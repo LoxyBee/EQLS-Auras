@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm start *)",
+      "Bash(node -c src/renderer/main-window/main-window.js)",
+      "Bash(node -c src/renderer/overlay/overlay.js)",
+      "Bash(awk -F'^' 'NR==6904' \"C:\\\\Users\\\\Public\\\\Daybreak Game Company\\\\Installed Games\\\\EverQuest Legends\\\\spells_us.txt\" | cut -d'|' -f1-5)",
+      "Bash(python3)"
+    ]
+  }
+}

@@ -1,0 +1,106 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 17, 22, 0.94);
+  overflow: hidden;
+}
+
+/* The whole window is always interactive (never click-through, unlike the
+   buff widgets), so only this strip needs to be draggable - everything
+   below has to stay clickable for the candidate/dismiss buttons. */
+#drag-bar {
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #dfe3ee;
+  background: rgba(60, 90, 200, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: center;
+}
+
+#cast-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cast-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.cast-text-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.cast-text {
+  font-size: 12px;
+  color: #dfe3ee;
+  font-style: italic;
+  line-height: 1.3;
+}
+
+.cast-dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #9a9fae;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.cast-dismiss:hover {
+  color: #dfe3ee;
+}
+
+.cast-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.cast-candidates button {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #2a2e38;
+  color: #dfe3ee;
+  cursor: pointer;
+}
+
+.cast-candidates button:hover {
+  background: #363b47;
+}

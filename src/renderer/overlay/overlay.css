@@ -1,0 +1,249 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  overflow: hidden;
+}
+
+/* Width is always set explicitly by overlay.js (the "List width" setting
+   in list mode, an icons-per-row x icon-size computation in icon mode)
+   rather than left to CSS defaults - a plain block flex container fills
+   100% of its parent by default regardless of content, which would make
+   the size overlay.js measures just reflect the window's own current
+   width back at itself: a runaway feedback loop where each resize
+   re-measures bigger, which resizes bigger again. */
+#content-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* While unlocked, this covers the entire widget (not just a header strip)
+   so anywhere on the widget can be clicked and dragged to reposition it -
+   the border doubles as a visual readout of the widget's current bounds,
+   which used to only show up on .buff-list and only in a thin outline.
+   Resizing still happens by dragging a window edge (native OS hit-testing
+   on the frameless window's border takes priority over app-region:drag
+   underneath it), same as before.
+
+   position:fixed (not absolute) deliberately - #content-wrap's own height
+   is intentionally content-driven/auto (see its comment - a fixed 100%
+   height there would create a measurement feedback loop), which shrinks
+   to nearly nothing with zero active buffs. inset:0 against an absolute
+   ancestor would shrink right along with it, leaving an empty widget with
+   almost no clickable/draggable surface even though widgetManager.js
+   floors the actual window size to one tile's height - fixed positioning
+   anchors this to the real window bounds instead, independent of however
+   little content there currently is. */
+.drag-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.4;
+  font-size: 11px;
+  color: #dfe3ee;
+  background: rgba(60, 90, 200, 0.45);
+  border: 2px dashed rgba(255, 255, 255, 0.65);
+  border-radius: 8px;
+  -webkit-app-region: drag;
+}
+
+body.unlocked .drag-overlay {
+  display: flex;
+}
+
+.buff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 4px;
+}
+
+.buff-row {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  height: var(--row-size, 28px);
+  flex-shrink: 0;
+  background: rgba(15, 17, 22, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  font-size: var(--text-size, 13px);
+  color: #f0f1f5;
+}
+
+/* Optional per-row icon (showRowIcon setting) - a plain flex sibling of
+   .buff-row-content, not part of it, specifically so the countdown bar's
+   percentage-width fill (see .buff-row-bar) is contained to the space
+   actually left after the icon instead of extending behind/under it.
+   order:1 under .mirrored moves it to the end (right side) without
+   touching DOM order - see overlay.js. */
+.buff-row-icon {
+  width: var(--row-size, 28px);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.buff-row.mirrored .buff-row-icon {
+  order: 1;
+}
+
+.buff-row-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.buff-row-icon .tile-placeholder {
+  font-size: calc(var(--row-size, 28px) * 0.35);
+}
+
+.buff-row-content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 9px;
+}
+
+/* Countdown fill - anchored to the "full" edge (left normally, right when
+   mirrored), shrinks as time runs out so the opposite edge recedes. Sits
+   behind the text (painted first, and the name/time spans get
+   position:relative so they stack above it). */
+.buff-row-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  background: rgba(90, 140, 255, 0.28);
+  transition: width 1s linear;
+}
+
+.buff-row.mirrored .buff-row-bar {
+  left: auto;
+  right: 0;
+}
+
+.buff-row.low .buff-row-bar {
+  background: rgba(255, 70, 70, 0.35);
+}
+
+.buff-row-content .name,
+.buff-row-content .time {
+  position: relative;
+  z-index: 1;
+}
+
+.buff-row-content .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.buff-row-content .time {
+  font-family: Consolas, monospace;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.buff-row.low {
+  border-color: rgba(255, 70, 70, 0.7);
+  background: rgba(70, 10, 10, 0.8);
+  animation: pulse 1s infinite;
+}
+
+.buff-row.low .time {
+  color: #ff6b6b;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* One-shot flash for a tile's first render after its buff lands - not
+   infinite like .low's pulse, so it plays once and stops on its own. */
+@keyframes landing-glow {
+  0% { box-shadow: 0 0 0 2px rgba(255, 214, 110, 0.95), 0 0 14px 5px rgba(255, 214, 110, 0.65); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 214, 110, 0); }
+}
+
+.buff-row.just-landed {
+  animation: landing-glow 0.9s ease-out;
+}
+
+.buff-list.icon-grid {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.buff-tile {
+  position: relative;
+  width: var(--icon-size, 46px);
+  height: var(--icon-size, 46px);
+  border-radius: 6px;
+  /* No overflow:hidden here (deliberately) - .tile-time is positioned
+     absolutely within this box and needs to be able to spill outside its
+     bounds at larger text sizes rather than getting clipped. Only the icon
+     art itself should be clipped to the rounded corners - handled below,
+     on the image/placeholder directly instead of the shared tile box. */
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(15, 17, 22, 0.72);
+}
+
+.buff-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 5px;
+}
+
+.tile-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--icon-size, 46px) * 0.3);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 5px;
+}
+
+/* Position/size/color for .tile-time is applied inline by
+   applyTileTimeStyle() in overlay.js, not here - see the comment on that
+   function for why. This class is kept only as a hook for overlay.js to
+   select the element by, not for any styling of its own. */
+
+.buff-tile.low {
+  border-color: rgba(255, 70, 70, 0.85);
+  animation: pulse 1s infinite;
+}
+
+.buff-tile.just-landed {
+  animation: landing-glow 0.9s ease-out;
+}

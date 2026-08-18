@@ -1,0 +1,1053 @@
+/* Design tokens - see UX_VISUAL_DESIGN.md at the project root for the full
+   rationale (measured against eqlsource.com's own documented palette
+   analysis of the game's texture archives, not picked by eye). Warm
+   umber/parchment, replacing the old cool blue-grey (#1b1e24/#24282f)
+   which read as "generic dev tool" per two rounds of visual feedback.
+   Added here as a pure token addition first - nothing consumes these yet,
+   so this step should be visually inert until the pieces that use them
+   land in later steps. */
+:root {
+  --bg: #14100b; /* darkest - the "gutter" behind blocks, and the sidebar */
+  --panel: #1c160f; /* one step up - window chrome, hover states */
+  --panel-2: #241c12; /* two steps up - fill colour for content blocks and inputs */
+  --line: #4a3c29; /* visible hairline / dotted-rule colour */
+  --line-soft: #3c3020; /* quieter divider, used sparingly */
+  --ink: #efe5d2; /* primary text - parchment */
+  --ink-mut: #b6a88b; /* secondary text */
+  --ink-dim: #8c8068; /* tertiary text */
+  --ink-faint: #6c6250; /* placeholder/disabled */
+  --accent: #cf9a4a; /* brass - interactive elements, "you configured this" */
+  --accent-soft: #cf9a4a1f;
+  --accent-line: #8a672f;
+  --bar: #6e5636; /* muted brass - solid fill for block-header caps only, never text */
+  --danger: #e2584a; /* reserved for exactly one job: a buff about to expire */
+  --danger-soft: #e2584a1a;
+  --ok: #6fae82;
+  --info: #5c93c4; /* live/diagnostic status - distinct from "you configured this" */
+  --info-soft: #5c93c41f;
+  --mono: Consolas, 'SFMono-Regular', monospace;
+  --sans: 'Segoe UI', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  /* Still the OLD literal colors on purpose - this step only adds the
+     token set above, it doesn't switch anything over to it yet (that
+     starts with the widget panel rebuild, next step). Keeps this step
+     genuinely visually inert rather than a partial, confusing swap. */
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #1b1e24;
+  color: #e8e8ec;
+}
+
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Persistent across every page/tab (lives outside .page-container, which is
+   the part that swaps per nav-btn) - see main-window.js's initProfileBar().
+   Deliberately plain/quiet styling, not a bright banner - this is a control
+   you reach for occasionally (after a loadout swap), not something that
+   should compete for attention with the actual buff tracking UI every time
+   you glance at the app. */
+.profile-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: #14161b;
+  border-bottom: 1px solid #2b2f38;
+}
+
+.profile-bar-label {
+  font-size: 12px;
+  color: #888e9c;
+  flex-shrink: 0;
+  cursor: help;
+}
+
+.profile-chip-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Switch-only - no delete/rename embedded here anymore, that moved to the
+   Manage profiles modal (gear button below) after a misclick complaint on
+   an earlier version that had a small X inline on every chip. */
+.profile-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid #33384280;
+  color: #b7bbc6;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.profile-chip:hover {
+  background: #20232b;
+}
+
+.profile-chip.active {
+  background: #2a3550;
+  border-color: #3d4d78;
+  color: #e8e8ec;
+  font-weight: 600;
+}
+
+.profile-add-btn,
+.profile-manage-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px dashed #454b58;
+  color: #b7bbc6;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.profile-add-btn:hover,
+.profile-manage-btn:hover {
+  background: #20232b;
+  color: #e8e8ec;
+}
+
+.manage-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manage-profile-row .text-input {
+  flex: 1;
+}
+
+.sidebar {
+  width: 190px;
+  flex-shrink: 0;
+  background: #14161b;
+  border-right: 1px solid #2b2f38;
+  padding: 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar h1 {
+  margin: 0 4px 12px;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.nav-btn {
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #b7bbc6;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.nav-btn:hover {
+  background: #20232b;
+}
+
+.nav-btn.active {
+  background: #2a3550;
+  border-color: #3d4d78;
+  color: #e8e8ec;
+  font-weight: 600;
+}
+
+.nav-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 2px 10px;
+  padding-left: 8px;
+  border-left: 1px solid #2b2f38;
+}
+
+.nav-sub-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.nav-sub-btn {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #9a9fae;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-sub-move-btn {
+  flex-shrink: 0;
+  width: 18px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #6f7482;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.nav-sub-move-btn:hover:not(:disabled) {
+  background: #20232b;
+  color: #b7bbc6;
+}
+
+.nav-sub-move-btn:disabled {
+  color: #3a3d45;
+  cursor: default;
+}
+
+.nav-sub-btn:hover {
+  background: #20232b;
+}
+
+.nav-sub-btn.active {
+  background: #2a3550;
+  border-color: #3d4d78;
+  color: #e8e8ec;
+  font-weight: 600;
+}
+
+.nav-add-widget-row {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px 2px;
+}
+
+.nav-add-widget-row button {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.slider-value {
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  color: #9a9fae;
+  min-width: 34px;
+}
+
+.anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 28px);
+  grid-template-rows: repeat(3, 28px);
+  gap: 4px;
+  margin: 2px 0 4px;
+}
+
+.anchor-cell {
+  background: #14161b;
+  border: 1px solid #4a4f5c;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.anchor-cell:hover {
+  background: #20232b;
+}
+
+.anchor-cell.active {
+  background: #2a3550;
+  border-color: #5a7ad9;
+}
+
+.page-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 28px 28px;
+}
+
+.page {
+  display: none;
+}
+
+.page.active {
+  display: block;
+}
+
+.page-title {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: #9a9fae;
+  font-size: 13px;
+}
+
+.card {
+  background: #24282f;
+  border: 1px solid #33384280;
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.settings-section {
+  background: #1c1f26;
+  border: 1px solid #33384280;
+  border-radius: 6px;
+  padding: 10px 14px 14px;
+  margin: 14px 0;
+}
+
+.settings-section-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #7c8293;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settings-section .row:first-of-type {
+  margin-top: 0;
+}
+
+/* Lighter-weight grouping label WITHIN a settings-section, for splitting
+   e.g. "Timer text" from "Label text" - no bubble of its own, since
+   nesting a bubble inside a bubble reads as one nesting level too many. */
+.settings-subsection-title {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9a9fae;
+}
+
+.settings-subsection-title:first-child {
+  margin-top: 0;
+}
+
+/* ================= Widget settings panel: blocks + topics =================
+   See UX_VISUAL_DESIGN.md for the full rationale. Gutter + flat blocks, not
+   nested cards: the panel sits directly on the page --bg, and each block is
+   a flat --panel-2 island (square corners, no border/shadow) separated from
+   its neighbours by a 6px gap that reveals the gutter as a seam. Blocks
+   never sit inside other blocks. */
+
+.block-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.block {
+  background: var(--panel-2);
+  padding: 14px 18px 16px;
+}
+
+.block h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+/* A small solid-fill bar at the block's own top, scoped to the block's
+   width (not the full window) - for a real section break, not just a
+   label. .info is a separate colour reserved for LIVE STATUS blocks
+   ("Active on this widget") so that kind of content is never visually
+   confused with a configuration block. */
+.block-cap {
+  margin: -14px -18px 12px;
+  padding: 7px 18px;
+  background: var(--bar);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.block-cap.info {
+  background: var(--info);
+}
+
+/* A collapsible topic row inside the Configuration block. Three tiers of
+   separation instead of one flat treatment:
+     1. row-to-row: a quiet dotted rule (deliberately the least emphatic
+        mark on the page, so it never competes with...)
+     2. ...a persistent LEFT STRIPE, coloured by what the row actually is
+        (brass = you configured something here, blue = live status/count,
+        none = still default) - visible whether open or closed, hovered or
+        not. This is the primary "does this need my attention" scan cue.
+     3. the open row's head gets a light accent wash + bold accent title,
+        marking "this one, right now" - a temporary interaction cue, kept
+        separate from the persistent stripe above.
+   Deliberately no additional dot/badge on top of the stripe - tried once
+   and it was one "configured" cue too many stacked on the same row. */
+.topic {
+  border-bottom: 1px dotted var(--line);
+  padding: 0 8px 0 12px;
+  margin: 0 -8px;
+  border-left: 4px solid transparent;
+}
+
+.topic:last-child {
+  border-bottom: none;
+}
+
+.topic.configured {
+  border-left-color: var(--accent);
+}
+
+.topic.live {
+  border-left-color: var(--info);
+}
+
+.topic-head {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--ink);
+  padding: 12px 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  gap: 9px;
+}
+
+.topic-head:hover .topic-title {
+  color: var(--accent);
+}
+
+.topic.open > .topic-head {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+.topic.open > .topic-head .topic-title {
+  color: var(--accent);
+}
+
+.topic.live.open > .topic-head {
+  background: var(--info-soft);
+  box-shadow: inset 0 0 0 1px var(--info);
+}
+
+.chev {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--ink-mut);
+  border-bottom: 1.5px solid var(--ink-mut);
+  transform: rotate(-45deg);
+  transition: transform 160ms ease;
+  flex-shrink: 0;
+}
+
+.topic.open .chev {
+  transform: rotate(45deg);
+  border-color: var(--accent);
+}
+
+.topic-title {
+  flex-shrink: 0;
+  transition: color 120ms ease;
+}
+
+.topic-summary {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.topic.configured .topic-summary {
+  color: #b98a4c;
+}
+
+.topic-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 180ms ease;
+}
+
+/* Unlike a short mockup demo, real topic content here (the buff picker's
+   search list especially) can run much taller than any small cap - a low
+   max-height would silently clip real, functional content instead of just
+   animating it. Set high enough that no realistic topic content should
+   ever hit it, so this stays purely a transition mechanism, never a clip. */
+.topic.open .topic-body {
+  max-height: 4000px;
+}
+
+.topic-body-inner {
+  padding: 6px 0 14px 6px;
+  font-size: 12.5px;
+  color: var(--ink-mut);
+}
+
+.empty-warn {
+  border-left: 2px solid var(--danger);
+  padding: 4px 0 4px 10px;
+  color: var(--danger);
+  font-size: 11.5px;
+  margin-top: 8px;
+}
+
+.card h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: #c7cbd6;
+}
+
+#status {
+  font-size: 14px;
+}
+
+dl {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #9a9fae;
+}
+
+dt {
+  display: inline-block;
+  min-width: 130px;
+  font-weight: 600;
+}
+
+dd {
+  display: inline;
+  margin: 0;
+}
+
+dd::after {
+  content: '';
+  display: block;
+}
+
+.card + .card {
+  margin-top: 16px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+.label {
+  min-width: 110px;
+  color: #9a9fae;
+}
+
+#eq-folder,
+#log-file {
+  font-family: Consolas, monospace;
+  word-break: break-all;
+}
+
+button {
+  background: #3a3f4b;
+  color: #e8e8ec;
+  border: 1px solid #4a4f5c;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #454b59;
+}
+
+.error {
+  color: #ff6b6b;
+  font-size: 12px;
+  min-height: 16px;
+  margin: 4px 0;
+}
+
+h4 {
+  font-size: 13px;
+  color: #c7cbd6;
+  margin: 16px 0 4px;
+}
+
+.hint {
+  font-size: 12px;
+  color: #9a9fae;
+  margin: 0 0 8px;
+}
+
+#add-widget-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.add-widget-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  background: #1c1f26;
+}
+
+.add-widget-choice:hover {
+  background: #262b34;
+  border-color: #5a7ad9;
+}
+
+.add-widget-choice strong {
+  color: #e8e8ec;
+  font-size: 14px;
+}
+
+.add-widget-choice span {
+  color: #9a9fae;
+  font-size: 12px;
+}
+
+.add-widget-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.add-widget-back {
+  align-self: flex-start;
+  font-size: 12px;
+  color: #9a9fae;
+  background: none;
+  border: none;
+  padding: 2px 0;
+}
+
+.add-widget-back:hover {
+  color: #dfe3ee;
+}
+
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.premade-widget-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 12px;
+  width: 100%;
+  background: #1c1f26;
+}
+
+.premade-widget-choice:hover {
+  background: #262b34;
+  border-color: #5a7ad9;
+}
+
+.premade-widget-choice strong {
+  color: #e8e8ec;
+  font-size: 13px;
+}
+
+.premade-widget-choice span {
+  color: #9a9fae;
+  font-size: 12px;
+}
+
+/* Planned/not-yet-built premade ideas - shown so the roadmap is visible in
+   the UI itself, but not clickable (no create() to run). Same layout as a
+   real choice, just visually muted and cursor:default instead of a hover
+   state, so it doesn't read as broken/unresponsive. */
+.premade-widget-choice.planned {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.premade-widget-choice.planned:hover {
+  background: #1c1f26;
+  border-color: transparent;
+}
+
+.premade-widget-choice .planned-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #3a3f4c;
+  color: #c7cbd6;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.nav-add-widget-btn {
+  width: 100%;
+}
+
+.about-priority-list {
+  margin: 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.about-priority-list li {
+  font-size: 13px;
+  color: #c7cbd6;
+  line-height: 1.5;
+}
+
+.about-priority-list strong {
+  color: #e8e8ec;
+}
+
+.line-feed {
+  background: #14161b;
+  border: 1px solid #33384280;
+  border-radius: 6px;
+  padding: 8px 10px;
+  height: 180px;
+  overflow-y: auto;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  color: #b7bbc6;
+}
+
+.line-feed div {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.buff-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.buff-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #1c1f26;
+  border: 1px solid #33384280;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.buff-list li.empty {
+  color: #6f7583;
+  font-style: italic;
+  background: none;
+  border: none;
+  padding: 4px 0;
+}
+
+.buff-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.buff-timer {
+  font-family: Consolas, monospace;
+  min-width: 56px;
+  text-align: right;
+}
+
+.buff-timer.low {
+  color: #ff5c5c;
+  font-weight: 700;
+}
+
+.duration-input {
+  width: 52px;
+  background: #14161b;
+  border: 1px solid #4a4f5c;
+  border-radius: 4px;
+  color: #e8e8ec;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.duration-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.duration-unit {
+  color: #9a9fae;
+  font-size: 12px;
+  margin-right: 4px;
+}
+
+.buff-icon-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: #14161b;
+}
+
+.icon-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding: 8px;
+  background: #14161b;
+  border: 1px solid #33384280;
+  border-radius: 6px;
+}
+
+.icon-picker-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  background: #1c1f26;
+}
+
+.icon-picker-thumb:hover {
+  border-color: #4a4f5c;
+}
+
+.icon-picker-thumb.selected {
+  border-color: #5a7ad9;
+}
+
+.ambiguous-candidates {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ambiguous-candidates button {
+  font-size: 11px;
+}
+
+.unknown-buff-row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.unknown-buff-row .row {
+  margin: 0;
+  flex-wrap: wrap;
+}
+
+.unknown-buff-row .row + .row {
+  margin-top: 6px;
+}
+
+.text-input {
+  flex: 1;
+  background: #14161b;
+  border: 1px solid #4a4f5c;
+  border-radius: 4px;
+  color: #e8e8ec;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.known-buff-add {
+  margin: 4px 0 10px;
+}
+
+.search-input {
+  display: block;
+  width: 100%;
+  margin: 0 0 10px;
+}
+
+.known-buff-list {
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.known-buff-list li {
+  flex-wrap: wrap;
+}
+
+.known-buff-list .buff-name {
+  flex-basis: 200px;
+  min-width: 120px;
+}
+
+.overlay-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #c7cbd6;
+  white-space: nowrap;
+}
+
+#widget-lock-btn.unlocked {
+  background: #5a3f14;
+  border-color: #8a6a2c;
+}
+
+.archive-prompt {
+  background: #4a3a14;
+  border: 1px solid #8a6a2c;
+  color: #ffd98a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  margin: 8px 0;
+}
+
+code {
+  background: #14161b;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: Consolas, monospace;
+}
+
+/* Reusable modal shell - anything that opens a picker/list of its own
+   (not just an inline expanding section) uses this pattern. */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-card {
+  background: #24282f;
+  border: 1px solid #33384280;
+  border-radius: 8px;
+  padding: 16px 20px;
+  width: 80vw;
+  max-width: 1100px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #c7cbd6;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #9a9fae;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.modal-close:hover {
+  color: #dfe3ee;
+}
+
+.modal-list {
+  flex: 1;
+  /* Flex items default to min-width:auto, not 0 - without this, a long
+     unwrapped row's natural width stops this list from ever shrinking to
+     fit the modal, pushing content (like a Remove button) out past the
+     edge instead of wrapping/truncating within it. */
+  min-width: 0;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+
+/* Long remembered-choice text wraps instead of being ellipsis-truncated -
+   seeing the full text/buff name matters when deciding what to remove,
+   and the Remove button stays pinned instead of getting squeezed. */
+.modal-list .row {
+  align-items: flex-start;
+}
+
+.modal-list .buff-name {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+
+.modal-list button {
+  flex-shrink: 0;
+}

@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EQLS Auras</title>
+  <link rel="stylesheet" href="main-window.css" />
+</head>
+<body>
+  <div class="app-layout">
+    <div class="profile-bar" id="profile-bar">
+      <span class="profile-bar-label" title="Switches which loadout's remembered ambiguous-cast answers (see Buff Tracker's 'Ambiguous casts' card) are active. Doesn't hide or change any widget.">
+        Loadout profile:
+      </span>
+      <div class="profile-chip-list" id="profile-chip-list"></div>
+      <button class="profile-add-btn" id="profile-add-btn" title="Add a new loadout profile">+</button>
+      <button class="profile-manage-btn" id="profile-manage-btn" title="Rename or delete loadout profiles">⚙</button>
+    </div>
+
+    <div class="app-body">
+    <nav class="sidebar">
+      <h1>EQLS Auras</h1>
+      <button class="nav-btn active" data-page="page-tracker">Buff Tracker</button>
+
+      <button class="nav-btn" data-page="page-overlay" id="widgets-nav-btn">Overlay Widgets</button>
+      <div class="nav-submenu" id="widgets-submenu">
+        <div class="nav-add-widget-row">
+          <button id="open-add-widget-modal-btn" class="nav-add-widget-btn">+ Add widget</button>
+        </div>
+      </div>
+
+      <button class="nav-btn" data-page="page-settings">Setup</button>
+      <button class="nav-btn" data-page="page-log">Log</button>
+      <button class="nav-btn" data-page="page-about">About</button>
+    </nav>
+
+    <div class="page-container">
+      <section id="page-tracker" class="page active">
+        <h2 class="page-title">Buff Tracker</h2>
+
+        <div class="card">
+          <h3>Ambiguous casts</h3>
+          <p class="hint">
+            EQ's message for this buff is shared by several different spells, so pick which one it
+            actually was - this can show up for your own casts too (e.g. two scribed spells sharing
+            the same text), not just when "track buffs from others" is on.
+          </p>
+          <ul id="ambiguous-buffs" class="buff-list">
+            <li class="empty">None right now.</li>
+          </ul>
+          <div class="row">
+            <button id="reset-ambiguous-btn">Reset remembered choices</button>
+            <button id="view-ambiguous-resolutions-btn">View remembered choices...</button>
+          </div>
+          <p class="hint">
+            Remembered choices are "this text means buff X" answers from resolving an ambiguous cast
+            before - cleared here so anything ambiguous prompts you again instead of reusing an old
+            answer. Doesn't affect what's currently active.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>Unknown casts</h3>
+          <p class="hint">
+            Casts that landed (or that we detected as landing) but aren't in the buff database yet.
+            This will also pick up non-buff spells you cast on enemies (heals, nukes) since the log
+            doesn't distinguish those - just Dismiss those.
+          </p>
+          <ul id="unknown-buffs" class="buff-list">
+            <li class="empty">None right now.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h3>Add a new buff</h3>
+          <p class="hint">
+            Pre-load a buff you know about, in case it doesn't turn up as an unknown cast first.
+          </p>
+          <button id="open-add-buff-modal-btn">Add a new buff...</button>
+        </div>
+
+        <div class="card">
+          <h3>Custom buffs</h3>
+          <p class="hint">
+            Buffs you've added yourself - typed in above, or promoted from an Unknown cast below.
+            Since these didn't come from the game's own spell files, they don't get an icon
+            automatically - use "Choose icon..." on one to pick its art.
+          </p>
+          <button id="open-custom-buffs-modal-btn">View custom buffs...</button>
+        </div>
+
+        <div class="card">
+          <h3>Known buffs</h3>
+          <p class="hint">
+            Everything the app knows how to time, with its duration and whether it shows on the built-in
+            "Self Buffs" widget. Edit a duration and click Save, or uncheck "Overlay" to track something
+            without cluttering that widget. (Other widgets you create on the Widgets page pick their
+            own buffs independently of this checkbox.)
+          </p>
+          <button id="open-known-buffs-modal-btn">Browse known buffs...</button>
+        </div>
+      </section>
+
+      <section id="page-overlay" class="page">
+        <h2 class="page-title">Overlay Widgets</h2>
+
+        <div class="card" id="icon-set-card">
+          <h3>Icon set</h3>
+          <div class="row">
+            <span class="label">Icon set:</span>
+            <select id="icon-set-select"></select>
+          </div>
+          <p class="hint">
+            The game ships a few different icon art styles under the hood. If icons don't look right
+            (or show broken), try switching this - a buff already showing correctly on your hotbar
+            confirms which set matches your client. This applies to every widget.
+          </p>
+        </div>
+
+        <div class="card" id="widgets-intro-card">
+          <h3>Widgets</h3>
+          <p class="hint">
+            A widget is its own independent overlay window, with its own position, size, and buffs
+            shown. Your widgets are listed under "Overlay Widgets" in the sidebar - click one to
+            configure it, or use "+ Add widget" there to import a share code, add a premade widget, or
+            build a custom one from scratch. "Self Buffs" is the built-in one and can't be deleted - it
+            shows whatever you've marked "Overlay" on the Buff Tracker page's Known Buffs list. EQ needs
+            to run in windowed or borderless-windowed mode (not exclusive fullscreen) for widgets to be
+            visible over it.
+          </p>
+        </div>
+
+        <div id="widget-settings-panel" style="display:none">
+          <div class="block-stack">
+
+            <!-- Identity block: always visible, no cap -->
+            <div class="block">
+              <h3 id="widget-settings-title">Widget settings</h3>
+              <div class="row">
+                <span class="label">Name:</span>
+                <input type="text" id="widget-name-input" class="text-input" />
+              </div>
+              <div class="row">
+                <label><input type="checkbox" id="widget-enabled-checkbox" /> Show this widget</label>
+                <button id="widget-lock-btn">Unlock to move</button>
+                <button id="widget-reset-position-btn">Reset position</button>
+              </div>
+              <p class="hint">
+                While unlocked, click and drag anywhere on the widget to reposition it, and drag an edge
+                to resize it - then click Lock here when you're done. While locked, it's fully
+                click-through. Lost track of a widget (dragged off-screen, or its monitor got
+                disconnected)? "Reset position" brings it back to a corner of your main screen.
+              </p>
+            </div>
+
+            <!-- Display & Size block: always visible -->
+            <div class="block">
+              <p class="block-cap">Display &amp; size</p>
+              <div class="row" id="widget-buff-source-row">
+                <span class="label">Buffs shown:</span>
+                <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
+                <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
+              </div>
+              <div class="row">
+                <span class="label">Display style:</span>
+                <label><input type="radio" name="widget-display-mode" value="list" /> List</label>
+                <label><input type="radio" name="widget-display-mode" value="icons" /> Icons</label>
+              </div>
+              <div class="row">
+                <span class="label">Sort by:</span>
+                <label><input type="radio" name="widget-sort-order" value="default" /> Cast order</label>
+                <label><input type="radio" name="widget-sort-order" value="time-remaining" /> Time remaining</label>
+                <label><input type="radio" name="widget-sort-order" value="alphabetical" /> Alphabetical</label>
+              </div>
+              <div class="row">
+                <span class="label">Opacity:</span>
+                <input type="range" id="widget-opacity-slider" min="0.2" max="1" step="0.05" />
+              </div>
+
+              <div id="widget-display-list-only-settings">
+                <div class="row">
+                  <label><input type="checkbox" id="widget-show-row-icon-checkbox" /> Show icon on each row</label>
+                </div>
+                <div class="row">
+                  <label><input type="checkbox" id="widget-mirror-row-checkbox" /> Mirror direction (icon on the right, bar counts down right-to-left)</label>
+                </div>
+              </div>
+
+              <div id="widget-display-icon-only-settings">
+                <div class="row">
+                  <span class="label">Icons per row:</span>
+                  <input type="range" id="widget-icons-per-row-slider" min="1" max="20" step="1" />
+                  <span id="widget-icons-per-row-value" class="slider-value">4</span>
+                </div>
+                <div class="row">
+                  <span class="label">Justification:</span>
+                  <label><input type="radio" name="widget-icon-justify" value="left" /> Left</label>
+                  <label><input type="radio" name="widget-icon-justify" value="center" /> Center</label>
+                  <label><input type="radio" name="widget-icon-justify" value="right" /> Right</label>
+                </div>
+                <p class="hint">
+                  With fewer buffs active than "Icons per row", this decides where they sit within that
+                  reserved space - e.g. a cap of 20 with just 1 buff active and "Center" selected puts it
+                  in the middle of the space 20 would take up, not flush to the left.
+                </p>
+              </div>
+
+              <div id="widget-list-only-settings">
+                <div class="row">
+                  <span class="label">List width:</span>
+                  <input type="range" id="widget-list-width-slider" min="120" max="500" step="5" />
+                  <span id="widget-list-width-value" class="slider-value">220px</span>
+                </div>
+                <div class="row">
+                  <span class="label">Row size:</span>
+                  <input type="range" id="widget-row-size-slider" min="18" max="60" step="1" />
+                  <span id="widget-row-size-value" class="slider-value">28px</span>
+                </div>
+                <p class="hint">
+                  Row size is the height of each row, independent of text size - same as icon size is
+                  independent of text size. Height fits itself to however many buffs are currently shown.
+                </p>
+              </div>
+
+              <div id="widget-icon-only-settings">
+                <div class="row">
+                  <span class="label">Icon size:</span>
+                  <input type="range" id="widget-icon-size-slider" min="24" max="96" step="2" />
+                  <span id="widget-icon-size-value" class="slider-value">46px</span>
+                </div>
+                <div class="row">
+                  <span class="label">Margin width:</span>
+                  <input type="range" id="widget-margin-width-slider" min="0" max="20" step="1" disabled />
+                  <span id="widget-margin-width-value" class="slider-value">planned</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Configuration block: collapsible topics live together here -->
+            <div class="block">
+              <p class="block-cap">Configuration</p>
+
+              <div class="topic open" id="widget-buff-filter-card" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Buffs shown</span>
+                  <span class="topic-summary" id="topic-buffs-shown-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <p class="hint" id="widget-buff-filter-hint"></p>
+                  <div id="widget-track-others-row" style="display:none">
+                    <div class="row">
+                      <label><input type="checkbox" id="widget-track-others-checkbox" /> Track buffs cast on me by others (opt-in)</label>
+                    </div>
+                    <p class="hint">
+                      Off by default - only your own buffs are tracked. When on, an ambiguous buff that isn't
+                      in your spellbook (most likely a group-mate's cast) queues up for you to pick which one
+                      it was, and remembers your choice until your group's membership changes.
+                    </p>
+                  </div>
+                  <div id="widget-self-buffs-filters" style="display:none">
+                    <div class="row">
+                      <label><input type="checkbox" id="widget-hide-bard-songs-checkbox" /> Hide bard songs</label>
+                    </div>
+                    <p class="hint">
+                      Identified by whether the cast line used "singing" instead of "casting" - a song that
+                      landed without a matching cast line (e.g. via an instant multi-buff burst) won't be
+                      caught by this.
+                    </p>
+                    <div class="row">
+                      <span class="label">Hide buffs longer than:</span>
+                      <input type="range" id="widget-max-duration-slider" min="0" max="240" step="5" />
+                      <span id="widget-max-duration-value" class="slider-value">off</span>
+                    </div>
+                    <p class="hint">Duration is in minutes. Set to 0 to turn this filter off.</p>
+                  </div>
+                  <div id="widget-selected-buffs-section" style="display:none">
+                    <h4 class="settings-subsection-title">Currently selected</h4>
+                    <p class="hint">
+                      Always shown here regardless of search, so a buff picked earlier stays easy to find and
+                      uncheck - with thousands of known buffs, scrolling/searching the full list below to find
+                      an already-checked one isn't practical.
+                    </p>
+                    <ul id="widget-selected-buffs-list" class="buff-list known-buff-list"></ul>
+                  </div>
+                  <input
+                    type="search"
+                    id="widget-buff-filter-search"
+                    class="text-input search-input"
+                    placeholder="Search buffs..."
+                  />
+                  <ul id="widget-buff-filter-list" class="buff-list known-buff-list"></ul>
+                </div></div>
+              </div>
+
+              <div class="topic" id="topic-timer-text" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Timer text</span>
+                  <span class="topic-summary" id="topic-timer-text-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <div class="row">
+                    <span class="label">Timer format:</span>
+                    <label><input type="radio" name="widget-timer-format" value="minutes-seconds" /> 5:12</label>
+                    <label><input type="radio" name="widget-timer-format" value="seconds-only" /> 312</label>
+                    <label><input type="radio" name="widget-timer-format" value="rounded-minutes" /> 6m</label>
+                  </div>
+                  <div class="row">
+                    <span class="label">Text size:</span>
+                    <input type="range" id="widget-text-size-slider" min="8" max="28" step="1" />
+                    <span id="widget-text-size-value" class="slider-value">13px</span>
+                  </div>
+                  <div class="row">
+                    <span class="label">Text color:</span>
+                    <input type="color" id="widget-timer-text-color-picker" disabled value="#f0f1f5" />
+                    <span class="slider-value">planned</span>
+                  </div>
+                  <p class="hint">Not active yet.</p>
+
+                  <div id="widget-icon-position-settings">
+                    <div class="row">
+                      <span class="label">Timer text position:</span>
+                    </div>
+                    <div class="anchor-grid" id="widget-anchor-grid">
+                      <button type="button" class="anchor-cell" data-anchor="top-left" title="Top left"></button>
+                      <button type="button" class="anchor-cell" data-anchor="top-center" title="Top center"></button>
+                      <button type="button" class="anchor-cell" data-anchor="top-right" title="Top right"></button>
+                      <button type="button" class="anchor-cell" data-anchor="middle-left" title="Middle left"></button>
+                      <button type="button" class="anchor-cell" data-anchor="middle-center" title="Middle center"></button>
+                      <button type="button" class="anchor-cell" data-anchor="middle-right" title="Middle right"></button>
+                      <button type="button" class="anchor-cell" data-anchor="bottom-left" title="Bottom left"></button>
+                      <button type="button" class="anchor-cell" data-anchor="bottom-center" title="Bottom center"></button>
+                      <button type="button" class="anchor-cell" data-anchor="bottom-right" title="Bottom right"></button>
+                    </div>
+                    <p class="hint">Where the countdown label sits on top of each icon.</p>
+                  </div>
+                </div></div>
+              </div>
+
+              <div class="topic" id="widget-icon-label-section" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Label text</span>
+                  <span class="topic-summary" id="topic-label-text-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <div class="row">
+                    <label><input type="checkbox" id="widget-show-icon-label-checkbox" /> Show label</label>
+                  </div>
+                  <p class="hint">
+                    An extra bit of text showing the buff or timer's name on each icon - useful when a
+                    toggle like this makes it worth naming what's what. Can be wider than the icon itself,
+                    so a long name isn't cut off.
+                  </p>
+                  <div id="widget-icon-label-options" style="display:none">
+                    <div class="row">
+                      <label><input type="checkbox" id="widget-wrap-text-checkbox" /> Wrap text to fit inside the icon</label>
+                    </div>
+                    <p class="hint">
+                      On: the label wraps and stays inside the icon's own bounds, best when many icons are
+                      packed together (like Self Buffs or Ally Buffs). Off: the label can spill past the icon
+                      rather than being cut off - usually better with just one or a few icons where there's
+                      room to spare. Only affects the label - the timer text is always short enough that it
+                      never needs to wrap.
+                    </p>
+                    <div class="row">
+                      <span class="label">Label size:</span>
+                      <input type="range" id="widget-icon-label-size-slider" min="6" max="20" step="1" />
+                      <span id="widget-icon-label-size-value" class="slider-value">11px</span>
+                    </div>
+                    <div class="row">
+                      <span class="label">Text color:</span>
+                      <input type="color" id="widget-label-text-color-picker" disabled value="#f0f1f5" />
+                      <span class="slider-value">planned</span>
+                    </div>
+                    <p class="hint">Not active yet.</p>
+                    <div class="row">
+                      <span class="label">Label position:</span>
+                    </div>
+                    <div class="anchor-grid" id="widget-icon-label-anchor-grid">
+                      <button type="button" class="anchor-cell" data-anchor="top-left" title="Top left"></button>
+                      <button type="button" class="anchor-cell" data-anchor="top-center" title="Top center"></button>
+                      <button type="button" class="anchor-cell" data-anchor="top-right" title="Top right"></button>
+                      <button type="button" class="anchor-cell" data-anchor="middle-left" title="Middle left"></button>
+                      <button type="button" class="anchor-cell" data-anchor="middle-center" title="Middle center"></button>
+                      <button type="button" class="anchor-cell" data-anchor="middle-right" title="Middle right"></button>
+                      <button type="button" class="anchor-cell" data-anchor="bottom-left" title="Bottom left"></button>
+                      <button type="button" class="anchor-cell" data-anchor="bottom-center" title="Bottom center"></button>
+                      <button type="button" class="anchor-cell" data-anchor="bottom-right" title="Bottom right"></button>
+                    </div>
+                  </div>
+                </div></div>
+              </div>
+
+              <div class="topic" id="topic-alerts" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Alerts</span>
+                  <span class="topic-summary" id="topic-alerts-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <div class="row">
+                    <span class="label">Expiring-soon flash:</span>
+                    <input type="range" id="widget-low-threshold-slider" min="0" max="120" step="5" />
+                    <span id="widget-low-threshold-value" class="slider-value">30s</span>
+                  </div>
+                  <p class="hint">
+                    When a buff's remaining time drops under this, its tile flashes red. Set to 0 to turn
+                    the flash off for this widget.
+                  </p>
+                  <div class="row">
+                    <label><input type="checkbox" id="widget-landing-glow-checkbox" /> Glow when a buff lands</label>
+                  </div>
+                </div></div>
+              </div>
+
+              <div class="topic" id="topic-sounds" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Sounds</span>
+                  <span class="topic-summary" id="topic-sounds-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <div class="row">
+                    <label><input type="checkbox" id="widget-sound-land-checkbox" /> Play a sound when a buff lands</label>
+                  </div>
+                  <div class="row">
+                    <label><input type="checkbox" id="widget-sound-expire-checkbox" /> Play a sound when a buff expires</label>
+                  </div>
+                  <div class="row">
+                    <span class="label">Warn before expiry:</span>
+                    <input type="range" id="widget-sound-warning-slider" min="0" max="60" step="5" />
+                    <span id="widget-sound-warning-value" class="slider-value">off</span>
+                  </div>
+                  <p class="hint">
+                    Plays a sound once, this many seconds before a buff runs out. Set to 0 to turn it off.
+                  </p>
+                  <div class="row">
+                    <span class="label">Alert sound:</span>
+                    <button type="button" disabled>Choose sound...</button>
+                    <span class="slider-value">planned</span>
+                  </div>
+                  <div class="row">
+                    <span class="label">Loop warning every:</span>
+                    <input type="range" id="widget-sound-loop-slider" min="0" max="10" step="1" />
+                    <span id="widget-sound-loop-value" class="slider-value">off</span>
+                  </div>
+                  <p class="hint">
+                    Repeats the warning sound this often for as long as the buff stays under the threshold
+                    above, instead of playing just once. Set to 0 for a single warning, same as before.
+                  </p>
+                </div></div>
+              </div>
+
+              <div class="topic" id="widget-custom-timers-card" data-topic style="display:none">
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Custom timers</span>
+                  <span class="topic-summary" id="topic-custom-timers-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <p class="hint">
+                    Timers defined here belong only to this widget - name it, give it a duration, and what
+                    starts it. "Chat message" lets you pick a channel and who said it without needing to know
+                    the exact log wording; "Exact log line" still works for anything else (an emote, an
+                    achievement message, any line at all).
+                  </p>
+                  <div class="known-buff-add">
+                    <div class="row">
+                      <input type="text" id="widget-new-timer-name" placeholder="Timer name" class="text-input" />
+                      <input type="number" id="widget-new-timer-minutes" min="0" step="1" placeholder="min" class="duration-input" />
+                      <span class="duration-unit">m</span>
+                      <input type="number" id="widget-new-timer-seconds" min="0" max="59" step="1" placeholder="sec" class="duration-input" />
+                      <span class="duration-unit">s</span>
+                    </div>
+                    <div class="row">
+                      <label><input type="radio" name="widget-new-timer-trigger-mode" value="chat" /> Chat message</label>
+                      <label><input type="radio" name="widget-new-timer-trigger-mode" value="raw" /> Exact log line</label>
+                    </div>
+
+                    <div id="widget-new-timer-chat-fields">
+                      <div class="row">
+                        <span class="label">Channel:</span>
+                        <select id="widget-new-timer-channel-select">
+                          <option value="say">Say</option>
+                          <option value="group">Group</option>
+                          <option value="guild">Guild</option>
+                          <option value="tell">Tell (someone messages you)</option>
+                        </select>
+                      </div>
+                      <div class="row" id="widget-new-timer-who-row">
+                        <span class="label">From:</span>
+                        <label><input type="radio" name="widget-new-timer-who" value="self" /> Yourself</label>
+                        <label><input type="radio" name="widget-new-timer-who" value="name" /> Specific person:</label>
+                        <input type="text" id="widget-new-timer-who-name" placeholder="Name" class="text-input" />
+                      </div>
+                      <div class="row">
+                        <input
+                          type="text"
+                          id="widget-new-timer-chat-message"
+                          placeholder="Starts the timer when this is said (just the words, e.g. hi)"
+                          class="text-input"
+                        />
+                      </div>
+                      <div class="row">
+                        <input
+                          type="text"
+                          id="widget-new-timer-chat-ended-message"
+                          placeholder="Ends the timer early when this is said (optional, same channel/person)"
+                          class="text-input"
+                        />
+                      </div>
+                    </div>
+
+                    <div id="widget-new-timer-raw-fields" style="display:none">
+                      <div class="row">
+                        <input
+                          type="text"
+                          id="widget-new-timer-trigger"
+                          placeholder="Trigger text - the exact log line that starts the timer"
+                          class="text-input"
+                        />
+                      </div>
+                      <div class="row">
+                        <input
+                          type="text"
+                          id="widget-new-timer-ended"
+                          placeholder="Ended text (optional) - ends the timer early if it appears"
+                          class="text-input"
+                        />
+                      </div>
+                    </div>
+
+                    <div class="row">
+                      <img id="widget-new-timer-icon-preview" class="buff-icon-thumb" style="display:none" />
+                      <button type="button" id="widget-new-timer-choose-icon-btn">Choose icon...</button>
+                      <button id="widget-new-timer-add-btn">Add</button>
+                      <button id="widget-new-timer-save-as-new-btn" style="display:none">Save as new</button>
+                      <button id="widget-new-timer-cancel-btn" style="display:none">Cancel edit</button>
+                    </div>
+                    <div id="widget-new-timer-icon-picker" class="icon-picker-grid" style="display:none"></div>
+                  </div>
+                  <ul id="widget-custom-timers-list" class="buff-list known-buff-list"></ul>
+                </div></div>
+              </div>
+
+              <div class="topic" id="widget-profiles-card" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Loadout profiles</span>
+                  <span class="topic-summary" id="topic-loadout-profiles-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <p class="hint">
+                    Which loadout profiles this widget belongs to - purely organizational, doesn't affect
+                    whether it's shown or how it detects buffs. Used when creating a new profile, to offer
+                    this widget in that profile's "which widgets should migrate in" checklist.
+                  </p>
+                  <ul id="widget-profiles-checklist" class="buff-list"></ul>
+                </div></div>
+              </div>
+            </div>
+
+            <!-- Live status block: its own info-capped block -->
+            <div class="block" id="widget-active-buffs-card" style="display:none">
+              <p class="block-cap info">Active on this widget</p>
+              <p class="hint" id="widget-active-buffs-hint">
+                Whatever's currently showing on this widget, live. "Remove" clears the tracked instance
+                (same as it ending naturally). "Don't track here" hides that buff from this widget only,
+                without affecting any other widget.
+              </p>
+              <ul id="widget-active-buffs-list" class="buff-list"></ul>
+              <div id="widget-excluded-buffs-section" style="display:none">
+                <button type="button" id="widget-toggle-excluded-btn">Show excluded buffs (0)</button>
+                <ul id="widget-excluded-buffs-list" class="buff-list" style="display:none; margin-top:8px"></ul>
+              </div>
+            </div>
+
+            <!-- Manage widget block -->
+            <div class="block" id="widget-manage-card" style="display:none">
+              <p class="block-cap">Manage widget</p>
+              <div class="row">
+                <button id="duplicate-widget-btn">Duplicate</button>
+                <button id="export-widget-btn">Export as code...</button>
+              </div>
+              <div class="row" id="export-widget-code-row" style="display:none">
+                <textarea id="export-widget-code-output" class="text-input" rows="3" readonly></textarea>
+                <button id="copy-widget-code-btn">Copy</button>
+              </div>
+              <div class="row">
+                <button id="delete-widget-btn">Delete widget</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <section id="page-settings" class="page">
+        <h2 class="page-title">Setup</h2>
+
+        <div class="card">
+          <h3>Buff duration bonuses</h3>
+          <p class="hint">
+            These AA and Exaltation abilities extend how long buffs last. Set them to match your
+            character so tracked timers reflect your real, extended durations instead of the base
+            spell length. This applies to every tracked buff - it doesn't change what's detected,
+            only how long the countdown runs.
+          </p>
+          <div class="row">
+            <span class="label">Spell Casting Reinforcement (AA):</span>
+            <select id="aa-reinforcement-select">
+              <option value="0">Not trained (0%)</option>
+              <option value="1">Rank 1 (+5%)</option>
+              <option value="2">Rank 2 (+15%)</option>
+              <option value="3">Rank 3 (+30%)</option>
+              <option value="4">Rank 4 (+50%)</option>
+            </select>
+          </div>
+          <div class="row">
+            <span class="label">Extended Enhancement (Exaltation):</span>
+            <select id="exaltation-select">
+              <option value="0">Not trained (0%)</option>
+              <option value="1">Rank 1 (+5%)</option>
+              <option value="2">Rank 2 (+10%)</option>
+              <option value="3">Rank 3 (+15%)</option>
+            </select>
+          </div>
+          <div class="row">
+            <span class="label">Total bonus:</span>
+            <span id="character-bonus-total">+0%</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>EverQuest log file</h3>
+          <div class="row">
+            <span class="label">Install folder:</span>
+            <span id="eq-folder">Detecting...</span>
+            <button id="browse-btn">Browse...</button>
+          </div>
+          <div class="row">
+            <span class="label">Active log file:</span>
+            <span id="log-file">-</span>
+            <button id="open-folder-btn">Open log folder</button>
+          </div>
+          <p id="log-error" class="error"></p>
+        </div>
+
+        <div class="card">
+          <h3>Spellbook detection</h3>
+          <div class="row">
+            <span class="label">Spellbook:</span>
+            <span id="spellbook-status">Checking...</span>
+          </div>
+          <p class="hint">
+            Your character's own spellbook is used to resolve ambiguous buff messages (EQ reuses a
+            lot of generic text across many different spells) down to whichever one you actually have.
+            Auto-detected from your EQ install folder above.
+          </p>
+          <div class="row">
+            <span class="label">Currently memorized:</span>
+            <span id="memorized-spells-status">None seen yet this session.</span>
+          </div>
+          <p class="hint">
+            Live, from your gem loadout right now (updates as you swap gems in-game) - not the same as
+            the full spellbook above. Used as a detection signal: a spell landing that you don't
+            currently have memorized is treated as evidence it wasn't your own cast.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>Overlay behavior</h3>
+          <div class="row">
+            <label>
+              <input type="checkbox" id="auto-hide-overlay-checkbox" />
+              Auto-hide overlay widgets when EverQuest isn't the focused window
+            </label>
+          </div>
+          <p class="hint">
+            Checks roughly every 2 seconds. Only hides widgets that are already enabled - anything
+            you've manually disabled stays hidden regardless of focus, and widgets reappear as soon
+            as EverQuest is focused again (or you turn this off).
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>Status</h3>
+          <p id="status">Checking...</p>
+          <dl id="version-info"></dl>
+        </div>
+      </section>
+
+      <section id="page-log" class="page">
+        <h2 class="page-title">Log</h2>
+
+        <div class="card">
+          <h3>Log splitting</h3>
+          <p class="hint">
+            Copies new lines into per-day files (and, optionally, a new file whenever logging seems to
+            have stopped and restarted) so you can review a session without wading through the whole log.
+            The original log file is left untouched by this.
+          </p>
+          <div class="row">
+            <label><input type="checkbox" id="split-enabled-checkbox" /> Enable log splitting</label>
+          </div>
+          <div class="row">
+            <label><input type="checkbox" id="split-gap-checkbox" /> Start a new file after a logging gap (10+ min of no activity)</label>
+          </div>
+          <p class="hint">
+            There's no log line for <code>/log off</code> / <code>/log on</code> - the game just stops writing
+            entirely while it's off. This detects that indirectly, by watching for a long gap between lines, so
+            it can occasionally split at the wrong moment during a genuinely quiet stretch of play.
+          </p>
+          <div class="row">
+            <span class="label">Output folder:</span>
+            <span id="split-output-folder">-</span>
+          </div>
+          <div class="row">
+            <button id="split-choose-folder-btn">Change...</button>
+            <button id="split-reset-folder-btn">Reset to default</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Archive log</h3>
+          <p class="hint">
+            EQ never clears this file itself, so it only grows. This copies the current log to a
+            timestamped archive file, then <strong>erases the live log file's contents</strong>.
+          </p>
+          <p class="hint">
+            <strong>Do this with care:</strong> if EQ is actively writing to the log at the exact moment
+            it's cleared, there's a small chance of a lost line or a game hiccup. Safest to do it right
+            after logging out or right after <code>/log off</code>, not mid-fight.
+          </p>
+          <div class="row">
+            <span class="label">Current log size:</span>
+            <span id="log-file-size">-</span>
+          </div>
+          <div id="archive-prompt" class="archive-prompt" style="display:none">
+            The log file is getting large - consider archiving it below.
+          </div>
+          <div class="row">
+            <button id="archive-now-btn">Archive log now...</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>Live log feed (for testing)</h4>
+          <p class="hint">
+            This shows new lines as they're written to your log file, so you can confirm tailing works.
+            Open the log file (see the Setup page) in Notepad, type a line at the end, and save it - it
+            should appear below within a second.
+          </p>
+          <div id="line-feed" class="line-feed"></div>
+        </div>
+
+        <div class="card">
+          <h4>Detection log</h4>
+          <p class="hint">
+            Live feed of every buff-detection decision (landed, queued for you, ignored, blocked) and
+            why - the same lines saved to detection-debug.log in the app's data folder, useful for
+            understanding a confusing moment without digging through the raw log yourself.
+          </p>
+          <div id="debug-line-feed" class="line-feed"></div>
+        </div>
+      </section>
+
+      <section id="page-about" class="page">
+        <h2 class="page-title">About</h2>
+
+        <div class="card">
+          <h3>Where buff data comes from</h3>
+          <p class="hint">
+            EverQuest has no universal "buff landed" message - every spell has its own flavor text, matched
+            against ~3,300 real spells mined from the game's own data files. Much of that text is shared
+            across spells (e.g. "You begin to regenerate." covers ~30 different regen buffs), so text
+            alone often can't tell them apart - that's the problem the priority order below solves.
+          </p>
+          <p class="hint">
+            The app also never reads log history - it starts at the bottom of the file and only watches
+            new lines, for speed and to avoid re-triggering old chat/combat. That means state like your
+            current gem slots, active buffs, and group are built live and start empty on each launch or
+            restart - so an already-running ambiguous buff can get re-prompted once right after a restart.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>How a buff gets identified, most to least certain</h3>
+          <ol class="about-priority-list">
+            <li>
+              <strong>You just cast it by name.</strong> If the log just showed "You begin casting X" (or
+              "You begin singing X" for bard songs), the very next landing line - even if that text is
+              shared by other spells - safely confirms it, because we already know exactly what you cast.
+            </li>
+            <li>
+              <strong>The landing text is unique to one buff.</strong> If only one spell in the whole
+              database uses that exact wording, it's safe to trust with no other context at all. This is
+              what catches instant clickies/AAs that produce no "begin casting" line to key off of.
+            </li>
+            <li>
+              <strong>Ambiguous text, narrowed by what's currently memorized.</strong> If several spells
+              share that landing text, but only one of them is sitting in one of your gem slots right now
+              (tracked from "You have finished memorizing X." / "You forget X." lines), it's almost
+              certainly that one - checked before the broader "ever scribed" check below because it's a
+              stronger signal: you can only ever cast what's actually memorized at the moment, so it tells
+              apart old ranks of a spell you leveled past from what you're actually using now, which
+              "scribed at some point" alone can't. The one exception applies here too: if someone else in
+              your group was just seen casting one of the candidates, it's not silently credited to you.
+            </li>
+            <li>
+              <strong>Ambiguous text, narrowed by your spellbook.</strong> If the memorized check above
+              didn't land on exactly one, but only one candidate is something you've ever scribed
+              (regardless of gem slot), it's almost certainly that one - same "someone else just cast it"
+              exception applies. This fallback exists because the memorized check only knows about gem
+              swaps made since the app was opened - it has no memory of what was in your gems before that,
+              so right after launch (before you've swapped anything) it has no memorized data to go on at
+              all, and this broader check fills that gap.
+            </li>
+            <li>
+              <strong>Ambiguous text during a "burst" (e.g. Quick Buff).</strong> Some abilities grant a
+              dozen-plus buffs at once with no per-buff cast line at all - without this check, every one of
+              those buffs would have no self-cast evidence whatsoever and would fall through to "probably
+              someone else's" below, disappearing even though they're genuinely yours. Anything ambiguous
+              that lands during that burst is presumed to be yours (you're the one who triggered it) - but
+              which specific buff it was is still never guessed.
+            </li>
+            <li>
+              <strong>Ambiguous text with no other signal.</strong> Most likely someone else's buff
+              landing on you - by this point, a genuine self-cast would already have matched one of the
+              signals above (named, unique, memorized, scribed, or a burst you triggered), so nothing left
+              to check most likely means an ally's group/AoE spell landed on you too. Hidden by default,
+              since tracking buffs cast on you by others is opt-in (Setup page) - this app is built around
+              tracking your own buffs first.
+            </li>
+            <li>
+              <strong>Still ambiguous? You get asked.</strong> If none of the above narrow it down to
+              exactly one buff, the app doesn't guess - it queues the choice for you, shown in the
+              Ambiguous Casts panel (Buff Tracker page) and in a small popup near the overlay, with a
+              button for each real candidate. Whichever one you pick is remembered, so that exact landing
+              text won't ask again - unless your group composition changes (group-targeted spells depend
+              on who's actually in your group) or you clear it yourself from "View remembered choices."
+            </li>
+          </ol>
+        </div>
+      </section>
+    </div>
+    </div>
+  </div>
+
+  <div id="create-profile-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>New loadout profile</h3>
+        <button id="close-create-profile-modal" class="modal-close">✕</button>
+      </div>
+      <p class="hint">
+        Each profile keeps its own separate memory of "this ambiguous text means buff X" answers -
+        switch profiles from the bar at the top whenever your loadout changes, instead of getting
+        stuck with a stale answer from before.
+      </p>
+      <div class="row">
+        <input type="text" id="new-profile-name-input" placeholder="Profile name" class="text-input" />
+      </div>
+      <p class="hint">
+        Which existing widgets should use this profile? You can change this later from a widget's
+        own settings.
+      </p>
+      <ul id="new-profile-widget-checklist" class="buff-list modal-list"></ul>
+      <div class="row">
+        <button id="create-profile-submit-btn">Create profile</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="manage-profiles-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Manage loadout profiles</h3>
+        <button id="close-manage-profiles-modal" class="modal-close">✕</button>
+      </div>
+      <p class="hint">
+        Rename a profile, or delete one you no longer need - deleting permanently discards its
+        remembered ambiguous-cast answers. Widgets aren't affected beyond no longer listing that
+        profile as one they belong to.
+      </p>
+      <ul id="manage-profiles-list" class="buff-list modal-list"></ul>
+    </div>
+  </div>
+
+  <div id="add-widget-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Add a widget</h3>
+        <button id="close-add-widget-modal" class="modal-close">✕</button>
+      </div>
+
+      <div id="add-widget-choices">
+        <button type="button" class="add-widget-choice" data-choice="import">
+          <strong>Import from code</strong>
+          <span>Paste a share code someone sent you to recreate their widget's exact settings.</span>
+        </button>
+        <button type="button" class="add-widget-choice" data-choice="premade">
+          <strong>Premade widget</strong>
+          <span>Ready-made widget types built into the app, already set up for a specific purpose.</span>
+        </button>
+        <button type="button" class="add-widget-choice" data-choice="custom">
+          <strong>Custom widget</strong>
+          <span>Start blank and pick exactly which buffs it shows yourself.</span>
+        </button>
+      </div>
+
+      <div id="add-widget-import-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <div class="row">
+          <input
+            type="text"
+            id="modal-import-widget-code-input"
+            class="text-input"
+            placeholder="Paste a widget share code..."
+          />
+          <button id="modal-import-widget-btn">Import</button>
+        </div>
+        <p class="hint" id="modal-import-widget-status"></p>
+      </div>
+
+      <div id="add-widget-premade-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <ul id="add-widget-premade-list" class="plain-list"></ul>
+      </div>
+
+      <div id="add-widget-custom-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <div class="row">
+          <input type="text" id="modal-new-widget-name" class="text-input" placeholder="Widget name..." />
+        </div>
+        <button type="button" class="add-widget-choice" id="modal-add-buff-widget-btn">
+          <strong>Custom buff widget</strong>
+          <span>Pick exactly which of your own or allies' buffs it shows.</span>
+        </button>
+        <button type="button" class="add-widget-choice" id="modal-add-timer-widget-btn">
+          <strong>Custom timer widget</strong>
+          <span>Define your own countdown timers, triggered by exact lines of log text.</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <div id="ambiguous-resolutions-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Remembered choices</h3>
+        <button id="close-ambiguous-resolutions-modal" class="modal-close">✕</button>
+      </div>
+      <input
+        type="search"
+        id="ambiguous-resolutions-search"
+        class="text-input search-input"
+        placeholder="Search remembered choices..."
+      />
+      <ul id="ambiguous-resolutions-list" class="buff-list known-buff-list modal-list"></ul>
+    </div>
+  </div>
+
+  <div id="add-buff-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Add a new buff</h3>
+        <button id="close-add-buff-modal" class="modal-close">✕</button>
+      </div>
+      <div class="known-buff-add">
+        <div class="row">
+          <input type="text" id="new-buff-name" placeholder="Buff name" class="text-input" />
+          <input type="number" id="new-buff-minutes" min="0" step="1" placeholder="min" class="duration-input" />
+          <span class="duration-unit">m</span>
+          <input type="number" id="new-buff-seconds" min="0" max="59" step="1" placeholder="sec" class="duration-input" />
+          <span class="duration-unit">s</span>
+        </div>
+        <div class="row">
+          <input type="text" id="new-buff-landing" placeholder="Landing text (optional) - e.g. &quot;You feel the spirit of wolf enter you.&quot;" class="text-input" />
+        </div>
+        <div class="row">
+          <input type="text" id="new-buff-ended" placeholder="Ended/faded text (optional) - e.g. &quot;The spirit of wolf leaves you.&quot;" class="text-input" />
+        </div>
+        <div class="row">
+          <img id="new-buff-icon-preview" class="buff-icon-thumb" style="display:none" />
+          <button type="button" id="new-buff-choose-icon-btn">Choose icon...</button>
+          <button id="new-buff-add-btn">Add</button>
+        </div>
+        <div id="new-buff-icon-picker" class="icon-picker-grid" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="custom-buffs-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Custom buffs</h3>
+        <button id="close-custom-buffs-modal" class="modal-close">✕</button>
+      </div>
+      <ul id="custom-buffs" class="buff-list known-buff-list modal-list">
+        <li class="empty">None yet.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="known-buffs-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Known buffs</h3>
+        <button id="close-known-buffs-modal" class="modal-close">✕</button>
+      </div>
+      <input type="search" id="known-buff-search" class="text-input search-input" placeholder="Search buffs..." />
+      <ul id="known-buffs" class="buff-list known-buff-list modal-list"></ul>
+    </div>
+  </div>
+
+  <script src="main-window.js"></script>
+</body>
+</html>
