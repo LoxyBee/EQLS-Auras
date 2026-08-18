@@ -44,7 +44,13 @@ class CustomTimerEngine extends EventEmitter {
   // Rebuilt fresh on every line rather than cached - trivially cheap given
   // realistic widget/timer counts, and avoids needing to invalidate a
   // cache on every possible widget CRUD path.
-  _findTriggerMatch(strippedLine) {
+  //
+  // Returns every definition whose trigger text matches, not just the
+  // first - two definitions (even with the same display name, e.g. the
+  // same trigger text given two different icons) both count as
+  // independently activated. Returning only the first match here used to
+  // mean the second one was never even considered.
+  _findTriggerMatches(strippedLine) {
     // Case-insensitive - unlike every other exact-text match in this app
     // (landing text, ended text, etc.), a custom timer's trigger text is
     // very often literally something the user typed in-game (a chat
@@ -54,12 +60,13 @@ class CustomTimerEngine extends EventEmitter {
     // is always consistently cased anyway, so this can't introduce any
     // ambiguity there - it only ever helps the user-typed-chat case.
     const lowerLine = strippedLine.toLowerCase();
+    const matches = [];
     for (const widget of this.getWidgetsFn()) {
       for (const timer of widget.customTimers || []) {
-        if (timer.triggerText && timer.triggerText.toLowerCase() === lowerLine) return timer;
+        if (timer.triggerText && timer.triggerText.toLowerCase() === lowerLine) matches.push(timer);
       }
     }
-    return null;
+    return matches;
   }
 
   handleLine(line) {
@@ -85,20 +92,26 @@ class CustomTimerEngine extends EventEmitter {
     // Checked unconditionally, not "else" - a line ending one timer
     // shouldn't stop it from also starting a different one (or restarting
     // the same one) if it happens to match a trigger too.
-    const match = this._findTriggerMatch(stripped);
-    if (!match) return;
-    const key = match.name.toLowerCase();
-    this.activeTimers.set(key, {
-      name: match.name,
-      durationSec: match.durationSec,
-      expiresAt: Date.now() + match.durationSec * 1000,
-      endedText: match.endedText || null,
-    });
+    const matches = this._findTriggerMatches(stripped);
+    if (matches.length === 0) return;
+    // Keyed by the definition's own id, not its name - two definitions are
+    // allowed to share a display name (e.g. same trigger text, different
+    // icons, meant to both show at once), and keying by name would let the
+    // second activation silently overwrite the first in the Map.
+    for (const match of matches) {
+      this.activeTimers.set(match.id, {
+        id: match.id,
+        name: match.name,
+        durationSec: match.durationSec,
+        expiresAt: Date.now() + match.durationSec * 1000,
+        endedText: match.endedText || null,
+      });
+    }
     this.emit('activeChanged', this.getActive());
   }
 
-  removeActive(name) {
-    this.activeTimers.delete(name.toLowerCase());
+  removeActive(id) {
+    this.activeTimers.delete(id);
     this.emit('activeChanged', this.getActive());
   }
 
@@ -116,11 +129,15 @@ class CustomTimerEngine extends EventEmitter {
   // Icon looked up live from the current definition (not snapshotted at
   // landing time) - same reasoning as BuffEngine.getActiveBuffs(), so
   // picking a new icon takes effect immediately even on an already-active
-  // timer instead of waiting for it to re-land.
-  _findDefinitionByName(lowerName) {
+  // timer instead of waiting for it to re-land. Looked up by id, not name -
+  // two definitions can share a display name but still have their own
+  // distinct icon (that's the whole point of allowing duplicate names), so
+  // a name-based lookup would show the wrong one (whichever definition
+  // happened to be found first) for every instance but the first.
+  _findDefinitionById(id) {
     for (const widget of this.getWidgetsFn()) {
       for (const timer of widget.customTimers || []) {
-        if (timer.name.toLowerCase() === lowerName) return timer;
+        if (timer.id === id) return timer;
       }
     }
     return null;
@@ -130,8 +147,9 @@ class CustomTimerEngine extends EventEmitter {
     const now = Date.now();
     return [...this.activeTimers.values()]
       .map((t) => {
-        const def = this._findDefinitionByName(t.name.toLowerCase());
+        const def = this._findDefinitionById(t.id);
         return {
+          id: t.id,
           name: t.name,
           durationSec: t.durationSec,
           remainingSec: Math.max(0, Math.round((t.expiresAt - now) / 1000)),

@@ -14,14 +14,103 @@ async function init() {
     statusEl.textContent = 'Something is wrong: ' + err.message;
   }
 
+  initTitleBar();
   initNavigation();
+  initTopicToggles();
   initProfileBar();
   initLogPanel();
+  initFirstRunLanding();
   initDetectionSettingsPanel();
   initBuffPanels();
   initWidgetsPanel();
   initKnownBuffsPanel();
   initCharacterSettingsPanel();
+}
+
+// Custom title bar (UX_VISUAL_DESIGN.md / the frameless-window follow-up) -
+// the window itself has no native minimize/maximize/close any more, so
+// these three buttons are the only way to reach them. Double-clicking the
+// drag region toggles maximize too, since that's standard title-bar
+// behavior every user already expects and -webkit-app-region:drag doesn't
+// provide it for free on Windows the way a native frame would.
+function initTitleBar() {
+  const dragRegion = document.getElementById('title-bar-drag');
+  const minimizeBtn = document.getElementById('title-bar-minimize-btn');
+  const maximizeBtn = document.getElementById('title-bar-maximize-btn');
+  const closeBtn = document.getElementById('title-bar-close-btn');
+
+  minimizeBtn.addEventListener('click', () => window.eqTracker.minimizeWindow());
+  maximizeBtn.addEventListener('click', () => window.eqTracker.toggleMaximizeWindow());
+  closeBtn.addEventListener('click', () => window.eqTracker.closeWindow());
+  dragRegion.addEventListener('dblclick', () => window.eqTracker.toggleMaximizeWindow());
+
+  function setMaximized(isMaximized) {
+    maximizeBtn.classList.toggle('is-maximized', isMaximized);
+    const label = isMaximized ? 'Restore' : 'Maximize';
+    maximizeBtn.title = label;
+    maximizeBtn.setAttribute('aria-label', label);
+  }
+
+  window.eqTracker.isWindowMaximized().then(setMaximized);
+  window.eqTracker.onWindowMaximizedChange(setMaximized);
+}
+
+// Topic disclosures (UX_VISUAL_DESIGN.md) - global, not scoped to any one
+// page, since every topic on every page is static markup already present
+// in the DOM at load time (shown/hidden and repopulated per selection, but
+// never created/destroyed), so wiring this once here covers all of them.
+// Deliberately no reset-on-switch anywhere: which topics are open/closed
+// persists as you navigate around, since nothing about switching pages or
+// widgets destroys these DOM nodes.
+function initTopicToggles() {
+  document.querySelectorAll('[data-toggle]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btn.closest('.topic').classList.toggle('open');
+    });
+  });
+}
+
+// UX_REDESIGN_PLAN.md's "default landing page": with no EQ folder
+// configured yet, land on Setup (promoted EQ-log-file card) instead of
+// Buff Tracker, so a fresh install's first screen is "let's find your
+// log" rather than an empty Buff Tracker page with no context for why
+// nothing's happening. Reverts to normal permanently once a folder is
+// actually confirmed - if auto-detection just works (the common case for
+// a standard install), the user may never see this state at all.
+function initFirstRunLanding() {
+  const eyebrowEl = document.getElementById('eq-log-eyebrow');
+  const headingEl = document.getElementById('eq-log-heading');
+  const subEl = document.getElementById('eq-log-promoted-sub');
+  const cardEl = document.getElementById('eq-log-card');
+  let promoted = false;
+  let hasLandedOnce = false;
+
+  function setPromoted(on) {
+    if (on === promoted) return;
+    promoted = on;
+    cardEl.classList.toggle('promoted', on);
+    eyebrowEl.style.display = on ? '' : 'none';
+    subEl.style.display = on ? '' : 'none';
+    headingEl.textContent = on ? "Let's find your EverQuest log" : 'EverQuest log file';
+  }
+
+  window.eqTracker.getLogState().then((state) => {
+    if (state.eqFolder) {
+      setPromoted(false);
+    } else {
+      setPromoted(true);
+      // Only the very first landing decision navigates - once the app has
+      // landed once, later status updates (below) only ever clear the
+      // promoted state, never re-navigate out from under the user.
+      const setupBtn = document.querySelector('.nav-btn[data-page="page-settings"]');
+      if (setupBtn) activateNavButton(setupBtn);
+    }
+    hasLandedOnce = true;
+  });
+
+  window.eqTracker.onLogStatus((state) => {
+    if (hasLandedOnce && state.eqFolder) setPromoted(false);
+  });
 }
 
 // Persistent chip bar living above the sidebar/page-container split (see
@@ -106,7 +195,7 @@ function initProfileBar() {
       deleteBtn.title = profiles.length <= 1 ? "Can't delete the only remaining profile" : `Delete "${profile.name}"`;
       deleteBtn.addEventListener('click', () => {
         const confirmed = window.confirm(
-          `Delete the loadout profile "${profile.name}"? This permanently discards its remembered ambiguous-cast answers. Widgets aren't deleted or hidden - they just stop listing this profile as one they belong to.`
+          `Delete the loadout profile "${profile.name}"? This permanently discards its remembered ambiguous-cast answers. Auras aren't deleted or hidden - they just stop listing this profile as one they belong to.`
         );
         if (!confirmed) return;
         window.eqTracker.deleteProfile(profile.id).then((removed) => {
@@ -139,7 +228,7 @@ function initProfileBar() {
     submitBtn.disabled = true;
     window.eqTracker.listWidgets().then((widgets) => {
       if (widgets.length === 0) {
-        checklistEl.innerHTML = '<li class="empty">No widgets yet.</li>';
+        checklistEl.innerHTML = '<li class="empty">No auras yet.</li>';
         submitBtn.disabled = false;
         return;
       }
@@ -256,6 +345,18 @@ function initNavigation() {
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => activateNavButton(btn));
   });
+
+  // Plain in-page links to another page (e.g. the trimmed Widgets intro
+  // card's "full explanation on the About page") - not .nav-btn elements
+  // themselves, so this finds and activates the REAL sidebar button for
+  // that page instead, keeping the sidebar's own active state correct.
+  document.querySelectorAll('a[data-page]').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = document.querySelector(`.nav-btn[data-page="${link.dataset.page}"]`);
+      if (target) activateNavButton(target);
+    });
+  });
 }
 
 const MAX_FEED_LINES = 200;
@@ -301,24 +402,33 @@ function initLogPanel() {
     archivePromptEl.style.display = state.shouldPromptArchive ? 'block' : 'none';
   }
 
-  function appendLine(line) {
+  // Only auto-follow new lines if the user was already at (or very near)
+  // the bottom before this one arrived - otherwise a line streaming in
+  // mid-read yanks them back down and makes the feed unreadable. Checked
+  // BEFORE appending, since scrollHeight grows the moment the new line is
+  // added and would always read as "not at the bottom yet" if checked after.
+  const NEAR_BOTTOM_PX = 4;
+  function isNearBottom(el) {
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
+  }
+
+  function appendToFeed(feedEl, line) {
+    const shouldStick = isNearBottom(feedEl);
     const div = document.createElement('div');
     div.textContent = line;
     feedEl.appendChild(div);
     while (feedEl.children.length > MAX_FEED_LINES) {
       feedEl.removeChild(feedEl.firstChild);
     }
-    feedEl.scrollTop = feedEl.scrollHeight;
+    if (shouldStick) feedEl.scrollTop = feedEl.scrollHeight;
+  }
+
+  function appendLine(line) {
+    appendToFeed(feedEl, line);
   }
 
   function appendDebugLine(line) {
-    const div = document.createElement('div');
-    div.textContent = line;
-    debugFeedEl.appendChild(div);
-    while (debugFeedEl.children.length > MAX_FEED_LINES) {
-      debugFeedEl.removeChild(debugFeedEl.firstChild);
-    }
-    debugFeedEl.scrollTop = debugFeedEl.scrollHeight;
+    appendToFeed(debugFeedEl, line);
   }
 
   window.eqTracker.getLogState().then(renderState);
@@ -728,7 +838,6 @@ function initWidgetsPanel() {
 
   const activeBuffsCardEl = document.getElementById('widget-active-buffs-card');
   const manageCardEl = document.getElementById('widget-manage-card');
-  const widgetProfilesCardEl = document.getElementById('widget-profiles-card');
   const widgetProfilesChecklistEl = document.getElementById('widget-profiles-checklist');
   const activeBuffsListEl = document.getElementById('widget-active-buffs-list');
   const excludedBuffsSectionEl = document.getElementById('widget-excluded-buffs-section');
@@ -775,6 +884,17 @@ function initWidgetsPanel() {
   let widgets = [];
   let selectedId = null;
   let allKnownBuffs = [];
+  // For the sidebar's per-widget profile-scope dot (see renderWidgetSubmenu)
+  // - only needs to know the full profile list, not which is active, so a
+  // simple cache refreshed on profiles:changed is enough. Not populated by
+  // that broadcast alone since it only fires on an actual create/rename/
+  // delete, not on startup - refreshProfilesCache() below covers that.
+  let latestProfiles = [];
+  function refreshProfilesCache() {
+    return window.eqTracker.getProfiles().then((list) => {
+      latestProfiles = list;
+    });
+  }
 
   // Live snapshots of each engine's active list, kept up to date regardless
   // of which widget (if any) is currently selected - so whichever one gets
@@ -817,11 +937,10 @@ function initWidgetsPanel() {
   function renderActiveBuffsForWidget(widget) {
     activeBuffsCardEl.style.display = '';
     manageCardEl.style.display = '';
-    widgetProfilesCardEl.style.display = '';
     const buffs = filterActiveBuffsForWidget(widget);
     activeBuffsListEl.innerHTML = '';
     if (buffs.length === 0) {
-      activeBuffsListEl.innerHTML = '<li class="empty">Nothing active on this widget right now.</li>';
+      activeBuffsListEl.innerHTML = '<li class="empty">Nothing active on this aura right now.</li>';
       renderExcludedBuffsList(widget);
       return;
     }
@@ -844,7 +963,7 @@ function initWidgetsPanel() {
       removeBtn.textContent = 'Remove';
       removeBtn.addEventListener('click', () => {
         if (widget.buffSource === 'ally') window.eqTracker.removeActiveAllyBuff(buff.allyName, buff.name);
-        else if (widget.buffSource === 'customTimer') window.eqTracker.removeActiveCustomTimer(buff.name);
+        else if (widget.buffSource === 'customTimer') window.eqTracker.removeActiveCustomTimer(buff.id);
         else window.eqTracker.removeActiveBuff(buff.name);
       });
 
@@ -858,7 +977,7 @@ function initWidgetsPanel() {
       if (widget.buffFilterMode === 'all') {
         const excludeBtn = document.createElement('button');
         excludeBtn.textContent = "Don't track here";
-        excludeBtn.title = 'Hide this buff from this widget only - other widgets are unaffected';
+        excludeBtn.title = 'Hide this buff from this aura only - other auras are unaffected';
         excludeBtn.addEventListener('click', () => {
           window.eqTracker.excludeWidgetBuff(widget.id, buff.name).then(() =>
             refreshWidgets().then(() => {
@@ -972,11 +1091,35 @@ function initWidgetsPanel() {
       btn.className = 'nav-btn nav-sub-btn' + (widget.id === selectedId ? ' active' : '');
       btn.dataset.page = 'page-overlay';
       btn.dataset.widgetId = widget.id;
-      btn.textContent = widget.name;
       btn.addEventListener('click', () => {
         activateNavButton(btn);
         selectWidget(widget.id);
       });
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'nav-sub-name';
+      nameSpan.textContent = widget.name;
+      btn.appendChild(nameSpan);
+
+      // Scoped to specific profiles (not every one that exists) - flagged
+      // so a widget disappearing after a profile switch isn't a mystery.
+      // latestProfiles.length === 0 before the initial fetch resolves
+      // means "unknown yet," not "zero profiles exist" (there's always at
+      // least the default one) - skip the dot rather than risk a false
+      // positive on first render.
+      const activeProfileIds = widget.activeProfileIds || [];
+      if (latestProfiles.length > 0 && activeProfileIds.length < latestProfiles.length) {
+        const dotWrap = document.createElement('span');
+        dotWrap.className = 'profile-dot-wrap';
+        const dot = document.createElement('span');
+        dot.className = 'profile-dot';
+        const names = latestProfiles.filter((p) => activeProfileIds.includes(p.id)).map((p) => p.name);
+        const tooltip = document.createElement('span');
+        tooltip.className = 'tooltip-bubble';
+        tooltip.textContent = names.length > 0 ? `Active on: ${names.join(', ')}` : 'Not active on any profile';
+        dotWrap.append(dot, tooltip);
+        btn.appendChild(dotWrap);
+      }
 
       // Reordering just swaps this widget with its immediate neighbor in
       // the stored list - getAll()/this submenu both render in array order,
@@ -1014,7 +1157,6 @@ function initWidgetsPanel() {
     customTimersCardEl.style.display = 'none';
     activeBuffsCardEl.style.display = 'none';
     manageCardEl.style.display = 'none';
-    widgetProfilesCardEl.style.display = 'none';
     trackOthersRowEl.style.display = 'none';
     selectedBuffsSectionEl.style.display = 'none';
     introCard.style.display = '';
@@ -1049,7 +1191,6 @@ function initWidgetsPanel() {
       customTimersCardEl.style.display = 'none';
       activeBuffsCardEl.style.display = 'none';
       manageCardEl.style.display = 'none';
-      widgetProfilesCardEl.style.display = 'none';
       trackOthersRowEl.style.display = 'none';
       selectedBuffsSectionEl.style.display = 'none';
       return;
@@ -1098,6 +1239,9 @@ function initWidgetsPanel() {
     const warningLoopSec = widget.soundWarningLoopSec || 0;
     soundWarningLoopSlider.value = warningLoopSec;
     soundWarningLoopValueEl.textContent = warningLoopSec === 0 ? 'off' : `${warningLoopSec}s`;
+    renderLandSoundPicker(widget.landSoundId);
+    renderExpireSoundPicker(widget.expireSoundId);
+    renderWarningSoundPicker(widget.warningSoundId);
     anchorButtons.forEach((b) => b.classList.toggle('active', b.dataset.anchor === (widget.contentAnchor || 'bottom-center')));
     wrapTextCheckbox.checked = !!widget.wrapText;
     showIconLabelCheckbox.checked = !!widget.showIconLabel;
@@ -1113,7 +1257,7 @@ function initWidgetsPanel() {
     duplicateWidgetBtn.style.display = widget.kind === 'self-buffs-builtin' ? 'none' : '';
 
     window.eqTracker.isWidgetLocked(id).then((locked) => {
-      lockBtn.textContent = locked ? 'Unlock to move' : 'Lock widget';
+      lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
       lockBtn.classList.toggle('unlocked', !locked);
     });
 
@@ -1147,10 +1291,10 @@ function initWidgetsPanel() {
       filterCard.style.display = '';
       filterHint.textContent =
         widget.kind === 'ally-buffs-builtin'
-          ? 'This widget shows every buff you\'ve cast on a current group member, marked "Overlay" ' +
+          ? 'This aura shows every buff you\'ve cast on a current group member, marked "Overlay" ' +
             'the same way self buffs are - uncheck "Overlay" for a buff on the Known Buffs page to ' +
             'hide it here too.'
-          : 'This widget shows every buff marked "Overlay" on the Known Buffs page. To hide a ' +
+          : 'This aura shows every buff marked "Overlay" on the Known Buffs page. To hide a ' +
             'specific buff from it, uncheck "Overlay" for that buff there instead.';
       filterSearch.style.display = 'none';
       filterListEl.innerHTML = '';
@@ -1168,7 +1312,7 @@ function initWidgetsPanel() {
       return;
     }
     filterCard.style.display = '';
-    filterHint.textContent = 'Pick which known buffs should show on this widget.';
+    filterHint.textContent = 'Pick which known buffs should show on this aura.';
     filterSearch.style.display = '';
     selfBuffsFiltersEl.style.display = 'none';
     renderSelectedBuffsList(widget);
@@ -1389,7 +1533,7 @@ function initWidgetsPanel() {
   function handleDelete(id) {
     const widget = findWidget(id);
     const confirmed = window.confirm(
-      `Delete widget "${widget ? widget.name : ''}"? This closes its overlay window and can't be undone.`
+      `Delete aura "${widget ? widget.name : ''}"? This closes its overlay window and can't be undone.`
     );
     if (!confirmed) return;
     window.eqTracker.deleteWidget(id).then(() => {
@@ -1441,7 +1585,7 @@ function initWidgetsPanel() {
     {
       name: 'Bard Song',
       description:
-        'A dedicated widget for bard songs specifically (own filter/behavior separate from other self buffs, ' +
+        'A dedicated aura for bard songs specifically (own filter/behavior separate from other self buffs, ' +
         'e.g. tuned for how often they auto-renew). Not built yet.',
     },
   ];
@@ -1542,14 +1686,14 @@ function initWidgetsPanel() {
   });
 
   nameInput.addEventListener('change', () => {
-    window.eqTracker.setWidgetName(selectedId, nameInput.value.trim() || 'Widget').then(refreshWidgets);
+    window.eqTracker.setWidgetName(selectedId, nameInput.value.trim() || 'Aura').then(refreshWidgets);
   });
   enabledCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetEnabled(selectedId, enabledCheckbox.checked).then(refreshWidgets);
   });
   lockBtn.addEventListener('click', async () => {
     const locked = await window.eqTracker.toggleWidgetLock(selectedId);
-    lockBtn.textContent = locked ? 'Unlock to move' : 'Lock widget';
+    lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
     lockBtn.classList.toggle('unlocked', !locked);
   });
   resetPositionBtn.addEventListener('click', () => {
@@ -1631,6 +1775,79 @@ function initWidgetsPanel() {
   soundExpireCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetSoundOnExpire(selectedId, soundExpireCheckbox.checked);
   });
+
+  const soundOpenFolderBtn = document.getElementById('widget-sound-open-folder-btn');
+  soundOpenFolderBtn.addEventListener('click', () => {
+    window.eqTracker.openSoundsFolder();
+  });
+
+  // Shared by every preview button below - previewing plays right here in
+  // the main window, entirely separate from overlay.js's own playback (the
+  // eqsound:// protocol is registered globally, so any renderer can load
+  // it), and respects the same volume slider the real alerts use so a
+  // preview is representative of what you'll actually hear.
+  const alertVolumeSlider = document.getElementById('widget-alert-volume-slider');
+  const alertVolumeValueEl = document.getElementById('widget-alert-volume-value');
+  function currentVolumeFraction() {
+    return (Number(alertVolumeSlider.value) || 0) / 100;
+  }
+
+  alertVolumeSlider.addEventListener('input', () => {
+    const volume = Number(alertVolumeSlider.value);
+    alertVolumeValueEl.textContent = `${volume}%`;
+    window.eqTracker.setWidgetAlertVolume(selectedId, volume);
+  });
+
+  // One picker per alert TYPE (land/expire/warning), not one shared sound
+  // for the whole widget - see backlog #16. Factored into a helper since
+  // the three are otherwise identical apart from which ids/setter they
+  // touch. setterName indexes into window.eqTracker rather than being
+  // passed the function directly so this stays simple to call three times
+  // below without repeating the same five-line wiring block three times.
+  function setupSoundPicker(kind, setterName) {
+    const nameEl = document.getElementById(`widget-sound-${kind}-name`);
+    const chooseBtn = document.getElementById(`widget-sound-${kind}-choose-btn`);
+    const previewBtn = document.getElementById(`widget-sound-${kind}-preview-btn`);
+    const resetBtn = document.getElementById(`widget-sound-${kind}-reset-btn`);
+    let currentSoundId = null;
+
+    function render(soundId) {
+      currentSoundId = soundId;
+      if (!soundId) {
+        nameEl.textContent = 'Default beep';
+        resetBtn.style.display = 'none';
+        previewBtn.style.display = 'none';
+        return;
+      }
+      resetBtn.style.display = '';
+      previewBtn.style.display = '';
+      window.eqTracker.getSoundInfo(soundId).then((info) => {
+        nameEl.textContent = info ? info.originalName : 'Default beep';
+      });
+    }
+
+    chooseBtn.addEventListener('click', () => {
+      window.eqTracker.pickSound().then((result) => {
+        if (!result) return; // cancelled, or picked something with an unrecognized extension
+        window.eqTracker[setterName](selectedId, result.id).then(() => render(result.id));
+      });
+    });
+    previewBtn.addEventListener('click', () => {
+      if (!currentSoundId) return;
+      const audio = new Audio(`eqsound://sound/${currentSoundId}`);
+      audio.volume = currentVolumeFraction();
+      audio.play().catch(() => {});
+    });
+    resetBtn.addEventListener('click', () => {
+      window.eqTracker[setterName](selectedId, null).then(() => render(null));
+    });
+
+    return render;
+  }
+
+  const renderLandSoundPicker = setupSoundPicker('land', 'setWidgetLandSoundId');
+  const renderExpireSoundPicker = setupSoundPicker('expire', 'setWidgetExpireSoundId');
+  const renderWarningSoundPicker = setupSoundPicker('warning', 'setWidgetWarningSoundId');
   soundWarningSlider.addEventListener('input', () => {
     const seconds = Number(soundWarningSlider.value);
     soundWarningValueEl.textContent = seconds === 0 ? 'off' : `${seconds}s`;
@@ -1642,17 +1859,6 @@ function initWidgetsPanel() {
     window.eqTracker.setWidgetSoundWarningLoopSec(selectedId, seconds);
   });
 
-  // Topic disclosures (UX_VISUAL_DESIGN.md) - the topics themselves are
-  // static markup (always present, just shown/hidden and repopulated per
-  // selected widget), so this only needs wiring once here, not re-wired on
-  // every widget selection. Deliberately no reset-on-switch: which topics
-  // are open/closed persists as you click between widgets in the sidebar,
-  // since nothing about switching widgets destroys these DOM nodes.
-  document.querySelectorAll('[data-toggle]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      btn.closest('.topic').classList.toggle('open');
-    });
-  });
   hideBardSongsCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetHideBardSongs(selectedId, hideBardSongsCheckbox.checked);
   });
@@ -1805,6 +2011,10 @@ function initWidgetsPanel() {
       exportCodeOutput.select();
     });
   });
+  setupModalToggle('widget-profiles-modal-backdrop', 'open-widget-profiles-modal-btn', 'close-widget-profiles-modal', () => {
+    const widget = findWidget(selectedId);
+    if (widget) renderWidgetProfilesChecklist(widget);
+  });
   copyCodeBtn.addEventListener('click', () => {
     exportCodeOutput.select();
     // Clipboard API is best-effort here - the textarea is already
@@ -1825,7 +2035,7 @@ function initWidgetsPanel() {
     if (!code) return;
     window.eqTracker.peekWidgetCode(code).then((info) => {
       if (!info) {
-        importStatus.textContent = "That doesn't look like a valid widget code.";
+        importStatus.textContent = "That doesn't look like a valid aura code.";
         return;
       }
 
@@ -1834,8 +2044,8 @@ function initWidgetsPanel() {
         // existing one in place, never spawn a second "Self Buffs".
         // Settings only: name isn't touched.
         const confirmed = window.confirm(
-          'This code is for the Self Buffs widget and will overwrite its current settings ' +
-            '(display, filters, sounds, etc.) - not create a new widget. Continue?'
+          'This code is for the Self Buffs aura and will overwrite its current settings ' +
+            '(display, filters, sounds, etc.) - not create a new aura. Continue?'
         );
         if (!confirmed) return;
         window.eqTracker.applyCodeToSelfBuffs(code).then((config) => {
@@ -1851,7 +2061,7 @@ function initWidgetsPanel() {
 
       window.eqTracker.importWidget(code).then((config) => {
         if (!config) {
-          importStatus.textContent = "That doesn't look like a valid widget code.";
+          importStatus.textContent = "That doesn't look like a valid aura code.";
           return;
         }
         closeAddWidgetModal();
@@ -1872,11 +2082,14 @@ function initWidgetsPanel() {
   // even though the real data on disk was already correct. Reacts to the
   // same profiles:changed broadcast initProfileBar listens to, independently.
   window.eqTracker.onProfilesChanged(() => {
-    refreshWidgets().then(() => {
-      const widget = selectedId && findWidget(selectedId);
-      if (widget) renderWidgetProfilesChecklist(widget);
+    refreshProfilesCache().then(() => {
+      refreshWidgets().then(() => {
+        const widget = selectedId && findWidget(selectedId);
+        if (widget) renderWidgetProfilesChecklist(widget);
+      });
     });
   });
+  refreshProfilesCache().then(renderWidgetSubmenu);
 
   window.eqTracker.getActiveBuffs().then((buffs) => {
     latestSelfBuffs = buffs;

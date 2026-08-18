@@ -15,6 +15,12 @@ function createMainWindow() {
     minWidth: 640,
     minHeight: 480,
     title: 'EQLS Auras',
+    // Frameless so the renderer can draw its own themed title bar (see
+    // index.html's .title-bar) instead of the OS default, which can't be
+    // recoloured to match the app's palette. backgroundColor matches
+    // --bg so there's no white flash before the page's own CSS loads.
+    frame: false,
+    backgroundColor: '#14100b',
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload-main.js'),
       contextIsolation: true,
@@ -25,11 +31,12 @@ function createMainWindow() {
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'main-window', 'index.html'));
 
-  // TEMP: forward renderer console output to this terminal while testing
-  // the widget-panel block/topic restructure - remove once confirmed.
-  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    console.log(`[renderer] ${message} (${sourceId}:${line})`);
-  });
+  // The custom title bar's maximize/restore button needs to know which
+  // icon to show, including when the window is maximized/restored some
+  // other way (double-clicking the drag region, a Windows snap gesture,
+  // Win+Up) - not just from its own click.
+  mainWindow.on('maximize', () => mainWindow.webContents.send('window:maximized'));
+  mainWindow.on('unmaximize', () => mainWindow.webContents.send('window:unmaximized'));
 
   // The main window is the only window with any visible chrome (title bar,
   // taskbar entry) - overlay widgets are frameless, skipTaskbar, and often

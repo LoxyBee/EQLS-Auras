@@ -1,3 +1,4 @@
+const path = require('path');
 const { execFile } = require('child_process');
 const { EventEmitter } = require('events');
 
@@ -10,6 +11,23 @@ const POLL_INTERVAL_MS = 2000;
 // process name is the reliable signal. Confirmed directly (Get-Process |
 // Where MainWindowTitle) while the user had the game running, not guessed.
 const TARGET_PROCESS_NAME = 'eqgame';
+
+// This app's OWN process name (e.g. "electron" in dev, "EQLS Auras" once
+// packaged) - the overlay must also stay visible while the user is
+// interacting with the app's own windows (dragging/resizing a widget,
+// adjusting settings in the main window), not just while EQ itself is
+// focused. Without this, clicking a widget to drag it briefly makes THAT
+// window - not eqgame - the foreground window, which auto-hide would
+// otherwise treat as "EQ lost focus" and hide the very widget being
+// dragged, making it impossible to reposition anything with this feature
+// on. Derived from the running executable rather than hardcoded so this
+// keeps working correctly through any future rename, same reasoning as
+// main.js's userData pin. On Windows (the only platform this app ships
+// for), every window this app owns - main window, each widget, the
+// ambiguous-cast popup - runs from this same executable image regardless
+// of which BrowserWindow/renderer process backs it, so a single process-
+// name check covers all of them without needing to enumerate windows.
+const OWN_PROCESS_NAME = path.basename(process.execPath, path.extname(process.execPath)).toLowerCase();
 
 // GetForegroundWindow + GetWindowThreadProcessId via inline P/Invoke -
 // avoids an npm native-binding module, since this environment isn't set up
@@ -33,19 +51,20 @@ $procId = 0
 try { (Get-Process -Id $procId -ErrorAction Stop).ProcessName } catch { '' }
 `;
 
-// Polls whether the game is the current foreground window, emitting
-// 'focusChanged' (boolean) only when that actually flips - not on every
-// poll - so a listener doesn't need to de-dupe itself. isEqFocused starts
-// as null (genuinely unknown, not "assumed unfocused") specifically so the
-// very first poll after start() always emits once and establishes real
-// state immediately, whichever way it turns out - a default of `false`
-// would have silently skipped emitting if the game happened to already be
-// unfocused, leaving a caller's own state stale until the NEXT real change.
+// Polls whether the foreground window belongs to EQ OR this app itself,
+// emitting 'focusChanged' (boolean) only when that actually flips - not on
+// every poll - so a listener doesn't need to de-dupe itself.
+// isRelevantAppFocused starts as null (genuinely unknown, not "assumed
+// unfocused") specifically so the very first poll after start() always
+// emits once and establishes real state immediately, whichever way it
+// turns out - a default of `false` would have silently skipped emitting if
+// the relevant app happened to already be unfocused, leaving a caller's
+// own state stale until the NEXT real change.
 class ForegroundWatcher extends EventEmitter {
   constructor() {
     super();
     this.timer = null;
-    this.isEqFocused = null;
+    this.isRelevantAppFocused = null;
   }
 
   start() {
@@ -59,15 +78,16 @@ class ForegroundWatcher extends EventEmitter {
       clearInterval(this.timer);
       this.timer = null;
     }
-    this.isEqFocused = null;
+    this.isRelevantAppFocused = null;
   }
 
   _poll() {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', PS_SCRIPT], { windowsHide: true }, (err, stdout) => {
       if (err) return; // best-effort - a single failed poll just keeps the last known state
-      const focused = stdout.trim().toLowerCase() === TARGET_PROCESS_NAME;
-      if (focused !== this.isEqFocused) {
-        this.isEqFocused = focused;
+      const processName = stdout.trim().toLowerCase();
+      const focused = processName === TARGET_PROCESS_NAME || processName === OWN_PROCESS_NAME;
+      if (focused !== this.isRelevantAppFocused) {
+        this.isRelevantAppFocused = focused;
         this.emit('focusChanged', focused);
       }
     });

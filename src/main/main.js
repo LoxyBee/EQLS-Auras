@@ -24,8 +24,8 @@ const path = require('path');
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
 const fs = require('fs');
-const { ipcMain, protocol, BrowserWindow } = require('electron');
-const { createMainWindow } = require('./mainWindow');
+const { ipcMain, protocol, BrowserWindow, Menu } = require('electron');
+const { createMainWindow, getMainWindow } = require('./mainWindow');
 const { LogService } = require('./logService');
 const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
@@ -39,9 +39,11 @@ const widgetManager = require('./widgetManager');
 const ambiguousPopup = require('./ambiguousPopup');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher } = require('./foregroundWatcher');
+const soundService = require('./soundService');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'eqicon', privileges: { standard: true, supportFetchAPI: true, corsEnabled: true } },
+  { scheme: 'eqsound', privileges: { standard: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
 
 // Running two copies at once is a real trap here: each would independently
@@ -162,8 +164,27 @@ app.on('second-instance', () => {
   win.focus();
 });
 
+// The default File/Edit/View/Window/Help menu never actually needs removing
+// by itself - a frameless window (see mainWindow.js) has no native frame to
+// hang a visible menu bar off, so it disappears on its own. What setting it
+// to null would also throw away is every accelerator that hung off it,
+// including Ctrl+R (reload) and Ctrl+Shift+I (DevTools) - both load-bearing
+// for this project's own testing practice (see CLAUDE.md). This keeps just
+// those, invisibly, instead of the full default menu or nothing at all.
+Menu.setApplicationMenu(Menu.buildFromTemplate([
+  {
+    label: 'View',
+    submenu: [
+      { role: 'reload' },
+      { role: 'forceReload' },
+      { role: 'toggleDevTools' },
+    ],
+  },
+]));
+
 app.whenReady().then(() => {
   iconService.registerProtocol();
+  soundService.registerProtocol();
   createMainWindow();
   widgetManager.initWidgets();
   logService.init();
@@ -202,7 +223,7 @@ ipcMain.handle('buffs:getActive', () => buffEngine.getActiveBuffs());
 ipcMain.handle('buffs:getActiveAllies', () => buffEngine.getActiveAllyBuffs());
 
 ipcMain.handle('customTimers:getActive', () => customTimerEngine.getActive());
-ipcMain.handle('customTimers:removeActive', (_event, name) => customTimerEngine.removeActive(name));
+ipcMain.handle('customTimers:removeActive', (_event, id) => customTimerEngine.removeActive(id));
 ipcMain.handle('buffs:getUnknown', () => buffEngine.getUnknownBuffs());
 ipcMain.handle('buffs:getKnown', () =>
   buffStore.getAll().map((b) => ({ ...b, iconUrl: b.iconId != null ? iconService.buildIconUrl(b.iconId) : null }))
@@ -326,6 +347,14 @@ ipcMain.handle('widget:setSoundOnLand', (_event, { id, enabled }) => widgetManag
 ipcMain.handle('widget:setSoundOnExpire', (_event, { id, enabled }) => widgetManager.setSoundOnExpire(id, enabled));
 ipcMain.handle('widget:setSoundWarningSec', (_event, { id, value }) => widgetManager.setSoundWarningSec(id, value));
 ipcMain.handle('widget:setSoundWarningLoopSec', (_event, { id, value }) => widgetManager.setSoundWarningLoopSec(id, value));
+ipcMain.handle('widget:setLandSoundId', (_event, { id, soundId }) => widgetManager.setLandSoundId(id, soundId));
+ipcMain.handle('widget:setExpireSoundId', (_event, { id, soundId }) => widgetManager.setExpireSoundId(id, soundId));
+ipcMain.handle('widget:setWarningSoundId', (_event, { id, soundId }) => widgetManager.setWarningSoundId(id, soundId));
+ipcMain.handle('widget:setAlertVolume', (_event, { id, value }) => widgetManager.setAlertVolume(id, value));
+
+ipcMain.handle('sounds:pick', () => soundService.pickAndImportSound(getMainWindow()));
+ipcMain.handle('sounds:getInfo', (_event, id) => soundService.getSoundInfo(id));
+ipcMain.handle('sounds:openFolder', () => soundService.openPickerFolder());
 ipcMain.handle('widget:setListWidth', (_event, { id, value }) => widgetManager.setListWidth(id, value));
 ipcMain.on('widget:reportContentSize', (_event, { id, width, height, originX }) => widgetManager.fitToContent(id, width, height, originX));
 ipcMain.handle('widget:setOpacity', (_event, { id, value }) => widgetManager.setOpacity(id, value));
@@ -403,6 +432,26 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// The main window is frameless (see mainWindow.js) so it draws its own
+// title bar in the renderer - these are the only way left to
+// minimize/maximize/close it, since Windows' native controls no longer
+// exist for that window.
+ipcMain.handle('window:minimize', () => {
+  getMainWindow()?.minimize();
+});
+ipcMain.handle('window:maximizeToggle', () => {
+  const win = getMainWindow();
+  if (!win) return;
+  if (win.isMaximized()) win.unmaximize();
+  else win.maximize();
+});
+ipcMain.handle('window:close', () => {
+  getMainWindow()?.close();
+});
+ipcMain.handle('window:isMaximized', () => {
+  return getMainWindow()?.isMaximized() ?? false;
 });
 
 // Basic round-trip test so we can confirm main <-> preload <-> renderer

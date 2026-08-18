@@ -1,10 +1,11 @@
 # UX Visual Design — 2026-08-18
 
-Status: **design settled, nothing implemented yet.** This is the visual counterpart to
-`UX_REDESIGN_PLAN.md` — that document covers information architecture (what's collapsed by
-default, what auto-expands, page-by-page layout); this one covers colour, typography, and how
-sections are separated on screen. Read both, plus `CLAUDE.md`, before touching
-`main-window.css` / `index.html` / `main-window.js`.
+Status: **implemented.** This is the visual counterpart to `UX_REDESIGN_PLAN.md` — that document
+covers information architecture (what's collapsed by default, what auto-expands, page-by-page
+layout); this one covers colour, typography, and how sections are separated on screen. Read both,
+plus `CLAUDE.md`, before touching `main-window.css` / `index.html` / `main-window.js`. See
+**Post-implementation revisions** near the bottom before assuming everything below is still
+exactly what's on screen — two things changed after real feedback on the built result.
 
 A working HTML mockup of the target look, built and iterated against real feedback, lives here:
 **https://claude.ai/code/artifact/1d95df30-3d6c-4e37-86b9-0af38e84ac5a** — fetch it and read the
@@ -29,7 +30,11 @@ visual feedback on the mockup identified the actual problems and the fix:
    rest for the eyes." The right answer, confirmed against a reference spreadsheet: **flat,
    square-cornered blocks of colour, sitting side by side (never nested), separated by a small
    gap that reveals a darker background underneath.** Like cards in a physical layout, but the
-   separation comes from gap + colour contrast, not from borders stacked on borders.
+   separation comes from gap + colour contrast, not from borders stacked on borders. (Revised
+   after implementation — see **Post-implementation revisions**: every block/card now also gets
+   its own 1px `var(--accent-line)` border. The gap-only version still wasn't enough separation
+   once real content was on screen. This is still never "borders stacked on borders" — one
+   border per block, not one per nesting level.)
 
 ## Design tokens
 
@@ -164,29 +169,70 @@ and the other four Setup cards collapse to single-line closed rows (same chevron
 widget panel's topics) rather than being dimmed — one visual vocabulary for "not needed right
 now," reused everywhere instead of introducing a second one just for this page.
 
-### 5. Buff Tracker page — new "at a glance" strip
+### 5. Buff Tracker page — "at a glance" strip (built, then removed)
 
-Add a row of gapped tiles (same gutter+block gap trick, at grid scale: `display:grid; gap:6px`
-over the page's `--bg`) above the existing cards, showing live counts: Ambiguous casts pending,
-Unknown casts pending, Active buffs, current Loadout profile. Zero-pending reads in quiet
-`--ink-faint`; a pending count turns `var(--danger)`. Clicking a tile scrolls to the relevant card
-below. This isn't in `UX_REDESIGN_PLAN.md` — it's a small addition surfacing "does anything need
-me right now" before any card, which is the actual point of the plan's existing "needs your
-attention above buff library" ordering, pushed one step further into layout instead of just copy
-order.
+A row of gapped tiles above the existing cards (Ambiguous casts pending, Unknown casts pending,
+Active buffs, current Loadout profile) was built and shipped, then cut outright on direct
+feedback after seeing it live. Not in `UX_REDESIGN_PLAN.md` to begin with — it was this doc's own
+addition — so removing it just reverts Buff Tracker to the plan's original ordering ("needs your
+attention" above "buff library", no extra strip above that). **Don't re-add this** without new
+instruction; it was tried, seen, and rejected, not just left undone.
+
+### 6. Window chrome — custom title bar
+
+Not originally part of this doc (it's outside `index.html`'s page content), added after the rest
+of this system shipped: the main window is now `frame: false` (see `mainWindow.js`) with its own
+themed title bar drawn in `index.html`/`main-window.css` (`.title-bar`) instead of the OS default,
+which couldn't be recoloured to match the palette. Same token set — `--bg` background, `--accent`
+mark/hover, `--danger` on the close button's hover only. Electron's default File/Edit/View/
+Window/Help menu is also gone (`Menu.setApplicationMenu(null)` in `main.js`) — it was a dev
+leftover with nothing in it an end user needs. Minimize/maximize/close now go through
+`ipcMain.handle('window:minimize'/'maximizeToggle'/'close')` and the `eqTracker` preload bridge,
+since a frameless window has no native controls left to fall back on.
 
 ## Process
 
 Per this project's standing practice (see `CLAUDE.md`): implement in small, independently
 testable steps, verified in the dev build (`npm start`) before moving on — one block/page at a
-time, not one large rewrite. Suggested order:
-
-1. Add the design tokens and confirm nothing visually breaks yet.
-2. Convert the widget settings panel (biggest and most-discussed piece).
-3. Buff list rows.
-4. Sidebar badges.
-5. Setup first-run.
-6. The new at-a-glance strip.
+time, not one large rewrite. This was largely followed, in two passes: a first pass got through
+tokens + the widget panel + sidebar + buff-list rows + the (since-removed) at-a-glance strip; a
+second pass swept every remaining old-palette rule in `main-window.css` (cards, buttons, inputs,
+modals, the profile bar, icon pickers, the log feed) that the first pass had left untouched, which
+is why a screenshot mid-way through looked like only some pages had been reskinned — they had.
 
 Nothing here touches detection logic (`buffEngine.js`, `buffStore.js`, etc.) — this is
 presentation-layer only.
+
+## Post-implementation revisions
+
+Two changes landed after the system above was built and actually seen running, both from direct
+feedback on the live app rather than anything in the original design:
+
+- **Every `.card` and `.block` now has a 1px `var(--accent-line)` border.** The gap-only
+  separation (no border, rely purely on the gutter seam) still read as insufficient once real
+  content — not a short mockup — filled the page; a highlight border matching the block-cap
+  banner's colour family was asked for explicitly, applied everywhere a card/block appears, not
+  just the widget panel. `.modal-card` picked up the same treatment for consistency.
+- **The "at a glance" strip is gone** (see §5 above) — built, shown live, cut on sight.
+- **`--line` now equals `--accent-line`, and `--line-soft` is the same hue at ~50% alpha.**
+  Every hairline, dotted rule, and structural divider in the app - not just card/block borders -
+  is the brass accent now, on the same explicit instruction ("that border accent used for all
+  line separations"). This was a token redefinition, not a per-selector sweep, so it also
+  reached things like default button/input borders that were never individually reviewed for it -
+  intentional, since the ask was "all," not "all the ones that look right."
+- **The ink ramp moved up one step, with `--ink` now pure white** (`#ffffff`, was the parchment
+  `#efe5d2`). `--ink-mut`/`--ink-dim`/`--ink-faint` each inherited the value one step above them
+  in the old ramp, so the *relative* spacing didn't change, only the floor. Sidebar nav items,
+  `.hint` text, and `.label` text were additionally promoted from a muted tier straight to
+  `var(--ink)` rather than relying on the ramp shift alone, since those were the specific
+  "blends into the background" complaints. Selected/active states (`.nav-btn.active`,
+  `.nav-sub-btn.active`, `.profile-chip.active`) went from `font-weight: 600` to `700` - the
+  distinction from "default" is now weight, not a separate colour, since default is already white.
+- **Body/UI text is Poppins now** (`--sans`), loaded via Google Fonts `<link>` tags in
+  `index.html`, falling back to Segoe UI/system-ui if it can't load. `--mono` (Consolas) was kept
+  for timer/value figures specifically - a deliberate carve-out, not an oversight, since tabular
+  monospace digits matter for a countdown that updates every second.
+
+Any future pass should treat all of the above - not just the block/topic/stripe system - as the
+current baseline. Several sections earlier in this document (tokens, "no border") describe what
+was originally *planned* rather than what's actually running; this section is the tie-breaker.
