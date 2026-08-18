@@ -52,6 +52,18 @@ function defaultSelfBuffsWidget(overrides = {}) {
     soundOnExpire: false,
     soundWarningSec: 0, // 0 = off
     soundWarningLoopSec: 0, // 0 = warn once only, matches soundWarningSec's own "0 = off" convention
+    // null = default synthesized beep. A real soundService.js registry id
+    // (see soundService.js) otherwise - one custom sound per alert TYPE,
+    // not one shared sound for the whole widget, per backlog #16's "per
+    // alert type, per widget" scope.
+    landSoundId: null,
+    expireSoundId: null,
+    warningSoundId: null,
+    // 0-100 - one shared volume for every alert sound on this widget
+    // (custom files and the default beeps alike), not a separate slider
+    // per alert type. Converted to a 0-1 fraction where it's actually
+    // applied (overlay.js).
+    alertVolume: 100,
     // List mode only - an icon next to the progress bar, and which side
     // everything anchors to (icon + bar's "full" edge), see overlay.js.
     showRowIcon: false,
@@ -142,6 +154,10 @@ function defaultCustomWidget(name) {
     soundOnExpire: false,
     soundWarningSec: 0,
     soundWarningLoopSec: 0,
+    landSoundId: null,
+    expireSoundId: null,
+    warningSoundId: null,
+    alertVolume: 100,
     showRowIcon: false,
     mirrorRowDirection: false,
     showIconLabel: false,
@@ -207,6 +223,7 @@ const SHAREABLE_FIELDS = [
   'soundOnExpire',
   'soundWarningSec',
   'soundWarningLoopSec',
+  'alertVolume',
   'hideBardSongs',
   'maxDurationFilterSec',
   'showRowIcon',
@@ -259,6 +276,10 @@ function normalizeWidget(widget) {
     soundOnExpire: !!widget.soundOnExpire,
     soundWarningSec: typeof widget.soundWarningSec === 'number' ? widget.soundWarningSec : 0,
     soundWarningLoopSec: typeof widget.soundWarningLoopSec === 'number' ? widget.soundWarningLoopSec : 0,
+    landSoundId: typeof widget.landSoundId === 'string' ? widget.landSoundId : null,
+    expireSoundId: typeof widget.expireSoundId === 'string' ? widget.expireSoundId : null,
+    warningSoundId: typeof widget.warningSoundId === 'string' ? widget.warningSoundId : null,
+    alertVolume: typeof widget.alertVolume === 'number' ? widget.alertVolume : 100,
     showRowIcon: !!widget.showRowIcon,
     mirrorRowDirection: !!widget.mirrorRowDirection,
     showIconLabel: !!widget.showIconLabel,

@@ -30,6 +30,10 @@ let currentConfig = {
   soundOnExpire: false,
   soundWarningSec: 0,
   soundWarningLoopSec: 0,
+  landSoundId: null,
+  expireSoundId: null,
+  warningSoundId: null,
+  alertVolume: 100,
   showRowIcon: false,
   mirrorRowDirection: false,
   showIconLabel: false,
@@ -57,8 +61,10 @@ function beep(freq, startDelayMs, durationMs) {
   const gain = ctx.createGain();
   osc.type = 'sine';
   osc.frequency.value = freq;
+  const volumeFraction = (currentConfig.alertVolume ?? 100) / 100;
+  const peakGain = Math.max(0.0001, 0.22 * volumeFraction);
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(0.22, startAt + 0.01);
+  gain.gain.exponentialRampToValueAtTime(peakGain, startAt + 0.01);
   gain.gain.exponentialRampToValueAtTime(0.0001, startAt + durationMs / 1000);
   osc.connect(gain);
   gain.connect(ctx.destination);
@@ -66,10 +72,36 @@ function beep(freq, startDelayMs, durationMs) {
   osc.stop(startAt + durationMs / 1000 + 0.02);
 }
 
+// Reused per kind rather than a fresh Audio() per play - re-triggered via
+// currentTime=0 + play() again, which handles rapid re-fires (e.g. a short
+// loop interval) fine for these short alert clips. Keyed by soundId too,
+// not just kind, so switching which file a slot uses (in the widget's own
+// settings) doesn't keep playing the OLD file from a stale element.
+const customAudioEls = { land: null, expire: null, warning: null };
+function playCustomSound(kind, soundId) {
+  let audio = customAudioEls[kind];
+  if (!audio || audio.dataset.soundId !== soundId) {
+    audio = new Audio(`eqsound://sound/${soundId}`);
+    audio.dataset.soundId = soundId;
+    customAudioEls[kind] = audio;
+  }
+  audio.currentTime = 0;
+  audio.volume = (currentConfig.alertVolume ?? 100) / 100;
+  // Best-effort - a rejected play() (e.g. the file went missing from
+  // customSounds/ since it was picked) shouldn't become an uncaught error,
+  // just silently produce no sound that one time.
+  audio.play().catch(() => {});
+}
+
 // One alert per render tick even if several buffs changed at once (e.g. a
 // multi-buff burst cast landing together) - a chime per buff would be a
 // wall of overlapping beeps instead of a useful cue.
 function playAlertSound(kind) {
+  const soundId = currentConfig[`${kind}SoundId`];
+  if (soundId) {
+    playCustomSound(kind, soundId);
+    return;
+  }
   if (kind === 'land') beep(880, 0, 110);
   else if (kind === 'expire') {
     beep(440, 0, 90);
@@ -80,11 +112,17 @@ function playAlertSound(kind) {
 // Identity key for every Set/Map that tracks a buff instance across
 // renders (tileRefs, landedNames, shownNames, warnedAt,
 // lastRemainingSec) - plain buff name for self buffs (unchanged from
-// before ally-buff tracking existed), but name+ally for ally buffs, since
-// the same buff name can be active on several different allies at once and
-// each instance needs its own independent identity/timer/glow state.
+// before ally-buff tracking existed), name+ally for ally buffs, since the
+// same buff name can be active on several different allies at once, and
+// each instance needs its own independent identity/timer/glow state. Custom
+// timers carry their own definition id (see customTimerEngine.js) and use
+// that instead of name - two definitions are allowed to share a display
+// name (e.g. same trigger text, different icons, meant to both show at
+// once), and a name-only key would collapse them into a single tile.
 function keyFor(buff) {
-  return buff.allyName ? `${buff.allyName.toLowerCase()}::${buff.name.toLowerCase()}` : buff.name.toLowerCase();
+  if (buff.allyName) return `${buff.allyName.toLowerCase()}::${buff.name.toLowerCase()}`;
+  if (buff.id) return `id::${buff.id}`;
+  return buff.name.toLowerCase();
 }
 
 function checkSoundWarnings(visible) {

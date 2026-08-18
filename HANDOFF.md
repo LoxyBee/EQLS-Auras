@@ -1,234 +1,116 @@
-# Session Handoff — 2026-08-17
+# Session Handoff — 2026-08-18
 
-This replaces the previous 2026-08-17 handoff (detection-engine overhaul + widget features) — that work
-is done, stable, and now just part of the app. This document extends it with everything built **after**
-that point in the same continuous session: icon-mode label/margin polish, a group-join detection bug fix,
-a self-buff misattribution fix + new "currently memorized" UI, a big QOL feature batch, a custom-timer
-"chat message" trigger builder, and — most importantly — **an open, unresolved architectural gap the user
-identified that has NOT been fixed yet.** Read `CLAUDE.md` first as always — this supplements it, doesn't
-replace it. The "Detection priority" comment block at the top of `buffEngine.js` remains the authoritative
-source for how detection actually works.
+This replaces the 2026-08-17 handoff. Everything that handoff described as work-in-progress is now done,
+stable, and folded into `CLAUDE.md` as permanent project knowledge:
+
+- **The multiclass-loadout `selfAmbiguousResolutions` staleness gap is resolved** — not via the
+  burst-detector approach that handoff was pointing toward (that idea was explicitly rejected mid-session:
+  a normal Quick-Buff-style fade/re-memorize cluster during ordinary play would false-trigger it, and
+  there's no reliable signal that distinguishes "loadout swap" from "routine gem juggling"). Instead:
+  named loadout profiles (`src/main/profileStore.js`) + a resolution-memory bucket per profile in
+  `buffEngine.js`, switched manually via the chip bar at the top of the main window whenever the user
+  actually swaps loadouts. See CLAUDE.md gotcha #9 for the full writeup — confirmed working live.
+- The app was renamed **EQ Buff Tracker → EQLS Auras** (userData path deliberately left pinned to the old
+  folder name — see `main.js` and CLAUDE.md's opening paragraph. Do not "fix" that pin).
+- A full UI/UX redesign (design tokens, block/topic layout system, page restructuring) shipped across the
+  whole app, not just isolated pages.
+- Auto-hide-overlay-when-EQ-unfocused, custom alert sounds, and loadout profiles are all built, wired, and
+  documented in CLAUDE.md's architecture section.
+
+Read `CLAUDE.md` first, as always — it's the durable source of truth. This document is just this session's
+continuation notes.
 
 ## Status: dev build only, nothing shipped
 
-Everything below is in `npm start` (dev build) only. `npm run dist` has not been run this session — the
-packaged installer predates all of this. Don't rebuild/ship without asking.
+Everything below is in `npm start` (dev build) only. `npm run dist` has not been run this session. Don't
+rebuild/ship without asking. Standing user preference (also in persistent memory): keep them on the dev
+build between sessions, don't revert to the packaged app after testing.
 
-User's standing preference (also in persistent memory): keep them on the dev build between sessions,
-don't revert to the packaged app after testing.
+## What happened this session
 
-## ⚠️ START HERE: unresolved bug the user identified, fix not yet implemented
+### Custom alert sounds (backlog #16) — finished, including two real bugs found live
 
-The user plays a custom server ("EverQuest Legends") with a **multiclass "loadout" mechanic**: swapping
-loadouts changes which spells are actually castable **without touching the spellbook file**, but it DOES
-generate a real burst of `"You forget X."` / `"You have finished memorizing Y."` lines in the log
-(confirmed empirically: ~14 events in ~15 seconds in the user's real log at one observed swap, timestamped
-19:57:44–59).
+The feature itself (per-widget/per-alert-type sound file picker, `eqsound://` protocol, `soundService.js`)
+was already built in an earlier part of this session. This session finished the remaining pieces and found
+two genuine bugs during live testing — both root-caused via temporary file-based debug logging + a
+temporary renderer `console-message` forwarder in `mainWindow.js` (both removed once confirmed fixed, per
+this project's standard practice for packaged-GUI-app debugging).
 
-The bug: `selfAmbiguousResolutions` (in `buffEngine.js` — a `Map<landingText, buffName>` of the user's own
-past answers to "which buff did this ambiguous text mean", persisted to disk, consulted automatically on
-every future occurrence of that same text so the user isn't re-prompted) is **never invalidated by
-anything loadout-related**. It's only cleared by (a) the user manually removing one entry via "View
-remembered choices", or (b) clicking "Reset remembered choices" (full manual reset, IPC
-`buffs:resetAmbiguousResolutions`). It is deliberately **never** cleared on party change (unlike its
-sibling `otherAmbiguousResolutions`, which IS cleared on party change) — that was a correct choice made
-earlier this session, on the reasoning "which of MY OWN spells this text means is a property of the
-player's spellbook/gear, not who's grouped with them." The user's insight is that this reasoning has a
-hole: on THIS server, the player's effective castable-spell set can change (via loadout swap) independent
-of both party membership AND the spellbook file, so a previously-correct self-resolution can silently
-become wrong after a swap — e.g. ambiguous text T correctly resolved to buff X under loadout A, but under
-loadout B the player can no longer cast X and CAN cast a different buff Y that happens to share the same
-text T, yet the app will keep confidently applying the stale "T means X" answer forever with no prompt.
+1. **Preview button did nothing** — `soundService.js`'s `eqsound://` protocol handler parsed the URL
+   wrong. URLs are built as `eqsound://sound/<id>` — `sound` is the *host*, `/<id>` is the *entire*
+   pathname (one segment). The handler was copied from `eqicon://`'s two-segment parser
+   (`eqicon://icon/<iconSet>/<iconId>`) and read `pathname.split('/')[1]` (undefined) instead of `[0]`, so
+   every sound request 404'd silently.
+2. **Still silent after fixing #1** — the file now served correctly (confirmed via debug logging: right
+   bytes, right content-type), but Chromium's `<audio>` element still refused to play it
+   (`MEDIA_ERR_SRC_NOT_SUPPORTED`). Root cause: `HTMLMediaElement` always probes a source with an HTTP
+   `Range` request before accepting it as playable; `protocol.handle()` doesn't do that negotiation
+   automatically like a real static file server would. Fixed by adding real `Range`/`Accept-Ranges`/
+   `Content-Range` handling (206 partial responses) to the `eqsound://` handler. This affects the real
+   in-game alert sounds too, not just the preview button, since they use the identical URL scheme —
+   confirmed fixed for both.
 
-Two earlier, weaker ideas were already explored and explicitly rejected/superseded before landing on this:
-1. A "buff-fade cascade" (many buffs dropping off around the same time) was floated as a detection signal
-   for "a loadout swap probably just happened" — the user pointed out this is a *side effect* of a swap,
-   not reliable (won't happen every time someone swaps).
-2. Checking spellbook-file staleness — real check, but not the actual mechanism here, since the spellbook
-   file genuinely doesn't change on this server's loadout swaps.
+Also added: **volume slider** (per-widget `alertVolume`, applied to both custom sound `<audio>` elements
+and the synthesized beep's peak gain in `overlay.js`), and an **"📁 Open sounds folder" button** that opens
+the same folder "Choose sound..." defaults to (`C:\Windows\Media` first time, then whatever folder was last
+picked from), so the user can drop their own audio files in ahead of time. All confirmed working live.
 
-**Design direction settled on but NOT YET IMPLEMENTED**: mirror the existing `BURST_WINDOW_MS`/
-`burstUntil` pattern already used elsewhere in `buffEngine.js` (for Quick-Buff-style instant multi-effect
-detection) as a template for a NEW burst detector on the forget/memorize handling block (currently around
-`buffEngine.js` lines ~267–282 — re-check line numbers, nothing has moved but count from `matchForgetSpell`
-/`matchMemorizeFinished` handling). Concretely: track a rolling count of forget+memorize events; if a
-burst of several fires in quick succession (needs a real threshold — the one observed real-world data
-point is ~14 events/~15s, but that's a single sample, not yet enough to pick a safe cutoff that won't
-false-trigger on a routine single/double gem swap during normal play), clear `selfAmbiguousResolutions`
-(and call `_saveSelfAmbiguousResolutions()`) exactly once per burst, same idea as the existing
-`isPartyChangeLine` handling for the *other* bucket.
+### "Widget" → "Aura" rename — UI text only, by explicit user choice
 
-**Before wiring this into the live app**: per this session's established (and user-reinforced) practice,
-build an isolated Node test script first — mock `store`, instantiate the real `BuffStore`/`BuffEngine`,
-replay a realistic synthetic sequence of memorize/forget lines (including a plausible "routine single gem
-swap" negative case) — to confirm the burst threshold actually distinguishes "loadout swap" from "normal
-play" before touching `buffEngine.js` for real and before asking for a dev-build restart/retest. **Do not
-just implement and ask the user to test live** — this is exactly the kind of subtle detection-logic change
-this project has a history of getting wrong on the first guess (see CLAUDE.md's stated project history).
+User asked for a rename, then chose the scope explicitly when asked (three options offered: UI-text-only /
+UI-text-plus-code-identifiers / full-rename-including-saved-data): **UI text only**. Every user-visible
+string (button labels, headings, tooltips, placeholders, dialog/confirm messages, modal titles) across
+`index.html` and `main-window.js` now says "aura" instead of "widget," with correct grammar (article
+agreement: "a widget" → "an aura"). Internal code — file names (`widgetStore.js`, `widgetManager.js`,
+`customTimerEngine.js`, etc.), variable/function names, IPC channel names (`widget:create` etc.), and the
+field names inside `widgets.json` — all deliberately still say "widget." **This was a deliberate scope
+choice, not laziness — do not "finish the job" by renaming the internal stuff without checking with the
+user first**, since a data-field rename would need the same kind of careful migration the app's own rename
+needed (real precedent: see the userData-path incident in CLAUDE.md's opening section).
 
-Also worth doing once a fix lands: add a line to CLAUDE.md's gotchas section documenting the loadout
-mechanic and the fix, the same way the "Infusion of Spirit" third-person gotcha is documented — future
-sessions won't otherwise know this server has a loadout mechanic at all.
+### Custom timer bug: duplicate-named/duplicate-triggered timers only ever activated one
 
-No code has been written for this yet — only investigation (reading the relevant code sections). The user
-interrupted mid-investigation specifically because I began reading/editing toward a fix without checking
-the plan with them first — **check in on the exact design (especially the burst threshold number) before
-implementing**, don't just land something and ask them to test blind.
+User report: created two Custom Timer definitions on one aura, both named "Hii it's me again," both
+triggered by the same chat line (`You say, 'Hii'`), deliberately given two different icons — expected both
+to show simultaneously when the trigger fired. Only one ever did. Two stacked bugs in
+`customTimerEngine.js`:
 
-## Everything else built this session, in order
+1. `_findTriggerMatch` (singular) returned only the *first* matching definition per log line, so the
+   second definition was never even considered when both matched the same trigger text.
+2. `activeTimers` (the live-state `Map`) was keyed by the timer's `name.toLowerCase()`, not its unique
+   `id` — so even fixing #1 alone would've made the second activation silently overwrite the first in the
+   Map, since two definitions sharing a display name collide on that key. The icon lookup (`getActive()`)
+   had the same name-based collision, so even a correctly-tracked second instance would've shown the wrong
+   (first-found) icon. Overlay-side, `overlay.js`'s `keyFor()` (the identity key used by every
+   render-tracking Map/Set — `tileRefs`, `landedNames`, `warnedAt`, etc.) also only distinguished ally
+   buffs by name+allyName; two same-named custom timer instances would've collapsed into one tile there
+   too.
 
-### Icon-mode label/margin polish
-- Fixed icon-mode label text clipping at the widget window's edge.
-- Settled, after several rounds of user correction, on a final design where the widget window can be
-  wider than the icon grid (to give unwrapped labels room), but the draggable blue drag-indicator overlay
-  is always sized to exactly the icon grid — decoupled from the window's true size. Implemented via
-  `position:fixed; inset` tricks in `overlay.js` plus an `originX`-compensated window-bounds system in
-  `widgetManager.js` (`originXByWidget` Map, `fitToContent(id, contentWidth, contentHeight, originX)`,
-  and a `'moved'` handler that adds the current origin offset back so real user drags still persist the
-  correct canonical position).
-- Fixed wrap-text being applied to timer text instead of only label text (moved the "Wrap text" toggle
-  from the Timer text settings section to the Label text section — user caught it was still misplaced
-  even after the first fix attempt).
-- Fixed a wrap-CSS bug causing premature 3–6-character wrapping (needed explicit `width`, not `max-width`,
-  for `-webkit-line-clamp` to size correctly).
-- Capped wrapped label text to 2 lines max (was 3).
-- Added a disabled "Margin width" placeholder slider to icon-mode widgets — **not functional yet**, just
-  a UI placeholder for future spacing-between-icons work. Its stray hint text was removed per user
-  request; it currently does nothing when moved.
-- Added per-widget icon **Justification** (left/center/right) — active icons position themselves within
-  the full "Icons per row" cap's reserved space instead of always packing from the left.
-- Reorganized the widget settings panel: Opacity, Icons per row, Show icon on each row, Mirror direction,
-  and Justification all moved into the "Display" card; List width/Row size/Icon size/Margin width stayed
-  in "Size." Size card was also moved to appear above the text-related cards per user request.
+Fixed all three: `_findTriggerMatches` (plural) now returns every match; `activeTimers` and the icon
+lookup are keyed by each definition's own `id`; `overlay.js`'s `keyFor()` now uses `id` for custom-timer
+buffs specifically (self-buffs and ally-buffs unchanged). The "Remove" button and its IPC/preload chain
+(`customTimers:removeActive`) now pass the instance `id` instead of `name` for the same reason. Verified
+first via an isolated Node script exercising the exact duplicate-name/duplicate-trigger scenario (activate
+both, end both via shared ended-text, remove one by id without touching the other), then confirmed live —
+user's screenshot shows both "Hii it's me again" icons (heart and dagger) active simultaneously after
+saying "Hii" in-game.
 
-### Rank-numeral duration scaling — investigated, documented, deliberately NOT built
-Confirmed via direct `spells_us.txt` lookup this is a custom-server-only duration-scaling effect layered
-on top of the base spell (not a roster-mining gap, not the same mechanism as Yaulp's genuinely-distinct
-per-rank spell IDs). One real data point (Spirit of the Puma, rank VII, observed ~162s vs 60s base with an
-existing 65% multiplier already stacked) isn't enough to fit a formula. Full writeup, including the exact
-next step (collect 2–3 more rank/duration pairs from the live log when the user reports a buff naturally
-expiring in play), is already in **CLAUDE.md backlog item #13** — don't duplicate it here, that's the
-canonical location per the user's explicit "set this aside somewhere reachable" request.
+## Testing practices reinforced this session
 
-### Group-join detection bug — fixed
-Root cause: group-membership tracking only ever learned about members via lines describing people joining
-the player's OWN group — it never handled the case of the player joining a group that already has other
-members. Fixed by adding `matchGroupJoinAccepted` (matches "You notify X that you agree to join the
-group.") in `buffParser.js`, tracked via a new `pendingGroupInviter` field on `BuffEngine`, consumed one
-line ahead of the self-join clear. Verified via synthetic log injection after an initial live retest
-false-negative turned out to be caused by the dev-build restart happening AFTER the relevant join event
-(the app never replays log history, so the restart itself ate the test's signal — not a real bug in the
-fix).
+- **Temporary file-based / console-forwarded debug logging**, removed once the root cause was confirmed —
+  used for both sound bugs. Packaged Windows GUI apps have no visible console, so this stays the standard
+  approach; the temporary `console-message` forwarder was added to `mainWindow.js` and fully removed
+  afterward, not left in place.
+- **Isolated Node test script** (real `CustomTimerEngine`, mocked `getWidgetsFn`/`iconUrlFn`) to verify the
+  duplicate-trigger fix's exact before-reported scenario before ever touching the live Electron app —
+  caught nothing new, but confirmed the fix against the precise repro rather than a hand-wave.
+- Standard restart discipline throughout: `taskkill //F //IM electron.exe //T` before every `npm start`,
+  syntax-check (`node --check`) every touched file, and a duplicate-ID/missing-reference/div-balance check
+  script run against `index.html` before any restart that touched HTML.
 
-### Self-buff misattribution bug — fixed, plus new "Currently memorized" UI
-Real bug: an ally-cast "Rizlona's Embers" was wrongly shown as the player's own buff. Root cause: the
-"unique landing text" auto-confirm detection tier had no awareness of the player's *actual current* gem
-loadout — it would confirm a landing as self-cast even when the player provably didn't have that spell
-memorized right now. Fixed by adding a `currentlyMemorized`-based check to that tier in `buffEngine.js`:
+## Known limitations — unchanged, no action needed
 
-```js
-const alreadyActive = this.activeBuffs.has(uniqueMatch.name.toLowerCase());
-const isMemorizableSpell = this.spellbookCheckFn ? this.spellbookCheckFn(uniqueMatch.name) : false;
-const knownNotMemorized =
-  !alreadyActive &&
-  isMemorizableSpell &&
-  this.currentlyMemorized.size > 0 &&
-  !this.currentlyMemorized.has(uniqueMatch.name.toLowerCase());
-if (knownNotMemorized) {
-  if (this.trackOthersEnabled) { this._land(uniqueMatch); }
-  else { /* ignored, debug logged */ }
-  this._checkForEndedBuffs(line);
-  return;
-}
-```
-
-This directly motivated a user question — "does this app actively track what spells the user has
-memorised? if it does, maybe that should be in the front end display somewhere?" — which led to a new
-`getCurrentlyMemorized()` method and a live "Currently memorized" display in the main window UI, backed
-by the same `currentlyMemorized` Set (built from `"You forget X."`/`"You have finished memorizing X."`
-lines, session-only, not persisted — same "never replay history" limitation as everything else here).
-
-**Note the direct link to the still-open task above**: this fix and the open multiclass-loadout gap are
-closely related (`currentlyMemorized` correctly tracks gem-slot state moment-to-moment) but distinct —
-this fix is about the "unique landing text" tier trusting stale spellbook-only info; the open gap is about
-the SEPARATE `selfAmbiguousResolutions` cache never being invalidated by the same underlying gem-state
-changes. Fixing one did not fix the other.
-
-### Custom timer "chat message" trigger builder — new feature, additive only
-Custom timers previously only supported raw "exact log line" triggers (free-text). Added a second,
-structured entry mode built entirely from real, log-verified channel-message formats: a Channel dropdown
-(Say/Group/Guild/Tell), a Who selector (Yourself or a specific named person), and plain message text —
-composed into the real matching log-line format via `buildChatTriggerLine()` in `main-window.js`. **The
-original "Exact log line" mode was deliberately kept, not replaced** — general-purpose raw-line triggering
-still needs to exist for anything the chat builder can't express. Explicit user constraint: this chat
-builder is ONLY for custom timers, not for the buff-detection system.
-
-Also added while working on the custom-timer form: a **"Save as new"** option when editing an existing
-custom timer, so edits can be committed as a brand-new timer without altering the one being edited.
-
-Two related detection-correctness fixes landed alongside this (in `customTimerEngine.js`):
-- Trigger/ended-text matching made case-insensitive (was case-sensitive, silently missing real matches).
-- Fixed a bug where multiple active custom timers sharing the same end-trigger phrase would only have
-  ONE of them actually end — now all matching timers end together.
-
-### QOL feature batch (backlog items #18–#23 — implemented, verified, and removed from backlog)
-Preceded by an explicit audit: "check my current functionality. see if there are currently any QOL gaps
-that users might want" → "add all to backlog, set icons per row maximum to 20" (also done — icons-per-row
-cap raised to 20). The six items, all implemented and confirmed working after a clean restart:
-1. **Delete confirmations** — `window.confirm()` guards added before destructive widget/timer/buff
-   deletes.
-2. **Off-screen widget position recovery** — a "Reset position" action per widget
-   (`resetPositionBtn`/`widget:resetPosition` IPC) for widgets that end up outside the visible screen
-   area.
-3. **Icon picker search** — see below, went through one full correction round.
-4. **Widget duplication** — `duplicateWidget()`, built as literally `exportCode()` + `importCode()` +
-   rename + position offset, reusing the existing export/import share-code substrate rather than a new
-   code path.
-5. **Copy-confirmation feedback** — visible confirmation when an export code is copied.
-6. **Sidebar widget reordering** — `move(id, direction)` in `widgetStore.js` / `moveWidget` IPC, exposed
-   in the sidebar as up/down controls (`renderWidgetSubmenu()` rewritten with `.nav-sub-row` +
-   `.nav-sub-move-btn` styling in `main-window.css`).
-
-**Correction round after live testing** (user's exact words): "search function should just live filter
-the icons, not have a drop down of names as well, because it's too clunky." `buildIconPicker()` in
-`main-window.js` was rewritten so the search input filters the icon grid directly in place (no separate
-results list) — the icon grid renders once with all icons up front, each thumb tagged with its matching
-buff name(s), and the search input just toggles `display: none` per-thumb on input. This is the current,
-confirmed-working implementation — don't reintroduce a dropdown/list alongside the grid.
-
-Also from that same correction round:
-- "Put the duplicate, export, and delete buttons in their own card below active on this widget" — done: a
-  new `#widget-manage-card` (Duplicate/Export/Delete) now sits directly below `#widget-active-buffs-card`
-  in `index.html`; the old inline buttons at the bottom of the settings panel were removed.
-- "Remove this text from sound card 'Planned: choosing your own sound per alert, and looping the warning
-  sound.' add placeholder buttons for choose sound, and loop sound every:" — done: hint text trimmed, two
-  disabled placeholder controls added (`widget-sound-loop-slider` and a "Choose sound" button), matching
-  **CLAUDE.md backlog items #16 and #17** (sound file selection, looping warning sound) — these remain
-  unbuilt, the placeholders are UI scaffolding only, not functional yet.
-
-### A resolved tangent: Electron location-access alert
-User reported a Windows "Electron is trying to access your location" alert coinciding with an internet
-dropout, plus a screenshot. Investigated and confirmed benign (nothing in this app requests geolocation
-deliberately — traced to routine Electron/Chromium/Windows Location Services interaction, not a security
-concern). Fully resolved within the conversation, no code changes, nothing pending here.
-
-## Known limitations — carried over, still true, don't "fix" without re-reading why
-
-(See the previous handoff section preserved in git/session history for the full list — log-replay-never,
-Quick Buff's variable buff count per cast, bard-song auto-tagging coverage gaps. All still accurate, no
-changes to any of these this session.)
-
-## Testing approach that worked well this session (same practice, reinforced again)
-
-- **Live log injection** (`echo "[timestamp] text" >> <logfile>`, exact `[Day Mon DD HH:MM:SS YYYY]`
-  format) to force scenarios on demand without playing — used again for the group-join fix retest.
-- **Reading the user's real files directly** (log, `spells_us.txt`, `widgets.json`, the real
-  `<CharName>-<Class>-Spellbook.txt`) to settle ambiguous questions empirically rather than guessing —
-  used for the Puma duration data point, the group-join mechanics, the memorized-spell timing, and the
-  loadout-swap log footprint (~14 forget/memorize events in ~15s).
-  restart discipline (`npm start` doesn't hot-reload main-process changes; kill lingering `electron.exe`
-  first or the single-instance lock silently no-ops a second `npm start`) — still applies, still worth
-  double-checking before every retest.
-- **Isolated Node test scripts** (mock `store`, real `BuffStore`/`BuffEngine`) to verify detection-logic
-  changes before a full Electron restart — this is explicitly the planned next step for the still-open
-  multiclass-loadout fix above, not yet done.
+Same list as before, still accurate: log-replay-never (app never reads log history on startup), Quick
+Buff's variable buff count per cast (confirmed non-bug, see CLAUDE.md gotcha #11), bard-song
+auto-tagging coverage gaps, rank-numeral duration scaling parked pending more data (CLAUDE.md backlog
+#13). Nothing here changed this session.

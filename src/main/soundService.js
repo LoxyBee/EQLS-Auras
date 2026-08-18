@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { app, dialog, protocol } = require('electron');
+const { app, dialog, protocol, shell } = require('electron');
+const { loadJson, saveJson } = require('./store');
 
 // Custom alert sounds (backlog #16) - lets the user pick a real audio file
 // per alert type per widget, instead of only the synthesized beeps in
@@ -11,6 +12,33 @@ const { app, dialog, protocol } = require('electron');
 // into userData and served back over a registered custom protocol.
 const ALLOWED_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.m4a']);
 const CONTENT_TYPES = { '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4' };
+
+// Windows ships a real folder of short, actually-usable notification/UI
+// sounds here - a genuine, zero-licensing-effort starting point for the
+// picker (as opposed to wherever Explorer happened to open last, which is
+// rarely anywhere useful for this). Only used the FIRST time, or if the
+// remembered last-used folder (see lastPickerDir below) no longer exists -
+// once the user has picked from their own folder once, that's almost
+// certainly more relevant to them than this default going forward.
+const WINDOWS_MEDIA_DIR = 'C:\\Windows\\Media';
+
+function defaultPickerDir() {
+  const last = loadJson('lastSoundPickerDir', null);
+  if (last && fs.existsSync(last)) return last;
+  if (fs.existsSync(WINDOWS_MEDIA_DIR)) return WINDOWS_MEDIA_DIR;
+  return undefined; // let the OS dialog fall back to its own default
+}
+
+// Lets someone drop their own audio files straight into whichever folder
+// "Choose Sound" will default to next time (see defaultPickerDir above) -
+// without this, "add your own sound" meant navigating there by hand first.
+// Falls back to the app's own customSounds storage folder (always exists,
+// created on demand) if neither the remembered folder nor C:\Windows\Media
+// exist, so this never has nothing to open.
+function openPickerFolder() {
+  const dir = defaultPickerDir() || soundsDir();
+  return shell.openPath(dir);
+}
 
 function soundsDir() {
   const dir = path.join(app.getPath('userData'), 'customSounds');
@@ -46,6 +74,7 @@ function saveRegistry(registry) {
 async function pickAndImportSound(browserWindow) {
   const result = await dialog.showOpenDialog(browserWindow, {
     title: 'Choose an alert sound',
+    defaultPath: defaultPickerDir(),
     filters: [{ name: 'Audio files', extensions: ['mp3', 'wav', 'ogg', 'm4a'] }],
     properties: ['openFile'],
   });
@@ -54,6 +83,11 @@ async function pickAndImportSound(browserWindow) {
   const sourcePath = result.filePaths[0];
   const ext = path.extname(sourcePath).toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(ext)) return null;
+
+  // Remembered for next time (see defaultPickerDir) - once the user has
+  // picked from their own folder, re-opening in C:\Windows\Media every
+  // time afterward would just be an extra click to navigate away from it.
+  saveJson('lastSoundPickerDir', path.dirname(sourcePath));
 
   const id = crypto.randomUUID();
   const fileName = `${id}${ext}`;
@@ -76,18 +110,57 @@ function getSoundInfo(id) {
 
 function registerProtocol() {
   protocol.handle('eqsound', (request) => {
-    const id = new URL(request.url).pathname.split('/').filter(Boolean)[1] || '';
+    const id = new URL(request.url).pathname.split('/').filter(Boolean)[0] || '';
     const info = getSoundInfo(id);
     if (!info) return new Response(null, { status: 404 });
     const filePath = path.join(soundsDir(), info.fileName);
+    let stat;
     try {
-      const data = fs.readFileSync(filePath);
-      const contentType = CONTENT_TYPES[path.extname(info.fileName).toLowerCase()] || 'application/octet-stream';
-      return new Response(data, { headers: { 'content-type': contentType } });
+      stat = fs.statSync(filePath);
     } catch {
       return new Response(null, { status: 404 });
     }
+    const contentType = CONTENT_TYPES[path.extname(info.fileName).toLowerCase()] || 'application/octet-stream';
+
+    // HTMLMediaElement (used both by the settings-panel preview button and
+    // by overlay.js's real alert playback) always probes a local source
+    // with an HTTP Range request before it'll accept it as playable media -
+    // unlike a real static-file HTTP server, protocol.handle doesn't do
+    // that negotiation for us, so without this Chromium rejects the whole
+    // response as MEDIA_ERR_SRC_NOT_SUPPORTED even when the bytes and
+    // content-type are both already correct (confirmed via debug logging:
+    // the file was served in full with the right content-type and still
+    // failed to decode until range support was added).
+    const range = request.headers.get('range');
+    if (range) {
+      const match = /bytes=(\d*)-(\d*)/.exec(range);
+      const start = match && match[1] ? parseInt(match[1], 10) : 0;
+      const end = match && match[2] ? parseInt(match[2], 10) : stat.size - 1;
+      const chunkSize = end - start + 1;
+      const fd = fs.openSync(filePath, 'r');
+      const buffer = Buffer.alloc(chunkSize);
+      fs.readSync(fd, buffer, 0, chunkSize, start);
+      fs.closeSync(fd);
+      return new Response(buffer, {
+        status: 206,
+        headers: {
+          'content-type': contentType,
+          'content-length': String(chunkSize),
+          'content-range': `bytes ${start}-${end}/${stat.size}`,
+          'accept-ranges': 'bytes',
+        },
+      });
+    }
+
+    const data = fs.readFileSync(filePath);
+    return new Response(data, {
+      headers: {
+        'content-type': contentType,
+        'content-length': String(stat.size),
+        'accept-ranges': 'bytes',
+      },
+    });
   });
 }
 
-module.exports = { pickAndImportSound, getSoundInfo, registerProtocol };
+module.exports = { pickAndImportSound, getSoundInfo, registerProtocol, openPickerFolder };

@@ -3,6 +3,15 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('eqTracker', {
   getVersionInfo: () => ipcRenderer.invoke('app:getVersionInfo'),
 
+  minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
+  toggleMaximizeWindow: () => ipcRenderer.invoke('window:maximizeToggle'),
+  closeWindow: () => ipcRenderer.invoke('window:close'),
+  isWindowMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+  onWindowMaximizedChange: (callback) => {
+    ipcRenderer.on('window:maximized', () => callback(true));
+    ipcRenderer.on('window:unmaximized', () => callback(false));
+  },
+
   getLogState: () => ipcRenderer.invoke('log:getState'),
   chooseLogFolder: () => ipcRenderer.invoke('log:chooseFolder'),
   onLogStatus: (callback) => {
@@ -38,7 +47,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   },
 
   getActiveCustomTimers: () => ipcRenderer.invoke('customTimers:getActive'),
-  removeActiveCustomTimer: (name) => ipcRenderer.invoke('customTimers:removeActive', name),
+  removeActiveCustomTimer: (id) => ipcRenderer.invoke('customTimers:removeActive', id),
   onActiveCustomTimersChanged: (callback) => {
     ipcRenderer.on('customTimers:active', (_event, timers) => callback(timers));
   },
@@ -124,6 +133,13 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetSoundOnExpire: (id, enabled) => ipcRenderer.invoke('widget:setSoundOnExpire', { id, enabled }),
   setWidgetSoundWarningSec: (id, seconds) => ipcRenderer.invoke('widget:setSoundWarningSec', { id, value: seconds }),
   setWidgetSoundWarningLoopSec: (id, seconds) => ipcRenderer.invoke('widget:setSoundWarningLoopSec', { id, value: seconds }),
+  setWidgetLandSoundId: (id, soundId) => ipcRenderer.invoke('widget:setLandSoundId', { id, soundId }),
+  setWidgetExpireSoundId: (id, soundId) => ipcRenderer.invoke('widget:setExpireSoundId', { id, soundId }),
+  setWidgetWarningSoundId: (id, soundId) => ipcRenderer.invoke('widget:setWarningSoundId', { id, soundId }),
+  setWidgetAlertVolume: (id, volume) => ipcRenderer.invoke('widget:setAlertVolume', { id, value: volume }),
+  pickSound: () => ipcRenderer.invoke('sounds:pick'),
+  getSoundInfo: (id) => ipcRenderer.invoke('sounds:getInfo', id),
+  openSoundsFolder: () => ipcRenderer.invoke('sounds:openFolder'),
   setWidgetListWidth: (id, width) => ipcRenderer.invoke('widget:setListWidth', { id, value: width }),
   setWidgetOpacity: (id, opacity) => ipcRenderer.invoke('widget:setOpacity', { id, value: opacity }),
   setWidgetBuffFilter: (id, mode, names) => ipcRenderer.invoke('widget:setBuffFilter', { id, mode, names }),

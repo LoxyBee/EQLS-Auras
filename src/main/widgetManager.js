@@ -539,6 +539,30 @@ function setSoundWarningLoopSec(id, seconds) {
   return config;
 }
 
+function setLandSoundId(id, soundId) {
+  const config = widgetStore.update(id, { landSoundId: soundId });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setExpireSoundId(id, soundId) {
+  const config = widgetStore.update(id, { expireSoundId: soundId });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setWarningSoundId(id, soundId) {
+  const config = widgetStore.update(id, { warningSoundId: soundId });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setAlertVolume(id, volume) {
+  const config = widgetStore.update(id, { alertVolume: volume });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setListWidth(id, width) {
   const config = widgetStore.update(id, { listWidth: width });
   pushConfigChanged(id);
@@ -620,6 +644,10 @@ module.exports = {
   setSoundOnExpire,
   setSoundWarningSec,
   setSoundWarningLoopSec,
+  setLandSoundId,
+  setExpireSoundId,
+  setWarningSoundId,
+  setAlertVolume,
   setListWidth,
   setOpacity,
   setName,
