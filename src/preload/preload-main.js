@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setShowOnOverlay: (name, showOnOverlay) =>
     ipcRenderer.invoke('buffs:setShowOnOverlay', { name, showOnOverlay }),
   setBardSong: (name, isBardSong) => ipcRenderer.invoke('buffs:setBardSong', { name, isBardSong }),
+  setNoDurationScaling: (name, value) => ipcRenderer.invoke('buffs:setNoDurationScaling', { name, value }),
 
   getAmbiguousCasts: () => ipcRenderer.invoke('buffs:getAmbiguous'),
   resolveAmbiguousCast: (text, buffName) => ipcRenderer.invoke('buffs:resolveAmbiguous', { text, buffName }),
@@ -84,10 +85,16 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getTrackOthersEnabled: () => ipcRenderer.invoke('settings:getTrackOthers'),
   setTrackOthersEnabled: (enabled) => ipcRenderer.invoke('settings:setTrackOthers', enabled),
   getAutoHideOverlayEnabled: () => ipcRenderer.invoke('settings:getAutoHideOverlay'),
+  getShowAurasWhenAppFocused: () => ipcRenderer.invoke('settings:getShowAurasWhenAppFocused'),
+  setShowAurasWhenAppFocused: (enabled) => ipcRenderer.invoke('settings:setShowAurasWhenAppFocused', enabled),
+  getOverlayMasterState: () => ipcRenderer.invoke('overlay:getMasterState'),
+  setOverlayAllUnlocked: (unlocked) => ipcRenderer.invoke('overlay:setAllUnlocked', unlocked),
   setAutoHideOverlayEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoHideOverlay', enabled),
 
   getSpellbookState: () => ipcRenderer.invoke('spellbook:getState'),
   getMemorizedSpells: () => ipcRenderer.invoke('spellbook:getMemorized'),
+  forgetMemorizedSpell: (name) => ipcRenderer.invoke('spellbook:forgetMemorized', name),
+  clearMemorizedSpells: () => ipcRenderer.invoke('spellbook:clearMemorized'),
   onMemorizedSpellsChanged: (callback) => {
     ipcRenderer.on('spellbook:memorized', (_event, names) => callback(names));
   },
@@ -105,7 +112,6 @@ contextBridge.exposeInMainWorld('eqTracker', {
   applyCodeToSelfBuffs: (code) => ipcRenderer.invoke('widget:applyCodeToSelfBuffs', code),
   deleteWidget: (id) => ipcRenderer.invoke('widget:delete', id),
   moveWidget: (id, direction) => ipcRenderer.invoke('widget:move', { id, direction }),
-  setWidgetEnabled: (id, enabled) => ipcRenderer.invoke('widget:setEnabled', { id, enabled }),
   setWidgetName: (id, name) => ipcRenderer.invoke('widget:setName', { id, value: name }),
   toggleWidgetLock: (id) => ipcRenderer.invoke('widget:toggleLock', id),
   resetWidgetPosition: (id) => ipcRenderer.invoke('widget:resetPosition', id),
@@ -126,6 +132,12 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetShowIconLabel: (id, enabled) => ipcRenderer.invoke('widget:setShowIconLabel', { id, enabled }),
   setWidgetIconLabelSize: (id, size) => ipcRenderer.invoke('widget:setIconLabelSize', { id, value: size }),
   setWidgetIconLabelAnchor: (id, anchor) => ipcRenderer.invoke('widget:setIconLabelAnchor', { id, value: anchor }),
+  setWidgetTimerTextColor: (id, value) => ipcRenderer.invoke('widget:setTimerTextColor', { id, value }),
+  setWidgetGroupAllyBuffs: (id, value) => ipcRenderer.invoke('widget:setGroupAllyBuffs', { id, value }),
+  setWidgetGroupAllyDirection: (id, value) => ipcRenderer.invoke('widget:setGroupAllyDirection', { id, value }),
+  setWidgetHideAllyNameOnTile: (id, value) => ipcRenderer.invoke('widget:setHideAllyNameOnTile', { id, value }),
+  setWidgetLabelTextColor: (id, value) => ipcRenderer.invoke('widget:setLabelTextColor', { id, value }),
+  setWidgetIconMargin: (id, value) => ipcRenderer.invoke('widget:setIconMargin', { id, value }),
   setWidgetWrapText: (id, enabled) => ipcRenderer.invoke('widget:setWrapText', { id, enabled }),
   setWidgetIconJustify: (id, value) => ipcRenderer.invoke('widget:setIconJustify', { id, value }),
   setWidgetMaxDurationFilter: (id, seconds) => ipcRenderer.invoke('widget:setMaxDurationFilter', { id, value: seconds }),

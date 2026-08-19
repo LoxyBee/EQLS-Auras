@@ -34,6 +34,10 @@ const { IconService } = require('./iconService');
 const { ICON_SETS } = require('./iconExtractor');
 const { SpellbookService } = require('./spellbookService');
 const { resolveInstallRoot } = require('./eqLocator');
+const { tagBardSongs } = require('./bardSongTagger');
+const { backfillBardSongs } = require('./rosterBackfill');
+const { saveSnapshot, loadSnapshot } = require('./sessionSnapshot');
+const gameSpellData = require('./gameSpellData');
 const { loadJson, saveJson } = require('./store');
 const widgetManager = require('./widgetManager');
 const ambiguousPopup = require('./ambiguousPopup');
@@ -51,8 +55,15 @@ protocol.registerSchemesAsPrivileged([
 // its own overlay window - so whichever window you're actually looking at
 // might not be the one that's processing anything. Refuse a second launch
 // and just focus the existing one instead.
+// `return` (legal at CommonJS module scope) matters as much as the quit:
+// app.quit() only *schedules* a shutdown, it doesn't stop execution, so
+// without this a rejected second instance would carry on running every
+// module-level side effect below - building stores, touching userData - while
+// on its way out. Given this project's history with a userData write from the
+// wrong place wiping real data, a second instance must do nothing at all.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
+  return;
 }
 
 const logService = new LogService();
@@ -76,6 +87,14 @@ const iconService = new IconService();
 const spellbookService = new SpellbookService();
 buffEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setSpellbookCheckFn((name) => spellbookService.has(name));
+// Suppresses "which bard song was that?" prompts when no aura would show the
+// answer anyway - songs are opt-in and off by default, so without this the
+// prompts kept arriving for something deliberately hidden. Checks live widget
+// state rather than a cached flag so enabling "Show bard songs" on any aura
+// starts the prompts again immediately.
+buffEngine.setBardSongsVisibleFn(() =>
+  widgetManager.getAllWidgetConfigs().some((w) => w.hideBardSongs === false)
+);
 customTimerEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setTrackOthersEnabled(loadJson('trackOthersEnabled', false));
 buffEngine.setBlockedNames(loadJson('blockedBuffs', []));
@@ -86,9 +105,27 @@ buffEngine.setBlockedNames(loadJson('blockedBuffs', []));
 // user turns it off.
 const foregroundWatcher = new ForegroundWatcher();
 let autoHideOverlayEnabled = loadJson('autoHideOverlay', true);
-foregroundWatcher.on('focusChanged', (focused) => {
-  if (autoHideOverlayEnabled) widgetManager.setForegroundHidden(!focused);
-});
+// Separate, OFF by default: whether this app's own windows also count as
+// "keep the auras visible". Used to be baked into auto-hide with no way to
+// turn it off, which meant tabbing to the app always dragged every aura back
+// on screen over whatever else was there. Kept as its own setting because the
+// two wants are genuinely different - "hide when I'm not playing" vs "show
+// while I'm configuring". Unlocked auras stay visible regardless of both
+// settings (see widgetManager.setLocked), so this being off never blocks
+// repositioning.
+let showAurasWhenAppFocused = loadJson('showAurasWhenAppFocused', false);
+
+function applyForegroundVisibility() {
+  const state = foregroundWatcher.lastState;
+  if (!autoHideOverlayEnabled || !state) {
+    widgetManager.setForegroundHidden(false);
+    return;
+  }
+  const shouldShow = state.eqFocused || (showAurasWhenAppFocused && state.ownAppFocused);
+  widgetManager.setForegroundHidden(!shouldShow);
+}
+
+foregroundWatcher.on('focusChanged', applyForegroundVisibility);
 if (autoHideOverlayEnabled) foregroundWatcher.start();
 
 // Permanent (not "remove before shipping" temp debug logging) - a running
@@ -104,7 +141,7 @@ try {
 } catch {
   // Doesn't exist yet - nothing to trim.
 }
-buffEngine.setDebugLogFn((message) => {
+function debugLog(message) {
   const line = `[${new Date().toLocaleTimeString()}] ${message}`;
   try {
     fs.appendFileSync(DEBUG_LOG_PATH, line + '\n');
@@ -112,7 +149,8 @@ buffEngine.setDebugLogFn((message) => {
     // Best-effort only - never let a logging failure break detection.
   }
   broadcast('debug:line', line);
-});
+}
+buffEngine.setDebugLogFn(debugLog);
 
 // AA "Spell Casting Reinforcement" (4 ranks) and Exaltation "Extended
 // Enhancement" (3 ranks) both extend buff durations by a flat percentage,
@@ -147,10 +185,85 @@ logService.watcher.on('status', (status) => {
     spellbookService.setCharacterBaseName(baseName);
   }
 });
-buffEngine.on('buffsChanged', (buffs) => broadcast('buffs:active', buffs));
-buffEngine.on('allyBuffsChanged', (buffs) => broadcast('buffs:activeAllies', buffs));
-buffEngine.on('memorizedChanged', (names) => broadcast('spellbook:memorized', names));
-customTimerEngine.on('activeChanged', (timers) => broadcast('customTimers:active', timers));
+// Persist live timers so a restart doesn't wipe everything currently running
+// - see sessionSnapshot.js for why this exists and why it's time-limited.
+// Debounced because these events fire on every tick of every buff (once a
+// second) and this writes to disk; 2s is far below the 5 minute grace window,
+// so nothing meaningful is lost even if the app dies between writes.
+let snapshotTimer = null;
+function saveSessionSnapshotSoon() {
+  if (snapshotTimer) return;
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = null;
+    const { selfBuffs, allyBuffs } = buffEngine.getSnapshotState();
+    saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, customTimers: customTimerEngine.getSnapshotState() });
+  }, 2000);
+}
+
+buffEngine.on('buffsChanged', (buffs) => {
+  broadcast('buffs:active', buffs);
+  saveSessionSnapshotSoon();
+});
+buffEngine.on('allyBuffsChanged', (buffs) => {
+  broadcast('buffs:activeAllies', buffs);
+  saveSessionSnapshotSoon();
+});
+// Where the EQ install actually lives, once known - kept module-level so
+// lookups against the game's own spell data (gameSpellData.js) can happen
+// from anywhere without re-deriving it from the log folder each time. Set by
+// applyInstallRoot below, null until the log folder is configured.
+let currentInstallRoot = null;
+
+function applyInstallRoot(eqFolder) {
+  if (!eqFolder) return;
+  currentInstallRoot = resolveInstallRoot(eqFolder);
+  iconService.setEqFolder(currentInstallRoot);
+  spellbookService.setInstallRoot(currentInstallRoot);
+  // Both are cheap and idempotent (they only write when they actually change
+  // something), so running them on every launch costs nothing after the first
+  // - and they self-heal if the roster is ever re-seeded or re-mined.
+  //
+  // Backfill runs before tagging so newly added songs arrive already flagged
+  // and don't need a second pass.
+  const added = backfillBardSongs(currentInstallRoot, buffStore);
+  if (added) debugLog(`Backfilled ${added} bard songs into the roster from spells_us.txt`);
+  const tagged = tagBardSongs(currentInstallRoot, buffStore);
+  if (tagged) debugLog(`Tagged ${tagged} existing roster entries as bard songs`);
+}
+
+// Enriched with icon art here rather than in the renderer: the gem-bar
+// display on the landing page needs an icon per spell, and resolving that
+// renderer-side would mean shipping the whole ~11k-entry roster over IPC just
+// to look up a handful of names. iconUrl is null for anything memorized that
+// isn't a tracked buff (a nuke, a heal) - the gem slot still renders, just
+// without art.
+function memorizedWithIcons() {
+  return buffEngine.getCurrentlyMemorized().map((name) => {
+    const known = buffStore.getByName(name);
+    // A memorized spell that isn't a tracked buff (a nuke, a heal, anything
+    // the roster's mining filter dropped) still has real icon art in the
+    // game data - falling back to that means every occupied gem shows its
+    // actual artwork, and the renderer greys out the non-buff ones rather
+    // than showing a placeholder.
+    const iconId = known?.iconId != null ? known.iconId : gameSpellData.getIconId(currentInstallRoot, name);
+    return {
+      name,
+      iconUrl: iconId != null ? iconService.buildIconUrl(iconId) : null,
+      isKnownBuff: !!known,
+      // Drives which end of the gem bar this lands on (see renderMemorized) -
+      // songs fill from the right, mirroring how bards actually lay their bar
+      // out. Comes from the roster's own flag where the spell is a tracked
+      // buff (bardSongTagger.js fills it in from the game's spell data, see
+      // gotcha #14); a non-buff spell is never treated as a song.
+      isBardSong: !!known?.isBardSong,
+    };
+  });
+}
+buffEngine.on('memorizedChanged', () => broadcast('spellbook:memorized', memorizedWithIcons()));
+customTimerEngine.on('activeChanged', (timers) => {
+  broadcast('customTimers:active', timers);
+  saveSessionSnapshotSoon();
+});
 buffEngine.on('unknownBuffsChanged', (buffs) => broadcast('buffs:unknown', buffs));
 buffEngine.on('ambiguousCastsChanged', (casts) => {
   broadcast('buffs:ambiguous', casts);
@@ -188,11 +301,28 @@ app.whenReady().then(() => {
   createMainWindow();
   widgetManager.initWidgets();
   logService.init();
-  const eqFolder = logService.getState().eqFolder;
-  if (eqFolder) {
-    const installRoot = resolveInstallRoot(eqFolder);
-    iconService.setEqFolder(installRoot);
-    spellbookService.setInstallRoot(installRoot);
+  // Part of the shutdown instrumentation above - this is the third quit path,
+  // and the only one that normally means "the user closed the app".
+  const win = getMainWindow();
+  if (win) {
+    win.on('close', () => debugLog('SHUTDOWN: main window close event'));
+    win.webContents.on('unresponsive', () => debugLog('SHUTDOWN WARNING: main window renderer unresponsive'));
+  }
+
+  applyInstallRoot(logService.getState().eqFolder);
+
+  // Put back whatever was still running when the app last closed - see
+  // sessionSnapshot.js. Deliberately after applyInstallRoot so the roster is
+  // fully backfilled/tagged first: a restored buff is looked up by name for
+  // its icon, and doing this earlier would restore entries the roster doesn't
+  // know about yet.
+  const { restored, gapMs, reason } = loadSnapshot({ loadJson, saveJson });
+  if (restored) {
+    const count =
+      buffEngine.restoreSnapshot(restored) + customTimerEngine.restoreSnapshot(restored.customTimers);
+    if (count) debugLog(`Restored ${count} running timers after a ${Math.round(gapMs / 1000)}s restart`);
+  } else if (reason && reason !== 'no snapshot') {
+    debugLog(`Did not restore timers: ${reason}`);
   }
 
   app.on('activate', () => {
@@ -205,11 +335,7 @@ app.whenReady().then(() => {
 ipcMain.handle('log:getState', () => logService.getState());
 ipcMain.handle('log:chooseFolder', async () => {
   const state = await logService.chooseFolder();
-  if (state.eqFolder) {
-    const installRoot = resolveInstallRoot(state.eqFolder);
-    iconService.setEqFolder(installRoot);
-    spellbookService.setInstallRoot(installRoot);
-  }
+  applyInstallRoot(state.eqFolder);
   return state;
 });
 ipcMain.handle('log:setSplitEnabled', (_event, enabled) => logService.setSplitEnabled(enabled));
@@ -261,6 +387,11 @@ ipcMain.handle('buffs:setShowOnOverlay', (_event, { name, showOnOverlay }) => {
   broadcast('buffs:active', buffEngine.getActiveBuffs());
   return result;
 });
+ipcMain.handle('buffs:setNoDurationScaling', (_event, { name, value }) => {
+  const result = buffStore.setNoDurationScaling(name, value);
+  broadcast('buffs:known', buffStore.getAll());
+  return result;
+});
 ipcMain.handle('buffs:setBardSong', (_event, { name, isBardSong }) => {
   const result = buffStore.setBardSong(name, isBardSong);
   broadcast('buffs:active', buffEngine.getActiveBuffs());
@@ -295,6 +426,18 @@ ipcMain.handle('settings:setAutoHideOverlay', (_event, enabled) => {
   }
   return autoHideOverlayEnabled;
 });
+ipcMain.handle('overlay:getMasterState', () => ({ allUnlocked: widgetManager.areAllUnlocked() }));
+ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => widgetManager.setAllUnlocked(unlocked));
+ipcMain.handle('settings:getShowAurasWhenAppFocused', () => showAurasWhenAppFocused);
+ipcMain.handle('settings:setShowAurasWhenAppFocused', (_event, enabled) => {
+  showAurasWhenAppFocused = enabled;
+  saveJson('showAurasWhenAppFocused', enabled);
+  // Re-evaluate straight away rather than waiting for the next focus change -
+  // the app itself is focused right now (the user just clicked the checkbox),
+  // so this setting's effect should be visible immediately.
+  applyForegroundVisibility();
+  return showAurasWhenAppFocused;
+});
 
 ipcMain.handle('settings:getCharacter', () => loadCharacterSettings());
 ipcMain.handle('settings:setCharacter', (_event, settings) => {
@@ -306,7 +449,9 @@ ipcMain.handle('spellbook:getState', () => ({
   filePath: spellbookService.getFilePath(),
   spellCount: spellbookService.getCount(),
 }));
-ipcMain.handle('spellbook:getMemorized', () => buffEngine.getCurrentlyMemorized());
+ipcMain.handle('spellbook:getMemorized', () => memorizedWithIcons());
+ipcMain.handle('spellbook:forgetMemorized', (_event, name) => buffEngine.removeMemorized(name));
+ipcMain.handle('spellbook:clearMemorized', () => buffEngine.clearMemorized());
 
 ipcMain.handle('widget:list', () => widgetManager.getAllWidgetConfigs());
 ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig(id));
@@ -319,7 +464,6 @@ ipcMain.handle('widget:duplicate', (_event, id) => widgetManager.duplicateWidget
 ipcMain.handle('widget:applyCodeToSelfBuffs', (_event, code) => widgetManager.applyCodeToSelfBuffs(code));
 ipcMain.handle('widget:delete', (_event, id) => widgetManager.deleteWidget(id));
 ipcMain.handle('widget:move', (_event, { id, direction }) => widgetManager.moveWidget(id, direction));
-ipcMain.handle('widget:setEnabled', (_event, { id, enabled }) => widgetManager.setEnabled(id, enabled));
 ipcMain.handle('widget:setName', (_event, { id, value }) => widgetManager.setName(id, value));
 ipcMain.handle('widget:toggleLock', (_event, id) => widgetManager.toggleLock(id));
 ipcMain.handle('widget:resetPosition', (_event, id) => widgetManager.resetPosition(id));
@@ -339,6 +483,12 @@ ipcMain.handle('widget:setShowRowIcon', (_event, { id, enabled }) => widgetManag
 ipcMain.handle('widget:setMirrorRowDirection', (_event, { id, enabled }) => widgetManager.setMirrorRowDirection(id, enabled));
 ipcMain.handle('widget:setShowIconLabel', (_event, { id, enabled }) => widgetManager.setShowIconLabel(id, enabled));
 ipcMain.handle('widget:setIconLabelSize', (_event, { id, value }) => widgetManager.setIconLabelSize(id, value));
+ipcMain.handle('widget:setTimerTextColor', (_event, { id, value }) => widgetManager.setTimerTextColor(id, value));
+ipcMain.handle('widget:setGroupAllyBuffs', (_event, { id, value }) => widgetManager.setGroupAllyBuffs(id, value));
+ipcMain.handle('widget:setGroupAllyDirection', (_event, { id, value }) => widgetManager.setGroupAllyDirection(id, value));
+ipcMain.handle('widget:setHideAllyNameOnTile', (_event, { id, value }) => widgetManager.setHideAllyNameOnTile(id, value));
+ipcMain.handle('widget:setLabelTextColor', (_event, { id, value }) => widgetManager.setLabelTextColor(id, value));
+ipcMain.handle('widget:setIconMargin', (_event, { id, value }) => widgetManager.setIconMargin(id, value));
 ipcMain.handle('widget:setIconLabelAnchor', (_event, { id, value }) => widgetManager.setIconLabelAnchor(id, value));
 ipcMain.handle('widget:setWrapText', (_event, { id, enabled }) => widgetManager.setWrapText(id, enabled));
 ipcMain.handle('widget:setIconJustify', (_event, { id, value }) => widgetManager.setIconJustify(id, value));
@@ -399,6 +549,11 @@ ipcMain.handle('profiles:setActive', (_event, id) => {
   const result = profileStore.setActiveId(id);
   if (result) {
     buffEngine.setActiveProfileId(result);
+    // Profile membership is what decides which widgets are on screen (see
+    // widgetManager's isVisibleForActiveProfile) - switching profiles has to
+    // re-evaluate every widget's visibility, not just swap the engine's
+    // ambiguous-resolution bucket.
+    widgetManager.applyProfileVisibility();
     broadcast('profiles:activeChanged', result);
   }
   return result;
@@ -428,7 +583,33 @@ ipcMain.handle('icons:setSet', (_event, iconSet) => {
 });
 ipcMain.handle('icons:getCount', () => iconService.getIconCount());
 
+// Shutdown instrumentation. The app was observed exiting on its own with
+// code 0 and no crash dump, meaning something called app.quit() - but there
+// are three paths that can (the single-instance guard, window-all-closed, and
+// the main window's own close handler) and nothing recorded which. These log
+// to the same persisted debug file as detection decisions, so a recurrence is
+// diagnosable after the fact instead of needing to catch it live.
+app.on('before-quit', () => {
+  debugLog('SHUTDOWN: before-quit fired');
+  // Flush immediately - the debounced save above may still be pending, and
+  // this is exactly the moment the snapshot matters most.
+  if (snapshotTimer) clearTimeout(snapshotTimer);
+  const { selfBuffs, allyBuffs } = buffEngine.getSnapshotState();
+  saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, customTimers: customTimerEngine.getSnapshotState() });
+});
+app.on('will-quit', () => debugLog('SHUTDOWN: will-quit fired'));
+// A renderer dying takes its window with it, which can cascade into
+// window-all-closed and look like a clean quit - `reason` distinguishes a
+// real crash ('crashed'/'oom') from an ordinary teardown ('clean-exit').
+app.on('render-process-gone', (_event, _contents, details) => {
+  debugLog(`SHUTDOWN: render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
+});
+app.on('child-process-gone', (_event, details) => {
+  debugLog(`SHUTDOWN: child-process-gone type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`);
+});
+
 app.on('window-all-closed', () => {
+  debugLog('SHUTDOWN: window-all-closed - every BrowserWindow is gone');
   if (process.platform !== 'darwin') {
     app.quit();
   }

@@ -51,20 +51,24 @@ $procId = 0
 try { (Get-Process -Id $procId -ErrorAction Stop).ProcessName } catch { '' }
 `;
 
-// Polls whether the foreground window belongs to EQ OR this app itself,
-// emitting 'focusChanged' (boolean) only when that actually flips - not on
-// every poll - so a listener doesn't need to de-dupe itself.
-// isRelevantAppFocused starts as null (genuinely unknown, not "assumed
-// unfocused") specifically so the very first poll after start() always
-// emits once and establishes real state immediately, whichever way it
-// turns out - a default of `false` would have silently skipped emitting if
-// the relevant app happened to already be unfocused, leaving a caller's
-// own state stale until the NEXT real change.
+// Polls which of EQ / this app owns the foreground window, emitting
+// 'focusChanged' with { eqFocused, ownAppFocused } only when that actually
+// changes - not on every poll - so a listener doesn't need to de-dupe itself.
+// lastState starts as null (genuinely unknown, not "assumed nothing focused")
+// specifically so the very first poll after start() always emits once and
+// establishes real state immediately, whichever way it turns out - a default
+// of both-false would have silently skipped emitting if neither app happened
+// to be focused, leaving a caller's own state stale until the NEXT change.
 class ForegroundWatcher extends EventEmitter {
   constructor() {
     super();
     this.timer = null;
-    this.isRelevantAppFocused = null;
+    // Which app is focused, tracked separately rather than collapsed into one
+    // "relevant app" boolean. The two now drive different settings: EQ being
+    // focused is what auto-hide keys off, while this app being focused is an
+    // independent, off-by-default option. Merging them here would make that
+    // second setting impossible to express.
+    this.lastState = null; // { eqFocused, ownAppFocused }
   }
 
   start() {
@@ -78,17 +82,19 @@ class ForegroundWatcher extends EventEmitter {
       clearInterval(this.timer);
       this.timer = null;
     }
-    this.isRelevantAppFocused = null;
+    this.lastState = null;
   }
 
   _poll() {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', PS_SCRIPT], { windowsHide: true }, (err, stdout) => {
       if (err) return; // best-effort - a single failed poll just keeps the last known state
       const processName = stdout.trim().toLowerCase();
-      const focused = processName === TARGET_PROCESS_NAME || processName === OWN_PROCESS_NAME;
-      if (focused !== this.isRelevantAppFocused) {
-        this.isRelevantAppFocused = focused;
-        this.emit('focusChanged', focused);
+      const eqFocused = processName === TARGET_PROCESS_NAME;
+      const ownAppFocused = processName === OWN_PROCESS_NAME;
+      const prev = this.lastState;
+      if (!prev || prev.eqFocused !== eqFocused || prev.ownAppFocused !== ownAppFocused) {
+        this.lastState = { eqFocused, ownAppFocused };
+        this.emit('focusChanged', this.lastState);
       }
     });
   }

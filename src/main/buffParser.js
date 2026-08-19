@@ -44,6 +44,16 @@ const OTHER_CAST_BEGIN_PATTERN = /^(.+?) begins (?:casting|singing) (.+)\.$/;
 const MEMORIZE_FINISHED_PATTERN = /^You have finished memorizing (.+)\.$/;
 const FORGET_SPELL_PATTERN = /^You forget (.+)\.$/;
 
+// EQ's generic heal/proc combat message - confirmed exact wording from a
+// real log: "You healed Shara for 255 hit points by Talisman of Altuna."
+// Only ever fires for the PLAYER'S OWN outgoing heal (who it landed on
+// doesn't matter - it always names a spell the player themselves cast), so
+// it's a strong disambiguation signal: if the named spell is one of the
+// candidates for an ambiguous landing text still sitting in the queue, this
+// confirms it directly, the same certainty as the player answering the
+// ambiguous popup themselves. See buffEngine.js's use of this.
+const HEAL_BY_SPELL_PATTERN = /^You healed .+ for \d+ hit points by (.+)\.$/;
+
 // Safety net only - the fast path is matching a landing-flavor line below.
 const FALLBACK_CONFIRM_WINDOW_MS = 12000;
 
@@ -122,6 +132,25 @@ function stripRankSuffix(name) {
   return name.replace(RANK_SUFFIX, '').trim();
 }
 
+const ROMAN_VALUES = { I: 1, V: 5, X: 10 };
+
+// How high a rank a spell name carries, for picking the lowest of several
+// variants of the same spell (see buffEngine's rank collapsing). A name with
+// no suffix at all is rank 0 - lower than "I" - since that's the base spell.
+// Returns 0 for anything unparseable, which keeps it out of the way.
+function rankValue(name) {
+  const match = RANK_SUFFIX.exec(name);
+  if (!match) return 0;
+  const numeral = match[0].replace(/\s+|Rk\.?/gi, '').toUpperCase();
+  let total = 0;
+  for (let i = 0; i < numeral.length; i++) {
+    const current = ROMAN_VALUES[numeral[i]] || 0;
+    const next = ROMAN_VALUES[numeral[i + 1]] || 0;
+    total += current < next ? -current : current;
+  }
+  return total;
+}
+
 function matchCastBegin(line) {
   const stripped = stripTimestamp(line);
   const match = CAST_BEGIN_PATTERN.exec(stripped) || SINGING_PATTERN.exec(stripped);
@@ -159,6 +188,12 @@ function matchMemorizeFinished(line) {
 function matchForgetSpell(line) {
   const stripped = stripTimestamp(line);
   const match = FORGET_SPELL_PATTERN.exec(stripped);
+  return match ? match[1].trim() : null;
+}
+
+function matchHealBySpell(line) {
+  const stripped = stripTimestamp(line);
+  const match = HEAL_BY_SPELL_PATTERN.exec(stripped);
   return match ? match[1].trim() : null;
 }
 
@@ -202,6 +237,7 @@ module.exports = {
   matchOtherCastBegin,
   matchMemorizeFinished,
   matchForgetSpell,
+  matchHealBySpell,
   matchGroupMemberJoined,
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
@@ -210,6 +246,7 @@ module.exports = {
   looksLikeLandingMessage,
   stripTimestamp,
   stripRankSuffix,
+  rankValue,
   FALLBACK_CONFIRM_WINDOW_MS,
   BURST_WINDOW_MS,
 };

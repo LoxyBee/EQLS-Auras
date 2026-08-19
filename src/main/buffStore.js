@@ -228,6 +228,7 @@ class BuffStore {
     this.store.saveJson('buffs', this.buffs);
     this._landingIndex = null;
     this._groupedLandingIndex = null;
+    this._groupedOthersSuffixIndex = null;
   }
 
   getAll() {
@@ -305,6 +306,34 @@ class BuffStore {
     return this._getGroupedLandingIndex().get(strippedLine) || [];
   }
 
+  // Reverse lookup for ally-buff detection: given the tail of a third-person
+  // landing line (everything after the groupmate's name), which buffs could
+  // it be? The existing ally path works forwards - it already knows which
+  // spell the player just cast and only needs to confirm the text - but a
+  // buff landed by an instant multi-target ability (Quick Buff) never
+  // produces a per-spell cast line to know that from, so it has to be
+  // identified from the text alone. Grouped, not flat, because 858 of the
+  // 2,034 distinct suffixes are shared by more than one spell - callers must
+  // decide what to do with an ambiguous result rather than getting a silent
+  // first-match guess (see the "no guessing" rule in buffEngine.js).
+  _getGroupedOthersSuffixIndex() {
+    if (!this._groupedOthersSuffixIndex) {
+      this._groupedOthersSuffixIndex = new Map();
+      for (const b of this.buffs) {
+        if (!b.othersLandingSuffix) continue;
+        if (!this._groupedOthersSuffixIndex.has(b.othersLandingSuffix)) {
+          this._groupedOthersSuffixIndex.set(b.othersLandingSuffix, []);
+        }
+        this._groupedOthersSuffixIndex.get(b.othersLandingSuffix).push(b);
+      }
+    }
+    return this._groupedOthersSuffixIndex;
+  }
+
+  findAllByOthersLandingSuffix(suffix) {
+    return this._getGroupedOthersSuffixIndex().get(suffix) || [];
+  }
+
   // options: { showOnOverlay, landingText, endedText, iconId } - any field
   // left undefined keeps its previous value (or a sensible default if this
   // is a brand new entry), so e.g. editing just the duration from the UI
@@ -340,6 +369,16 @@ class BuffStore {
     // look indistinguishable from "no icon chosen".
     if (iconId !== undefined) entry.iconId = iconId;
     if (othersLandingSuffix) entry.othersLandingSuffix = othersLandingSuffix;
+    // Whether the duration-extension AAs apply to this spell - see
+    // buffEngine._scaledDuration. Preserved across re-saves like the fields
+    // above, and only written when actually true so the roster does not gain
+    // a redundant false on ~12,000 entries.
+    const noScaling =
+      options.noDurationScaling !== undefined ? options.noDurationScaling : previous?.noDurationScaling;
+    if (noScaling) entry.noDurationScaling = true;
+    // isBardSong is set by the tagger/backfill rather than this path, but has
+    // to survive an edit here for exactly the same reason.
+    if (previous?.isBardSong) entry.isBardSong = true;
 
     // Anything that didn't already exist (typed into "Add a new buff", or
     // promoted from an Unknown cast) wasn't mined from the game's own
@@ -385,6 +424,18 @@ class BuffStore {
   // which automatic detection can never catch. Two-way (unlike
   // markBardSong, which only ever sets true), so a wrong auto-tag or a
   // manual mistake can be corrected either direction.
+  // Per-buff opt-out from the duration-extension AAs - see
+  // buffEngine._scaledDuration for why a global multiplier alone was not
+  // enough. Toggled from the Known Buffs list.
+  setNoDurationScaling(name, noDurationScaling) {
+    const entry = this.getByName(name);
+    if (!entry) return null;
+    if (noDurationScaling) entry.noDurationScaling = true;
+    else delete entry.noDurationScaling;
+    this._save();
+    return entry;
+  }
+
   setBardSong(name, isBardSong) {
     const entry = this.getByName(name);
     if (!entry) return null;

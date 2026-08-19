@@ -66,6 +66,30 @@
       <section id="page-tracker" class="page active">
         <h2 class="page-title">Buff Tracker</h2>
 
+        <h3 class="settings-page-section-title">Detection status</h3>
+
+        <!-- Front and centre on the landing page on purpose: an empty
+             memorized list is the single most common reason a buff gets
+             wrongly ignored, and it's invisible otherwise. See the "unknown"
+             state styling in main-window.css. -->
+        <div class="card" id="memorized-card">
+          <h3>What the app thinks you have memorized</h3>
+          <div id="memorized-gem-bar" class="gem-bar"></div>
+          <div class="row">
+            <p id="memorized-spells-status" class="memorized-summary">Checking...</p>
+            <button type="button" id="clear-memorized-btn" style="display:none">Forget all</button>
+          </div>
+          <p class="hint" id="memorized-hint">
+            Built from "You forget X." / "You have finished memorizing X." lines as you swap gems, and
+            remembered between sessions. It is <strong>not</strong> read from your spellbook file, and the
+            app never replays log history - so if you change gems while it's closed, this will still be
+            showing the old loadout. <strong>Click any gem to forget it</strong> when that happens; a wrong
+            entry here makes the app ignore buffs it should be tracking. The log never says <em>which</em>
+            slot a spell went into, so positions won't match your in-game bar - regular spells fill from the
+            left, bard songs (underlined) from the right.
+          </p>
+        </div>
+
         <h3 class="settings-page-section-title">Needs your attention</h3>
 
         <div class="card">
@@ -104,21 +128,17 @@
         <h3 class="settings-page-section-title">Buff library</h3>
 
         <div class="card">
-          <h3>Add a new buff</h3>
-          <p class="hint">
-            Pre-load a buff you know about, in case it doesn't turn up as an unknown cast first.
-          </p>
-          <button id="open-add-buff-modal-btn">Add a new buff...</button>
-        </div>
-
-        <div class="card">
           <h3>Custom buffs</h3>
           <p class="hint">
-            Buffs you've added yourself - typed in above, or promoted from an Unknown cast below.
-            Since these didn't come from the game's own spell files, they don't get an icon
-            automatically - use "Choose icon..." on one to pick its art.
+            Buffs you've added yourself, or promoted from an Unknown cast. Add one here to pre-load a
+            buff you know about, in case it doesn't turn up as an unknown cast first. Since these
+            didn't come from the game's own spell files they don't get an icon automatically - use
+            "Choose icon..." on one to pick its art.
           </p>
-          <button id="open-custom-buffs-modal-btn">View custom buffs...</button>
+          <div class="row">
+            <button id="open-add-buff-modal-btn">Add a new buff...</button>
+            <button id="open-custom-buffs-modal-btn">View custom buffs...</button>
+          </div>
         </div>
 
         <div class="card">
@@ -143,6 +163,43 @@
           </p>
         </div>
 
+        <!-- Everything that acts on every aura at once, including the two
+             auto-hide settings that used to live on the Setup page - they
+             belong with the auras they affect, not with log/client setup. -->
+        <div class="card">
+          <h3>All auras</h3>
+          <div class="row">
+            <button type="button" id="master-unlock-all-btn">Unlock all auras</button>
+          </div>
+          <p class="hint">
+            A toggle - press again to re-lock everything. Makes every aura draggable and resizable at
+            once. An unlocked aura is never auto-hidden, so you can always see what you're moving.
+            Doesn't change which profiles an aura belongs to.
+          </p>
+
+          <h4 class="settings-subsection-title">When to show them</h4>
+          <div class="row">
+            <label>
+              <input type="checkbox" id="auto-hide-overlay-checkbox" />
+              Hide auras when EverQuest isn't the focused window
+            </label>
+          </div>
+          <p class="hint">
+            Checks roughly every 2 seconds. Auras reappear as soon as EverQuest is focused again, or
+            when you turn this off.
+          </p>
+          <div class="row">
+            <label>
+              <input type="checkbox" id="show-auras-app-focused-checkbox" />
+              Also show them while this app is the focused window
+            </label>
+          </div>
+          <p class="hint">
+            Off by default - useful while you're arranging auras, distracting otherwise. Note you
+            don't need this just to move one: unlocking an aura always shows it regardless.
+          </p>
+        </div>
+
         <div id="widget-settings-panel" style="display:none">
           <div class="block-stack">
 
@@ -153,9 +210,29 @@
                 <span class="label">Name:</span>
                 <input type="text" id="widget-name-input" class="text-input" />
               </div>
+              <!-- Always open, never behind a button: this is the aura's on/off
+                   control, so it has to be visible at a glance. Fills the row
+                   and wraps. -->
               <div class="row">
-                <label><input type="checkbox" id="widget-enabled-checkbox" /> Show this aura</label>
-                <button id="widget-lock-btn">Unlock to move</button>
+                <span class="label">Show on profiles:</span>
+                <div id="widget-profiles-toggles" class="profile-toggle-list"></div>
+              </div>
+              <p class="hint">
+                This aura is on screen only while one of the ticked profiles is the active one.
+                Untick them all to switch it off entirely - that works as a plain on/off even if you
+                only keep one profile.
+              </p>
+            </div>
+
+            <!-- Display & Size block: always visible -->
+            <div class="block">
+              <p class="block-cap">Display &amp; size</p>
+
+              <!-- Position controls live here rather than up in the identity
+                   block: moving and resizing IS display, and they're the most
+                   used controls in this panel - previously easy to miss. -->
+              <div class="row position-controls">
+                <button id="widget-lock-btn" class="btn-prominent">Unlock to move</button>
                 <button id="widget-reset-position-btn">Reset position</button>
               </div>
               <p class="hint">
@@ -164,11 +241,7 @@
                 click-through. Lost track of an aura (dragged off-screen, or its monitor got
                 disconnected)? "Reset position" brings it back to a corner of your main screen.
               </p>
-            </div>
 
-            <!-- Display & Size block: always visible -->
-            <div class="block">
-              <p class="block-cap">Display &amp; size</p>
               <div class="row" id="widget-buff-source-row">
                 <span class="label">Buffs shown:</span>
                 <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
@@ -235,6 +308,31 @@
                 </p>
               </div>
 
+              <!-- Only meaningful on an aura showing buffs cast on other
+                   people - hidden entirely otherwise (see renderBuffFilter). -->
+              <div id="widget-ally-grouping-settings" style="display:none">
+                <div class="row">
+                  <label><input type="checkbox" id="widget-group-ally-checkbox" /> Group by player</label>
+                </div>
+                <p class="hint">
+                  Splits the aura into a section per person, with their name as a heading above their
+                  buffs, instead of one flat list.
+                </p>
+                <div class="row" id="widget-ally-direction-row">
+                  <span class="label">Stack groups:</span>
+                  <label><input type="radio" name="widget-ally-direction" value="vertical" /> Vertically</label>
+                  <label><input type="radio" name="widget-ally-direction" value="horizontal" /> Side by side</label>
+                </div>
+                <div class="row">
+                  <label><input type="checkbox" id="widget-hide-ally-name-checkbox" /> Hide the player name on each buff</label>
+                </div>
+                <p class="hint">
+                  Buffs normally read "Avenrae: Shield of Flame". Grouping already puts the name in the
+                  heading, so it's dropped from the buffs automatically while grouping is on - this
+                  setting drops it when grouping is off too.
+                </p>
+              </div>
+
               <div id="widget-icon-only-settings">
                 <div class="row">
                   <span class="label">Icon size:</span>
@@ -243,8 +341,8 @@
                 </div>
                 <div class="row">
                   <span class="label">Margin width:</span>
-                  <input type="range" id="widget-margin-width-slider" min="0" max="20" step="1" disabled />
-                  <span id="widget-margin-width-value" class="slider-value">planned</span>
+                  <input type="range" id="widget-margin-width-slider" min="0" max="20" step="1" />
+                  <span id="widget-margin-width-value" class="slider-value">5px</span>
                 </div>
               </div>
             </div>
@@ -261,87 +359,13 @@
                 </button>
                 <div class="topic-body"><div class="topic-body-inner">
                   <p class="hint">
-                    Timers defined here belong only to this aura - name it, give it a duration, and what
-                    starts it. "Chat message" lets you pick a channel and who said it without needing to know
-                    the exact log wording; "Exact log line" still works for anything else (an emote, an
-                    achievement message, any line at all).
+                    Timers defined here belong only to this aura. Each one needs a name, a duration, and
+                    something that starts it - a chat message, or any exact line from the log.
                   </p>
-                  <div class="known-buff-add">
-                    <div class="row">
-                      <input type="text" id="widget-new-timer-name" placeholder="Timer name" class="text-input" />
-                      <input type="number" id="widget-new-timer-minutes" min="0" step="1" placeholder="min" class="duration-input" />
-                      <span class="duration-unit">m</span>
-                      <input type="number" id="widget-new-timer-seconds" min="0" max="59" step="1" placeholder="sec" class="duration-input" />
-                      <span class="duration-unit">s</span>
-                    </div>
-                    <div class="row">
-                      <label><input type="radio" name="widget-new-timer-trigger-mode" value="chat" /> Chat message</label>
-                      <label><input type="radio" name="widget-new-timer-trigger-mode" value="raw" /> Exact log line</label>
-                    </div>
-
-                    <div id="widget-new-timer-chat-fields">
-                      <div class="row">
-                        <span class="label">Channel:</span>
-                        <select id="widget-new-timer-channel-select">
-                          <option value="say">Say</option>
-                          <option value="group">Group</option>
-                          <option value="guild">Guild</option>
-                          <option value="tell">Tell (someone messages you)</option>
-                        </select>
-                      </div>
-                      <div class="row" id="widget-new-timer-who-row">
-                        <span class="label">From:</span>
-                        <label><input type="radio" name="widget-new-timer-who" value="self" /> Yourself</label>
-                        <label><input type="radio" name="widget-new-timer-who" value="name" /> Specific person:</label>
-                        <input type="text" id="widget-new-timer-who-name" placeholder="Name" class="text-input" />
-                      </div>
-                      <div class="row">
-                        <input
-                          type="text"
-                          id="widget-new-timer-chat-message"
-                          placeholder="Starts the timer when this is said (just the words, e.g. hi)"
-                          class="text-input"
-                        />
-                      </div>
-                      <div class="row">
-                        <input
-                          type="text"
-                          id="widget-new-timer-chat-ended-message"
-                          placeholder="Ends the timer early when this is said (optional, same channel/person)"
-                          class="text-input"
-                        />
-                      </div>
-                    </div>
-
-                    <div id="widget-new-timer-raw-fields" style="display:none">
-                      <div class="row">
-                        <input
-                          type="text"
-                          id="widget-new-timer-trigger"
-                          placeholder="Trigger text - the exact log line that starts the timer"
-                          class="text-input"
-                        />
-                      </div>
-                      <div class="row">
-                        <input
-                          type="text"
-                          id="widget-new-timer-ended"
-                          placeholder="Ended text (optional) - ends the timer early if it appears"
-                          class="text-input"
-                        />
-                      </div>
-                    </div>
-
-                    <div class="row">
-                      <img id="widget-new-timer-icon-preview" class="buff-icon-thumb" style="display:none" />
-                      <button type="button" id="widget-new-timer-choose-icon-btn">Choose icon...</button>
-                      <button id="widget-new-timer-add-btn">Add</button>
-                      <button id="widget-new-timer-save-as-new-btn" style="display:none">Save as new</button>
-                      <button id="widget-new-timer-cancel-btn" style="display:none">Cancel edit</button>
-                    </div>
-                    <div id="widget-new-timer-icon-picker" class="icon-picker-grid" style="display:none"></div>
-                  </div>
                   <ul id="widget-custom-timers-list" class="buff-list known-buff-list"></ul>
+                  <div class="row">
+                    <button type="button" id="widget-add-timer-btn">+ Add timer</button>
+                  </div>
                 </div></div>
               </div>
 
@@ -365,8 +389,7 @@
                   </div>
                   <div class="row">
                     <span class="label">Text color:</span>
-                    <input type="color" id="widget-timer-text-color-picker" disabled value="#f0f1f5" />
-                    <span class="slider-value">planned</span>
+                    <input type="color" id="widget-timer-text-color-picker" value="#f0f1f5" />
                   </div>
                   <p class="hint">Not active yet.</p>
 
@@ -423,8 +446,7 @@
                     </div>
                     <div class="row">
                       <span class="label">Text color:</span>
-                      <input type="color" id="widget-label-text-color-picker" disabled value="#f0f1f5" />
-                      <span class="slider-value">planned</span>
+                      <input type="color" id="widget-label-text-color-picker" value="#f0f1f5" />
                     </div>
                     <p class="hint">Not active yet.</p>
                     <div class="row">
@@ -474,13 +496,6 @@
                   <span class="topic-summary" id="topic-sounds-summary"></span>
                 </button>
                 <div class="topic-body"><div class="topic-body-inner">
-                  <div class="row">
-                    <button type="button" id="widget-sound-open-folder-btn">📁 Open sounds folder</button>
-                  </div>
-                  <p class="hint">
-                    Opens the folder "Choose sound..." starts in - drop your own mp3/wav/ogg/m4a files in there
-                    to have them ready to pick from.
-                  </p>
                   <div class="row">
                     <span class="label">Volume:</span>
                     <input type="range" id="widget-alert-volume-slider" min="0" max="100" step="5" />
@@ -535,6 +550,14 @@
                     Repeats the warning sound this often for as long as the buff stays under the threshold
                     above, instead of playing just once. Set to 0 for a single warning, same as before.
                   </p>
+
+                  <div class="row">
+                    <button type="button" id="widget-sound-open-folder-btn">📁 Open sounds folder</button>
+                  </div>
+                  <p class="hint">
+                    Opens the folder "Choose sound..." starts in - drop your own mp3/wav/ogg/m4a files in there
+                    to have them ready to pick from.
+                  </p>
                 </div></div>
               </div>
 
@@ -548,22 +571,29 @@
                   <p class="hint" id="widget-buff-filter-hint"></p>
                   <div id="widget-track-others-row" style="display:none">
                     <div class="row">
-                      <label><input type="checkbox" id="widget-track-others-checkbox" /> Track buffs cast on me by others (opt-in)</label>
+                      <label><input type="checkbox" id="widget-track-others-checkbox" /> Track buffs cast on me by others</label>
+                      <span class="experimental-badge">Experimental</span>
                     </div>
                     <p class="hint">
                       Off by default - only your own buffs are tracked. When on, an ambiguous buff that isn't
                       in your spellbook (most likely a group-mate's cast) queues up for you to pick which one
                       it was, and remembers your choice until your group's membership changes.
+                      Telling your own casts from an ally's isn't always possible from the log alone, so
+                      expect some misattribution while this is on.
                     </p>
                   </div>
                   <div id="widget-self-buffs-filters" style="display:none">
                     <div class="row">
-                      <label><input type="checkbox" id="widget-hide-bard-songs-checkbox" /> Hide bard songs</label>
+                      <label><input type="checkbox" id="widget-hide-bard-songs-checkbox" /> Show bard songs</label>
+                      <span class="experimental-badge">Experimental</span>
                     </div>
                     <p class="hint">
-                      Identified by whether the cast line used "singing" instead of "casting" - a song that
-                      landed without a matching cast line (e.g. via an instant multi-buff burst) won't be
-                      caught by this.
+                      Off by default - bard songs re-sing constantly and are hard to tell apart from an
+                      ally's, so they're kept out of this list unless you ask for them. Songs are identified
+                      from your EverQuest install's own spell data (any spell only a bard can cast), plus any
+                      spell seen cast with "singing" instead of "casting". <strong>This does not distinguish
+                      your own songs from a group-mate's</strong> - that isn't reliably knowable from the log,
+                      so expect an ally's songs to appear here too.
                     </p>
                     <div class="row">
                       <span class="label">Hide buffs longer than:</span>
@@ -614,7 +644,6 @@
               <div class="row">
                 <button id="duplicate-widget-btn">Duplicate</button>
                 <button id="export-widget-btn">Export as code...</button>
-                <button id="open-widget-profiles-modal-btn">Loadout profiles...</button>
                 <button id="delete-widget-btn" class="btn-danger">Delete aura</button>
               </div>
               <div class="row" id="export-widget-code-row" style="display:none">
@@ -670,20 +699,6 @@
           </p>
         </div>
 
-        <div class="card">
-          <h3>Overlay behavior</h3>
-          <div class="row">
-            <label>
-              <input type="checkbox" id="auto-hide-overlay-checkbox" />
-              Auto-hide overlay auras when EverQuest isn't the focused window
-            </label>
-          </div>
-          <p class="hint">
-            Checks roughly every 2 seconds. Only hides auras that are already enabled - anything
-            you've manually disabled stays hidden regardless of focus, and auras reappear as soon
-            as EverQuest is focused again (or you turn this off).
-          </p>
-        </div>
 
         <div class="card">
           <h3>Status</h3>
@@ -737,14 +752,9 @@
             lot of generic text across many different spells) down to whichever one you actually have.
             Auto-detected from your EQ install folder above.
           </p>
-          <div class="row">
-            <span class="label">Currently memorized:</span>
-            <span id="memorized-spells-status">None seen yet this session.</span>
-          </div>
           <p class="hint">
-            Live, from your gem loadout right now (updates as you swap gems in-game) - not the same as
-            the full spellbook above. Used as a detection signal: a spell landing that you don't
-            currently have memorized is treated as evidence it wasn't your own cast.
+            Which spells you currently have <em>memorized</em> is tracked separately and shown on the
+            Buff Tracker page under "Detection status" - that's live gem state, not the spellbook file.
           </p>
         </div>
       </section>
@@ -861,9 +871,11 @@
             Switch profiles from the bar at the top of the app whenever you actually swap loadouts - nothing
             detects the swap automatically, so this is a manual habit, not something to expect the app to
             catch on its own. Add a profile with the <code>+</code> button; rename or delete one from the
-            <code>⚙</code> "Manage" button next to it. An aura can belong to specific profiles (see its own
-            settings) - that's purely organizational and never affects whether it's shown, only which
-            auras get offered when you're setting up a new profile.
+            <code>⚙</code> "Manage" button next to it. Profiles also control which auras are on screen: an
+            aura shows only while one of the profiles it belongs to is the active one, so switching
+            profiles swaps your whole overlay layout along with the remembered answers. Set which profiles
+            an aura belongs to from "Loadout profiles..." in its own settings. An aura with no profiles
+            ticked shows on every profile.
           </p>
         </div>
 
@@ -1044,21 +1056,125 @@
     </div>
   </div>
 
-  <div id="widget-profiles-modal-backdrop" class="modal-backdrop" style="display:none">
-    <div class="modal-card">
+  <!-- Every field visible and editable up front, for both adding and editing -
+       replaces the old inline form where you had to click Edit on a list row
+       to load its values into fields sitting elsewhere on the page. -->
+  <div id="custom-timer-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card modal-card-wide">
       <div class="modal-header">
-        <h3>Loadout profiles</h3>
-        <button id="close-widget-profiles-modal" class="modal-close">✕</button>
+        <h3 id="custom-timer-modal-title">Add timer</h3>
+        <button id="close-custom-timer-modal" class="modal-close">✕</button>
+      </div>
+
+      <!-- Icon sits as a clickable gem box to the left of the name/duration
+           fields, matching how the timer will actually appear on the overlay -
+           rather than a separate "Icon" section with its own button further
+           down the form. -->
+      <div class="timer-identity">
+        <button
+          type="button"
+          id="widget-new-timer-choose-icon-btn"
+          class="icon-picker-box"
+          title="Choose an icon"
+        >
+          <img id="widget-new-timer-icon-preview" style="display:none" alt="" />
+          <span class="icon-picker-placeholder" id="widget-new-timer-icon-placeholder">+</span>
+        </button>
+        <div class="timer-identity-fields">
+          <div class="row">
+            <span class="label">Name:</span>
+            <input type="text" id="widget-new-timer-name" placeholder="Timer name" class="text-input" />
+          </div>
+          <div class="row">
+            <span class="label">Duration:</span>
+            <input type="number" id="widget-new-timer-minutes" min="0" step="1" placeholder="min" class="duration-input" />
+            <span class="duration-unit">m</span>
+            <input type="number" id="widget-new-timer-seconds" min="0" max="59" step="1" placeholder="sec" class="duration-input" />
+            <span class="duration-unit">s</span>
+          </div>
+        </div>
+      </div>
+      <div id="widget-new-timer-icon-picker" style="display:none"></div>
+
+      <h4 class="settings-subsection-title">What starts it?</h4>
+      <!-- Built from TRIGGER_TYPES in main-window.js, including the disabled
+           "Planned" entries - adding a future trigger type is a one-line
+           addition there, not new markup here. -->
+      <div id="widget-new-timer-trigger-types" class="trigger-type-list"></div>
+
+      <div id="widget-new-timer-chat-fields">
+        <div class="row">
+          <span class="label">Channel:</span>
+          <select id="widget-new-timer-channel-select">
+            <option value="say">Say</option>
+            <option value="group">Group</option>
+            <option value="guild">Guild</option>
+            <option value="tell">Tell (someone messages you)</option>
+          </select>
+        </div>
+        <div class="row" id="widget-new-timer-who-row">
+          <span class="label">From:</span>
+          <label><input type="radio" name="widget-new-timer-who" value="self" /> Yourself</label>
+          <label><input type="radio" name="widget-new-timer-who" value="name" /> Specific person:</label>
+          <input type="text" id="widget-new-timer-who-name" placeholder="Name" class="text-input" />
+        </div>
+        <div class="row">
+          <input
+            type="text"
+            id="widget-new-timer-chat-message"
+            placeholder="Starts the timer when this is said (just the words, e.g. hi)"
+            class="text-input"
+          />
+        </div>
+        <div class="row">
+          <input
+            type="text"
+            id="widget-new-timer-chat-ended-message"
+            placeholder="Ends the timer early when this is said (optional, same channel/person)"
+            class="text-input"
+          />
+        </div>
+      </div>
+
+      <div id="widget-new-timer-raw-fields" style="display:none">
+        <div class="row">
+          <input
+            type="text"
+            id="widget-new-timer-trigger"
+            placeholder="Trigger text - the exact log line that starts the timer"
+            class="text-input"
+          />
+        </div>
+        <div class="row">
+          <input
+            type="text"
+            id="widget-new-timer-ended"
+            placeholder="Ended text (optional) - ends the timer early if it appears"
+            class="text-input"
+          />
+        </div>
+      </div>
+
+      <h4 class="settings-subsection-title">Behaviour</h4>
+      <div class="row">
+        <label class="disabled-option">
+          <input type="checkbox" id="widget-new-timer-inverse" disabled />
+          Reverse detection
+        </label>
+        <span class="planned-badge">Planned</span>
       </div>
       <p class="hint">
-        Which loadout profiles this aura belongs to - purely organizational, doesn't affect
-        whether it's shown or how it detects buffs. Used when creating a new profile, to offer
-        this aura in that profile's "which auras should migrate in" checklist.
+        Would show this timer while the trigger has <em>not</em> happened, and hide it for the duration
+        once it does - the opposite of how timers work today. Not built yet.
       </p>
-      <ul id="widget-profiles-checklist" class="buff-list modal-list"></ul>
+
+      <div class="modal-actions">
+        <button id="widget-new-timer-add-btn">Add timer</button>
+        <button id="widget-new-timer-save-as-new-btn" style="display:none">Save as new</button>
+        <button id="widget-new-timer-cancel-btn">Cancel</button>
+      </div>
     </div>
   </div>
-
 
   <div id="ambiguous-resolutions-modal-backdrop" class="modal-backdrop" style="display:none">
     <div class="modal-card">
@@ -1101,7 +1217,7 @@
           <button type="button" id="new-buff-choose-icon-btn">Choose icon...</button>
           <button id="new-buff-add-btn">Add</button>
         </div>
-        <div id="new-buff-icon-picker" class="icon-picker-grid" style="display:none"></div>
+        <div id="new-buff-icon-picker" style="display:none"></div>
       </div>
     </div>
   </div>
