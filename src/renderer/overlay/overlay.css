@@ -84,7 +84,7 @@ body.unlocked .drag-overlay {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 5px;
   font-size: var(--text-size, 13px);
-  color: #f0f1f5;
+  color: var(--timer-text-color, #f0f1f5);
 }
 
 /* Optional per-row icon (showRowIcon setting) - a plain flex sibling of
@@ -197,7 +197,7 @@ body.unlocked .drag-overlay {
 .buff-list.icon-grid {
   flex-direction: row;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--icon-gap, 5px);
 }
 
 .buff-tile {
@@ -246,4 +246,50 @@ body.unlocked .drag-overlay {
 
 .buff-tile.just-landed {
   animation: landing-glow 0.9s ease-out;
+}
+
+
+/* Ally-buff grouping - tiles split by whose buff it is, each group under a
+   heading naming that ally. Groups stack down the screen by default, or side
+   by side when the aura is set to horizontal. */
+.buff-list.ally-grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.buff-list.ally-grouped.ally-grouped-horizontal {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ally-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* Same 4-direction outline the tile text uses, for the same reason - it has to
+   stay readable against arbitrary game art with no background panel. */
+.ally-group-heading {
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+}
+
+.ally-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Icon mode inside a group reflows like the ungrouped grid does. */
+.ally-group-body.icon-grid {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--icon-gap, 5px);
 }

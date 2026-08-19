@@ -316,13 +316,111 @@ function initDetectionSettingsPanel() {
       : 'Not found yet - will pick it up automatically once detected.';
   });
 
-  function renderMemorized(names) {
-    memorizedStatusEl.textContent = names.length > 0 ? names.join(', ') : 'None seen yet this session.';
+  // The empty state is the important one and is styled as a warning, not a
+  // neutral "nothing here": an empty memorized list is the single most common
+  // cause of a real buff being wrongly ignored (the app never replays log
+  // history, so it starts empty every launch), and until now that was
+  // completely invisible from the UI.
+  const memorizedCardEl = document.getElementById('memorized-card');
+  const memorizedGemBarEl = document.getElementById('memorized-gem-bar');
+  const clearMemorizedBtn = document.getElementById('clear-memorized-btn');
+  // Fixed-size gem bar rather than a list that grows: an empty slot is
+  // meaningful information here ("the app doesn't know about this one yet"),
+  // so the unfilled slots have to stay visible. 14 is the game's own gem
+  // limit. Anything beyond 14 still gets counted in the summary line below
+  // rather than silently dropped - the app can genuinely observe more than
+  // 14 names in a session if gems were swapped without a matching "forget".
+  const GEM_SLOTS = 14;
+  function renderMemorized(spells) {
+    const empty = spells.length === 0;
+    memorizedCardEl.classList.toggle('unknown', empty);
+    memorizedStatusEl.classList.toggle('empty-state', empty);
+
+    // Regular spells fill from the left, bard songs from the right, mirroring
+    // how a bard actually arranges their gem bar. The two runs grow toward
+    // each other and stop rather than overwrite, so a drifted picture (more
+    // than GEM_SLOTS names observed, which happens if a gem was swapped
+    // without a matching "You forget X." line) loses the overflow from the
+    // middle instead of silently clobbering a slot - the summary line below
+    // still reports the true count either way.
+    const slots = new Array(GEM_SLOTS).fill(null);
+    let left = 0;
+    let right = GEM_SLOTS - 1;
+    for (const spell of spells) {
+      if (spell.isBardSong) continue;
+      if (left > right) break;
+      slots[left++] = spell;
+    }
+    for (const spell of spells) {
+      if (!spell.isBardSong) continue;
+      if (right < left) break;
+      slots[right--] = spell;
+    }
+
+    memorizedGemBarEl.innerHTML = '';
+    for (let i = 0; i < GEM_SLOTS; i++) {
+      const spell = slots[i];
+      const slot = document.createElement('div');
+      slot.className =
+        'gem-slot' +
+        (spell ? '' : ' gem-empty') +
+        (spell && spell.isBardSong ? ' gem-song' : '') +
+        // Greyed out rather than hidden: a memorized nuke/heal genuinely
+        // occupies a gem, it just isn't something this app tracks, and
+        // showing it desaturated says that without needing a legend.
+        (spell && !spell.isKnownBuff ? ' gem-nonbuff' : '');
+      if (spell) {
+        // Native title attribute rather than a custom bubble - it survives
+        // the slot being near the window edge with no positioning logic, and
+        // this is a diagnostic readout, not a primary interaction.
+        slot.title =
+          (spell.isKnownBuff ? spell.name : `${spell.name} (not a tracked buff)`) +
+          '\nClick to forget - use this when the app is remembering a gem you no longer have loaded.';
+        // Clicking forgets it. The memory persists across restarts now, so it
+        // can be actively wrong (gems swapped while the app was closed) rather
+        // than merely incomplete - and a wrong entry is worse than a missing
+        // one, since the detection tiers treat "not memorized" as evidence.
+        slot.addEventListener('click', () => {
+          window.eqTracker.forgetMemorizedSpell(spell.name);
+        });
+        if (spell.iconUrl) {
+          const img = document.createElement('img');
+          img.src = spell.iconUrl;
+          img.alt = '';
+          slot.appendChild(img);
+        } else {
+          // Only reached when the spell is in neither the roster nor the
+          // game's spell data (or the EQ folder isn't configured yet), so
+          // there's genuinely no art to show - an initial at least keeps the
+          // slot reading as occupied rather than empty.
+          const initial = document.createElement('span');
+          initial.className = 'gem-initial';
+          initial.textContent = spell.name.charAt(0).toUpperCase();
+          slot.appendChild(initial);
+        }
+      }
+      memorizedGemBarEl.appendChild(slot);
+    }
+
+    clearMemorizedBtn.style.display = empty ? 'none' : '';
+    memorizedStatusEl.textContent = empty
+      ? "Nothing remembered - the app doesn't know what you have memorized."
+      : `${spells.length} spell${spells.length === 1 ? '' : 's'} remembered - click a gem to forget it.`;
   }
+  clearMemorizedBtn.addEventListener('click', () => {
+    window.eqTracker.clearMemorizedSpells();
+  });
   window.eqTracker.getMemorizedSpells().then(renderMemorized);
   window.eqTracker.onMemorizedSpellsChanged(renderMemorized);
 
   const autoHideCheckbox = document.getElementById('auto-hide-overlay-checkbox');
+  const showAurasAppFocusedCheckbox = document.getElementById('show-auras-app-focused-checkbox');
+  window.eqTracker.getShowAurasWhenAppFocused().then((enabled) => {
+    showAurasAppFocusedCheckbox.checked = enabled;
+  });
+  showAurasAppFocusedCheckbox.addEventListener('change', () => {
+    window.eqTracker.setShowAurasWhenAppFocused(showAurasAppFocusedCheckbox.checked);
+  });
   window.eqTracker.getAutoHideOverlayEnabled().then((enabled) => {
     autoHideCheckbox.checked = enabled;
   });
@@ -758,6 +856,80 @@ function initAmbiguousPanel() {
   });
 }
 
+// Every kind of thing that can start a custom timer. Built entries carry a
+// fieldsId pointing at their own settings panel in index.html; `planned`
+// entries render disabled with a Planned badge, same approach as
+// PLANNED_PREMADE_WIDGETS - the roadmap stays visible in the app itself
+// rather than only in project docs, and shipping a new trigger type means
+// adding fieldsId + markup, not restructuring the picker.
+//
+// Deliberately ordered easiest-first: "Chat message" needs no knowledge of
+// the game's log wording at all, so it's the right default for someone
+// setting up their first timer.
+//
+// Module scope, not inside initWidgetsPanel: renderTriggerTypeChoices() has
+// to run before the mode radios are queried (they don't exist until it does),
+// and a `const` declared later in that same function would be in its temporal
+// dead zone at that point.
+const TRIGGER_TYPES = [
+  {
+    value: 'chat',
+    label: 'Chat message',
+    description: 'Something you or someone else says in a channel. No need to know the exact log wording.',
+    fieldsId: 'widget-new-timer-chat-fields',
+  },
+  {
+    value: 'raw',
+    label: 'Exact log line',
+    description: 'Any line at all, matched literally - an emote, an achievement, a spell message.',
+    fieldsId: 'widget-new-timer-raw-fields',
+  },
+  {
+    value: 'zone',
+    label: 'Zone change',
+    description: 'Starts when you enter or leave a particular zone.',
+    planned: true,
+  },
+  {
+    value: 'combat',
+    label: 'Combat state',
+    description: 'Starts when you enter or leave combat.',
+    planned: true,
+  },
+];
+
+function renderTriggerTypeChoices() {
+  const container = document.getElementById('widget-new-timer-trigger-types');
+  container.innerHTML = '';
+  for (const type of TRIGGER_TYPES) {
+    const label = document.createElement('label');
+    label.className = 'trigger-type-choice' + (type.planned ? ' planned' : '');
+
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'widget-new-timer-trigger-mode';
+    radio.value = type.value;
+    if (type.planned) radio.disabled = true;
+
+    const text = document.createElement('span');
+    text.className = 'trigger-type-text';
+    const strong = document.createElement('strong');
+    strong.textContent = type.label;
+    if (type.planned) {
+      const badge = document.createElement('span');
+      badge.className = 'planned-badge';
+      badge.textContent = 'Planned';
+      strong.appendChild(badge);
+    }
+    const desc = document.createElement('span');
+    desc.textContent = type.description;
+    text.append(strong, desc);
+
+    label.append(radio, text);
+    container.appendChild(label);
+  }
+}
+
 function initWidgetsPanel() {
   const submenuEl = document.getElementById('widgets-submenu');
   const addRow = submenuEl.querySelector('.nav-add-widget-row');
@@ -768,7 +940,6 @@ function initWidgetsPanel() {
   const settingsPanel = document.getElementById('widget-settings-panel');
   const settingsTitle = document.getElementById('widget-settings-title');
   const nameInput = document.getElementById('widget-name-input');
-  const enabledCheckbox = document.getElementById('widget-enabled-checkbox');
   const lockBtn = document.getElementById('widget-lock-btn');
   const resetPositionBtn = document.getElementById('widget-reset-position-btn');
   const buffSourceRow = document.getElementById('widget-buff-source-row');
@@ -809,6 +980,15 @@ function initWidgetsPanel() {
   const showIconLabelCheckbox = document.getElementById('widget-show-icon-label-checkbox');
   const iconLabelOptionsEl = document.getElementById('widget-icon-label-options');
   const iconLabelSizeSlider = document.getElementById('widget-icon-label-size-slider');
+  const timerTextColorPicker = document.getElementById('widget-timer-text-color-picker');
+  const labelTextColorPicker = document.getElementById('widget-label-text-color-picker');
+  const marginWidthSlider = document.getElementById('widget-margin-width-slider');
+  const allyGroupingSettingsEl = document.getElementById('widget-ally-grouping-settings');
+  const groupAllyCheckbox = document.getElementById('widget-group-ally-checkbox');
+  const allyDirectionRadios = document.querySelectorAll('input[name="widget-ally-direction"]');
+  const allyDirectionRow = document.getElementById('widget-ally-direction-row');
+  const hideAllyNameCheckbox = document.getElementById('widget-hide-ally-name-checkbox');
+  const marginWidthValueEl = document.getElementById('widget-margin-width-value');
   const iconLabelSizeValueEl = document.getElementById('widget-icon-label-size-value');
   const iconLabelAnchorButtons = document.querySelectorAll('#widget-icon-label-anchor-grid .anchor-cell');
   const wrapTextCheckbox = document.getElementById('widget-wrap-text-checkbox');
@@ -838,7 +1018,7 @@ function initWidgetsPanel() {
 
   const activeBuffsCardEl = document.getElementById('widget-active-buffs-card');
   const manageCardEl = document.getElementById('widget-manage-card');
-  const widgetProfilesChecklistEl = document.getElementById('widget-profiles-checklist');
+  const widgetProfilesTogglesEl = document.getElementById('widget-profiles-toggles');
   const activeBuffsListEl = document.getElementById('widget-active-buffs-list');
   const excludedBuffsSectionEl = document.getElementById('widget-excluded-buffs-section');
   const excludedBuffsListEl = document.getElementById('widget-excluded-buffs-list');
@@ -860,6 +1040,7 @@ function initWidgetsPanel() {
   const newTimerSecondsInput = document.getElementById('widget-new-timer-seconds');
   const newTimerTriggerInput = document.getElementById('widget-new-timer-trigger');
   const newTimerEndedInput = document.getElementById('widget-new-timer-ended');
+  renderTriggerTypeChoices();
   const newTimerModeRadios = document.querySelectorAll('input[name="widget-new-timer-trigger-mode"]');
   const newTimerChatFieldsEl = document.getElementById('widget-new-timer-chat-fields');
   const newTimerRawFieldsEl = document.getElementById('widget-new-timer-raw-fields');
@@ -871,7 +1052,23 @@ function initWidgetsPanel() {
   const newTimerAddBtn = document.getElementById('widget-new-timer-add-btn');
   const newTimerSaveAsNewBtn = document.getElementById('widget-new-timer-save-as-new-btn');
   const newTimerCancelBtn = document.getElementById('widget-new-timer-cancel-btn');
+  const addTimerBtn = document.getElementById('widget-add-timer-btn');
+  const customTimerModalBackdrop = document.getElementById('custom-timer-modal-backdrop');
+  const customTimerModalTitle = document.getElementById('custom-timer-modal-title');
+  const closeCustomTimerModalBtn = document.getElementById('close-custom-timer-modal');
   const newTimerIconPreview = document.getElementById('widget-new-timer-icon-preview');
+  const newTimerIconPlaceholder = document.getElementById('widget-new-timer-icon-placeholder');
+
+  // Single place that knows the icon box shows EITHER the chosen art or the
+  // "+" placeholder, never both - three separate call sites used to toggle
+  // only the img, which would have left the "+" showing through once the box
+  // replaced the old plain "Choose icon..." button.
+  function setTimerIconPreview(iconUrl) {
+    const has = !!iconUrl;
+    if (has) newTimerIconPreview.src = iconUrl;
+    newTimerIconPreview.style.display = has ? '' : 'none';
+    newTimerIconPlaceholder.style.display = has ? 'none' : '';
+  }
   const newTimerChooseIconBtn = document.getElementById('widget-new-timer-choose-icon-btn');
   const newTimerIconPicker = document.getElementById('widget-new-timer-icon-picker');
   let editingTimerId = null;
@@ -1043,17 +1240,18 @@ function initWidgetsPanel() {
   // every live buffs tick like renderActiveBuffsForWidget - this fetches
   // the profile list over IPC and would otherwise spam that every second
   // and blow away an in-progress checkbox click.
+  // Always-visible toggle chips rather than a checklist behind a button:
+  // this is the aura's on/off control (unticking every profile hides it
+  // entirely - see isVisibleForActiveProfile), so it has to be readable at a
+  // glance. Rendered even when only one profile exists, because with one
+  // profile it IS the plain enable/disable switch.
   function renderWidgetProfilesChecklist(widget) {
-    widgetProfilesChecklistEl.innerHTML = '';
+    widgetProfilesTogglesEl.innerHTML = '';
     window.eqTracker.getProfiles().then((profiles) => {
-      if (profiles.length <= 1) {
-        widgetProfilesChecklistEl.innerHTML = '<li class="empty">Only one profile exists - add more from the top bar.</li>';
-        return;
-      }
       const activeIds = new Set(widget.activeProfileIds || []);
       profiles.forEach((profile) => {
-        const li = document.createElement('li');
         const label = document.createElement('label');
+        label.className = 'profile-toggle' + (activeIds.has(profile.id) ? ' on' : '');
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.checked = activeIds.has(profile.id);
@@ -1061,12 +1259,15 @@ function initWidgetsPanel() {
           const current = new Set(findWidget(widget.id)?.activeProfileIds || []);
           if (checkbox.checked) current.add(profile.id);
           else current.delete(profile.id);
+          label.classList.toggle('on', checkbox.checked);
           window.eqTracker.setWidgetActiveProfileIds(widget.id, [...current]).then(refreshWidgets);
         });
-        label.append(checkbox, ' ' + profile.name);
-        li.appendChild(label);
-        widgetProfilesChecklistEl.appendChild(li);
+        label.append(checkbox, document.createTextNode(profile.name));
+        widgetProfilesTogglesEl.appendChild(label);
       });
+      if (profiles.length === 0) {
+        widgetProfilesTogglesEl.innerHTML = '<span class="hint">No profiles exist.</span>';
+      }
     });
   }
 
@@ -1202,7 +1403,6 @@ function initWidgetsPanel() {
     exportCodeOutput.value = '';
     settingsTitle.textContent = `${widget.name} settings`;
     nameInput.value = widget.name;
-    enabledCheckbox.checked = widget.enabled;
     // Self-vs-ally is a togglable choice on a self/ally custom widget, but
     // a "custom timer widget" fixes its source at creation time (see the
     // Add Widget modal's two distinct buttons) and never offers this
@@ -1245,6 +1445,15 @@ function initWidgetsPanel() {
     anchorButtons.forEach((b) => b.classList.toggle('active', b.dataset.anchor === (widget.contentAnchor || 'bottom-center')));
     wrapTextCheckbox.checked = !!widget.wrapText;
     showIconLabelCheckbox.checked = !!widget.showIconLabel;
+    groupAllyCheckbox.checked = !!widget.groupAllyBuffs;
+    allyDirectionRadios.forEach((r) => (r.checked = r.value === (widget.groupAllyDirection || 'vertical')));
+    hideAllyNameCheckbox.checked = !!widget.hideAllyNameOnTile;
+    allyDirectionRow.style.display = widget.groupAllyBuffs ? '' : 'none';
+    timerTextColorPicker.value = widget.timerTextColor || '#f0f1f5';
+    labelTextColorPicker.value = widget.labelTextColor || '#f0f1f5';
+    const iconMargin = typeof widget.iconMarginPx === 'number' ? widget.iconMarginPx : 5;
+    marginWidthSlider.value = iconMargin;
+    marginWidthValueEl.textContent = iconMargin + 'px';
     const labelSize = typeof widget.iconLabelSize === 'number' ? widget.iconLabelSize : 11;
     iconLabelSizeSlider.value = labelSize;
     iconLabelSizeValueEl.textContent = `${labelSize}px`;
@@ -1272,6 +1481,12 @@ function initWidgetsPanel() {
     // shown" filter mode at all, since there's no shared pool to pick
     // from. Shown/hidden independently of filterCard.
     customTimersCardEl.style.display = widget.buffSource === 'customTimer' ? '' : 'none';
+    // Grouping is per-person, so it needs tiles that actually carry a person -
+    // shown for the Ally Buffs builtin and any custom aura set to the ally
+    // source, hidden everywhere else rather than offering a setting that
+    // could never do anything.
+    const showsAllies = widget.kind === 'ally-buffs-builtin' || widget.buffSource === 'ally';
+    allyGroupingSettingsEl.style.display = showsAllies ? '' : 'none';
     if (widget.buffSource === 'customTimer') {
       resetTimerForm();
       renderCustomTimersList(widget);
@@ -1300,7 +1515,11 @@ function initWidgetsPanel() {
       filterListEl.innerHTML = '';
       selectedBuffsSectionEl.style.display = 'none';
       selfBuffsFiltersEl.style.display = '';
-      hideBardSongsCheckbox.checked = !!widget.hideBardSongs;
+      // Checkbox reads "Show bard songs" but the stored field is
+      // hideBardSongs - inverted here (and in the change handler below)
+      // rather than renaming the persisted field, which would need a data
+      // migration for no real benefit.
+      hideBardSongsCheckbox.checked = !widget.hideBardSongs;
       const maxDurationMin = Math.round((widget.maxDurationFilterSec || 0) / 60);
       maxDurationSlider.value = maxDurationMin;
       maxDurationValueEl.textContent = maxDurationMin === 0 ? 'off' : `${maxDurationMin}m`;
@@ -1368,8 +1587,11 @@ function initWidgetsPanel() {
 
   function updateTimerModeVisibility() {
     const mode = [...newTimerModeRadios].find((r) => r.checked)?.value || 'chat';
-    newTimerChatFieldsEl.style.display = mode === 'chat' ? '' : 'none';
-    newTimerRawFieldsEl.style.display = mode === 'raw' ? '' : 'none';
+    for (const type of TRIGGER_TYPES) {
+      if (!type.fieldsId) continue;
+      const el = document.getElementById(type.fieldsId);
+      if (el) el.style.display = type.value === mode ? '' : 'none';
+    }
   }
 
   function resetTimerForm() {
@@ -1388,19 +1610,76 @@ function initWidgetsPanel() {
     newTimerChatEndedMessageInput.value = '';
     updateTimerChannelVisibility();
     updateTimerModeVisibility();
-    newTimerAddBtn.textContent = 'Add';
+    newTimerAddBtn.textContent = 'Add timer';
     newTimerSaveAsNewBtn.style.display = 'none';
-    newTimerCancelBtn.style.display = 'none';
-    newTimerIconPreview.style.display = 'none';
+    setTimerIconPreview(null);
     newTimerIconPicker.style.display = 'none';
     newTimerIconPicker.innerHTML = '';
+  }
+
+  // Loads an existing timer's values into the form. Split out of the list's
+  // Edit button so adding and editing go through the same modal with the same
+  // fields visible - the old flow had the form sitting inline on the page and
+  // Edit reaching across to populate it, which is what made "add" and "edit"
+  // feel like two different screens.
+  function populateTimerForm(timer, iconUrl) {
+    editingTimerId = timer.id;
+    newTimerNameInput.value = timer.name;
+    newTimerMinutesInput.value = String(Math.floor(timer.durationSec / 60));
+    newTimerSecondsInput.value = String(timer.durationSec % 60);
+    // Restores whichever mode this timer was actually built in - triggerChat
+    // only exists on a timer set up via the chat-message builder; anything
+    // else (including every timer that predates that feature) only ever had a
+    // raw triggerText/endedText, so it lands back in raw mode with the exact
+    // line it already has, unchanged.
+    if (timer.triggerChat) {
+      newTimerModeRadios.forEach((r) => (r.checked = r.value === 'chat'));
+      newTimerChannelSelect.value = timer.triggerChat.channel;
+      newTimerWhoRadios.forEach((r) => (r.checked = r.value === (timer.triggerChat.isSelf ? 'self' : 'name')));
+      newTimerWhoNameInput.value = timer.triggerChat.name || '';
+      newTimerChatMessageInput.value = timer.triggerChat.message || '';
+      newTimerChatEndedMessageInput.value = timer.endedChat?.message || '';
+      newTimerTriggerInput.value = '';
+      newTimerEndedInput.value = '';
+    } else {
+      newTimerModeRadios.forEach((r) => (r.checked = r.value === 'raw'));
+      newTimerTriggerInput.value = timer.triggerText;
+      newTimerEndedInput.value = timer.endedText || '';
+      newTimerChannelSelect.value = 'say';
+      newTimerWhoRadios.forEach((r) => (r.checked = r.value === 'self'));
+      newTimerWhoNameInput.value = '';
+      newTimerChatMessageInput.value = '';
+      newTimerChatEndedMessageInput.value = '';
+    }
+    updateTimerChannelVisibility();
+    updateTimerModeVisibility();
+    newTimerIconId = timer.iconId;
+    setTimerIconPreview(iconUrl);
+    newTimerAddBtn.textContent = 'Save changes';
+    // Only meaningful while editing - "save as new" from a blank form would
+    // just be a second Add button.
+    newTimerSaveAsNewBtn.style.display = '';
+  }
+
+  // timer omitted = add mode.
+  function openTimerModal(timer, iconUrl) {
+    resetTimerForm();
+    if (timer) populateTimerForm(timer, iconUrl);
+    customTimerModalTitle.textContent = timer ? 'Edit timer' : 'Add timer';
+    customTimerModalBackdrop.style.display = 'flex';
+    newTimerNameInput.focus();
+  }
+
+  function closeTimerModal() {
+    customTimerModalBackdrop.style.display = 'none';
+    resetTimerForm();
   }
 
   function renderCustomTimersList(widget) {
     customTimersListEl.innerHTML = '';
     const timers = widget.customTimers || [];
     if (timers.length === 0) {
-      customTimersListEl.innerHTML = '<li class="empty">None yet - add one above.</li>';
+      customTimersListEl.innerHTML = '<li class="empty">None yet - use + Add timer.</li>';
       return;
     }
     window.eqTracker.getIconSet().then((iconSet) => {
@@ -1418,55 +1697,12 @@ function initWidgetsPanel() {
         duration.textContent = `${m}:${String(s).padStart(2, '0')}`;
         const editBtn = document.createElement('button');
         editBtn.textContent = 'Edit';
-        editBtn.addEventListener('click', () => {
-          editingTimerId = timer.id;
-          newTimerNameInput.value = timer.name;
-          newTimerMinutesInput.value = String(Math.floor(timer.durationSec / 60));
-          newTimerSecondsInput.value = String(timer.durationSec % 60);
-          // Restores whichever mode this timer was actually built in -
-          // triggerChat only exists on a timer set up via the chat-message
-          // builder (see the Add/Save handler below); anything else
-          // (including every timer that predates this feature) only ever
-          // had a raw triggerText/endedText, so it lands back in raw mode
-          // with the exact line it already has, unchanged.
-          if (timer.triggerChat) {
-            newTimerModeRadios.forEach((r) => (r.checked = r.value === 'chat'));
-            newTimerChannelSelect.value = timer.triggerChat.channel;
-            newTimerWhoRadios.forEach((r) => (r.checked = r.value === (timer.triggerChat.isSelf ? 'self' : 'name')));
-            newTimerWhoNameInput.value = timer.triggerChat.name || '';
-            newTimerChatMessageInput.value = timer.triggerChat.message || '';
-            newTimerChatEndedMessageInput.value = timer.endedChat?.message || '';
-            newTimerTriggerInput.value = '';
-            newTimerEndedInput.value = '';
-          } else {
-            newTimerModeRadios.forEach((r) => (r.checked = r.value === 'raw'));
-            newTimerTriggerInput.value = timer.triggerText;
-            newTimerEndedInput.value = timer.endedText || '';
-            newTimerChannelSelect.value = 'say';
-            newTimerWhoRadios.forEach((r) => (r.checked = r.value === 'self'));
-            newTimerWhoNameInput.value = '';
-            newTimerChatMessageInput.value = '';
-            newTimerChatEndedMessageInput.value = '';
-          }
-          updateTimerChannelVisibility();
-          updateTimerModeVisibility();
-          newTimerIconId = timer.iconId;
-          if (iconUrl) {
-            newTimerIconPreview.src = iconUrl;
-            newTimerIconPreview.style.display = '';
-          } else {
-            newTimerIconPreview.style.display = 'none';
-          }
-          newTimerAddBtn.textContent = 'Save changes';
-          newTimerSaveAsNewBtn.style.display = '';
-          newTimerCancelBtn.style.display = '';
-          newTimerNameInput.focus();
-        });
+        editBtn.addEventListener('click', () => openTimerModal(timer, iconUrl));
         const deleteBtn = document.createElement('button');
         deleteBtn.textContent = 'Delete';
         deleteBtn.addEventListener('click', () => {
           if (!window.confirm(`Delete timer "${timer.name}"? This can't be undone.`)) return;
-          if (editingTimerId === timer.id) resetTimerForm();
+          if (editingTimerId === timer.id) closeTimerModal();
           window.eqTracker.removeWidgetCustomTimer(widget.id, timer.id).then(() => {
             refreshWidgets().then(() => renderCustomTimersList(findWidget(widget.id)));
           });
@@ -1688,11 +1924,11 @@ function initWidgetsPanel() {
   nameInput.addEventListener('change', () => {
     window.eqTracker.setWidgetName(selectedId, nameInput.value.trim() || 'Aura').then(refreshWidgets);
   });
-  enabledCheckbox.addEventListener('change', () => {
-    window.eqTracker.setWidgetEnabled(selectedId, enabledCheckbox.checked).then(refreshWidgets);
-  });
   lockBtn.addEventListener('click', async () => {
     const locked = await window.eqTracker.toggleWidgetLock(selectedId);
+    // Unlocking one aura can complete (or break) "all unlocked", so the
+    // master toggle has to re-read rather than drift out of sync.
+    refreshMasterButtons();
     lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
     lockBtn.classList.toggle('unlocked', !locked);
   });
@@ -1860,7 +2096,8 @@ function initWidgetsPanel() {
   });
 
   hideBardSongsCheckbox.addEventListener('change', () => {
-    window.eqTracker.setWidgetHideBardSongs(selectedId, hideBardSongsCheckbox.checked);
+    // Inverted - see the render side above.
+    window.eqTracker.setWidgetHideBardSongs(selectedId, !hideBardSongsCheckbox.checked);
   });
   maxDurationSlider.addEventListener('input', () => {
     const minutes = Number(maxDurationSlider.value);
@@ -1878,8 +2115,7 @@ function initWidgetsPanel() {
       buildIconPicker(newTimerIconId, (iconId) => {
         newTimerIconId = iconId;
         window.eqTracker.getIconSet().then((iconSet) => {
-          newTimerIconPreview.src = `eqicon://icon/${encodeURIComponent(iconSet)}/${iconId}`;
-          newTimerIconPreview.style.display = '';
+          setTimerIconPreview(`eqicon://icon/${encodeURIComponent(iconSet)}/${iconId}`);
         });
         newTimerIconPicker.style.display = 'none';
         newTimerIconPicker.innerHTML = '';
@@ -1934,7 +2170,41 @@ function initWidgetsPanel() {
     };
   }
 
-  newTimerCancelBtn.addEventListener('click', resetTimerForm);
+  // Master unlock for every aura at once. State is read back from the main
+  // process rather than tracked here, so the button stays correct even when
+  // something else changes it (unlocking a single aura, a profile switch).
+  const masterUnlockAllBtn = document.getElementById('master-unlock-all-btn');
+
+  function renderMasterButtons(state) {
+    masterUnlockAllBtn.classList.toggle('active', state.allUnlocked);
+    masterUnlockAllBtn.textContent = state.allUnlocked ? 'Lock all auras' : 'Unlock all auras';
+  }
+  function refreshMasterButtons() {
+    return window.eqTracker.getOverlayMasterState().then(renderMasterButtons);
+  }
+  masterUnlockAllBtn.addEventListener('click', () => {
+    window.eqTracker.getOverlayMasterState().then((state) =>
+      window.eqTracker.setOverlayAllUnlocked(!state.allUnlocked).then(() => {
+        refreshMasterButtons();
+        // The per-aura Unlock button shows the same state, so it has to be
+        // re-read rather than left showing a stale label.
+        if (selectedId) {
+          window.eqTracker.isWidgetLocked(selectedId).then((locked) => {
+            lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
+            lockBtn.classList.toggle('unlocked', !locked);
+          });
+        }
+      })
+    );
+  });
+  refreshMasterButtons();
+
+  addTimerBtn.addEventListener('click', () => openTimerModal());
+  newTimerCancelBtn.addEventListener('click', closeTimerModal);
+  closeCustomTimerModalBtn.addEventListener('click', closeTimerModal);
+  customTimerModalBackdrop.addEventListener('click', (e) => {
+    if (e.target === customTimerModalBackdrop) closeTimerModal();
+  });
   newTimerAddBtn.addEventListener('click', () => {
     const timerData = readTimerFormData();
     if (!timerData) return;
@@ -1943,7 +2213,7 @@ function initWidgetsPanel() {
       : window.eqTracker.addWidgetCustomTimer(selectedId, timerData);
     request
       .then(() => {
-        resetTimerForm();
+        closeTimerModal();
         return refreshWidgets();
       })
       .then(() => renderCustomTimersList(findWidget(selectedId)));
@@ -1959,7 +2229,7 @@ function initWidgetsPanel() {
     window.eqTracker
       .addWidgetCustomTimer(selectedId, timerData)
       .then(() => {
-        resetTimerForm();
+        closeTimerModal();
         return refreshWidgets();
       })
       .then(() => renderCustomTimersList(findWidget(selectedId)));
@@ -1983,6 +2253,33 @@ function initWidgetsPanel() {
     updateIconLabelOptionsVisibility();
     window.eqTracker.setWidgetShowIconLabel(selectedId, showIconLabelCheckbox.checked);
   });
+  groupAllyCheckbox.addEventListener('change', () => {
+    // The direction choice only means anything while grouping is on, so it
+    // appears and disappears with the toggle rather than sitting there inert.
+    allyDirectionRow.style.display = groupAllyCheckbox.checked ? '' : 'none';
+    window.eqTracker.setWidgetGroupAllyBuffs(selectedId, groupAllyCheckbox.checked);
+  });
+  allyDirectionRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (radio.checked) window.eqTracker.setWidgetGroupAllyDirection(selectedId, radio.value);
+    });
+  });
+  hideAllyNameCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetHideAllyNameOnTile(selectedId, hideAllyNameCheckbox.checked);
+  });
+
+  timerTextColorPicker.addEventListener('input', () => {
+    window.eqTracker.setWidgetTimerTextColor(selectedId, timerTextColorPicker.value);
+  });
+  labelTextColorPicker.addEventListener('input', () => {
+    window.eqTracker.setWidgetLabelTextColor(selectedId, labelTextColorPicker.value);
+  });
+  marginWidthSlider.addEventListener('input', () => {
+    const px = Number(marginWidthSlider.value);
+    marginWidthValueEl.textContent = px + 'px';
+    window.eqTracker.setWidgetIconMargin(selectedId, px);
+  });
+
   iconLabelSizeSlider.addEventListener('input', () => {
     const size = Number(iconLabelSizeSlider.value);
     iconLabelSizeValueEl.textContent = `${size}px`;
@@ -2010,10 +2307,6 @@ function initWidgetsPanel() {
       exportCodeRow.style.display = '';
       exportCodeOutput.select();
     });
-  });
-  setupModalToggle('widget-profiles-modal-backdrop', 'open-widget-profiles-modal-btn', 'close-widget-profiles-modal', () => {
-    const widget = findWidget(selectedId);
-    if (widget) renderWidgetProfilesChecklist(widget);
   });
   copyCodeBtn.addEventListener('click', () => {
     exportCodeOutput.select();
@@ -2243,6 +2536,22 @@ function buildKnownBuffRow(buff, refresh) {
   });
   bardSongLabel.append(bardSongCheckbox, document.createTextNode('Bard song'));
 
+  // Some spells carry a fixed duration the duration-extension AAs never
+  // touch (Promised Renewal is the confirmed one). Without this the only
+  // lever was the global multiplier, which is all-or-nothing - correcting one
+  // unscaled spell would have thrown out the scaling every other buff needs.
+  const noScalingLabel = document.createElement('label');
+  noScalingLabel.className = 'overlay-toggle-label';
+  noScalingLabel.title =
+    "Don't apply your Spell Casting Reinforcement / Extended Enhancement bonus to this buff - for spells whose duration the game never extends.";
+  const noScalingCheckbox = document.createElement('input');
+  noScalingCheckbox.type = 'checkbox';
+  noScalingCheckbox.checked = !!buff.noDurationScaling;
+  noScalingCheckbox.addEventListener('change', () => {
+    window.eqTracker.setNoDurationScaling(buff.name, noScalingCheckbox.checked);
+  });
+  noScalingLabel.append(noScalingCheckbox, document.createTextNode('No AA scaling'));
+
   const landingInput = document.createElement('input');
   landingInput.type = 'text';
   landingInput.placeholder = 'Landing text (optional)';
@@ -2302,7 +2611,7 @@ function buildKnownBuffRow(buff, refresh) {
   const topRow = document.createElement('div');
   topRow.className = 'row';
   if (icon) topRow.append(icon);
-  topRow.append(nameSpan, duration.element, saveBtn, overlayLabel, bardSongLabel, iconBtn, deleteBtn);
+  topRow.append(nameSpan, duration.element, saveBtn, overlayLabel, bardSongLabel, noScalingLabel, iconBtn, deleteBtn);
 
   const textRow = document.createElement('div');
   textRow.className = 'row';

@@ -6,6 +6,7 @@ const {
   matchOtherCastBegin,
   matchMemorizeFinished,
   matchForgetSpell,
+  matchHealBySpell,
   matchGroupMemberJoined,
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
@@ -13,6 +14,8 @@ const {
   isPartyChangeLine,
   looksLikeLandingMessage,
   stripTimestamp,
+  stripRankSuffix,
+  rankValue,
   FALLBACK_CONFIRM_WINDOW_MS,
   BURST_WINDOW_MS,
 } = require('./buffParser');
@@ -138,17 +141,48 @@ class BuffEngine extends EventEmitter {
     this.recentOtherCasts = new Set(); // lowercased spell name last seen cast by someone else, cleared on party change
     // lowercased spell name -> currently sitting in a gem slot (built from
     // "You forget X."/"You have finished memorizing X." lines - see
-    // handleLine). Not persisted and not backfilled from history (same
-    // "never replay the log" limitation as everything else here), so it
-    // only reflects gem swaps made since the app started watching.
-    this.currentlyMemorized = new Set();
+    // handleLine).
+    //
+    // PERSISTED, unlike most state here. It still can't be backfilled from
+    // history (the app never replays the log), but starting empty every
+    // launch was itself a bug source: an empty set means "we don't know",
+    // and the detection tiers treat not-currently-memorized as evidence a
+    // landing wasn't the player's own - so a fresh launch mid-session caused
+    // real buffs to be silently ignored. Carrying the last known gem loadout
+    // across restarts makes the common case ("app restarted, gems unchanged")
+    // correct instead of blank.
+    //
+    // The tradeoff is that it can now be stale rather than merely empty - if
+    // gems were swapped while the app was closed, it's remembering something
+    // untrue. That's why the landing-page gem bar lets the user click a gem
+    // to forget it (see removeMemorized), and why it's labelled a memory of
+    // what was last seen rather than live truth.
+    // Map rather than Set: keyed by lowercased name (every lookup in the
+    // detection tiers is case-insensitive) but carrying the original casing
+    // as the value, so a memorized spell that ISN'T in the buff roster - a
+    // nuke, a heal - can still be displayed properly instead of rendering as
+    // "rain of spikes". Roster spells get their casing from the roster; these
+    // have no other source for it.
+    this.currentlyMemorized = new Map(
+      (store.loadJson('currentlyMemorized', []) || []).map((entry) =>
+        // Tolerates the older flat array-of-names format as well as the
+        // current [lower, original] pairs.
+        Array.isArray(entry) ? [entry[0], entry[1]] : [String(entry).toLowerCase(), String(entry)]
+      )
+    );
     // Confirmed group members, lowercased name -> real-case name (from
-    // "<Name> has joined the group." lines) - session-only like everything
-    // else here, and bounds ally-buff detection to actual groupmates rather
-    // than any name that happens to appear in a third-person landing line.
-    // No way to discover members already in the group before the app
-    // started watching or before the player joined - same "never replay
-    // history" limitation as currentlyMemorized/recentOtherCasts.
+    // "<Name> has joined the group." lines).
+    //
+    // NO LONGER GATES ALLY-BUFF DETECTION. It used to, and that was a real
+    // bug: membership can only be learned from join/leave lines seen live, so
+    // grouping up before launching the app - or any restart mid-session -
+    // left it empty and silently disabled ally tracking completely (confirmed
+    // from a real log: a Shield of Flame cast whose "Avenrae is enveloped by
+    // flame." landed 3s later was ignored purely because the group had formed
+    // hours before startup). Both ally paths in handleLine now take the
+    // recipient's name from the landing line itself instead. Kept up to date
+    // because it's genuine information worth having, but nothing depends on
+    // it being complete.
     this.groupMembers = new Map();
     // Set by "You notify X that you agree to join the group." (see
     // buffParser.js) - the one line naming a pre-existing group's member
@@ -175,6 +209,7 @@ class BuffEngine extends EventEmitter {
     this.durationMultiplierFn = () => 1;
     this.iconUrlFn = (iconId) => `eqicon://icon/Alternate%201/${iconId}`;
     this.debugLogFn = null; // (message) => void - see setDebugLogFn
+    this.bardSongsVisibleFn = () => true; // see setBardSongsVisibleFn
     this.tickTimer = setInterval(() => this._tick(), TICK_INTERVAL_MS);
   }
 
@@ -347,14 +382,47 @@ class BuffEngine extends EventEmitter {
     const forgotten = matchForgetSpell(line);
     if (forgotten) {
       this.currentlyMemorized.delete(forgotten.toLowerCase());
+      this._saveCurrentlyMemorized();
       this.emit('memorizedChanged', this.getCurrentlyMemorized());
       this._checkForEndedBuffs(line);
       return;
     }
     const memorized = matchMemorizeFinished(line);
     if (memorized) {
-      this.currentlyMemorized.add(memorized.toLowerCase());
+      this.currentlyMemorized.set(memorized.toLowerCase(), memorized);
+      this._saveCurrentlyMemorized();
       this.emit('memorizedChanged', this.getCurrentlyMemorized());
+      this._checkForEndedBuffs(line);
+      return;
+    }
+
+    // "You healed X for N hit points by <SpellName>." only ever fires for
+    // the player's own outgoing heal, so it names a spell the player
+    // themselves just cast with total certainty - if that spell is one of
+    // the candidates for a still-queued ambiguous cast (see
+    // _queueAmbiguousCast below), this resolves it directly instead of
+    // leaving the user to answer a prompt this line already answered.
+    // Real example that motivated this: "You feel tough." queued 3
+    // candidates (Harnessing of Spirit, Talisman of Altuna, Talisman of
+    // Tnarg); the very next line, "You healed Shara for 255 hit points by
+    // Talisman of Altuna.", named the exact answer. Resolved the same way
+    // a manual pick is (resolveAmbiguousCast persists it too) - reusing
+    // that path rather than a one-off "land but don't remember" special
+    // case, since this evidence is at least as strong as a user's own
+    // manual answer. Restricted to isSelf entries - a heal proc can only
+    // ever confirm the player's own cast, never someone else's ambiguous
+    // buff landing on the player.
+    const healedBySpell = matchHealBySpell(line);
+    if (healedBySpell) {
+      for (const [text, entry] of this.ambiguousCasts) {
+        if (entry.isSelf && entry.candidateNames.includes(healedBySpell)) {
+          this._debugLog(
+            `LANDED "${healedBySpell}" - ambiguous text "${text}" auto-resolved by a heal-proc line naming the spell directly`
+          );
+          this.resolveAmbiguousCast(text, healedBySpell);
+          break;
+        }
+      }
       this._checkForEndedBuffs(line);
       return;
     }
@@ -366,16 +434,76 @@ class BuffEngine extends EventEmitter {
     // matches this can never also be the player's own landing text (that
     // text never has a name prefix), so there's no risk of this stealing a
     // line the self-detection tiers below would otherwise have handled.
-    if (this.recentSelfCast && Date.now() < this.recentSelfCast.expiresAt && this.groupMembers.size > 0) {
+    if (this.recentSelfCast && Date.now() < this.recentSelfCast.expiresAt) {
       const known = this.buffStore.getByName(this.recentSelfCast.name);
-      if (known && known.othersLandingSuffix) {
-        for (const allyName of this.groupMembers.values()) {
-          if (stripped === `${allyName}${known.othersLandingSuffix}`) {
-            this._debugLog(`ALLY LANDED "${known.name}" on "${allyName}" - named cast, confirmed by third-person landing text`);
-            this._landOnAlly(known, allyName);
-            this._checkForEndedBuffs(line);
-            return;
-          }
+      if (known && known.othersLandingSuffix && stripped.endsWith(known.othersLandingSuffix)) {
+        // The recipient's name is taken from the line itself rather than
+        // matched against the tracked group list. Requiring group membership
+        // here was a real bug: membership is only learned from join/leave
+        // lines seen live, so grouping up before launching the app (or any
+        // restart mid-session) left it empty and silently disabled ally
+        // detection entirely - confirmed from a real log, a Shield of Flame
+        // cast whose "Avenrae is enveloped by flame." landed 3s later and was
+        // ignored purely because the group had formed hours before startup.
+        //
+        // Dropping that requirement costs almost nothing in certainty: we
+        // already know the player cast THIS EXACT spell within the last few
+        // seconds, and the game printed its third-person landing text. The
+        // name in front is whoever received it, group-tracked or not.
+        const allyName = stripped.slice(0, -known.othersLandingSuffix.length);
+        // EQ character names are a single alphabetic word - this rejects a
+        // line that merely happens to end with the same words (e.g. a sentence
+        // fragment in a chat message).
+        if (/^[A-Za-z]+$/.test(allyName)) {
+          this._debugLog(`ALLY LANDED "${known.name}" on "${allyName}" - named cast, confirmed by third-person landing text`);
+          this._landOnAlly(known, allyName);
+          this._checkForEndedBuffs(line);
+          return;
+        }
+      }
+    }
+
+    // Same thing, but for a burst the player triggered themselves ("You
+    // activate Quick Buff.") rather than a named cast. This is the ONLY path
+    // that can catch a group buff from an instant multi-target ability: those
+    // produce no per-spell cast line at all, so recentSelfCast is null above
+    // and the whole ally tier used to be skipped - which is why ally-buff
+    // tracking had never once fired despite the roster carrying 9,219
+    // third-person suffixes and the group being tracked correctly.
+    //
+    // Identified from the text alone (strip the groupmate's name, look the
+    // remaining suffix up), so unlike the named-cast path there's no spell
+    // identity known in advance. Requires an unambiguous suffix - 858 of the
+    // 2,034 distinct suffixes are shared by several spells, and the "no
+    // guessing" rule that governs self-buff ambiguity applies here too;
+    // a shared one is left alone rather than resolved to whichever came
+    // first. Attribution to the player rests on the burst window, the same
+    // evidence the self-buff burst tier already relies on.
+    if (Date.now() < this.burstUntil) {
+      // Split the line into "<Name>" + "<everything after it>" and look the
+      // remainder up as a third-person landing suffix. EQ character names are
+      // a single alphabetic word, so this is unambiguous to parse, and it
+      // means the recipient does NOT have to be a known groupmate - see the
+      // groupMembers field comment for why depending on that was a bug.
+      // A line that isn't a landing message simply finds no suffix match.
+      const nameSplit = /^([A-Za-z]+)( .+)$/.exec(stripped);
+      if (nameSplit) {
+        const allyName = nameSplit[1];
+        const suffix = nameSplit[2];
+        const matches = this.buffStore.findAllByOthersLandingSuffix(suffix);
+        if (matches.length > 1) {
+          this._debugLog(
+            `ALLY AMBIGUOUS "${suffix}" on "${allyName}" - burst context, ${matches.length} candidates: ${matches.map((c) => c.name).join(', ')}`
+          );
+        } else if (matches.length === 1) {
+          // Keep the burst alive the same way the self tiers do - a long
+          // multi-buff burst shouldn't time out partway through just because
+          // several of its landings went to other people.
+          this.burstUntil = Date.now() + BURST_WINDOW_MS;
+          this._debugLog(`ALLY LANDED "${matches[0].name}" on "${allyName}" - burst context, unique third-person landing text`);
+          this._landOnAlly(matches[0], allyName);
+          this._checkForEndedBuffs(line);
+          return;
         }
       }
     }
@@ -439,8 +567,25 @@ class BuffEngine extends EventEmitter {
       // look like someone else's.
       const alreadyActive = this.activeBuffs.has(uniqueMatch.name.toLowerCase());
       const isMemorizableSpell = this.spellbookCheckFn ? this.spellbookCheckFn(uniqueMatch.name) : false;
+      const inBurst = Date.now() < this.burstUntil;
+      // A burst the player themselves triggered ("You activate X.", e.g.
+      // Quick Buff) is presumed to have genuinely granted every buff it
+      // lands, memorized-per-this-session or not - this is what covers a
+      // real reported false-negative: currentlyMemorized only reflects gems
+      // actually observed loading THIS session, so a burst landing right
+      // after a fresh app launch (buffs already active in-game before the
+      // app ever saw a memorize/forget line) would otherwise look
+      // indistinguishable from "not memorized" and get silently IGNORED,
+      // with no way to recover that specific buff for the rest of the
+      // session. Deliberately permissive here, same "completeness over
+      // perfect naming" reasoning as the rest of this burst system -
+      // accepted known tradeoff: two people Quick-Buffing at the same
+      // moment, or a cancelled Quick Buff, could let a buff through that
+      // wasn't actually the player's. Scoped tightly to burst context only
+      // (`inBurst`), never applied outside it.
       const knownNotMemorized =
         !alreadyActive &&
+        !inBurst &&
         isMemorizableSpell &&
         this.currentlyMemorized.size > 0 &&
         !this.currentlyMemorized.has(uniqueMatch.name.toLowerCase());
@@ -454,15 +599,19 @@ class BuffEngine extends EventEmitter {
         this._checkForEndedBuffs(line);
         return;
       }
-      if (Date.now() < this.burstUntil) this.burstUntil = Date.now() + BURST_WINDOW_MS;
-      this._debugLog(`LANDED "${uniqueMatch.name}" - unique landing text, no other-cast evidence`);
+      if (inBurst) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+      this._debugLog(
+        inBurst && isMemorizableSpell && !alreadyActive && this.currentlyMemorized.size > 0 && !this.currentlyMemorized.has(uniqueMatch.name.toLowerCase())
+          ? `LANDED "${uniqueMatch.name}" - unique landing text, not currently memorized but assumed yours (burst context)`
+          : `LANDED "${uniqueMatch.name}" - unique landing text, no other-cast evidence`
+      );
       this._land(uniqueMatch);
       this._checkForEndedBuffs(line);
       return;
     }
 
     // Ambiguous landing text (shared by multiple buffs).
-    const candidates = this.buffStore.findAllByLandingText(stripped);
+    const candidates = this._collapseRankVariants(this.buffStore.findAllByLandingText(stripped));
     if (candidates.length > 0) {
       const inBurst = Date.now() < this.burstUntil;
       const selfCandidates = this.spellbookCheckFn ? candidates.filter((c) => this.spellbookCheckFn(c.name)) : [];
@@ -711,13 +860,27 @@ class BuffEngine extends EventEmitter {
   // one place. resolveUnknown() deliberately does NOT go through this guard
   // - that's the user manually typing in a duration for something, which
   // should never be silently ignored.
+  // Duration-extension AAs (Spell Casting Reinforcement, Extended
+  // Enhancement) do not apply to every spell - some carry a fixed duration
+  // the game never scales. Promised Renewal is the confirmed case, and the
+  // user expects more to turn up, so this is a per-buff opt-out flag on the
+  // roster rather than a hardcoded list of names.
+  //
+  // Without it the only lever was the global multiplier, which is all-or-
+  // nothing: correcting one unscaled spell would have thrown out the scaling
+  // every other buff genuinely needs.
+  _scaledDuration(entry) {
+    const multiplier = entry.noDurationScaling ? 1 : this.durationMultiplierFn();
+    return Math.round(entry.durationSec * multiplier);
+  }
+
   _land(known) {
     if (this.blockedNames.has(known.name.toLowerCase())) {
       this._debugLog(`BLOCKED "${known.name}" - landing suppressed, you chose "No longer track" for this buff`);
       return;
     }
     const key = known.name.toLowerCase();
-    const effectiveDurationSec = Math.round(known.durationSec * this.durationMultiplierFn());
+    const effectiveDurationSec = this._scaledDuration(known);
     this.activeBuffs.set(key, {
       name: known.name,
       durationSec: effectiveDurationSec,
@@ -737,7 +900,7 @@ class BuffEngine extends EventEmitter {
       return;
     }
     const key = `${allyName.toLowerCase()}::${known.name.toLowerCase()}`;
-    const effectiveDurationSec = Math.round(known.durationSec * this.durationMultiplierFn());
+    const effectiveDurationSec = this._scaledDuration(known);
     this.allyBuffs.set(key, {
       name: known.name,
       allyName,
@@ -754,7 +917,7 @@ class BuffEngine extends EventEmitter {
     const entry = this.buffStore.upsert(name, durationSec, options);
     const key = name.toLowerCase();
     this.unknownBuffs.delete(key);
-    const effectiveDurationSec = Math.round(entry.durationSec * this.durationMultiplierFn());
+    const effectiveDurationSec = this._scaledDuration(entry);
     this.activeBuffs.set(key, {
       name: entry.name,
       durationSec: effectiveDurationSec,
@@ -818,7 +981,35 @@ class BuffEngine extends EventEmitter {
   // active the moment this was queued, so resolving it later always writes
   // to that profile's bucket even if the user has since switched profiles
   // - not whatever happens to be active at click time.
+  // Asking "which bard song was that?" is pointless when no aura is showing
+  // bard songs - the answer changes nothing visible, so it's pure interruption.
+  // Songs are opt-in and off by default (see hideBardSongs in widgetStore.js),
+  // which made this the common case rather than an edge one.
+  //
+  // Only suppresses when EVERY candidate is a song: a text shared between a
+  // song and a regular buff still has a real answer worth having, since the
+  // non-song outcome would display.
+  _shouldSuppressAsHiddenBardSongs(candidates) {
+    if (!candidates.length) return false;
+    if (!candidates.every((c) => c.isBardSong)) return false;
+    return !this.bardSongsVisibleFn();
+  }
+
+  // Injected by main.js - true when at least one on-screen aura would
+  // actually display a bard song. Defaults to true so the engine keeps its
+  // old behaviour standalone (e.g. in a plain Node test script) rather than
+  // silently swallowing prompts when nothing wired it up.
+  setBardSongsVisibleFn(fn) {
+    this.bardSongsVisibleFn = fn;
+  }
+
   _queueAmbiguousCast(text, candidates, isSelf) {
+    if (this._shouldSuppressAsHiddenBardSongs(candidates)) {
+      this._debugLog(
+        `SKIPPED ambiguous "${text}" - every candidate is a bard song and no aura is showing bard songs`
+      );
+      return;
+    }
     const existing = this.ambiguousCasts.get(text);
     if (existing) {
       existing.lastSeenAt = Date.now();
@@ -950,15 +1141,99 @@ class BuffEngine extends EventEmitter {
   // misattribution like "this landed as my own cast but I know an ally cast
   // it" is actually diagnosable from the app itself instead of requiring a
   // log grep - also now a real input to detection (see the unique-landing-
-  // text branch in handleLine). currentlyMemorized itself only ever stores
-  // lowercased names (the matching key), so this looks each one up against
-  // the roster for a properly-cased name to display - falls back to the
-  // lowercased form for anything not in the roster (a custom/unlisted spell
-  // can still be memorized and matched, just without a nicer display name).
+  // text branch in handleLine). Prefers the roster's spelling where the spell
+  // is a known buff, and otherwise falls back to the casing captured from the
+  // log line itself (see the currentlyMemorized field comment) so an
+  // unlisted spell still displays as "Rain of Spikes", not "rain of spikes".
   getCurrentlyMemorized() {
     return [...this.currentlyMemorized]
-      .map((lower) => this.buffStore.getByName(lower)?.name || lower)
+      .map(([lower, original]) => this.buffStore.getByName(lower)?.name || original || lower)
       .sort((a, b) => a.localeCompare(b));
+  }
+
+  // Several ranks of ONE spell sharing a landing text isn't real ambiguity -
+  // it's the same buff either way, and asking "Shauri's Sonorous Clouding, I,
+  // II or III?" is a question with no useful answer. Collapses them to the
+  // lowest rank (see rankValue: an unsuffixed base name counts as 0, below
+  // "I") so detection proceeds silently instead of prompting.
+  //
+  // Lowest rather than highest deliberately: it's the conservative guess for
+  // duration, so a timer under-reads rather than showing a buff as still up
+  // after it has actually dropped. The variants all stay in the roster - they
+  // are real, separately-castable tiers - this only affects which one an
+  // ambiguous landing resolves to.
+  //
+  // Only collapses when EVERY candidate shares one base name. A text shared
+  // by genuinely different spells (plus, possibly, ranks of them) stays
+  // ambiguous and still prompts, which is the "no guessing" rule this file
+  // applies everywhere else.
+  //
+  // NOTE: tuned for EverQuest Legends specifically, where ranks observed so
+  // far are pure power tiers of the same effect. A server where a numbered
+  // variant is a meaningfully different spell would need this revisited - see
+  // the rank-suffix gotcha in CLAUDE.md, which already documents that a bare
+  // trailing numeral is NOT universally a rank.
+  _collapseRankVariants(candidates) {
+    if (candidates.length <= 1) return candidates;
+    const base = stripRankSuffix(candidates[0].name).toLowerCase();
+    const allSameSpell = candidates.every((c) => stripRankSuffix(c.name).toLowerCase() === base);
+    if (!allSameSpell) return candidates;
+    return [candidates.reduce((lowest, c) => (rankValue(c.name) < rankValue(lowest.name) ? c : lowest))];
+  }
+
+  // Raw internal entries (absolute expiresAt, not remaining seconds) for the
+  // session snapshot - deliberately NOT getActiveBuffs(), which is a
+  // display-shaped view: it resolves icons live, computes remainingSec, and
+  // filters nothing. Restoring needs the storage shape back, unchanged.
+  getSnapshotState() {
+    return {
+      selfBuffs: [...this.activeBuffs.values()],
+      allyBuffs: [...this.allyBuffs.values()],
+    };
+  }
+
+  // Puts saved entries back without re-running any detection. Anything past
+  // its expiry has already been filtered out by sessionSnapshot.loadSnapshot,
+  // and a blocked buff is dropped here in case the user blocked it between
+  // sessions.
+  restoreSnapshot({ selfBuffs = [], allyBuffs = [] }) {
+    for (const buff of selfBuffs) {
+      if (this.blockedNames.has(buff.name.toLowerCase())) continue;
+      this.activeBuffs.set(buff.name.toLowerCase(), buff);
+    }
+    for (const buff of allyBuffs) {
+      if (this.blockedNames.has(buff.name.toLowerCase())) continue;
+      this.allyBuffs.set(`${buff.allyName.toLowerCase()}::${buff.name.toLowerCase()}`, buff);
+    }
+    if (selfBuffs.length) this.emit('buffsChanged', this.getActiveBuffs());
+    if (allyBuffs.length) this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+    return selfBuffs.length + allyBuffs.length;
+  }
+
+  _saveCurrentlyMemorized() {
+    this.store.saveJson('currentlyMemorized', [...this.currentlyMemorized]);
+  }
+
+  // Manual correction for the persisted gem memory (see the field's comment).
+  // Because the set now survives restarts it can be genuinely wrong rather
+  // than merely empty - gems swapped while the app was closed leave it
+  // remembering a spell that isn't loaded any more, which then acts as false
+  // evidence in the detection tiers. The landing-page gem bar wires a click
+  // on a gem to this.
+  removeMemorized(name) {
+    const lower = name.toLowerCase();
+    if (!this.currentlyMemorized.delete(lower)) return false;
+    this._saveCurrentlyMemorized();
+    this.emit('memorizedChanged', this.getCurrentlyMemorized());
+    return true;
+  }
+
+  clearMemorized() {
+    if (this.currentlyMemorized.size === 0) return false;
+    this.currentlyMemorized.clear();
+    this._saveCurrentlyMemorized();
+    this.emit('memorizedChanged', this.getCurrentlyMemorized());
+    return true;
   }
 
   getActiveBuffs() {

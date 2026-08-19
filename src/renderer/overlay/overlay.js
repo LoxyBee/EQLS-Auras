@@ -41,6 +41,12 @@ let currentConfig = {
   iconLabelAnchor: 'top-center',
   wrapText: false,
   iconJustify: 'left',
+  groupAllyBuffs: false,
+  groupAllyDirection: 'vertical',
+  hideAllyNameOnTile: false,
+  timerTextColor: '#f0f1f5',
+  labelTextColor: '#f0f1f5',
+  iconMarginPx: 5,
 };
 
 // Short synthesized tones instead of bundled audio files - no assets to
@@ -185,8 +191,45 @@ function initials(name) {
 // Ally buffs need to show WHO they're on (the same buff can be active on
 // several different allies at once) - self buffs (no allyName) render
 // exactly as before.
+//
+// The name prefix is dropped when the tile already sits under a heading
+// naming that ally (grouping on), or when the user has turned it off
+// outright - repeating "Avenrae:" on every tile in Avenrae's own group is
+// just noise eating tile width.
 function displayName(buff) {
-  return buff.allyName ? `${buff.allyName}: ${buff.name}` : buff.name;
+  if (!buff.allyName) return buff.name;
+  if (currentConfig.hideAllyNameOnTile || currentConfig.groupAllyBuffs) return buff.name;
+  return `${buff.allyName}: ${buff.name}`;
+}
+
+// Ally buffs split by whose they are, each group under its own heading.
+//
+// Groups are ordered alphabetically by name, NOT by whose buff happened to
+// land first. Alphabetical is stable: a person's section stays in the same
+// place all session, so you learn where to look instead of re-reading the
+// headings every time something is recast. First-appearance order would
+// reshuffle whenever someone's last buff dropped and came back.
+//
+// Buffs WITHIN each group keep the aura's own sort order (cast order, time
+// remaining, alphabetical - whatever the user picked), which is applied
+// upstream in visibleBuffs.
+function groupByAlly(buffs) {
+  const groups = new Map();
+  for (const buff of buffs) {
+    const key = buff.allyName || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(buff);
+  }
+  return [...groups.entries()]
+    .map(([allyName, list]) => ({ allyName, buffs: list }))
+    .sort((a, b) => a.allyName.localeCompare(b.allyName));
+}
+
+// Grouping only makes sense when tiles actually carry an ally name - a self
+// or custom-timer aura would produce one nameless group, which is just the
+// flat list with a blank heading over it.
+function shouldGroupByAlly(visible) {
+  return !!currentConfig.groupAllyBuffs && visible.some((b) => b.allyName);
 }
 
 function buildListRow(buff) {
@@ -334,7 +377,7 @@ const WRAP_MAX_LINES = 2;
 // fit inside the icon" is specifically about the name label (the thing
 // liable to be a long multi-word buff name), not the countdown (always
 // short - "5:12", "312", "6m" - which has no business wrapping at all).
-function applyTilePositionedTextStyle(el, low, anchor, textSize, wrap) {
+function applyTilePositionedTextStyle(el, low, anchor, textSize, wrap, color) {
   const [vertical, horizontal] = anchor.split('-');
 
   // Plain text, no background bar - a filled box reads as an odd banner
@@ -359,7 +402,10 @@ function applyTilePositionedTextStyle(el, low, anchor, textSize, wrap) {
   el.style.fontFamily = 'Consolas, monospace';
   el.style.fontSize = `${textSize}px`;
   el.style.fontWeight = '700';
-  el.style.color = low ? '#ff8080' : '#f0f1f5';
+  // The low-time warning colour deliberately overrides any custom colour -
+  // "this is about to run out" is the one meaning that must never be themed
+  // away (same reasoning as --danger being reserved in the main window).
+  el.style.color = low ? '#ff8080' : color || '#f0f1f5';
   el.style.background = 'none';
   el.style.textShadow = '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000';
   el.style.height = 'auto';
@@ -414,14 +460,15 @@ function updateRef(ref, buff, isIcon) {
   ref.timeEl.textContent = formatTime(buff.remainingSec, currentConfig.timerFormat);
   if (isIcon) {
     updateTileIcon(ref, buff);
-    applyTilePositionedTextStyle(ref.timeEl, low, currentConfig.contentAnchor || 'bottom-center', currentConfig.textSize || 10, false);
+    applyTilePositionedTextStyle(ref.timeEl, low, currentConfig.contentAnchor || 'bottom-center', currentConfig.textSize || 10, false, currentConfig.timerTextColor);
     if (ref.labelEl) {
       applyTilePositionedTextStyle(
         ref.labelEl,
         low,
         currentConfig.iconLabelAnchor || 'top-center',
         currentConfig.iconLabelSize || 11,
-        !!currentConfig.wrapText
+        !!currentConfig.wrapText,
+        currentConfig.labelTextColor
       );
     }
   } else {
@@ -631,16 +678,64 @@ function render(buffs) {
   // "0 tracked already" compare as "unchanged" even though the DOM still
   // had a stale leftover tile nobody ever told to go away. Comparing
   // against reality directly can't drift out of sync like that.
+  // Grouped rendering nests tiles inside per-ally containers, so listEl's own
+  // children are groups rather than tiles and the plain count check below
+  // can't see a change. A signature of the group layout (names + sizes +
+  // direction) is compared instead - it changes exactly when the nesting
+  // needs rebuilding, and stays stable while only timers tick.
+  const grouped = shouldGroupByAlly(visible);
+  const groups = grouped ? groupByAlly(visible) : null;
+  const groupKey = grouped
+    ? `${currentConfig.groupAllyDirection || 'vertical'}|${groups.map((g) => `${g.allyName}:${g.buffs.length}`).join(',')}`
+    : '';
+
   const structureChanged =
     listEl.dataset.mode !== modeKey ||
-    listEl.children.length !== visibleKeys.length ||
+    listEl.dataset.groupKey !== groupKey ||
+    (!grouped && listEl.children.length !== visibleKeys.length) ||
     visibleKeys.some((key) => !tileRefs.has(key));
 
   if (structureChanged) {
     listEl.innerHTML = '';
     tileRefs.clear();
-    listEl.classList.toggle('icon-grid', isIcon);
+    listEl.classList.toggle('icon-grid', isIcon && !grouped);
+    listEl.classList.toggle('ally-grouped', grouped);
+    listEl.classList.toggle('ally-grouped-horizontal', grouped && currentConfig.groupAllyDirection === 'horizontal');
     listEl.dataset.mode = modeKey;
+    listEl.dataset.groupKey = groupKey;
+
+    if (grouped) {
+      for (const group of groups) {
+        const section = document.createElement('div');
+        section.className = 'ally-group';
+        const heading = document.createElement('div');
+        heading.className = 'ally-group-heading';
+        heading.textContent = group.allyName;
+        // Heading text tracks the label colour setting so a grouped aura
+        // stays visually consistent with its own tiles.
+        heading.style.color = currentConfig.labelTextColor || '#f0f1f5';
+        heading.style.fontSize = `${Math.max(9, (currentConfig.textSize || 13) - 1)}px`;
+        section.appendChild(heading);
+
+        const body = document.createElement('div');
+        body.className = 'ally-group-body' + (isIcon ? ' icon-grid' : '');
+        for (const buff of group.buffs) {
+          const ref = isIcon ? buildIconTile(buff) : buildListRow(buff);
+          updateRef(ref, buff, isIcon);
+          if (currentConfig.landingGlowEnabled !== false && newlyLanded.has(keyFor(buff))) {
+            ref.root.classList.add('just-landed');
+            ref.root.addEventListener('animationend', () => ref.root.classList.remove('just-landed'), { once: true });
+          }
+          tileRefs.set(keyFor(buff), ref);
+          body.appendChild(ref.root);
+        }
+        section.appendChild(body);
+        listEl.appendChild(section);
+      }
+      reportSizeIfChanged();
+      return;
+    }
+
     for (const buff of visible) {
       const ref = isIcon ? buildIconTile(buff) : buildListRow(buff);
       updateRef(ref, buff, isIcon);
@@ -666,10 +761,16 @@ function render(buffs) {
     // Same buffs, same mode - update in place and re-append in the
     // current sort order (appendChild on an already-attached node moves
     // it rather than cloning, so this reorders without recreating).
+    //
+    // Grouped tiles are deliberately NOT re-appended: they live inside their
+    // own per-ally container, and appending to listEl would rip every tile
+    // out of its group and pile them flat at the top level - on every tick.
+    // Any reordering that actually matters changes the group signature, which
+    // takes the rebuild path above instead.
     for (const buff of visible) {
       const ref = tileRefs.get(keyFor(buff));
       updateRef(ref, buff, isIcon);
-      listEl.appendChild(ref.root);
+      if (!grouped) listEl.appendChild(ref.root);
     }
   }
   // Unconditional, not just inside the structureChanged branch above - a
@@ -714,6 +815,8 @@ function applyConfig(config) {
   currentConfig = config;
   document.documentElement.style.setProperty('--text-size', `${config.textSize || 13}px`);
   document.documentElement.style.setProperty('--icon-size', `${config.iconSize || 46}px`);
+  document.documentElement.style.setProperty('--timer-text-color', config.timerTextColor || '#f0f1f5');
+  document.documentElement.style.setProperty('--icon-gap', `${config.iconMarginPx ?? 5}px`);
   document.documentElement.style.setProperty('--row-size', `${config.rowSize || 28}px`);
 
   if (config.displayMode === 'icons') {

@@ -1,116 +1,81 @@
 # Session Handoff — 2026-08-18
 
-This replaces the 2026-08-17 handoff. Everything that handoff described as work-in-progress is now done,
-stable, and folded into `CLAUDE.md` as permanent project knowledge:
+## Read these first, in this order
 
-- **The multiclass-loadout `selfAmbiguousResolutions` staleness gap is resolved** — not via the
-  burst-detector approach that handoff was pointing toward (that idea was explicitly rejected mid-session:
-  a normal Quick-Buff-style fade/re-memorize cluster during ordinary play would false-trigger it, and
-  there's no reliable signal that distinguishes "loadout swap" from "routine gem juggling"). Instead:
-  named loadout profiles (`src/main/profileStore.js`) + a resolution-memory bucket per profile in
-  `buffEngine.js`, switched manually via the chip bar at the top of the main window whenever the user
-  actually swaps loadouts. See CLAUDE.md gotcha #9 for the full writeup — confirmed working live.
-- The app was renamed **EQ Buff Tracker → EQLS Auras** (userData path deliberately left pinned to the old
-  folder name — see `main.js` and CLAUDE.md's opening paragraph. Do not "fix" that pin).
-- A full UI/UX redesign (design tokens, block/topic layout system, page restructuring) shipped across the
-  whole app, not just isolated pages.
-- Auto-hide-overlay-when-EQ-unfocused, custom alert sounds, and loadout profiles are all built, wired, and
-  documented in CLAUDE.md's architecture section.
+1. **`CLAUDE.md`** — the durable source of truth. Project conventions, architecture, and 19 hard-won detection gotchas. The backlog at the bottom is prioritised.
+2. **`TESTING.md`** — everything built but **not yet confirmed in real gameplay**. This is large right now. Nothing in it counts as done until seen working in-game.
+3. **`FEATURES.md`** — wanted but not built. New capability only; bugs and architecture live in `CLAUDE.md`.
+4. This file — what happened in the last session and what state it left things in.
 
-Read `CLAUDE.md` first, as always — it's the durable source of truth. This document is just this session's
-continuation notes.
+## Status: dev build only
 
-## Status: dev build only, nothing shipped
+Everything is in `npm start` (dev build). **`npm run dist` has NOT been run since a large amount of new code landed** — three new main-process modules exist that have never been packaged (`gameSpellData.js`, `rosterBackfill.js`, `sessionSnapshot.js`, plus `bardSongTagger.js`). Verifying the packaged build is a genuine outstanding risk, not a formality.
 
-Everything below is in `npm start` (dev build) only. `npm run dist` has not been run this session. Don't
-rebuild/ship without asking. Standing user preference (also in persistent memory): keep them on the dev
-build between sessions, don't revert to the packaged app after testing.
+Standing user preference: keep them on the dev build between sessions.
 
-## What happened this session
+---
 
-### Custom alert sounds (backlog #16) — finished, including two real bugs found live
+## THE TWO THINGS THAT ACTUALLY MATTER
 
-The feature itself (per-widget/per-alert-type sound file picker, `eqsound://` protocol, `soundService.js`)
-was already built in an earlier part of this session. This session finished the remaining pieces and found
-two genuine bugs during live testing — both root-caused via temporary file-based debug logging + a
-temporary renderer `console-message` forwarder in `mainWindow.js` (both removed once confirmed fixed, per
-this project's standard practice for packaged-GUI-app debugging).
+Everything else in this file is detail. These two are the substance.
 
-1. **Preview button did nothing** — `soundService.js`'s `eqsound://` protocol handler parsed the URL
-   wrong. URLs are built as `eqsound://sound/<id>` — `sound` is the *host*, `/<id>` is the *entire*
-   pathname (one segment). The handler was copied from `eqicon://`'s two-segment parser
-   (`eqicon://icon/<iconSet>/<iconId>`) and read `pathname.split('/')[1]` (undefined) instead of `[0]`, so
-   every sound request 404'd silently.
-2. **Still silent after fixing #1** — the file now served correctly (confirmed via debug logging: right
-   bytes, right content-type), but Chromium's `<audio>` element still refused to play it
-   (`MEDIA_ERR_SRC_NOT_SUPPORTED`). Root cause: `HTMLMediaElement` always probes a source with an HTTP
-   `Range` request before accepting it as playable; `protocol.handle()` doesn't do that negotiation
-   automatically like a real static file server would. Fixed by adding real `Range`/`Accept-Ranges`/
-   `Content-Range` handling (206 partial responses) to the `eqsound://` handler. This affects the real
-   in-game alert sounds too, not just the preview button, since they use the identical URL scheme —
-   confirmed fixed for both.
+### 1. The detection engine is architecturally wrong (P0 in CLAUDE.md)
 
-Also added: **volume slider** (per-widget `alertVolume`, applied to both custom sound `<audio>` elements
-and the synthesized beep's peak gain in `overlay.js`), and an **"📁 Open sounds folder" button** that opens
-the same folder "Choose sound..." defaults to (`C:\Windows\Media` first time, then whatever folder was last
-picked from), so the user can drop their own audio files in ahead of time. All confirmed working live.
+`buffEngine.js`'s `handleLine()` is a chain of tiers, each ending in `return`. When a tier matches on *text* but fails a *confidence* sub-check, it still returns — so the line is consumed and every later tier that might have resolved it correctly never runs. The user diagnosed this themselves: *"every check if not passed, should continue, not end the check."*
 
-### "Widget" → "Aura" rename — UI text only, by explicit user choice
+This has now produced misdetections from four separate directions. Several point fixes have been applied around it (burst-context memorized exemption, heal-proc auto-resolve, ally burst path) and **those may become redundant or need folding into the rework** — don't treat them as settled design.
 
-User asked for a rename, then chose the scope explicitly when asked (three options offered: UI-text-only /
-UI-text-plus-code-identifiers / full-rename-including-saved-data): **UI text only**. Every user-visible
-string (button labels, headings, tooltips, placeholders, dialog/confirm messages, modal titles) across
-`index.html` and `main-window.js` now says "aura" instead of "widget," with correct grammar (article
-agreement: "a widget" → "an aura"). Internal code — file names (`widgetStore.js`, `widgetManager.js`,
-`customTimerEngine.js`, etc.), variable/function names, IPC channel names (`widget:create` etc.), and the
-field names inside `widgets.json` — all deliberately still say "widget." **This was a deliberate scope
-choice, not laziness — do not "finish the job" by renaming the internal stuff without checking with the
-user first**, since a data-field rename would need the same kind of careful migration the app's own rename
-needed (real precedent: see the userData-path incident in CLAUDE.md's opening section).
+**Nothing else on the backlog matters as much.** This is the app's actual job.
 
-### Custom timer bug: duplicate-named/duplicate-triggered timers only ever activated one
+### 2. The roster is missing ~37,000 spells, and that silently corrupts detection
 
-User report: created two Custom Timer definitions on one aura, both named "Hii it's me again," both
-triggered by the same chat line (`You say, 'Hii'`), deliberately given two different icons — expected both
-to show simultaneously when the trigger fired. Only one ever did. Two stacked bugs in
-`customTimerEngine.js`:
+The original mining kept only spells with a duration field `> 0`. That dropped real, castable buffs — and a missing entry doesn't just hide a buff, it makes some *other* spell's shared landing text look **unique**, which promotes a guess into the highest-confidence auto-confirm tier.
 
-1. `_findTriggerMatch` (singular) returned only the *first* matching definition per log line, so the
-   second definition was never even considered when both matched the same trigger text.
-2. `activeTimers` (the live-state `Map`) was keyed by the timer's `name.toLowerCase()`, not its unique
-   `id` — so even fixing #1 alone would've made the second activation silently overwrite the first in the
-   Map, since two definitions sharing a display name collide on that key. The icon lookup (`getActive()`)
-   had the same name-based collision, so even a correctly-tracked second instance would've shown the wrong
-   (first-found) icon. Overlay-side, `overlay.js`'s `keyFor()` (the identity key used by every
-   render-tracking Map/Set — `tileRefs`, `landedNames`, `warnedAt`, etc.) also only distinguished ally
-   buffs by name+allyName; two same-named custom timer instances would've collapsed into one tile there
-   too.
+Measured: **351 landing texts appear unique to the app but are shared in the game's own data.**
 
-Fixed all three: `_findTriggerMatches` (plural) now returns every match; `activeTimers` and the icon
-lookup are keyed by each definition's own `id`; `overlay.js`'s `keyFor()` now uses `id` for custom-timer
-buffs specifically (self-buffs and ally-buffs unchanged). The "Remove" button and its IPC/preload chain
-(`customTimers:removeActive`) now pass the instance `id` instead of `name` for the same reason. Verified
-first via an isolated Node script exercising the exact duplicate-name/duplicate-trigger scenario (activate
-both, end both via shared ended-text, remove one by id without touching the other), then confirmed live —
-user's screenshot shows both "Hii it's me again" icons (heart and dagger) active simultaneously after
-saying "Hii" in-game.
+Half-fixed: `rosterBackfill.js` restored 1,083 bard songs (roster 11,337 → 12,420). The non-song half is **still open** — including `Armor of Protection`, which is why a "You feel protected." prompt once offered four candidates none of which was the right answer.
 
-## Testing practices reinforced this session
+There's a cheaper interim option written up in `CLAUDE.md`: build a shared-text veto index from raw game data and use it *only* to block the unique-text auto-confirm. No roster changes, no duration questions, kills the false-confidence problem on its own.
 
-- **Temporary file-based / console-forwarded debug logging**, removed once the root cause was confirmed —
-  used for both sound bugs. Packaged Windows GUI apps have no visible console, so this stays the standard
-  approach; the temporary `console-message` forwarder was added to `mainWindow.js` and fully removed
-  afterward, not left in place.
-- **Isolated Node test script** (real `CustomTimerEngine`, mocked `getWidgetsFn`/`iconUrlFn`) to verify the
-  duplicate-trigger fix's exact before-reported scenario before ever touching the live Electron app —
-  caught nothing new, but confirmed the fix against the precise repro rather than a hand-wave.
-- Standard restart discipline throughout: `taskkill //F //IM electron.exe //T` before every `npm start`,
-  syntax-check (`node --check`) every touched file, and a duplicate-ID/missing-reference/div-balance check
-  script run against `index.html` before any restart that touched HTML.
+---
 
-## Known limitations — unchanged, no action needed
+## What landed this session
 
-Same list as before, still accurate: log-replay-never (app never reads log history on startup), Quick
-Buff's variable buff count per cast (confirmed non-bug, see CLAUDE.md gotcha #11), bard-song
-auto-tagging coverage gaps, rank-numeral duration scaling parked pending more data (CLAUDE.md backlog
-#13). Nothing here changed this session.
+### Detection / correctness
+- **Ally-buff tracking now works at all.** It had never fired once — the tier was gated on `recentSelfCast` (set only by a named cast line, which Quick Buff never produces) and on the recipient being a known group member (only learned from join/leave lines seen live). Both gates removed/bypassed; the recipient's name now comes from the landing line itself. Gotchas #17, #18.
+- **Quick-Buff bursts no longer ignore already-active buffs** — inside a burst window the not-memorized exclusion is skipped.
+- **Heal-proc auto-resolve** — `"You healed X for N hit points by <Spell>"` names the answer outright and resolves a queued ambiguous cast.
+- **Rank collapsing** — a landing text shared only by ranks of one spell resolves silently to the lowest rank instead of prompting. Genuinely different spells still prompt.
+- **Bard songs**: tagged from game data (1 → 1,430 tagged), backfilled into the roster, opt-in and off by default, prompts suppressed when no aura shows them.
+- **Per-buff "No AA scaling"** flag — some spells carry a fixed duration the duration-extension AAs never touch. Promised Renewal is set to 12s + excluded.
+
+### Behaviour / state
+- **Session restore** — live timers survive a restart within a 5-minute grace window. Gotcha #19.
+- **Memorized gems persist** across restarts, shown as a 14-slot gem bar on the landing page, click a gem to forget.
+- **Profile-gated aura visibility** — `activeProfileIds` is now the on/off control; the global "Show this aura" toggle is gone. Unticking every profile hides the aura.
+- **Auto-hide split into two settings**, the second (show while this app is focused) off by default. Unlocked auras are never auto-hidden.
+- **Shutdown instrumentation** — the app was seen exiting unprompted with no crash dump and no way to tell which of three quit paths fired. All are now logged.
+
+### UI
+Custom timer form is a modal with a data-driven trigger picker; ally buffs can group by player with headings (alphabetical, horizontal or vertical); window size/position persists; colour pickers and margin width wired up; overlay master controls consolidated onto the Overlay Auras page.
+
+---
+
+## Open questions needing the user, not code
+
+- **Inferno Shield duration.** App shows ~24m; measured from the log it's 16–17½m against a 900s base. The user has confirmed this is **NOT** the AA-scaling exclusion — it's a separate problem, still undiagnosed.
+- **The non-song roster gap** — needs a decision on approach (re-mine vs veto index) before anyone builds it.
+- **`Promised Renewal XII`** was left at 18s. It has different landing text from the base spell, so it's a genuinely distinct spell whose real duration hasn't been measured.
+- **Bundled roster is stale.** All roster fixes are in the user's local data only. A fresh install still gets the broken roster; the bard half self-heals on launch, the rest doesn't.
+
+---
+
+## Working practices that have earned their place
+
+- **Measure, don't guess.** The user's real log and `spells_us.txt` have settled more questions this session than reasoning did — including catching two cases where a plausible-sounding theory was simply wrong. Field positions in the spell data were established by scanning every field against known values, not from docs.
+- **Isolated Node scripts** (mock `store`, real `BuffStore`/`BuffEngine`) before touching the live app. Caught real regressions.
+- **Watch out for tests that pass for the wrong reason.** One session-restore test "passed" while not actually exercising the thing it claimed to; it was only caught by checking the expected number appeared.
+- **Verify markup structurally** (duplicate ids, div balance, dangling `getElementById`, renderer→preload API) before every restart that touches HTML. This caught several breakages pre-flight.
+- **Do not use offset-based string slicing to edit HTML.** It silently deleted an unrelated modal this session. Use targeted edits.
+- **Beware bash eating backticks** in `python -c` heredocs — it stripped code references out of docs twice and produced an empty `debugLog()` call once.
+- Restart discipline: `taskkill //F //IM electron.exe //T` then `npm start`; `node --check` every touched file.

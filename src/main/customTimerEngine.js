@@ -110,6 +110,24 @@ class CustomTimerEngine extends EventEmitter {
     this.emit('activeChanged', this.getActive());
   }
 
+  // See buffEngine.getSnapshotState - raw storage shape, not the display view
+  // getActive() returns.
+  getSnapshotState() {
+    return [...this.activeTimers.values()];
+  }
+
+  // Keyed by the definition's own id, same as handleLine - two definitions can
+  // legitimately share a name (see the duplicate-timer gotcha in CLAUDE.md),
+  // so restoring by name would silently merge them back into one.
+  restoreSnapshot(timers = []) {
+    for (const timer of timers) {
+      if (!timer.id) continue;
+      this.activeTimers.set(timer.id, timer);
+    }
+    if (timers.length) this.emit('activeChanged', this.getActive());
+    return timers.length;
+  }
+
   removeActive(id) {
     this.activeTimers.delete(id);
     this.emit('activeChanged', this.getActive());

@@ -46,7 +46,7 @@ function defaultSelfBuffsWidget(overrides = {}) {
     sortOrder: 'default',
     lowTimeThresholdSec: 30,
     landingGlowEnabled: true,
-    hideBardSongs: false,
+    hideBardSongs: true,
     maxDurationFilterSec: 0, // 0 = no cutoff
     soundOnLand: false,
     soundOnExpire: false,
@@ -77,6 +77,23 @@ function defaultSelfBuffsWidget(overrides = {}) {
     showIconLabel: false,
     iconLabelSize: 11,
     iconLabelAnchor: 'top-center',
+    // Text colours for the two icon-mode text overlays and the list-mode
+    // timer. A buff about to expire still overrides these with the reserved
+    // danger colour (see overlay.js) - that warning must not be themeable
+    // away.
+    timerTextColor: '#f0f1f5',
+    labelTextColor: '#f0f1f5',
+    // Ally auras only - group tiles by whose buff it is, with the ally's name
+    // as a heading above each group, instead of one flat undifferentiated
+    // list. groupAllyDirection stacks those groups down the screen
+    // ('vertical') or side by side ('horizontal'). hideAllyNameOnTile drops
+    // the redundant "Name: " prefix from each tile once the heading already
+    // says whose group it is.
+    groupAllyBuffs: false,
+    groupAllyDirection: 'vertical',
+    hideAllyNameOnTile: false,
+    // Icon mode only - pixels of space between icons in the grid.
+    iconMarginPx: 5,
     // Icon mode only - whether timer/label text wraps and clips to stay
     // fully inside its own tile, or overflows past it (see overlay.js's
     // applyTilePositionedTextStyle). On by default for the two "show
@@ -163,6 +180,23 @@ function defaultCustomWidget(name) {
     showIconLabel: false,
     iconLabelSize: 11,
     iconLabelAnchor: 'top-center',
+    // Text colours for the two icon-mode text overlays and the list-mode
+    // timer. A buff about to expire still overrides these with the reserved
+    // danger colour (see overlay.js) - that warning must not be themeable
+    // away.
+    timerTextColor: '#f0f1f5',
+    labelTextColor: '#f0f1f5',
+    // Ally auras only - group tiles by whose buff it is, with the ally's name
+    // as a heading above each group, instead of one flat undifferentiated
+    // list. groupAllyDirection stacks those groups down the screen
+    // ('vertical') or side by side ('horizontal'). hideAllyNameOnTile drops
+    // the redundant "Name: " prefix from each tile once the heading already
+    // says whose group it is.
+    groupAllyBuffs: false,
+    groupAllyDirection: 'vertical',
+    hideAllyNameOnTile: false,
+    // Icon mode only - pixels of space between icons in the grid.
+    iconMarginPx: 5,
     // Off by default here - see defaultSelfBuffsWidget's comment on why the
     // two builtin "show everything" kinds default this on instead
     // (defaultAllyBuffsWidget overrides it back to true below).
@@ -187,7 +221,7 @@ function defaultAllyBuffsWidget(name) {
     buffFilterMode: 'all',
     buffSource: 'ally',
     height: 500,
-    hideBardSongs: false,
+    hideBardSongs: true,
     maxDurationFilterSec: 0,
     wrapText: true, // see defaultSelfBuffsWidget's comment
     iconsPerRow: DEFAULT_ICONS_PER_ROW, // see defaultCustomWidget's comment on why it's 1 there but not here
@@ -225,6 +259,12 @@ const SHAREABLE_FIELDS = [
   'soundWarningLoopSec',
   'alertVolume',
   'hideBardSongs',
+  'timerTextColor',
+  'groupAllyBuffs',
+  'groupAllyDirection',
+  'hideAllyNameOnTile',
+  'labelTextColor',
+  'iconMarginPx',
   'maxDurationFilterSec',
   'showRowIcon',
   'mirrorRowDirection',
@@ -271,6 +311,12 @@ function normalizeWidget(widget) {
     lowTimeThresholdSec: typeof widget.lowTimeThresholdSec === 'number' ? widget.lowTimeThresholdSec : 30,
     landingGlowEnabled: widget.landingGlowEnabled !== false,
     hideBardSongs: !!widget.hideBardSongs,
+    timerTextColor: typeof widget.timerTextColor === 'string' ? widget.timerTextColor : '#f0f1f5',
+    groupAllyBuffs: !!widget.groupAllyBuffs,
+    groupAllyDirection: widget.groupAllyDirection === 'horizontal' ? 'horizontal' : 'vertical',
+    hideAllyNameOnTile: !!widget.hideAllyNameOnTile,
+    labelTextColor: typeof widget.labelTextColor === 'string' ? widget.labelTextColor : '#f0f1f5',
+    iconMarginPx: typeof widget.iconMarginPx === 'number' ? widget.iconMarginPx : 5,
     maxDurationFilterSec: typeof widget.maxDurationFilterSec === 'number' ? widget.maxDurationFilterSec : 0,
     soundOnLand: !!widget.soundOnLand,
     soundOnExpire: !!widget.soundOnExpire,
@@ -323,6 +369,16 @@ class WidgetStore {
     const existing = this.store.loadJson('widgets', null);
     if (existing) {
       const data = { ...existing, widgets: existing.widgets.map(normalizeWidget) };
+      // v1 -> v2: bard songs became opt-in rather than shown by default.
+      // Version-gated so it runs exactly once - a user who later decides they
+      // DO want songs shown must not have that choice stomped on every launch.
+      // Needed because until now `isBardSong` was almost never set on the
+      // roster (see bardSongTagger.js), so "show songs" was the de-facto
+      // behaviour by accident rather than by choice.
+      if (!data.version || data.version < 2) {
+        for (const widget of data.widgets) widget.hideBardSongs = true;
+        data.version = 2;
+      }
       this.store.saveJson('widgets', data);
       return data;
     }
@@ -336,7 +392,7 @@ class WidgetStore {
       position: oldPosition,
     });
 
-    const data = { version: 1, widgets: [selfBuffs] };
+    const data = { version: 2, widgets: [selfBuffs] };
     this.store.saveJson('widgets', data);
     return data;
   }

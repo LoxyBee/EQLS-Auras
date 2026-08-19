@@ -217,11 +217,21 @@ body {
 
 /* Brass, not the old blue accent - matches "you're on this one" everywhere
    else the accent means "current/selected." */
+/* Solid accent fill, not the usual soft tint. Which profile is live now
+   decides which auras are on screen (see gotcha #13), so this is one of the
+   few places worth spending the strongest available signal - the previous
+   soft-tint-plus-bold treatment was too easy to miss at a glance. Dark text
+   on brass, since --ink white on this fill has poor contrast. */
 .profile-chip.active {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-  color: var(--ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
   font-weight: 700;
+}
+
+.profile-chip:not(.active):hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .profile-add-btn,
@@ -814,6 +824,49 @@ button:hover {
   color: var(--ink);
 }
 
+/* Chromium's default colour input is a thick white-bordered chip that reads as
+   a foreign control against this palette. The swatch itself is the point, so
+   the chrome around it is cut to a hairline: zero padding, and the inner
+   swatch element (a shadow-DOM part, hence the -webkit- pseudo-elements) is
+   stretched to fill the whole box. */
+input[type='color'] {
+  width: 42px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+input[type='color']:hover {
+  border-color: var(--accent);
+}
+
+input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+input[type='color']::-webkit-color-swatch {
+  border: none;
+}
+
+/* A toggle button that is currently ON - the master "show all" / "unlock all"
+   controls. Solid accent so an active override is obvious at a glance, since
+   both of them suppress normal auto-hide behaviour while engaged. */
+button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+button.active:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
 /* Marks a genuinely destructive action (e.g. "Delete aura") - kept rare on
    purpose, same "colour marks meaning" rule as everywhere else in this
    design system. */
@@ -948,6 +1001,316 @@ h4 {
 .premade-widget-choice.planned:hover {
   background: var(--panel-2);
   border-color: transparent;
+}
+
+/* Marks a feature that works but is known to be unreliable - currently the
+   two "can't tell your cast from an ally's" cases (bard songs, others'-buff
+   tracking). Same shape as .planned-badge but tinted with the accent rather
+   than muted, since this labels something live and in use, not something
+   that doesn't exist yet. */
+/* "The app doesn't know yet" state for the memorized-spells card on the
+   landing page - deliberately uses the reserved urgent colour rather than the
+   accent, because an empty list actively causes real buffs to be ignored
+   (see the detection notes in CLAUDE.md), it isn't merely informational. */
+#memorized-card.unknown {
+  border-left: 2px solid var(--danger);
+}
+
+/* Reads as the game's own spell-gem bar: a fixed run of square slots, filled
+   left-to-right. Wraps rather than scrolls so all 16 stay visible at any
+   window width - an empty slot carries real meaning here (the app hasn't seen
+   that gem), so none of them may be hidden. */
+.gem-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.gem-slot {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: default;
+  position: relative;
+}
+
+/* Only filled gems are clickable (clicking forgets them) - the hover state
+   reads as "removable" rather than "selectable": the icon dims and a danger
+   ring appears, so it's obvious the click destroys something rather than
+   opening it. */
+.gem-slot:not(.gem-empty) {
+  cursor: pointer;
+}
+
+.gem-slot:not(.gem-empty):hover {
+  border-color: var(--danger);
+}
+
+.gem-slot:not(.gem-empty):hover img {
+  opacity: 0.35;
+}
+
+.gem-slot:not(.gem-empty):hover::after {
+  content: '\00d7';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger);
+  font-size: 20px;
+  line-height: 1;
+  font-family: var(--sans);
+}
+
+.gem-slot img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated; /* real EQ icon art is small - keep it crisp, not blurred */
+}
+
+.gem-initial {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-mut);
+}
+
+/* Icon box + name/duration as one identity block at the top of the timer
+   modal, so the first thing you set up looks like what the timer will
+   actually be on the overlay. */
+.timer-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 10px;
+}
+
+.timer-identity-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.timer-identity-fields .row {
+  margin: 2px 0;
+}
+
+/* Same square-gem language as the memorized gem bar, but its own class - that
+   one's hover means "click to forget" (danger red, × overlay), which would be
+   exactly the wrong signal here where clicking opens the icon picker. */
+.icon-picker-box {
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.icon-picker-box:hover {
+  border-color: var(--accent);
+}
+
+.icon-picker-box img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated; /* real EQ icon art is small - keep it crisp */
+}
+
+.icon-picker-placeholder {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ink-dim);
+  font-family: var(--sans);
+}
+
+.icon-picker-box:hover .icon-picker-placeholder {
+  color: var(--accent);
+}
+
+/* The custom-timer modal carries far more content than the other modals (every
+   field for add AND edit, the trigger picker, the icon grid), so it has to
+   scroll inside its own max-height rather than overflow the viewport. */
+.modal-card-wide {
+  overflow-y: auto;
+}
+
+/* .modal-card is a flex column, so by default every child is allowed to
+   shrink below its own height - which silently crushed the icon picker grid
+   (its max-height:220px became a few pixels with a scrollbar, unusable) once
+   the modal's content got taller than the card. Children keep their natural
+   height and the card itself scrolls instead. */
+.modal-card-wide > * {
+  flex-shrink: 0;
+}
+
+/* Primary/secondary actions pinned at the end of a modal's content, separated
+   from the fields above so "Cancel" can't be mistaken for another setting. */
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dotted var(--line);
+}
+
+/* A control that exists in the UI but isn't wired up yet - always paired with
+   a Planned badge, never used to mean "temporarily unavailable". */
+.disabled-option {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Trigger-type picker for custom timers. A stacked choice list rather than a
+   row of bare radios because each option needs a description to be
+   self-explanatory, and because the list is meant to grow - future trigger
+   types (zone, combat, ...) slot in as disabled "Planned" entries, so the
+   layout has to stay readable at 6-8 rows, not just 2. */
+.trigger-type-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 10px;
+}
+
+.trigger-type-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.trigger-type-choice:hover {
+  border-color: var(--line);
+}
+
+.trigger-type-choice input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.trigger-type-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trigger-type-text strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.trigger-type-text span {
+  font-size: 11.5px;
+  color: var(--ink-mut);
+  line-height: 1.4;
+}
+
+/* Checked state gets the accent treatment the rest of the design system uses
+   for "you chose this", so the selected trigger is obvious without the row
+   shouting when it isn't selected. */
+.trigger-type-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Visible but inert - the roadmap is the point, so these must read as real
+   future options rather than broken ones. */
+.trigger-type-choice.planned {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.trigger-type-choice.planned:hover {
+  border-color: transparent;
+}
+
+.trigger-type-choice .planned-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--ink-mut);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+/* Memorized, but not something this app tracks (a nuke, a heal). Real icon
+   art, desaturated and dimmed so the gem still reads as occupied while being
+   clearly distinct from a tracked buff. */
+.gem-slot.gem-nonbuff img {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.gem-slot.gem-nonbuff {
+  border-style: dotted;
+}
+
+/* Bard songs sit at the right-hand end of the bar (see renderMemorized) - the
+   accent underline is what makes that grouping legible as deliberate rather
+   than looking like a gap in the middle of the bar. */
+.gem-slot.gem-song {
+  border-bottom: 2px solid var(--accent);
+}
+
+/* Deliberately flatter/darker than a filled slot rather than dashed-outlined:
+   an empty gem should read as "nothing here" at a glance without competing
+   with the filled ones for attention. */
+.gem-slot.gem-empty {
+  background: var(--bg);
+  border-style: dashed;
+  border-color: var(--line);
+}
+
+#memorized-card.unknown .gem-slot.gem-empty {
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.memorized-summary {
+  margin: 4px 0 8px;
+  font-size: 12px;
+  color: var(--ink-mut);
+}
+
+.memorized-summary.empty-state {
+  color: var(--danger);
+}
+
+.experimental-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .premade-widget-choice .planned-badge {
@@ -1186,10 +1549,77 @@ h4 {
 /* "Unlocked, click and drag me" state - the bar cap colour, since it's
    the same "editing/attention" register as a block header, not a
    warning. */
-#widget-lock-btn.unlocked {
-  background: var(--bar);
-  border-color: var(--accent-line);
+/* Profile toggles inside an aura's settings. Fills the row and wraps rather
+   than scrolling - with enough profiles this list gets long, and every entry
+   has to stay visible because unticking them all is how you switch the aura
+   off (see isVisibleForActiveProfile in widgetManager.js). */
+.profile-toggle-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--ink-mut);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.profile-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Matches the top bar's active profile chip so "this profile is on" reads the
+   same in both places. */
+.profile-toggle.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
   color: var(--ink);
+  font-weight: 600;
+}
+
+/* The two position controls sit above the rest of Display & size, separated
+   by a rule - they're actions, not settings, and mixing them into the slider
+   list is what made them easy to overlook. */
+.position-controls {
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px dotted var(--line-soft);
+}
+
+/* The one button in this panel that's a real "do something now" action rather
+   than a setting, so it gets accent weight the others deliberately don't. */
+.btn-prominent {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.btn-prominent:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Unlocked is a live, temporary state that must be unmistakable - you're
+   currently able to drag the overlay around - so it inverts to a solid fill
+   rather than staying an outline like .btn-prominent above. */
+#widget-lock-btn.unlocked,
+#widget-lock-btn.unlocked:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
 }
 
 .archive-prompt {

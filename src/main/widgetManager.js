@@ -31,12 +31,34 @@ const runtimeLock = new Map(); // id -> boolean
 const originXByWidget = new Map(); // id -> number
 // Runtime-only, never persisted - true when the auto-hide-when-EQ-unfocused
 // feature (see foregroundWatcher.js) currently has widgets hidden. Kept
-// separate from each widget's own persisted `enabled` state (widgetStore.js)
-// so toggling focus never touches that store, and so EQ regaining focus (or
-// the feature being turned off) restores exactly whichever widgets were
-// actually enabled before - not everything indiscriminately, and never a
-// widget the user manually disabled.
+// separate from profile-based visibility (below) so toggling focus never
+// touches the widget store, and so EQ regaining focus (or the feature being
+// turned off) restores exactly whichever widgets the active profile says
+// should be showing - not everything indiscriminately.
 let foregroundHidden = false;
+
+// THE single source of truth for "should this widget's window be on screen".
+// Loadout profile membership IS the on/off control - there is deliberately
+// no separate global "enabled" switch anymore. That was an explicit user
+// decision: two independent concepts (a global enable toggle AND per-profile
+// membership) meant two places to look when a widget didn't show up, so they
+// asked for one point of contact instead. The persisted `enabled` field is
+// intentionally left in widgetStore.js untouched (zero-risk to existing
+// saved data, see this project's userData-path incident) but is no longer
+// read for visibility anywhere - don't reintroduce it as a second gate.
+//
+// Empty activeProfileIds means HIDDEN EVERYWHERE. This reverses an earlier
+// choice (empty used to mean "show on every profile", as a guard against a
+// new widget silently being invisible) - the user asked for unticking every
+// profile to be the way you switch an aura off, which also gives a single
+// profile a working on/off toggle. The original worry doesn't apply in
+// practice: every creation path (create / duplicate / import / premade) ticks
+// the currently active profile, so an empty list only ever results from the
+// user deliberately unticking everything.
+function isVisibleForActiveProfile(config) {
+  const ids = config.activeProfileIds || [];
+  return ids.includes(getActiveProfileIdFn());
+}
 
 function getDefaultPosition() {
   const { workArea } = screen.getPrimaryDisplay();
@@ -110,7 +132,11 @@ function createWidgetWindow(config) {
   });
 
   win.once('ready-to-show', () => {
-    if (widgetStore.getById(config.id)?.enabled && !foregroundHidden) win.showInactive();
+    // Same single decision as everywhere else - a window created while an
+    // unlock is active must appear immediately, not wait for the next focus
+    // change.
+    const current = widgetStore.getById(config.id);
+    if (current && shouldBeOnScreen(current)) win.showInactive();
   });
 
   win.on('moved', () => {
@@ -141,7 +167,7 @@ function createWidgetWindow(config) {
 
 function initWidgets() {
   for (const config of widgetStore.getAll()) {
-    if (config.enabled) createWidgetWindow(config);
+    if (isVisibleForActiveProfile(config)) createWidgetWindow(config);
   }
 }
 
@@ -316,47 +342,90 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
   widgetStore.update(id, { width, height });
 }
 
-function setEnabled(id, enabled) {
-  const config = widgetStore.update(id, { enabled });
-  if (!config) return null;
-  let win = windows.get(id);
-  if (enabled) {
-    if (!win) win = createWidgetWindow(config);
-    // Don't actually show it if auto-hide currently has everything hidden -
-    // it'll appear once EQ regains focus (or auto-hide gets turned off)
-    // instead, same as every other enabled widget.
-    else if (!foregroundHidden) win.showInactive();
+// Brings one widget's window in line with what isVisibleForActiveProfile
+// currently says - creating the window on demand the first time a widget
+// becomes visible (a widget that's never been visible this session has no
+// window yet, since initWidgets only builds the ones it needs). Safe to call
+// repeatedly; showing an already-shown window is a no-op.
+// Single decision for "should this aura's window be on screen", in priority
+// order: it must belong to the active profile at all; an unlocked aura (one
+// being repositioned) then beats auto-hide, since you can't drag what you
+// can't see; otherwise auto-hide decides.
+function shouldBeOnScreen(config) {
+  if (!isVisibleForActiveProfile(config)) return false;
+  if (isUnlocked(config.id)) return true;
+  return !foregroundHidden;
+}
+
+function applyVisibility(config) {
+  let win = windows.get(config.id);
+  if (shouldBeOnScreen(config)) {
+    if (!win) {
+      createWidgetWindow(config); // its ready-to-show handler does the showing
+      return;
+    }
+    win.showInactive();
   } else if (win) {
     win.hide();
   }
-  return config;
+}
+
+// Called by main.js whenever the ACTIVE loadout profile changes - profile
+// membership is what decides visibility now (see isVisibleForActiveProfile),
+// so a switch has to re-evaluate every widget, not just the ones the user
+// touched.
+function applyProfileVisibility() {
+  for (const config of widgetStore.getAll()) applyVisibility(config);
 }
 
 // Called by main.js on every game-focus change, only while the auto-hide
-// setting is on (see main.js's foregroundWatcher wiring) - hides/shows
-// every currently-ENABLED widget's window. A widget the user has manually
-// disabled was already hidden and stays that way regardless of focus.
+// setting is on (see main.js's foregroundWatcher wiring) - hides/shows every
+// widget the active profile says should be showing. A widget hidden by
+// profile membership was already hidden and stays that way regardless of
+// focus.
 function setForegroundHidden(hidden) {
   if (hidden === foregroundHidden) return;
   foregroundHidden = hidden;
-  for (const config of widgetStore.getAll()) {
-    if (!config.enabled) continue;
-    const win = windows.get(config.id);
-    if (!win) continue;
-    if (hidden) win.hide();
-    else win.showInactive();
-  }
+  // One decision function (shouldBeOnScreen) rather than repeating the
+  // override rules here - an unlocked or force-shown aura must survive
+  // auto-hide, and that logic should live in exactly one place.
+  for (const config of widgetStore.getAll()) applyVisibility(config);
 }
 
+// An UNLOCKED aura is always on screen, whatever auto-hide currently says.
+// Unlocking is how you reposition or resize one, and you can only do that to
+// something you can see - with auto-hide on, clicking into this app to unlock
+// an aura is itself what makes EQ lose focus, so the aura being adjusted was
+// the one thing guaranteed to vanish. Re-locking hands it straight back to
+// the normal rules.
 function setLocked(id, locked) {
   runtimeLock.set(id, locked);
-  widgetStore.update(id, { locked });
+  const config = widgetStore.update(id, { locked });
   const win = windows.get(id);
   if (win) {
     win.setIgnoreMouseEvents(locked, { forward: true });
     win.webContents.send('widget:lockChanged', locked);
+    if (config) applyVisibility(config);
   }
   return locked;
+}
+
+// Master unlock control on the Overlay Auras page. A toggle rather than a
+// one-shot action so the same button always puts things back - "unlock
+// everything" with no matching "re-lock everything" would leave every aura
+// click-catching with no obvious way out.
+function setAllUnlocked(unlocked) {
+  for (const config of widgetStore.getAll()) setLocked(config.id, !unlocked);
+  return unlocked;
+}
+
+function areAllUnlocked() {
+  const all = widgetStore.getAll();
+  return all.length > 0 && all.every((c) => isUnlocked(c.id));
+}
+
+function isUnlocked(id) {
+  return runtimeLock.get(id) === false;
 }
 
 // Only recovery path for a widget that's been dragged off-screen, or whose
@@ -467,11 +536,14 @@ function setShowIconLabel(id, enabled) {
   return config;
 }
 
-// Pure membership bookkeeping (see widgetStore.js's activeProfileIds field
-// doc) - never affects whether this widget is shown, only which loadout
-// profiles' ambiguous-cast memory it's considered part of.
+// Profile membership IS this widget's on/off control (see
+// isVisibleForActiveProfile) - ticking/unticking the currently active
+// profile here has to show/hide it immediately, which is the whole point of
+// there being no separate global enable toggle.
 function setActiveProfileIds(id, profileIds) {
   const config = widgetStore.update(id, { activeProfileIds: profileIds });
+  if (!config) return null;
+  applyVisibility(config);
   pushConfigChanged(id);
   return config;
 }
@@ -479,10 +551,48 @@ function setActiveProfileIds(id, profileIds) {
 // Called by main.js when a profile is deleted - no pushConfigChanged loop
 // needed here (unlike most mutations) since the renderer already refreshes
 // its whole widget list in response to the profiles:changed broadcast that
-// accompanies a deletion, and this has no visual effect on the overlay
-// itself to push anyway.
+// accompanies a deletion. Visibility IS re-applied though: dropping a
+// deleted profile can leave a widget with an empty membership list, which
+// now means "visible on every profile".
 function removeProfileFromAllWidgets(profileId) {
   widgetStore.removeProfileFromAllWidgets(profileId);
+  applyProfileVisibility();
+}
+
+function setGroupAllyBuffs(id, value) {
+  const config = widgetStore.update(id, { groupAllyBuffs: value });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setGroupAllyDirection(id, value) {
+  const config = widgetStore.update(id, { groupAllyDirection: value });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setHideAllyNameOnTile(id, value) {
+  const config = widgetStore.update(id, { hideAllyNameOnTile: value });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setTimerTextColor(id, value) {
+  const config = widgetStore.update(id, { timerTextColor: value });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setLabelTextColor(id, value) {
+  const config = widgetStore.update(id, { labelTextColor: value });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setIconMargin(id, value) {
+  const config = widgetStore.update(id, { iconMarginPx: value });
+  pushConfigChanged(id);
+  return config;
 }
 
 function setIconLabelSize(id, size) {
@@ -613,8 +723,10 @@ module.exports = {
   applyCodeToSelfBuffs,
   deleteWidget,
   moveWidget,
-  setEnabled,
+  applyProfileVisibility,
   setForegroundHidden,
+  setAllUnlocked,
+  areAllUnlocked,
   setLocked,
   toggleLock,
   resetPosition,
@@ -636,6 +748,12 @@ module.exports = {
   setShowIconLabel,
   setActiveProfileIds,
   removeProfileFromAllWidgets,
+  setGroupAllyBuffs,
+  setGroupAllyDirection,
+  setHideAllyNameOnTile,
+  setTimerTextColor,
+  setLabelTextColor,
+  setIconMargin,
   setIconLabelSize,
   setIconLabelAnchor,
   setWrapText,
