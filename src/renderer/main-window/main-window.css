@@ -1643,6 +1643,14 @@ code {
 .modal-backdrop {
   position: fixed;
   inset: 0;
+  /* The window is frameless and .title-bar carries -webkit-app-region:drag. A drag region is
+     hit-tested by the OS before the page sees the click, and stacking order does not override it,
+     so any modal content that overlaps the top 32px becomes un-clickable - the click moves the
+     window instead. A tall modal in a short window (the minimum is 480px high) centres itself far
+     enough up for that to reach its first input.
+     Opting the whole backdrop out costs nothing and makes it structurally impossible: nothing
+     inside a modal should ever drag the window. */
+  -webkit-app-region: no-drag;
   /* A warm-tinted black, not neutral - matches the ground it's dimming
      down to instead of reading as a different, colder overlay dropped on
      top of it. */

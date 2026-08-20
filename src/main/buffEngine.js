@@ -23,6 +23,19 @@ const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
 const TICK_INTERVAL_MS = 1000;
 
+// A character has fourteen spell gems, so at most fourteen spells can be memorized at once.
+//
+// currentlyMemorized can nevertheless drift above that, because it is built purely from
+// "You forget X." / "You have finished memorizing X." lines and those are only seen while the app
+// is running. Close the app, swap a gem, reopen: the forget line was never seen, so the old spell
+// stays in the picture indefinitely and the count creeps up.
+//
+// That is not only a wrong number on screen. currentlyMemorized is real evidence in detection - a
+// unique landing text is refused if the spell is knowably NOT in a gem right now - so every stale
+// entry vouches for a spell that is not loaded. Capping at the real number of gems keeps the
+// fourteen most recently seen, which are the ones most likely to reflect the bar as it really is.
+const MAX_MEMORIZED_GEMS = 14;
+
 // Consumes parsed log lines, decides when a cast has actually landed (see
 // buffParser.js for why), and keeps live countdown state for everything
 // currently active. Buffs not found in the buff database are surfaced as
@@ -170,6 +183,12 @@ class BuffEngine extends EventEmitter {
         Array.isArray(entry) ? [entry[0], entry[1]] : [String(entry).toLowerCase(), String(entry)]
       )
     );
+    // Trim on load as well as on insert. A store saved before the cap existed can already hold
+    // more than fourteen, and capping only new arrivals would leave that file permanently over
+    // the limit - it would never come down on its own, because entries are only removed by a
+    // "You forget X." line for a gem the app may never see again. Healing it here means one
+    // launch fixes it, with no reset button to find.
+    if (this._trimMemorized() > 0) this._saveCurrentlyMemorized();
     // Confirmed group members, lowercased name -> real-case name (from
     // "<Name> has joined the group." lines).
     //
@@ -389,7 +408,7 @@ class BuffEngine extends EventEmitter {
     }
     const memorized = matchMemorizeFinished(line);
     if (memorized) {
-      this.currentlyMemorized.set(memorized.toLowerCase(), memorized);
+      this._rememberMemorized(memorized);
       this._saveCurrentlyMemorized();
       this.emit('memorizedChanged', this.getCurrentlyMemorized());
       this._checkForEndedBuffs(line);
@@ -1208,6 +1227,38 @@ class BuffEngine extends EventEmitter {
     if (selfBuffs.length) this.emit('buffsChanged', this.getActiveBuffs());
     if (allyBuffs.length) this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
     return selfBuffs.length + allyBuffs.length;
+  }
+
+  // Records a spell as memorized, keeping the picture to the fourteen real gem slots.
+  //
+  // The delete before the set is load-bearing and easy to miss: a Map does NOT move an existing
+  // key to the end when you re-set it, so without the delete, re-memorizing a spell you already
+  // had leaves it at its original position and the trim below would happily evict the gem you
+  // just loaded while keeping one you swapped out ten minutes ago.
+  _rememberMemorized(name) {
+    const key = name.toLowerCase();
+    this.currentlyMemorized.delete(key);
+    this.currentlyMemorized.set(key, name);
+    this._trimMemorized();
+  }
+
+  // Drops the stalest entries until the picture fits the gem bar. Map iterates in insertion
+  // order, so the first key is the least recently seen.
+  //
+  // Whatever is dropped is always a guess - the overflow only exists because a "You forget X."
+  // line was missed - but the stalest entry is the likeliest to be the wrong one, and a picture
+  // that fits the bar is closer to the truth than one that cannot possibly be right.
+  _trimMemorized() {
+    let dropped = 0;
+    while (this.currentlyMemorized.size > MAX_MEMORIZED_GEMS) {
+      const oldest = this.currentlyMemorized.keys().next().value;
+      this.currentlyMemorized.delete(oldest);
+      dropped++;
+    }
+    if (dropped) {
+      this._debugLog(`MEMORIZED TRIM dropped ${dropped} stale entr${dropped === 1 ? 'y' : 'ies'} - over ${MAX_MEMORIZED_GEMS} gems`);
+    }
+    return dropped;
   }
 
   _saveCurrentlyMemorized() {
