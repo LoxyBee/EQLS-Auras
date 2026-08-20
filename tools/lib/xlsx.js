@@ -101,12 +101,29 @@ function readWorkbook(filePath) {
   const text = (n) => (zip.has(n) ? zip.get(n).toString('utf8') : null);
 
   // Shared string table. Excel stores most cell text here and cells reference it by index.
+  //
+  // Each entry is kept BOTH as flat text and as its list of formatting runs, because in this
+  // spreadsheet the two carry different information. A spell name cell is two runs: the real
+  // name, then a grey category tag - "Blast of Cold" + " det". Flattened, that reads "Blast of
+  // Cold det", which matches nothing in the game data and nothing in the log. The tag is also in
+  // column D, but only for det/buff/pet: the 76 "port" spells carry the tag in the name run with
+  // column D left blank, so stripping by a guessed tag vocabulary silently misses them.
+  // Reading run[0] takes the name from the document's own structure instead of guessing.
   const shared = [];
+  const sharedRuns = [];
   const ss = text('xl/sharedStrings.xml');
   if (ss) {
     const re = /<si\b[^>]*>([\s\S]*?)<\/si>/g;
     let m;
-    while ((m = re.exec(ss))) shared.push(innerText(m[1]));
+    while ((m = re.exec(ss))) {
+      shared.push(innerText(m[1]));
+      const runs = [];
+      const rre = /<r\b[^>]*>([\s\S]*?)<\/r>/g;
+      let rm;
+      while ((rm = rre.exec(m[1]))) runs.push(innerText(rm[1]));
+      // A single-run <si> has no <r> wrapper at all; treat the whole thing as one run.
+      sharedRuns.push(runs.length ? runs : [innerText(m[1])]);
+    }
   }
 
   // Sheet name -> part path, resolved through the workbook relationships.
@@ -171,7 +188,39 @@ function readWorkbook(filePath) {
     return rows;
   }
 
-  return { sheetNames: sheets.map((s) => s.name), sheet };
+  /**
+   * Same grid as sheet(), but every cell is the array of its formatting runs rather than the
+   * flattened string. Cells that are not shared strings come back as a single-element array.
+   *
+   * Use this when a cell's runs mean different things - here, run[0] of a Name cell is the real
+   * spell name and run[1] is a category tag that must not reach the game-data lookup.
+   */
+  function sheetRuns(name) {
+    const s = sheets.find((x) => x.name === name);
+    if (!s) throw new Error(`no such sheet: ${name}`);
+    const xml = text(s.part);
+    const rows = [];
+    for (const rm of xml.matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
+      const rowNum = Number(attr(`<row${rm[1]}>`, 'r') || 0);
+      const cells = {};
+      for (const cm of (rm[2] || '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        const head = `<c${cm[1]}>`;
+        const col = (attr(head, 'r') || '').replace(/\d+/g, '');
+        const type = attr(head, 't');
+        const body = cm[2] || '';
+        if (type === 'inlineStr') { cells[col] = [innerText(body)]; continue; }
+        const v = body.match(/<v\b[^>]*>([\s\S]*?)<\/v>/);
+        if (!v) continue;
+        const rawVal = decodeEntities(v[1]);
+        cells[col] = type === 's' ? (sharedRuns[Number(rawVal)] || ['']) : [rawVal];
+      }
+      if (Object.keys(cells).length) rows[Math.max(0, rowNum - 1)] = cells;
+    }
+    for (let i = 0; i < rows.length; i++) if (!rows[i]) rows[i] = {};
+    return rows;
+  }
+
+  return { sheetNames: sheets.map((s) => s.name), sheet, sheetRuns };
 }
 
 module.exports = { readWorkbook };

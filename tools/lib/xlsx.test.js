@@ -137,6 +137,20 @@ test('runs inside one shared string are joined in order', () => {
   assert.equal(readWorkbook(p).sheet('s1')[0].A, 'Dmg: 11');
 });
 
+test('sheetRuns exposes formatting runs separately', () => {
+  const files = [
+    ['xl/workbook.xml', `<workbook><sheets><sheet name="s1" r:id="rId1"/></sheets></workbook>`],
+    ['xl/_rels/workbook.xml.rels', `<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`],
+    ['xl/sharedStrings.xml', `<sst><si><r><t>Blast of Cold</t></r><r><t xml:space="preserve"> det</t></r></si></sst>`],
+    ['xl/worksheets/sheet1.xml', `<worksheet><sheetData><row r="1"><c r="C1" t="s"><v>0</v></c></row></sheetData></worksheet>`],
+  ];
+  const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'xlsxtest-')), 'f.xlsx');
+  fs.writeFileSync(p, zipOf(files));
+  const wb = readWorkbook(p);
+  assert.equal(wb.sheet('s1')[0].C, 'Blast of Cold det', 'flat read should still concatenate runs');
+  assert.deepEqual(wb.sheetRuns('s1')[0].C, ['Blast of Cold', ' det'], 'runs must stay separate');
+});
+
 // ---------------------------------------------------------------- the real file, if present
 
 const REAL = path.join(__dirname, '..', '..', 'new spell roster to be added.xlsx');
@@ -150,6 +164,15 @@ if (fs.existsSync(REAL)) {
     assert.equal(rows[0].C, 'Name');
     assert.equal(rows[0].N, 'Duration');
     assert.equal(data.filter((r) => r.C != null).length, 1052, 'every spell must have a name');
+
+    // The category tag lives in the second run of the Name cell. Column D carries it too, but
+    // ONLY for det/buff/pet - the 76 "port" spells leave column D blank, so anything that strips
+    // the tag by matching column D silently leaves " port" glued to 76 spell names, and those
+    // names then match nothing in the game data. Take the name from run[0] instead.
+    const runs = wb.sheetRuns('spells').slice(1).filter((r) => Object.keys(r).length);
+    const tags = new Set(runs.map((r) => (r.C && r.C[1] ? r.C[1].trim() : '')).filter(Boolean));
+    assert.deepEqual([...tags].sort(), ['det', 'pet', 'port'], 'the category-tag vocabulary changed');
+    assert.equal(runs[0].C[0], 'Blast of Cold', 'run[0] should be the bare spell name');
     // The columns the sheet ships empty. If these ever fill in, the roster build should use them.
     for (const col of ['I', 'J', 'K', 'L']) {
       assert.equal(data.filter((r) => r[col] != null).length, 0, `column ${col} is no longer empty - the roster build can now use it`);
