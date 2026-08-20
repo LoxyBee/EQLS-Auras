@@ -78,18 +78,15 @@ class BuffStore {
     // still votes on whether a landing line is ambiguous, so carrying them made text that is
     // unique in practice look ambiguous and prompted for answers that had only one option.
     //
-    // A BACKUP IS WRITTEN FIRST, and that is not ceremony. Nothing else in this file backs
-    // anything up, three of these one-shot blocks delete entries, and they all run inside a
-    // constructor before any window exists - so a mistake here is invisible and unrecoverable.
-    // The backup is plain JSON in userData; restoring is copying one file over another.
+    // No copy of the old roster is written into userData. The retired roster is kept in the
+    // repository at archive/buffs-legacy-11337.json as catalogue material - deliberately outside
+    // src/ so it is never packaged - and duplicating 2.5 MB of it into every user's app data to
+    // guard a migration that is reproducible from the spreadsheet would be clutter, not safety.
     //
     // What survives: anything the user made themselves (custom: true), and the per-buff
     // "show on overlay" choice for every spell that exists in both rosters. What goes: seeded
     // entries for spells this server does not have, which is the entire intent.
     if (!meta.eqlRosterV1) {
-      const backupName = 'buffs-backup-before-eql-roster';
-      if (!store.loadJson(backupName, null)) store.saveJson(backupName, this.buffs);
-
       const overlayChoice = new Map();
       for (const b of this.buffs) {
         if (b.showOnOverlay !== undefined) overlayChoice.set(b.name.toLowerCase(), b.showOnOverlay);

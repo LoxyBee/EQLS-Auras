@@ -47,7 +47,10 @@ const { stripRankSuffix } = require('../src/main/buffParser');
 const ROOT = path.join(__dirname, '..');
 const SHEET = path.join(ROOT, 'new spell roster to be added.xlsx');
 const OUT = path.join(ROOT, 'src', 'shared', 'data', 'buffs.json');
-const ARCHIVE_DIR = path.join(ROOT, 'src', 'shared', 'data', 'archive');
+// Deliberately OUTSIDE src/. package.json's build.files is ["src/**/*", "package.json"], so
+// anything under src/ ships inside the installer - a 2.5 MB retired roster would have been
+// handed to every user for no reason. See archive/README.md.
+const ARCHIVE_DIR = path.join(ROOT, 'archive');
 const OVERRIDES = path.join(__dirname, 'roster-overrides.json');
 
 const EQ_CANDIDATES = [
