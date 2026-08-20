@@ -1,0 +1,19 @@
+{
+  "_README": [
+    "Manual corrections applied on top of the spreadsheet and the game data, by tools/build-roster.js.",
+    "",
+    "Every entry needs a 'why' naming who verified it and how. This file exists so a correction",
+    "survives the next roster rebuild instead of being silently undone by it - and so nobody has to",
+    "guess later whether a number was measured or assumed.",
+    "",
+    "Format:  \"<exact spell name>\": { \"why\": \"...\", \"set\": { <fields to overwrite> } }"
+  ],
+
+  "Promised Renewal": {
+    "why": "Shara verified 15s in game on 2026-08-19. The spreadsheet says 18s and the game data says 18s, so both sources are wrong for this spell on this server. It is also the only spell in category 'Delayed' and its effect is a Final Heal after a fuse - the 18s is the delay before the heal fires, not a buff duration, which is why it must not take the AA duration bonus either.",
+    "set": {
+      "durationSec": 15,
+      "noDurationScaling": true
+    }
+  }
+}

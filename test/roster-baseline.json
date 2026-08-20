@@ -1,12 +1,13 @@
 {
-  "entries": 11337,
-  "distinctNames": 11337,
-  "withLandingText": 11190,
-  "withEndedText": 9489,
-  "withOthersSuffix": 9219,
-  "withIconId": 11263,
-  "distinctLandingTexts": 2468,
-  "uniqueLandingTexts": 1447,
-  "distinctOthersSuffix": 2034,
-  "uniqueOthersSuffix": 1176
+  "entries": 1052,
+  "autoConfirmable": 230,
+  "distinctNames": 1052,
+  "withLandingText": 720,
+  "withEndedText": 528,
+  "withOthersSuffix": 810,
+  "withIconId": 1051,
+  "distinctLandingTexts": 454,
+  "uniqueLandingTexts": 346,
+  "distinctOthersSuffix": 419,
+  "uniqueOthersSuffix": 303
 }

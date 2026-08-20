@@ -58,8 +58,16 @@ function measure(r) {
     if (e.othersLandingSuffix) other.set(e.othersLandingSuffix, (other.get(e.othersLandingSuffix) || 0) + 1);
   }
   const uniq = (m) => [...m.values()].filter((v) => v === 1).length;
+  // The number that actually decides behaviour: how many landing lines the app will treat as
+  // proof on their own, with no corroborating evidence. Mirrors buffStore._getLandingIndex -
+  // excluded if another roster entry claims the same text, OR if the game itself has more than
+  // one spell printing it (potions and clicky items are not in the roster but do print).
+  const autoConfirmable = r.filter(
+    (e) => e.landingText && land.get(e.landingText) === 1 && !(e.landingTextSharedBy > 1)
+  ).length;
   return {
     entries: r.length,
+    autoConfirmable,
     distinctNames: new Set(r.map((e) => e.name)).size,
     withLandingText: r.filter((e) => e.landingText).length,
     withEndedText: r.filter((e) => e.endedText).length,
@@ -104,12 +112,41 @@ test('text fields, where present, are strings', () => {
   assert.deepEqual(bad.slice(0, 5), [], `${bad.length} non-string text fields, e.g. ${bad.slice(0, 5).join(', ')}`);
 });
 
-test('no entry carries an othersLandingSuffix without a landingText', () => {
-  // Ally detection reverse-looks-up the suffix and then lands a buff by name; an entry with a
-  // suffix but no landing text can be detected on a groupmate and never on the player, which
-  // reads as "it works for everyone except me".
-  const bad = roster.filter((e) => e.othersLandingSuffix && !e.landingText).map((e) => e.name);
-  assert.deepEqual(bad.slice(0, 5), [], `${bad.length} entries can be seen on allies but never on you, e.g. ${bad.slice(0, 5).join(', ')}`);
+// Known, understood exceptions to the rule below. Anything added here needs a reason.
+const NO_SELF_LANDING_TEXT = new Set([
+  // Summons a scouting eye rather than buffing the caster, so the game prints no
+  // "you are ..." line even though the spell is nominally self-targeted.
+  'Eye of Zomm',
+]);
+
+test('a self-targeted spell with a duration has landing text', () => {
+  // Detection is exact-text matching, so a self-targeted buff with a duration and no landing
+  // text can never be seen on the player - the timer simply never appears, with no error.
+  //
+  // The older, broader form of this test ("nothing has an others-suffix without a landing text")
+  // does not hold now that detrimentals and pet buffs are in the roster: a spell you cast on a
+  // mob or a pet correctly has only the third-person line. Narrowed to the case that is actually
+  // a defect.
+  const bad = roster
+    .filter((e) => /self/i.test(e.targets || '') && e.durationSec != null && !e.landingText)
+    .map((e) => e.name)
+    .filter((n) => !NO_SELF_LANDING_TEXT.has(n));
+  assert.deepEqual(bad, [], `${bad.length} self-targeted spells with a duration can never be detected on you: ${bad.slice(0, 8).join(', ')}`);
+});
+
+test('an entry whose landing text is shared game-wide is flagged', () => {
+  // The flag is what stops a shrunken roster turning ambiguity into confident wrongness.
+  // If a rebuild ever drops it, detection silently starts auto-confirming ~130 texts that
+  // potions and clicky items also print.
+  const flagged = roster.filter((e) => e.landingTextSharedBy > 1).length;
+  const withText = roster.filter((e) => e.landingText).length;
+  if (withText === 0) return;
+  assert.ok(
+    flagged > 0,
+    'No entry carries landingTextSharedBy. Either the roster predates that field, or a rebuild ' +
+    'dropped it - in which case detection will auto-confirm landing lines that clicky items and ' +
+    'potions also print. Rebuild with tools/build-roster.js.'
+  );
 });
 
 // ---------------------------------------------------------------- capability baseline

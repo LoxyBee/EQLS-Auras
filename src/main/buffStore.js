@@ -274,7 +274,17 @@ class BuffStore {
       this._landingIndex = new Map();
       for (const b of this.buffs) {
         if (!b.landingText) continue;
-        if (ownerCounts.get(b.landingText) > 1) continue; // ambiguous - skip
+        if (ownerCounts.get(b.landingText) > 1) continue; // ambiguous within the roster - skip
+        // Ambiguous in the GAME even though only one roster entry claims it. The roster holds
+        // castable EQL spells; potions, clicky items and AAs print the same lines and are not in
+        // it. "Your mind begins to clear." is one bard song here but 67 spells in the game data,
+        // 66 of them Elixir of Clarity ranks - so without this check, clicking an elixir gets
+        // confidently reported as the song. This became load-bearing when the roster shrank from
+        // 11,337 generic-client entries to 1,052 EQL ones: 50 landing texts went from
+        // roster-ambiguous to roster-unique, and every single one is still shared in the game.
+        // Counted at build time from spells_us_str.txt - see tools/build-roster.js. Rosters
+        // without the field are unaffected and behave exactly as before.
+        if (b.landingTextSharedBy > 1) continue;
         this._landingIndex.set(b.landingText, b);
       }
     }
