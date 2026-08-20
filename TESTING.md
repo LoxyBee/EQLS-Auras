@@ -52,38 +52,37 @@ short.
 
 ## Memorized gem bar (landing page)
 
-- [ ] **Persists across restarts.** Memorize some spells, close the app,
+- [x] **Persists across restarts.** Memorize some spells, close the app,
   reopen. *Expect*: the bar comes back populated, not empty and red.
-- [ ] **Click a gem to forget it** - gem disappears, stays gone after restart.
-- [ ] **"Forget all"** clears the whole bar.
-- [ ] **Bard songs sit at the right-hand end**, underlined; regular spells
+- [x] **Click a gem to forget it** - gem disappears, stays gone after restart.
+- [x] **"Forget all"** clears the whole bar.
+- [x] **Bard songs sit at the right-hand end**, underlined; regular spells
   fill from the left.
-- [ ] **Non-buff spells** (a nuke, a heal) show their real icon greyed out
+- [x] **Non-buff spells** (a nuke, a heal) show their real icon greyed out
   with a dotted border, and hovering says "(not a tracked buff)".
-- [ ] **Empty state is red/warning** on a genuinely fresh memory.
+- [x] **Empty state is red/warning** on a genuinely fresh memory.
 
 ---
 
 ## Custom timers
 
-- [ ] **Add timer** opens the modal with every field visible.
-- [ ] **Edit** opens the same modal pre-populated; title says "Edit timer",
+- [x] **Add timer** opens the modal with every field visible.
+- [x] **Edit** opens the same modal pre-populated; title says "Edit timer",
   button says "Save changes", and "Save as new" appears.
-- [ ] **Save as new** creates a second timer without altering the original.
-- [ ] **Deleting the timer currently open** closes the modal.
-- [ ] **Icon gem box** - click opens the picker, picking sets the art, the
+- [x] **Save as new** creates a second timer without altering the original.
+- [x] **Icon gem box** - click opens the picker, picking sets the art, the
   picker is full height and usable (it was previously clipped to a sliver).
-- [ ] Two timers sharing a name *and* trigger text both fire, with their own
+- [x] Two timers sharing a name *and* trigger text both fire, with their own
   distinct icons. *(Regression guard - this was a real bug.)*
 
 ---
 
 ## Sounds
 
-- [ ] **Preview** plays the chosen sound.
-- [ ] **Volume slider** affects both custom sounds and the default beeps.
-- [ ] **Open sounds folder** opens the folder the picker defaults to.
-- [ ] Real in-game alerts (land / expire / warning) actually play.
+- [x] **Preview** plays the chosen sound.
+- [x] **Volume slider** affects both custom sounds and the default beeps.
+- [x] **Open sounds folder** opens the folder the picker defaults to.
+- [x] Real in-game alerts (land / expire / warning) actually play.
 
 ---
 
@@ -93,26 +92,26 @@ short.
       window, close, reopen. *Expect*: it returns where you left it.
       *Edge case worth checking*: maximize, close, reopen - it should restore
       to the pre-maximize size, not a screen-sized non-maximized window.
-- [ ] **"Add a new buff" and "View custom buffs"** now sit together in one
+- [x] **"Add a new buff" and "View custom buffs"** now sit together in one
       Custom buffs card; both still open their modals.
-- [ ] **"Open sounds folder"** now at the bottom of the Sounds section, still
+- [x] **"Open sounds folder"** now at the bottom of the Sounds section, still
       opens the right folder.
-- [ ] **Profile toggles moved into aura settings.** Now an always-visible row
+- [x] **Profile toggles moved into aura settings.** Now an always-visible row
       of chips at the top of an aura's settings, not a modal.
       *Expect*: ticking/unticking shows/hides the aura immediately.
       **Behaviour change**: unticking *every* profile now hides the aura
       entirely (it used to mean "show on all profiles"). With a single profile
       this is your plain on/off switch. Worth checking no existing aura
       vanished unexpectedly.
-- [ ] **Profile chip in the top bar** is now solid brass when active - should
+- [x] **Profile chip in the top bar** is now solid brass when active - should
       be obvious at a glance which profile is live.
-- [ ] **Unlock to move / Reset position** moved into Display & size, above a
+- [x] **Unlock to move / Reset position** moved into Display & size, above a
       dotted rule. "Unlock to move" is accent-outlined, and goes solid brass
       while actually unlocked.
-- [ ] **Timer text colour / Label text colour** pickers now work (icon mode
+- [x] **Timer text colour / Label text colour** pickers now work (icon mode
       and list mode). *Expect*: a buff about to expire still goes red - the
       low-time warning deliberately overrides any custom colour.
-- [ ] **Margin width** slider now works - changes the gap between icons in
+- [x] **Margin width** slider now works - changes the gap between icons in
       icon mode.
 
 ## Overlay behaviour
@@ -122,10 +121,10 @@ short.
       "Also show auras while EQLS Auras itself is the focused window", is OFF
       by default. *Expect*: with it off, tabbing to this app no longer drags
       every aura back on screen; with it on, it does.
-- [ ] **An unlocked aura is never auto-hidden.** Click Unlock to move on one
+- [x] **An unlocked aura is never auto-hidden.** Click Unlock to move on one
       aura while EQ isn't focused - it should stay visible so you can actually
       drag it. Re-locking hands it back to the normal rules.
-- [ ] **"Unlock all auras"** toggle unlocks/re-locks every aura at once, and
+- [x] **"Unlock all auras"** toggle unlocks/re-locks every aura at once, and
       the per-aura Unlock button label stays in sync with it (and vice versa).
 - [ ] **Both auto-hide settings moved** off the Setup page into the "All
       auras" card on Overlay Auras. Check they still actually work from their
@@ -143,17 +142,17 @@ short.
 
 ## Ally buff grouping
 
-- [ ] **Group by player** on an ally aura splits it into a section per person
+- [x] **Group by player** on an ally aura splits it into a section per person
       with their name as a heading. Groups are ordered **alphabetically** and
       stay put as timers tick - they should never reshuffle.
-- [ ] **Stack groups vertically / side by side** both lay out correctly, in
+- [x] **Stack groups vertically / side by side** both lay out correctly, in
       list mode and icon mode.
-- [ ] **The name prefix disappears from tiles while grouping is on** (the
+- [x] **The name prefix disappears from tiles while grouping is on** (the
       heading covers it), and the separate "Hide the player name" toggle drops
       it when grouping is off.
-- [ ] **Nothing breaks over time.** Leave a grouped aura running a few minutes
+- [x] **Nothing breaks over time.** Leave a grouped aura running a few minutes
       - tiles must stay inside their group, not drift out into a flat pile.
-- [ ] The grouping section is **hidden** on self-buff and custom-timer auras.
+- [x] The grouping section is **hidden** on self-buff and custom-timer auras.
 
 ## Duration scaling exclusion
 
