@@ -275,16 +275,22 @@ class BuffStore {
       for (const b of this.buffs) {
         if (!b.landingText) continue;
         if (ownerCounts.get(b.landingText) > 1) continue; // ambiguous within the roster - skip
-        // Ambiguous in the GAME even though only one roster entry claims it. The roster holds
-        // castable EQL spells; potions, clicky items and AAs print the same lines and are not in
-        // it. "Your mind begins to clear." is one bard song here but 67 spells in the game data,
-        // 66 of them Elixir of Clarity ranks - so without this check, clicking an elixir gets
-        // confidently reported as the song. This became load-bearing when the roster shrank from
-        // 11,337 generic-client entries to 1,052 EQL ones: 50 landing texts went from
-        // roster-ambiguous to roster-unique, and every single one is still shared in the game.
-        // Counted at build time from spells_us_str.txt - see tools/build-roster.js. Rosters
-        // without the field are unaffected and behave exactly as before.
-        if (b.landingTextSharedBy > 1) continue;
+        // NOTE: entries also carry `landingTextSharedBy` - how many DISTINCT spell names in the
+        // game's own spells_us_str.txt print this same line. It is deliberately NOT consulted
+        // here, and that decision is worth recording because the opposite was tried first.
+        //
+        // Gating on it looked obviously right: "Your mind begins to clear." is one bard song in
+        // the roster but 5 distinct names in the game, including Elixir of Clarity. But the
+        // client's data files carry every spell from every EverQuest version, and this server
+        // runs a small subset - which is the entire reason the roster was cut from 11,337 to
+        // 1,052. Counting those absent spells as rivals reintroduced exactly the over-counting
+        // the rebuild removed. Measured against real logs: it suppressed 116 entries, 32 of them
+        // lines she actually sees in play, and the co-sharers were overwhelmingly other-expansion
+        // content - Spirit of the Panther, Ancient: Lcea's Lament, Talisman of the Panther Rk. II.
+        //
+        // The field stays on the entries because it is real evidence and costs nothing. If a
+        // false attribution ever does show up, re-enabling this is one line - but it should be
+        // scoped to co-sharers that exist on THIS server, not to the whole client data file.
         this._landingIndex.set(b.landingText, b);
       }
     }

@@ -60,10 +60,10 @@ function measure(r) {
   const uniq = (m) => [...m.values()].filter((v) => v === 1).length;
   // The number that actually decides behaviour: how many landing lines the app will treat as
   // proof on their own, with no corroborating evidence. Mirrors buffStore._getLandingIndex -
-  // excluded if another roster entry claims the same text, OR if the game itself has more than
-  // one spell printing it (potions and clicky items are not in the roster but do print).
+  // excluded if another roster entry claims the same text. landingTextSharedBy is recorded on
+  // entries but deliberately not consulted - see the note in buffStore._getLandingIndex.
   const autoConfirmable = r.filter(
-    (e) => e.landingText && land.get(e.landingText) === 1 && !(e.landingTextSharedBy > 1)
+    (e) => e.landingText && land.get(e.landingText) === 1
   ).length;
   return {
     entries: r.length,
@@ -134,18 +134,21 @@ test('a self-targeted spell with a duration has landing text', () => {
   assert.deepEqual(bad, [], `${bad.length} self-targeted spells with a duration can never be detected on you: ${bad.slice(0, 8).join(', ')}`);
 });
 
-test('an entry whose landing text is shared game-wide is flagged', () => {
-  // The flag is what stops a shrunken roster turning ambiguity into confident wrongness.
-  // If a rebuild ever drops it, detection silently starts auto-confirming ~130 texts that
-  // potions and clicky items also print.
+test('game-wide sharing evidence is recorded on entries', () => {
+  // landingTextSharedBy counts how many DISTINCT spell names in the client's own data print the
+  // same landing line. It is recorded but NOT acted on - see the note in
+  // buffStore._getLandingIndex for why gating on it was tried and reverted.
+  //
+  // The test exists so the evidence does not quietly disappear from a future rebuild. If a real
+  // misattribution ever turns up, this is the data needed to scope a narrower fix, and gathering
+  // it after the fact means re-deriving it from the game files under time pressure.
   const flagged = roster.filter((e) => e.landingTextSharedBy > 1).length;
-  const withText = roster.filter((e) => e.landingText).length;
-  if (withText === 0) return;
+  if (!roster.some((e) => e.landingText)) return;
   assert.ok(
     flagged > 0,
-    'No entry carries landingTextSharedBy. Either the roster predates that field, or a rebuild ' +
-    'dropped it - in which case detection will auto-confirm landing lines that clicky items and ' +
-    'potions also print. Rebuild with tools/build-roster.js.'
+    'No entry carries landingTextSharedBy. Either this roster predates the field or a rebuild ' +
+    'dropped it. Nothing breaks immediately - it is evidence, not behaviour - but rebuild with ' +
+    'tools/build-roster.js to get it back.'
   );
 });
 
