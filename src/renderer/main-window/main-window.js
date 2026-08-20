@@ -1824,6 +1824,47 @@ function initWidgetsPanel() {
         'A dedicated aura for bard songs specifically (own filter/behavior separate from other self buffs, ' +
         'e.g. tuned for how often they auto-renew). Not built yet.',
     },
+    // The rest of the roadmap, shown in the app rather than only in FEATURES.md. Listing something
+    // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
+    // it looks to anyone using the app who did not write it.
+    {
+      name: 'Buff timer',
+      description:
+        'Pick a spell and whether you are watching it on yourself or on an ally, and the aura builds ' +
+        'itself with sensible defaults. Not built yet.',
+    },
+    {
+      name: 'Cooldown timer',
+      description:
+        'Pick a spell and get a countdown for when it can be cast again, rather than how long it ' +
+        'lasts. Not built yet.',
+    },
+    {
+      name: 'Debuff on an enemy',
+      description:
+        'Track mez, slow, malo and the like on the mobs you cast them on, with a flash when one ' +
+        'resists. Not built yet.',
+    },
+    {
+      name: 'First aggro',
+      description:
+        'Shows who hit the boss first, or who the boss hit first. Not built yet - and it can only ' +
+        'ever be as complete as your own log, which does not see everything across a raid.',
+    },
+    {
+      name: 'Damage parser',
+      description: 'A running damage readout built from the combat log. Not built yet.',
+    },
+    {
+      name: 'Travel guide',
+      description:
+        'Knows which travel spells you have scribed and shows the shortest route somewhere. ' +
+        'Not built yet.',
+    },
+    {
+      name: 'Global recovery',
+      description: 'A countdown for the global recovery time between casts. Not built yet.',
+    },
   ];
 
   function renderPremadeList() {

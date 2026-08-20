@@ -279,7 +279,20 @@ const SHAREABLE_FIELDS = [
 // JSON + base64, no diffing) never shipped to a real user, so there's no
 // back-compat need, just a distinct prefix in case an old code ever
 // resurfaces (importCode rejects an unrecognized prefix cleanly).
-const SHARE_CODE_PREFIX = 'EQBT2-';
+// Prefix on every exported aura code. Two jobs: it tells this app a pasted string is one of
+// ours rather than base64 from somewhere else, and it is distinctive enough to spot in a line of
+// game chat - which is what the planned "import from chat" feature needs to recognise.
+//
+// Bumped from EQBT2- when the roster was rebuilt. Old codes referenced spells from the generic
+// 11,337-entry roster that no longer exist, so they could not be honoured anyway; a prefix change
+// makes them fail cleanly at the door instead of importing an aura whose buffs silently never
+// fire. Breaking them was agreed rather than assumed.
+const SHARE_CODE_PREFIX = 'EQLSAURAS1-';
+
+// Recognised, no longer decodable. Kept so the import UI can eventually say "this code is from an
+// older version" instead of "invalid code" - a much better answer for someone pasting a code a
+// friend sent last week. Nothing consults this yet; wiring it belongs with the import feature.
+const LEGACY_SHARE_CODE_PREFIXES = ['EQBT2-'];
 
 // textSize used to be a 'small'|'medium'|'large' enum (fixed 3-step radio
 // buttons) - now it's a free px number via a slider. Widgets saved under

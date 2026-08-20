@@ -67,6 +67,64 @@ class BuffStore {
       if (changed) this._save();
     }
 
+    // One-time: adopt the EQ Legends roster.
+    //
+    // The bundled roster was rebuilt from the server's own spell list - 11,337 generic
+    // EverQuest-client entries down to the 1,052 spells this server actually has. The
+    // version-gated pass above cannot deliver that, because it only ever ADDS missing entries and
+    // refreshes ones that look untouched. Run on an existing install it would merge the new 1,052
+    // into the old 11,337 and leave roughly 12,000 - bigger, not smaller, which is the opposite
+    // of the point. Roster SIZE is the thing being fixed: every spell this server does not have
+    // still votes on whether a landing line is ambiguous, so carrying them made text that is
+    // unique in practice look ambiguous and prompted for answers that had only one option.
+    //
+    // A BACKUP IS WRITTEN FIRST, and that is not ceremony. Nothing else in this file backs
+    // anything up, three of these one-shot blocks delete entries, and they all run inside a
+    // constructor before any window exists - so a mistake here is invisible and unrecoverable.
+    // The backup is plain JSON in userData; restoring is copying one file over another.
+    //
+    // What survives: anything the user made themselves (custom: true), and the per-buff
+    // "show on overlay" choice for every spell that exists in both rosters. What goes: seeded
+    // entries for spells this server does not have, which is the entire intent.
+    if (!meta.eqlRosterV1) {
+      const backupName = 'buffs-backup-before-eql-roster';
+      if (!store.loadJson(backupName, null)) store.saveJson(backupName, this.buffs);
+
+      const overlayChoice = new Map();
+      for (const b of this.buffs) {
+        if (b.showOnOverlay !== undefined) overlayChoice.set(b.name.toLowerCase(), b.showOnOverlay);
+      }
+      const starterNames = new Set(starter.map((e) => e.name.toLowerCase()));
+      const keptCustom = this.buffs.filter((b) => b.custom === true && !starterNames.has(b.name.toLowerCase()));
+
+      this.buffs = starter.map((e) => {
+        const copy = { ...e, custom: false };
+        const choice = overlayChoice.get(e.name.toLowerCase());
+        if (choice !== undefined) copy.showOnOverlay = choice;
+        return copy;
+      });
+      this.buffs.push(...keptCustom);
+
+      meta.eqlRosterV1 = true;
+      meta.eqlRosterV1Stats = { replaced: starter.length, keptCustom: keptCustom.length };
+
+      // Every one-shot below this point was a fixup for the OLD mined roster - backfilling
+      // third-person text, rebuilding it wholesale, purging unmatched customs, dropping
+      // over-long durations. Against a roster that has just been replaced outright they have
+      // nothing left to do, and left un-flagged they actively undo this migration: the custom
+      // purge deletes the user's hand-made buffs, and the wholesale rebuild strips the overlay
+      // choices restored just above. Found by the tests in test/roster-migration.test.js, which
+      // failed on exactly that - a hand-made buff vanishing and two entries going missing.
+      meta.customMigrated = true;
+      meta.otherSuffixMigrated = true;
+      meta.fullRosterRebuildV1 = true;
+      meta.unmatchedCustomPurgedV1 = true;
+      meta.longDurationPurgedV1 = true;
+
+      store.saveJson('buffsMeta', meta);
+      this._save();
+    }
+
     // One-time: the "custom" flag (drives the Custom Buffs list) didn't
     // exist before it was added, so anything typed in or promoted from an
     // Unknown cast prior to that never got marked - retroactively flag
