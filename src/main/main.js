@@ -42,7 +42,7 @@ const { loadJson, saveJson } = require('./store');
 const widgetManager = require('./widgetManager');
 const ambiguousPopup = require('./ambiguousPopup');
 const { ProfileStore } = require('./profileStore');
-const { ForegroundWatcher } = require('./foregroundWatcher');
+const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
 const soundService = require('./soundService');
 
 protocol.registerSchemesAsPrivileged([
@@ -399,9 +399,20 @@ ipcMain.handle('buffs:setBardSong', (_event, { name, isBardSong }) => {
 });
 
 ipcMain.handle('buffs:getAmbiguous', () => buffEngine.getAmbiguousCasts());
-ipcMain.handle('buffs:resolveAmbiguous', (_event, { text, buffName }) =>
-  buffEngine.resolveAmbiguousCast(text, buffName)
-);
+ipcMain.handle('buffs:resolveAmbiguous', (_event, { text, buffName }) => {
+  const result = buffEngine.resolveAmbiguousCast(text, buffName);
+  // Put EverQuest back in front once the last question is answered.
+  //
+  // The popup only ever appears mid-fight, and answering it means clicking out of the game -
+  // which the game does not undo by itself, so you are left hunting for the window at the worst
+  // possible moment. Only when the queue is EMPTY: with several queued, focusing the game after
+  // the first answer would throw you out of the popup before you had finished with it.
+  //
+  // Deliberately not awaited. It is a nicety, and the answer is already recorded either way -
+  // making the renderer wait on a PowerShell round-trip to learn that would be the wrong trade.
+  if (buffEngine.getAmbiguousCasts().length === 0) focusGameWindow();
+  return result;
+});
 ipcMain.handle('buffs:dismissAmbiguous', (_event, text) => buffEngine.dismissAmbiguousCast(text));
 ipcMain.handle('buffs:resetAmbiguousResolutions', () => buffEngine.resetAmbiguousResolutions());
 ipcMain.handle('buffs:getAmbiguousResolutions', () => buffEngine.getAmbiguousResolutions());

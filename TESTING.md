@@ -16,6 +16,136 @@ short.
 
 ---
 
+## Run the automated tests first
+
+```
+npm test
+```
+
+Zero dependencies, a few seconds, and it covers a lot of what used to need a
+character standing in a zone. If it is red, nothing below is worth doing yet -
+read the failure text, it says what broke and why.
+
+Six suites at the time of writing:
+
+| Suite | Guards |
+|---|---|
+| `test/pin.test.js` | the userData pin, including the realistic way to break it - adding a `require` above it in `main.js` |
+| `test/roster.test.js` | roster shape, and a snapshot of what detection can do, so a change that quietly costs coverage fails loudly |
+| `test/roster-migration.test.js` | the one-time roster replacement: custom buffs survive, overlay choices survive, it runs once, and it writes nothing into app data |
+| `test/memorized-cap.test.js` | the fourteen-gem cap, including re-memorising refreshing an entry and an oversized saved file healing on load |
+| `test/focus-game.test.js` | the refocus-EverQuest call: targets `eqgame` by process name, restores a minimised window, never throws |
+| `tools/lib/xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
+
+If the roster capability snapshot fails after a deliberate roster change, read
+the printed delta, and if every moved number is intended:
+
+```
+node test/roster.test.js --update
+```
+
+---
+
+## NEEDS THE LIVE CLIENT - Shara only
+
+Everything in this section was **deliberately not attempted** in the build
+environment. It needs EverQuest actually running, and driving the app by
+synthetic clicks while a real session is open is not safe - during this work a
+stray automated click landed in the game window, which is exactly the reason
+this section exists.
+
+Nothing here has been verified. Treat every item as unknown, not as working.
+
+### Refocus EverQuest after answering an ambiguous cast *(new)*
+
+The call itself is unit-tested; whether Windows honours it is not testable
+without a real desktop. Windows refuses foreground changes from a process that
+is not already foreground under some conditions, so this is the one that most
+plausibly does nothing in practice.
+
+- [ ] Answer an ambiguous cast popup with EQ behind it. *Expect*: EQ comes to
+      the front by itself, no alt-tab needed.
+- [ ] With **several** questions queued, answer the first. *Expect*: focus does
+      NOT jump to the game yet - it should only happen once the last one is
+      answered, or you get thrown out of the popup mid-way.
+- [ ] Answer a question with EQ **minimised**. *Expect*: the game is restored,
+      not merely focused.
+- [ ] Close EQ, trigger a question from a replayed log, answer it. *Expect*:
+      nothing happens and no error appears.
+
+### The un-clickable name box in "New loadout profile" *(fix applied, unconfirmed)*
+
+The window is frameless and its title bar is a drag region. Drag regions are
+hit-tested by Windows before the page sees the click, so modal content
+overlapping the top 32px cannot be clicked - the click moves the window instead.
+A tall modal in a short window centres far enough up for that to reach its first
+input, which fits the symptom. Modals now opt out of the drag region.
+
+**This was never reproduced, so the diagnosis may be wrong.**
+
+- [ ] Open the `+` new-profile dialog and click the name box. *Expect*: a
+      cursor appears and typing works.
+- [ ] Repeat with the window **as short as it goes** (480px minimum) and with
+      several auras configured, so the checklist makes the modal tall. This is
+      the case the theory predicts used to fail.
+- [ ] Repeat maximised. If it fails **here**, the diagnosis is wrong - say so,
+      because the real cause is then still unfound.
+
+### Detrimental spells on enemies *(data landed, engine not yet changed)*
+
+The roster now carries all 327 detrimental spells with their real text, and
+`" has been mesmerized."` is an ordinary third-person suffix. The engine cannot
+use them yet: the ally path requires a recipient name matching `^[A-Za-z]+$`,
+and mob names contain spaces, so `a worry wraith` is rejected.
+
+- [ ] Confirm no debuff timers appear yet, and that nothing MIS-fires - a mob
+      name must not be mistaken for a groupmate.
+
+---
+
+## New spell roster *(biggest change - test this first)*
+
+The roster went from 11,337 generic EverQuest entries to the 1,052 spells this
+server actually has, rebuilt from the curated spreadsheet plus the game's own
+`spells_us.txt` / `spells_us_str.txt`. On first launch a one-time migration
+replaces the roster in your saved data. Automated tests cover the mechanics;
+these cover whether it is *right* in play.
+
+Measured against the 19 Aug log before shipping: recognised landing lines went
+45 -> 83, and auto-confirmed 19 -> 49. So expect **more** buffs to be picked up
+and **fewer** questions, not the reverse.
+
+- [ ] **First launch after the update.** *Expect*: the app starts normally,
+      Known Buffs shows about 1,052 entries rather than 11,000+.
+- [ ] **Your auras still work.** Every aura you had configured still tracks the
+      same buffs. *If any aura went blank, stop and report which* - that is the
+      one outcome that matters most.
+- [ ] **Fewer ambiguity prompts** for spells you cast often. Prompts should be
+      noticeably rarer, not more common.
+- [ ] **No prompt asks you to choose between a spell and itself** (e.g. two
+      ranks of Cannibalize). Rank variants are collapsed; if one appears, the
+      collapsing missed a case.
+- [ ] **Promised Renewal reads 15s**, not 18s or 12s, and does not grow with AA
+      duration bonuses.
+- [ ] **Icons still render** on the overlay - the new roster carries icon ids
+      for 1,051 of 1,052 spells.
+- [ ] **A buff that used to be recognised no longer is.** Watch for this
+      specifically. Five spells in the whole roster genuinely cannot be
+      detected (Calm-line spells that print no text at all) - anything beyond
+      those is a regression worth reporting.
+- [ ] **Bard songs** still detect and still sit at the right-hand end of the
+      gem bar.
+
+### If something is badly wrong
+
+The old roster is at `archive/buffs-legacy-11337.json` in the project folder,
+kept for reference. Do **not** copy it back over `src/shared/data/buffs.json` -
+the app has already migrated and it would re-introduce the ambiguity the rebuild
+removed. Report what broke instead; the roster is rebuildable from the
+spreadsheet in a minute with `node tools/build-roster.js --write`.
+
+---
+
 ## Detection engine
 
 - [ ] **Quick Buff burst no longer ignores already-active buffs.**
@@ -52,6 +182,16 @@ short.
 
 ## Memorized gem bar (landing page)
 
+- [ ] **Never shows more than 14 gems.** *(new cap)* Play a session with several
+      loadout swaps, including closing the app mid-swap. *Expect*: the count
+      stays at or below 14 and never creeps up over days.
+- [ ] **An already-drifted count heals itself.** If your bar currently shows
+      more than 14, one launch of this build should bring it to 14 with the
+      most recent kept.
+- [ ] **Re-memorising a spell you already have does not evict it.** Memorise a
+      full bar, re-memorise the first spell, then memorise one more. *Expect*:
+      the re-memorised spell is still there and the stalest one went instead.
+
 - [x] **Persists across restarts.** Memorize some spells, close the app,
   reopen. *Expect*: the bar comes back populated, not empty and red.
 - [x] **Click a gem to forget it** - gem disappears, stays gone after restart.
@@ -87,6 +227,15 @@ short.
 ---
 
 ## QOL batch
+
+- [ ] **Reset remembered choices is red**, matching Delete aura. *(new)*
+- [ ] **The Add Aura premade list shows eight greyed "Not built yet" entries**
+      below the working ones, and none of them can be clicked. *(new)*
+- [ ] **Share codes.** Export an aura: the code should start `EQLSAURAS1-`.
+      Import it back and confirm it works. *(new prefix)*
+- [ ] **An old `EQBT2-` code is refused** rather than importing something
+      broken. A clear "not a valid code" is the expected result for now; a
+      friendlier "this is from an older version" message is not built yet.
 
 - [ ] **Window size and position persist** across restarts. Resize/move the
       window, close, reopen. *Expect*: it returns where you left it.

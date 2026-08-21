@@ -100,4 +100,52 @@ class ForegroundWatcher extends EventEmitter {
   }
 }
 
-module.exports = { ForegroundWatcher };
+// Brings EverQuest back to the front.
+//
+// Answering the ambiguous-cast popup means clicking away from the game, and the game does not
+// come back on its own - so without this you answer a one-click question and then have to find
+// your way back into EQ mid-fight, which is exactly when the question tends to appear.
+//
+// Same inline P/Invoke approach as the poll above, for the same reason: no native npm module.
+// Targets eqgame by PROCESS NAME rather than window title, because the Daybreak launcher shows
+// the identical title "EverQuest Legends" and focusing the launcher instead would be worse than
+// doing nothing (see the note at the top of this file).
+//
+// Deliberately best-effort and silent. The game not running, or Windows refusing the focus
+// change because this app is not the foreground window, are both ordinary situations - not
+// errors worth interrupting anyone about. Resolves to true only when a window was actually
+// raised, so callers and tests can tell the difference.
+function focusGameWindow(execFileFn = execFile) {
+  const script = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class EQBTFocus {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+}
+"@
+$p = Get-Process -Name '${TARGET_PROCESS_NAME}' -ErrorAction SilentlyContinue |
+     Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+if ($p) {
+  # SW_RESTORE (9) first, so a minimised client is un-minimised rather than merely focused.
+  [EQBTFocus]::ShowWindow($p.MainWindowHandle, 9) | Out-Null
+  [EQBTFocus]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
+  'focused'
+} else { 'not-running' }
+`;
+  return new Promise((resolve) => {
+    try {
+      execFileFn(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', script],
+        { windowsHide: true, timeout: 4000 },
+        (err, stdout) => resolve(!err && String(stdout).trim() === 'focused')
+      );
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+module.exports = { ForegroundWatcher, focusGameWindow };
