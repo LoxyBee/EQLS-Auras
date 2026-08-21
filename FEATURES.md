@@ -242,9 +242,10 @@ land before the things that sit on them.
    The second render job. Strictly after step 6, never in parallel — both rewrite the same
    render path. Landing 23 unblocks four other notes.
 
-8. **Promised Renewal fix (1), then the spell data foundation (35)**
-   Start sourcing 35's data **now**, in parallel with steps 1–7. It is blocked on data-
-   gathering, not on engineering time.
+8. ~~**Promised Renewal fix (1), then the spell data foundation (35)**~~ **DONE** — both landed
+   inside the roster rebuild, which ran first as the priority fix rather than eighth. The data
+   gathering this step was waiting on was solved from the game's own files. See notes 1 and 35.
+   **This unblocks note 37**, which drops from several days to a few hours.
 
 9. **Detection rework (24), with overwrite detection (26) and the ally misfire (28) inside it**
    Your own diagnosis: a failed check should continue, not end the check. Fixing that makes 26
@@ -676,44 +677,44 @@ line.
 
 ### Every note at a glance
 
-| # | What it is | Type | Effort | Blocked |
+| # | What it is | Type | Effort | Status |
 |---|---|---|---|---|
-| 1 | Correct Promised Renewal in the roster: its real duration is 15 seconds... | data | trivial |  |
-| 2 | New premade aura: a 'first aggro' checker showing who hit the boss firs... | core-feature | needs-design | yes |
-| 3 | Bug: the remembered-memorized-spells list grows past 14; cap it at the ... | bug | small |  |
-| 4 | QoL: a 'hide all auras' master toggle on the main menu, as a temporary ... | qol | small |  |
-| 5 | Style the 'Reset remembered choices' button red/danger, matching the ot... | qol | trivial |  |
-| 6 | While auras are unlocked, show each aura's name in its blue move box, a... | qol | small |  |
-| 7 | Add text/UI size scaling options for the app window itself | feature | small |  |
-| 8 | Per-aura toggle: merge buffs that share the same duration into one icon... | feature | medium |  |
+| 1 | Correct Promised Renewal in the roster: its real duration is 15 seconds... | data | trivial | **done** |
+| 2 | New premade aura: a 'first aggro' checker showing who hit the boss firs... | core-feature | needs-design | blocked |
+| 3 | Bug: the remembered-memorized-spells list grows past 14; cap it at the ... | bug | small | **done** |
+| 4 | QoL: a 'hide all auras' master toggle on the main menu, as a temporary ... | qol | small | **done** |
+| 5 | Style the 'Reset remembered choices' button red/danger, matching the ot... | qol | trivial | **done** |
+| 6 | While auras are unlocked, show each aura's name in its blue move box, a... | qol | small | **done** |
+| 7 | Add text/UI size scaling options for the app window itself | feature | small | **done** |
+| 8 | Per-aura toggle: merge buffs that share the same duration into one icon... | feature | medium | **done** |
 | 9 | Let a custom aura's timer fire on a combination of triggers (any-of / a... | feature | needs-design |  |
 | 10 | Let one custom trigger run a duration and then roll straight into a coo... | feature | medium |  |
-| 11 | Track AoE mez per mob: start each timer from the land line (never the c... | core-feature | large | yes |
+| 11 | Track AoE mez per mob: start each timer from the land line (never the c... | core-feature | large | blocked |
 | 12 | Show mez as a single consolidated tile - the mob breaking soonest, a co... | feature | medium |  |
-| 13 | Make the main window's left sidebar resizable by dragging its edge | qol | small |  |
+| 13 | Make the main window's left sidebar resizable by dragging its edge | qol | small | **done** |
 | 14 | Premade "buff timer" aura: pick a spell from a dropdown and whether it'... | core-feature | medium |  |
-| 15 | Premade "spell cooldown" aura: pick a skill from a dropdown and get a r... | core-feature | medium | yes |
-| 16 | Premade "debuff on an enemy" aura (mez, malo, slow, etc.) that shows ev... | core-feature | needs-design | yes |
-| 17 | Build the Mesmerization aura as the first worked example of the enemy-d... | feature | large | yes |
+| 15 | Premade "spell cooldown" aura: pick a skill from a dropdown and get a r... | core-feature | medium | blocked |
+| 16 | Premade "debuff on an enemy" aura (mez, malo, slow, etc.) that shows ev... | core-feature | needs-design | blocked |
+| 17 | Build the Mesmerization aura as the first worked example of the enemy-d... | feature | large | blocked |
 | 18 | For AoE debuffs, use the fact that mobs sharing a name produce one succ... | feature | small |  |
 | 19 | Damage parser premade aura, plus a placeholder entry for it in the Add ... | feature | needs-design |  |
-| 20 | Travel guide premade aura that knows which travel spells you have scrib... | feature | needs-design | yes |
-| 21 | An in-game aura showing which loadout profile is currently active, appe... | qol | small | yes |
-| 22 | Show the "All auras" master controls (Unlock all auras) only on the Ove... | qol | trivial |  |
-| 23 | Add a third display style, "Text only", alongside List and Icons - with... | core-feature | large |  |
-| 24 | Rework spell detection into the stated priority order - and add a new p... | core-feature | large | yes |
-| 25 | Add a disabled "Global recovery time" entry to the premade aura list as... | qol | trivial |  |
-| 26 | Detect when a newly landed buff overwrites one that is already running,... | feature | needs-design | yes |
+| 20 | Travel guide premade aura that knows which travel spells you have scrib... | feature | needs-design | blocked |
+| 21 | An in-game aura showing which loadout profile is currently active, appe... | qol | small | blocked |
+| 22 | Show the "All auras" master controls (Unlock all auras) only on the Ove... | qol | trivial | **done** |
+| 23 | Add a third display style, "Text only", alongside List and Icons - with... | core-feature | large | **done** |
+| 24 | Rework spell detection into the stated priority order - and add a new p... | core-feature | large | blocked |
+| 25 | Add a disabled "Global recovery time" entry to the premade aura list as... | qol | trivial | **done** |
+| 26 | Detect when a newly landed buff overwrites one that is already running,... | feature | needs-design | blocked |
 | 27 | Promote "Buffs shown" out of Configuration into its own section, sittin... | core-feature | large |  |
-| 28 | Bug: the Ally Buffs aura showed Berserker Spirit on 19 Aug at 12:15 for... | bug | small | yes |
-| 29 | After you answer the ambiguous-cast popup, put keyboard focus straight ... | qol | small |  |
-| 30 | Watch the log for aura share codes people post in chat, and offer them ... | feature | large | yes |
-| 31 | Unlocking an aura to move it should put it on screen even when that aur... | qol | small |  |
-| 32 | Fix the alert volume slider so it loads the aura's saved volume, and re... | bug | small |  |
-| 33 | The name box in the "New loadout profile" dialog can't be clicked | bug | trivial | yes |
-| 34 | Add "Buff" and "Debuff" premade aura templates that ask you to pick one... | feature | needs-design | yes |
-| 35 | Archive the current spell roster and rebuild it from the new EQL spell ... | data | needs-design | yes |
-| 36 | Play an alert sound when someone asks to trade with you | feature | small |  |
+| 28 | Bug: the Ally Buffs aura showed Berserker Spirit on 19 Aug at 12:15 for... | bug | small | blocked |
+| 29 | After you answer the ambiguous-cast popup, put keyboard focus straight ... | qol | small | **done** |
+| 30 | Watch the log for aura share codes people post in chat, and offer them ... | feature | large | blocked |
+| 31 | Unlocking an aura to move it should put it on screen even when that aur... | qol | small | **done** |
+| 32 | Fix the alert volume slider so it loads the aura's saved volume, and re... | bug | small | **done (range half declined)** |
+| 33 | The name box in the "New loadout profile" dialog can't be clicked | bug | trivial | **fix unconfirmed** |
+| 34 | Add "Buff" and "Debuff" premade aura templates that ask you to pick one... | feature | needs-design | blocked |
+| 35 | Archive the current spell roster and rebuild it from the new EQL spell ... | data | needs-design | **done** |
+| 36 | Play an alert sound when someone asks to trade with you | feature | small | **done** |
 | 37 | Give each aura tile a coloured border by spell type (red for damage/DoT... | feature | large |  |
 | 38 | Let an aura apply only while you are in a specific zone - either as an ... | feature | needs-design |  |
 | 39 | New aura category for multi-trigger auras with AND/OR conditions - reco... | feature | needs-design |  |
@@ -722,7 +723,20 @@ line.
 
 #### #1 — Correct Promised Renewal in the roster: its real duration is 15 seconds, and it never gets the AA duration bonus
 
-`data` · `trivial` (under an hour)
+`data` · `trivial` (under an hour) · **done, inside the roster rebuild**
+
+> **Done.** `Promised Renewal` is 15 seconds with `noDurationScaling` set, and the correction
+> lives in `tools/roster-overrides.json` rather than being typed into the roster file - so a
+> future rebuild cannot quietly undo it, which is exactly the failure the analysis below worried
+> about. The `why` field on the override records that you measured it in game.
+>
+> Two of the ambiguities below stopped existing when the roster was replaced:
+> **"Promised Renewal XII" is not a separate entry any more** - it was one of the other-expansion
+> spells that went - and **there is no "Promised X family" to correct**: this server has exactly
+> one Promised spell, not the thirty the old roster carried.
+>
+> The concern about the fix not reaching an existing install is handled by the `eqlRosterV1`
+> migration, which replaces the stored roster rather than merging into it.
 
 Much easier than it sounds, with one catch. The mechanism you need already exists: a previous
 session set Promised Renewal to 12s + 'No AA scaling' in YOUR local data (HANDOFF.md line 50),
@@ -2054,7 +2068,42 @@ build it after that rework, not before, or it'll be built twice.
 
 #### #35 — Archive the current spell roster and rebuild it from the new EQL spell spreadsheet, including its per-tier (roman numeral) scaling rules and spell categories
 
-`data` · `needs-design` (needs a decision first)  · **blocked**
+`data` · `needs-design` (needs a decision first) · **DONE - this was the priority fix**
+
+> **The design decision below was answered by Shara: REPLACE, not merge.** "the detection layer is
+> problematic because there is too much in the roster. it needs a full redo with only current
+> spells." The roster went from 11,337 generic EverQuest entries to the **1,052 spells this server
+> actually has**, and the old one is archived at `archive/buffs-legacy-11337.json`, outside
+> `src/` so it never ships.
+>
+> **The blocker below was real and was solved from a source nobody had considered.** The sheet's
+> four detection columns genuinely are empty - but the game's own `spells_us.txt` and
+> `spells_us_str.txt` carry that text, and `tools/build-roster.js` now reads both. Measured
+> coverage of the shipped roster, counted rather than estimated:
+>
+> | field | entries carrying it |
+> |---|---|
+> | landing text | 720 |
+> | others-landing suffix | 810 |
+> | ended text | 528 |
+> | reuse time | 989 |
+> | category | 1,052 |
+> | scaling category | 1,052 |
+>
+> Only **five** spells are genuinely undetectable, all Calm-line spells that print nothing at all.
+>
+> **The scaling mapping the note calls a judgement call is written.** The sheet defines 8 scaling
+> categories against 109 spell categories with no mapping supplied; `scaleCategory()` in
+> `tools/build-roster.js` is that mapping, and every entry carries its result.
+>
+> **Measured against a real 28,240-line session of yours:** auto-confirmed detections went 19 to
+> **49**, and recognised-at-all went 45 to **83**. The eight extra ambiguity prompts are lines the
+> old roster did not recognise at all, so nothing regressed.
+>
+> **Nothing in the app reads `category` or `scaleCategory` yet** - they are the foundation, and
+> the notes that consume them are separate. See note 37, whose stated blocker is now gone.
+>
+> The Promised Renewal disagreement the note ends on is settled - see note 1.
 
 **Blocked:** The four columns detection actually runs on - "landed on you", "landed on other",
 "spell faded", "reuse" - are completely empty in the sheet (header row only, zero data rows).
@@ -2150,7 +2199,22 @@ matches, so the new mode must use its own matcher rather than relaxing the share
 
 #### #37 — Give each aura tile a coloured border by spell type (red for damage/DoTs, green for heals/HoTs), on by default, toggled from a new "Borders" sub-section under Label text
 
-`feature` · `large` (several days)
+`feature` · ~~`large` (several days)~~ **→ `small`. UNBLOCKED, 20 August 2026.**
+
+> **The reason this was sized as large has gone.** The analysis below opens "the app has NO idea
+> what type any spell is" and lists a roster entry as
+> `{name, durationSec, landingText, endedText, iconId, showOnOverlay, isBardSong}`. That is no
+> longer what a roster entry looks like. Every one of the 1,052 entries now carries `category`
+> (109 values, from the spreadsheet) and `scaleCategory` (9 values: buff, debuff, nuke, dot,
+> heal, hot, pet, charm, none).
+>
+> The cheap path the note itself points at - "this should be built AFTER that spreadsheet becomes
+> the roster" - is the path that was taken. What is left is choosing colours and drawing a border,
+> which is a few hours, not several days. The days of empirical field-mining it feared are not
+> needed and were never done.
+>
+> `scaleCategory` is probably the field to colour by: 9 values maps onto a legend someone can
+> hold in their head, where 109 does not.
 
 MUCH HARDER THAN IT SOUNDS, but for one specific reason: the app has NO idea what type any spell
 is. A roster entry is {name, durationSec, landingText, endedText, iconId, showOnOverlay,
