@@ -97,6 +97,9 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getOverlayMasterState: () => ipcRenderer.invoke('overlay:getMasterState'),
   setOverlayAllUnlocked: (unlocked) => ipcRenderer.invoke('overlay:setAllUnlocked', unlocked),
   setOverlayMasterHidden: (hidden) => ipcRenderer.invoke('overlay:setMasterHidden', hidden),
+  onOverlayMasterStateChanged: (callback) => {
+    ipcRenderer.on('overlay:masterStateChanged', () => callback());
+  },
   setAutoHideOverlayEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoHideOverlay', enabled),
 
   getSpellbookState: () => ipcRenderer.invoke('spellbook:getState'),

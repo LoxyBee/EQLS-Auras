@@ -823,9 +823,11 @@ backlog.
 > 3. **Persistence:** **not** persisted. A forgotten hide surviving a restart looks exactly like
 >    "all my auras broke overnight". The button is loud while it is on for the same reason.
 >
-> **The hotkey is NOT built**, and it is the one part that genuinely needs your answer: a global
-> hotkey is swallowed before EverQuest ever sees it, so it has to be a key you never use in game.
-> Name one and it is a small addition.
+> **The hotkey is built: Pause/Break**, the key you named. It is grabbed at the OS level, so
+> EverQuest genuinely never sees it while the app is running - which is exactly why it had to be
+> a key you never use. If another program already owns it, registration fails quietly and is
+> logged; the button in the top bar keeps working either way, so the shortcut is never the only
+> way to reach this. The key is released on quit, or it would stay captured after the app closed.
 >
 > One thing worth knowing: a **sound-only aura is exempt** from this toggle, because it draws
 > nothing and there is nothing of it on screen to clear. Unticking its profiles is still how you

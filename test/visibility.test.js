@@ -314,6 +314,41 @@ test('the four clauses of shouldBeOnScreen are in the order the notes require', 
   assert.ok(at('masterHidden') < at('foregroundHidden'));
 });
 
+test('the Pause hotkey toggles master hide, and gives the key back on quit', () => {
+  // Chosen by the owner because she never uses it in game, which is the only thing that makes a
+  // global shortcut safe here: it is grabbed at OS level and EverQuest never sees the key at all
+  // while this app runs. Structural, because globalShortcut needs a real Electron app.
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+
+  assert.match(main, /globalShortcut\.register\('Pause'/, 'the hotkey is not registered');
+  assert.match(
+    main, /globalShortcut\.unregisterAll\(\)/,
+    'without this the key stays captured from EverQuest after the app has quit'
+  );
+  const quit = main.match(/app\.on\('will-quit'[\s\S]*?\n\}\);/);
+  assert.ok(quit && /unregisterAll/.test(quit[0]), 'the release must happen on will-quit');
+
+  // register() fails by returning false, not by throwing, when another app already owns the key.
+  // The button in the top bar has to keep working in that case - the shortcut is never the only
+  // way to reach this.
+  assert.match(main, /if \(!hotkeyRegistered\)/, 'a failed registration is not noticed');
+
+  // And the toggle has to be the same one the button uses, not a second copy of the rule.
+  const handler = main.match(/globalShortcut\.register\('Pause', \(\) => \{([\s\S]*?)\n  \}\)/);
+  assert.ok(handler, 'the hotkey handler has been restructured');
+  assert.match(handler[1], /widgetManager\.setMasterHidden\(!widgetManager\.isMasterHidden\(\)\)/);
+  assert.match(
+    handler[1], /overlay:masterStateChanged/,
+    'the top-bar button is the only readout of a state that is invisible by definition - it has ' +
+    'to be told when something else changes it'
+  );
+
+  const renderer = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8'
+  );
+  assert.match(renderer, /onOverlayMasterStateChanged\(\(\) => refreshMasterButtons\(\)\)/);
+});
+
 process.on('exit', () => {
   try {
     fs.rmSync(USER_DATA, { recursive: true, force: true });

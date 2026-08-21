@@ -288,6 +288,44 @@ test('the Sounds section of the settings window is not hidden for any aura type'
   );
 });
 
+test('exporting an aura says when its custom sound will not travel', () => {
+  // The three sound-file slots are deliberately not shareable - the id points at a file in the
+  // sender's own app data. For an aura with tiles that is a cosmetic loss. For a sound-only aura
+  // the sound IS the aura, so the recipient gets a different thing wearing the same name.
+  //
+  // The function is lifted out of the renderer and run for real, the same trick trade-ping.test.js
+  // uses on its pattern: main-window.js needs a DOM and cannot be required here, but this piece
+  // of it depends on nothing but its argument.
+  const src = rendererSrc.match(/function soundWarningFor\(widget\) \{[\s\S]*?\n  \}/);
+  assert.ok(src, 'soundWarningFor has been renamed or restructured');
+  // eslint-disable-next-line no-new-func
+  const soundWarningFor = new Function(`${src[0]}; return soundWarningFor;`)();
+
+  assert.equal(soundWarningFor(null), '', 'no aura, no warning');
+  assert.equal(soundWarningFor({ displayMode: 'list' }), '', 'default beeps travel fine - say nothing');
+  assert.equal(
+    soundWarningFor({ displayMode: 'list', landSoundId: null, expireSoundId: null }), '',
+    'empty slots must not count as custom sounds'
+  );
+
+  const listWarning = soundWarningFor({ displayMode: 'list', expireSoundId: 'abc' });
+  assert.match(listWarning, /will not travel/i);
+  assert.match(listWarning, /sound file\b/, 'one file should be singular');
+
+  const twoFiles = soundWarningFor({ displayMode: 'list', expireSoundId: 'a', landSoundId: 'b' });
+  assert.match(twoFiles, /sound files/, 'two files should be plural');
+
+  const silentWarning = soundWarningFor({ displayMode: 'sound-only', landSoundId: 'abc' });
+  assert.notEqual(silentWarning, listWarning, 'a sound-only aura deserves the stronger wording');
+  assert.match(silentWarning, /NOT travel/, 'it should be unmissable, not a footnote');
+});
+
+test('the export warning is cleared when the panel is put away', () => {
+  // Left on screen, it would appear over the NEXT aura exported - one that may have no custom
+  // sound at all.
+  assert.match(rendererSrc, /exportSoundWarningEl\.style\.display = 'none';/);
+});
+
 // ---------------------------------------------------------------------------
 // Order: where a wrong line number is silent rather than loud
 // ---------------------------------------------------------------------------

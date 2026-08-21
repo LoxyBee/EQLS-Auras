@@ -1021,6 +1021,7 @@ function initWidgetsPanel() {
   const exportCodeRow = document.getElementById('export-widget-code-row');
   const exportCodeOutput = document.getElementById('export-widget-code-output');
   const copyCodeBtn = document.getElementById('copy-widget-code-btn');
+  const exportSoundWarningEl = document.getElementById('export-sound-warning');
   const openAddWidgetBtn = document.getElementById('open-add-widget-modal-btn');
   const addWidgetModalBackdrop = document.getElementById('add-widget-modal-backdrop');
   const closeAddWidgetModalBtn = document.getElementById('close-add-widget-modal');
@@ -1441,6 +1442,7 @@ function initWidgetsPanel() {
     allAurasCard.style.display = 'none';
     settingsPanel.style.display = '';
     exportCodeRow.style.display = 'none';
+    exportSoundWarningEl.style.display = 'none';
     exportCodeOutput.value = '';
     settingsTitle.textContent = `${widget.name} settings`;
     nameInput.value = widget.name;
@@ -2311,6 +2313,9 @@ function initWidgetsPanel() {
       })
     );
   });
+  // The Pause hotkey toggles the same state from outside this window, so the button has to
+  // re-read rather than assume it is the only thing that can change it.
+  window.eqTracker.onOverlayMasterStateChanged(() => refreshMasterButtons());
   masterHideAllBtn.addEventListener('click', () => {
     window.eqTracker.getOverlayMasterState().then((state) =>
       window.eqTracker.setOverlayMasterHidden(!state.masterHidden).then(refreshMasterButtons)
@@ -2419,11 +2424,33 @@ function initWidgetsPanel() {
       if (config) focusWidget(config.id);
     });
   });
+  // A custom sound is a file in THIS install's app data. The code carries an id that means
+  // nothing on anyone else's machine, so the three sound-file slots are deliberately left out of
+  // SHAREABLE_FIELDS and the recipient falls back to the default beep. For an aura with tiles
+  // that is a cosmetic loss nobody needs warning about. For a sound-only aura the sound IS the
+  // aura, so the recipient gets a different thing wearing the same name with no signal at all -
+  // which is why this says so at the moment the code is produced rather than in the docs.
+  function soundWarningFor(widget) {
+    if (!widget) return '';
+    const files = ['landSoundId', 'expireSoundId', 'warningSoundId'].filter((k) => widget[k]);
+    if (!files.length) return '';
+    const which = files.length === 1 ? 'sound file' : 'sound files';
+    return widget.displayMode === 'sound-only'
+      ? `Your chosen ${which} will NOT travel with this code - whoever imports it hears the default ` +
+        `beep instead. This aura is nothing but its sound, so send them the file separately if you ` +
+        `want them to hear what you hear.`
+      : `Note: your chosen ${which} will not travel with this code. Everything else does; whoever ` +
+        `imports it hears the default beep unless you send them the file separately.`;
+  }
+
   exportBtn.addEventListener('click', () => {
     window.eqTracker.exportWidget(selectedId).then((code) => {
       if (!code) return;
       exportCodeOutput.value = code;
       exportCodeRow.style.display = '';
+      const warning = soundWarningFor(findWidget(selectedId));
+      exportSoundWarningEl.textContent = warning;
+      exportSoundWarningEl.style.display = warning ? '' : 'none';
       exportCodeOutput.select();
     });
   });

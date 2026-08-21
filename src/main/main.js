@@ -24,7 +24,7 @@ const path = require('path');
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
 const fs = require('fs');
-const { ipcMain, protocol, BrowserWindow, Menu } = require('electron');
+const { ipcMain, protocol, BrowserWindow, Menu, globalShortcut } = require('electron');
 const { createMainWindow, getMainWindow } = require('./mainWindow');
 const { LogService } = require('./logService');
 const { BuffStore } = require('./buffStore');
@@ -323,6 +323,26 @@ app.whenReady().then(() => {
   if (win) {
     win.on('close', () => debugLog('SHUTDOWN: main window close event'));
     win.webContents.on('unresponsive', () => debugLog('SHUTDOWN WARNING: main window renderer unresponsive'));
+  }
+
+  // Note 4's hotkey. Pause/Break, chosen by the owner because she never uses it in game - which
+  // is the only thing that makes a global shortcut safe here: it is grabbed at the OS level and
+  // EverQuest never sees the key at all while this app is running.
+  //
+  // Registration can genuinely fail (another app already owns the key), and it fails by
+  // returning false rather than throwing - so it is logged and the button in the top bar carries
+  // on working either way. The shortcut is never the only way to reach this.
+  const hotkeyRegistered = globalShortcut.register('Pause', () => {
+    const hidden = widgetManager.setMasterHidden(!widgetManager.isMasterHidden());
+    const settingsWin = getMainWindow();
+    // Keep the button in the top bar honest - it is the only readout of a state that is
+    // otherwise invisible by definition.
+    if (settingsWin && !settingsWin.isDestroyed()) {
+      settingsWin.webContents.send('overlay:masterStateChanged', { masterHidden: hidden });
+    }
+  });
+  if (!hotkeyRegistered) {
+    debugLog('Could not register the Pause hotkey - another application already owns it');
   }
 
   applyInstallRoot(logService.getState().eqFolder);
@@ -723,7 +743,12 @@ app.on('before-quit', () => {
   const { selfBuffs, allyBuffs } = buffEngine.getSnapshotState();
   saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, customTimers: customTimerEngine.getSnapshotState() });
 });
-app.on('will-quit', () => debugLog('SHUTDOWN: will-quit fired'));
+app.on('will-quit', () => {
+  debugLog('SHUTDOWN: will-quit fired');
+  // A global shortcut outlives the window that registered it, so leaving it registered means the
+  // key stays captured from EverQuest after the app has gone.
+  globalShortcut.unregisterAll();
+});
 // A renderer dying takes its window with it, which can cascade into
 // window-all-closed and look like a clean quit - `reason` distinguishes a
 // real crash ('crashed'/'oom') from an ordinary teardown ('clean-exit').

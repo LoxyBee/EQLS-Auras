@@ -209,6 +209,9 @@ observed, and if it is wrong the symptom is a missed alert, not an error.
 - [ ] **Export its share code and import it back.** *Expect*: the copy is
       sound-only too. A custom sound FILE deliberately does not travel - the
       copy falls back to the default beep, which is correct, not a bug.
+- [ ] **Pick a custom sound file for it, then press Export.** *Expect*: a line under the code
+      saying the file will NOT travel, worded more strongly than on an ordinary aura because for
+      this one the sound is the whole aura. With only the default beeps, no message at all.
 
 ### Sounds on every aura type
 
@@ -230,6 +233,11 @@ There is a new **Hide auras** button at the right-hand end of the profile bar, a
 
 - [ ] **Press Hide auras.** *Expect*: every aura disappears at once, and the button turns red and
       reads "Auras hidden - show". Press again and they all come back exactly as they were.
+- [ ] **Press the Pause key**, with EverQuest focused. *Expect*: exactly the same thing, and the
+      button in the app updates to match even though you never touched it.
+- [ ] **Confirm Pause does nothing in EverQuest any more** while the app is running. That is the
+      cost of a global hotkey and the reason you were asked to pick a key you do not use.
+- [ ] **Close the app and press Pause again.** *Expect*: EverQuest gets the key back.
 - [ ] **Unlock an aura, then press Hide auras.** *Expect*: it hides too. Hiding deliberately
       beats unlocking - if that turns out to be the wrong way round for you, it is one line.
 - [ ] **Restart the app while auras are hidden.** *Expect*: they come back visible. The hide is

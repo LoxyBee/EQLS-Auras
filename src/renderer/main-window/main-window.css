@@ -209,6 +209,14 @@ body {
   cursor: pointer;
 }
 
+/* The hotkey is invisible otherwise, and a shortcut nobody knows about is a shortcut nobody
+   uses. Sits beside the button rather than in a tooltip for that reason. */
+.master-hide-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
 .master-hide-btn:hover {
   color: var(--ink);
   border-color: var(--ink-mut);
