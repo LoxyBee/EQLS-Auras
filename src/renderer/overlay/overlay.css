@@ -64,6 +64,41 @@ body {
 
 body.unlocked .drag-overlay {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Deliberately a small pill rather than a full-width bar. The box around it is what you grab to
+   move the aura, and -webkit-app-region: no-drag carves a hole in that - too generous here and
+   the aura you are trying to move becomes the one you cannot. */
+.drag-name {
+  -webkit-app-region: no-drag;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(20, 30, 70, 0.55);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.drag-name:hover {
+  background: rgba(20, 30, 70, 0.85);
+  border-color: #fff;
+}
+
+/* Hidden when there is no name to show yet, so an empty pill never sits there looking broken. */
+.drag-name:empty {
+  display: none;
+}
+
+.drag-hint {
+  -webkit-app-region: drag;
 }
 
 /* A sound-only aura draws nothing, and that has to include the unlock chrome. Hiding

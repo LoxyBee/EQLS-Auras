@@ -1839,6 +1839,10 @@ function initWidgetsPanel() {
 
   widgetsNavBtn.addEventListener('click', deselectWidget);
 
+  // Note 6 - an aura's name was clicked in its move box out on the overlay. Registered in here
+  // rather than alongside the other IPC listeners because focusWidget lives in this closure.
+  window.eqTracker.onOpenWidgetSettings((id) => focusWidget(id));
+
   // Refreshes the widget list, then selects+focuses a specific one - shared
   // by every path that ends with a brand-new (or overwritten) widget:
   // custom creation, premade creation, and both import outcomes below.

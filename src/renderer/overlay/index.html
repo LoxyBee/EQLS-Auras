@@ -7,7 +7,13 @@
 </head>
 <body>
   <div id="content-wrap">
-    <div id="drag-overlay" class="drag-overlay">Click and drag to move<br />Lock in app when done</div>
+    <!-- The whole box is a Chromium drag region, which eats mouse events - so the clickable
+         name has to be a no-drag child of it (see .drag-name in overlay.css). Keep it small:
+         every pixel of no-drag is a pixel you can no longer grab the aura by. -->
+    <div id="drag-overlay" class="drag-overlay">
+      <button type="button" id="drag-name" class="drag-name" title="Open this aura's settings"></button>
+      <span class="drag-hint">Click and drag to move<br />Lock in app when done</span>
+    </div>
     <div id="buff-list" class="buff-list"></div>
   </div>
   <script src="overlay.js"></script>

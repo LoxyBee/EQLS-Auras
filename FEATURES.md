@@ -886,7 +886,24 @@ already asks for confirmation before clearing anything.
 
 #### #6 — While auras are unlocked, show each aura's name in its blue move box, and clicking that name should jump straight to that aura's settings
 
-`qol` · `small` (a few hours)
+`qol` · `small` (a few hours) · **built 20 August 2026, both halves**
+
+> The name is a small no-drag pill inside the box, sized so the rest of the box still drags -
+> the trap named below is real and a click listener anywhere inside a drag region simply never
+> fires, with no error to show for it. A test pins the pill as `no-drag` and the box and hint as
+> `drag`, comparing the declared values exactly rather than matching on the word "drag", which
+> also matches "no-drag".
+>
+> The name is written from `applyConfig`, so renaming an aura updates its box straight away
+> rather than at the next restart. An aura with no name shows no pill at all.
+>
+> Clicking it raises and focuses the settings window (restoring it first if minimised) and opens
+> that aura's page. As predicted below, this pulls EverQuest out of focus - and with auto-hide on
+> that is the moment your other auras vanish. Unlocked ones stay put, which is what makes it
+> tolerable rather than alarming.
+>
+> A sound-only aura has no move box at all, so it has no pill - its settings are reached from the
+> sidebar like any other aura's.
 
 Two halves with very different costs, and the first half is nearly free: the overlay renderer
 already receives the aura's full config including its name (widgetManager sends the whole object

@@ -28,4 +28,9 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   reportContentSize: (widgetId, width, height, originX) => {
     ipcRenderer.send('widget:reportContentSize', { id: widgetId, width, height, originX });
   },
+  // Note 6. Only the second thing an overlay window can send to the main process - it is
+  // otherwise receive-only, which is why this needed a new channel rather than an existing one.
+  openSettings: (widgetId) => {
+    ipcRenderer.send('widget:openSettings', widgetId);
+  },
 });

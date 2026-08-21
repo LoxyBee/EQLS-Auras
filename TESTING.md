@@ -26,7 +26,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a
 character standing in a zone. If it is red, nothing below is worth doing yet -
 read the failure text, it says what broke and why.
 
-Ten suites at the time of writing:
+Eleven suites at the time of writing:
 
 | Suite | Guards |
 |---|---|
@@ -39,6 +39,7 @@ Ten suites at the time of writing:
 | `test/trade-ping.test.js` | the trade-request line pattern, run against your own real logs - it must fire on requests and on nothing else |
 | `test/sound-only.test.js` | sound-only auras: the mode survives saving and sharing, a foreign mode cannot arrive by either import route, every aura type still carries every sound setting, and the overlay's early return stays between the alerts and the drawing |
 | `test/visibility.test.js` | the whole precedence model - profile membership as the on/off switch, "Hide auras" beating unlock, unlocking one aura beating its profile, and off meaning silent as well as invisible |
+| `test/move-box.test.js` | the name pill in the move box: that it opts out of the drag region (a click inside one never fires), that it does not swallow the draggable area, and that every hop from the pill to the settings page exists |
 | `tools/lib/xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
 
 If the roster capability snapshot fails after a deliberate roster change, read
@@ -240,6 +241,22 @@ There is a new **Hide auras** button at the right-hand end of the profile bar, a
       away. Only unlocking one by hand pulls it onto the screen.
 - [ ] **Move a switched-off aura while it is unlocked, then re-lock, then switch its profile back
       on.** *Expect*: it is where you put it.
+
+### Aura names in the move box *(new - needs looking at)*
+
+- [ ] **Unlock an aura.** *Expect*: its blue box now shows the aura's name in a small pill above
+      the "Click and drag to move" text.
+- [ ] **Drag the box by the area around the pill.** *Expect*: it still moves normally. This is
+      the one to watch - the pill has to be a hole in the draggable area, and too big a hole
+      means the aura you are trying to move is the one you cannot.
+- [ ] **Click the pill.** *Expect*: the settings window comes to the front and opens that aura's
+      page. If the window was minimised it should restore.
+- [ ] **Expect EverQuest to lose focus when it does.** With auto-hide on, your other auras
+      disappear at that moment. Unlocked ones stay. That is intended, not a bug.
+- [ ] **Rename an aura while it is unlocked.** *Expect*: the pill updates immediately, without a
+      restart.
+- [ ] **Unlock several auras at once.** *Expect*: you can tell which box is which, which is the
+      entire point of the note.
 
 ### Sound follows the on/off switch, not the screen *(new - a real bug was found here)*
 

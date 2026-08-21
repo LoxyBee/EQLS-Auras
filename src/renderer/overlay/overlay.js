@@ -3,6 +3,10 @@ const widgetId = new URLSearchParams(window.location.search).get('widgetId');
 const listEl = document.getElementById('buff-list');
 const contentWrap = document.getElementById('content-wrap');
 const dragOverlayEl = document.getElementById('drag-overlay');
+const dragNameEl = document.getElementById('drag-name');
+
+// Note 6. Only reachable while unlocked, since the whole box is hidden otherwise.
+dragNameEl.addEventListener('click', () => window.eqOverlay.openSettings(widgetId));
 
 // Used only until the real config arrives from getConfig() below - a
 // freshly created widget's window has to fully boot before that resolves,
@@ -860,6 +864,10 @@ function applyConfig(config) {
   // screen immediately, instead of staying visible until the next buff tick happens to arrive -
   // which, on a quiet aura, could be a very long time.
   document.body.classList.toggle('sound-only', config.displayMode === 'sound-only');
+  // Note 6 - the aura's own name in its move box, so a screen full of unlocked blue rectangles
+  // says which is which. Set from applyConfig rather than once at boot because a rename arrives
+  // as a config change, and the box would otherwise show the old name until the next restart.
+  dragNameEl.textContent = config.name || '';
   document.documentElement.style.setProperty('--text-size', `${config.textSize || 13}px`);
   document.documentElement.style.setProperty('--icon-size', `${config.iconSize || 46}px`);
   document.documentElement.style.setProperty('--timer-text-color', config.timerTextColor || '#f0f1f5');

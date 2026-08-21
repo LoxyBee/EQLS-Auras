@@ -114,6 +114,9 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createWidget: (name, buffSource) => ipcRenderer.invoke('widget:create', { name, buffSource }),
   createAllyBuffsWidget: (name) => ipcRenderer.invoke('widget:createAlly', { name }),
   createSoundOnlyWidget: (name) => ipcRenderer.invoke('widget:createSoundOnly', { name }),
+  onOpenWidgetSettings: (callback) => {
+    ipcRenderer.on('widget:openSettings', (_event, id) => callback(id));
+  },
   exportWidget: (id) => ipcRenderer.invoke('widget:export', id),
   peekWidgetCode: (code) => ipcRenderer.invoke('widget:peekCode', code),
   importWidget: (code) => ipcRenderer.invoke('widget:import', code),

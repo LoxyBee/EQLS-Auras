@@ -562,6 +562,18 @@ ipcMain.handle('spellbook:clearMemorized', () => buffEngine.clearMemorized());
 
 ipcMain.handle('widget:list', () => widgetManager.getAllWidgetConfigs());
 ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig(id));
+// Note 6 - clicking an aura's name in its move box. Raises the settings window and tells it
+// which aura to open. Worth knowing: this pulls EverQuest out of focus, so with auto-hide on it
+// is also the moment your other auras vanish. The unlocked ones stay put, which is the only
+// reason that is tolerable.
+ipcMain.on('widget:openSettings', (_event, id) => {
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  win.webContents.send('widget:openSettings', id);
+});
 // An overlay asks for this as it boots, the same way it asks for its lock state - a window
 // created on demand would otherwise start out assuming it may make noise.
 ipcMain.handle('widget:isAudible', (_event, id) => {
