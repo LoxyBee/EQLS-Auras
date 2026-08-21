@@ -211,5 +211,21 @@ test('the title bar is still the only thing that drags the window', () => {
   );
 });
 
+test('the OVERLAY renderer looks up only ids that exist in its own markup too', () => {
+  // The same silent break, in the window nobody has open while they work. The overlay looks up
+  // far fewer ids than the settings window, which is exactly why it is easy to forget - the
+  // move-box name pill was the first new one added to it in a long while.
+  const overlayDir = path.join(__dirname, '..', 'src', 'renderer', 'overlay');
+  const overlayHtml = fs.readFileSync(path.join(overlayDir, 'index.html'), 'utf8');
+  const overlayJs = fs.readFileSync(path.join(overlayDir, 'overlay.js'), 'utf8');
+  const ids = new Set([...overlayHtml.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  const looked = [...overlayJs.matchAll(/getElementById\(\s*'([^']+)'\s*\)/g)].map((m) => m[1]);
+  assert.ok(looked.length >= 3, 'suspiciously few lookups - has the overlay been restructured?');
+  assert.deepEqual(
+    [...new Set(looked)].filter((id) => !ids.has(id)), [],
+    'the overlay looks up ids that are not in its markup, which returns null and fails later'
+  );
+});
+
 module.exports = () => report('renderer-wiring');
 if (require.main === module) process.exit(report('renderer-wiring') ? 1 : 0);
