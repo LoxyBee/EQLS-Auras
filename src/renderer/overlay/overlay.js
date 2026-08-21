@@ -770,6 +770,19 @@ function visibleBuffs(buffs) {
     const nameSet = new Set((currentConfig.buffNames || []).map((n) => n.toLowerCase()));
     filtered = buffs.filter((b) => nameSet.has(b.name.toLowerCase()));
   }
+  // INSTANTS - nukes, heals, gates - only belong on an aura that is not drawing a countdown.
+  //
+  // Shara's rule: they "should not be added to selection lists that have a duration based tile"
+  // but "can be added to sound and text only custom auras... just in case someone wants feedback
+  // when a cast is successful or resisted". So a list or icon aura filters them out here, and a
+  // sound-only or text aura keeps them.
+  //
+  // Done at the aura level rather than by not landing them at all, because the engine has one
+  // active list feeding every aura - refusing to land would take them away from the two kinds of
+  // aura that are supposed to have them.
+  const drawsCountdowns = currentConfig.displayMode !== 'sound-only' && currentConfig.displayMode !== 'text';
+  if (drawsCountdowns) filtered = filtered.filter((b) => !b.instant);
+
   // Merged AFTER filtering and BEFORE sorting. After filtering, or an excluded buff would still
   // be counted in a badge; before sorting, so the merged tile takes its place in the order by the
   // remaining time it actually shows rather than by whichever member happened to be first.

@@ -23,6 +23,15 @@ const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
 const TICK_INTERVAL_MS = 1000;
 
+// How long an INSTANT stays in the active list - a spell the roster has no duration for and which
+// is not marked as lasting forever, i.e. something that happened rather than something running.
+//
+// Deliberately not zero. A sound aura only needs the landing, but a text aura has to keep the
+// words on screen long enough to read, and an entry that expired in the tick it arrived would give
+// it nothing to draw. It is a display choice, not a claim about the game - durationSec stays null
+// so no countdown can ever be rendered from it.
+const INSTANT_DISPLAY_SEC = 6;
+
 // A character has fourteen spell gems, so at most fourteen spells can be memorized at once.
 //
 // currentlyMemorized can nevertheless drift above that, because it is built purely from
@@ -977,6 +986,29 @@ class BuffEngine extends EventEmitter {
       return;
     }
     const effectiveDurationSec = this._scaledDuration(known);
+    // AN INSTANT. The roster has no duration for it and it is not marked as lasting forever, so it
+    // is something that happens rather than something that runs - a nuke, a heal, a gate.
+    //
+    // Shara's rule: "genuine no duration spells should not be tracked for duration based auras...
+    // but can be added to instance based tracking such as sounds, and text only." So it still
+    // LANDS, because that is how a sound or text aura hears about it at all, and the overlay is
+    // what refuses to draw it as a countdown tile.
+    //
+    // It gets a short life rather than none, and that number is a display choice rather than a
+    // claim about the game: a text aura has to have something on screen long enough to read, and
+    // an event with no duration would otherwise vanish in the same tick it arrived. Everything
+    // else about it is honest - durationSec stays null so nothing can render a countdown from it.
+    if (!Number.isFinite(effectiveDurationSec)) {
+      this.activeBuffs.set(key, {
+        name: known.name,
+        durationSec: null,
+        expiresAt: Date.now() + INSTANT_DISPLAY_SEC * 1000,
+        instant: true,
+        endedText: known.endedText || null,
+      });
+      this.emit('buffsChanged', this.getActiveBuffs());
+      return;
+    }
     this.activeBuffs.set(key, {
       name: known.name,
       durationSec: effectiveDurationSec,
@@ -1002,6 +1034,17 @@ class BuffEngine extends EventEmitter {
       return;
     }
     const effectiveDurationSec = this._scaledDuration(known);
+    if (!Number.isFinite(effectiveDurationSec)) {
+      this.allyBuffs.set(key, {
+        name: known.name,
+        allyName,
+        durationSec: null,
+        expiresAt: Date.now() + INSTANT_DISPLAY_SEC * 1000,
+        instant: true,
+      });
+      this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+      return;
+    }
     this.allyBuffs.set(key, {
       name: known.name,
       allyName,
@@ -1388,8 +1431,11 @@ class BuffEngine extends EventEmitter {
           durationSec: b.durationSec,
           // null, not a number, for a buff that never runs out. Everything downstream checks for
           // it rather than trying to render a countdown that has no end.
-          remainingSec: b.infinite ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
+          remainingSec: b.infinite || b.instant ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
           infinite: !!b.infinite,
+          // An event rather than a running buff. The overlay uses this to keep it off auras that
+          // draw countdowns, and to allow it on the two that do not.
+          instant: !!b.instant,
           showOnOverlay: known ? known.showOnOverlay !== false : true,
           // != null, not a truthy check - icon id 0 is a real, pickable
           // icon (the picker's first thumbnail), not "no icon".
@@ -1406,9 +1452,15 @@ class BuffEngine extends EventEmitter {
       // subtraction would treat null as zero and put them at the top as if they were about to
       // expire - the opposite of the truth, in the position the eye goes to first.
       .sort((a, b) => {
-        if (a.infinite && b.infinite) return 0;
-        if (a.infinite) return 1;
-        if (b.infinite) return -1;
+        // Anything with no remaining time - infinite or instant - sorts LAST. remainingSec is null
+        // for both, and plain subtraction treats null as zero, which would put them at the top as
+        // if they were about to expire: the opposite of the truth, in the position the eye checks
+        // first.
+        const aNone = a.infinite || a.instant;
+        const bNone = b.infinite || b.instant;
+        if (aNone && bNone) return 0;
+        if (aNone) return 1;
+        if (bNone) return -1;
         return a.remainingSec - b.remainingSec;
       });
   }
@@ -1427,8 +1479,11 @@ class BuffEngine extends EventEmitter {
           durationSec: b.durationSec,
           // null, not a number, for a buff that never runs out. Everything downstream checks for
           // it rather than trying to render a countdown that has no end.
-          remainingSec: b.infinite ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
+          remainingSec: b.infinite || b.instant ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
           infinite: !!b.infinite,
+          // An event rather than a running buff. The overlay uses this to keep it off auras that
+          // draw countdowns, and to allow it on the two that do not.
+          instant: !!b.instant,
           showOnOverlay: known ? known.showOnOverlay !== false : true,
           // != null, not a truthy check - icon id 0 is a real, pickable
           // icon (the picker's first thumbnail), not "no icon".
@@ -1445,9 +1500,15 @@ class BuffEngine extends EventEmitter {
       // subtraction would treat null as zero and put them at the top as if they were about to
       // expire - the opposite of the truth, in the position the eye goes to first.
       .sort((a, b) => {
-        if (a.infinite && b.infinite) return 0;
-        if (a.infinite) return 1;
-        if (b.infinite) return -1;
+        // Anything with no remaining time - infinite or instant - sorts LAST. remainingSec is null
+        // for both, and plain subtraction treats null as zero, which would put them at the top as
+        // if they were about to expire: the opposite of the truth, in the position the eye checks
+        // first.
+        const aNone = a.infinite || a.instant;
+        const bNone = b.infinite || b.instant;
+        if (aNone && bNone) return 0;
+        if (aNone) return 1;
+        if (bNone) return -1;
         return a.remainingSec - b.remainingSec;
       });
   }

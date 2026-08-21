@@ -1741,8 +1741,28 @@ so a never-expiring tile needs a deliberate answer there rather than falling thr
 > coloured as though seconds from expiring, beep an about-to-expire warning once a loop interval
 > forever, and sort to the top of the list as the most urgent thing on screen.
 >
-> **AND A LIVE BUG FOUND ON THE WAY — NOT fixed, because fixing it costs more than it saves and
-> the choice is yours.** 275 roster entries carry a landing text and no duration. Multiplying an
+> **INSTANTS — BUILT, and this is what finally fixed the NaN bug properly.** Your rule: a genuine
+> no-duration spell "should not be tracked for duration based auras such as custom timer, ally
+> buffs, self buffs, etc. but can be added to instance based tracking such as sounds, and text
+> only... just in case someone wants feedback when a cast is successful or resisted."
+>
+> So a spell with no duration that is not marked infinite is now an **instant** — something that
+> happened rather than something running. It still lands, because that is the only way a sound or
+> text aura hears about anything at all, and the OVERLAY refuses to draw it on any aura that draws
+> countdowns. `durationSec` stays null so nothing can render a timer from it, and the expiry is a
+> short display life rather than NaN, which is what makes it removable at all.
+>
+> That short life is the one invented number in this, and it is a display choice rather than a
+> claim about the game: a text aura needs the words on screen long enough to read, and an event
+> with no duration would otherwise vanish in the tick it arrived.
+>
+> **The NaN bug is gone as a side effect.** Every no-duration spell now falls into one of two
+> honest cases — infinite, or instant — and neither produces NaN. Verified against 1.6 million
+> lines in both modes: no regressions, every total identical.
+
+> ~~**AND A LIVE BUG FOUND ON THE WAY — NOT fixed, because fixing it costs more than it saves and
+> the choice is yours.**~~ *(Fixed — see the two boxes above. The measurement below is kept
+> because it is what ruled out the naive fix.)* 275 roster entries carry a landing text and no duration. Multiplying an
 > absent duration gives NaN, NaN becomes the expiry time, and the expiry sweep asks
 > `expiresAt <= now` — which is false for NaN, forever. So one of those landing produces a tile
 > reading **"NaN:NaN" that never counts down and cannot be dismissed without restarting the app.**

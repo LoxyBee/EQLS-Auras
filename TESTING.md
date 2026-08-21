@@ -302,7 +302,23 @@ a full bar, sorted to the bottom of the list, and they never disappear on their 
       into the roster. Confirm and they are a two-line addition to
       `tools/roster-overrides.json`, which now carries the instructions.
 
-### A buff that never goes away *(the OTHER no-duration spells - still needs your decision)*
+### Instant spells - nukes, heals, gates *(new - and this fixed the NaN tile)*
+
+Your rule: a spell with no real duration should not clutter a duration-based aura, but should be
+available to sound and text auras "just in case someone wants feedback when a cast is successful
+or resisted". That is now how it works.
+
+- [ ] **Watch a normal aura during a fight.** *Expect*: no tiles for your nukes or heals, and no
+      tile stuck showing NaN. That last one was the bug - it could only be cleared by restarting.
+- [ ] **Make a sound aura, pick a heal or a nuke, turn on the land sound.** *Expect*: it makes the
+      noise when the spell goes off, with nothing drawn.
+- [ ] **Make a text aura and point it at the same spell.** *Expect*: the words appear briefly and
+      then clear themselves.
+- [ ] **Worth knowing:** the "briefly" is six seconds, and it is the only number in this the app
+      invented. It exists so a text aura has something on screen long enough to read. Say if it
+      should be longer, shorter, or a setting.
+
+### The older no-duration measurement *(kept for the record - the fix above supersedes it)*
 
 275 spells in the roster have a landing message but no duration. When one of those landed, the app
 worked out its expiry as "not a number", and the once-a-second cleanup asks "is the expiry time in

@@ -88,43 +88,68 @@ test('an expired buff is swept away', () => {
 });
 
 // ---------------------------------------------------------------------------
-// A spell the roster has no duration for - A KNOWN DEFECT, pinned as it stands
+// A spell the roster has no duration for
 // ---------------------------------------------------------------------------
 //
-// These tests assert BROKEN behaviour on purpose, which is unusual enough to explain.
+// 275 of the 1,052 roster entries carry a landing text and no duration, and there turned out to
+// be two completely different reasons for that. Some genuinely never run out - Yaulp, Fury - and
+// are marked as such (see infinite-duration.test.js). The rest are INSTANTS: a nuke, a heal, a
+// gate, something that happens rather than something that runs.
 //
-// 275 of the 1,052 roster entries carry a landing text and no duration. An absent duration
-// multiplies to NaN, NaN becomes the expiry, and the sweep asks `expiresAt <= now` - false for
-// NaN, forever. So one of those landing produces a tile reading "NaN:NaN" that never counts down
-// and cannot be dismissed without restarting the app.
+// Until this was sorted out, an absent duration multiplied to NaN, NaN became the expiry, and the
+// sweep asks `expiresAt <= now` - false for NaN, forever. The result was a tile reading "NaN:NaN"
+// that never counted down and could not be dismissed without restarting.
 //
-// It was fixed by refusing to land them, and the fix was reverted after measuring it against 1.6
-// million lines of real play: it removed 67 distinct spells and 18,405 landings. Most were
-// instants that should never have had a timer, but 31 were real buffs - Armor of Protection,
-// Barbcoat, Fury, Wolf Form, Shrink - and dropping those is a genuine loss.
-//
-// Every available option trades one wrong behaviour for another, so it is the owner's decision.
-// Until she makes it, these pin what the app actually does, so nobody changes it by accident and
-// nobody has to rediscover the measurement. See FEATURES.md note 24.
+// Shara's rule for instants: not tracked on auras that draw countdowns, but available to sound and
+// text auras, "just in case someone wants feedback when a cast is successful or resisted". So they
+// still land - that is how those two hear about anything - and the overlay refuses to draw them as
+// countdown tiles.
 
-test('KNOWN DEFECT: a spell with no duration lands with an expiry of NaN', () => {
+test('an instant lands with no remaining time, and no NaN anywhere', () => {
   const { engine, buffStore } = makeEngine();
-  const noDuration = buffStore.getByName('Alliance');
-  assert.equal(typeof noDuration.durationSec, 'undefined', 'the fixture spell now HAS a duration - pick another');
+  const instant = buffStore.getByName('Alliance');
+  assert.equal(typeof instant.durationSec, 'undefined', 'the fixture spell now HAS a duration - pick another');
 
-  engine._land(noDuration);
-  assert.deepEqual(names(engine), ['Alliance'], 'it does still land - that is the half worth keeping');
-  const entry = [...engine.activeBuffs.values()][0];
-  assert.ok(Number.isNaN(entry.expiresAt), 'the expiry is NaN - this is the defect');
+  engine._land(instant);
+  const [buff] = engine.getActiveBuffs();
+  assert.equal(buff.name, 'Alliance');
+  assert.equal(buff.instant, true);
+  assert.equal(buff.remainingSec, null, 'null, never NaN - NaN is what produced the unkillable tile');
+  assert.equal(buff.durationSec, null, 'nothing may render a countdown from this');
 });
 
-test('KNOWN DEFECT: and the sweep can never remove it', () => {
-  // NaN <= anything is false, so the once-a-second cleanup skips it every time, forever.
+test('and it can actually be swept away, unlike before', () => {
+  // The defect was that the sweep asks `expiresAt <= now`, which is false for NaN forever. A
+  // finite expiry is what makes it removable at all.
   const { engine, buffStore } = makeEngine();
   engine._land(buffStore.getByName('Alliance'));
+  const entry = [...engine.activeBuffs.values()][0];
+  assert.ok(Number.isFinite(entry.expiresAt), 'a non-finite expiry can never be swept');
+
+  entry.expiresAt = Date.now() - 1000;
   engine._tick();
-  assert.deepEqual(names(engine), ['Alliance'], 'still there after a sweep');
-  assert.equal(NaN <= Date.now() + 31536000000, false, 'and a year would not help');
+  assert.deepEqual(names(engine), [], 'it must be removable');
+});
+
+test('an instant sorts LAST, not first', () => {
+  // Same trap as the infinite ones: remainingSec is null, and null sorts as zero.
+  const { engine, buffStore } = makeEngine();
+  engine._land(buffStore.getByName('Alliance'));
+  engine._land(buffStore.getByName('Spirit of the Puma'));
+  assert.deepEqual(names(engine).length, 2);
+  assert.equal(engine.getActiveBuffs()[0].name, 'Spirit of the Puma', 'the real countdown comes first');
+});
+
+test('the overlay keeps instants off auras that draw countdowns', () => {
+  // The rule itself. A list or icon aura filters them out; a sound-only or text aura keeps them.
+  const overlay = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'overlay', 'overlay.js'), 'utf8'
+  );
+  assert.match(
+    overlay,
+    /const drawsCountdowns = currentConfig\.displayMode !== 'sound-only' && currentConfig\.displayMode !== 'text';/
+  );
+  assert.match(overlay, /if \(drawsCountdowns\) filtered = filtered\.filter\(\(b\) => !b\.instant\);/);
 });
 
 test('a duration that IS known behaves correctly', () => {
