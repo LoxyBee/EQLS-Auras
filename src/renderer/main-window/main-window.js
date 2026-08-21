@@ -1996,6 +1996,15 @@ function initWidgetsPanel() {
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'dispelled'),
     },
     {
+      id: 'resisted',
+      name: 'Resist flash',
+      description:
+        'Flashes RESISTED for a second and a half whenever a spell you cast is resisted. Covers ' +
+        'every spell at once, not one you have to pick - useful for mez and charm, where a resist ' +
+        'is the difference between a mob standing still and a mob hitting you.',
+      create: (name) => window.eqTracker.createTextAuraWidget(name, 'resisted'),
+    },
+    {
       id: 'buff-timer',
       name: 'Buff timer',
       description:

@@ -63,7 +63,16 @@ class CustomTimerEngine extends EventEmitter {
     const matches = [];
     for (const widget of this.getWidgetsFn()) {
       for (const timer of widget.customTimers || []) {
-        if (timer.triggerText && timer.triggerText.toLowerCase() === lowerLine) matches.push(timer);
+        if (!timer.triggerText) continue;
+        const trigger = timer.triggerText.toLowerCase();
+        // Exact by default, and that default is why this stayed exact for so long: a trigger of
+        // "hi" matching every line with "hi" anywhere in it is a timer that fires constantly.
+        //
+        // "contains" exists for the lines the game writes with a name in the middle of them -
+        // "Orc centurion resisted your Mesmerize!" is never going to match a fixed string, because
+        // the mob's name is part of it. Opt-in per timer, so nothing already set up changes.
+        const hit = timer.triggerMatch === 'contains' ? lowerLine.includes(trigger) : trigger === lowerLine;
+        if (hit) matches.push(timer);
       }
     }
     return matches;

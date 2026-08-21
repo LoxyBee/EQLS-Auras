@@ -496,6 +496,37 @@ function normalizeWidget(widget) {
 // Three definitions, one tile: a text aura only ever draws one thing, and no single log line can
 // match two of these anyway.
 const TEXT_AURA_PRESETS = {
+  // Note 17's red RESIST flash, at the 1.4 seconds she asked for.
+  //
+  // One trigger covers every spell rather than one per spell, because "resisted your " only ever
+  // appears in the line the game writes when something YOU cast is resisted. Counted across
+  // 1,521,971 log lines: 970 matches, every one of them that shape. The two lines that could be
+  // confused with it are safely excluded - "You resist <Caster>'s <Spell>!" (761 lines, a resist
+  // happening TO you) does not contain the phrase, and neither do the 11 third-party resists of
+  // the form "<Mob> resisted <Someone>'s <Spell>!".
+  //
+  // Worth knowing it was checked: one line in those logs is a player typing the word "resisted"
+  // in chat. It says "resisted my slows", not "resisted your", so it does not fire this.
+  //
+  // The 1.4 is her number, and it is honest to about a second: timers are swept once a second, so
+  // the flash actually clears on the first tick after 1.4s - somewhere between 1.4 and 2.4 seconds
+  // depending on where in the tick it landed. Left as 1.4 rather than rounded to 2, because the
+  // sweep is what to change if that ever matters, not the number written here.
+  resisted: () => ({
+    buffSource: 'customTimer',
+    textAuraMessage: 'RESISTED',
+    textAuraSize: 48,
+    customTimers: [
+      {
+        id: crypto.randomUUID(),
+        name: 'Resisted',
+        durationSec: 1.4,
+        triggerText: 'resisted your ',
+        triggerMatch: 'contains',
+        endedText: '',
+      },
+    ],
+  }),
   dispelled: () => ({
     buffSource: 'customTimer',
     textAuraMessage: 'DISPELLED',
@@ -674,7 +705,7 @@ class WidgetStore {
   // pick step) so the existing explicit-buffNames-filter rendering path in
   // overlay.js already isolates this widget's own timers out of the
   // engine's combined active list, with zero special-casing needed there.
-  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId }) {
+  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch }) {
     const widget = this.getById(id);
     if (!widget) return null;
     const timer = {
@@ -696,6 +727,10 @@ class WidgetStore {
       // real/valid choice) is falsy and would otherwise get silently
       // discarded as if no icon was picked.
       iconId: iconId ?? undefined,
+      // 'contains' or undefined. See customTimerEngine._findTriggerMatches - for a game line with
+      // a name in the middle of it, which no fixed string can ever equal. Left undefined rather
+      // than defaulted to 'exact' so every timer already saved stays byte-identical.
+      triggerMatch: triggerMatch === 'contains' ? 'contains' : undefined,
     };
     widget.customTimers = [...(widget.customTimers || []), timer];
     widget.buffNames = widget.customTimers.map((t) => t.name);

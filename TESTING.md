@@ -768,6 +768,21 @@ roughly one every few hours of play. Nothing stopped being *detected*; things
 stop being *shown* once they are over. If you would rather they stayed put,
 say so - it is one line to put back.
 
+## The RESIST flash
+
+Add Aura -> **Resist flash**. One aura, covers every spell you cast - you do not
+pick which.
+
+- [ ] **Get a mez resisted and RESISTED flashes up**, then goes away on its own.
+- [ ] **It does NOT fire when something resists a spell somebody else cast**,
+      and does NOT fire when a spell is resisted *by you* - those are different
+      lines, and there are 761 of the second kind in your logs against 970 of
+      the real ones, so if this is wrong the flash will be on constantly.
+- [ ] **It lasts about a second and a half.** You asked for 1.4s. Timers are
+      swept once a second, so in practice it clears somewhere between 1.4 and
+      2.4 seconds after the resist. If that reads as too long or too short,
+      say so - the number is one line.
+
 ## Stability
 
 - [ ] **App no longer closes itself.** It was observed exiting unprompted
