@@ -348,8 +348,41 @@ Two notes were **checked and are NOT blocked** — the lines are already in your
   instance suffixes though: `Befallen`, `Befallen 1 (Awakened)` and `Befallen 3 (Fused)` are
   separate strings, so "only in Befallen" has to mean base-name matching, not exact matching.
 
-**#11 / #17 mez really is blocked** — there is not a single mez land, resist, worn-off or slain
-line anywhere in your logs, which makes sense for CLR/BRD/SHM. Someone has to cast one.
+**#11 / #17 mez was NOT blocked — that claim above was wrong, and it is now built.** You said so
+and you were right. The lines were in the logs the whole time; the file this was written from was
+one log, not all of them. Counted across all seven of your logs (1,521,971 lines):
+
+| line | count |
+| --- | --- |
+| `<Name> has been mesmerized.` | 251 |
+| `<Name> has been charmed.` | 129 |
+| `<Name> resisted your <Spell>!` | 970 (5 of them Mesmerize, 3 Charm) |
+| `Your <Spell> spell has worn off of <Name>.` | 1,440 (189 Mesmerize, 43 Charm) |
+| `<Name> has been slain by <Killer>!` | 6,617 |
+| `You have slain <Name>!` | 482 |
+| `<Name> has been awakened by <Breaker>.` | 142 |
+
+The real blocker was never the lines — it was that a landing on someone else was only accepted if
+the name was ONE alphabetic word, and a mob is "a greater kobold". See the commit "Track debuffs on
+enemies, opt-in per spell".
+
+**Two corrections to #18 that came out of the same count.** Its Risk section assumes a mez broken
+early by damage produces no line. It produces `<Name> has been awakened by <Breaker>.`, and it
+names who broke it — about four breaks in five emit it. But it is redundant for a mez YOU cast,
+because the wear-off line arrives in the same second and always first (98 of 98 pairs); its real
+use is a mez somebody else cast, which produces no wear-off line at all.
+
+And #18's `x6` counting is worth less than it looks with your current book: `Mesmerize` is
+single-target — 214 of 239 casts produced exactly one landing, and not one produced a genuine
+multi-landing. Every AoE case in your logs is somebody else's `Mesmerization VI`/`VII`. The count
+is real (two `a sonic bat` landings from one cast really is two bats, corroborated by two separate
+death lines) but it will read `x1` almost always until you cast a ranked mez.
+
+**Two more things that count against notes still open.** `Mesmerize` measures at 30s, not the
+spreadsheet's 24 — 90 natural expiries with a hard ceiling at exactly 30 and nothing above it,
+which matches your own #17 table. The roster now says 30. And `This NPC cannot be charmed.`
+exists (3 times) but carries no target name, so it can only be tied to a mob by sitting next to
+the resist line.
 
 ### The twelve groups
 
