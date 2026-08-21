@@ -341,5 +341,89 @@ test('the toggle is hidden where it could not do anything', () => {
   assert.doesNotMatch(block[0], /sound-only/);
 });
 
+// ---------------------------------------------------------------------------
+// The "Debuff on an enemy" premade - note 16
+// ---------------------------------------------------------------------------
+
+test('the premade builds an ally-source aura with the enemy switch already on', () => {
+  // An enemy landing goes into the ally list, because "not you" is all the log line says. The
+  // point of the premade is that nobody has to know that.
+  const data = {};
+  const store = new WidgetStore({
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  });
+  const w = store.createBuffTimer('Mez', { spellName: 'Mesmerize', source: 'enemy' });
+  assert.equal(w.buffSource, 'ally');
+  assert.equal(w.trackOnEnemies, true);
+  assert.deepEqual(w.buffNames, ['Mesmerize']);
+  assert.equal(w.buffFilterMode, 'explicit');
+});
+
+test('the other two sources do not turn the enemy switch on', () => {
+  const data = {};
+  const store = new WidgetStore({
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  });
+  for (const source of ['self', 'ally', undefined, 'sideways']) {
+    const w = store.createBuffTimer('X', { spellName: 'Agility', source });
+    assert.equal(w.trackOnEnemies, false, `source=${source} switched enemy tracking on`);
+  }
+});
+
+test('only spells you actually cast at something offer the enemy option', () => {
+  // A heal has third-person landing text and so passes the ally test. Offering "on an enemy" for
+  // it would build an aura that never lights up - the same failure note 14 called out.
+  const handler = mainSrc.match(/ipcMain\.handle\('buffs:trackable'[\s\S]*?\n\);/);
+  assert.ok(handler, 'the trackable-spell list has been restructured');
+  assert.match(handler[0], /enemy: !!\(/);
+  assert.match(handler[0], /\['debuff', 'charm', 'dot', 'nuke'\]\.includes\(e\.scaleCategory\)/);
+
+  // And the distinction is real, not a filter that passes everything.
+  const trackable = roster.filter((e) => e.landingText && String(e.landingText).trim());
+  const ally = trackable.filter((e) => e.othersLandingSuffix && String(e.othersLandingSuffix).trim());
+  const enemy = ally.filter((e) => ['debuff', 'charm', 'dot', 'nuke'].includes(e.scaleCategory));
+  assert.ok(enemy.length > 100, `only ${enemy.length} spells could be watched on an enemy`);
+  assert.ok(enemy.length < ally.length, 'every ally-capable spell is enemy-capable - check the categories');
+});
+
+test('the enemy option is disabled, with a reason, where it cannot apply', () => {
+  const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const fn = renderer.match(/function chooseBuffTimerSpell\(buff\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'chooseBuffTimerSpell has been renamed or restructured');
+  assert.match(fn[1], /enemyRadio\.disabled = !buff\.enemy/);
+  assert.match(fn[1], /buffTimerEnemyWarning\.textContent =/, 'it disables the option without saying why');
+});
+
+test('picking an unsupported spell does not leave a disabled radio selected', () => {
+  // Both branches clear their own radio only if it was the one selected. An earlier version reset
+  // to "self" unconditionally, so choosing the enemy option and then a spell without ally text
+  // silently threw the choice away.
+  const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const fn = renderer.match(/function chooseBuffTimerSpell\(buff\) \{([\s\S]*?)\n {2}\}/)[1];
+  assert.match(fn, /if \(enemyRadio\.checked\) \{/);
+  assert.match(fn, /if \(allyRadio\.checked\) \{/);
+  // And the premade's preference is applied last, once both know whether they are available.
+  assert.match(fn, /if \(preferred && !preferred\.disabled\) preferred\.checked = true;/);
+});
+
+test('both premades share one panel', () => {
+  // The alternative is a second picker over the same 720 spells, which is the thing note 14 was
+  // written generically to avoid.
+  const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  assert.match(renderer, /id: 'enemy-debuff',/, 'no Debuff on an enemy entry in the premade list');
+  assert.match(renderer, /defaultSource: 'enemy',/);
+  const panels = renderer.match(/panel: 'buff-timer',/g) || [];
+  assert.equal(panels.length, 2, 'the two premades should point at the same panel');
+});
+
+test('the third option exists in the markup', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'index.html'), 'utf8');
+  assert.match(html, /id="buff-timer-enemy-label"/);
+  assert.match(html, /name="buff-timer-source" value="enemy"/);
+  assert.match(html, /id="buff-timer-enemy-warning"/);
+});
+
 module.exports = () => report('enemy-debuffs');
 if (require.main === module) process.exit(report('enemy-debuffs') ? 1 : 0);

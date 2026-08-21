@@ -150,8 +150,10 @@ test('the premade opens the panel instead of building immediately', () => {
   assert.match(rendererSrc, /id: 'buff-timer',/, 'no Buff timer entry in the premade list');
   assert.match(rendererSrc, /panel: 'buff-timer',/);
   assert.match(rendererSrc, /if \(premade\.panel\) \{/, 'the list still assumes every premade builds at once');
-  // And the panel is reset each time, or the last spell picked would still be showing.
-  assert.match(rendererSrc, /resetBuffTimerPanel\(\)/);
+  // And the panel is reset each time, or the last spell picked would still be showing - carrying
+  // the premade's own starting choice, since two premades now share this one panel and differ
+  // only in which of the three "On:" options they open on.
+  assert.match(rendererSrc, /resetBuffTimerPanel\(premade\.defaultSource\)/);
 });
 
 test('the trackable list is fetched fresh when the modal opens', () => {

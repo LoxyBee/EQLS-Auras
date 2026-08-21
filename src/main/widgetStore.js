@@ -635,9 +635,16 @@ class WidgetStore {
   // Deliberately built in ONE call rather than by chaining four setters from the renderer. Each
   // of those would be a separate IPC round trip that pushes a config change to the overlay, so
   // the aura would visibly assemble itself - source, then filter, then name - on screen.
+  // source: 'self' | 'ally' | 'enemy'.
+  //
+  // 'enemy' is note 16's premade and is the same aura as 'ally' with the enemy switch already on -
+  // an enemy debuff lands in the ally list, because "not you" is all the log line tells you. It is
+  // a separate option here rather than a checkbox the user finds afterwards because the whole
+  // point of a premade is not having to know that mez and Spirit of Wolf take the same route.
   createBuffTimer(name, { spellName, source, activeProfileIds } = {}) {
     const widget = defaultCustomWidget(name || spellName || 'Buff timer');
-    widget.buffSource = source === 'ally' ? 'ally' : 'self';
+    widget.buffSource = source === 'ally' || source === 'enemy' ? 'ally' : 'self';
+    widget.trackOnEnemies = source === 'enemy';
     widget.buffFilterMode = 'explicit';
     widget.buffNames = spellName ? [spellName] : [];
     // One spell means one tile, so the four-wide grid a "show everything" aura wants would be

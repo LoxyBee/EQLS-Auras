@@ -1999,10 +1999,22 @@ function initWidgetsPanel() {
       id: 'buff-timer',
       name: 'Buff timer',
       description:
-        'Pick one spell and whether you are watching it on yourself or on someone you cast it on, ' +
-        'and the aura is built for you. The only premade that asks a question first.',
+        'Pick one spell and whether you are watching it on yourself, on someone you cast it on, ' +
+        'or on something you cast it at, and the aura is built for you.',
       // No create() - this one opens a panel instead. See renderPremadeList.
       panel: 'buff-timer',
+    },
+    {
+      id: 'enemy-debuff',
+      name: 'Debuff on an enemy',
+      description:
+        'A timer for a mez, charm, snare or slow on the thing you cast it at, showing its name ' +
+        'and clearing when it dies, wears off, or the mez is broken. Same picker as Buff timer, ' +
+        'opened with the enemy option already chosen.',
+      panel: 'buff-timer',
+      // Which of the three "On:" options the panel should start on. The picker is identical; the
+      // only difference between this premade and Buff timer is what it assumes you came for.
+      defaultSource: 'enemy',
     },
   ];
 
@@ -2072,6 +2084,8 @@ function initWidgetsPanel() {
   const buffTimerSourceRow = document.getElementById('buff-timer-source-row');
   const buffTimerAllyLabel = document.getElementById('buff-timer-ally-label');
   const buffTimerAllyWarning = document.getElementById('buff-timer-ally-warning');
+  const buffTimerEnemyLabel = document.getElementById('buff-timer-enemy-label');
+  const buffTimerEnemyWarning = document.getElementById('buff-timer-enemy-warning');
   const buffTimerCreateRow = document.getElementById('buff-timer-create-row');
   const buffTimerCreateBtn = document.getElementById('buff-timer-create-btn');
 
@@ -2080,6 +2094,7 @@ function initWidgetsPanel() {
   const BUFF_TIMER_RENDER_CAP = 40;
   let trackableBuffs = [];
   let buffTimerChoice = null;
+  let buffTimerPreferredSource = 'self';
 
   function renderBuffTimerList() {
     const query = buffTimerSearch.value.trim().toLowerCase();
@@ -2107,7 +2122,12 @@ function initWidgetsPanel() {
       strong.textContent = buff.name;
       const span = document.createElement('span');
       const howLong = buff.infinite ? 'lasts until dispelled' : buff.durationSec ? `${buff.durationSec}s` : 'no duration';
-      span.textContent = buff.ally ? `${howLong} - can be watched on you or on an ally` : `${howLong} - on you only`;
+      const where = buff.enemy
+        ? 'on you, an ally, or something you cast it at'
+        : buff.ally
+          ? 'on you or on an ally'
+          : 'on you only';
+      span.textContent = `${howLong} - ${where}`;
       btn.append(strong, span);
       btn.addEventListener('click', () => chooseBuffTimerSpell(buff));
       li.appendChild(btn);
@@ -2132,12 +2152,34 @@ function initWidgetsPanel() {
     // third-person landing text builds an aura that silently never lights up. Disabled rather
     // than hidden, with the reason, so it reads as "not possible for this spell" instead of the
     // option having mysteriously moved.
+    // Note 16. Same reasoning as the ally option below: disabled with a reason rather than hidden,
+    // so it reads as "not possible for this spell" instead of the choice having moved. A heal has
+    // third-person landing text and so passes the ally test, but watching it "on an enemy" would
+    // build an aura that never lights up.
+    const enemyRadio = buffTimerEnemyLabel.querySelector('input');
+    enemyRadio.disabled = !buff.enemy;
+    buffTimerEnemyLabel.classList.toggle('disabled', !buff.enemy);
+    if (!buff.enemy) {
+      if (enemyRadio.checked) {
+        enemyRadio.checked = false;
+        buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
+      }
+      buffTimerEnemyWarning.textContent =
+        `"${buff.name}" is not something you cast at an enemy, so it can only be watched on you ` +
+        'or on someone in your group.';
+      buffTimerEnemyWarning.style.display = '';
+    } else {
+      buffTimerEnemyWarning.style.display = 'none';
+    }
+
     const allyRadio = buffTimerAllyLabel.querySelector('input');
     allyRadio.disabled = !buff.ally;
     buffTimerAllyLabel.classList.toggle('disabled', !buff.ally);
     if (!buff.ally) {
-      allyRadio.checked = false;
-      buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
+      if (allyRadio.checked) {
+        allyRadio.checked = false;
+        buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
+      }
       buffTimerAllyWarning.textContent =
         `The app has no message for "${buff.name}" landing on someone else, so it can only be ` +
         'watched on you. An aura set to watch it on an ally would never light up.';
@@ -2145,15 +2187,26 @@ function initWidgetsPanel() {
     } else {
       buffTimerAllyWarning.style.display = 'none';
     }
+
+    // Applied after both options know whether they are available, so a premade asking for the
+    // enemy option on a spell that cannot use it falls back to a working choice rather than
+    // leaving a disabled radio selected.
+    const preferred = buffTimerSourceRow.querySelector(`input[value="${buffTimerPreferredSource}"]`);
+    if (preferred && !preferred.disabled) preferred.checked = true;
   }
 
-  function resetBuffTimerPanel() {
+  // preferredSource is what the premade that opened this panel came for - the radios still show
+  // all three, so the choice is visible rather than hidden, it just starts on the likely one.
+  function resetBuffTimerPanel(preferredSource) {
+    buffTimerPreferredSource = preferredSource === 'enemy' || preferredSource === 'ally' ? preferredSource : 'self';
     buffTimerChoice = null;
     buffTimerSearch.value = '';
     buffTimerChosenRow.style.display = 'none';
     buffTimerSourceRow.style.display = 'none';
     buffTimerCreateRow.style.display = 'none';
     buffTimerAllyWarning.style.display = 'none';
+    buffTimerEnemyWarning.style.display = 'none';
+    buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
     renderBuffTimerList();
   }
 
@@ -2190,7 +2243,7 @@ function initWidgetsPanel() {
             panel.style.display = panel.id === `add-widget-${premade.panel}-panel` ? '' : 'none';
           });
           if (premade.panel === 'buff-timer') {
-            resetBuffTimerPanel();
+            resetBuffTimerPanel(premade.defaultSource);
             buffTimerSearch.focus();
           }
           return;

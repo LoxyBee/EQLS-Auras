@@ -646,6 +646,16 @@ ipcMain.handle('buffs:trackable', () =>
     .map((e) => ({
       name: e.name,
       ally: !!(e.othersLandingSuffix && String(e.othersLandingSuffix).trim()),
+      // Whether "on something you cast it at" can be offered. Needs the same third-person landing
+      // text ally tracking needs - an enemy landing IS an ally landing as far as the log is
+      // concerned, since "not you" is all the line says - plus a category that means the spell is
+      // cast at something rather than on someone. Offering it for a heal would build an aura that
+      // never lights up.
+      enemy: !!(
+        e.othersLandingSuffix &&
+        String(e.othersLandingSuffix).trim() &&
+        ['debuff', 'charm', 'dot', 'nuke'].includes(e.scaleCategory)
+      ),
       durationSec: typeof e.durationSec === 'number' ? e.durationSec : null,
       infinite: !!e.infiniteDuration,
     }))
