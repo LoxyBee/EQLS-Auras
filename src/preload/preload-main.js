@@ -130,6 +130,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetMergeSameDuration: (id, value) =>
     ipcRenderer.invoke('widget:setMergeSameDuration', { id, value }),
   setWidgetCategoryBorders: (id, value) => ipcRenderer.invoke('widget:setCategoryBorders', { id, value }),
+  setWidgetTrackOnEnemies: (id, value) => ipcRenderer.invoke('widget:setTrackOnEnemies', { id, value }),
   onOpenWidgetSettings: (callback) => {
     ipcRenderer.on('widget:openSettings', (_event, id) => callback(id));
   },

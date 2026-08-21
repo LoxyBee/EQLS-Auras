@@ -1033,6 +1033,9 @@ function initWidgetsPanel() {
   const displayModeRowEl = document.getElementById('widget-display-mode-row');
   const buffSourceTimerLabelEl = document.getElementById('widget-buff-source-timer-label');
   const categoryBordersCheckbox = document.getElementById('widget-category-borders-checkbox');
+  const trackEnemiesCheckbox = document.getElementById('widget-track-enemies-checkbox');
+  const enemiesRowEl = document.getElementById('widget-enemies-row');
+  const enemiesHintEl = document.getElementById('widget-enemies-hint');
   const bordersRowEl = document.getElementById('widget-borders-row');
   const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
@@ -1570,6 +1573,7 @@ function initWidgetsPanel() {
     landingGlowCheckbox.checked = widget.landingGlowEnabled !== false;
     mergeCheckbox.checked = !!widget.mergeSameDuration;
     categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
+    trackEnemiesCheckbox.checked = !!widget.trackOnEnemies;
     textMessageInput.value = widget.textAuraMessage || '';
     const textAuraSize = widget.textAuraSize || 32;
     textAuraSizeSlider.value = String(textAuraSize);
@@ -1648,6 +1652,18 @@ function initWidgetsPanel() {
       (widget.kind === 'ally-buffs-builtin' || widget.buffSource === 'ally') &&
       widget.displayMode !== 'sound-only';
     allyGroupingSettingsEl.style.display = showsAllies ? '' : 'none';
+
+    // Watching a spell on an enemy only means anything to an aura reading the ally list, because
+    // that is where a landing on somebody who is not you goes. Offered to a self-source aura it
+    // would be a live switch that widens detection and then draws nothing - the exact "empty aura
+    // and no way to tell why" this is meant to avoid.
+    //
+    // NOT gated on sound-only the way the grouping options above are. An aura that only makes a
+    // noise is a perfectly good way to hear that a mez landed or was resisted, which is the case
+    // the owner asked for when she said instants belong on sound and text auras.
+    const canWatchEnemies = widget.kind === 'ally-buffs-builtin' || widget.buffSource === 'ally';
+    enemiesRowEl.style.display = canWatchEnemies ? '' : 'none';
+    enemiesHintEl.style.display = canWatchEnemies ? '' : 'none';
     if (widget.buffSource === 'customTimer') {
       resetTimerForm();
       renderCustomTimersList(widget);
@@ -2385,6 +2401,9 @@ function initWidgetsPanel() {
   });
   categoryBordersCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetCategoryBorders(selectedId, categoryBordersCheckbox.checked);
+  });
+  trackEnemiesCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetTrackOnEnemies(selectedId, trackEnemiesCheckbox.checked);
   });
   mergeCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetMergeSameDuration(selectedId, mergeCheckbox.checked).then(refreshWidgets);

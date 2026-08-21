@@ -770,6 +770,20 @@ function visibleBuffs(buffs) {
     const nameSet = new Set((currentConfig.buffNames || []).map((n) => n.toLowerCase()));
     filtered = buffs.filter((b) => nameSet.has(b.name.toLowerCase()));
   }
+  // ENEMIES - a debuff on something you are fighting, rather than a buff on a groupmate.
+  //
+  // The engine marks these; the aura decides whether it wants them. Without this the Ally Buffs
+  // aura would fill up with mobs, which is not what anyone means by "ally buffs" - and the mark
+  // is set by the spell's category, so it already applies to debuffs on one-word-named mobs that
+  // the app has been detecting all along.
+  //
+  // The test for "does this aura want them" is the aura's own trackOnEnemies setting, the same
+  // one that told the engine to widen its recipient check. One switch, so an aura cannot end up
+  // asking to detect something it then refuses to draw.
+  if (!currentConfig.trackOnEnemies) {
+    filtered = filtered.filter((b) => !b.onEnemy);
+  }
+
   // INSTANTS - nukes, heals, gates - only belong on an aura that is not drawing a countdown.
   //
   // Shara's rule: they "should not be added to selection lists that have a duration based tile"

@@ -283,5 +283,63 @@ test('the engine is given the list at startup', () => {
   assert.match(mainSrc, /buffEngine\.setEnemyDebuffNamesFn\(\(\) => widgetManager\.getEnemyDebuffNames\(\)\)/);
 });
 
+// ---------------------------------------------------------------------------
+// Reaching it, and drawing it
+// ---------------------------------------------------------------------------
+
+test('an aura that did not ask for enemies does not draw them', () => {
+  // The half that matters most. Without it the Ally Buffs aura fills up with mobs - and it would,
+  // because the enemy mark is set by the spell's category, so it already applies to debuffs on
+  // one-word-named mobs the app has been detecting all along.
+  const overlay = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'overlay', 'overlay.js'), 'utf8');
+  assert.match(overlay, /if \(!currentConfig\.trackOnEnemies\) \{/, 'no enemy filter in the overlay');
+  assert.match(
+    overlay,
+    /filtered = filtered\.filter\(\(b\) => !b\.onEnemy\);/,
+    'the filter does not actually drop enemy landings'
+  );
+});
+
+test('the toggle is reachable end to end', () => {
+  // Six files have to agree for one checkbox to do anything. Any one of them missing leaves a
+  // control that looks live and silently does nothing, which is worse than not offering it.
+  const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'index.html'), 'utf8');
+  const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload-main.js'), 'utf8');
+  assert.match(html, /id="widget-track-enemies-checkbox"/, 'no checkbox');
+  assert.match(renderer, /trackEnemiesCheckbox\.addEventListener\('change'/, 'nothing listens to it');
+  assert.match(
+    renderer,
+    /trackEnemiesCheckbox\.checked = !!widget\.trackOnEnemies;/,
+    'it never shows its own saved state, so it reads as off every time the panel opens'
+  );
+  assert.match(preload, /setWidgetTrackOnEnemies:/, 'no bridge');
+  assert.match(mainSrc, /ipcMain\.handle\('widget:setTrackOnEnemies'/, 'no handler');
+  assert.match(managerSrc, /function setTrackOnEnemies\(id, enabled\)/, 'no manager function');
+  assert.match(managerSrc, /^ {2}setTrackOnEnemies,$/m, 'the manager function is not exported');
+});
+
+test('changing it pushes the new config to the overlay', () => {
+  // Without this the aura keeps the old setting until something unrelated happens to refresh it.
+  const fn = managerSrc.match(/function setTrackOnEnemies\(id, enabled\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn, 'setTrackOnEnemies has been renamed or restructured');
+  assert.match(fn[1], /pushConfigChanged\(id\)/);
+});
+
+test('the toggle is hidden where it could not do anything', () => {
+  // An enemy landing goes into the ally list, so on a self-source aura this would widen detection
+  // and then draw nothing - the exact "empty aura and no way to tell why" it is meant to avoid.
+  const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  assert.match(renderer, /const canWatchEnemies =[\s\S]{0,140}buffSource === 'ally'/);
+  assert.match(renderer, /enemiesRowEl\.style\.display = canWatchEnemies \? '' : 'none';/);
+  assert.match(renderer, /enemiesHintEl\.style\.display = canWatchEnemies \? '' : 'none';/);
+
+  // Deliberately NOT excluded for sound-only, unlike the tile-grouping options beside it: an aura
+  // that only makes a noise is a perfectly good way to hear that a mez landed.
+  const block = renderer.match(/const canWatchEnemies =[\s\S]*?enemiesHintEl\.style\.display[^\n]*\n/);
+  assert.ok(block, 'the enemy visibility block has been restructured');
+  assert.doesNotMatch(block[0], /sound-only/);
+});
+
 module.exports = () => report('enemy-debuffs');
 if (require.main === module) process.exit(report('enemy-debuffs') ? 1 : 0);

@@ -306,6 +306,22 @@
                 shown" says it does, so pick what it listens for there, then choose when it should
                 make a noise.
               </p>
+              <div class="row" id="widget-enemies-row">
+                <label>
+                  <input type="checkbox" id="widget-track-enemies-checkbox" />
+                  Also watch these spells on enemies
+                </label>
+              </div>
+              <p class="hint" id="widget-enemies-hint">
+                For mez, charm, snare and slow - the things you cast AT something rather than on
+                your group. The tile shows the target's name, and clears when it dies, when the
+                spell wears off, or when a mez is broken. Off by default because a mob's name is
+                not a single word, so watching for one means accepting a much looser match, and
+                doing that for every spell at once would bury you: in one player's logs it would
+                have meant 160,000 extra tiles, most of them from two bard songs hitting
+                everything in earshot. Turning it on here applies only to the spells THIS aura
+                watches.
+              </p>
               <div class="row" id="widget-borders-row">
                 <label>
                   <input type="checkbox" id="widget-category-borders-checkbox" />

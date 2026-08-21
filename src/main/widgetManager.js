@@ -661,6 +661,16 @@ function setCategoryBorders(id, enabled) {
   return config;
 }
 
+// Notes 11/16/17. Turning this on does two things at once, and they have to stay together: the
+// aura starts DRAWING debuffs on enemies, and the engine starts DETECTING them for the spells this
+// aura watches (see getEnemyDebuffNames). Split across two switches, someone would inevitably end
+// up with one on and the other off, and the aura would sit there empty with no way to tell why.
+function setTrackOnEnemies(id, enabled) {
+  const config = widgetStore.update(id, { trackOnEnemies: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setMergeSameDuration(id, enabled) {
   const config = widgetStore.update(id, { mergeSameDuration: !!enabled });
   pushConfigChanged(id);
@@ -965,6 +975,7 @@ module.exports = {
   setLandingGlowEnabled,
   setMergeSameDuration,
   setCategoryBorders,
+  setTrackOnEnemies,
   setTextAuraMessage,
   setTextAuraSize,
   setTextAuraInstantSec,
