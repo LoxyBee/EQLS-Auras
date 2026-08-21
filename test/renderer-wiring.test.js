@@ -61,11 +61,14 @@ test('every aura slider is populated from the aura, not just read from', () => {
   //
   // Nothing throws in that situation and nothing looks broken, so it is worth a standing check
   // rather than trusting each new slider to be wired by hand.
+  // Every range input with an id, not just the per-aura ones: the same trap applies to any
+  // slider anywhere, and scoping the check to one prefix means the next one added elsewhere
+  // is unguarded by default.
   const sliderIds = [...html.matchAll(/<input[^>]*type="range"[^>]*>/g)]
     .map((m) => (m[0].match(/\bid="([^"]+)"/) || [])[1])
-    .filter((id) => id && id.startsWith('widget-'));
+    .filter(Boolean);
 
-  assert.ok(sliderIds.length > 5, 'found suspiciously few aura sliders - has the markup changed?');
+  assert.ok(sliderIds.length > 5, 'found suspiciously few sliders - has the markup changed?');
 
   const unpopulated = [];
   for (const id of sliderIds) {
@@ -84,6 +87,42 @@ test('the per-aura Unlock to move button still exists', () => {
   // The master control was scoped down; the per-aura one must NOT have gone with it.
   assert.ok(htmlIds.has('widget-lock-btn'), 'the per-aura Unlock to move button is missing');
   assert.match(js, /widget-lock-btn/, 'the per-aura lock button is no longer wired up');
+});
+
+test('the UI scale control is wired end to end', () => {
+  // Three files have to agree for a setting to work at all: markup, preload bridge, main handler.
+  // Any one missing is silent - the control renders and does nothing. Checked as text because
+  // there is no way to click it here.
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload', 'preload-main.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+
+  assert.ok(htmlIds.has('ui-scale-slider'), 'no scale slider in the markup');
+  assert.match(js, /getUiScale\(\)/, 'the renderer never reads the saved scale, so it will not persist visually');
+  assert.match(js, /setUiScale\(/, 'the renderer never applies the scale');
+  assert.match(preload, /getUiScale/, 'preload does not expose getUiScale, so the renderer call throws');
+  assert.match(preload, /setUiScale/, 'preload does not expose setUiScale');
+  assert.match(main, /ipcMain\.handle\(\s*'ui:getScale'/, 'no main-process handler for ui:getScale');
+  assert.match(main, /ipcMain\.handle\(\s*'ui:setScale'/, 'no main-process handler for ui:setScale');
+});
+
+test('the saved UI scale is re-applied on launch', () => {
+  // A zoom factor lives on the web contents, not on disk, so it resets to 1 every launch unless
+  // something puts it back - which reads as "the setting did not save" when it saved perfectly.
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.match(
+    main, /did-finish-load[\s\S]{0,200}applyUiScale/,
+    'the saved scale is not re-applied after the page loads - applying it earlier is silently dropped'
+  );
+});
+
+test('the overlay is not scaled by the app text size setting', () => {
+  // Auras have their own icon, text and label sizes per aura. Scaling them from the settings
+  // window would fight those. Electron zoom is per-webContents, so this holds as long as nobody
+  // reaches for the overlay's contents here.
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const start = main.indexOf('function applyUiScale');
+  const fn = main.slice(start, main.indexOf("ipcMain.handle('ui:getScale'", start));
+  assert.ok(!/widgetManager|overlay/i.test(fn), 'applyUiScale reaches into the overlay - auras have their own size settings');
 });
 
 test('modals opt out of the window drag region', () => {

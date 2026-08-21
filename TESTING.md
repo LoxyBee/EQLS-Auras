@@ -91,6 +91,31 @@ input, which fits the symptom. Modals now opt out of the drag region.
 - [ ] Repeat maximised. If it fails **here**, the diagnosis is wrong - say so,
       because the real cause is then still unfound.
 
+### App text size *(new - needs looking at)*
+
+Scaling is done with Electron's zoom factor rather than by rewriting the
+stylesheet, because main-window.css carries 316 hardcoded px values across 39
+distinct sizes and converting all of them by hand, with no layout tests, would
+get some wrong in ways only visible by eye. Zoom scales text, spacing and
+controls together and cannot drift out of step with itself.
+
+The wiring is tested; how it *looks* is not. I attempted a screenshot and could
+not get a reliable one without stealing focus from the running game, so this is
+yours.
+
+- [ ] **Setup > App text size** moves the whole window together - text, padding,
+      buttons - with nothing clipped or overlapping at 80% or at 160%.
+- [ ] **It survives a restart.** Set 130%, close, reopen. *Expect*: still 130%,
+      and the slider reads 130 rather than snapping back.
+- [ ] **Your auras are unaffected** at every setting. They have their own sizes
+      per aura and must not move.
+- [ ] **Reset returns to 100%.**
+- [ ] At 160%, check the **frameless title bar** still looks right and the
+      window can still be dragged and closed.
+- [ ] At 160%, open a modal (Add aura) and check its content is reachable -
+      a scaled-up modal is taller, which is exactly the case the drag-region
+      fix above is about.
+
 ### Detrimental spells on enemies *(data landed, engine not yet changed)*
 
 The roster now carries all 327 detrimental spells with their real text, and

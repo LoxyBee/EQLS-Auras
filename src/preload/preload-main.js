@@ -3,6 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('eqTracker', {
   getVersionInfo: () => ipcRenderer.invoke('app:getVersionInfo'),
 
+  getUiScale: () => ipcRenderer.invoke('ui:getScale'),
+  setUiScale: (pct) => ipcRenderer.invoke('ui:setScale', pct),
+
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:maximizeToggle'),
   closeWindow: () => ipcRenderer.invoke('window:close'),

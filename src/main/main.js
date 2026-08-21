@@ -315,6 +315,14 @@ app.whenReady().then(() => {
   iconService.registerProtocol();
   soundService.registerProtocol();
   createMainWindow();
+  // Re-apply the saved UI scale. A zoom factor lives on the web contents, not on disk, so it
+  // resets to 1 on every launch unless something puts it back. Set on did-finish-load rather than
+  // straight away: applying it before the page has loaded is silently dropped, which reads as
+  // "the setting did not save" when it saved perfectly well.
+  {
+    const win = getMainWindow();
+    if (win) win.webContents.once('did-finish-load', () => applyUiScale(loadJson('uiScale', 100)));
+  }
   widgetManager.initWidgets();
   logService.init();
   // Part of the shutdown instrumentation above - this is the third quit path,
@@ -412,6 +420,35 @@ ipcMain.handle('buffs:setBardSong', (_event, { name, isBardSong }) => {
   const result = buffStore.setBardSong(name, isBardSong);
   broadcast('buffs:active', buffEngine.getActiveBuffs());
   return result;
+});
+
+// Settings-window UI scale.
+//
+// Done with Electron's zoom factor rather than by converting the stylesheet to relative units.
+// main-window.css carries 316 hardcoded px values across 39 distinct sizes; rewriting all of them
+// to rem would be a large change to a window with no automated layout coverage, and it would get
+// some of them wrong in ways only visible by eye. Zoom scales text, spacing and controls together
+// and cannot drift out of step with itself.
+//
+// It applies to THIS window's web contents only, so the overlay is untouched - which is right:
+// every aura already has its own icon, text and label sizes, and scaling those from here would
+// fight the per-aura settings.
+const UI_SCALE_MIN = 80;
+const UI_SCALE_MAX = 160;
+
+function applyUiScale(pct) {
+  const clamped = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Number(pct) || 100));
+  const win = getMainWindow();
+  // setZoomFactor throws on a destroyed webContents - reachable if this lands during shutdown.
+  if (win && !win.isDestroyed()) win.webContents.setZoomFactor(clamped / 100);
+  return clamped;
+}
+
+ipcMain.handle('ui:getScale', () => loadJson('uiScale', 100));
+ipcMain.handle('ui:setScale', (_event, pct) => {
+  const applied = applyUiScale(pct);
+  saveJson('uiScale', applied);
+  return applied;
 });
 
 ipcMain.handle('buffs:getAmbiguous', () => buffEngine.getAmbiguousCasts());

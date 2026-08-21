@@ -25,6 +25,7 @@ async function init() {
   initWidgetsPanel();
   initKnownBuffsPanel();
   initCharacterSettingsPanel();
+  initUiScale();
 }
 
 // Custom title bar (UX_VISUAL_DESIGN.md / the frameless-window follow-up) -
@@ -2832,3 +2833,37 @@ function setupModalToggle(backdropId, openBtnId, closeBtnId, onOpen) {
 }
 
 init();
+
+// App text size for THIS window. Backed by Electron's zoom factor in main.js - see the note
+// there for why that rather than rewriting 316 hardcoded px values as rem.
+//
+// The slider is populated from the saved value on load. That is the same trap the alert-volume
+// slider fell into: an HTML range with no `value` attribute silently falls back to the midpoint
+// of its own range, so an unpopulated 80-160 slider would sit at 120 while the window rendered
+// at 100%.
+function initUiScale() {
+  const slider = document.getElementById('ui-scale-slider');
+  const valueEl = document.getElementById('ui-scale-value');
+  const resetBtn = document.getElementById('ui-scale-reset-btn');
+  if (!slider) return;
+
+  function show(pct) {
+    slider.value = pct;
+    valueEl.textContent = `${pct}%`;
+  }
+
+  window.eqTracker.getUiScale().then((pct) => show(pct || 100));
+
+  slider.addEventListener('input', () => {
+    const pct = Number(slider.value);
+    valueEl.textContent = `${pct}%`;
+    // Applied live on drag so the size can be judged by eye rather than by the number. The main
+    // process clamps and persists, and returns what it actually used.
+    window.eqTracker.setUiScale(pct);
+  });
+
+  resetBtn.addEventListener('click', () => {
+    show(100);
+    window.eqTracker.setUiScale(100);
+  });
+}
