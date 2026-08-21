@@ -36,12 +36,12 @@ at the repo root ships.
 
 ## 2. Current state
 
-**30 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
+**34 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
 `.gitignore` - it was staged once by a careless `git add -A` and amended straight back out, and
 the ignore entry is what makes that command safe to type here at all.
 
 ```
-npm test   ->  13 suites, 163 cases, green
+npm test   ->  14 suites, 176 cases, green
 ```
 
 | Suite | Cases | Guards |
@@ -58,6 +58,7 @@ npm test   ->  13 suites, 163 cases, green
 | `test/move-box.test.js` | 9 | the move-box name pill and its drag-region trap |
 | `test/merged-tiles.test.js` | 31 | merged tiles: both rules, tile identity, and where merging meets render() |
 | `test/text-aura.test.js` | 22 | text auras: the one-tile rule, the words, the dispel announcer |
+| `test/category-borders.test.js` | 13 | coloured edges: roster, overlay and stylesheet must agree |
 | `tools/lib/xlsx.test.js` | 7 | the spreadsheet reader |
 
 **`test/visibility.test.js` uses a new technique worth knowing about:** it replaces `electron` in
@@ -236,10 +237,23 @@ order IS the behaviour. Master hide beats unlock, deliberately. Per-aura unlock 
 
 `FEATURES.md` holds all 39 raw notes, sorted, with a 13-step build order and twelve groups.
 
-- Steps **1–7 done**. Step 5 was notes 4, 31 and 6; step 6 was note 8, merged tiles; step 7 was
-  note 23, **redefined by Shara as a text aura TYPE rather than a display style**. Plus the
-  sound-only aura, the Pause hotkey and the share-code sound warning, all asked for directly.
-- **Next: step 8** (note 35 data), then step 9 (note 24, detection rework), and so on.
+- Steps **1–8 done**, plus note 37 out of order. Step 5 was notes 4, 31 and 6; step 6 was note 8;
+  step 7 was note 23, **redefined by Shara as a text aura TYPE rather than a display style**; step
+  8 turned out to be already done inside the roster rebuild, so the work there was correcting
+  three notes that still described the old world. Plus the sound-only aura (later moved into the
+  custom list beside the text aura), the Pause hotkey and the share-code sound warning.
+- **Note 37 was taken out of order and is done.** Its blocker - "the app has NO idea what type any
+  spell is" - was removed by the roster rebuild, which dropped it from several days to a few hours.
+  Taking it was a deliberate deviation from the build order: step 9 is blocked, and note 37 had
+  become the least volatile available item, which is the ordering principle the plan is built on.
+- **Next: step 9** (note 24, detection rework) — **blocked** on a real log sample of an ambiguous
+  bard-song landing text repeating on the next pulse. BUT three of its four parts do NOT depend on
+  that assumption and are described in the note as real changes: a failed tier consuming the line
+  so no later tier can rescue it (`buffEngine.js:592-601`), memorized gems being checked before
+  /outputfile spells when it should be the other way round (`:653`), and the caster's name being
+  captured by the parser and thrown away at `:374`. Those three are the highest-value unblocked
+  work left - and the riskiest in the app, since this is the detection engine. Her 28,240-line log
+  is the safety net: replay before and after, the way the roster rebuild was validated.
 - **The rest of note 23 is a second feature, not a leftover:** text as an *alert option on other
   auras* ("showing text when a timer condition is met, or something is applied, or failed"). It
   reuses the text tile's rendering. The mez/charm premades with icon-plus-text are downstream of
@@ -305,6 +319,25 @@ guards, so neutering the branch to `if (false)` left it happy.
 
 Assert existence first, and anchor on the thing that does the work rather than a name near it.
 Both were found by mutation testing, not by reading.
+
+---
+
+### The roster rebuild paid for itself twice over
+
+Worth knowing before planning anything: the rebuild did not just fix detection. Every entry now
+carries `category` (109 values), `scaleCategory` (9), `classes`, `level`, `manaCost`,
+`castSec`, `reuseSec` and `targets`. Measured coverage: landing text 720, others-landing suffix
+810, ended text 528, reuse 989, category and scaleCategory 1,052 each.
+
+That silently unblocked note 37 (built) and is the foundation notes 13-style rank scaling and the
+premade builders were waiting on. **Before sizing anything that says "the app has no idea what
+type a spell is", check the roster - that sentence is out of date.**
+
+### The at-a-glance table now has a Status column
+
+It used to say only whether a note was blocked, which meant a table summarising all 39 said
+nothing about the ones that were finished. It now reads: **17 done, 1 fix-unconfirmed, 12
+blocked.** Each "done" was verified against the source or the commit that landed it.
 
 ---
 
