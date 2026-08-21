@@ -274,7 +274,19 @@ everywhere, so an aura you do not touch behaves exactly as it does today.
 - [ ] **Check the glow and the sounds still work on a merged aura.** Turn on "Glow when a buff
       lands" and a land sound, then re-cast one member of a merged group. *Expect*: the tile
       flashes and the sound plays. This is the one most likely to be silently wrong.
-- [ ] **Check the pre-expiry warning fires once, not once per merged buff.**
+- [ ] **Check the pre-expiry warning fires once, not once per merged buff** - and then check it
+      fires AGAIN next time round, after those buffs are recast. The second half is the one that
+      was broken: a merged tile warned once and then stayed silent for the whole session.
+- [ ] **Recast the buff a merged tile is counting down, before it drops.** *Expect*: the tile
+      switches to naming and counting down whichever buff is now soonest. It used to keep the old
+      name while counting down the new one.
+- [ ] **Turn the merge checkbox on while a buff is already inside its warning window.** *Expect*:
+      no beep from the act of ticking the box.
+- [ ] **In list mode, look at the badge as a merged tile runs low.** *Expect*: it stays readable
+      and does not take on the colour of the bar behind it.
+- [ ] Under **"Same length, cast together"**, two buffs cast within a second or so of the
+      three-second window may occasionally split into two tiles and rejoin. That is a known
+      limit, not a new bug - the countdown the overlay receives is whole seconds.
 - [ ] **Try it in icon mode as well as list mode.** *Expect*: the badge in the tile's top-right
       corner, not overlapping the countdown.
 - [ ] **Turn it off again.** *Expect*: every tile comes straight back, unchanged.

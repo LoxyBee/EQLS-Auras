@@ -994,6 +994,30 @@ setting rather than being assumed to just work.
 > **The count badge is one shared builder**, exactly as the parenthetical asked: note 12 wants the
 > identical badge, and two copies of "the same badge" is how they stop being the same badge.
 >
+> **Four defects were found by review after this was first written, and all four are fixed.**
+> Worth listing, because three of them were silent:
+>
+> - A merged tile is led by whichever member runs out first. Recast that one and the lead
+>   changes while the group does not - so nothing forced a rebuild, and the tile went on
+>   counting down the new lead while still showing the old one's name.
+> - The pre-expiry warning is remembered per tile, and the two places that forget it only ever
+>   look at raw buffs - so a merged tile warned once and then stayed silent for the rest of the
+>   session. It now forgets as soon as it climbs back above the threshold, which works for a
+>   merged tile and is belt-and-braces for an ordinary one.
+> - Turning merging on re-identified every tile, so anything already inside the warning window
+>   beeped again about something you had already been told. Changing a setting now records what
+>   is in the window and plays nothing.
+> - In list mode the count badge painted UNDER the countdown bar, so it came out tinted blue -
+>   then red as the buff ran low, which reads as the badge itself being a warning.
+>
+> **One known limit, recorded rather than claimed away.** Under "same length, cast together",
+> two buffs cast almost exactly the tolerance apart can flip between merged and separate as
+> other buffs come and go, because the countdown the app receives is whole seconds rounded at
+> whatever moment the update happens to be sent. Only pairs within about half a second of the
+> boundary are affected, and the effect is one tile briefly becoming two and rejoining. Fixing it
+> properly needs the exact expiry time sent to the overlay, which is a change to every aura's
+> data for a cosmetic flicker in one mode.
+>
 > The risk below turned out to have a second half nobody had written down. Keeping the merged
 > tile's identity stable is necessary but not sufficient: the landing glow and the alert sounds
 > are worked out from RAW buff keys, and a merged tile's key is one no raw buff ever carries - so

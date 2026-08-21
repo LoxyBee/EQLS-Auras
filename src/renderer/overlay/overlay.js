@@ -158,6 +158,24 @@ function keyFor(buff) {
 
 function checkSoundWarnings(visible) {
   const thresholdSec = currentConfig.soundWarningSec || 0;
+
+  // Changing a setting must not make a noise. Toggling merging on, or switching the app-wide
+  // merge rule, re-identifies every tile - and a tile already inside the warning window with no
+  // record against its new identity would warn again for something the user has already been
+  // told about. Instead, the first pass after a config change quietly RECORDS what is already in
+  // the window and plays nothing. Same reasoning as hasRenderedBefore in render(): the state
+  // existed before this arrangement did, so it is not news.
+  if (warningsSuppressedOnce) {
+    warningsSuppressedOnce = false;
+    if (thresholdSec > 0) {
+      const now = Date.now();
+      for (const buff of visible) {
+        if (buff.remainingSec <= thresholdSec) warnedAt.set(keyFor(buff), now);
+      }
+    }
+    return;
+  }
+
   if (thresholdSec <= 0) return;
   // 0 = warn once only (the original behavior) - a real loop interval
   // re-fires every N seconds for as long as the buff stays under
@@ -167,7 +185,20 @@ function checkSoundWarnings(visible) {
   const now = Date.now();
   for (const buff of visible) {
     const key = keyFor(buff);
-    if (buff.remainingSec > thresholdSec) continue;
+    if (buff.remainingSec > thresholdSec) {
+      // Back above the threshold means whatever this tile is counting down was renewed or
+      // replaced, so the fact that it was warned about no longer applies - it must be able to
+      // warn again on the way down.
+      //
+      // For an ordinary buff this is belt and braces: render() already clears the entry on
+      // expiry and on renewal, and remaining never rises otherwise. For a MERGED tile it is the
+      // only thing that works. Both of render()'s pruning loops iterate raw engine keys, and a
+      // merged tile's key is deliberately one no raw buff ever carries, so nothing there could
+      // ever clear it - a merged tile warned once and then stayed silent for the rest of the
+      // session.
+      warnedAt.delete(key);
+      continue;
+    }
     const lastWarnedAt = warnedAt.get(key);
     if (lastWarnedAt === undefined) {
       warnedAt.set(key, now);
@@ -549,16 +580,36 @@ const BURST_TOLERANCE_SEC = 3;
 let mergeRule = 'duration';
 
 // The merged tile's identity, and it has to be STABLE across renders: warnedAt and tileRefs are
-// both keyed by it, so an identity that churned every tick would rebuild the tile constantly and
-// re-fire the pre-expiry warning sound. Derived from the alphabetically first member key, which
-// changes only when that particular buff leaves the group - never merely because time passed.
-function mergedKeyFor(members) {
-  return `merged::${members.map(keyFor).sort()[0]}`;
+// both keyed by it, so an identity that churned would rebuild the tile constantly and re-fire the
+// pre-expiry warning.
+//
+// Built from the BUCKET the group belongs to - who it is on, and how long these buffs last -
+// rather than from the members themselves. An earlier version used the alphabetically-first
+// member key, which was stable against time passing but NOT against membership: casting one more
+// buff of the same length re-sorted the members, changed the anchor, and made an already-warned
+// group look brand new, so it beeped again. A bucket cannot be changed by anything joining or
+// leaving it.
+//
+// burstIndex distinguishes two bursts that share a bucket, which only the 'burst' rule can
+// produce - under 'duration' it is always 0 and the identity is completely fixed for as long as
+// the group exists. Under 'burst' it renumbers if an entire earlier burst ends, which is the one
+// remaining way this can move.
+function mergedKeyFor(bucket, burstIndex) {
+  return `merged::${bucket}::${burstIndex}`;
 }
 
 // Splits one same-duration bucket into bursts. Greedy against the group's own first member
 // rather than its neighbour, so a long chain of buffs one second apart cannot drift arbitrarily
 // far from where it started and end up as a single group spanning a minute.
+//
+// KNOWN LIMIT, recorded rather than claimed away. remainingSec is not a stable quantity: the
+// engine computes it as Math.round((expiresAt - now) / 1000) at whatever instant it happens to
+// broadcast, and it broadcasts on every landing and expiry as well as on the second. So for two
+// buffs cast about BURST_TOLERANCE_SEC apart, the rounded gap can read as 3 at one sample and 4
+// at the next, and the pair merges and unmerges as unrelated buffs come and go. Only pairs within
+// about half a second of the boundary are affected, and the visible effect is one tile briefly
+// becoming two and rejoining. Fixing it properly needs either the absolute expiry time in the
+// overlay payload or a memory of the previous grouping, and neither is worth carrying for this.
 function splitIntoBursts(members) {
   if (mergeRule !== 'burst') return [members];
   const sorted = [...members].sort((a, b) => b.remainingSec - a.remainingSec);
@@ -583,26 +634,30 @@ function mergeByDuration(buffs) {
   }
 
   const out = [];
-  for (const members of buckets.values()) {
-    for (const group of splitIntoBursts(members)) {
+  for (const [bucket, members] of buckets) {
+    splitIntoBursts(members).forEach((group, burstIndex) => {
       if (group.length < 2) {
         // A group of one is left completely untouched - no merged key, no badge, no difference
         // from an aura with merging switched off. Worth being deliberate about: it is what makes
         // turning the toggle on harmless for an aura that never has anything to merge.
         out.push(group[0]);
-        continue;
+        return;
       }
       // The lead is the one about to expire, because that is the timer the tile shows - so the
       // tile also names it and wears its icon. Naming any other member would put a countdown and
       // a name on screen that describe different buffs.
+      //
+      // The lead can CHANGE without the group changing: recast the buff that was about to run
+      // out and it goes to the back of the queue. render() has to notice, which is why the lead's
+      // name is part of the structural signature - see mergeKey there.
       const lead = group.reduce((a, b) => (b.remainingSec < a.remainingSec ? b : a));
       out.push({
         ...lead,
         mergedCount: group.length,
         mergedKeys: group.map(keyFor),
-        mergedKey: mergedKeyFor(group),
+        mergedKey: mergedKeyFor(bucket, burstIndex),
       });
-    }
+    });
   }
   return out;
 }
@@ -736,6 +791,10 @@ const shownNames = new Set();
 // resets or repeats a warning for a buff that never stopped running.
 const warnedAt = new Map();
 
+// Set by applyConfig, honoured once by checkSoundWarnings - see the note there. A settings change
+// re-identifies tiles, and re-identifying something is not a reason to beep about it.
+let warningsSuppressedOnce = false;
+
 // Last-seen remainingSec per raw active buff - lets the SOUND alerts (but
 // deliberately not the glow, see below) notice a buff being re-cast even
 // though it never actually left the active list, e.g. an auto-renewing
@@ -847,10 +906,19 @@ function render(buffs) {
   // can't see a change. A signature of the group layout (names + sizes +
   // direction) is compared instead - it changes exactly when the nesting
   // needs rebuilding, and stays stable while only timers tick.
-  // A merged tile's badge is written when the tile is built, so a count going from six to five
-  // has to count as a structural change or the badge would keep claiming six. Membership changing
-  // already forces a rebuild when merging is off, so this is the same rule, not a new one.
-  const mergeKey = visible.map((b) => b.mergedCount || 0).join(',');
+  // Everything a merged tile draws ONCE, at build time: its badge count and its name. Both have
+  // to be part of the structural signature or the tile keeps showing a stale one.
+  //
+  // The name is the subtle half. A merged tile is led by the member about to run out, and
+  // recasting that member sends it to the back of the queue - so the lead changes while the group
+  // does not. The count is unchanged, the identity is unchanged, so nothing else in the check
+  // below moves, and render() takes the in-place path, which updates the countdown and the icon
+  // but never the name. The tile then counts down one buff while naming another, which is worse
+  // than showing no tile at all.
+  //
+  // Empty string for an unmerged tile, so an aura with merging off produces a constant signature
+  // and behaves exactly as it did before any of this existed.
+  const mergeKey = visible.map((b) => (b.mergedCount ? `${b.mergedCount}:${b.name}` : '')).join('|');
 
   const grouped = shouldGroupByAlly(visible);
   const groups = grouped ? groupByAlly(visible) : null;
@@ -1111,6 +1179,8 @@ function applyConfig(config) {
   // always reflects current reality (a picked buff, an edited icon)
   // immediately instead of waiting on the next tick.
   tileRefs.clear();
+  // See warningsSuppressedOnce. Changing a setting must not produce a sound.
+  warningsSuppressedOnce = true;
   Promise.all([
     window.eqOverlay.getActiveBuffs(),
     window.eqOverlay.getActiveAllyBuffs(),

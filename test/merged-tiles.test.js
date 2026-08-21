@@ -44,7 +44,7 @@ function loadMerging() {
     pick(/const BURST_TOLERANCE_SEC = \d+;/, 'BURST_TOLERANCE_SEC'),
     pick(/let mergeRule = '[a-z]+';/, 'mergeRule'),
     pick(/function keyFor\(buff\) \{[\s\S]*?\n\}/, 'keyFor'),
-    pick(/function mergedKeyFor\(members\) \{[\s\S]*?\n\}/, 'mergedKeyFor'),
+    pick(/function mergedKeyFor\(bucket, burstIndex\) \{[\s\S]*?\n\}/, 'mergedKeyFor'),
     pick(/function splitIntoBursts\(members\) \{[\s\S]*?\n\}/, 'splitIntoBursts'),
     pick(/function mergeByDuration\(buffs\) \{[\s\S]*?\n\}/, 'mergeByDuration'),
     pick(/function memberKeys\(buff\) \{[\s\S]*?\n\}/, 'memberKeys'),
@@ -215,6 +215,42 @@ test('two merged groups on the same person get different identities', () => {
   assert.notEqual(keys[0], keys[1], 'two bursts on one ally must not collide');
 });
 
+test('a new buff of the same length joining does NOT re-identify the tile', () => {
+  // This is what the first identity scheme got wrong. Keyed off the alphabetically-first member,
+  // casting one more buff of the same length re-sorted the members and changed the key - so an
+  // already-warned group looked brand new and beeped again for buffs the user had already been
+  // told about. The identity now comes from the bucket, which nothing can change by joining it.
+  M.setRule('duration');
+  const before = M.mergeByDuration([buff('Brilliance', 1440, 20), buff('Clarity', 1440, 22)])[0];
+  const after = M.mergeByDuration([
+    buff('Aegolism', 1440, 1440),
+    buff('Brilliance', 1440, 18),
+    buff('Clarity', 1440, 20),
+  ])[0];
+  assert.equal(before.mergedKey, after.mergedKey, 'a member joining must not re-identify the tile');
+  assert.equal(after.mergedCount, 3);
+});
+
+test('the anchor member expiring does not re-identify the tile either', () => {
+  M.setRule('duration');
+  const before = M.mergeByDuration([buff('Aaa', 600, 10), buff('Zzz', 600, 400), buff('Mmm', 600, 500)])[0];
+  const after = M.mergeByDuration([buff('Zzz', 600, 390), buff('Mmm', 600, 490)])[0];
+  assert.equal(before.mergedKey, after.mergedKey);
+});
+
+test('the identity names who and how long, so two people never collide', () => {
+  M.setRule('duration');
+  const out = M.mergeByDuration([
+    buff('A', 1440, 900, 'Avenrae'),
+    buff('B', 1440, 800, 'Avenrae'),
+    buff('A', 1440, 900, 'Shara'),
+    buff('B', 1440, 800, 'Shara'),
+  ]);
+  assert.equal(out.length, 2);
+  assert.notEqual(out[0].mergedKey, out[1].mergedKey);
+  for (const tile of out) assert.match(tile.mergedKey, /^merged::[a-z]+::1440::0$/);
+});
+
 test('keyFor prefers the merged identity over the ally or timer identity it inherited', () => {
   // A merged tile is built by spreading its lead member, so it still carries that member's
   // allyName and id. Falling through to either would make two different merged groups collide,
@@ -254,13 +290,119 @@ test('glow and sound are matched against members, never against the tile key', (
   }
 });
 
-test('a changing count forces the tile to be rebuilt', () => {
-  // The badge is written at build time, so six-to-five has to count as a structural change.
-  assert.match(overlaySrc, /const mergeKey = visible\.map\(\(b\) => b\.mergedCount \|\| 0\)\.join\(','\)/);
+test('everything a merged tile draws once is part of the structural signature', () => {
+  // The badge count AND the lead's name are both written at build time, and the in-place update
+  // path refreshes neither. The name is the one that was missed: recasting the buff a tile is
+  // counting down sends it to the back of the queue, so the LEAD changes while the group does
+  // not - the count is the same, the identity is the same, nothing else in the check moves, and
+  // the tile is left counting down one buff while naming another.
+  const sig = overlaySrc.match(/const mergeKey = visible\.map\([^;]+;/);
+  assert.ok(sig, 'the merge signature has been restructured');
+  assert.match(sig[0], /b\.mergedCount/, 'the badge count is not in the signature');
+  assert.match(sig[0], /b\.name/, 'the lead name is not in the signature - the tile will go stale');
+
   const check = overlaySrc.match(/const structureChanged =[\s\S]*?;\r?\n/);
   assert.ok(check, 'the structural-change check has been restructured');
   assert.match(check[0], /listEl\.dataset\.mergeKey !== mergeKey/);
   assert.match(overlaySrc, /listEl\.dataset\.mergeKey = mergeKey;/, 'the signature is never stored');
+});
+
+/**
+ * The REAL merge signature, lifted out of render() and made callable.
+ *
+ * An earlier version of the tests below re-typed the formula instead of using it, which meant
+ * they proved a copy correct and left the original free to differ. Mutation testing found it:
+ * adding remainingSec to the real signature - which would rebuild every tile once a second -
+ * changed nothing the tests could see.
+ */
+function mergeSignature() {
+  const m = overlaySrc.match(/const mergeKey = (visible\.map\([\s\S]*?);\r?\n/);
+  assert.ok(m, 'the merge signature has been restructured');
+  // eslint-disable-next-line no-new-func
+  return new Function('visible', `return ${m[1]};`);
+}
+
+test('the signature actually changes when only the lead changes', () => {
+  // The failure in full: two 1440s buffs merged, the shorter one recast. Run it rather than trust
+  // the regex above, and run the real expression rather than a copy of it.
+  M.setRule('duration');
+  const sig = mergeSignature();
+  const sigOf = (list) => sig(M.mergeByDuration(list));
+
+  const before = sigOf([buff('Aegolism', 1440, 900), buff('Brilliance', 1440, 120)]);
+  const after = sigOf([buff('Aegolism', 1440, 899), buff('Brilliance', 1440, 1440)]);
+  assert.notEqual(before, after, 'a lead change must force the tile to be rebuilt');
+  assert.match(before, /Brilliance/);
+  assert.match(after, /Aegolism/);
+});
+
+test('the signature does NOT change on an ordinary tick', () => {
+  // The other half, and just as important: a signature that moved every second would tear down
+  // and rebuild every tile once a second, losing the landing glow mid-animation each time.
+  M.setRule('duration');
+  const sig = mergeSignature();
+  const sigOf = (list) => sig(M.mergeByDuration(list));
+  const before = sigOf([buff('Aegolism', 1440, 900), buff('Brilliance', 1440, 120)]);
+  const tick = sigOf([buff('Aegolism', 1440, 899), buff('Brilliance', 1440, 119)]);
+  assert.equal(before, tick, 'time passing alone must not rebuild the tile');
+});
+
+test('an unmerged aura produces a constant signature', () => {
+  // Which is what keeps this whole mechanism invisible to an aura that has merging switched off.
+  M.setRule('duration');
+  const sig = mergeSignature();
+  assert.equal(
+    sig([buff('A', 600, 100), buff('B', 1440, 50)]),
+    sig([buff('A', 600, 99), buff('B', 1440, 49)])
+  );
+});
+
+test('a warned tile forgets it was warned once it climbs back above the threshold', () => {
+  // The bug: warnedAt is keyed by the TILE, and both of render()'s pruning loops iterate RAW
+  // engine keys - which by design can never equal a merged key. So a merged tile warned once and
+  // then stayed silent for the rest of the session, however many times its buffs were recast.
+  const fn = overlaySrc.match(/function checkSoundWarnings\(visible\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn, 'checkSoundWarnings has been restructured');
+  const body = fn[1];
+  const above = body.indexOf('buff.remainingSec > thresholdSec');
+  assert.ok(above >= 0, 'the above-threshold branch is gone');
+  assert.match(
+    body.slice(above, above + 900), /warnedAt\.delete\(key\)/,
+    'going back above the threshold must clear the record, or a merged tile can never warn twice'
+  );
+});
+
+test('changing a setting does not make a noise', () => {
+  // Toggling merging, or switching the app-wide rule, re-identifies every tile. A tile already
+  // inside the warning window with no record against its NEW identity would warn again about
+  // something the user has already been told. The first pass after a config change records what
+  // is already in the window and plays nothing.
+  assert.match(overlaySrc, /let warningsSuppressedOnce = false;/);
+  assert.match(overlaySrc, /warningsSuppressedOnce = true;/, 'applyConfig never arms the suppression');
+  const fn = overlaySrc.match(/function checkSoundWarnings\(visible\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn);
+  const body = fn[1];
+  assert.ok(
+    body.indexOf('warningsSuppressedOnce') < body.indexOf('playAlertSound'),
+    'the suppression must be checked before anything can play'
+  );
+  assert.match(body, /warnedAt\.set\(keyFor\(buff\), now\)/, 'it must RECORD, not just skip - or it warns next tick');
+});
+
+test('the count badge paints over the countdown bar, not under it', () => {
+  // The row's bar is an absolutely-positioned fill at z-index 0, and .name and .time opt into
+  // position:relative + z-index:1 precisely so they sit above it. A plain flex item does not, so
+  // the badge came out tinted blue - then red as the buff ran low, which reads as the badge
+  // itself being some kind of warning.
+  const base = overlayCss.match(/\.count-badge \{([\s\S]*?)\}/);
+  assert.ok(base, '.count-badge has been renamed');
+  assert.match(base[1], /position: relative/);
+  assert.match(base[1], /z-index: 1/);
+  // Icon mode overrides position, so its rule has to come afterwards or it loses.
+  assert.ok(
+    overlayCss.indexOf('.count-badge {') < overlayCss.indexOf('.buff-tile .count-badge {'),
+    'the icon-mode override must come after the base rule'
+  );
 });
 
 test('merging happens after filtering and before sorting', () => {
