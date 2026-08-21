@@ -973,6 +973,8 @@ function initWidgetsPanel() {
   const soundExpireCheckbox = document.getElementById('widget-sound-expire-checkbox');
   const soundWarningSlider = document.getElementById('widget-sound-warning-slider');
   const soundWarningValueEl = document.getElementById('widget-sound-warning-value');
+  const alertVolumeSlider = document.getElementById('widget-alert-volume-slider');
+  const alertVolumeValueEl = document.getElementById('widget-alert-volume-value');
   const soundWarningLoopSlider = document.getElementById('widget-sound-loop-slider');
   const soundWarningLoopValueEl = document.getElementById('widget-sound-loop-value');
   // Scoped per grid, not a bare '.anchor-cell' query - the label position
@@ -1447,6 +1449,15 @@ function initWidgetsPanel() {
     const warningLoopSec = widget.soundWarningLoopSec || 0;
     soundWarningLoopSlider.value = warningLoopSec;
     soundWarningLoopValueEl.textContent = warningLoopSec === 0 ? 'off' : `${warningLoopSec}s`;
+    // The volume slider was the one control in this panel never populated from the widget, so it
+    // always showed the markup default rather than the aura's saved value. And because the input
+    // carried no `value` attribute at all, an HTML range falls back to the midpoint of its own
+    // range - 50 on a 0-100 track - so the handle sat halfway along while the sound played at
+    // the real default of 100%. That is the whole of the reported "slider starts in the middle
+    // but it's 100%": not a scale problem, a control that never loaded its value.
+    const alertVolume = typeof widget.alertVolume === 'number' ? widget.alertVolume : 100;
+    alertVolumeSlider.value = alertVolume;
+    alertVolumeValueEl.textContent = `${alertVolume}%`;
     renderLandSoundPicker(widget.landSoundId);
     renderExpireSoundPicker(widget.expireSoundId);
     renderWarningSoundPicker(widget.warningSoundId);
@@ -2071,8 +2082,6 @@ function initWidgetsPanel() {
   // eqsound:// protocol is registered globally, so any renderer can load
   // it), and respects the same volume slider the real alerts use so a
   // preview is representative of what you'll actually hear.
-  const alertVolumeSlider = document.getElementById('widget-alert-volume-slider');
-  const alertVolumeValueEl = document.getElementById('widget-alert-volume-value');
   function currentVolumeFraction() {
     return (Number(alertVolumeSlider.value) || 0) / 100;
   }

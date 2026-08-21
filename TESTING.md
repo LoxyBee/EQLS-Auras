@@ -229,6 +229,18 @@ spreadsheet in a minute with `node tools/build-roster.js --write`.
 ## QOL batch
 
 - [ ] **Reset remembered choices is red**, matching Delete aura. *(new)*
+- [ ] **"Unlock all auras" appears ONLY on the Overlay Auras overview** - select
+      any individual aura and the whole "All auras" card (including the two
+      auto-hide checkboxes) should be gone. *(new)*
+- [ ] **The per-aura "Unlock to move" button is still there** on each aura's own
+      settings. Scoping the master control down is exactly when its sibling
+      might be taken with it.
+- [ ] **The alert volume slider shows the aura's real value** when you select an
+      aura, not always the middle of the track. *(bug fix)* Set one aura to 40%,
+      another to 100%, switch between them: the handle should move.
+      *This is almost certainly the whole of the "starts in the middle but it's
+      100%" report* - the slider was never populated, and an HTML range with no
+      value defaults to the midpoint.
 - [ ] **The Add Aura premade list shows eight greyed "Not built yet" entries**
       below the working ones, and none of them can be clicked. *(new)*
 - [ ] **Share codes.** Export an aura: the code should start `EQLSAURAS1-`.

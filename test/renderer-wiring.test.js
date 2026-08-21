@@ -52,6 +52,34 @@ test('the All auras card is scoped to the overview, not shown on every aura', ()
   assert.equal(hides.length, 1, 'the All auras card should be hidden in exactly one place (select)');
 });
 
+test('every aura slider is populated from the aura, not just read from', () => {
+  // The bug this generalises: the alert-volume slider was read on input and saved, but nothing
+  // ever wrote the saved value BACK into it when an aura was selected. Worse, its markup had no
+  // `value` attribute, and an HTML range with no value falls back to the midpoint of its own
+  // range - so the handle sat halfway along a 0-100 track while the real volume was 100. It
+  // looked like a scale problem and was really a control that never loaded.
+  //
+  // Nothing throws in that situation and nothing looks broken, so it is worth a standing check
+  // rather than trusting each new slider to be wired by hand.
+  const sliderIds = [...html.matchAll(/<input[^>]*type="range"[^>]*>/g)]
+    .map((m) => (m[0].match(/\bid="([^"]+)"/) || [])[1])
+    .filter((id) => id && id.startsWith('widget-'));
+
+  assert.ok(sliderIds.length > 5, 'found suspiciously few aura sliders - has the markup changed?');
+
+  const unpopulated = [];
+  for (const id of sliderIds) {
+    const bind = js.match(new RegExp(`const\\s+(\\w+)\\s*=\\s*document\\.getElementById\\(\\s*'${id}'\\s*\\)`));
+    if (!bind) { unpopulated.push(`${id} (never looked up)`); continue; }
+    if (!new RegExp(`\\b${bind[1]}\\.value\\s*=`).test(js)) unpopulated.push(`${id} -> ${bind[1]}`);
+  }
+  assert.deepEqual(
+    unpopulated, [],
+    'these sliders are never assigned a value, so they will show their markup default instead of ' +
+    `the aura's saved setting: ${unpopulated.join(', ')}`
+  );
+});
+
 test('the per-aura Unlock to move button still exists', () => {
   // The master control was scoped down; the per-aura one must NOT have gone with it.
   assert.ok(htmlIds.has('widget-lock-btn'), 'the per-aura Unlock to move button is missing');
