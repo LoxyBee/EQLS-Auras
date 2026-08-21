@@ -276,6 +276,17 @@
                 shown" says it does, so pick what it listens for there, then choose when it should
                 make a noise.
               </p>
+              <div class="row" id="widget-merge-row">
+                <label>
+                  <input type="checkbox" id="widget-merge-checkbox" />
+                  Merge buffs that share a duration into one tile
+                </label>
+              </div>
+              <p class="hint" id="widget-merge-hint">
+                One tile instead of many, showing the soonest to run out and a count of how many are
+                behind it - a full group buff is otherwise a wall of tiles. Which buffs count as
+                "the same" is set once for the whole app, on the Setup page.
+              </p>
               <div class="row" id="widget-sort-order-row">
                 <span class="label">Sort by:</span>
                 <label><input type="radio" name="widget-sort-order" value="default" /> Cast order</label>
@@ -724,6 +735,22 @@
           </p>
         </div>
 
+
+        <div class="card" id="merge-rule-card">
+          <h3>Merged tiles</h3>
+          <div class="row">
+            <span class="label">Treat as the same:</span>
+            <label><input type="radio" name="merge-rule" value="duration" /> Same length</label>
+            <label><input type="radio" name="merge-rule" value="burst" /> Same length, cast together</label>
+          </div>
+          <p class="hint">
+            Applies to every aura that has "Merge buffs that share a duration" turned on.
+            <strong>Same length</strong> is simple and predictable, but a large part of the spell
+            list lasts 24 minutes, so unrelated buffs will merge as well.
+            <strong>Same length, cast together</strong> only merges buffs that landed at about the
+            same moment, so a group buff merges while two unrelated 24-minute buffs stay apart.
+          </p>
+        </div>
 
         <div class="card" id="trade-ping-card">
           <h3>Trade requests</h3>

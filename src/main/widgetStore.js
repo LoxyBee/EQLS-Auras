@@ -70,6 +70,8 @@ function defaultSelfBuffsWidget(overrides = {}) {
     sortOrder: 'default',
     lowTimeThresholdSec: 30,
     landingGlowEnabled: true,
+    // Note 8 - see defaultCustomWidget's comment on this field.
+    mergeSameDuration: false,
     hideBardSongs: true,
     maxDurationFilterSec: 0, // 0 = no cutoff
     soundOnLand: false,
@@ -191,6 +193,12 @@ function defaultCustomWidget(name) {
     sortOrder: 'default',
     lowTimeThresholdSec: 30,
     landingGlowEnabled: true,
+    // Note 8. Collapses buffs that share a duration into one tile showing the lowest remaining
+    // time and a count of how many are behind it - a Quick Buff set on a full group is about
+    // fourteen tiles per ally otherwise. Per-aura, because it suits an ally aura far more than a
+    // self-buff one. WHAT counts as "the same" is a separate, app-wide setting - see mergeRule
+    // in main.js, which the owner asked for because either reading is defensible.
+    mergeSameDuration: false,
     soundOnLand: false,
     soundOnExpire: false,
     soundWarningSec: 0,
@@ -277,6 +285,7 @@ const SHAREABLE_FIELDS = [
   'sortOrder',
   'lowTimeThresholdSec',
   'landingGlowEnabled',
+  'mergeSameDuration',
   'soundOnLand',
   'soundOnExpire',
   'soundWarningSec',
@@ -354,6 +363,7 @@ function normalizeWidget(widget) {
     sortOrder: widget.sortOrder || 'default',
     lowTimeThresholdSec: typeof widget.lowTimeThresholdSec === 'number' ? widget.lowTimeThresholdSec : 30,
     landingGlowEnabled: widget.landingGlowEnabled !== false,
+    mergeSameDuration: !!widget.mergeSameDuration,
     hideBardSongs: !!widget.hideBardSongs,
     timerTextColor: typeof widget.timerTextColor === 'string' ? widget.timerTextColor : '#f0f1f5',
     groupAllyBuffs: !!widget.groupAllyBuffs,

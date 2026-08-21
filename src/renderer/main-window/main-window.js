@@ -27,6 +27,7 @@ async function init() {
   initCharacterSettingsPanel();
   initUiScale();
   initSidebarResize();
+  initMergeRule();
   initTradePing();
 }
 
@@ -989,6 +990,9 @@ function initWidgetsPanel() {
   const iconPositionSettings = document.getElementById('widget-icon-position-settings');
   // Everything a sound-only aura has no use for - see updateDisplayModeVisibility below.
   const soundOnlyHintEl = document.getElementById('widget-sound-only-hint');
+  const mergeCheckbox = document.getElementById('widget-merge-checkbox');
+  const mergeRowEl = document.getElementById('widget-merge-row');
+  const mergeHintEl = document.getElementById('widget-merge-hint');
   const sortOrderRowEl = document.getElementById('widget-sort-order-row');
   const opacityRowEl = document.getElementById('widget-opacity-row');
   const positionRowEl = document.getElementById('widget-position-row');
@@ -1410,6 +1414,9 @@ function initWidgetsPanel() {
     displayListOnlySettings.style.display = isIcons || isSoundOnly ? 'none' : '';
     soundOnlyHintEl.style.display = isSoundOnly ? '' : 'none';
     sortOrderRowEl.style.display = isSoundOnly ? 'none' : '';
+    // Merging is about how tiles are drawn, and a sound-only aura draws none.
+    mergeRowEl.style.display = isSoundOnly ? 'none' : '';
+    mergeHintEl.style.display = isSoundOnly ? 'none' : '';
     opacityRowEl.style.display = isSoundOnly ? 'none' : '';
     positionRowEl.style.display = isSoundOnly ? 'none' : '';
     positionHintEl.style.display = isSoundOnly ? 'none' : '';
@@ -1474,6 +1481,7 @@ function initWidgetsPanel() {
     lowThresholdSlider.value = lowThreshold;
     lowThresholdValueEl.textContent = lowThreshold === 0 ? 'off' : `${lowThreshold}s`;
     landingGlowCheckbox.checked = widget.landingGlowEnabled !== false;
+    mergeCheckbox.checked = !!widget.mergeSameDuration;
     soundLandCheckbox.checked = !!widget.soundOnLand;
     soundExpireCheckbox.checked = !!widget.soundOnExpire;
     const warningSec = widget.soundWarningSec || 0;
@@ -2116,6 +2124,9 @@ function initWidgetsPanel() {
   });
   landingGlowCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetLandingGlowEnabled(selectedId, landingGlowCheckbox.checked);
+  });
+  mergeCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetMergeSameDuration(selectedId, mergeCheckbox.checked).then(refreshWidgets);
   });
   soundLandCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetSoundOnLand(selectedId, soundLandCheckbox.checked);
@@ -3058,6 +3069,23 @@ function initSidebarResize() {
 // the one that needs attention while you are looking at something else. The other lines are in
 // the log if they are ever wanted.
 const TRADE_REQUEST_PATTERN = /^([A-Za-z]+) is interested in making a trade\.$/;
+
+// The app-wide half of note 8. A radio group rather than a per-aura setting because the owner
+// could not choose between the two readings and asked for both - which makes it something you
+// try, and a setting you try belongs somewhere you change it once, not on every aura.
+function initMergeRule() {
+  const radios = document.querySelectorAll('input[name="merge-rule"]');
+  window.eqTracker.getMergeRule().then((rule) => {
+    radios.forEach((radio) => {
+      radio.checked = radio.value === rule;
+    });
+  });
+  radios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (radio.checked) window.eqTracker.setMergeRule(radio.value);
+    });
+  });
+}
 
 function initTradePing() {
   const checkbox = document.getElementById('trade-ping-checkbox');

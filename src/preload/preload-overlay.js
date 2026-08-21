@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onLockChanged: (callback) => {
     ipcRenderer.on('widget:lockChanged', (_event, locked) => callback(locked));
   },
+  getMergeRule: () => ipcRenderer.invoke('ui:getMergeRule'),
+  onMergeRuleChanged: (callback) => {
+    ipcRenderer.on('ui:mergeRuleChanged', (_event, rule) => callback(rule));
+  },
   getAudible: (widgetId) => ipcRenderer.invoke('widget:isAudible', widgetId),
   onAudibleChanged: (callback) => {
     ipcRenderer.on('widget:audibleChanged', (_event, audible) => callback(audible));

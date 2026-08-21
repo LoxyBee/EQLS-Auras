@@ -147,6 +147,10 @@ function playAlertSound(kind) {
 // name (e.g. same trigger text, different icons, meant to both show at
 // once), and a name-only key would collapse them into a single tile.
 function keyFor(buff) {
+  // Checked FIRST. A merged tile is built by spreading its lead member, so it still carries that
+  // member's allyName and id - fall through to either of those and two different merged groups
+  // on the same ally would collide, or a merged custom timer would take its lead's identity.
+  if (buff.mergedKey) return buff.mergedKey;
   if (buff.allyName) return `${buff.allyName.toLowerCase()}::${buff.name.toLowerCase()}`;
   if (buff.id) return `id::${buff.id}`;
   return buff.name.toLowerCase();
@@ -253,6 +257,17 @@ function shouldGroupByAlly(visible) {
   return !!currentConfig.groupAllyBuffs && visible.some((b) => b.allyName);
 }
 
+// Note 8's count, and deliberately ONE builder rather than two. Note 12 wants the identical badge
+// on a different kind of merged tile, and two copies of a thing described as "the same badge" is
+// how they end up not being the same badge.
+function buildCountBadge(count) {
+  const badge = document.createElement('span');
+  badge.className = 'count-badge';
+  badge.textContent = `\u00d7${count}`;
+  badge.title = `${count} buffs merged into this one`;
+  return badge;
+}
+
 function buildListRow(buff) {
   const root = document.createElement('div');
   root.className = 'buff-row';
@@ -284,6 +299,8 @@ function buildListRow(buff) {
   time.className = 'time';
 
   content.append(bar, name, time);
+  // Between the name and the time, so the countdown stays where the eye already looks for it.
+  if (buff.mergedCount > 1) content.insertBefore(buildCountBadge(buff.mergedCount), time);
 
   const ref = { root, timeEl: time, barEl: bar, iconWrapEl: null, lastIconUrl: undefined };
   if (currentConfig.showRowIcon) {
@@ -332,6 +349,9 @@ function buildIconTile(buff) {
 
   const ref = { root, timeEl: time, labelEl: null, lastIconUrl: undefined };
   updateTileIcon(ref, buff);
+  // Appended after the icon so it draws over it - .buff-tile is position:relative and the badge
+  // is absolutely placed in its corner.
+  if (buff.mergedCount > 1) root.appendChild(buildCountBadge(buff.mergedCount));
 
   // Read once at build time, not tracked for later updates - a name only
   // ever changes by way of a different buff replacing this tile entirely
@@ -508,6 +528,95 @@ function sortBuffs(buffs, order) {
   return buffs;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Note 8 - merged tiles.
+//
+// Buffs sharing a duration collapse into ONE tile showing the lowest remaining time, whose buffs
+// they are, and a count of how many are behind it. A Quick Buff set on a full group is about
+// fourteen tiles per ally otherwise.
+//
+// WHAT counts as "the same" is an app-wide setting (see mergeRule in main.js), because both
+// readings are defensible and the owner asked to be able to try each:
+//   'duration' - same total duration, full stop.
+//   'burst'    - same total duration AND landed together.
+//
+// "Landed together" needs no landing timestamp, which is fortunate because the overlay is never
+// sent one. Two buffs of the same duration cast in the same burst have, by definition, the same
+// time remaining - so a tolerance on remainingSec is the same test. Three seconds absorbs the
+// rounding without merging things cast a pull apart.
+const BURST_TOLERANCE_SEC = 3;
+
+let mergeRule = 'duration';
+
+// The merged tile's identity, and it has to be STABLE across renders: warnedAt and tileRefs are
+// both keyed by it, so an identity that churned every tick would rebuild the tile constantly and
+// re-fire the pre-expiry warning sound. Derived from the alphabetically first member key, which
+// changes only when that particular buff leaves the group - never merely because time passed.
+function mergedKeyFor(members) {
+  return `merged::${members.map(keyFor).sort()[0]}`;
+}
+
+// Splits one same-duration bucket into bursts. Greedy against the group's own first member
+// rather than its neighbour, so a long chain of buffs one second apart cannot drift arbitrarily
+// far from where it started and end up as a single group spanning a minute.
+function splitIntoBursts(members) {
+  if (mergeRule !== 'burst') return [members];
+  const sorted = [...members].sort((a, b) => b.remainingSec - a.remainingSec);
+  const bursts = [];
+  for (const buff of sorted) {
+    const current = bursts[bursts.length - 1];
+    if (current && current[0].remainingSec - buff.remainingSec <= BURST_TOLERANCE_SEC) current.push(buff);
+    else bursts.push([buff]);
+  }
+  return bursts;
+}
+
+function mergeByDuration(buffs) {
+  // Bucketed per recipient as well as per duration. The tile says whose buffs these are, and one
+  // covering two different people could not - which is also why a merged tile keeps its lead
+  // member's allyName rather than inventing a combined label.
+  const buckets = new Map();
+  for (const buff of buffs) {
+    const bucket = `${(buff.allyName || '').toLowerCase()}::${buff.durationSec}`;
+    if (!buckets.has(bucket)) buckets.set(bucket, []);
+    buckets.get(bucket).push(buff);
+  }
+
+  const out = [];
+  for (const members of buckets.values()) {
+    for (const group of splitIntoBursts(members)) {
+      if (group.length < 2) {
+        // A group of one is left completely untouched - no merged key, no badge, no difference
+        // from an aura with merging switched off. Worth being deliberate about: it is what makes
+        // turning the toggle on harmless for an aura that never has anything to merge.
+        out.push(group[0]);
+        continue;
+      }
+      // The lead is the one about to expire, because that is the timer the tile shows - so the
+      // tile also names it and wears its icon. Naming any other member would put a countdown and
+      // a name on screen that describe different buffs.
+      const lead = group.reduce((a, b) => (b.remainingSec < a.remainingSec ? b : a));
+      out.push({
+        ...lead,
+        mergedCount: group.length,
+        mergedKeys: group.map(keyFor),
+        mergedKey: mergedKeyFor(group),
+      });
+    }
+  }
+  return out;
+}
+
+/** The raw buff keys a tile stands for - itself, unless it is a merged one. */
+function memberKeys(buff) {
+  return buff.mergedKeys || [keyFor(buff)];
+}
+
+/** Whether any raw buff behind this tile is in the given set of raw keys. */
+function anyMemberIn(buff, set) {
+  return memberKeys(buff).some((key) => set.has(key));
+}
+
 function visibleBuffs(buffs) {
   let filtered;
   if (currentConfig.buffFilterMode === 'all') {
@@ -527,6 +636,10 @@ function visibleBuffs(buffs) {
     const nameSet = new Set((currentConfig.buffNames || []).map((n) => n.toLowerCase()));
     filtered = buffs.filter((b) => nameSet.has(b.name.toLowerCase()));
   }
+  // Merged AFTER filtering and BEFORE sorting. After filtering, or an excluded buff would still
+  // be counted in a badge; before sorting, so the merged tile takes its place in the order by the
+  // remaining time it actually shows rather than by whichever member happened to be first.
+  if (currentConfig.mergeSameDuration) filtered = mergeByDuration(filtered);
   return sortBuffs(filtered, currentConfig.sortOrder);
 }
 
@@ -646,7 +759,11 @@ function render(buffs) {
   const isIcon = currentConfig.displayMode === 'icons';
   const modeKey = isIcon ? 'icons' : 'list';
   const visibleKeys = visible.map((b) => keyFor(b));
-  const visibleSet = new Set(visibleKeys);
+  // NOT the same set as visibleKeys once merging is on, and the difference matters. The landing
+  // glow and the alert sounds are worked out from RAW buff keys; a merged tile has a key of its
+  // own that no raw buff ever carries, so matching against tile keys would leave a merged aura
+  // never glowing and never beeping. This set names the raw buffs currently on screen.
+  const visibleSet = new Set(visible.flatMap(memberKeys));
 
   const rawSet = new Set(buffs.map((b) => keyFor(b)));
   const newlyLandedRaw = new Set([...rawSet].filter((name) => !landedNames.has(name)));
@@ -730,6 +847,11 @@ function render(buffs) {
   // can't see a change. A signature of the group layout (names + sizes +
   // direction) is compared instead - it changes exactly when the nesting
   // needs rebuilding, and stays stable while only timers tick.
+  // A merged tile's badge is written when the tile is built, so a count going from six to five
+  // has to count as a structural change or the badge would keep claiming six. Membership changing
+  // already forces a rebuild when merging is off, so this is the same rule, not a new one.
+  const mergeKey = visible.map((b) => b.mergedCount || 0).join(',');
+
   const grouped = shouldGroupByAlly(visible);
   const groups = grouped ? groupByAlly(visible) : null;
   const groupKey = grouped
@@ -739,6 +861,7 @@ function render(buffs) {
   const structureChanged =
     listEl.dataset.mode !== modeKey ||
     listEl.dataset.groupKey !== groupKey ||
+    listEl.dataset.mergeKey !== mergeKey ||
     (!grouped && listEl.children.length !== visibleKeys.length) ||
     visibleKeys.some((key) => !tileRefs.has(key));
 
@@ -750,6 +873,7 @@ function render(buffs) {
     listEl.classList.toggle('ally-grouped-horizontal', grouped && currentConfig.groupAllyDirection === 'horizontal');
     listEl.dataset.mode = modeKey;
     listEl.dataset.groupKey = groupKey;
+    listEl.dataset.mergeKey = mergeKey;
 
     if (grouped) {
       for (const group of groups) {
@@ -769,7 +893,7 @@ function render(buffs) {
         for (const buff of group.buffs) {
           const ref = isIcon ? buildIconTile(buff) : buildListRow(buff);
           updateRef(ref, buff, isIcon);
-          if (currentConfig.landingGlowEnabled !== false && newlyLanded.has(keyFor(buff))) {
+          if (currentConfig.landingGlowEnabled !== false && anyMemberIn(buff, newlyLanded)) {
             ref.root.classList.add('just-landed');
             ref.root.addEventListener('animationend', () => ref.root.classList.remove('just-landed'), { once: true });
           }
@@ -789,7 +913,7 @@ function render(buffs) {
       // Only a genuinely new arrival gets the one-shot glow - a tile
       // recreated here because a *different* buff changed the visible set
       // (forcing this same full-rebuild path) must not replay it.
-      if (currentConfig.landingGlowEnabled !== false && newlyLanded.has(keyFor(buff))) {
+      if (currentConfig.landingGlowEnabled !== false && anyMemberIn(buff, newlyLanded)) {
         ref.root.classList.add('just-landed');
         // Must come off once the one-shot animation finishes, not linger
         // forever - .just-landed and .low both set the `animation` shorthand,
@@ -1026,6 +1150,15 @@ window.eqOverlay.onActiveCustomTimersChanged((timers) => {
 
 window.eqOverlay.getLockState(widgetId).then(applyLockState);
 window.eqOverlay.onLockChanged(applyLockState);
+
+window.eqOverlay.getMergeRule().then((rule) => {
+  mergeRule = rule;
+  render(currentSourceBuffs());
+});
+window.eqOverlay.onMergeRuleChanged((rule) => {
+  mergeRule = rule;
+  render(currentSourceBuffs());
+});
 
 window.eqOverlay.getAudible(widgetId).then((value) => {
   audible = value !== false;

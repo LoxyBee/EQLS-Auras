@@ -635,6 +635,12 @@ function setLowTimeThreshold(id, seconds) {
   return config;
 }
 
+function setMergeSameDuration(id, enabled) {
+  const config = widgetStore.update(id, { mergeSameDuration: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setLandingGlowEnabled(id, enabled) {
   const config = widgetStore.update(id, { landingGlowEnabled: enabled });
   pushConfigChanged(id);
@@ -879,6 +885,7 @@ module.exports = {
   setSortOrder,
   setLowTimeThreshold,
   setLandingGlowEnabled,
+  setMergeSameDuration,
   setHideBardSongs,
   setMaxDurationFilter,
   setShowRowIcon,

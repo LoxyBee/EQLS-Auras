@@ -263,6 +263,36 @@ body.sound-only #content-wrap {
   background: rgba(15, 17, 22, 0.72);
 }
 
+/* Note 8 - how many buffs are behind a merged tile. One rule for both display modes, and
+   deliberately reused by note 12's merged tiles rather than copied. Sized off the tile's own text
+   rather than a fixed pixel value, so it keeps its proportions as the text-size slider moves. */
+.count-badge {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.8em;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* In icon mode there is no room in the flow, so it sits in the top-right corner over the art.
+   pointer-events:none because the whole overlay is click-through anyway and a badge that could
+   ever catch a click would be a hole in that. */
+.buff-tile .count-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  z-index: 2;
+  background: rgba(20, 24, 34, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
 .buff-tile img {
   width: 100%;
   height: 100%;

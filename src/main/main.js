@@ -491,6 +491,30 @@ function clampStoredSidebarWidth(px) {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(n)));
 }
 
+// Note 8's second half. WHICH buffs count as "the same duration" is app-wide rather than
+// per-aura, at the owner's request - both readings are defensible and she wanted to be able to
+// try each rather than have one picked for her.
+//
+//   'duration'  - any buffs with the same total duration merge. Simple and predictable, but a
+//                 large slice of the roster is 1440s, so unrelated buffs merge too.
+//   'burst'     - same duration AND landed at about the same time, so a Quick Buff set merges
+//                 while two unrelated 24-minute buffs stay apart.
+//
+// Anything unrecognised falls back to 'duration', which is the simpler behaviour and the one a
+// user is likeliest to be able to make sense of if it ever shows up unexpectedly.
+const MERGE_RULES = ['duration', 'burst'];
+const normalizeMergeRule = (rule) => (MERGE_RULES.includes(rule) ? rule : 'duration');
+
+ipcMain.handle('ui:getMergeRule', () => normalizeMergeRule(loadJson('mergeRule', 'duration')));
+ipcMain.handle('ui:setMergeRule', (_event, rule) => {
+  const value = normalizeMergeRule(rule);
+  saveJson('mergeRule', value);
+  // Every overlay needs it, not just the focused one - it is app-wide, and an aura that kept the
+  // old rule until the next restart would look like the setting had not worked.
+  broadcast('ui:mergeRuleChanged', value);
+  return value;
+});
+
 ipcMain.handle('ui:getTradePing', () => loadJson('tradePingEnabled', false) === true);
 ipcMain.handle('ui:setTradePing', (_event, enabled) => {
   const on = enabled === true;
@@ -603,6 +627,9 @@ ipcMain.handle('widget:isAudible', (_event, id) => {
 ipcMain.handle('widget:create', (_event, { name, buffSource }) => widgetManager.createCustomWidget(name, { buffSource }));
 ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAllyBuffsWidget(name));
 ipcMain.handle('widget:createSoundOnly', (_event, { name }) => widgetManager.createSoundOnlyWidget(name));
+ipcMain.handle('widget:setMergeSameDuration', (_event, { id, value }) =>
+  widgetManager.setMergeSameDuration(id, value)
+);
 ipcMain.handle('widget:export', (_event, id) => widgetManager.exportWidget(id));
 ipcMain.handle('widget:peekCode', (_event, code) => widgetManager.peekWidgetCode(code));
 ipcMain.handle('widget:import', (_event, code) => widgetManager.importWidget(code));

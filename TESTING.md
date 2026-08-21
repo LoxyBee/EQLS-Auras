@@ -26,7 +26,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a
 character standing in a zone. If it is red, nothing below is worth doing yet -
 read the failure text, it says what broke and why.
 
-Eleven suites at the time of writing:
+Twelve suites at the time of writing:
 
 | Suite | Guards |
 |---|---|
@@ -40,6 +40,7 @@ Eleven suites at the time of writing:
 | `test/sound-only.test.js` | sound-only auras: the mode survives saving and sharing, a foreign mode cannot arrive by either import route, every aura type still carries every sound setting, and the overlay's early return stays between the alerts and the drawing |
 | `test/visibility.test.js` | the whole precedence model - profile membership as the on/off switch, "Hide auras" beating unlock, unlocking one aura beating its profile, and off meaning silent as well as invisible |
 | `test/move-box.test.js` | the name pill in the move box: that it opts out of the drag region (a click inside one never fires), that it does not swallow the draggable area, and that every hop from the pill to the settings page exists |
+| `test/merged-tiles.test.js` | the merging maths run for real - both rules, per-person bucketing, which member the tile names - plus the two places merging meets the rest of the overlay: glow and sound matching members rather than tile keys, and a changing count forcing a rebuild |
 | `tools/lib/xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
 
 If the roster capability snapshot fails after a deliberate roster change, read
@@ -249,6 +250,34 @@ There is a new **Hide auras** button at the right-hand end of the profile bar, a
       away. Only unlocking one by hand pulls it onto the screen.
 - [ ] **Move a switched-off aura while it is unlocked, then re-lock, then switch its profile back
       on.** *Expect*: it is where you put it.
+
+### Merged tiles *(new - needs looking at)*
+
+A per-aura **Merge buffs that share a duration into one tile** checkbox, plus an app-wide
+**Merged tiles** card on the Setup page choosing what counts as "the same". Off by default
+everywhere, so an aura you do not touch behaves exactly as it does today.
+
+- [ ] **Leave it off on every aura and use the app normally for a bit.** *Expect*: no difference
+      at all. This is the check that matters most - nothing should have changed for anything you
+      have not deliberately turned on.
+- [ ] **Turn it on for your Ally Buffs aura and cast a group buff set.** *Expect*: one tile per
+      person instead of a wall, showing the soonest to run out, that person's name, and a small
+      "x6" style badge.
+- [ ] **Watch one of the merged buffs run out.** *Expect*: the count drops by one and the tile
+      switches to counting down the next one.
+- [ ] **On the Setup page, switch between "Same length" and "Same length, cast together".**
+      *Expect*: the change takes effect immediately on every aura, without a restart.
+- [ ] **With "Same length" chosen**, look for unrelated 24-minute buffs merging together. They
+      will, and that is the rule doing what it says - switch to the other one if you dislike it.
+- [ ] **With "Same length, cast together" chosen**, cast one buff, wait a minute, then cast
+      another of the same length. *Expect*: two separate tiles.
+- [ ] **Check the glow and the sounds still work on a merged aura.** Turn on "Glow when a buff
+      lands" and a land sound, then re-cast one member of a merged group. *Expect*: the tile
+      flashes and the sound plays. This is the one most likely to be silently wrong.
+- [ ] **Check the pre-expiry warning fires once, not once per merged buff.**
+- [ ] **Try it in icon mode as well as list mode.** *Expect*: the badge in the tile's top-right
+      corner, not overlapping the countdown.
+- [ ] **Turn it off again.** *Expect*: every tile comes straight back, unchanged.
 
 ### Aura names in the move box *(new - needs looking at)*
 

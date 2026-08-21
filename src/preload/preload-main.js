@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setUiScale: (pct) => ipcRenderer.invoke('ui:setScale', pct),
   getSidebarWidth: () => ipcRenderer.invoke('ui:getSidebarWidth'),
   setSidebarWidth: (px) => ipcRenderer.invoke('ui:setSidebarWidth', px),
+  getMergeRule: () => ipcRenderer.invoke('ui:getMergeRule'),
+  setMergeRule: (rule) => ipcRenderer.invoke('ui:setMergeRule', rule),
   getTradePing: () => ipcRenderer.invoke('ui:getTradePing'),
   setTradePing: (enabled) => ipcRenderer.invoke('ui:setTradePing', enabled),
 
@@ -117,6 +119,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createWidget: (name, buffSource) => ipcRenderer.invoke('widget:create', { name, buffSource }),
   createAllyBuffsWidget: (name) => ipcRenderer.invoke('widget:createAlly', { name }),
   createSoundOnlyWidget: (name) => ipcRenderer.invoke('widget:createSoundOnly', { name }),
+  setWidgetMergeSameDuration: (id, value) =>
+    ipcRenderer.invoke('widget:setMergeSameDuration', { id, value }),
   onOpenWidgetSettings: (callback) => {
     ipcRenderer.on('widget:openSettings', (_event, id) => callback(id));
   },

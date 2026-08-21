@@ -971,7 +971,37 @@ setting rather than being assumed to just work.
 
 #### #8 — Per-aura toggle: merge buffs that share the same duration into one icon showing the lowest remaining time, the recipient's name, and a count of how many are merged
 
-`feature` · `medium` (about a day)
+`feature` · `medium` (about a day) · **built 20 August 2026**
+
+> **Both interpretations below were answered.**
+>
+> 1. **"THE PLAYER NAME" = the recipient**, as read here. A merged tile is bucketed per person as
+>    well as per duration, so it can name whose buffs these are; a tile covering two people
+>    could not. A Self Buffs aura has no recipient, so its merged tiles just carry the count.
+> 2. **"Exact same duration" is now YOUR CHOICE, made once for the whole app** on the Setup page,
+>    because you could not pick between the two readings and asked for both. **Same length** is
+>    the simple rule and does merge unrelated buffs that happen to last as long. **Same length,
+>    cast together** additionally requires them to have landed at about the same moment.
+>
+> That second one needed no landing timestamp, which is lucky because the overlay is never sent
+> one: two buffs of the same duration cast in the same burst have, by definition, the same time
+> remaining, so a three-second tolerance on the countdown is the same test.
+>
+> **The tile names and wears the icon of the member that is about to run out**, because that is
+> the countdown it shows - a tile counting down to one buff while naming another is worse than no
+> tile at all.
+>
+> **The count badge is one shared builder**, exactly as the parenthetical asked: note 12 wants the
+> identical badge, and two copies of "the same badge" is how they stop being the same badge.
+>
+> The risk below turned out to have a second half nobody had written down. Keeping the merged
+> tile's identity stable is necessary but not sufficient: the landing glow and the alert sounds
+> are worked out from RAW buff keys, and a merged tile's key is one no raw buff ever carries - so
+> matching against tile keys would have left a merged aura that never glowed and never beeped,
+> with nothing to show for it. Every tile now reports which raw buffs it stands for, and that is
+> what glow and sound are matched against. The stability half is handled by deriving the tile's
+> identity from its alphabetically-first member, which changes only when that buff actually
+> leaves the group and never merely because time passed.
 
 One real ambiguity I had to interpret: "THE PLAYER NAME". A Self Buffs aura has no name to show.
 I read it as the recipient's name (buff.allyName), which is also where the payoff is biggest -
