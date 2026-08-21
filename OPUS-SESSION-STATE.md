@@ -36,12 +36,12 @@ at the repo root ships.
 
 ## 2. Current state
 
-**38 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
+**41 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
 `.gitignore` - it was staged once by a careless `git add -A` and amended straight back out, and
 the ignore entry is what makes that command safe to type here at all.
 
 ```
-npm test   ->  16 suites, 198 cases, green
+npm test   ->  17 suites, 217 cases, green
 ```
 
 | Suite | Cases | Guards |
@@ -59,7 +59,8 @@ npm test   ->  16 suites, 198 cases, green
 | `test/merged-tiles.test.js` | 31 | merged tiles: both rules, tile identity, and where merging meets render() |
 | `test/text-aura.test.js` | 22 | text auras: the one-tile rule, the words, the dispel announcer |
 | `test/category-borders.test.js` | 13 | coloured edges: roster, overlay and stylesheet must agree |
-| `test/detection.test.js` | 16 | the detection engine's first coverage, incl. two pinned KNOWN DEFECTS |
+| `test/detection.test.js` | 21 | the detection engine's coverage: tiers, the veto, instants |
+| `test/infinite-duration.test.js` | 14 | spells that never run out, and the null-comparison traps |
 | `test/spellbook-diagnostic.test.js` | 6 | the spellbook status says what to do, not "it will appear" |
 | `tools/lib/xlsx.test.js` | 7 | the spreadsheet reader |
 
@@ -371,15 +372,44 @@ her cast lines if needed.
   first, that deletes one active buff per call, and ~90 ended-texts are shared between buffs - so a
   line reaching it twice removes two live timers.
 
+### THE BIGGEST LESSON OF THE SESSION: I measured a signal and inferred its cause
+
+On part B I found 1,816 `You forget X.` lines in the logs and concluded that loadout swaps
+announce themselves, so the gem list could not go stale — and argued against the change Shara had
+asked for. **She was right and I was wrong.** Those lines are what a MANUAL un-memorise prints. A
+full EQ Legends loadout swap prints nothing at all.
+
+The evidence was real; the inference from it was not. 1,816 forget lines are perfectly consistent
+with "swaps are silent and she un-memorises by hand a lot", and I never considered that reading
+before telling her her own premise was factually wrong.
+
+**She has the game. I have the file.** When those two disagree about what the game does, the file
+is evidence about the file.
+
+### The three no-duration cases, now settled
+
+A roster entry with no duration turned out to mean three different things, and treating them alike
+is what produced the NaN tile:
+
+1. **Infinite** — Yaulp, Fury. Marked in `tools/roster-overrides.json`, no countdown, never swept.
+2. **Instant** — nukes, heals, gates. Lands so sound and text auras can react; the OVERLAY keeps it
+   off any aura that draws countdowns. Short display life, never NaN.
+3. **Genuinely unknown** — none left in practice; anything not marked infinite is treated as an
+   instant.
+
+**`null <= 30` is true in JavaScript**, and `remainingSec` is null for cases 1 and 2. That single
+fact broke four separate places: the low-time colour, the pre-expiry warning sound, the sort order,
+and the ally sweep. Expect it anywhere a number is optional.
+
 ### Two live defects, both measured, both awaiting Shara
 
 1. **The spellbook file has never existed.** 14,650 landings discarded and ~11,000 more turned into
    prompts across her logs, purely for want of it. The UI now says so instead of promising it will
    appear on its own. **Needs: the exact in-game command, to name it in the hint.**
-2. **275 roster entries have a landing text and no duration** → NaN expiry → a tile that never
-   counts down and cannot be dismissed. Fixing it by refusing to land them costs 67 spells and
-   18,405 landings, of which 31 are real buffs. **Needs: her choice between no-countdown tiles,
-   a default length, or not tracking them.** Pinned by two KNOWN DEFECT tests meanwhile.
+2. ~~275 roster entries have a landing text and no duration → NaN expiry.~~ **FIXED** — see the
+   three cases above. What is left is small: Frenzy and Rage look like Fury and are listed as
+   candidates in the overrides file rather than marked, and the six-second display life for an
+   instant is an invented number worth arguing with.
 
 ---
 
