@@ -296,6 +296,12 @@ anywhere.
 
 *Notes #32, #36 · start with **#32** · a few hours*
 
+> **Status, 20 August 2026.** Both notes are done. Note 32’s bug half is fixed; its 0-200
+> re-range was **declined by the owner** (“keep the volume slider as it is, 0-100 is fine”), so the
+> ambiguity flagged below never had to be resolved by an implementer guessing. Note 36 shipped as a
+> **global** setting, which was the reading offered below, and it is now the precedent the pure-sound
+> aura builds on rather than repeats.
+
 CLUSTER: the alert layer. Small, self-contained, worth doing early because half of it is a real
 bug on a field that already exists. TWO SEPARATE THINGS LIVE IN NOTE 32 AND ONLY ONE IS A BUG.
 The bug: the slider never loads the aura's saved volume - main-window.js:2025-2033 wires an
@@ -1713,7 +1719,15 @@ screen at once, which could be a lot of windows.
 
 #### #32 — Fix the alert volume slider so it loads the aura's saved volume, and re-range it so 100% sits in the middle and it runs 0-200%
 
-`bug` · `small` (a few hours)
+`bug` · `small` (a few hours) · **bug half done · range half closed by the owner**
+
+**Decided, 20 August 2026 — Shara: "keep the volume slider as it is, 0-100 is fine."** The bug half
+is fixed (commit `d626cb3`); the 0-200 re-range is **not being built**, so the risk below is never
+taken and no `createMediaElementSource` chain is introduced. Splitting this note in two earned its
+keep: the half that was a real bug took minutes, and the half that was a data-meaning change got to
+be declined on its own terms instead of riding in on the fix. `alertVolume` keeps meaning "percent,
+0-100, where 100 is the sound as authored" - which is also what every already-minted share code
+means by it.
 
 I found the actual cause of "starts in the middle but it's 100%", and it's a real bug separate
 from the range request: selectWidget() populates every other slider from the saved config but

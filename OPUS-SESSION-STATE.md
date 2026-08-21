@@ -166,11 +166,10 @@ user's hand-made buffs. **The tests caught that within a minute of being written
 
 ## 5. Open — needs Shara
 
-1. **The 0–200 volume range (note 32b).** The bug half is fixed and probably explains the whole
-   report. If she still wants it: an audio element's volume caps at 1.0, so >100% needs Web Audio;
-   `createMediaElementSource` reroutes an element **permanently**; and `alertVolume` is persisted
-   per aura **and travels in share codes**, so changing what 100 means changes every existing aura.
-   My recommendation: leave at 0–100.
+1. ~~The 0–200 volume range (note 32b).~~ **Closed 20 Aug 2026** — Shara: "keep the volume slider
+   as it is, 0-100 is fine." The bug half stays fixed; the re-range is not being built, so
+   `alertVolume` still means percent 0–100, no `createMediaElementSource` chain is introduced, and
+   no already-minted share code changes meaning.
 2. **Note 33** — does the profile name box fail every time, or only in a small window? If it fails
    maximised, my diagnosis is wrong and the real cause is unfound.
 3. Everything in `TESTING.md`'s **NEEDS THE LIVE CLIENT** section is unverified.
