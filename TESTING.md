@@ -26,7 +26,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a
 character standing in a zone. If it is red, nothing below is worth doing yet -
 read the failure text, it says what broke and why.
 
-Thirteen suites at the time of writing:
+Fourteen suites at the time of writing:
 
 | Suite | Guards |
 |---|---|
@@ -40,6 +40,7 @@ Thirteen suites at the time of writing:
 | `test/sound-only.test.js` | sound-only auras: the mode survives saving and sharing, a foreign mode cannot arrive by either import route, every aura type still carries every sound setting, and the overlay's early return stays between the alerts and the drawing |
 | `test/visibility.test.js` | the whole precedence model - profile membership as the on/off switch, "Hide auras" beating unlock, unlocking one aura beating its profile, and off meaning silent as well as invisible |
 | `test/move-box.test.js` | the name pill in the move box: that it opts out of the drag region (a click inside one never fires), that it does not swallow the draggable area, and that every hop from the pill to the settings page exists |
+| `test/category-borders.test.js` | the coloured edges: that the roster's categories, the overlay's list and the stylesheet's colours all still agree, since a spell whose category nothing has a colour for loses its edge silently |
 | `test/text-aura.test.js` | text auras: the one-tile rule, what the words say, that it never becomes a fourth Display style radio, and that the dispel announcer's attested trigger still appears in your own logs |
 | `test/merged-tiles.test.js` | the merging maths run for real - both rules, per-person bucketing, which member the tile names - plus the two places merging meets the rest of the overlay: glow and sound matching members rather than tile keys, and a changing count forcing a rebuild |
 | `tools/lib/xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
@@ -256,6 +257,27 @@ There is a new **Hide auras** button at the right-hand end of the profile bar, a
       away. Only unlocking one by hand pulls it onto the screen.
 - [ ] **Move a switched-off aura while it is unlocked, then re-lock, then switch its profile back
       on.** *Expect*: it is where you put it.
+
+### Coloured edges by spell type *(new - CHANGES HOW YOUR EXISTING AURAS LOOK)*
+
+Note 37. Every tile now gets a coloured edge saying what kind of spell it is, and it is **on by
+default on auras you already have** - so the first launch after this will look different. Turn it
+off per aura with "Colour each tile's edge by spell type".
+
+- [ ] **Look at your Self Buffs aura.** *Expect*: blue edges on ordinary buffs, and other colours
+      where the spell is something else. Nothing should have moved or resized - only the colour of
+      the edge changes.
+- [ ] **Check a heal-over-time and a damage-over-time** if you have either up. *Expect*: dark
+      green and dark amber respectively, distinctly darker than their instant versions.
+- [ ] **Find a spell with no type** (242 of the 1,052 have none). *Expect*: its ordinary edge,
+      not a guessed colour.
+- [ ] **A custom timer aura.** *Expect*: no coloured edge at all - there is no spell behind it.
+- [ ] **Turn the setting off on one aura.** *Expect*: that aura only goes back to normal.
+- [ ] **Try it in icon mode as well as list mode.**
+- [ ] **Worth your judgement:** you asked for red for damage and green for heals, which is the one
+      pair that is hardest for colour-blind players. The colours differ in brightness as well as
+      hue to soften that. If any two are hard to tell apart on your monitor, say which and they
+      can be changed - they are eight lines in one stylesheet.
 
 ### Text auras and the dispel announcer *(new - needs looking at)*
 

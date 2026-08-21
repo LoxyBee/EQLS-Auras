@@ -326,10 +326,30 @@ function applyTextAuraStyle(el) {
   el.style.color = currentConfig.labelTextColor || '#f0f1f5';
 }
 
+// Note 37 - a coloured edge saying what KIND of spell this is. The colours themselves live in
+// overlay.css so they can be changed without touching logic; this only decides which class goes
+// on the tile.
+//
+// Applied at build time, like the name and the icon: a spell does not change category while it is
+// running, so there is nothing here for the per-tick update path to keep in step.
+//
+// A merged tile inherits its lead member's category, which is right - the lead is the buff it is
+// naming and counting down. A custom timer has no spell behind it and so gets no colour at all,
+// rather than a misleading one.
+const CATEGORY_CLASSES = new Set(['buff', 'debuff', 'nuke', 'dot', 'heal', 'hot', 'pet', 'charm']);
+
+function applyCategoryBorder(root, buff) {
+  if (currentConfig.categoryBordersEnabled === false) return;
+  const category = buff.spellCategory;
+  if (!category || !CATEGORY_CLASSES.has(category)) return;
+  root.classList.add('cat', `cat-${category}`);
+}
+
 /** The one place that decides which kind of tile a mode gets, so every call site agrees. */
 function buildTile(buff, isText, isIcon) {
-  if (isText) return buildTextTile(buff);
-  return isIcon ? buildIconTile(buff) : buildListRow(buff);
+  const ref = isText ? buildTextTile(buff) : isIcon ? buildIconTile(buff) : buildListRow(buff);
+  applyCategoryBorder(ref.root, buff);
+  return ref;
 }
 
 function buildListRow(buff) {

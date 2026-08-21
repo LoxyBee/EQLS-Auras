@@ -86,6 +86,9 @@ function defaultSelfBuffsWidget(overrides = {}) {
     landingGlowEnabled: true,
     // Note 8 - see defaultCustomWidget's comment on this field.
     mergeSameDuration: false,
+    // Note 37 - a coloured edge by what kind of spell it is. On by default, at the owner's
+    // request, so it works without anyone going looking for it.
+    categoryBordersEnabled: true,
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -221,6 +224,9 @@ function defaultCustomWidget(name) {
     // self-buff one. WHAT counts as "the same" is a separate, app-wide setting - see mergeRule
     // in main.js, which the owner asked for because either reading is defensible.
     mergeSameDuration: false,
+    // Note 37 - a coloured edge by what kind of spell it is. On by default, at the owner's
+    // request, so it works without anyone going looking for it.
+    categoryBordersEnabled: true,
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -316,6 +322,7 @@ const SHAREABLE_FIELDS = [
   'lowTimeThresholdSec',
   'landingGlowEnabled',
   'mergeSameDuration',
+  'categoryBordersEnabled',
   'textAuraMessage',
   'textAuraSize',
   'soundOnLand',
@@ -396,6 +403,10 @@ function normalizeWidget(widget) {
     lowTimeThresholdSec: typeof widget.lowTimeThresholdSec === 'number' ? widget.lowTimeThresholdSec : 30,
     landingGlowEnabled: widget.landingGlowEnabled !== false,
     mergeSameDuration: !!widget.mergeSameDuration,
+    // !== false, so an aura saved before this field existed gets the borders too rather than
+    // being the only one without them. That does change how existing auras LOOK on first launch
+    // after upgrading, which is called out in TESTING.md rather than left as a surprise.
+    categoryBordersEnabled: widget.categoryBordersEnabled !== false,
     textAuraMessage: typeof widget.textAuraMessage === 'string' ? widget.textAuraMessage : '',
     textAuraSize: typeof widget.textAuraSize === 'number' ? widget.textAuraSize : 32,
     hideBardSongs: !!widget.hideBardSongs,

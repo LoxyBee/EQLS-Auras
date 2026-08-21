@@ -637,6 +637,9 @@ ipcMain.handle('widget:setTextAuraSize', (_event, { id, value }) => widgetManage
 ipcMain.handle('widget:setMergeSameDuration', (_event, { id, value }) =>
   widgetManager.setMergeSameDuration(id, value)
 );
+ipcMain.handle('widget:setCategoryBorders', (_event, { id, value }) =>
+  widgetManager.setCategoryBorders(id, value)
+);
 ipcMain.handle('widget:export', (_event, id) => widgetManager.exportWidget(id));
 ipcMain.handle('widget:peekCode', (_event, code) => widgetManager.peekWidgetCode(code));
 ipcMain.handle('widget:import', (_event, code) => widgetManager.importWidget(code));

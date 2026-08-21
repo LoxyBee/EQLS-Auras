@@ -645,6 +645,12 @@ function setLowTimeThreshold(id, seconds) {
   return config;
 }
 
+function setCategoryBorders(id, enabled) {
+  const config = widgetStore.update(id, { categoryBordersEnabled: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setMergeSameDuration(id, enabled) {
   const config = widgetStore.update(id, { mergeSameDuration: !!enabled });
   pushConfigChanged(id);
@@ -920,6 +926,7 @@ module.exports = {
   setLowTimeThreshold,
   setLandingGlowEnabled,
   setMergeSameDuration,
+  setCategoryBorders,
   setTextAuraMessage,
   setTextAuraSize,
   setHideBardSongs,

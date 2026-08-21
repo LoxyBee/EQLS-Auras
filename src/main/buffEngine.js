@@ -1303,6 +1303,11 @@ class BuffEngine extends EventEmitter {
           // icon (the picker's first thumbnail), not "no icon".
           iconUrl: known?.iconId != null ? this.iconUrlFn(known.iconId) : null,
           isBardSong: !!known?.isBardSong,
+          // Note 37. The roster's own scaling category - buff, debuff, nuke, dot, heal, hot,
+          // pet, charm - nine values, which is a legend someone can hold in their head where the
+          // 109 fine-grained categories are not. Sent as a plain string and coloured by the
+          // overlay; nothing in the main process cares what it looks like.
+          spellCategory: known?.scaleCategory || null,
         };
       })
       .sort((a, b) => a.remainingSec - b.remainingSec);
@@ -1326,6 +1331,11 @@ class BuffEngine extends EventEmitter {
           // icon (the picker's first thumbnail), not "no icon".
           iconUrl: known?.iconId != null ? this.iconUrlFn(known.iconId) : null,
           isBardSong: !!known?.isBardSong,
+          // Note 37. The roster's own scaling category - buff, debuff, nuke, dot, heal, hot,
+          // pet, charm - nine values, which is a legend someone can hold in their head where the
+          // 109 fine-grained categories are not. Sent as a plain string and coloured by the
+          // overlay; nothing in the main process cares what it looks like.
+          spellCategory: known?.scaleCategory || null,
         };
       })
       .sort((a, b) => a.remainingSec - b.remainingSec);

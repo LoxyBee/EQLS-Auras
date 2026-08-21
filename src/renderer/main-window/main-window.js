@@ -1000,6 +1000,9 @@ function initWidgetsPanel() {
   const textHintEl = document.getElementById('widget-text-hint');
   const displayModeRowEl = document.getElementById('widget-display-mode-row');
   const buffSourceTimerLabelEl = document.getElementById('widget-buff-source-timer-label');
+  const categoryBordersCheckbox = document.getElementById('widget-category-borders-checkbox');
+  const bordersRowEl = document.getElementById('widget-borders-row');
+  const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
   const mergeRowEl = document.getElementById('widget-merge-row');
   const mergeHintEl = document.getElementById('widget-merge-hint');
@@ -1450,6 +1453,11 @@ function initWidgetsPanel() {
     // exactly one whatever happens, so there is never anything to merge.
     mergeRowEl.style.display = isSoundOnly || isTextAura ? 'none' : '';
     mergeHintEl.style.display = isSoundOnly || isTextAura ? 'none' : '';
+    // A sound aura draws no tile to put an edge on. A text aura draws one, but it is a plate of
+    // words rather than a spell tile, and giving it a spell-type edge would be the first thing on
+    // screen the mode promised never to draw.
+    bordersRowEl.style.display = isSoundOnly || isTextAura ? 'none' : '';
+    bordersHintEl.style.display = isSoundOnly || isTextAura ? 'none' : '';
     // The countdown's own styling, which a text aura has no countdown for.
     timerTextTopicEl.style.display = isSoundOnly || isTextAura ? 'none' : '';
     opacityRowEl.style.display = isSoundOnly ? 'none' : '';
@@ -1527,6 +1535,7 @@ function initWidgetsPanel() {
     lowThresholdValueEl.textContent = lowThreshold === 0 ? 'off' : `${lowThreshold}s`;
     landingGlowCheckbox.checked = widget.landingGlowEnabled !== false;
     mergeCheckbox.checked = !!widget.mergeSameDuration;
+    categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
     textMessageInput.value = widget.textAuraMessage || '';
     const textAuraSize = widget.textAuraSize || 32;
     textAuraSizeSlider.value = String(textAuraSize);
@@ -2193,6 +2202,9 @@ function initWidgetsPanel() {
     const size = Number(textAuraSizeSlider.value);
     textAuraSizeValueEl.textContent = `${size}px`;
     window.eqTracker.setWidgetTextAuraSize(selectedId, size);
+  });
+  categoryBordersCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetCategoryBorders(selectedId, categoryBordersCheckbox.checked);
   });
   mergeCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetMergeSameDuration(selectedId, mergeCheckbox.checked).then(refreshWidgets);

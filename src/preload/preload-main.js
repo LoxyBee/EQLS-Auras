@@ -124,6 +124,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetTextAuraSize: (id, value) => ipcRenderer.invoke('widget:setTextAuraSize', { id, value }),
   setWidgetMergeSameDuration: (id, value) =>
     ipcRenderer.invoke('widget:setMergeSameDuration', { id, value }),
+  setWidgetCategoryBorders: (id, value) => ipcRenderer.invoke('widget:setCategoryBorders', { id, value }),
   onOpenWidgetSettings: (callback) => {
     ipcRenderer.on('widget:openSettings', (_event, id) => callback(id));
   },

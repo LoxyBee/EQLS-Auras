@@ -715,7 +715,7 @@ line.
 | 34 | Add "Buff" and "Debuff" premade aura templates that ask you to pick one... | feature | needs-design | blocked |
 | 35 | Archive the current spell roster and rebuild it from the new EQL spell ... | data | needs-design | **done** |
 | 36 | Play an alert sound when someone asks to trade with you | feature | small | **done** |
-| 37 | Give each aura tile a coloured border by spell type (red for damage/DoT... | feature | large |  |
+| 37 | Give each aura tile a coloured border by spell type (red for damage/DoT... | feature | small | **done** |
 | 38 | Let an aura apply only while you are in a specific zone - either as an ... | feature | needs-design |  |
 | 39 | New aura category for multi-trigger auras with AND/OR conditions - reco... | feature | needs-design |  |
 
@@ -2199,7 +2199,7 @@ matches, so the new mode must use its own matcher rather than relaxing the share
 
 #### #37 — Give each aura tile a coloured border by spell type (red for damage/DoTs, green for heals/HoTs), on by default, toggled from a new "Borders" sub-section under Label text
 
-`feature` · ~~`large` (several days)~~ **→ `small`. UNBLOCKED, 20 August 2026.**
+`feature` · ~~`large` (several days)~~ **→ built, 20 August 2026, in a few hours.**
 
 > **The reason this was sized as large has gone.** The analysis below opens "the app has NO idea
 > what type any spell is" and lists a roster entry as
@@ -2213,8 +2213,25 @@ matches, so the new mode must use its own matcher rather than relaxing the share
 > which is a few hours, not several days. The days of empirical field-mining it feared are not
 > needed and were never done.
 >
-> `scaleCategory` is probably the field to colour by: 9 values maps onto a legend someone can
-> hold in their head, where 109 does not.
+> `scaleCategory` is the field it colours by: 9 values maps onto a legend someone can hold in
+> their head, where 109 does not. Red for direct damage, amber for damage over time, green for
+> heals, darker green for heals over time, blue for buffs, purple for debuffs, amber for pets,
+> magenta for charms. The 242 spells the roster has no type for keep their ordinary edge rather
+> than being guessed at, and a custom timer never gets one - there is no spell behind it to be
+> right about.
+>
+> **On by default**, as asked, including on auras that already exist - so the first launch after
+> upgrading looks different. That is called out in TESTING.md rather than left as a surprise.
+>
+> Drawn as a border colour plus an inset shadow rather than a thicker border: a wider border would
+> reflow every row and grid in the app, and this doubles the visual weight without moving a pixel.
+>
+> **One thing said plainly rather than glossed over.** Red against green is the single pair a
+> large share of colour-blind players cannot separate, and it is exactly the pair that was asked
+> for. The hues are kept, but the four damage and healing colours are also spread apart in
+> LIGHTNESS, so they stay distinguishable as greys - a test enforces that gap, and it caught the
+> first palette, where damage and damage-over-time were too close. It is a mitigation, not a fix.
+> The real fix is letting the palette be chosen, which belongs with the other colour settings.
 
 MUCH HARDER THAN IT SOUNDS, but for one specific reason: the app has NO idea what type any spell
 is. A roster entry is {name, durationSec, landingText, endedText, iconId, showOnOverlay,
