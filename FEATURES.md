@@ -1661,7 +1661,91 @@ so a never-expiring tile needs a deliberate answer there rather than falling thr
 
 #### #24 — Rework spell detection into the stated priority order - and add a new post-cast check that waits to see whether an ambiguous landing text repeats on the next song pulse, resolving buff-vs-bard-song automatically instead of asking, with the popup showing a countdown to the next check
 
-`core-feature` · `large` (several days)  · **blocked**
+`core-feature` · `large` (several days)  · **partly done · one part declined · one part still blocked**
+
+> **Worked through 20 August 2026 against 1.6 million lines of real logs.** The three parts that
+> did not depend on the blocked assumption were each investigated properly, and they did not all
+> survive contact with the evidence. Taking them in turn.
+>
+> **First, every line number below is about 19 lines stale**, and one is simply wrong: part (C)'s
+> discard is at `buffEngine.js:391-396`, not :372-377 — line 374 is inside a different tier
+> altogether. `handleLine` now spans :322-827. The `buffParser.js:175-180` citation is accurate.
+>
+> **(C) The caster's name — BUILT.** `recentOtherCasts` is now a Map from spell name to the caster
+> as written, so the debug log can say *IGNORED "Amplification" - unique text, recently cast by
+> "Motrin"*. The KEY is deliberately unchanged: six decisions gate on
+> `_hasRecentOtherCast(spellName)`, and widening it to caster+spell would mean the same spell cast
+> by two different people stopped matching itself — the veto would quietly weaken, and with
+> track-others off that lands someone else's buff on your own aura. This is a type change plus
+> three strings and is provably behaviour-neutral. It also unblocks note 28, which is waiting on
+> the log being able to name a cause.
+>
+> **(B) /outputfile spells before memorized gems — DECLINED, and the reason is worth reading.**
+> The stated premise is that a loadout swap never prints that you un-memorised anything. On this
+> server it does: `CLAUDE.md` records a swap producing roughly fourteen forget/memorize lines in
+> fifteen seconds, and your logs contain **1,816 "You forget X." lines**, every one of which the
+> engine already acts on. So across the very event cited as justification, the gem list is the one
+> that TRACKS the change and the /outputfile dump is the one that goes stale — the reorder promotes
+> the staler source.
+>
+> It would also lose work. "Checked before" means moving the whole spellbook block above the gem
+> block, and that block ends by QUEUING a question whenever the spellbook narrows to more than one.
+> Every line where the spellbook leaves two candidates but exactly one is in a gem would stop
+> resolving itself and start asking. Measured on one real day: the gem check decides 24 landings,
+> the spellbook check 6, and **they never disagreed once**.
+>
+> If you still want it after reading that, the only non-lossy shape is "consult both, and when they
+> each narrow to exactly one different spell, prefer the spellbook" — which is code for a case that
+> occurred zero times in 1.6 million lines.
+>
+> **(A) "Every check if not passed should continue, not end" — NOT BUILDABLE AS WRITTEN, and the
+> restructure would be actively dangerous.** Three things:
+>
+> 1. The branch meant is `knownNotMemorized` at :605-620, not :592-601 (that range is a comment).
+> 2. A literal fall-through there is inert or harmful. The demoted line re-enters the ambiguous
+>    tier with exactly one candidate, where the renewal check cannot fire and the gem check cannot
+>    fire — so the spellbook check lands it unconditionally and the veto becomes dead code.
+> 3. **Do not convert returns to fall-throughs as a pattern anywhere in `handleLine`.** Every
+>    consume site calls `_checkForEndedBuffs(line)` immediately first, and that deletes one active
+>    buff per call. About ninety ended-texts in the roster are shared by more than one buff
+>    ("Your skin returns to normal."), so a line reaching it twice removes two live timers — which
+>    presents as a buff you are still running vanishing when a different one wears off.
+>
+> What (A) is really asking for — a landing that is currently dropped in silence getting a second
+> chance — is worth having, and there is a safe shape for it: in that branch, look up a remembered
+> answer first and otherwise QUEUE the choice instead of logging IGNORED. That can only turn a
+> silent drop into a landing you confirmed once, or one prompt. **It needs your answer first** —
+> see the questions at the end of this note.
+>
+> **AND A LIVE BUG FOUND ON THE WAY — NOT fixed, because fixing it costs more than it saves and
+> the choice is yours.** 275 roster entries carry a landing text and no duration. Multiplying an
+> absent duration gives NaN, NaN becomes the expiry time, and the expiry sweep asks
+> `expiresAt <= now` — which is false for NaN, forever. So one of those landing produces a tile
+> reading **"NaN:NaN" that never counts down and cannot be dismissed without restarting the app.**
+> Forty-five of those spells' landing texts appear in your logs, one of them 12,798 times.
+>
+> I fixed it by refusing to land them, measured it against 1.6 million lines, and **reverted it**.
+> It removed **67 distinct spells and 18,405 landings**. The breakdown is what decides this:
+>
+> | what they are | how many | should they have a timer? |
+> |---|---|---|
+> | nukes | 29 | no — instant, never should have had one |
+> | heals | 7 | no — same |
+> | real buffs | 11 | **yes** — Armor of Protection, Barbcoat, Fury, Wolf Form, Yaulp II, O`Keil's Levity… |
+> | pets | 3 | probably |
+> | uncategorised | 17 | mixed — Shrink and Feign Death yes, Gate and Cancel Magic no |
+>
+> So refusing is right for the 36 instants and wrong for the 31 that are not. **18 of those 31
+> have an ended text**, which means they could be tracked with no countdown at all and removed
+> properly when that text appears — that is the shape that loses least, and it needs the overlay
+> to draw a tile without a timer, which is a real change rather than a guard.
+>
+> The other thing worth knowing: a buff that never expires stays "active", so every later line
+> sharing its text is treated as a **renewal of the zombie** rather than being resolved properly.
+> Roughly fifteen thousand decisions per corpus currently take that path.
+>
+> **This is pinned by tests as a known defect** (`test/detection.test.js`, the two cases named
+> KNOWN DEFECT) so that nobody changes it by accident and nobody has to redo the measurement.
 
 **Blocked:** Needs a real log sample of an ambiguous bard-song landing text repeating - e.g.
 Cassindra's Chant of Clarity's "Your mind clears." - to confirm the game re-prints the landing

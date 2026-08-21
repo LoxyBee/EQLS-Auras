@@ -151,7 +151,19 @@ class BuffEngine extends EventEmitter {
     // selfAmbiguousResolutionsByProfile - no separate sync step needed.
     this.selfAmbiguousResolutions = this._getOrCreateSelfResolutionsMap(this.activeProfileId);
     this.otherAmbiguousResolutions = new Map(store.loadJson('otherAmbiguousResolutions', []));
-    this.recentOtherCasts = new Set(); // lowercased spell name last seen cast by someone else, cleared on party change
+    // lowercased spell name -> the caster name as written, for spells last seen cast by
+    // someone else. Cleared on party change.
+    //
+    // A Map rather than a Set purely so the debug log can say WHO. The KEY is unchanged and
+    // must stay unchanged: six decisions gate on _hasRecentOtherCast(spellName), and widening
+    // the key to caster+spell would quietly weaken all of them - the same spell cast by two
+    // different people would stop matching itself. Map.has and Set.has behave identically on
+    // the same key, so nothing downstream can tell the difference.
+    //
+    // Worth having: this veto is the app's most consequential decision, and until now it was
+    // made on anonymous evidence. One day's log carries 3,934 third-person cast lines against
+    // 15 party-change lines to clear them, so "why did my buff not appear" was unanswerable.
+    this.recentOtherCasts = new Map();
     // lowercased spell name -> currently sitting in a gem slot (built from
     // "You forget X."/"You have finished memorizing X." lines - see
     // handleLine).
@@ -390,7 +402,7 @@ class BuffEngine extends EventEmitter {
     // maintaining it, which in practice means "still in the group."
     const otherCast = matchOtherCastBegin(line);
     if (otherCast) {
-      this.recentOtherCasts.add(otherCast.spellName.toLowerCase());
+      this.recentOtherCasts.set(otherCast.spellName.toLowerCase(), otherCast.casterName);
       this._checkForEndedBuffs(line);
       return;
     }
@@ -564,10 +576,17 @@ class BuffEngine extends EventEmitter {
     if (uniqueMatch) {
       if (this._hasRecentOtherCast(uniqueMatch.name)) {
         if (this.trackOthersEnabled) {
-          this._debugLog(`LANDED "${uniqueMatch.name}" - unique text, but recently cast by someone else; landed anyway (track others ON)`);
+          // The caster goes in double quotes deliberately: tools/replay-log.js normalises every
+          // debug line by blanking quoted spans before tallying, so a quoted name keeps the
+          // before/after histogram comparable instead of making every row read as "changed".
+          this._debugLog(
+            `LANDED "${uniqueMatch.name}" - unique text, but recently cast by "${this._recentOtherCaster(uniqueMatch.name)}"; landed anyway (track others ON)`
+          );
           this._land(uniqueMatch);
         } else {
-          this._debugLog(`IGNORED "${uniqueMatch.name}" - unique text, recently cast by someone else, track others OFF`);
+          this._debugLog(
+            `IGNORED "${uniqueMatch.name}" - unique text, recently cast by "${this._recentOtherCaster(uniqueMatch.name)}", track others OFF`
+          );
         }
         this._checkForEndedBuffs(line);
         return;
@@ -756,7 +775,9 @@ class BuffEngine extends EventEmitter {
           // this for the user anyway (as if we didn't already know) was a
           // real bug - land it directly, same confidence as the player's
           // own named-cast path above.
-          this._debugLog(`LANDED "${otherCastMatch.name}" - confirmed via third-person cast line, track others ON`);
+          this._debugLog(
+            `LANDED "${otherCastMatch.name}" - confirmed via third-person cast line from "${this._recentOtherCaster(otherCastMatch.name)}", track others ON`
+          );
           this._land(otherCastMatch);
         } else {
           const remembered = this.otherAmbiguousResolutions.get(stripped);
@@ -840,6 +861,11 @@ class BuffEngine extends EventEmitter {
     return this.recentOtherCasts.has(name.toLowerCase());
   }
 
+  /** Who was last seen casting it, or null. For explaining a decision, never for making one. */
+  _recentOtherCaster(name) {
+    return this.recentOtherCasts.get(name.toLowerCase()) || null;
+  }
+
   _cancelPendingCast() {
     if (this.pendingCast) {
       clearTimeout(this.pendingCast.timer);
@@ -888,6 +914,24 @@ class BuffEngine extends EventEmitter {
   // Without it the only lever was the global multiplier, which is all-or-
   // nothing: correcting one unscaled spell would have thrown out the scaling
   // every other buff genuinely needs.
+  // KNOWN DEFECT, DELIBERATELY LEFT IN PLACE PENDING A DECISION - see FEATURES.md note 24.
+  //
+  // 275 of the 1,052 roster entries carry a landing text and NO durationSec. Multiplying an
+  // absent duration gives NaN, that becomes expiresAt, and the sweep in _tick asks
+  // `expiresAt <= now` - which is false for NaN, forever. So one of those landing produces a
+  // tile reading "NaN:NaN" that never counts down and cannot be dismissed without a restart.
+  // Forty-five of those spells' landing texts appear in the owner's real logs.
+  //
+  // It was fixed by refusing to land them, and the fix was REVERTED after measuring it: across
+  // 1.6 million lines that removed 67 distinct spells and 18,405 landings. Most are instants
+  // (29 nukes, 7 heals) that should never have had a timer - but 31 are real buffs, including
+  // Armor of Protection, Barbcoat, Fury, Wolf Form and Shrink, and dropping those is a loss.
+  //
+  // Every option here trades one wrong behaviour for another, so it is the owner's call, not a
+  // decision to make quietly inside a helper. The shape that loses least: land a no-duration
+  // spell that HAS an ended text with no countdown at all and let its ended text remove it (18
+  // of the 31 qualify), and refuse the rest. That needs the overlay to draw a tile with no
+  // timer, which is a real change rather than a guard.
   _scaledDuration(entry) {
     const multiplier = entry.noDurationScaling ? 1 : this.durationMultiplierFn();
     return Math.round(entry.durationSec * multiplier);

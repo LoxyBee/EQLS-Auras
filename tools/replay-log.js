@@ -110,16 +110,29 @@ async function replay(files, spellbookPath = null) {
   const ambiguous = new Map();  // landing text -> the candidate names it offered
   const unknown = new Set();    // landing-shaped text the roster does not know
 
+  // Counted AFTER the call, and only if the buff is really in the active map.
+  //
+  // An earlier version counted the call itself, which quietly turned this instrument into a liar:
+  // _land can decline (a blocked name, or a roster entry with no duration), so a spell that was
+  // attempted a hundred times and landed none of them still appeared in the results as if it had.
+  // The whole question this tool answers is "did anything stop being detected", and counting
+  // attempts answers a different one.
   const origLand = engine._land.bind(engine);
   engine._land = (known) => {
-    landed.set(known.name, (landed.get(known.name) || 0) + 1);
-    return origLand(known);
+    const result = origLand(known);
+    if (engine.activeBuffs.has(known.name.toLowerCase())) {
+      landed.set(known.name, (landed.get(known.name) || 0) + 1);
+    }
+    return result;
   };
   const origAlly = engine._landOnAlly.bind(engine);
   engine._landOnAlly = (known, allyName) => {
-    const key = `${known.name}|${allyName}`;
-    allyLanded.set(key, (allyLanded.get(key) || 0) + 1);
-    return origAlly(known, allyName);
+    const result = origAlly(known, allyName);
+    if (engine.allyBuffs.has(`${allyName.toLowerCase()}::${known.name.toLowerCase()}`)) {
+      const key = `${known.name}|${allyName}`;
+      allyLanded.set(key, (allyLanded.get(key) || 0) + 1);
+    }
+    return result;
   };
   const origAmbiguous = engine._queueAmbiguousCast.bind(engine);
   engine._queueAmbiguousCast = (text, candidates, isSelf) => {

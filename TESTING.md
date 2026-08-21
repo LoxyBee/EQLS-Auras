@@ -26,7 +26,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a
 character standing in a zone. If it is red, nothing below is worth doing yet -
 read the failure text, it says what broke and why.
 
-Fourteen suites at the time of writing:
+Sixteen suites at the time of writing:
 
 | Suite | Guards |
 |---|---|
@@ -40,6 +40,8 @@ Fourteen suites at the time of writing:
 | `test/sound-only.test.js` | sound-only auras: the mode survives saving and sharing, a foreign mode cannot arrive by either import route, every aura type still carries every sound setting, and the overlay's early return stays between the alerts and the drawing |
 | `test/visibility.test.js` | the whole precedence model - profile membership as the on/off switch, "Hide auras" beating unlock, unlocking one aura beating its profile, and off meaning silent as well as invisible |
 | `test/move-box.test.js` | the name pill in the move box: that it opts out of the drag region (a click inside one never fires), that it does not swallow the draggable area, and that every hop from the pill to the settings page exists |
+| `test/detection.test.js` | the detection engine's first real coverage - a landing starts a timer, its ended text stops it, a blocked buff never lands, someone else's cast is not counted as yours, and a spell with no duration produces no tile instead of an unkillable one |
+| `test/spellbook-diagnostic.test.js` | that the spellbook status says what is missing and how to fix it, rather than promising it will appear on its own |
 | `test/category-borders.test.js` | the coloured edges: that the roster's categories, the overlay's list and the stylesheet's colours all still agree, since a spell whose category nothing has a colour for loses its edge silently |
 | `test/text-aura.test.js` | text auras: the one-tile rule, what the words say, that it never becomes a fourth Display style radio, and that the dispel announcer's attested trigger still appears in your own logs |
 | `test/merged-tiles.test.js` | the merging maths run for real - both rules, per-person bucketing, which member the tile names - plus the two places merging meets the rest of the overlay: glow and sound matching members rather than tile keys, and a changing count forcing a rebuild |
@@ -257,6 +259,51 @@ There is a new **Hide auras** button at the right-hand end of the profile bar, a
       away. Only unlocking one by hand pulls it onto the screen.
 - [ ] **Move a switched-off aura while it is unlocked, then re-lock, then switch its profile back
       on.** *Expect*: it is where you put it.
+
+### Your spellbook file is missing, and it is costing you a lot *(do this one first)*
+
+Across your eight logs - 1.6 million lines - **14,650 buff landings were thrown away** because the
+app could not tell whether they were yours, and about **11,000 more became questions** for the same
+reason. The cause is that `<Character>-<CLASS>-Spellbook.txt` has never existed in your EQ folder.
+EverQuest reuses the same buff wording across many spells; your spellbook is what tells the app
+which of them you actually have.
+
+The Setup page used to say it would "pick it up automatically once detected", which was wrong and
+is why nobody went looking. It now says what is missing and why it matters.
+
+- [ ] **Run your client's output-file command for your spellbook**, logged in on that character,
+      then restart the app.
+- [ ] **Check Setup > Spellbook detection.** *Expect*: "Found - N spells", and the amber warning
+      gone.
+- [ ] **Play a session and compare.** *Expect*: noticeably fewer ambiguity prompts, and buffs
+      appearing that used to be silently missing.
+- [ ] **Tell me the exact command you used** - the hint text deliberately does not name one,
+      because I did not want to print the wrong syntax.
+- [ ] **If you are willing, send the file back with the repo.** The before/after numbers above are
+      measured against a reconstruction; a real one would make them exact.
+
+### A buff that never goes away *(FOUND, measured, NOT fixed - needs your decision)*
+
+275 spells in the roster have a landing message but no duration. When one of those landed, the app
+worked out its expiry as "not a number", and the once-a-second cleanup asks "is the expiry time in
+the past" - which is never true for "not a number". The tile showed **NaN:NaN**, never counted
+down, and could not be dismissed except by restarting.
+
+Forty-five of those spells appear in your logs; the most common, "Your mind clears.", 12,798 times.
+
+I fixed this by refusing to track those spells, measured it against all 1.6 million lines, and
+then **reverted it** - because it removed 67 spells and 18,405 landings. 36 of those are nukes and
+heals that should never have had a timer, but 31 are real buffs: Armor of Protection, Barbcoat,
+Fury, Wolf Form, Yaulp II, Shrink, Feign Death. Dropping those is a real loss, so the trade is
+yours to make rather than mine.
+
+- [ ] **Look for a stuck tile** showing NaN, or a timer that never moves. If you have ever seen
+      one and wondered why it would not go away, this is why.
+- [ ] **Decide what those spells should do.** The three options, honestly:
+      **(a)** show with no countdown at all and disappear when their "ended" message arrives -
+      works for 18 of the 31, and is the option that loses least;
+      **(b)** get a default length, which means the app inventing a number;
+      **(c)** not be tracked at all, which is what my reverted fix did.
 
 ### Coloured edges by spell type *(new - CHANGES HOW YOUR EXISTING AURAS LOOK)*
 
