@@ -36,12 +36,12 @@ at the repo root ships.
 
 ## 2. Current state
 
-**28 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
+**30 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
 `.gitignore` - it was staged once by a careless `git add -A` and amended straight back out, and
 the ignore entry is what makes that command safe to type here at all.
 
 ```
-npm test   ->  12 suites, 141 cases, green
+npm test   ->  13 suites, 163 cases, green
 ```
 
 | Suite | Cases | Guards |
@@ -57,6 +57,7 @@ npm test   ->  12 suites, 141 cases, green
 | `test/visibility.test.js` | 14 | the whole on-screen / audible precedence model |
 | `test/move-box.test.js` | 9 | the move-box name pill and its drag-region trap |
 | `test/merged-tiles.test.js` | 31 | merged tiles: both rules, tile identity, and where merging meets render() |
+| `test/text-aura.test.js` | 22 | text auras: the one-tile rule, the words, the dispel announcer |
 | `tools/lib/xlsx.test.js` | 7 | the spreadsheet reader |
 
 **`test/visibility.test.js` uses a new technique worth knowing about:** it replaces `electron` in
@@ -235,14 +236,14 @@ order IS the behaviour. Master hide beats unlock, deliberately. Per-aura unlock 
 
 `FEATURES.md` holds all 39 raw notes, sorted, with a 13-step build order and twelve groups.
 
-- Steps **1–6 done**. Step 5 was notes 4, 31 and 6; step 6 was note 8, merged tiles. Plus the
+- Steps **1–7 done**. Step 5 was notes 4, 31 and 6; step 6 was note 8, merged tiles; step 7 was
+  note 23, **redefined by Shara as a text aura TYPE rather than a display style**. Plus the
   sound-only aura, the Pause hotkey and the share-code sound warning, all asked for directly.
-- **Next: step 7** — note **23**, the text-only display mode. **Half its groundwork is already
-  laid** by the sound-only mode (`DISPLAY_MODES`, `normalizeDisplayMode`,
-  `updateDisplayModeVisibility`), so what is left is its own size field, a render branch, and the
-  expensive half: the "how long does it stay up" lifetime rules. It has two interpretations of
-  its own waiting on Shara.
-- Then step 8 (note 35 data), step 9 (note 24, detection rework), and so on.
+- **Next: step 8** (note 35 data), then step 9 (note 24, detection rework), and so on.
+- **The rest of note 23 is a second feature, not a leftover:** text as an *alert option on other
+  auras* ("showing text when a timer condition is met, or something is applied, or failed"). It
+  reuses the text tile's rendering. The mez/charm premades with icon-plus-text are downstream of
+  the detrimental detection work, which is still blocked.
 - **Notes 12 and 18 are the rest of the merged-tile cluster and are blocked** on notes 11 and 17
   respectively, both of which are downstream of the detrimental-detection work. The count badge
   note 12 wants is already built and shared.
@@ -271,6 +272,39 @@ any test could see. Lift the real expression out of the source and run it.
 
 **Do this again.** Both times a fan-out review has run over this session's own work it has found
 real defects that the tests, written by the same person who wrote the code, did not.
+
+---
+
+### Text auras — and a design principle worth reusing
+
+Note 23 asked for a third *display style*. Shara redefined it as a *type*: "this might cause
+confusion with all the options, and my goal is accessibility over all." So a text aura is chosen
+once, at creation, beside Custom buff aura and Custom timer aura, and the Display style radios are
+hidden on one. Underneath it is still just `displayMode: 'text'`, reusing everything the
+sound-only mode built.
+
+**The principle: where a choice is OFFERED is a separate decision from how it is STORED.** A test
+now fails if 'text' ever appears as a fourth radio.
+
+**Worth knowing:** the expensive half of note 23 - "how long does the text stay up" - evaporated.
+It is answered by whatever the aura already watches: a buff shows while the buff is up, a trigger
+for its own duration, and "until a closing text" is what a custom timer's ended-text already does.
+No new lifetime rules in either engine.
+
+**The dispel announcer is real** because the log line was finally found in her own logs:
+`You feel very dispelled.` The other two strengths are inference from the third-person forms.
+A test reads her actual log and fails if the attested wording stops appearing.
+
+### The indexOf trap — fixed in four places, worth never repeating
+
+Several tests proved an ordering with `a.indexOf(x) < a.indexOf(y)` without first asserting that
+`x` exists. **indexOf returns -1 for a missing needle, and -1 is less than any real index** - so
+every one of those checks passed most confidently at exactly the moment the guard it protected had
+been deleted. A related one matched a *variable name* that also appears inside the block it
+guards, so neutering the branch to `if (false)` left it happy.
+
+Assert existence first, and anchor on the thing that does the work rather than a name near it.
+Both were found by mutation testing, not by reading.
 
 ---
 
