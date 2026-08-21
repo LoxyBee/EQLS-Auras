@@ -1,6 +1,6 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
-const { WidgetStore, normalizeDisplayMode, isSoundOnly } = require('./widgetStore');
+const { WidgetStore, normalizeDisplayMode, isSoundOnly, isTextAura } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
@@ -97,6 +97,10 @@ function estimateIconGridWidth(config) {
 // so a widget that's already empty at launch (no content-change event ever
 // fires to correct it) gets the floor applied too, not just live resizes.
 function minHeightFor(config) {
+  // A text aura's one line is as tall as its own size setting, which goes far higher than either
+  // of the other two - floor it to that, or a 96px announcement opens in a window too short to
+  // show it and looks clipped until something resizes.
+  if (config.displayMode === 'text') return config.textAuraSize || 32;
   return (config.displayMode === 'icons' ? config.iconSize : config.rowSize) || 40;
 }
 
@@ -223,6 +227,12 @@ function unexcludeBuff(id, name) {
 
 function createAllyBuffsWidget(name) {
   const config = widgetStore.createAllyBuffs(name, { activeProfileIds: [getActiveProfileIdFn()] });
+  createWidgetWindow(config);
+  return config;
+}
+
+function createTextAuraWidget(name, preset) {
+  const config = widgetStore.createTextAura(name, { preset, activeProfileIds: [getActiveProfileIdFn()] });
   createWidgetWindow(config);
   return config;
 }
@@ -641,6 +651,18 @@ function setMergeSameDuration(id, enabled) {
   return config;
 }
 
+function setTextAuraMessage(id, message) {
+  const config = widgetStore.update(id, { textAuraMessage: String(message == null ? '' : message) });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setTextAuraSize(id, size) {
+  const config = widgetStore.update(id, { textAuraSize: Number(size) || 32 });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setLandingGlowEnabled(id, enabled) {
   const config = widgetStore.update(id, { landingGlowEnabled: enabled });
   pushConfigChanged(id);
@@ -833,7 +855,13 @@ function setBuffFilter(id, mode, names) {
 }
 
 function setBuffSource(id, source) {
-  const config = widgetStore.update(id, { buffSource: source === 'ally' ? 'ally' : 'self' });
+  // 'customTimer' is accepted ONLY for a text aura. Every other aura has its source fixed when it
+  // is created, deliberately - see defaultCustomWidget's note on the field - and this coercion is
+  // what enforces that. A text aura is the exception because its whole purpose is to announce
+  // something, and the thing worth announcing is as often a line of log text as it is a buff.
+  const current = widgetStore.getById(id);
+  const allowed = isTextAura(current) ? ['self', 'ally', 'customTimer'] : ['self', 'ally'];
+  const config = widgetStore.update(id, { buffSource: allowed.includes(source) ? source : 'self' });
   pushConfigChanged(id);
   return config;
 }
@@ -852,6 +880,7 @@ module.exports = {
   createCustomWidget,
   createAllyBuffsWidget,
   createSoundOnlyWidget,
+  createTextAuraWidget,
   exportWidget,
   peekWidgetCode,
   importWidget,
@@ -886,6 +915,8 @@ module.exports = {
   setLowTimeThreshold,
   setLandingGlowEnabled,
   setMergeSameDuration,
+  setTextAuraMessage,
+  setTextAuraSize,
   setHideBardSongs,
   setMaxDurationFilter,
   setShowRowIcon,

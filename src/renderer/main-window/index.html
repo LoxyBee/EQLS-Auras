@@ -263,13 +263,34 @@
                 <span class="label">Buffs shown:</span>
                 <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
                 <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
+                <!-- Text auras only. Every other aura has its source fixed when it is created;
+                     a text aura is meant to be able to announce anything the app can see, so it
+                     is the one type where this can be changed afterwards. -->
+                <label id="widget-buff-source-timer-label" style="display:none">
+                  <input type="radio" name="widget-buff-source" value="customTimer" /> Your own text triggers
+                </label>
               </div>
-              <div class="row">
+              <div class="row" id="widget-display-mode-row">
                 <span class="label">Display style:</span>
                 <label><input type="radio" name="widget-display-mode" value="list" /> List</label>
                 <label><input type="radio" name="widget-display-mode" value="icons" /> Icons</label>
                 <label><input type="radio" name="widget-display-mode" value="sound-only" /> Sound only</label>
               </div>
+              <div class="row" id="widget-text-message-row">
+                <span class="label">Say:</span>
+                <input type="text" id="widget-text-message-input" class="text-input" placeholder="DISPELLED" />
+              </div>
+              <div class="row" id="widget-text-size-row">
+                <span class="label">Text size:</span>
+                <input type="range" id="widget-text-size-slider" min="12" max="120" step="2" />
+                <span id="widget-text-size-value" class="slider-value">32px</span>
+              </div>
+              <p class="hint" id="widget-text-hint">
+                This aura draws one line of words and nothing else - no icon, no countdown. It shows
+                while whatever it is watching is active, and it only ever shows <strong>one</strong>
+                thing at a time, however many you pick. Leave "Say" blank to use the name of the buff
+                or trigger itself.
+              </p>
               <p class="hint" id="widget-sound-only-hint" style="display:none">
                 This aura draws nothing at all - no tiles, and no dashed box when unlocked. It only
                 makes the sounds set up under Sounds below. It still watches exactly what "Buffs
@@ -1134,6 +1155,13 @@
         <button type="button" class="add-widget-choice" id="modal-add-timer-widget-btn">
           <strong>Custom timer aura</strong>
           <span>Define your own countdown timers, triggered by exact lines of log text.</span>
+        </button>
+        <button type="button" class="add-widget-choice" id="modal-add-text-widget-btn">
+          <strong>Custom text aura</strong>
+          <span>
+            Announces one thing in large words and nothing else - no icon, no countdown. Point it at
+            a buff or at your own line of log text.
+          </span>
         </button>
       </div>
     </div>

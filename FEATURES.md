@@ -1562,7 +1562,44 @@ dependency for other notes rather than depending on anything: note 21 (the in-ga
 profile overlay) and note 17 (the mez "RESIST" flash) both say outright that they need the text-
 only aura. Building those first would mean building them twice.
 
-> **Half the groundwork is already laid, 20 August 2026.** The sound-only aura (below) added a
+> **REDEFINED AND BUILT, 20 August 2026.** The note below asks for a third *display style*
+> beside List and Icons, with its own size and a choice of how long the text stays up. What
+> shipped is a different shape, because you redefined it:
+>
+> - **It is a TYPE, not a display style.** "i was going to say it should be an option alongside
+>   list and icon modes, but this might cause confusion with all the options, and my goal is
+>   accessibility over all." So **Custom text aura** sits beside Custom buff aura and Custom timer
+>   aura in the add-aura flow, and the Display style radios are hidden on one entirely. It is
+>   still a display mode underneath - it reuses everything the sound-only mode built - but nobody
+>   has to read a fourth radio on every aura they own to find that out.
+> - **One tile, always.** "it should be limited to 1 tile/event only." Enforced where things are
+>   drawn, never on what may be watched - the dispel announcer listens for three different lines
+>   precisely so it catches all three strengths of the message.
+> - **It can watch anything.** "text only aura should be able to track everything other auras can
+>   track." A text aura is the one type whose source can be changed after creation, so the same
+>   aura can announce a buff on you, a buff on an ally, or a line of log text.
+> - **Interpretation (1) below was right:** it has its own size field, 12-120px. The shared one
+>   stays capped at 28 because it also drives list rows and icon labels.
+> - **The expensive half was never needed.** "A choice of how long the text stays on screen" turns
+>   out to be answered by what the aura is already watching: a buff shows while the buff is up, a
+>   trigger shows for its own duration, and "until a closing text is seen" is what a custom
+>   timer's ended-text already does. No new lifetime rules in either engine, which is the entire
+>   reason this note was sized as large.
+> - **AND/OR triggers are deliberately still out** - "(and/or triggers for it should come later)".
+>
+> **The dispel announcer is real, not a placeholder.** It had been sitting in the in-app "not
+> built yet" list; it is a genuine premade now, because the log line finally turned up in your own
+> logs: "You feel very dispelled." The other two strengths ("You feel dispelled.", "You feel a bit
+> dispelled.") are **inferred** from the third-person forms, where all three do appear. All three
+> ship, and TESTING.md says which one is attested and which two are inference rather than letting
+> the guess pass for a fact.
+>
+> **Still to come, as you described it:** text as an *alert option on other auras* - "showing text
+> when a timer condition is met, or something is applied, or failed". That is a second feature
+> reusing this one's rendering, and the mez/charm premades with icon-plus-text are downstream of
+> the detrimental detection work that is still blocked.
+
+> **Half the groundwork was already laid, 20 August 2026.** The sound-only aura (below) added a
 > real third display mode, which means the first risk named here is **already fixed**:
 > `setDisplayMode` now goes through `normalizeDisplayMode`, `DISPLAY_MODES` is a named list to
 > add to, `normalizeWidget` guards the value on both import routes, and

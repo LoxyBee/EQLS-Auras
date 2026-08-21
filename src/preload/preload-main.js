@@ -119,6 +119,9 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createWidget: (name, buffSource) => ipcRenderer.invoke('widget:create', { name, buffSource }),
   createAllyBuffsWidget: (name) => ipcRenderer.invoke('widget:createAlly', { name }),
   createSoundOnlyWidget: (name) => ipcRenderer.invoke('widget:createSoundOnly', { name }),
+  createTextAuraWidget: (name, preset) => ipcRenderer.invoke('widget:createTextAura', { name, preset }),
+  setWidgetTextAuraMessage: (id, value) => ipcRenderer.invoke('widget:setTextAuraMessage', { id, value }),
+  setWidgetTextAuraSize: (id, value) => ipcRenderer.invoke('widget:setTextAuraSize', { id, value }),
   setWidgetMergeSameDuration: (id, value) =>
     ipcRenderer.invoke('widget:setMergeSameDuration', { id, value }),
   onOpenWidgetSettings: (callback) => {

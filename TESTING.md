@@ -26,7 +26,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a
 character standing in a zone. If it is red, nothing below is worth doing yet -
 read the failure text, it says what broke and why.
 
-Twelve suites at the time of writing:
+Thirteen suites at the time of writing:
 
 | Suite | Guards |
 |---|---|
@@ -40,6 +40,7 @@ Twelve suites at the time of writing:
 | `test/sound-only.test.js` | sound-only auras: the mode survives saving and sharing, a foreign mode cannot arrive by either import route, every aura type still carries every sound setting, and the overlay's early return stays between the alerts and the drawing |
 | `test/visibility.test.js` | the whole precedence model - profile membership as the on/off switch, "Hide auras" beating unlock, unlocking one aura beating its profile, and off meaning silent as well as invisible |
 | `test/move-box.test.js` | the name pill in the move box: that it opts out of the drag region (a click inside one never fires), that it does not swallow the draggable area, and that every hop from the pill to the settings page exists |
+| `test/text-aura.test.js` | text auras: the one-tile rule, what the words say, that it never becomes a fourth Display style radio, and that the dispel announcer's attested trigger still appears in your own logs |
 | `test/merged-tiles.test.js` | the merging maths run for real - both rules, per-person bucketing, which member the tile names - plus the two places merging meets the rest of the overlay: glow and sound matching members rather than tile keys, and a changing count forcing a rebuild |
 | `tools/lib/xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
 
@@ -250,6 +251,42 @@ There is a new **Hide auras** button at the right-hand end of the profile bar, a
       away. Only unlocking one by hand pulls it onto the screen.
 - [ ] **Move a switched-off aura while it is unlocked, then re-lock, then switch its profile back
       on.** *Expect*: it is where you put it.
+
+### Text auras and the dispel announcer *(new - needs looking at)*
+
+A new **Custom text aura** in "+ Add aura" > Custom aura, and a real **You Have Been Dispelled**
+premade. A text aura draws one line of words and nothing else - no icon, no countdown - and only
+ever shows one thing at a time.
+
+- [ ] **Add a Custom text aura**, point it at a buff you can cast on yourself, and cast it.
+      *Expect*: your words (or the buff's name) appear in large text, and nothing else. No icon,
+      no timer, no bar.
+- [ ] **Let it run out.** *Expect*: the text disappears.
+- [ ] **Type something into "Say"**, e.g. PUMA UP. *Expect*: it says that instead of the buff
+      name. Clear the box again and the name comes back.
+- [ ] **Drag the "Text size" slider up.** *Expect*: it gets properly large - up to 120px - and
+      the aura's window grows to fit rather than clipping it.
+- [ ] **Check it is readable over a bright zone** (snow, desert, water). The dark plate behind
+      the words is there for exactly this; say so if it is still hard to read anywhere.
+- [ ] **Pick several buffs on one text aura and have two active at once.** *Expect*: still only
+      ONE line of text. Which one it picks follows the aura's "Sort by" setting.
+- [ ] **Switch its "Buffs shown" to "Your own text triggers"** and add a trigger. *Expect*: the
+      option is there at all - a text aura is the only type that can change source after it is
+      made - and the trigger announces when the line appears.
+- [ ] **Confirm the Display style radios are NOT shown** on a text aura, and that no fourth
+      "Text" option has appeared on your other auras.
+
+**The dispel announcer**, from "+ Add aura" > Premade aura:
+
+- [ ] **Add "You Have Been Dispelled".** *Expect*: it lands on its own settings page, already set
+      up, drawing nothing yet.
+- [ ] **Get dispelled.** *Expect*: DISPELLED in large letters for eight seconds, then gone.
+- [ ] **Only one of its three triggers is confirmed from your logs:** "You feel very dispelled."
+      The other two - "You feel dispelled." and "You feel a bit dispelled." - are an inference
+      from the third-person versions, where all three strengths do appear. **If you get a weaker
+      dispel and nothing shows, tell me the exact line** and it is a one-word fix.
+- [ ] **Check it does not fire when someone ELSE is dispelled** ("Avenrae feels very
+      dispelled."). It should not - the triggers are whole-line exact matches.
 
 ### Merged tiles *(new - needs looking at)*
 

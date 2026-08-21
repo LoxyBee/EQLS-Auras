@@ -382,10 +382,18 @@ test('changing a setting does not make a noise', () => {
   const fn = overlaySrc.match(/function checkSoundWarnings\(visible\) \{([\s\S]*?)\n\}/);
   assert.ok(fn);
   const body = fn[1];
-  assert.ok(
-    body.indexOf('warningsSuppressedOnce') < body.indexOf('playAlertSound'),
-    'the suppression must be checked before anything can play'
-  );
+  // Existence before ordering - indexOf gives -1 for a missing needle, which compares as "first".
+  //
+  // Anchored on the BRANCH, not on the variable name. An earlier version searched for
+  // "warningsSuppressedOnce", which still appears inside the block that assigns it - so
+  // neutering the guard to "if (false)" left the test perfectly happy. Mutation testing found
+  // that; the lesson is to match the thing that does the work, not a name that happens to be
+  // near it.
+  const suppression = body.indexOf('if (warningsSuppressedOnce) {');
+  const play = body.indexOf('playAlertSound');
+  assert.ok(suppression >= 0, 'checkSoundWarnings no longer honours the suppression at all');
+  assert.ok(play >= 0, 'checkSoundWarnings no longer plays anything');
+  assert.ok(suppression < play, 'the suppression must be checked before anything can play');
   assert.match(body, /warnedAt\.set\(keyFor\(buff\), now\)/, 'it must RECORD, not just skip - or it warns next tick');
 });
 
@@ -399,10 +407,10 @@ test('the count badge paints over the countdown bar, not under it', () => {
   assert.match(base[1], /position: relative/);
   assert.match(base[1], /z-index: 1/);
   // Icon mode overrides position, so its rule has to come afterwards or it loses.
-  assert.ok(
-    overlayCss.indexOf('.count-badge {') < overlayCss.indexOf('.buff-tile .count-badge {'),
-    'the icon-mode override must come after the base rule'
-  );
+  const baseAt = overlayCss.indexOf('.count-badge {');
+  const iconModeAt = overlayCss.indexOf('.buff-tile .count-badge {');
+  assert.ok(baseAt >= 0 && iconModeAt >= 0, 'one of the badge rules has been renamed or removed');
+  assert.ok(baseAt < iconModeAt, 'the icon-mode override must come after the base rule');
 });
 
 test('merging happens after filtering and before sorting', () => {
@@ -411,8 +419,12 @@ test('merging happens after filtering and before sorting', () => {
   const fn = overlaySrc.match(/function visibleBuffs\(buffs\) \{([\s\S]*?)\n\}/);
   assert.ok(fn, 'visibleBuffs has been restructured');
   const body = fn[1];
-  assert.ok(body.indexOf('excludedBuffNames') < body.indexOf('mergeByDuration'));
-  assert.ok(body.indexOf('mergeByDuration') < body.indexOf('sortBuffs'));
+  const filterAt = body.indexOf('excludedBuffNames');
+  const mergeAt = body.indexOf('mergeByDuration');
+  const sortAt = body.indexOf('sortBuffs');
+  assert.ok(filterAt >= 0 && mergeAt >= 0 && sortAt >= 0, 'one of the three steps is gone');
+  assert.ok(filterAt < mergeAt, 'an excluded buff would still be counted in a badge');
+  assert.ok(mergeAt < sortAt, 'the merged tile would take its place in the order by the wrong time');
 });
 
 test('the count badge is built in exactly one place', () => {
@@ -471,8 +483,9 @@ test('both settings are reachable in the app', () => {
   assert.match(rendererSrc, /mergeCheckbox\.checked = !!widget\.mergeSameDuration/, 'never populated');
   assert.match(rendererSrc, /function initMergeRule\(\)/);
   assert.match(rendererSrc, /\n  initMergeRule\(\);/, 'initMergeRule is never called');
-  // A sound-only aura draws no tiles, so there is nothing to merge.
-  assert.match(rendererSrc, /mergeRowEl\.style\.display = isSoundOnly \? 'none' : ''/);
+  // Neither a sound-only aura nor a text aura has anything to merge: one draws no tiles at all,
+  // the other draws exactly one whatever happens.
+  assert.match(rendererSrc, /mergeRowEl\.style\.display = isSoundOnly \|\| isTextAura \? 'none' : ''/);
 });
 
 module.exports = () => report('merged-tiles');

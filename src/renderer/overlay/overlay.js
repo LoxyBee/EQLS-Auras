@@ -299,6 +299,39 @@ function buildCountBadge(count) {
   return badge;
 }
 
+// A TEXT AURA's whole rendering: one line of words, and nothing else. No icon, no countdown, no
+// bar - not hidden by CSS but never built, so there is nothing to leak through at an awkward size
+// or catch a stray style later.
+//
+// The words are the user's own if they set any, and the name of whatever is being watched if not.
+// A buff aura reads well either way ("Spirit of the Puma"); a trigger almost always wants
+// something short and loud instead, which is why the field exists.
+function buildTextTile(buff) {
+  const root = document.createElement('div');
+  root.className = 'text-tile';
+  root.textContent = textFor(buff);
+  applyTextAuraStyle(root);
+  // timeEl/barEl deliberately null - updateRef checks for them rather than assuming every tile
+  // has a countdown, because this is the first kind that does not.
+  return { root, timeEl: null, barEl: null, iconWrapEl: null, labelEl: null, lastIconUrl: undefined };
+}
+
+function textFor(buff) {
+  const message = (currentConfig.textAuraMessage || '').trim();
+  return message || displayName(buff);
+}
+
+function applyTextAuraStyle(el) {
+  el.style.fontSize = `${currentConfig.textAuraSize || 32}px`;
+  el.style.color = currentConfig.labelTextColor || '#f0f1f5';
+}
+
+/** The one place that decides which kind of tile a mode gets, so every call site agrees. */
+function buildTile(buff, isText, isIcon) {
+  if (isText) return buildTextTile(buff);
+  return isIcon ? buildIconTile(buff) : buildListRow(buff);
+}
+
 function buildListRow(buff) {
   const root = document.createElement('div');
   root.className = 'buff-row';
@@ -529,6 +562,9 @@ function updateRef(ref, buff, isIcon) {
   const threshold = currentConfig.lowTimeThresholdSec ?? 30;
   const low = threshold > 0 && buff.remainingSec <= threshold;
   ref.root.classList.toggle('low', low);
+  // A text aura has no countdown to update - it says its piece and disappears when whatever it is
+  // watching ends. Checked rather than assumed, because it is the first tile without one.
+  if (!ref.timeEl) return;
   ref.timeEl.textContent = formatTime(buff.remainingSec, currentConfig.timerFormat);
   if (isIcon) {
     updateTileIcon(ref, buff);
@@ -695,7 +731,18 @@ function visibleBuffs(buffs) {
   // be counted in a badge; before sorting, so the merged tile takes its place in the order by the
   // remaining time it actually shows rather than by whichever member happened to be first.
   if (currentConfig.mergeSameDuration) filtered = mergeByDuration(filtered);
-  return sortBuffs(filtered, currentConfig.sortOrder);
+  const sorted = sortBuffs(filtered, currentConfig.sortOrder);
+
+  // A TEXT AURA IS ONE TILE, always, however many things it is watching. That is what makes it an
+  // announcement rather than a list, and it is the owner's explicit constraint on the type.
+  //
+  // Enforced here, at the last moment, rather than by stopping the user picking a second thing.
+  // The dispel announcer watches three different lines of log text precisely so it catches all
+  // three severities, and only one of them can ever match at a time - a limit on what may be
+  // WATCHED would have made that impossible while limiting nothing anyone can see. After sorting,
+  // so which one wins follows the aura's own sort order rather than arrival luck.
+  if (currentConfig.displayMode === 'text') return sorted.slice(0, 1);
+  return sorted;
 }
 
 // Both modes fit their window's height to exactly however many rows/icons
@@ -815,8 +862,9 @@ let hasRenderedBefore = false;
 
 function render(buffs) {
   const visible = visibleBuffs(buffs);
+  const isText = currentConfig.displayMode === 'text';
   const isIcon = currentConfig.displayMode === 'icons';
-  const modeKey = isIcon ? 'icons' : 'list';
+  const modeKey = isText ? 'text' : isIcon ? 'icons' : 'list';
   const visibleKeys = visible.map((b) => keyFor(b));
   // NOT the same set as visibleKeys once merging is on, and the difference matters. The landing
   // glow and the alert sounds are worked out from RAW buff keys; a merged tile has a key of its
@@ -920,7 +968,9 @@ function render(buffs) {
   // and behaves exactly as it did before any of this existed.
   const mergeKey = visible.map((b) => (b.mergedCount ? `${b.mergedCount}:${b.name}` : '')).join('|');
 
-  const grouped = shouldGroupByAlly(visible);
+  // A text aura is a single tile, so there is nothing to group and no heading that would make
+  // sense above one line of words.
+  const grouped = !isText && shouldGroupByAlly(visible);
   const groups = grouped ? groupByAlly(visible) : null;
   const groupKey = grouped
     ? `${currentConfig.groupAllyDirection || 'vertical'}|${groups.map((g) => `${g.allyName}:${g.buffs.length}`).join(',')}`
@@ -959,7 +1009,7 @@ function render(buffs) {
         const body = document.createElement('div');
         body.className = 'ally-group-body' + (isIcon ? ' icon-grid' : '');
         for (const buff of group.buffs) {
-          const ref = isIcon ? buildIconTile(buff) : buildListRow(buff);
+          const ref = buildTile(buff, isText, isIcon);
           updateRef(ref, buff, isIcon);
           if (currentConfig.landingGlowEnabled !== false && anyMemberIn(buff, newlyLanded)) {
             ref.root.classList.add('just-landed');
@@ -976,7 +1026,7 @@ function render(buffs) {
     }
 
     for (const buff of visible) {
-      const ref = isIcon ? buildIconTile(buff) : buildListRow(buff);
+      const ref = buildTile(buff, isText, isIcon);
       updateRef(ref, buff, isIcon);
       // Only a genuinely new arrival gets the one-shot glow - a tile
       // recreated here because a *different* buff changed the visible set
@@ -1056,6 +1106,7 @@ function applyConfig(config) {
   // screen immediately, instead of staying visible until the next buff tick happens to arrive -
   // which, on a quiet aura, could be a very long time.
   document.body.classList.toggle('sound-only', config.displayMode === 'sound-only');
+  document.body.classList.toggle('text-aura', config.displayMode === 'text');
   // Note 6 - the aura's own name in its move box, so a screen full of unlocked blue rectangles
   // says which is which. Set from applyConfig rather than once at boot because a rename arrives
   // as a config change, and the box would otherwise show the old name until the next restart.
@@ -1066,7 +1117,24 @@ function applyConfig(config) {
   document.documentElement.style.setProperty('--icon-gap', `${config.iconMarginPx ?? 5}px`);
   document.documentElement.style.setProperty('--row-size', `${config.rowSize || 28}px`);
 
-  if (config.displayMode === 'icons') {
+  if (config.displayMode === 'text') {
+    // A text aura is sized by its words, not by a setting. Every explicit width the other two
+    // modes set has to be cleared, or a line of 48px text is clipped to whatever "List width"
+    // happened to be - which looks like the text being broken rather than the box being narrow.
+    currentOriginX = 0;
+    listEl.style.maxWidth = '';
+    listEl.style.margin = '';
+    listEl.style.justifyContent = '';
+    listEl.style.width = '';
+    contentWrap.style.width = '';
+    dragOverlayEl.style.position = '';
+    dragOverlayEl.style.inset = '';
+    dragOverlayEl.style.top = '';
+    dragOverlayEl.style.left = '';
+    dragOverlayEl.style.transform = '';
+    dragOverlayEl.style.width = '';
+    dragOverlayEl.style.height = '';
+  } else if (config.displayMode === 'icons') {
     // Icons per row is an explicit count, not a natural reflow based on
     // how many happen to fit at the current icon size - constrain the
     // grid's width to exactly that many columns (+ gaps) so it wraps

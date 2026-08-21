@@ -28,7 +28,17 @@ const DEFAULT_LIST_WIDTH = 220;
 // (it tests displayMode === 'icons' and treats everything else as a list), so this is a guard
 // that changes no behaviour rather than a new rule. It earns its place on the import path,
 // which is the one place a value this app never wrote can arrive from.
-const DISPLAY_MODES = ['list', 'icons', 'sound-only'];
+//   'text'       - a TEXT AURA. Draws one line of words and nothing else: no icon, no countdown,
+//                  no bar. It shows while the thing it watches is active and disappears when
+//                  that ends. Limited to ONE tile however many things it is watching, which is
+//                  what makes it an announcement rather than a list.
+//
+// 'text' is deliberately NOT offered in the Display style radios beside List and Icons, even
+// though that is exactly what it is underneath. The owner's reasoning, and it is the right call:
+// a fourth radio on every aura is a fourth thing to read and rule out on every aura, and the goal
+// is accessibility. It is chosen once, at creation, next to "Custom buff aura" and "Custom timer
+// aura" - which is where someone deciding what KIND of thing to make is already looking.
+const DISPLAY_MODES = ['list', 'icons', 'sound-only', 'text'];
 
 function normalizeDisplayMode(mode) {
   return DISPLAY_MODES.includes(mode) ? mode : 'list';
@@ -36,6 +46,10 @@ function normalizeDisplayMode(mode) {
 
 function isSoundOnly(widget) {
   return !!widget && widget.displayMode === 'sound-only';
+}
+
+function isTextAura(widget) {
+  return !!widget && widget.displayMode === 'text';
 }
 
 function defaultSelfBuffsWidget(overrides = {}) {
@@ -72,6 +86,14 @@ function defaultSelfBuffsWidget(overrides = {}) {
     landingGlowEnabled: true,
     // Note 8 - see defaultCustomWidget's comment on this field.
     mergeSameDuration: false,
+    // Text auras only. What the aura actually says - blank means "use the name of whatever it is
+    // watching", which is the sensible default for a buff and usually wrong for a trigger, where
+    // the point is to say something short and loud like DISPELLED.
+    textAuraMessage: '',
+    // Its own size, deliberately not the shared textSize. That one is capped at 28px because it
+    // also drives list rows and icon labels, and the whole point of an announcement is that it
+    // can be much bigger than that without dragging every other aura's text up with it.
+    textAuraSize: 32,
     hideBardSongs: true,
     maxDurationFilterSec: 0, // 0 = no cutoff
     soundOnLand: false,
@@ -199,6 +221,14 @@ function defaultCustomWidget(name) {
     // self-buff one. WHAT counts as "the same" is a separate, app-wide setting - see mergeRule
     // in main.js, which the owner asked for because either reading is defensible.
     mergeSameDuration: false,
+    // Text auras only. What the aura actually says - blank means "use the name of whatever it is
+    // watching", which is the sensible default for a buff and usually wrong for a trigger, where
+    // the point is to say something short and loud like DISPELLED.
+    textAuraMessage: '',
+    // Its own size, deliberately not the shared textSize. That one is capped at 28px because it
+    // also drives list rows and icon labels, and the whole point of an announcement is that it
+    // can be much bigger than that without dragging every other aura's text up with it.
+    textAuraSize: 32,
     soundOnLand: false,
     soundOnExpire: false,
     soundWarningSec: 0,
@@ -286,6 +316,8 @@ const SHAREABLE_FIELDS = [
   'lowTimeThresholdSec',
   'landingGlowEnabled',
   'mergeSameDuration',
+  'textAuraMessage',
+  'textAuraSize',
   'soundOnLand',
   'soundOnExpire',
   'soundWarningSec',
@@ -364,6 +396,8 @@ function normalizeWidget(widget) {
     lowTimeThresholdSec: typeof widget.lowTimeThresholdSec === 'number' ? widget.lowTimeThresholdSec : 30,
     landingGlowEnabled: widget.landingGlowEnabled !== false,
     mergeSameDuration: !!widget.mergeSameDuration,
+    textAuraMessage: typeof widget.textAuraMessage === 'string' ? widget.textAuraMessage : '',
+    textAuraSize: typeof widget.textAuraSize === 'number' ? widget.textAuraSize : 32,
     hideBardSongs: !!widget.hideBardSongs,
     timerTextColor: typeof widget.timerTextColor === 'string' ? widget.timerTextColor : '#f0f1f5',
     groupAllyBuffs: !!widget.groupAllyBuffs,
@@ -399,6 +433,31 @@ function normalizeWidget(widget) {
     activeProfileIds: Array.isArray(widget.activeProfileIds) ? widget.activeProfileIds : [DEFAULT_PROFILE_ID],
   };
 }
+
+// Ready-made text auras. Each returns the fields to overlay onto a fresh custom widget.
+//
+// The dispel announcer is the one the roadmap has listed as "not built yet" since the premade
+// list was written. It is real now because the log line finally is: "You feel very dispelled."
+// appears in the owner's own logs. The other two severities are inferred from the third-person
+// forms, which DO all three appear ("feels dispelled", "feels a bit dispelled", "feels very
+// dispelled") - so they are included, and TESTING.md says plainly which of the three is attested
+// and which two are inference. A trigger that never matches costs nothing; a missing one means a
+// real dispel goes unannounced.
+//
+// Three definitions, one tile: a text aura only ever draws one thing, and no single log line can
+// match two of these anyway.
+const TEXT_AURA_PRESETS = {
+  dispelled: () => ({
+    buffSource: 'customTimer',
+    textAuraMessage: 'DISPELLED',
+    textAuraSize: 48,
+    customTimers: [
+      { id: crypto.randomUUID(), name: 'Dispelled', durationSec: 8, triggerText: 'You feel very dispelled.', endedText: '' },
+      { id: crypto.randomUUID(), name: 'Dispelled', durationSec: 8, triggerText: 'You feel dispelled.', endedText: '' },
+      { id: crypto.randomUUID(), name: 'Dispelled', durationSec: 8, triggerText: 'You feel a bit dispelled.', endedText: '' },
+    ],
+  }),
+};
 
 function defaultsForKind(kind, name) {
   if (kind === 'self-buffs-builtin') return defaultSelfBuffsWidget();
@@ -503,6 +562,23 @@ class WidgetStore {
   //
   // soundOnExpire is on so that the moment they pick a buff, it does the thing the aura is for
   // without a second trip into the Sounds section.
+  // A TEXT AURA. Presets rather than free-form config, so the premade announcers and the blank
+  // one both come through here and the IPC surface stays a name and a known string.
+  //
+  // Starts on 'self' buffs unless a preset says otherwise: the buff picker is immediately usable,
+  // whereas an empty trigger list needs a trip through another dialog before it can do anything.
+  // The source is switchable afterwards, including to text triggers, which is what makes this
+  // able to watch everything any other aura can watch.
+  createTextAura(name, { preset, activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name);
+    widget.displayMode = 'text';
+    if (preset && TEXT_AURA_PRESETS[preset]) Object.assign(widget, TEXT_AURA_PRESETS[preset](widget));
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
   createSoundOnly(name, { activeProfileIds } = {}) {
     const widget = defaultCustomWidget(name);
     widget.displayMode = 'sound-only';
@@ -771,4 +847,11 @@ class WidgetStore {
   }
 }
 
-module.exports = { WidgetStore, DISPLAY_MODES, normalizeDisplayMode, isSoundOnly };
+module.exports = {
+  WidgetStore,
+  DISPLAY_MODES,
+  TEXT_AURA_PRESETS,
+  normalizeDisplayMode,
+  isSoundOnly,
+  isTextAura,
+};

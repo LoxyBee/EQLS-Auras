@@ -263,6 +263,36 @@ body.sound-only #content-wrap {
   background: rgba(15, 17, 22, 0.72);
 }
 
+/* A TEXT AURA: one line of words over the game, and nothing else.
+
+   The backdrop and the outline are not decoration. This sits on top of a game whose background is
+   whatever the player happens to be looking at - white text on a snowfield is invisible, and an
+   announcement you cannot read is worse than none, because you stop trusting it. The dark plate
+   and the dark text-shadow together keep it legible on any of it.
+
+   width:max-content so the plate hugs the words: a fixed width would either clip a long message
+   or leave a wide dark bar sitting over the game when the message is short. */
+.text-tile {
+  width: max-content;
+  max-width: 100%;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: rgba(12, 14, 20, 0.72);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 2px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+
+/* The reserved low-time colour deliberately cannot be themed away anywhere else in this app, and
+   a text aura is no exception - if the thing it is announcing is about to run out, it says so in
+   the same red every other aura uses. */
+.text-tile.low {
+  color: #ff8080 !important;
+}
+
 /* Note 8 - how many buffs are behind a merged tile. One rule for both display modes, and
    deliberately reused by note 12's merged tiles rather than copied. Sized off the tile's own text
    rather than a fixed pixel value, so it keeps its proportions as the text-size slider moves. */

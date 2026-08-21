@@ -55,7 +55,7 @@ const newStore = () => new WidgetStore(fakeStore());
 // ---------------------------------------------------------------------------
 
 test('sound-only is a real display mode, and nonsense still falls back to list', () => {
-  assert.deepEqual(DISPLAY_MODES, ['list', 'icons', 'sound-only']);
+  assert.deepEqual(DISPLAY_MODES, ['list', 'icons', 'sound-only', 'text']);
   assert.equal(normalizeDisplayMode('sound-only'), 'sound-only');
   assert.equal(normalizeDisplayMode('icons'), 'icons');
   assert.equal(normalizeDisplayMode('list'), 'list');
@@ -216,12 +216,14 @@ test('the alert path refuses to make a noise for an aura that is switched off', 
   const fn = overlaySrc.match(/function playAlertSound\(kind\) \{([\s\S]*?)\n\}/);
   assert.ok(fn, 'playAlertSound has been renamed or restructured');
   const body = fn[1].replace(/^\s*\/\/.*$/gm, '');
-  assert.match(body, /if \(!audible\) return;/, 'nothing stops a switched-off aura beeping');
-  // First statement in the body, before any branch that could play something.
-  assert.ok(
-    body.indexOf('if (!audible) return;') < body.indexOf('playCustomSound'),
-    'the guard must come before any playback path'
-  );
+  // Existence asserted BEFORE the ordering, and the same everywhere in these suites: indexOf
+  // returns -1 when a thing is missing, and -1 is less than any real index, so an ordering check
+  // on its own passes most confidently at exactly the moment the guard has been deleted.
+  const guard = body.indexOf('if (!audible) return;');
+  const play = body.indexOf('playCustomSound');
+  assert.ok(guard >= 0, 'nothing stops a switched-off aura beeping');
+  assert.ok(play >= 0, 'playAlertSound no longer plays anything');
+  assert.ok(guard < play, 'the guard must come before any playback path');
   // And it has to actually be fed from the main process, in both directions.
   assert.match(overlaySrc, /window\.eqOverlay\.getAudible\(widgetId\)/, 'never fetched at boot');
   assert.match(overlaySrc, /window\.eqOverlay\.onAudibleChanged\(/, 'never updated on a profile switch');
@@ -429,6 +431,10 @@ test('the sound-only body class is applied by the overlay and honoured by its st
 
 test('Sound only is offered as a display style, spelled the way the store expects', () => {
   const values = [...html.matchAll(/name="widget-display-mode" value="([^"]+)"/g)].map((m) => m[1]);
+  // 'text' is a real display mode but deliberately NOT a radio here - a text aura is chosen once,
+  // at creation, beside "Custom buff aura" and "Custom timer aura". The owner's call, on the
+  // grounds that a fourth radio on every aura is a fourth thing to read and rule out on every
+  // aura. This assertion is what stops it quietly appearing as one.
   assert.deepEqual(values, ['list', 'icons', 'sound-only']);
   // A radio whose value the store rejects would silently save as 'list' and look like the
   // setting simply did not stick.
@@ -444,10 +450,12 @@ test('the controls a sound-only aura cannot use are hidden, not left dead on scr
   // Each of these is a real saveable setting that could not possibly have an effect on an aura
   // that draws nothing. Leaving a live control on screen doing nothing is how someone ends up
   // certain the app is broken.
+  // A second reason to hide the same control is allowed - a text aura hides several of these too -
+  // so the check is that isSoundOnly is one of the reasons, not that it is the only one.
   const hidden = ['sortOrderRowEl', 'opacityRowEl', 'positionRowEl', 'positionHintEl', 'timerTextTopicEl', 'alertsTopicEl'];
   for (const el of hidden) {
     assert.match(
-      src, new RegExp(`${el}\\.style\\.display = isSoundOnly \\? 'none' : ''`),
+      src, new RegExp(`${el}\\.style\\.display = isSoundOnly( \\|\\| \\w+)? \\? 'none' : ''`),
       `${el} is not hidden for a sound-only aura`
     );
   }

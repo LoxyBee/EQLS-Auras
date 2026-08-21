@@ -990,6 +990,16 @@ function initWidgetsPanel() {
   const iconPositionSettings = document.getElementById('widget-icon-position-settings');
   // Everything a sound-only aura has no use for - see updateDisplayModeVisibility below.
   const soundOnlyHintEl = document.getElementById('widget-sound-only-hint');
+  const textMessageInput = document.getElementById('widget-text-message-input');
+  const textMessageRowEl = document.getElementById('widget-text-message-row');
+  // textAura*, not text* - there is already a textSizeSlider for the shared list/icon text size,
+  // and this is the separate, much larger one a text aura gets to itself.
+  const textAuraSizeSlider = document.getElementById('widget-text-size-slider');
+  const textAuraSizeValueEl = document.getElementById('widget-text-size-value');
+  const textAuraSizeRowEl = document.getElementById('widget-text-size-row');
+  const textHintEl = document.getElementById('widget-text-hint');
+  const displayModeRowEl = document.getElementById('widget-display-mode-row');
+  const buffSourceTimerLabelEl = document.getElementById('widget-buff-source-timer-label');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
   const mergeRowEl = document.getElementById('widget-merge-row');
   const mergeHintEl = document.getElementById('widget-merge-hint');
@@ -1036,6 +1046,7 @@ function initWidgetsPanel() {
   const importBtn = document.getElementById('modal-import-widget-btn');
   const importStatus = document.getElementById('modal-import-widget-status');
   const premadeListEl = document.getElementById('add-widget-premade-list');
+  const modalAddTextWidgetBtn = document.getElementById('modal-add-text-widget-btn');
   const modalNewWidgetNameInput = document.getElementById('modal-new-widget-name');
   const modalAddBuffWidgetBtn = document.getElementById('modal-add-buff-widget-btn');
   const modalAddTimerWidgetBtn = document.getElementById('modal-add-timer-widget-btn');
@@ -1406,6 +1417,19 @@ function initWidgetsPanel() {
   function updateDisplayModeVisibility(displayMode) {
     const isIcons = displayMode === 'icons';
     const isSoundOnly = displayMode === 'sound-only';
+    // A text aura draws one line of words and nothing else, so everything about tiles, rows,
+    // grids and countdowns is as meaningless to it as it is to a sound-only aura. Its own two
+    // settings - what it says and how big - appear instead.
+    //
+    // The Display style radios are hidden entirely for one. A text aura is a TYPE, chosen once
+    // when it is created, the same way a custom timer aura's source is fixed at creation and
+    // never offered as a toggle afterwards.
+    const isTextAura = displayMode === 'text';
+    textMessageRowEl.style.display = isTextAura ? '' : 'none';
+    textAuraSizeRowEl.style.display = isTextAura ? '' : 'none';
+    textHintEl.style.display = isTextAura ? '' : 'none';
+    displayModeRowEl.style.display = isTextAura ? 'none' : '';
+    buffSourceTimerLabelEl.style.display = isTextAura ? '' : 'none';
     iconOnlySettings.style.display = isIcons ? '' : 'none';
     iconPositionSettings.style.display = isIcons ? '' : 'none';
     iconLabelSectionEl.style.display = isIcons ? '' : 'none';
@@ -1413,15 +1437,25 @@ function initWidgetsPanel() {
     displayIconOnlySettings.style.display = isIcons ? '' : 'none';
     displayListOnlySettings.style.display = isIcons || isSoundOnly ? 'none' : '';
     soundOnlyHintEl.style.display = isSoundOnly ? '' : 'none';
+    // Sort order still means something to a text aura even though it shows one thing: it is what
+    // decides WHICH one, when more than one of the things it watches is active at once.
     sortOrderRowEl.style.display = isSoundOnly ? 'none' : '';
-    // Merging is about how tiles are drawn, and a sound-only aura draws none.
-    mergeRowEl.style.display = isSoundOnly ? 'none' : '';
-    mergeHintEl.style.display = isSoundOnly ? 'none' : '';
+    // Merging is about how tiles are drawn. A sound-only aura draws none, and a text aura draws
+    // exactly one whatever happens, so there is never anything to merge.
+    mergeRowEl.style.display = isSoundOnly || isTextAura ? 'none' : '';
+    mergeHintEl.style.display = isSoundOnly || isTextAura ? 'none' : '';
+    // The countdown's own styling, which a text aura has no countdown for.
+    timerTextTopicEl.style.display = isSoundOnly || isTextAura ? 'none' : '';
     opacityRowEl.style.display = isSoundOnly ? 'none' : '';
     positionRowEl.style.display = isSoundOnly ? 'none' : '';
     positionHintEl.style.display = isSoundOnly ? 'none' : '';
-    timerTextTopicEl.style.display = isSoundOnly ? 'none' : '';
     alertsTopicEl.style.display = isSoundOnly ? 'none' : '';
+    // The per-mode groups below are shown for anything that is not icon mode, so a text aura
+    // needs the same extra clause sound-only does or they reappear underneath it.
+    if (isTextAura) {
+      listOnlySettings.style.display = 'none';
+      displayListOnlySettings.style.display = 'none';
+    }
   }
 
   // The label's own size/position controls stay hidden until "Show label"
@@ -1458,7 +1492,10 @@ function initWidgetsPanel() {
     // Add Widget modal's two distinct buttons) and never offers this
     // toggle - same reasoning as the two builtin kinds having a fixed,
     // implied source (Self Buffs always self, Ally Buffs always ally).
-    buffSourceRow.style.display = widget.kind === 'custom' && widget.buffSource !== 'customTimer' ? '' : 'none';
+    buffSourceRow.style.display =
+      widget.kind === 'custom' && (widget.displayMode === 'text' || widget.buffSource !== 'customTimer')
+        ? ''
+        : 'none';
     buffSourceRadios.forEach((r) => (r.checked = r.value === (widget.buffSource || 'self')));
     displayModeRadios.forEach((r) => (r.checked = r.value === widget.displayMode));
     timerFormatRadios.forEach((r) => (r.checked = r.value === widget.timerFormat));
@@ -1482,6 +1519,10 @@ function initWidgetsPanel() {
     lowThresholdValueEl.textContent = lowThreshold === 0 ? 'off' : `${lowThreshold}s`;
     landingGlowCheckbox.checked = widget.landingGlowEnabled !== false;
     mergeCheckbox.checked = !!widget.mergeSameDuration;
+    textMessageInput.value = widget.textAuraMessage || '';
+    const textAuraSize = widget.textAuraSize || 32;
+    textAuraSizeSlider.value = String(textAuraSize);
+    textAuraSizeValueEl.textContent = `${textAuraSize}px`;
     soundLandCheckbox.checked = !!widget.soundOnLand;
     soundExpireCheckbox.checked = !!widget.soundOnExpire;
     const warningSec = widget.soundWarningSec || 0;
@@ -1884,6 +1925,15 @@ function initWidgetsPanel() {
         'and which sound it plays on the settings page it opens on.',
       create: (name) => window.eqTracker.createSoundOnlyWidget(name),
     },
+    {
+      id: 'dispelled',
+      name: 'You Have Been Dispelled',
+      description:
+        'Flashes DISPELLED in large letters when something strips your buffs, then clears itself ' +
+        'after eight seconds. A text aura - it draws no icon and no countdown. Listens for all ' +
+        'three strengths of the message.',
+      create: (name) => window.eqTracker.createTextAuraWidget(name, 'dispelled'),
+    },
   ];
 
   // Not-yet-built premade ideas - shown as visible-but-disabled entries at
@@ -1891,12 +1941,6 @@ function initWidgetsPanel() {
   // the roadmap is discoverable in the app itself, not just a note buried in
   // project docs. No create() - clicking these does nothing.
   const PLANNED_PREMADE_WIDGETS = [
-    {
-      name: 'You Have Been Dispelled',
-      description:
-        'A one-time event notification, not a duration timer - flashes a message when a dispel lands on you. ' +
-        'Not built yet.',
-    },
     {
       name: 'Bard Song',
       description:
@@ -2037,6 +2081,16 @@ function initWidgetsPanel() {
   }
   modalAddBuffWidgetBtn.addEventListener('click', () => addWidget());
   modalAddTimerWidgetBtn.addEventListener('click', () => addWidget('customTimer'));
+  modalAddTextWidgetBtn.addEventListener('click', () => {
+    const name = modalNewWidgetNameInput.value.trim();
+    if (!name) return;
+    // Its own creator rather than createWidget with a flag: a text aura is a type, and it starts
+    // with settings of its own that a plain custom aura has no use for.
+    window.eqTracker.createTextAuraWidget(name).then((config) => {
+      closeAddWidgetModal();
+      focusWidget(config.id);
+    });
+  });
   modalNewWidgetNameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') addWidget();
   });
@@ -2124,6 +2178,14 @@ function initWidgetsPanel() {
   });
   landingGlowCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetLandingGlowEnabled(selectedId, landingGlowCheckbox.checked);
+  });
+  textMessageInput.addEventListener('change', () => {
+    window.eqTracker.setWidgetTextAuraMessage(selectedId, textMessageInput.value);
+  });
+  textAuraSizeSlider.addEventListener('input', () => {
+    const size = Number(textAuraSizeSlider.value);
+    textAuraSizeValueEl.textContent = `${size}px`;
+    window.eqTracker.setWidgetTextAuraSize(selectedId, size);
   });
   mergeCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetMergeSameDuration(selectedId, mergeCheckbox.checked).then(refreshWidgets);

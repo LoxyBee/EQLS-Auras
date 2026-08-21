@@ -627,6 +627,13 @@ ipcMain.handle('widget:isAudible', (_event, id) => {
 ipcMain.handle('widget:create', (_event, { name, buffSource }) => widgetManager.createCustomWidget(name, { buffSource }));
 ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAllyBuffsWidget(name));
 ipcMain.handle('widget:createSoundOnly', (_event, { name }) => widgetManager.createSoundOnlyWidget(name));
+ipcMain.handle('widget:createTextAura', (_event, { name, preset }) =>
+  widgetManager.createTextAuraWidget(name, preset)
+);
+ipcMain.handle('widget:setTextAuraMessage', (_event, { id, value }) =>
+  widgetManager.setTextAuraMessage(id, value)
+);
+ipcMain.handle('widget:setTextAuraSize', (_event, { id, value }) => widgetManager.setTextAuraSize(id, value));
 ipcMain.handle('widget:setMergeSameDuration', (_event, { id, value }) =>
   widgetManager.setMergeSameDuration(id, value)
 );
