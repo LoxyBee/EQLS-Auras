@@ -36,12 +36,12 @@ at the repo root ships.
 
 ## 2. Current state
 
-**23 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
+**28 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
 `.gitignore` - it was staged once by a careless `git add -A` and amended straight back out, and
 the ignore entry is what makes that command safe to type here at all.
 
 ```
-npm test   ->  11 suites, 106 cases, green
+npm test   ->  12 suites, 141 cases, green
 ```
 
 | Suite | Cases | Guards |
@@ -56,6 +56,7 @@ npm test   ->  11 suites, 106 cases, green
 | `test/sound-only.test.js` | 21 | sound-only auras, both import routes, sound parity across aura types |
 | `test/visibility.test.js` | 14 | the whole on-screen / audible precedence model |
 | `test/move-box.test.js` | 9 | the move-box name pill and its drag-region trap |
+| `test/merged-tiles.test.js` | 31 | merged tiles: both rules, tile identity, and where merging meets render() |
 | `tools/lib/xlsx.test.js` | 7 | the spreadsheet reader |
 
 **`test/visibility.test.js` uses a new technique worth knowing about:** it replaces `electron` in
@@ -234,15 +235,42 @@ order IS the behaviour. Master hide beats unlock, deliberately. Per-aura unlock 
 
 `FEATURES.md` holds all 39 raw notes, sorted, with a 13-step build order and twelve groups.
 
-- Steps **1–5 done** (placeholders, small correctness, main-window chrome, alert layer, and the
-  visibility precedence model: notes 4, 31 and 6). Plus the sound-only aura, asked for directly.
-- **Next: step 6** — note **8**, merged tiles. **Blocked on two interpretations** (see Open above);
-  the count badge is the reusable half and note 12 wants the identical one, so build it once.
-- Then step 7 (note 23, text-only mode — unblocks four others; **half its groundwork is already
-  laid** by the sound-only display mode, see the box on that note), step 8 (note 35 data),
-  step 9 (note 24, detection rework), and so on.
+- Steps **1–6 done**. Step 5 was notes 4, 31 and 6; step 6 was note 8, merged tiles. Plus the
+  sound-only aura, the Pause hotkey and the share-code sound warning, all asked for directly.
+- **Next: step 7** — note **23**, the text-only display mode. **Half its groundwork is already
+  laid** by the sound-only mode (`DISPLAY_MODES`, `normalizeDisplayMode`,
+  `updateDisplayModeVisibility`), so what is left is its own size field, a render branch, and the
+  expensive half: the "how long does it stay up" lifetime rules. It has two interpretations of
+  its own waiting on Shara.
+- Then step 8 (note 35 data), step 9 (note 24, detection rework), and so on.
+- **Notes 12 and 18 are the rest of the merged-tile cluster and are blocked** on notes 11 and 17
+  respectively, both of which are downstream of the detrimental-detection work. The count badge
+  note 12 wants is already built and shared.
 - **18 of 39 notes are blocked** on a real log line, a decision, or data that does not exist. They
   are listed together in `FEATURES.md` with exactly what is missing.
+
+---
+
+### Merged tiles — what review found, and what it says about the method
+
+The merged-tiles change was written, tested, committed, and THEN reviewed by four agents with
+different lenses. The review raised twelve findings that deduplicated to four real defects, three
+of which were silent - no error, no console output, just an aura quietly doing the wrong thing:
+
+1. A merged tile is led by whichever member expires first. Recast that one and the lead changes
+   while the group does not, so nothing forced a rebuild and the tile kept the old name.
+2. `warnedAt` is keyed by the tile; both places that prune it iterate RAW keys, which can never
+   equal a merged key. A merged tile warned once and then never again.
+3. Turning merging on re-identified every tile, so anything already in the warning window beeped.
+4. The count badge painted under the countdown bar and took its colour.
+
+**The lesson worth keeping: a test that re-types a formula proves a copy correct.** The signature
+test duplicated the `mergeKey` expression instead of using it, so a mutation adding
+`remainingSec` to the real one - which would rebuild every tile once a second - changed nothing
+any test could see. Lift the real expression out of the source and run it.
+
+**Do this again.** Both times a fan-out review has run over this session's own work it has found
+real defects that the tests, written by the same person who wrote the code, did not.
 
 ---
 
