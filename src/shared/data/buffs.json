@@ -9710,7 +9710,7 @@
   "name": "Mesmerize",
   "spellId": 292,
   "kind": "det",
-  "durationSec": 24,
+  "durationSec": 30,
   "landingText": "You are mesmerized.",
   "endedText": "You are no longer mesmerized.",
   "iconId": 35,
@@ -10737,7 +10737,7 @@
   "level": 39,
   "manaCost": 915,
   "castSec": 3,
-  "reuseSec": 21.5,
+  "reuseSec": 18,
   "targets": "Friendly",
   "noDurationScaling": true
  },

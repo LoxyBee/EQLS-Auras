@@ -1,0 +1,287 @@
+'use strict';
+/**
+ * Debuffs on things you are fighting - notes 11, 16, 17.
+ *
+ * Why this could never work before: a landing on someone else is read from a line like
+ * "<name> has been mesmerized.", and the engine only accepted <name> if it was ONE alphabetic
+ * word. That check is not arbitrary - it is what stops a chat message that happens to end with
+ * the same words from being read as a spell landing. But a mob is "a greater kobold", so every
+ * mez, charm, snare and slow the owner has ever cast was rejected by it.
+ *
+ * Why it is opt-in rather than simply relaxed: measured across her 1.5 million real log lines,
+ * dropping that check for everything admits about 160,000 landings, of which 106,876 are two
+ * bard songs pulsing on every mob in earshot. Opting in per aura bounds the volume by what
+ * someone actually asked to see.
+ *
+ * The three ending lines were found by counting them in those same logs. None of them is in the
+ * roster, and one of them - "has been awakened by" - was not known to the project at all: the
+ * note on AoE mez assumed a mez broken by damage was silent. It is not, four times in five.
+ */
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { test, report } = require('./harness');
+const { BuffStore } = require('../src/main/buffStore');
+const { BuffEngine } = require('../src/main/buffEngine');
+const { matchOthersWornOff, matchSlain, matchAwakened } = require('../src/main/buffParser');
+const { WidgetStore } = require('../src/main/widgetStore');
+
+const ROOT = path.join(__dirname, '..');
+const roster = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'shared', 'data', 'buffs.json'), 'utf8'));
+const managerSrc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'widgetManager.js'), 'utf8');
+const mainSrc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.js'), 'utf8');
+const storeSrc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'widgetStore.js'), 'utf8');
+
+const TS = '[Wed Aug 19 19:17:52 2026] ';
+
+function memory() {
+  const data = {};
+  return {
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  };
+}
+
+// watching: array of spell names an aura has opted into, or null for "nobody opted into anything",
+// which is the state every existing install is in.
+function engine(watching) {
+  const store = memory();
+  const e = new BuffEngine(new BuffStore(store), store);
+  e.stop(); // no ticking - every test here drives the lines itself
+  if (watching) {
+    const set = new Set(watching.map((s) => s.toLowerCase()));
+    e.setEnemyDebuffNamesFn(() => set);
+  }
+  return e;
+}
+
+const feed = (e, ...lines) => lines.forEach((l) => e.handleLine(TS + l));
+const names = (e) => e.getActiveAllyBuffs().map((b) => `${b.allyName}::${b.name}`).sort();
+
+// ---------------------------------------------------------------------------
+// The opt-in, and the guarantee that nothing changes without it
+// ---------------------------------------------------------------------------
+
+test('with nothing opted in, a mob name is rejected exactly as before', () => {
+  // The whole no-regression promise rests on this one. Every install that has not asked for enemy
+  // tracking must behave identically to before the feature existed.
+  const e = engine(null);
+  feed(e, 'You begin casting Mesmerize.', 'orc legionnaire has been mesmerized.');
+  assert.deepEqual(names(e), []);
+});
+
+test('opting in admits the same line', () => {
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Mesmerize.', 'orc legionnaire has been mesmerized.');
+  assert.deepEqual(names(e), ['orc legionnaire::Mesmerize']);
+});
+
+test('opting one spell in does not admit a different one', () => {
+  // The bound only holds if it is per spell. If opting into Mesmerize relaxed the check globally,
+  // the 106,876 bard-song landings come straight back.
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Charm.', 'orc legionnaire has been charmed.');
+  assert.deepEqual(names(e), []);
+});
+
+test('a real player name still lands whether or not anything is opted in', () => {
+  for (const watching of [null, ['Mesmerize']]) {
+    const e = engine(watching);
+    feed(e, 'You begin casting Mesmerize.', 'Marrowbane has been mesmerized.');
+    assert.deepEqual(names(e), ['Marrowbane::Mesmerize'], `watching=${watching}`);
+  }
+});
+
+test('the relaxed check still refuses a sentence', () => {
+  // What the strict single-word check was there for. Widened to mob names is not widened to
+  // anything at all - a chat line ending in the same words must still be rejected.
+  //
+  // Two shapes, because two separate caps do the work and a test that only trips one of them
+  // leaves the other free to be deleted. The long one is caught by the length cap; the short one
+  // is under 38 characters and is caught only by the word cap.
+  const e = engine(['Mesmerize']);
+  const known = { name: 'Mesmerize', scaleCategory: 'debuff' };
+  // Seven words in thirty characters: short enough to slip past the length cap, so only the word
+  // cap can reject it. Real mob names top out around five words.
+  assert.equal(e._isValidRecipient('he said the camp is over there', known), false, 'word cap');
+  // Two words, forty-six characters: only the length cap can reject this one. The previous case
+  // trips both caps, so on its own it would let either be deleted unnoticed.
+  assert.equal(e._isValidRecipient('a naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaame', known), false, 'length cap');
+  assert.equal(
+    e._isValidRecipient('a very long name that runs past any plausible mob', known), false, 'both caps'
+  );
+  feed(e, 'You begin casting Mesmerize.',
+    'Someone said in general chat that the whole camp has been mesmerized.');
+  assert.deepEqual(names(e), []);
+});
+
+test('real mob names from the logs are all accepted', () => {
+  const e = engine(['Mesmerize']);
+  const known = { name: 'Mesmerize', scaleCategory: 'debuff' };
+  const mobs = [
+    'a greater kobold',
+    'a Teir`Dal ranger',
+    'an elite gnoll shaman',
+    'Baron Telyx V`Zher',
+    'the froglok shin lord',
+    'orc legionnaire',
+    'a spinechiller spider',
+    'The Prophet',
+  ];
+  for (const mob of mobs) {
+    assert.ok(e._isValidRecipient(mob, known), `rejected a real mob name: ${mob}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Telling an enemy apart from a groupmate
+// ---------------------------------------------------------------------------
+
+test('what makes a landing an enemy landing is the spell, not the name', () => {
+  // Plenty of mobs have one-word names - Bonefire and Marrowbane are both real, and both are mezzed
+  // in the logs - so the shape of the name cannot decide this. The spell's category can.
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Mesmerize.', 'Bonefire has been mesmerized.');
+  assert.equal(e.getActiveAllyBuffs()[0].onEnemy, true);
+});
+
+test('an ordinary buff on a groupmate is not marked as being on an enemy', () => {
+  const e = engine(null);
+  feed(e, 'You begin casting Spirit of Wolf.', 'Marrowbane is surrounded by a brief lupine aura.');
+  const buff = e.getActiveAllyBuffs().find((b) => b.name === 'Spirit of Wolf');
+  assert.ok(buff, 'the ally buff did not land - this test proves nothing unless it does');
+  assert.equal(buff.onEnemy, false, 'a beneficial buff must never be flagged as an enemy');
+});
+
+test('every mez and charm in the roster is categorised as something cast at an enemy', () => {
+  // If the roster ever recategorised these, the tiles would silently stop being marked and would
+  // start showing up on ally auras instead.
+  const family = roster.filter(
+    (e) => e.othersLandingSuffix === ' has been mesmerized.' || e.othersLandingSuffix === ' has been charmed.'
+  );
+  assert.ok(family.length >= 7, `only ${family.length} mez/charm entries - has the roster changed?`);
+  for (const e of family) {
+    assert.ok(['debuff', 'charm'].includes(e.scaleCategory), `${e.name} is categorised ${e.scaleCategory}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// How it ends
+// ---------------------------------------------------------------------------
+
+test('the wear-off line ends it, naming spell and target', () => {
+  // Verbatim from eqlog_Shara_rivervale_2026-08-19.txt.
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Mesmerize.', 'orc legionnaire has been mesmerized.');
+  assert.deepEqual(names(e), ['orc legionnaire::Mesmerize']);
+  feed(e, 'Your Mesmerize spell has worn off of orc legionnaire.');
+  assert.deepEqual(names(e), []);
+});
+
+test('death ends it, and the casing changes between the two lines', () => {
+  // The land line keeps the mob's natural casing ("orc legionnaire"); the slain line forces a
+  // capital ("Orc legionnaire"). Verified across 6,617 slain lines with no exceptions. A
+  // case-sensitive lookup would clear nothing, ever.
+  for (const death of ['Orc legionnaire has been slain by Avenrae!', 'You have slain orc legionnaire!']) {
+    const e = engine(['Mesmerize']);
+    feed(e, 'You begin casting Mesmerize.', 'orc legionnaire has been mesmerized.');
+    feed(e, death);
+    assert.deepEqual(names(e), [], `not cleared by: ${death}`);
+  }
+});
+
+test('a broken mez ends it', () => {
+  // The line the project did not know existed. 142 of them in the logs.
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Mesmerize.', 'orc legionnaire has been mesmerized.');
+  feed(e, 'Orc legionnaire has been awakened by Shara.');
+  assert.deepEqual(names(e), []);
+});
+
+test('a break only clears a mez, not everything on that mob', () => {
+  // "awakened" does not name a spell, so it can only be trusted to end the thing it describes.
+  // A charm or a snare on the same mob is still running.
+  const e = engine(['Mesmerize', 'Charm']);
+  feed(e, 'You begin casting Charm.', 'orc legionnaire has been charmed.');
+  feed(e, 'Orc legionnaire has been awakened by Shara.');
+  assert.deepEqual(names(e), ['orc legionnaire::Charm']);
+});
+
+test('an ending line for one mob leaves another mob alone', () => {
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Mesmerize.', 'orc legionnaire has been mesmerized.');
+  feed(e, 'You begin casting Mesmerize.', 'a sonic bat has been mesmerized.');
+  feed(e, 'Orc legionnaire has been slain by Avenrae!');
+  assert.deepEqual(names(e), ['a sonic bat::Mesmerize']);
+});
+
+test('ending lines do not touch buffs on groupmates', () => {
+  // Scoped to enemy landings on purpose. A buff on an ally has never been cleared by anything but
+  // its own timer, and changing that here would alter what is on screen for people who never asked
+  // for enemy tracking at all.
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Spirit of Wolf.', 'Marrowbane is surrounded by a brief lupine aura.');
+  const before = names(e);
+  assert.ok(before.includes('Marrowbane::Spirit of Wolf'), 'the ally buff did not land - nothing is being tested');
+  feed(e, 'Your Spirit of Wolf spell has worn off of Marrowbane.', 'Marrowbane has been slain by a gnoll!');
+  assert.deepEqual(names(e), before, 'an ally buff was cleared by an enemy-debuff ending line');
+});
+
+// ---------------------------------------------------------------------------
+// The line shapes themselves
+// ---------------------------------------------------------------------------
+
+test('the ending patterns match the real lines and nothing else', () => {
+  assert.deepEqual(matchOthersWornOff(`${TS}Your Mesmerize spell has worn off of orc legionnaire.`), {
+    spellName: 'Mesmerize',
+    targetName: 'orc legionnaire',
+  });
+  assert.equal(matchSlain(`${TS}Orc centurion has been slain by Avenrae!`), 'Orc centurion');
+  assert.equal(matchSlain(`${TS}You have slain orc legionnaire!`), 'orc legionnaire');
+  assert.equal(matchAwakened(`${TS}A worry wraith has been awakened by Shara.`), 'A worry wraith');
+
+  // The self form has no target and must not be read as one.
+  assert.equal(matchOthersWornOff(`${TS}Your Yaulp spell has worn off.`), null);
+  // The player dying is a different line and must not clear a mob's debuffs.
+  assert.equal(matchSlain(`${TS}You have been slain by a gnoll!`), null);
+});
+
+test('a spell name in an ending line can carry a rank numeral', () => {
+  // Real examples from the logs: Plague III, Envenomed Bolt IV, Togor's Insects V.
+  assert.deepEqual(matchOthersWornOff(`${TS}Your Togor's Insects V spell has worn off of a greater kobold.`), {
+    spellName: "Togor's Insects V",
+    targetName: 'a greater kobold',
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+
+test('the aura setting exists, is off by default, and is shareable', () => {
+  const data = {};
+  const store = new WidgetStore({
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  });
+  const w = store.create('Mez');
+  assert.equal(w.trackOnEnemies, false, 'enemy tracking must be off unless asked for');
+  assert.match(storeSrc, /'trackOnEnemies',/, 'not in SHAREABLE_FIELDS, so a share code would drop it');
+});
+
+test('only spells from auras that opted in are sent to the engine', () => {
+  const fn = managerSrc.match(/function getEnemyDebuffNames\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn, 'getEnemyDebuffNames has been renamed or restructured');
+  assert.match(fn[1], /if \(!config\.trackOnEnemies\) continue;/);
+  assert.match(fn[1], /toLowerCase\(\)/, 'the engine lowercases its lookup, so the set must be lowercased too');
+  // Not filtered by profile: detection must not depend on which loadout happens to be selected.
+  assert.doesNotMatch(fn[1], /profile/i);
+});
+
+test('the engine is given the list at startup', () => {
+  assert.match(mainSrc, /buffEngine\.setEnemyDebuffNamesFn\(\(\) => widgetManager\.getEnemyDebuffNames\(\)\)/);
+});
+
+module.exports = () => report('enemy-debuffs');
+if (require.main === module) process.exit(report('enemy-debuffs') ? 1 : 0);

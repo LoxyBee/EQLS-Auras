@@ -14,27 +14,30 @@
     "spreadsheet gives no duration BECAUSE they genuinely have none, as opposed to instants like",
     "nukes and heals, which have no duration because they do not last at all."
   ],
-
   "Yaulp": {
     "why": "Shara, 20 August 2026: named as an example of a spell the spreadsheet gives no duration for because it genuinely lasts until dispelled or zoned, not because it is instant.",
-    "set": { "infiniteDuration": true }
+    "set": {
+      "infiniteDuration": true
+    }
   },
-
   "Yaulp II": {
     "why": "A rank of Yaulp - identical landing and ended text - so it gets the same treatment. Marking only the base spell would leave the rank Shara actually casts still broken.",
-    "set": { "infiniteDuration": true }
+    "set": {
+      "infiniteDuration": true
+    }
   },
-
   "Yaulp III": {
     "why": "A rank of Yaulp, same as Yaulp II - identical landing and ended text, so it gets the same treatment for the same reason. Leaving a rank unmarked would mean the spell behaves differently depending on which one the player happens to have scribed.",
-    "set": { "infiniteDuration": true }
+    "set": {
+      "infiniteDuration": true
+    }
   },
-
   "Fury": {
     "why": "Shara, 20 August 2026: named alongside Yaulp as an example of a genuinely unlimited-duration spell.",
-    "set": { "infiniteDuration": true }
+    "set": {
+      "infiniteDuration": true
+    }
   },
-
   "_CANDIDATES": [
     "NOT marked, because nobody has confirmed them - listed so the next person does not have to",
     "rediscover them. Frenzy and Rage share Fury's exact ended text (\"Your frenzy fades.\") and are",
@@ -43,14 +46,26 @@
     "",
     "The wider list worth reviewing: 31 roster entries have a landing text, no duration, and are NOT",
     "nukes or heals. Armor of Protection, Barbcoat, Wolf Form, Shrink, Feign Death, Banshee Aura,",
-    "O'Keil's Levity, Melanie's Mellifluous Motion, Minor Familiar, Cassindra's Chorus of Clarity."
+    "O'Keil's Levity, Melanie's Mellifluous Motion, Minor Familiar, Cassindra's Chorus of Clarity.",
+    "",
+    "RECAST TIMES are mined from the game data and are RIGHT MOST OF THE TIME BUT NOT ALWAYS.",
+    "Two were checked in game: Yaulp mined 18s and is 18s; Promised Renewal mined 21.5s and is 18s.",
+    "So one in two of the spot checks was wrong. Anything that shows a recast countdown should be",
+    "treated as a good default that the player can correct, not as measured truth, and a correction",
+    "belongs here as \"reuseSec\" rather than being typed into the roster."
   ],
-
   "Promised Renewal": {
-    "why": "Shara verified 15s in game on 2026-08-19. The spreadsheet says 18s and the game data says 18s, so both sources are wrong for this spell on this server. It is also the only spell in category 'Delayed' and its effect is a Final Heal after a fuse - the 18s is the delay before the heal fires, not a buff duration, which is why it must not take the AA duration bonus either.",
+    "why": "RECAST: Shara verified 18s in game on 2026-08-20; the game data mines as 21.5s, which is wrong for this spell. Yaulp mined as 18s and she confirms 18s, so the recast field is right in general and wrong here in particular - do not 'correct' it globally on the strength of this one. DURATION: Shara verified 15s in game on 2026-08-19. The spreadsheet says 18s and the game data says 18s, so both sources are wrong for this spell on this server. It is also the only spell in category 'Delayed' and its effect is a Final Heal after a fuse - the 18s is the delay before the heal fires, not a buff duration, which is why it must not take the AA duration bonus either.",
     "set": {
       "durationSec": 15,
-      "noDurationScaling": true
+      "noDurationScaling": true,
+      "reuseSec": 18
+    }
+  },
+  "Mesmerize": {
+    "why": "Measured from the owner's own logs, and it agrees with her note-17 table (30/36/36/40) against the spreadsheet's 24. 189 Mesmerize wear-off lines were split by whether an \"awakened by\" break line sat within 1s: 99 breaks, 90 natural expiries. The natural expiries have a hard ceiling at exactly 30s - 13 sit on 30, none above it - which is what a real duration looks like. The 24s in the spreadsheet is wrong. Ranks II/III/V cannot be checked the same way: the owner has never cast them in any log.",
+    "set": {
+      "durationSec": 30
     }
   }
 }

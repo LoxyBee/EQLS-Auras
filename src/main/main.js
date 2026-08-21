@@ -89,6 +89,8 @@ const iconService = new IconService();
 const spellbookService = new SpellbookService();
 buffEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setSpellbookCheckFn((name) => spellbookService.has(name));
+// See buffEngine.setEnemyDebuffNamesFn - which spells any aura has asked to watch on enemies.
+buffEngine.setEnemyDebuffNamesFn(() => widgetManager.getEnemyDebuffNames());
 // Suppresses "which bard song was that?" prompts when no aura would show the
 // answer anyway - songs are opt-in and off by default, so without this the
 // prompts kept arriving for something deliberately hidden. Checks live widget

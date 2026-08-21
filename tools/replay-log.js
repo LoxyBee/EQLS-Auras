@@ -51,7 +51,11 @@ const DEFAULT_LOGS = [
   'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale.txt',
   'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale2.txt',
   'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale3.txt',
-  'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale4.txt',
+  // rivervale4 is a byte-identical PREFIX of rivervale5 - its whole 79,352 lines are the first
+  // 79,352 of the other, verified by md5. Replaying both fed the same 79,352 lines through the
+  // engine twice, which inflated every absolute count this tool has ever printed by about 5%.
+  // Regression comparisons were unaffected, since both sides double-counted equally, but the
+  // headline numbers were wrong. Only the longer file is replayed.
   'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale5.txt',
   'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale_2026-08-17.txt',
   'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale_2026-08-18.txt',
@@ -73,7 +77,7 @@ function memoryStore(initial = {}) {
  * buffsChanged fires on every tick and every expiry too, so counting those would drown the signal
  * in noise. These four are the actual decisions.
  */
-async function replay(files, spellbookPath = null) {
+async function replay(files, spellbookPath = null, enemyNames = null) {
   const store = memoryStore();
   const buffStore = new BuffStore(store);
   const engine = new BuffEngine(buffStore, store);
@@ -87,6 +91,14 @@ async function replay(files, spellbookPath = null) {
     svc._load();
     engine.setSpellbookCheckFn((name) => svc.has(name));
     console.log(`  with spellbook: ${svc.getCount()} spells from ${spellbookPath}`);
+  }
+  // Stands in for widgetManager.getEnemyDebuffNames() - the spells some aura has asked to watch
+  // on things you are fighting. Without it the recipient check stays strict and mob names are
+  // rejected, which is exactly the state to measure the relaxed one against.
+  if (enemyNames && enemyNames.length) {
+    const set = new Set(enemyNames.map((n) => n.toLowerCase()));
+    engine.setEnemyDebuffNamesFn(() => set);
+    console.log(`  watching on enemies: ${enemyNames.join(', ')}`);
   }
 
   // WHICH CHECK DECIDED, and how often. The engine narrates every decision through _debugLog with
@@ -166,6 +178,7 @@ async function replay(files, spellbookPath = null) {
   return {
     files,
     spellbookPath,
+    enemyNames: enemyNames || [],
     lineCount,
     landed: sorted(landed),
     allyLanded: sorted(allyLanded),
@@ -261,11 +274,17 @@ async function main() {
   const out = outAt >= 0 ? args[outAt + 1] : null;
   const bookAt = args.indexOf('--spellbook');
   const spellbook = bookAt >= 0 ? args[bookAt + 1] : null;
+  const enemyAt = args.indexOf('--enemy');
+  const enemyNames = enemyAt >= 0 ? String(args[enemyAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : null;
   // Skip the flag AND its value; everything else left over is a log path. The earlier version
   // compared against outAt + 1 even when there was no --out at all, which made outAt + 1 zero and
   // silently threw away the first path given.
   const given = args.filter(
-    (a, i) => !a.startsWith('--') && !(outAt >= 0 && i === outAt + 1) && !(bookAt >= 0 && i === bookAt + 1)
+    (a, i) =>
+      !a.startsWith('--') &&
+      !(outAt >= 0 && i === outAt + 1) &&
+      !(bookAt >= 0 && i === bookAt + 1) &&
+      !(enemyAt >= 0 && i === enemyAt + 1)
   );
   const files = (given.length ? given : DEFAULT_LOGS).filter((f) => {
     if (fs.existsSync(f)) return true;
@@ -278,7 +297,7 @@ async function main() {
   }
 
   console.log(`Replaying ${files.length} log(s)...`);
-  const result = await replay(files, spellbook);
+  const result = await replay(files, spellbook, enemyNames);
   console.log(`\n${result.lineCount} lines`);
   for (const [k, v] of Object.entries(result.totals)) console.log(`  ${k.padEnd(24)} ${v}`);
 

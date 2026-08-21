@@ -895,6 +895,25 @@ function setBuffSource(id, source) {
   return config;
 }
 
+// Every spell any aura has asked to watch on enemies, lowercased.
+//
+// Rebuilt on each call rather than cached, for the same reason customTimerEngine rebuilds its
+// trigger list: it is trivially cheap at realistic aura counts, and a cache here would need
+// invalidating on every create, delete, import, filter edit and profile switch - five chances to
+// get it wrong for no measurable gain.
+//
+// Deliberately NOT filtered by the active profile. An aura switched off for this loadout should
+// not silently change what the ENGINE is willing to detect: that would make detection depend on
+// which profile happened to be selected, which is the kind of thing nobody ever works out.
+function getEnemyDebuffNames() {
+  const names = new Set();
+  for (const config of widgetStore.getAll()) {
+    if (!config.trackOnEnemies) continue;
+    for (const name of config.buffNames || []) names.add(String(name).toLowerCase());
+  }
+  return names;
+}
+
 function getAllWidgetConfigs() {
   return widgetStore.getAll();
 }
@@ -986,5 +1005,6 @@ module.exports = {
   unexcludeBuff,
   fitToContent,
   getAllWidgetConfigs,
+  getEnemyDebuffNames,
   getWidgetConfig,
 };

@@ -7,6 +7,9 @@ const {
   matchMemorizeFinished,
   matchForgetSpell,
   matchHealBySpell,
+  matchOthersWornOff,
+  matchSlain,
+  matchAwakened,
   matchGroupMemberJoined,
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
@@ -31,6 +34,23 @@ const TICK_INTERVAL_MS = 1000;
 // at least as long as the most patient aura might want - hence the cap, which matches the slider's
 // maximum. Nothing draws a countdown from it either way: durationSec stays null.
 const INSTANT_RETENTION_SEC = 60;
+
+// Spell categories that are cast AT something rather than ON someone. Used to mark a landing as
+// being on an enemy, so an aura can choose to show those separately from buffs on groupmates.
+const ENEMY_SPELL_CATEGORIES = new Set(['debuff', 'charm', 'dot', 'nuke']);
+
+// What a mob name is allowed to look like. Real examples from the owner's logs: "a greater kobold",
+// "a Teir`Dal ranger", "an elite gnoll shaman", "Baron Telyx V`Zher", "the froglok shin lord".
+//
+// The word cap and the length cap are the point. Without them this is "any text at all", and the
+// whole reason the strict single-word check existed was that something has to stop a sentence
+// ending in the same words from being read as a landing.
+const MOB_NAME_PATTERN = /^[A-Za-z][A-Za-z `'-]{0,38}$/;
+const MOB_NAME_MAX_WORDS = 6;
+
+// The one thing that identifies a mez, since the break line does not name the spell. Every roster
+// entry in the mez family - Mesmerize, Mesmerization, Dazzle - shares this exact landing text.
+const MEZ_LANDING_SUFFIX = ' has been mesmerized.';
 
 // A character has fourteen spell gems, so at most fourteen spells can be memorized at once.
 //
@@ -271,6 +291,39 @@ class BuffEngine extends EventEmitter {
     this.spellbookCheckFn = fn;
   }
 
+  // fn() => Set of lowercased spell names that some aura has asked to watch ON ENEMIES.
+  //
+  // This is what makes enemy-debuff tracking possible without drowning in it. A mob's name is not
+  // one alphabetic word - "a greater kobold", "a Teir`Dal ranger" - so the recipient check below
+  // rejects it, which is why mez and charm have never tracked. Simply relaxing that check would
+  // let EVERY debuff on every mob through: measured against 1.6 million real lines, that is
+  // 160,000 landings, over 100,000 of them from two bard songs pulsing on everything in range.
+  //
+  // So it is opt-in per spell. Only a spell an aura is actually watching gets the relaxed check,
+  // which bounds the volume by what the user asked for rather than by how busy the fight is.
+  //
+  // Injected rather than reading widgetManager directly, for the same reason as the spellbook
+  // check: widgetManager pulls in Electron, and this engine has to stay runnable in a plain Node
+  // test and in tools/replay-log.js.
+  setEnemyDebuffNamesFn(fn) {
+    this.enemyDebuffNamesFn = fn;
+  }
+
+  _isWatchedOnEnemies(name) {
+    if (!this.enemyDebuffNamesFn) return false;
+    const names = this.enemyDebuffNamesFn();
+    return !!names && names.has(name.toLowerCase());
+  }
+
+  // Whether a landing of this spell is on an enemy rather than on a groupmate.
+  //
+  // Decided by the SPELL, not by the shape of the name: plenty of mobs have one-word names
+  // ("Bonefire", "Marrowbane"), so the name cannot tell you, while a spell's category can. A mez
+  // or a snare is something you cast at something you are fighting, whoever it happens to be.
+  _isEnemySpell(known) {
+    return ENEMY_SPELL_CATEGORIES.has(known && known.scaleCategory);
+  }
+
   _getOrCreateSelfResolutionsMap(profileId) {
     let map = this.selfAmbiguousResolutionsByProfile.get(profileId);
     if (!map) {
@@ -492,10 +545,7 @@ class BuffEngine extends EventEmitter {
         // seconds, and the game printed its third-person landing text. The
         // name in front is whoever received it, group-tracked or not.
         const allyName = stripped.slice(0, -known.othersLandingSuffix.length);
-        // EQ character names are a single alphabetic word - this rejects a
-        // line that merely happens to end with the same words (e.g. a sentence
-        // fragment in a chat message).
-        if (/^[A-Za-z]+$/.test(allyName)) {
+        if (this._isValidRecipient(allyName, known)) {
           this._debugLog(`ALLY LANDED "${known.name}" on "${allyName}" - named cast, confirmed by third-person landing text`);
           this._landOnAlly(known, allyName);
           this._checkForEndedBuffs(line);
@@ -883,6 +933,9 @@ class BuffEngine extends EventEmitter {
   }
 
   _checkForEndedBuffs(line) {
+    // Runs first, and does not return early, because it reads different line shapes from the self
+    // loop below - letting one starve the other would be a silent, ordering-dependent bug.
+    this._checkForEndedEnemyDebuffs(line);
     for (const [key, buff] of this.activeBuffs) {
       if (buff.endedText && line.includes(buff.endedText)) {
         this.activeBuffs.delete(key);
@@ -890,6 +943,88 @@ class BuffEngine extends EventEmitter {
         return; // a line only ever reports one buff fading
       }
     }
+  }
+
+  // Ends a debuff on something you are fighting, from the three lines the game actually prints
+  // for it (see the pattern comments in buffParser).
+  //
+  // Deliberately limited to entries marked onEnemy. A buff on a groupmate has never been cleared
+  // by anything but its own timer, and widening that here would change what is on screen today
+  // for people who have not asked for any of this - "Your Spirit of Wolf spell has worn off of
+  // Marrowbane." would start removing tiles that currently sit there until they run out. That
+  // change is probably an improvement and is worth making on purpose, with the owner looking at
+  // it, rather than as a side effect of adding mez tracking.
+  _checkForEndedEnemyDebuffs(line) {
+    let changed = false;
+    const drop = (key) => {
+      this.allyBuffs.delete(key);
+      changed = true;
+    };
+
+    // Names the spell and the target both, so it needs no guessing at all.
+    const worn = matchOthersWornOff(line);
+    if (worn) {
+      const key = `${worn.targetName.toLowerCase()}::${worn.spellName.toLowerCase()}`;
+      const entry = this.allyBuffs.get(key);
+      if (entry && entry.onEnemy) {
+        this._debugLog(`ENEMY DEBUFF ENDED "${entry.name}" on "${entry.allyName}" - the log says it wore off`);
+        drop(key);
+      }
+    }
+
+    // Dead things hold no debuffs. Clears every one of them on that target at once, which is the
+    // point - a mob dying is the most common way a debuff you are watching stops mattering.
+    const slain = matchSlain(line);
+    if (slain) {
+      const prefix = `${slain.toLowerCase()}::`;
+      for (const [key, entry] of this.allyBuffs) {
+        if (entry.onEnemy && key.startsWith(prefix)) {
+          this._debugLog(`ENEMY DEBUFF ENDED "${entry.name}" on "${entry.allyName}" - it died`);
+          drop(key);
+        }
+      }
+    }
+
+    // A mez broken early. It does not name the spell, so it can only clear a mez - anything else
+    // on that mob is still running.
+    //
+    // Measured caveat, so nobody later wonders why this never seems to fire: for a mez YOU cast it
+    // is redundant. The game emits the wear-off line in the same second and, in all 98 pairs in
+    // the owner's logs, always FIRST - so the branch above has already cleared the entry by the
+    // time this one looks. It is kept because it is the only signal for a mez somebody ELSE cast,
+    // which is where note 16 goes next, and because it costs one regex on lines that are rare.
+    const awakened = matchAwakened(line);
+    if (awakened) {
+      const prefix = `${awakened.toLowerCase()}::`;
+      for (const [key, entry] of this.allyBuffs) {
+        if (!entry.onEnemy || !key.startsWith(prefix)) continue;
+        const known = this.buffStore.getByName(entry.name);
+        if (known && known.othersLandingSuffix === MEZ_LANDING_SUFFIX) {
+          this._debugLog(`ENEMY DEBUFF ENDED "${entry.name}" on "${entry.allyName}" - the mez was broken`);
+          drop(key);
+        }
+      }
+    }
+
+    if (changed) this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+  }
+
+  // Who a third-person landing line is about.
+  //
+  // A player's name is one alphabetic word, and that strictness is what stops a line which merely
+  // happens to END with the same words - a sentence fragment quoted in chat - from being read as
+  // a landing. It stays the default for exactly that reason.
+  //
+  // A MOB's name is not one word. So for a spell an aura has explicitly asked to watch on enemies
+  // (see setEnemyDebuffNamesFn) the shape is widened to what a mob name actually looks like:
+  // letters, spaces, apostrophes, backticks and hyphens, a few words at most. Deliberately NOT
+  // "anything before the suffix" - that would accept a whole sentence, and the strict check exists
+  // because something has to.
+  _isValidRecipient(name, known) {
+    if (/^[A-Za-z]+$/.test(name)) return true;
+    if (!this._isWatchedOnEnemies(known.name)) return false;
+    if (!MOB_NAME_PATTERN.test(name)) return false;
+    return name.trim().split(/\s+/).length <= MOB_NAME_MAX_WORDS;
   }
 
   _hasRecentOtherCast(name) {
@@ -1041,8 +1176,16 @@ class BuffEngine extends EventEmitter {
       return;
     }
     const key = `${allyName.toLowerCase()}::${known.name.toLowerCase()}`;
+    const onEnemy = this._isEnemySpell(known);
     if (known.infiniteDuration) {
-      this.allyBuffs.set(key, { name: known.name, allyName, durationSec: null, expiresAt: null, infinite: true });
+      this.allyBuffs.set(key, {
+        name: known.name,
+        allyName,
+        durationSec: null,
+        expiresAt: null,
+        infinite: true,
+        onEnemy,
+      });
       this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
       return;
     }
@@ -1058,6 +1201,7 @@ class BuffEngine extends EventEmitter {
         // what makes the sound fire again rather than once.
         landedAt: Date.now(),
         instant: true,
+        onEnemy,
       });
       this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
       return;
@@ -1067,6 +1211,7 @@ class BuffEngine extends EventEmitter {
       allyName,
       durationSec: effectiveDurationSec,
       expiresAt: Date.now() + effectiveDurationSec * 1000,
+      onEnemy,
     });
     this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
   }
@@ -1494,6 +1639,9 @@ class BuffEngine extends EventEmitter {
         return {
           name: b.name,
           allyName: b.allyName,
+          // Whether this landed on something you are fighting rather than on a groupmate. An aura
+          // uses it to show one and not the other; nothing in the engine decides on it.
+          onEnemy: !!b.onEnemy,
           durationSec: b.durationSec,
           // null, not a number, for a buff that never runs out. Everything downstream checks for
           // it rather than trying to render a countdown that has no end.

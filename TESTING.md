@@ -737,6 +737,37 @@ spreadsheet in a minute with `node tools/build-roster.js --write`.
       `detection-debug.log` will say "Did not restore timers: closed for Ns,
       over the 300s limit".
 
+## Debuffs on enemies (mez, charm, snare, slow)
+
+This is off until an aura asks for it. Tick **"Also watch these on enemies"**
+on a custom aura, and the spells that aura is watching start tracking on the
+things you cast them at.
+
+- [ ] **Mez a mob and the tile appears with its name on it** - "a greater
+      kobold", not blank and not your own name. Nothing showed here before,
+      for any spell, because a mob's name is not one word and the recipient
+      check only accepted one word.
+- [ ] **The tile clears when the mob dies**, without waiting for the timer.
+- [ ] **The tile clears when the mez breaks** rather than counting down to
+      zero while the mob is already hitting you.
+- [ ] **AoE mez shows one tile per mob.** Two mobs with the *same* name
+      currently collapse into a single tile - that is a known gap, note 18,
+      not something to report as a bug.
+- [ ] **Mesmerize runs 30 seconds, not 24.** The spreadsheet said 24; your own
+      note-17 table said 30, and 90 natural expiries in your logs stop dead at
+      30 with nothing above it, so the roster now says 30. Worth one check
+      against a stopwatch.
+- [ ] **Turning it off puts everything back.** Untick it and the mob tiles
+      should stop appearing entirely.
+
+**One change that happens whether or not you turn this on**, so it is worth
+knowing about rather than being surprised by: a debuff tile now disappears when
+the log says the debuff ended - the mob died, or the spell wore off - instead of
+sitting there until its timer runs out. Across your logs that is 277 tiles,
+roughly one every few hours of play. Nothing stopped being *detected*; things
+stop being *shown* once they are over. If you would rather they stayed put,
+say so - it is one line to put back.
+
 ## Stability
 
 - [ ] **App no longer closes itself.** It was observed exiting unprompted

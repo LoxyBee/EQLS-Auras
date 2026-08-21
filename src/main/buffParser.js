@@ -225,6 +225,64 @@ function isFailureLine(line) {
   return FAILURE_PATTERNS.some((pattern) => pattern.test(stripped));
 }
 
+// ---------------------------------------------------------------------------
+// How a debuff on something you are fighting comes to an end.
+//
+// A buff on YOU ends with the roster's endedText. A debuff on a mob does not: none of these three
+// lines is in the roster, and until now the app had no way to know a mez had broken, so an enemy
+// tile could only ever count down to zero and hope. All three shapes below were counted against
+// the owner's 1,521,971 real log lines, and the counts are in the note beside each one.
+// ---------------------------------------------------------------------------
+
+// "Your Mesmerize spell has worn off of orc legionnaire."  (1,440 lines)
+//
+// The best of the three by far, because it names the spell AND the target, so nothing has to be
+// guessed. Its one limit is that it is CASTER-SCOPED: it only ever appears for a spell YOU cast.
+// One of the owner's logs has 14 mez landings and not one wear-off line, because every one of
+// those mezzes was a groupmate's.
+const OTHERS_WORN_OFF_PATTERN = /^Your (.+) spell has worn off of (.+)\.$/;
+
+// "A worry wraith has been slain by Shara!"  (6,617)   /   "You have slain a worry wraith!"  (482)
+//
+// Two shapes, and they capitalize differently: the slain-by form forces a capital at the start of
+// the sentence ("A worry wraith"), while the you-have-slain form keeps the name's natural casing
+// ("a worry wraith"). The same mob therefore appears both ways, which is why every lookup built
+// on these has to be case-insensitive.
+const SLAIN_BY_PATTERN = /^(.+) has been slain by .+!$/;
+const YOU_SLEW_PATTERN = /^You have slain (.+)!$/;
+
+// "Orc legionnaire has been awakened by Shara."  (142)
+//
+// A mez broken early by damage, naming whoever broke it. This line was not known to the project
+// at all - the note covering AoE mez assumed a break was silent - and it is the only way to tell
+// a mez that was broken from one that ran its course. It does not name the spell, so it can only
+// clear a mez, not an arbitrary debuff.
+//
+// Two things worth knowing. It is not a complete signal - of roughly 121 identifiable breaks, 99
+// emitted this line, so about four in five; the timer stays as the backstop. And for a mez YOU
+// cast it is redundant, because the wear-off line above lands in the same second and always
+// first (98 of 98 pairs). Its real use is a mez cast by somebody else, which produces no
+// wear-off line at all.
+const AWAKENED_PATTERN = /^(.+) has been awakened by .+\.$/;
+
+function matchOthersWornOff(line) {
+  const m = OTHERS_WORN_OFF_PATTERN.exec(stripTimestamp(line));
+  return m ? { spellName: m[1], targetName: m[2] } : null;
+}
+
+// The name of whatever just died, or null. Both death shapes, since either can be the one that
+// ends a fight the player was tracking a debuff through.
+function matchSlain(line) {
+  const stripped = stripTimestamp(line);
+  const m = SLAIN_BY_PATTERN.exec(stripped) || YOU_SLEW_PATTERN.exec(stripped);
+  return m ? m[1] : null;
+}
+
+function matchAwakened(line) {
+  const m = AWAKENED_PATTERN.exec(stripTimestamp(line));
+  return m ? m[1] : null;
+}
+
 function looksLikeLandingMessage(line) {
   const stripped = line.replace(TIMESTAMP_PREFIX, '');
   return LANDING_HINT_PATTERNS.some((pattern) => pattern.test(stripped));
@@ -241,6 +299,9 @@ module.exports = {
   matchGroupMemberJoined,
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
+  matchOthersWornOff,
+  matchSlain,
+  matchAwakened,
   isFailureLine,
   isPartyChangeLine,
   looksLikeLandingMessage,

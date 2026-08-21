@@ -98,6 +98,13 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // Note 37 - a coloured edge by what kind of spell it is. On by default, at the owner's
     // request, so it works without anyone going looking for it.
     categoryBordersEnabled: true,
+    // Notes 11/16/17. Watch the picked spells on the things you cast them AT rather than on your
+    // group - mez, charm, snare, slow. Off by default and opt-in per aura on purpose: mob names
+    // are not one word, so accepting them at all requires relaxing a check that exists to stop a
+    // sentence being read as a landing, and doing that for every spell would mean 160,000 extra
+    // landings across the owner's logs, 100,000 of them from two bard songs pulsing on everything
+    // in range. Opting in per aura bounds it by what someone actually asked to see.
+    trackOnEnemies: false,
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -240,6 +247,13 @@ function defaultCustomWidget(name) {
     // Note 37 - a coloured edge by what kind of spell it is. On by default, at the owner's
     // request, so it works without anyone going looking for it.
     categoryBordersEnabled: true,
+    // Notes 11/16/17. Watch the picked spells on the things you cast them AT rather than on your
+    // group - mez, charm, snare, slow. Off by default and opt-in per aura on purpose: mob names
+    // are not one word, so accepting them at all requires relaxing a check that exists to stop a
+    // sentence being read as a landing, and doing that for every spell would mean 160,000 extra
+    // landings across the owner's logs, 100,000 of them from two bard songs pulsing on everything
+    // in range. Opting in per aura bounds it by what someone actually asked to see.
+    trackOnEnemies: false,
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -340,6 +354,7 @@ const SHAREABLE_FIELDS = [
   'landingGlowEnabled',
   'mergeSameDuration',
   'categoryBordersEnabled',
+  'trackOnEnemies',
   'textAuraMessage',
   'textAuraSize',
   'textAuraInstantSec',
@@ -425,6 +440,7 @@ function normalizeWidget(widget) {
     // being the only one without them. That does change how existing auras LOOK on first launch
     // after upgrading, which is called out in TESTING.md rather than left as a surprise.
     categoryBordersEnabled: widget.categoryBordersEnabled !== false,
+    trackOnEnemies: !!widget.trackOnEnemies,
     textAuraMessage: typeof widget.textAuraMessage === 'string' ? widget.textAuraMessage : '',
     textAuraSize: typeof widget.textAuraSize === 'number' ? widget.textAuraSize : 32,
     // Clamped to the engine's own retention ceiling. A share code asking for five minutes would
