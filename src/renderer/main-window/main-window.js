@@ -2033,22 +2033,10 @@ function initWidgetsPanel() {
     // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
     // it looks to anyone using the app who did not write it.
     {
-      name: 'Buff timer',
-      description:
-        'Pick a spell and whether you are watching it on yourself or on an ally, and the aura builds ' +
-        'itself with sensible defaults. Not built yet.',
-    },
-    {
       name: 'Cooldown timer',
       description:
         'Pick a spell and get a countdown for when it can be cast again, rather than how long it ' +
         'lasts. Not built yet.',
-    },
-    {
-      name: 'Debuff on an enemy',
-      description:
-        'Track mez, slow, malo and the like on the mobs you cast them on, with a flash when one ' +
-        'resists. Not built yet.',
     },
     {
       name: 'First aggro',
@@ -2256,7 +2244,13 @@ function initWidgetsPanel() {
       li.appendChild(btn);
       premadeListEl.appendChild(li);
     }
-    for (const planned of PLANNED_PREMADE_WIDGETS) {
+    // A premade that has been BUILT must not still be sitting in the planned list, or the Add
+    // Aura list offers it twice - once working, once greyed out as "Not built yet". That happened
+    // to both Buff timer and Debuff on an enemy, because building one means adding an entry over
+    // there and it is easy to forget to remove this one. Filtered rather than merely tested, so
+    // the app is right even if someone adds a premade without reading the test.
+    const builtNames = new Set(PREMADE_WIDGETS.map((p) => p.name));
+    for (const planned of PLANNED_PREMADE_WIDGETS.filter((p) => !builtNames.has(p.name))) {
       const li = document.createElement('li');
       const btn = document.createElement('button');
       btn.type = 'button';
