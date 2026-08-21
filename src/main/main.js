@@ -560,6 +560,7 @@ ipcMain.handle('widget:list', () => widgetManager.getAllWidgetConfigs());
 ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig(id));
 ipcMain.handle('widget:create', (_event, { name, buffSource }) => widgetManager.createCustomWidget(name, { buffSource }));
 ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAllyBuffsWidget(name));
+ipcMain.handle('widget:createSoundOnly', (_event, { name }) => widgetManager.createSoundOnlyWidget(name));
 ipcMain.handle('widget:export', (_event, id) => widgetManager.exportWidget(id));
 ipcMain.handle('widget:peekCode', (_event, code) => widgetManager.peekWidgetCode(code));
 ipcMain.handle('widget:import', (_event, code) => widgetManager.importWidget(code));

@@ -987,6 +987,14 @@ function initWidgetsPanel() {
   const anchorButtons = document.querySelectorAll('#widget-anchor-grid .anchor-cell');
   const iconOnlySettings = document.getElementById('widget-icon-only-settings');
   const iconPositionSettings = document.getElementById('widget-icon-position-settings');
+  // Everything a sound-only aura has no use for - see updateDisplayModeVisibility below.
+  const soundOnlyHintEl = document.getElementById('widget-sound-only-hint');
+  const sortOrderRowEl = document.getElementById('widget-sort-order-row');
+  const opacityRowEl = document.getElementById('widget-opacity-row');
+  const positionRowEl = document.getElementById('widget-position-row');
+  const positionHintEl = document.getElementById('widget-position-hint');
+  const timerTextTopicEl = document.getElementById('topic-timer-text');
+  const alertsTopicEl = document.getElementById('topic-alerts');
   const iconLabelSectionEl = document.getElementById('widget-icon-label-section');
   const showIconLabelCheckbox = document.getElementById('widget-show-icon-label-checkbox');
   const iconLabelOptionsEl = document.getElementById('widget-icon-label-options');
@@ -1376,16 +1384,36 @@ function initWidgetsPanel() {
     allAurasCard.style.display = '';
   }
 
-  // Icon size/icons-per-row/timer-text-position only mean anything in Icon
-  // mode; row size only means anything in List mode - shown/hidden
-  // together whenever the mode changes.
-  function updateIconOnlyVisibility(displayMode) {
-    iconOnlySettings.style.display = displayMode === 'icons' ? '' : 'none';
-    iconPositionSettings.style.display = displayMode === 'icons' ? '' : 'none';
-    iconLabelSectionEl.style.display = displayMode === 'icons' ? '' : 'none';
-    listOnlySettings.style.display = displayMode === 'icons' ? 'none' : '';
-    displayIconOnlySettings.style.display = displayMode === 'icons' ? '' : 'none';
-    displayListOnlySettings.style.display = displayMode === 'icons' ? 'none' : '';
+  // Icon size/icons-per-row/timer-text-position only mean anything in Icon mode; row size only
+  // means anything in List mode; and a Sound-only aura draws nothing, so NONE of it applies -
+  // not the per-mode groups, not opacity, not sort order, not the position controls, not the
+  // timer-text or Alerts topics (both purely about how a tile looks).
+  //
+  // They are hidden rather than disabled because every one of them is a real, saveable setting
+  // that simply could not have an effect here. Leaving a live control on screen that does
+  // nothing is how a user ends up convinced the app is broken. Hiding is also non-destructive:
+  // the stored values are untouched, so switching back to List or Icons restores the aura
+  // exactly as it was configured.
+  //
+  // What deliberately STAYS visible in sound-only mode: the name, profile membership, "Buffs
+  // shown" (what it listens for), Display style itself (the way back out), and the whole
+  // Sounds topic - which is the entire remaining point of the aura.
+  function updateDisplayModeVisibility(displayMode) {
+    const isIcons = displayMode === 'icons';
+    const isSoundOnly = displayMode === 'sound-only';
+    iconOnlySettings.style.display = isIcons ? '' : 'none';
+    iconPositionSettings.style.display = isIcons ? '' : 'none';
+    iconLabelSectionEl.style.display = isIcons ? '' : 'none';
+    listOnlySettings.style.display = isIcons || isSoundOnly ? 'none' : '';
+    displayIconOnlySettings.style.display = isIcons ? '' : 'none';
+    displayListOnlySettings.style.display = isIcons || isSoundOnly ? 'none' : '';
+    soundOnlyHintEl.style.display = isSoundOnly ? '' : 'none';
+    sortOrderRowEl.style.display = isSoundOnly ? 'none' : '';
+    opacityRowEl.style.display = isSoundOnly ? 'none' : '';
+    positionRowEl.style.display = isSoundOnly ? 'none' : '';
+    positionHintEl.style.display = isSoundOnly ? 'none' : '';
+    timerTextTopicEl.style.display = isSoundOnly ? 'none' : '';
+    alertsTopicEl.style.display = isSoundOnly ? 'none' : '';
   }
 
   // The label's own size/position controls stay hidden until "Show label"
@@ -1483,7 +1511,7 @@ function initWidgetsPanel() {
       b.classList.toggle('active', b.dataset.anchor === (widget.iconLabelAnchor || 'top-center'))
     );
     updateIconLabelOptionsVisibility();
-    updateIconOnlyVisibility(widget.displayMode);
+    updateDisplayModeVisibility(widget.displayMode);
     deleteBtn.style.display = widget.deletable ? '' : 'none';
     duplicateWidgetBtn.style.display = widget.kind === 'self-buffs-builtin' ? 'none' : '';
 
@@ -1507,7 +1535,13 @@ function initWidgetsPanel() {
     // shown for the Ally Buffs builtin and any custom aura set to the ally
     // source, hidden everywhere else rather than offering a setting that
     // could never do anything.
-    const showsAllies = widget.kind === 'ally-buffs-builtin' || widget.buffSource === 'ally';
+    // A sound-only aura draws no tiles, so there are no tiles to group - the options would be
+    // real settings that could never have any effect. Handled here rather than in
+    // updateDisplayModeVisibility because renderBuffFilter runs afterwards and would put them
+    // straight back.
+    const showsAllies =
+      (widget.kind === 'ally-buffs-builtin' || widget.buffSource === 'ally') &&
+      widget.displayMode !== 'sound-only';
     allyGroupingSettingsEl.style.display = showsAllies ? '' : 'none';
     if (widget.buffSource === 'customTimer') {
       resetTimerForm();
@@ -1827,6 +1861,15 @@ function initWidgetsPanel() {
       description: 'Shows every buff you’ve cast on your current group members, with the same filter options (hide bard songs, hide long buffs, sound alerts, etc.) as Self Buffs.',
       create: (name) => window.eqTracker.createAllyBuffsWidget(name),
     },
+    {
+      id: 'sound-only',
+      name: 'Sound only',
+      description:
+        'Draws nothing at all - no tiles, no box on screen, ever. It just makes a noise when ' +
+        'something you have picked lands, runs out, or is about to. Choose what it listens for ' +
+        'and which sound it plays on the settings page it opens on.',
+      create: (name) => window.eqTracker.createSoundOnlyWidget(name),
+    },
   ];
 
   // Not-yet-built premade ideas - shown as visible-but-disabled entries at
@@ -2010,7 +2053,7 @@ function initWidgetsPanel() {
   displayModeRadios.forEach((radio) => {
     radio.addEventListener('change', () => {
       if (!radio.checked) return;
-      updateIconOnlyVisibility(radio.value);
+      updateDisplayModeVisibility(radio.value);
       window.eqTracker.setWidgetDisplayMode(selectedId, radio.value);
     });
   });

@@ -14,6 +14,30 @@ const DEFAULT_ICONS_PER_ROW = 4;
 const DEFAULT_ROW_SIZE = 28; // matches the original hardcoded list-row height at default text size
 const DEFAULT_LIST_WIDTH = 220;
 
+// How an aura presents itself. 'sound-only' is an aura that draws NOTHING - no tiles, no
+// window content, not even the dashed drag box while unlocked - and exists purely to make a
+// noise when something it is watching lands, expires, or is about to expire.
+//
+// It is a DISPLAY MODE rather than a new kind of aura on purpose. Every filter, buff source,
+// custom timer and sound setting that already exists keeps working untouched; any existing
+// aura can be switched to it and back without losing a single setting; and nothing in the
+// share-code path, the profile system or the widget list needs to learn a new concept. A new
+// kind would have meant teaching all of that about a fourth case for no user-visible gain.
+//
+// Unknown values normalize to 'list', which is exactly what the overlay already did with them
+// (it tests displayMode === 'icons' and treats everything else as a list), so this is a guard
+// that changes no behaviour rather than a new rule. It earns its place on the import path,
+// which is the one place a value this app never wrote can arrive from.
+const DISPLAY_MODES = ['list', 'icons', 'sound-only'];
+
+function normalizeDisplayMode(mode) {
+  return DISPLAY_MODES.includes(mode) ? mode : 'list';
+}
+
+function isSoundOnly(widget) {
+  return !!widget && widget.displayMode === 'sound-only';
+}
+
 function defaultSelfBuffsWidget(overrides = {}) {
   return {
     id: 'self-buffs',
@@ -304,6 +328,7 @@ const LEGACY_TEXT_SIZE_PX = { small: 11, medium: 13, large: 16 };
 function normalizeWidget(widget) {
   return {
     ...widget,
+    displayMode: normalizeDisplayMode(widget.displayMode),
     textSize: typeof widget.textSize === 'number' ? widget.textSize : LEGACY_TEXT_SIZE_PX[widget.textSize] || DEFAULT_TEXT_SIZE,
     iconSize: typeof widget.iconSize === 'number' ? widget.iconSize : DEFAULT_ICON_SIZE,
     contentAnchor: widget.contentAnchor || DEFAULT_ANCHOR,
@@ -443,6 +468,29 @@ class WidgetStore {
 
   createAllyBuffs(name, { activeProfileIds } = {}) {
     const widget = defaultAllyBuffsWidget(name);
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
+  // The "Sound only" premade - an ordinary custom widget that happens to start in
+  // displayMode 'sound-only'. Deliberately NOT its own kind: see DISPLAY_MODES above.
+  //
+  // It starts SILENT, and that is the right default even though a premade that does nothing
+  // out of the box looks unhelpful. buffFilterMode 'explicit' with an empty buffNames means it
+  // watches nothing until the user picks something, matching how every other custom widget
+  // fails closed. The alternative - filter mode 'all' with an expire sound on - would beep
+  // every single time any buff anywhere ran out, which is a machine gun, not an alert. The
+  // add-aura flow drops the user straight onto this widget's own settings page (focusWidget in
+  // main-window.js), so "pick what it listens for" is the very next thing on screen.
+  //
+  // soundOnExpire is on so that the moment they pick a buff, it does the thing the aura is for
+  // without a second trip into the Sounds section.
+  createSoundOnly(name, { activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name);
+    widget.displayMode = 'sound-only';
+    widget.soundOnExpire = true;
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -688,8 +736,18 @@ class WidgetStore {
       if (field === 'name') continue;
       patch[field] = payload[field] !== undefined ? payload[field] : defaults[field];
     }
+    // This is the one import path that does NOT go through normalizeWidget - importCode()
+    // creates a widget and normalizes it, while this one patches an existing one in place via
+    // update(), which deliberately does not normalize (it is also the setter every settings
+    // control uses, and re-normalizing on every slider drag would be waste).
+    //
+    // Only displayMode is guarded here rather than the whole patch, because it is the only
+    // shareable field where an unrecognised value has no sensible rendering. A foreign mode
+    // would leave Self Buffs drawing nothing with no visible reason why, and Self Buffs is the
+    // one aura that cannot be deleted and recreated to escape it.
+    patch.displayMode = normalizeDisplayMode(patch.displayMode);
     return this.update('self-buffs', patch);
   }
 }
 
-module.exports = { WidgetStore };
+module.exports = { WidgetStore, DISPLAY_MODES, normalizeDisplayMode, isSoundOnly };

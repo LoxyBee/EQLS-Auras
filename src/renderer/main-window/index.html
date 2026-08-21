@@ -237,11 +237,11 @@
               <!-- Position controls live here rather than up in the identity
                    block: moving and resizing IS display, and they're the most
                    used controls in this panel - previously easy to miss. -->
-              <div class="row position-controls">
+              <div class="row position-controls" id="widget-position-row">
                 <button id="widget-lock-btn" class="btn-prominent">Unlock to move</button>
                 <button id="widget-reset-position-btn">Reset position</button>
               </div>
-              <p class="hint">
+              <p class="hint" id="widget-position-hint">
                 While unlocked, click and drag anywhere on the aura to reposition it, and drag an edge
                 to resize it - then click Lock here when you're done. While locked, it's fully
                 click-through. Lost track of an aura (dragged off-screen, or its monitor got
@@ -257,14 +257,21 @@
                 <span class="label">Display style:</span>
                 <label><input type="radio" name="widget-display-mode" value="list" /> List</label>
                 <label><input type="radio" name="widget-display-mode" value="icons" /> Icons</label>
+                <label><input type="radio" name="widget-display-mode" value="sound-only" /> Sound only</label>
               </div>
-              <div class="row">
+              <p class="hint" id="widget-sound-only-hint" style="display:none">
+                This aura draws nothing at all - no tiles, and no dashed box when unlocked. It only
+                makes the sounds set up under Sounds below. It still watches exactly what "Buffs
+                shown" says it does, so pick what it listens for there, then choose when it should
+                make a noise.
+              </p>
+              <div class="row" id="widget-sort-order-row">
                 <span class="label">Sort by:</span>
                 <label><input type="radio" name="widget-sort-order" value="default" /> Cast order</label>
                 <label><input type="radio" name="widget-sort-order" value="time-remaining" /> Time remaining</label>
                 <label><input type="radio" name="widget-sort-order" value="alphabetical" /> Alphabetical</label>
               </div>
-              <div class="row">
+              <div class="row" id="widget-opacity-row">
                 <span class="label">Opacity:</span>
                 <input type="range" id="widget-opacity-slider" min="0.2" max="1" step="0.05" />
               </div>

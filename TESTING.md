@@ -26,7 +26,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a
 character standing in a zone. If it is red, nothing below is worth doing yet -
 read the failure text, it says what broke and why.
 
-Six suites at the time of writing:
+Nine suites at the time of writing:
 
 | Suite | Guards |
 |---|---|
@@ -35,6 +35,9 @@ Six suites at the time of writing:
 | `test/roster-migration.test.js` | the one-time roster replacement: custom buffs survive, overlay choices survive, it runs once, and it writes nothing into app data |
 | `test/memorized-cap.test.js` | the fourteen-gem cap, including re-memorising refreshing an entry and an oversized saved file healing on load |
 | `test/focus-game.test.js` | the refocus-EverQuest call: targets `eqgame` by process name, restores a minimised window, never throws |
+| `test/renderer-wiring.test.js` | the settings window's markup against its script: every id looked up exists, every slider is populated from the aura, modals opt out of the drag region |
+| `test/trade-ping.test.js` | the trade-request line pattern, run against your own real logs - it must fire on requests and on nothing else |
+| `test/sound-only.test.js` | sound-only auras: the mode survives saving and sharing, a foreign mode cannot arrive by either import route, every aura type still carries every sound setting, and the overlay's early return stays between the alerts and the drawing |
 | `tools/lib/xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
 
 If the roster capability snapshot fails after a deliberate roster change, read
@@ -161,6 +164,62 @@ your speakers is not testable here.
       It lives in that window's renderer. The window stays alive for the app's
       whole lifetime, so it should - but browsers throttle background timers,
       and if it turns out to miss pings while minimised, say so.
+
+### Sound-only auras *(new - needs looking at)*
+
+A new **Display style: Sound only**, plus a **Sound only** entry in the premade
+list. An aura in this mode draws nothing at all and exists purely to make a
+noise. Everything below is about whether the sound actually reaches your
+speakers and whether the aura truly leaves no mark on screen - neither of which
+can be checked without the client.
+
+The one thing worth watching hardest is the third item. A sound-only aura is
+deliberately exempt from the auto-hide-when-EverQuest-is-unfocused behaviour,
+because there is nothing of it on screen to hide and a hidden window is one
+Chromium is entitled to throttle. That reasoning is sound but it has not been
+observed, and if it is wrong the symptom is a missed alert, not an error.
+
+- [ ] **Add one from "+ Add aura" > Premade aura > Sound only.** *Expect*: it
+      lands on its own settings page, drawing nothing anywhere on screen.
+- [ ] **The settings page hides what cannot apply**: no Sort by, no Opacity, no
+      Unlock/Reset position, no Timer text or Alerts sections. Sounds, Buffs
+      shown, profiles and the name box all stay.
+- [ ] **Pick a buff under "Buffs shown", leave "Play a sound when a buff
+      expires" on, and let that buff run out.** *Expect*: a sound, and nothing
+      drawn at any point.
+- [ ] **Do the same with EverQuest in focus, then with the app in focus and
+      EverQuest behind it, then with EverQuest minimised.** *Expect*: the sound
+      every time. If it goes quiet in any of those, say which - that is the
+      throttling question above, and it is the most likely thing to be wrong.
+- [ ] **Unlock it** (via "Unlock all auras" on the overview, since it has no
+      unlock button of its own). *Expect*: still nothing on screen - no dashed
+      blue box. Every other aura should still show theirs.
+- [ ] **Switch an existing aura that has tiles on screen to Sound only.**
+      *Expect*: its tiles disappear immediately, without waiting for a buff to
+      change, and it keeps making its sounds.
+- [ ] **Switch it back to List.** *Expect*: it returns exactly as it was -
+      same width, same opacity, same sort order. Nothing should have been lost.
+- [ ] **Untick every profile for it.** *Expect*: it goes silent. Profile
+      membership is still the on/off switch, and this is the check that it did
+      not get exempted along with everything else.
+- [ ] **Restart the app.** *Expect*: it is still sound-only, still silent on
+      screen, still audible.
+- [ ] **Export its share code and import it back.** *Expect*: the copy is
+      sound-only too. A custom sound FILE deliberately does not travel - the
+      copy falls back to the default beep, which is correct, not a bug.
+
+### Sounds on every aura type
+
+Sound settings were already available on every kind of aura; nothing needed
+adding. Worth one pass to confirm that is true in practice as well as in the
+markup.
+
+- [ ] Open the **Sounds** section on Self Buffs, on an Ally Buffs aura, on a
+      custom buff aura, and on a custom timer aura. *Expect*: the same
+      controls in all four, and the volume slider showing that aura's own
+      saved value rather than always 100%.
+- [ ] The volume slider stays **0-100**, as asked. If a sound is too quiet at
+      100, that is the source file, not the slider.
 
 ### Detrimental spells on enemies *(data landed, engine not yet changed)*
 

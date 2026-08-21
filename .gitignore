@@ -1,3 +1,7 @@
 node_modules/
 dist/
 *.log
+
+# Off limits. Never opened, never committed - and .gitignore is the only thing that makes
+# `git add -A` safe to type in this repository.
+PERSONAL COPY DO NOT TOUCH.md

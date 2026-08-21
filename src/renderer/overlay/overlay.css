@@ -66,6 +66,20 @@ body.unlocked .drag-overlay {
   display: flex;
 }
 
+/* A sound-only aura draws nothing, and that has to include the unlock chrome. Hiding
+   #content-wrap alone is enough for the drag overlay too - display:none removes the whole
+   subtree from rendering, and a position:fixed descendant is no exception - but the rule is
+   written against the id rather than the class so it cannot lose a specificity tie with
+   body.unlocked .drag-overlay above.
+
+   This is what makes an unlocked sound-only aura correct rather than merely tidy. The drag box
+   exists so an aura with no active buffs is still a grabbable target; a sound-only aura has no
+   position worth grabbing, and showing a dashed blue box for it would put on screen the one
+   thing the mode promises never to draw. */
+body.sound-only #content-wrap {
+  display: none;
+}
+
 .buff-list {
   display: flex;
   flex-direction: column;

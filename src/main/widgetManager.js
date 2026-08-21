@@ -1,6 +1,6 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
-const { WidgetStore } = require('./widgetStore');
+const { WidgetStore, normalizeDisplayMode, isSoundOnly } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
@@ -213,6 +213,16 @@ function createAllyBuffsWidget(name) {
   return config;
 }
 
+function createSoundOnlyWidget(name) {
+  const config = widgetStore.createSoundOnly(name, { activeProfileIds: [getActiveProfileIdFn()] });
+  // Still gets a real overlay window, exactly like every other aura. That window is where the
+  // sound actually comes from - overlay.js already owns the whole alert pipeline (which buffs
+  // count as visible, renewal detection, the warning-threshold loop, the volume). Routing
+  // sound-only auras somewhere else would have meant a second copy of all of it.
+  createWidgetWindow(config);
+  return config;
+}
+
 function exportWidget(id) {
   return widgetStore.exportCode(id);
 }
@@ -353,6 +363,17 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
 // can't see; otherwise auto-hide decides.
 function shouldBeOnScreen(config) {
   if (!isVisibleForActiveProfile(config)) return false;
+  // A sound-only aura draws nothing, so "on screen" costs it nothing and hiding it buys nothing.
+  // Auto-hide exists to clear the screen while EQ is not in focus; there is nothing of this
+  // aura on the screen to clear. Letting it be hidden would be actively harmful: a hidden
+  // window is a window Chromium is entitled to throttle, and the only thing this aura does is
+  // react promptly to events. It stays up, silent and invisible, and keeps listening.
+  //
+  // Profile membership is deliberately still checked FIRST. Profile membership is this app's
+  // on/off switch (see isVisibleForActiveProfile), and an aura switched off for the current
+  // profile must be genuinely off - a sound-only aura that kept beeping after being switched
+  // off would be untraceable, because there would be nothing on screen to point at.
+  if (isSoundOnly(config)) return true;
   if (isUnlocked(config.id)) return true;
   return !foregroundHidden;
 }
@@ -453,8 +474,13 @@ function isLocked(id) {
 }
 
 function setDisplayMode(id, mode) {
-  const config = widgetStore.update(id, { displayMode: mode === 'icons' ? 'icons' : 'list' });
+  const config = widgetStore.update(id, { displayMode: normalizeDisplayMode(mode) });
   pushConfigChanged(id);
+  // Switching INTO or OUT OF sound-only changes whether this widget should be on screen at all
+  // (see shouldBeOnScreen) - a sound-only aura is exempt from auto-hide, an ordinary one is not.
+  // Without this, turning an aura sound-only while EQ was unfocused left it hidden and therefore
+  // deaf until the next focus change happened to correct it.
+  applyVisibility(config);
   return config;
 }
 
@@ -716,6 +742,7 @@ module.exports = {
   setActiveProfileIdFn,
   createCustomWidget,
   createAllyBuffsWidget,
+  createSoundOnlyWidget,
   exportWidget,
   peekWidgetCode,
   importWidget,

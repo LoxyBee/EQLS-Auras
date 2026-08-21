@@ -121,6 +121,57 @@ entry with a `fieldsId`, add that panel's markup, handle the mode in
 
 ---
 
+## Asked for after the notes
+
+Requests that arrived directly rather than through the numbered list. Kept apart from the
+backlog so the note numbers stay traceable to what you originally wrote.
+
+### The pure sound aura — *asked 20 August 2026, built*
+
+> "a new aura type should also be added as a pure sound aura, with a premade option to create
+> one. sound options should also be available for all aura types if not already."
+
+**Built as a third display style, not a fourth kind of aura.** That was the one real design
+decision and it is worth writing down, because the obvious reading of "a new aura type" points
+the other way. Every filter, buff source, custom timer and sound setting the app already has
+keeps working untouched; any existing aura can be switched to Sound only and back without
+losing a single setting; and nothing in the share-code path, the profile system or the aura list
+had to learn a new concept. A fourth kind would have meant teaching all of that about another
+case, for nothing the user could see.
+
+It draws nothing at all - no tiles, and no dashed blue box when unlocked. The unlock box exists
+so an aura with no active buffs is still a grabbable target; a sound-only aura has no position
+worth grabbing, and drawing one would put on screen the single thing the mode promises never to
+draw. Sort order, opacity, the position controls, Timer text and Alerts are all hidden for it
+too - each of those is a real, saveable setting that could not possibly have an effect, and a
+live control that does nothing is how someone ends up certain the app is broken. They are
+hidden, not cleared, so switching back to List restores the aura exactly as it was.
+
+One behaviour is deliberately different and should be checked in game: **a sound-only aura is
+exempt from the auto-hide-when-EverQuest-is-unfocused rule.** Auto-hide exists to clear the
+screen, and there is nothing of this aura on the screen to clear - while a hidden window is one
+Chromium is entitled to throttle, which for an aura whose only job is reacting promptly would be
+the worst possible trade. Profile membership is still checked first, so unticking every profile
+still switches it off; that ordering is pinned by a test, because an aura that kept beeping
+after being switched off would be untraceable with nothing on screen to point at.
+
+**The second half of the request needed no work.** Sound settings were already available on
+every aura type - the Sounds topic sits inside the shared per-aura panel and no code anywhere
+shows or hides it by kind. Rather than say so and move on, there is now a test that fails if
+anything ever starts hiding it, and another that checks all four aura types carry every sound
+field with matching defaults. Note 32's volume slider bug (fixed earlier) was the real reason
+sounds *felt* unavailable on some auras: the slider never loaded the aura's saved value.
+
+This also paid down note 23's first risk - see the note there.
+
+**Where it lives:** `DISPLAY_MODES` / `normalizeDisplayMode` / `isSoundOnly` in
+`widgetStore.js`; `createSoundOnly` beside `createAllyBuffs`; `shouldBeOnScreen` and
+`setDisplayMode` in `widgetManager.js`; the early return in `overlay.js`'s `render()` and the
+`body.sound-only` rule in `overlay.css`; `updateDisplayModeVisibility` and the
+`PREMADE_WIDGETS` entry in `main-window.js`. Guarded by `test/sound-only.test.js`.
+
+---
+
 ## Sorted backlog — your raw notes, organised
 
 Everything that was in the loose list at the bottom of this file is here, nothing dropped.
@@ -1417,8 +1468,18 @@ dependency for other notes rather than depending on anything: note 21 (the in-ga
 profile overlay) and note 17 (the mez "RESIST" flash) both say outright that they need the text-
 only aura. Building those first would mean building them twice.
 
-**Risk:** widgetManager.setDisplayMode() forces any value that isn't 'icons' to 'list', so a
-partly-wired third mode silently reverts to List with no error. Separately, the "always" option
+> **Half the groundwork is already laid, 20 August 2026.** The sound-only aura (below) added a
+> real third display mode, which means the first risk named here is **already fixed**:
+> `setDisplayMode` now goes through `normalizeDisplayMode`, `DISPLAY_MODES` is a named list to
+> add to, `normalizeWidget` guards the value on both import routes, and
+> `updateIconOnlyVisibility` has become `updateDisplayModeVisibility`, which already reasons
+> about more than two modes. A test pins each of those. What is left of note 23 is the part
+> that was always the expensive half - the lifetime rules - plus its own text-size field and a
+> render branch that actually draws something.
+
+**Risk:** ~~widgetManager.setDisplayMode() forces any value that isn't 'icons' to 'list', so a
+partly-wired third mode silently reverts to List with no error.~~ *(Fixed 20 Aug - see the note
+above.)* Separately, the "always" option
 puts entries into the engines that no tick ever removes - both engines currently assume every
 active entry eventually expires, and the 5-minute session-snapshot restore filters on expiresAt,
 so a never-expiring tile needs a deliberate answer there rather than falling through.

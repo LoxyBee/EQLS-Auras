@@ -672,6 +672,32 @@ function render(buffs) {
   checkSoundWarnings(visible);
   hasRenderedBefore = true;
 
+  // A sound-only aura stops here, and WHERE this line sits is the whole design.
+  //
+  // Everything above it is the alert pipeline: which buffs count as visible for this aura,
+  // first-landing vs renewal detection, the land and expire sounds, the warning threshold and
+  // its repeat loop. All of it still runs, unchanged, because sound is the entire point of the
+  // mode. Everything below it is DOM building and window sizing, and a sound-only aura has
+  // neither. That split is why this mode needed no second copy of the alert logic.
+  //
+  // The tiles are cleared rather than left alone: an aura switched to sound-only part-way
+  // through a session still has its old tiles in listEl, and nothing further down would ever
+  // remove them. dataset.mode is stamped so switching back to list or icons trips
+  // structureChanged below and rebuilds from scratch.
+  //
+  // reportContentSize is deliberately never reached. The window keeps whatever size it last
+  // had instead of being resized to fit content that is never drawn - it is transparent,
+  // click-through and empty, so its size has no observable effect, and leaving it alone means
+  // switching back out of sound-only restores the size the user had chosen.
+  if (currentConfig.displayMode === 'sound-only') {
+    if (listEl.children.length) {
+      listEl.innerHTML = '';
+      tileRefs.clear();
+    }
+    listEl.dataset.mode = 'sound-only';
+    return;
+  }
+
   // Compared against the DOM's actual current child count, not just
   // tileRefs.size - the two can be independently reset (applyConfig clears
   // tileRefs before this ever runs) in a way that made "0 visible now" and
@@ -813,6 +839,10 @@ const LABEL_OVERFLOW_MARGIN_PX = 60;
 
 function applyConfig(config) {
   currentConfig = config;
+  // Applied here rather than in render() so an aura switched to sound-only clears off the
+  // screen immediately, instead of staying visible until the next buff tick happens to arrive -
+  // which, on a quiet aura, could be a very long time.
+  document.body.classList.toggle('sound-only', config.displayMode === 'sound-only');
   document.documentElement.style.setProperty('--text-size', `${config.textSize || 13}px`);
   document.documentElement.style.setProperty('--icon-size', `${config.iconSize || 46}px`);
   document.documentElement.style.setProperty('--timer-text-color', config.timerTextColor || '#f0f1f5');
