@@ -36,12 +36,12 @@ at the repo root ships.
 
 ## 2. Current state
 
-**34 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
+**38 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
 `.gitignore` - it was staged once by a careless `git add -A` and amended straight back out, and
 the ignore entry is what makes that command safe to type here at all.
 
 ```
-npm test   ->  14 suites, 176 cases, green
+npm test   ->  16 suites, 198 cases, green
 ```
 
 | Suite | Cases | Guards |
@@ -59,6 +59,8 @@ npm test   ->  14 suites, 176 cases, green
 | `test/merged-tiles.test.js` | 31 | merged tiles: both rules, tile identity, and where merging meets render() |
 | `test/text-aura.test.js` | 22 | text auras: the one-tile rule, the words, the dispel announcer |
 | `test/category-borders.test.js` | 13 | coloured edges: roster, overlay and stylesheet must agree |
+| `test/detection.test.js` | 16 | the detection engine's first coverage, incl. two pinned KNOWN DEFECTS |
+| `test/spellbook-diagnostic.test.js` | 6 | the spellbook status says what to do, not "it will appear" |
 | `tools/lib/xlsx.test.js` | 7 | the spreadsheet reader |
 
 **`test/visibility.test.js` uses a new technique worth knowing about:** it replaces `electron` in
@@ -338,6 +340,46 @@ type a spell is", check the roster - that sentence is out of date.**
 It used to say only whether a note was blocked, which meant a table summarising all 39 said
 nothing about the ones that were finished. It now reads: **17 done, 1 fix-unconfirmed, 12
 blocked.** Each "done" was verified against the source or the commit that landed it.
+
+---
+
+### Step 9, the detection rework — read this before touching buffEngine
+
+**`tools/replay-log.js` is the safety net and it is not optional.** It replays the owner's real
+logs through the real engine and records what was detected. Capture before, change, capture after,
+diff. Nothing about detection should be claimed without it.
+
+**It lied to me once, and the way it lied is the lesson.** It counted calls to `_land` rather than
+actual landings, so a change that made `_land` decline still showed "no regressions". Corrected, the
+same change showed **157**. If you extend the harness, measure OUTCOMES, never attempts.
+
+**A default capture is also blind to two whole tiers**, and this is not the harness's fault - it is
+the owner's real situation. She has no spellbook file, so `selfCandidates` is empty on every line
+and the spellbook tiers never fire. `--spellbook <path>` replays with one; build a stand-in from
+her cast lines if needed.
+
+**What was decided, with the evidence:**
+
+- **Part C — built.** `recentOtherCasts` is a Map so the log can name the caster. Proved neutral:
+  every total identical across 1.6M lines, one debug row renamed. **Never widen the KEY** to
+  caster+spell - six gates read it, and the same spell cast by two people would stop matching.
+- **Part B — declined.** Its premise ("a loadout swap never says you un-memorised anything") is
+  false here: 1,816 `You forget X.` lines, all acted on. The literal reorder also loses
+  auto-resolutions, because the spellbook block QUEUES when it narrows to more than one.
+- **Part A — not buildable as written.** And a general rule fell out of it: **do not convert
+  `return` to fall-through in `handleLine`.** Every consume site calls `_checkForEndedBuffs`
+  first, that deletes one active buff per call, and ~90 ended-texts are shared between buffs - so a
+  line reaching it twice removes two live timers.
+
+### Two live defects, both measured, both awaiting Shara
+
+1. **The spellbook file has never existed.** 14,650 landings discarded and ~11,000 more turned into
+   prompts across her logs, purely for want of it. The UI now says so instead of promising it will
+   appear on its own. **Needs: the exact in-game command, to name it in the hint.**
+2. **275 roster entries have a landing text and no duration** → NaN expiry → a tile that never
+   counts down and cannot be dismissed. Fixing it by refusing to land them costs 67 spells and
+   18,405 landings, of which 31 are real buffs. **Needs: her choice between no-countdown tiles,
+   a default length, or not tracking them.** Pinned by two KNOWN DEFECT tests meanwhile.
 
 ---
 
