@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onLockChanged: (callback) => {
     ipcRenderer.on('widget:lockChanged', (_event, locked) => callback(locked));
   },
+  getAudible: (widgetId) => ipcRenderer.invoke('widget:isAudible', widgetId),
+  onAudibleChanged: (callback) => {
+    ipcRenderer.on('widget:audibleChanged', (_event, audible) => callback(audible));
+  },
   onConfigChanged: (callback) => {
     ipcRenderer.on('widget:configChanged', (_event, config) => callback(config));
   },

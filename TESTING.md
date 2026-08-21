@@ -26,7 +26,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a
 character standing in a zone. If it is red, nothing below is worth doing yet -
 read the failure text, it says what broke and why.
 
-Nine suites at the time of writing:
+Ten suites at the time of writing:
 
 | Suite | Guards |
 |---|---|
@@ -38,6 +38,7 @@ Nine suites at the time of writing:
 | `test/renderer-wiring.test.js` | the settings window's markup against its script: every id looked up exists, every slider is populated from the aura, modals opt out of the drag region |
 | `test/trade-ping.test.js` | the trade-request line pattern, run against your own real logs - it must fire on requests and on nothing else |
 | `test/sound-only.test.js` | sound-only auras: the mode survives saving and sharing, a foreign mode cannot arrive by either import route, every aura type still carries every sound setting, and the overlay's early return stays between the alerts and the drawing |
+| `test/visibility.test.js` | the whole precedence model - profile membership as the on/off switch, "Hide auras" beating unlock, unlocking one aura beating its profile, and off meaning silent as well as invisible |
 | `tools/lib/xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
 
 If the roster capability snapshot fails after a deliberate roster change, read
@@ -220,6 +221,41 @@ markup.
       saved value rather than always 100%.
 - [ ] The volume slider stays **0-100**, as asked. If a sound is too quiet at
       100, that is the source file, not the slider.
+
+### Hide all auras, and unlocking a switched-off aura *(new - needs looking at)*
+
+Notes 4 and 31, built as one change because separately they argue over which override wins.
+There is a new **Hide auras** button at the right-hand end of the profile bar, always visible.
+
+- [ ] **Press Hide auras.** *Expect*: every aura disappears at once, and the button turns red and
+      reads "Auras hidden - show". Press again and they all come back exactly as they were.
+- [ ] **Unlock an aura, then press Hide auras.** *Expect*: it hides too. Hiding deliberately
+      beats unlocking - if that turns out to be the wrong way round for you, it is one line.
+- [ ] **Restart the app while auras are hidden.** *Expect*: they come back visible. The hide is
+      deliberately not remembered, so a forgotten one cannot look like a broken app.
+- [ ] **Untick every profile for an aura so it is switched off, then press its Unlock to move.**
+      *Expect*: it appears on screen so you can drag it, even though it is switched off. Lock it
+      again and it goes away. This did nothing at all before.
+- [ ] **Do the same but with "Unlock all auras" instead.** *Expect*: your switched-off auras stay
+      away. Only unlocking one by hand pulls it onto the screen.
+- [ ] **Move a switched-off aura while it is unlocked, then re-lock, then switch its profile back
+      on.** *Expect*: it is where you put it.
+
+### Sound follows the on/off switch, not the screen *(new - a real bug was found here)*
+
+Hiding an aura's window never silenced it - a hidden overlay carries on receiving updates and
+carries on playing its alert sounds. That was invisible while every aura had tiles; it stops
+being invisible the moment an aura is nothing but sound. The rule is now:
+
+- **Switched off for this profile** - silent, and not on screen. Off means off.
+- **Hidden by "Hide auras", or by auto-hide while EverQuest is unfocused** - still audible. You
+  usually want to hear a buff about to drop even when you are looking at something else.
+
+- [ ] **Set up any aura with a sound, untick every profile for it, and make its buff land or
+      expire.** *Expect*: silence. Before this change it would still have beeped.
+- [ ] **Put it back on your profile, press Hide auras, and do the same.** *Expect*: you still
+      hear it. This one is meant to keep making noise.
+- [ ] **Same again with EverQuest focused so auto-hide kicks in.** *Expect*: still audible.
 
 ### Detrimental spells on enemies *(data landed, engine not yet changed)*
 

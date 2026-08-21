@@ -194,6 +194,37 @@ body {
   flex-wrap: wrap;
 }
 
+/* Pushed to the far end of the bar - it acts on every aura at once, so it should not sit among
+   the per-profile chips as though it were one of them. */
+.master-hide-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--ink-mut);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.master-hide-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink-mut);
+}
+
+/* Deliberately loud while it is on. This override is temporary, is not saved, and hides things
+   the user is otherwise expecting to see - a quiet button here is how someone spends ten minutes
+   convinced their auras have stopped working. */
+.master-hide-btn.active {
+  background: #b3423a;
+  border-style: solid;
+  border-color: #b3423a;
+  color: #fff;
+  font-weight: 600;
+}
+
 /* Switch-only - no delete/rename embedded here anymore, that moved to the
    Manage profiles modal (gear button below) after a misclick complaint on
    an earlier version that had a small X inline on every chip. */

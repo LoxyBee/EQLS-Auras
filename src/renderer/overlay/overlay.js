@@ -57,8 +57,20 @@ let currentConfig = {
 let audioCtx = null;
 function getAudioCtx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  // An overlay window is click-through and never focused, so it can never receive the user
+  // gesture a suspended context waits for - if one ever suspends here, nothing would ever wake
+  // it and the aura would go permanently, silently deaf. Electron's own default
+  // (autoplayPolicy: 'no-user-gesture-required', electron.d.ts) means this should not happen at
+  // all; the two lines are insurance, and they mirror what the settings window already does.
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
   return audioCtx;
 }
+
+// Whether this aura is switched ON for the current loadout profile. Pushed from the main
+// process; see widgetManager.shouldBeAudible for why it is a separate question from whether the
+// window is on screen. Starts true because a window only ever exists for an aura that was
+// on-profile when it was created, and the real value is fetched as this script boots.
+let audible = true;
 
 function beep(freq, startDelayMs, durationMs) {
   const ctx = getAudioCtx();
@@ -103,6 +115,11 @@ function playCustomSound(kind, soundId) {
 // multi-buff burst cast landing together) - a chime per buff would be a
 // wall of overlapping beeps instead of a useful cue.
 function playAlertSound(kind) {
+  // Profile membership is the app's on/off switch, and OFF has to mean silent as well as
+  // invisible. Hiding the window does not stop this function being called - the engine keeps
+  // broadcasting and render() keeps running behind a hidden window - so the check has to be
+  // here, at the last point before a noise is actually made.
+  if (!audible) return;
   const soundId = currentConfig[`${kind}SoundId`];
   if (soundId) {
     playCustomSound(kind, soundId);
@@ -1001,6 +1018,13 @@ window.eqOverlay.onActiveCustomTimersChanged((timers) => {
 
 window.eqOverlay.getLockState(widgetId).then(applyLockState);
 window.eqOverlay.onLockChanged(applyLockState);
+
+window.eqOverlay.getAudible(widgetId).then((value) => {
+  audible = value !== false;
+});
+window.eqOverlay.onAudibleChanged((value) => {
+  audible = value !== false;
+});
 
 window.eqOverlay.getConfig(widgetId).then(applyConfig);
 window.eqOverlay.onConfigChanged(applyConfig);

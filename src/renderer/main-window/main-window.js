@@ -2278,10 +2278,16 @@ function initWidgetsPanel() {
   // process rather than tracked here, so the button stays correct even when
   // something else changes it (unlocking a single aura, a profile switch).
   const masterUnlockAllBtn = document.getElementById('master-unlock-all-btn');
+  const masterHideAllBtn = document.getElementById('master-hide-all-btn');
 
   function renderMasterButtons(state) {
     masterUnlockAllBtn.classList.toggle('active', state.allUnlocked);
     masterUnlockAllBtn.textContent = state.allUnlocked ? 'Lock all auras' : 'Unlock all auras';
+    // Note 4. The label changes as well as the colour: the button is in the always-visible bar,
+    // so it is read at a glance from across the room, and "Hide auras" while auras are already
+    // hidden would be the wrong half of the sentence.
+    masterHideAllBtn.classList.toggle('active', state.masterHidden);
+    masterHideAllBtn.textContent = state.masterHidden ? 'Auras hidden - show' : 'Hide auras';
   }
   function refreshMasterButtons() {
     return window.eqTracker.getOverlayMasterState().then(renderMasterButtons);
@@ -2299,6 +2305,11 @@ function initWidgetsPanel() {
           });
         }
       })
+    );
+  });
+  masterHideAllBtn.addEventListener('click', () => {
+    window.eqTracker.getOverlayMasterState().then((state) =>
+      window.eqTracker.setOverlayMasterHidden(!state.masterHidden).then(refreshMasterButtons)
     );
   });
   refreshMasterButtons();
@@ -2440,9 +2451,19 @@ function initWidgetsPanel() {
         // Self Buffs is a singleton - this code has to overwrite the
         // existing one in place, never spawn a second "Self Buffs".
         // Settings only: name isn't touched.
+        // Spelled out separately because it is the one outcome someone would not predict from
+        // "overwrite its current settings": Self Buffs cannot be deleted, so an unexpected
+        // sound-only code leaves them looking at an empty screen with no obvious way back.
+        const soundOnlyWarning =
+          info.displayMode === 'sound-only'
+            ? '\n\nNOTE: this code is for a SOUND ONLY aura. Self Buffs will stop drawing ' +
+              'anything on screen and will only make sounds. You can put it back with Display ' +
+              'style > List on its settings page.'
+            : '';
         const confirmed = window.confirm(
           'This code is for the Self Buffs aura and will overwrite its current settings ' +
-            '(display, filters, sounds, etc.) - not create a new aura. Continue?'
+            '(display, filters, sounds, etc.) - not create a new aura. Continue?' +
+            soundOnlyWarning
         );
         if (!confirmed) return;
         window.eqTracker.applyCodeToSelfBuffs(code).then((config) => {

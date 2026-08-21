@@ -343,6 +343,12 @@ function normalizeWidget(widget) {
     // behavior-preserving default. ally-buffs-builtin always forces 'ally'
     // regardless of what's stored, since its source isn't user-editable.
     buffSource: widget.kind === 'ally-buffs-builtin' ? 'ally' : widget.buffSource || 'self',
+    // Coerced for the same reason customTimers and excludedBuffNames are, and it was the one
+    // list field missing the guard. Share codes are pasted out of chat by design, and overlay.js
+    // feeds this straight into a Set - a non-array throws there and takes the whole render with
+    // it. On an ordinary aura that shows up as tiles that stop updating; on a sound-only aura it
+    // is completely silent, with nothing on screen to notice missing.
+    buffNames: Array.isArray(widget.buffNames) ? widget.buffNames : [],
     customTimers: Array.isArray(widget.customTimers) ? widget.customTimers : [],
     excludedBuffNames: Array.isArray(widget.excludedBuffNames) ? widget.excludedBuffNames : [],
     sortOrder: widget.sortOrder || 'default',
@@ -685,7 +691,12 @@ class WidgetStore {
     if (!payload) return null;
     const builtinKinds = ['self-buffs-builtin', 'ally-buffs-builtin'];
     const kind = builtinKinds.includes(payload.kind) ? payload.kind : 'custom';
-    return { name: payload.name, kind };
+    // displayMode is here so the Self Buffs confirm dialog can say what is actually about to
+    // happen. A sound-only code applied to Self Buffs is a legitimate thing to want and a
+    // catastrophic thing to do by accident: Self Buffs cannot be deleted, so an unexpected one
+    // leaves the user staring at an empty screen with no obvious way back. A code carries only
+    // its diff from the defaults, so an absent displayMode genuinely means 'list'.
+    return { name: payload.name, kind, displayMode: normalizeDisplayMode(payload.displayMode) };
   }
 
   // Creates a brand-new widget from a code - never overwrites an existing

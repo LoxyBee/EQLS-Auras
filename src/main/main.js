@@ -529,7 +529,11 @@ ipcMain.handle('settings:setAutoHideOverlay', (_event, enabled) => {
   }
   return autoHideOverlayEnabled;
 });
-ipcMain.handle('overlay:getMasterState', () => ({ allUnlocked: widgetManager.areAllUnlocked() }));
+ipcMain.handle('overlay:getMasterState', () => ({
+  allUnlocked: widgetManager.areAllUnlocked(),
+  masterHidden: widgetManager.isMasterHidden(),
+}));
+ipcMain.handle('overlay:setMasterHidden', (_event, hidden) => widgetManager.setMasterHidden(hidden));
 ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => widgetManager.setAllUnlocked(unlocked));
 ipcMain.handle('settings:getShowAurasWhenAppFocused', () => showAurasWhenAppFocused);
 ipcMain.handle('settings:setShowAurasWhenAppFocused', (_event, enabled) => {
@@ -558,6 +562,12 @@ ipcMain.handle('spellbook:clearMemorized', () => buffEngine.clearMemorized());
 
 ipcMain.handle('widget:list', () => widgetManager.getAllWidgetConfigs());
 ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig(id));
+// An overlay asks for this as it boots, the same way it asks for its lock state - a window
+// created on demand would otherwise start out assuming it may make noise.
+ipcMain.handle('widget:isAudible', (_event, id) => {
+  const config = widgetManager.getWidgetConfig(id);
+  return config ? widgetManager.shouldBeAudible(config) : true;
+});
 ipcMain.handle('widget:create', (_event, { name, buffSource }) => widgetManager.createCustomWidget(name, { buffSource }));
 ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAllyBuffsWidget(name));
 ipcMain.handle('widget:createSoundOnly', (_event, { name }) => widgetManager.createSoundOnlyWidget(name));

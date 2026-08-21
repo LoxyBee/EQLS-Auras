@@ -36,6 +36,15 @@ const originXByWidget = new Map(); // id -> number
 // turned off) restores exactly whichever widgets the active profile says
 // should be showing - not everything indiscriminately.
 let foregroundHidden = false;
+// Runtime-only, deliberately never persisted (note 4). A forgotten master-hide surviving a
+// restart would look exactly like "all my auras broke overnight", and the cost of NOT persisting
+// it is one button press.
+let masterHidden = false;
+// Auras the user unlocked ONE AT A TIME, which forces them on screen even when the active
+// loadout profile has them switched off (note 31) - you cannot drag something you cannot see.
+// Deliberately not populated by "Unlock all auras": that would dump every aura you own onto the
+// screen at once, which is the opposite of useful. Runtime-only, cleared by re-locking.
+const forceShown = new Set(); // ids
 
 // THE single source of truth for "should this widget's window be on screen".
 // Loadout profile membership IS the on/off control - there is deliberately
@@ -123,8 +132,13 @@ function createWidgetWindow(config) {
   // the game window - EQ still needs to run windowed/borderless-windowed,
   // never true exclusive fullscreen, or nothing can draw over it.
   win.setAlwaysOnTop(true, 'screen-saver');
-  win.setIgnoreMouseEvents(true, { forward: true });
-  runtimeLock.set(config.id, true);
+  // Every widget starts LOCKED on launch regardless of how it was left last time - the same
+  // safety behaviour the single overlay always had - which is what an empty runtimeLock map
+  // means. But a window can now also be created ON DEMAND by unlocking an aura the current
+  // profile has switched off (note 31), and that one must not immediately re-lock itself: the
+  // unlock is already recorded, and overwriting it here made the button appear to do nothing.
+  if (!runtimeLock.has(config.id)) runtimeLock.set(config.id, true);
+  win.setIgnoreMouseEvents(shouldIgnoreMouse(config), { forward: true });
   win.setOpacity(config.opacity ?? 1);
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'overlay', 'index.html'), {
@@ -361,21 +375,63 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
 // order: it must belong to the active profile at all; an unlocked aura (one
 // being repositioned) then beats auto-hide, since you can't drag what you
 // can't see; otherwise auto-hide decides.
+// TWO DIFFERENT KINDS OF RULE live in this function, and confusing them is how it goes wrong.
+//
+//   ON/OFF - is this aura running at all? Loadout profile membership is the only one, and it is
+//   deliberately the app's single on/off switch (see isVisibleForActiveProfile above).
+//
+//   SCREEN-CLEARING - is a running aura visible right now? The master hide toggle (note 4) and
+//   auto-hide-while-EverQuest-is-unfocused. Both are temporary, neither touches saved data.
+//
+// Unlocking overrides screen-clearing rules, because you cannot drag something you cannot see.
+// A sound-only aura is subject to the on/off rule and exempt from every screen-clearing one,
+// because it has nothing on the screen to clear.
+//
+// The order below IS the behaviour. Each clause has a reason it sits where it does.
 function shouldBeOnScreen(config) {
-  if (!isVisibleForActiveProfile(config)) return false;
-  // A sound-only aura draws nothing, so "on screen" costs it nothing and hiding it buys nothing.
-  // Auto-hide exists to clear the screen while EQ is not in focus; there is nothing of this
-  // aura on the screen to clear. Letting it be hidden would be actively harmful: a hidden
-  // window is a window Chromium is entitled to throttle, and the only thing this aura does is
-  // react promptly to events. It stays up, silent and invisible, and keeps listening.
-  //
-  // Profile membership is deliberately still checked FIRST. Profile membership is this app's
-  // on/off switch (see isVisibleForActiveProfile), and an aura switched off for the current
-  // profile must be genuinely off - a sound-only aura that kept beeping after being switched
-  // off would be untraceable, because there would be nothing on screen to point at.
+  // Note 31: unlocking one aura BY HAND puts it on screen even when the current profile has it
+  // switched off, and re-locking hands it straight back to the normal rules. forceShown rather
+  // than isUnlocked, so "Unlock all auras" does not drag every switched-off aura onto the screen
+  // with it.
+  if (!isVisibleForActiveProfile(config) && !forceShown.has(config.id)) return false;
+
+  // A sound-only aura draws nothing, so being on screen costs it nothing and hiding it buys
+  // nothing. Hiding it would be actively harmful: a hidden window is one Chromium is entitled to
+  // throttle, and reacting promptly is the only thing this aura does. It stays up, invisible,
+  // and keeps listening. Below the profile check, never above it - an aura that kept beeping
+  // after being switched off would be untraceable, with nothing on screen to point at.
   if (isSoundOnly(config)) return true;
+
+  // Note 4: master hide beats unlock, deliberately, and this is the one clause that had to be
+  // decided rather than inherited. It exists to clear the screen while doing other UI work, so
+  // "Hide all auras" appearing to do nothing because something happened to be unlocked is
+  // exactly the failure that would make the button useless.
+  if (masterHidden) return false;
+
   if (isUnlocked(config.id)) return true;
   return !foregroundHidden;
+}
+
+// Whether an aura should be MAKING SOUND, which is a different question from whether it should
+// be drawn - and the distinction only became visible once an aura could be nothing but sound.
+//
+// Hiding a window does NOT silence it. A hidden overlay keeps receiving the engine broadcasts
+// and keeps running render(), which is exactly where the alert sounds fire. For an ordinary aura
+// that was invisible in both senses of the word, so nobody noticed; for a sound-only aura it is
+// the whole aura.
+//
+// The rule follows shouldBeOnScreen's two kinds of rule. Profile membership is the ON/OFF
+// switch, so an aura the current loadout has switched off is off, full stop - silent as well as
+// invisible. The SCREEN-CLEARING overrides (master hide, auto-hide while EverQuest is unfocused)
+// deliberately do NOT silence anything: hearing that a buff is about to drop while you are
+// tabbed out is most of the reason to have a sound at all.
+function shouldBeAudible(config) {
+  return isVisibleForActiveProfile(config);
+}
+
+function pushAudible(config) {
+  const win = windows.get(config.id);
+  if (win && !win.isDestroyed()) win.webContents.send('widget:audibleChanged', shouldBeAudible(config));
 }
 
 function applyVisibility(config) {
@@ -389,6 +445,9 @@ function applyVisibility(config) {
   } else if (win) {
     win.hide();
   }
+  // After the show/hide, and on every path that has a window: a profile switch is the one thing
+  // that changes this, and it comes through here for every widget.
+  pushAudible(config);
 }
 
 // Called by main.js whenever the ACTIVE loadout profile changes - profile
@@ -419,14 +478,37 @@ function setForegroundHidden(hidden) {
 // an aura is itself what makes EQ lose focus, so the aura being adjusted was
 // the one thing guaranteed to vanish. Re-locking hands it straight back to
 // the normal rules.
-function setLocked(id, locked) {
+//
+// The force option is what separates unlocking ONE aura from "Unlock all auras" (note 31).
+// Unlocking one by hand forces it on screen even if the active profile has it switched off;
+// unlocking everything does not, or every aura you own appears at once.
+// A sound-only aura stays click-through whatever its lock says. Unlocked, it would otherwise be
+// an INVISIBLE rectangle sitting over the game and swallowing clicks - with nothing on screen to
+// explain where they were going. There is nothing to drag either, which is why the settings
+// window hides its Unlock button too.
+function shouldIgnoreMouse(config) {
+  return isSoundOnly(config) || isLocked(config.id);
+}
+
+function setLocked(id, locked, { force = true } = {}) {
   runtimeLock.set(id, locked);
+  if (locked || !force) forceShown.delete(id);
+  else forceShown.add(id);
   const config = widgetStore.update(id, { locked });
+
+  // Visibility FIRST, and unconditionally. An aura switched off for the current profile has no
+  // window at all, so unlocking it has to be able to create one - the previous version only
+  // re-evaluated visibility when a window already existed, which meant unlocking an off-profile
+  // aura did nothing whatsoever and read as a broken button.
+  if (config) applyVisibility(config);
+
+  // Re-read: applyVisibility may have just created this window. A brand-new one does not need
+  // the message anyway - overlay.js asks for the lock state itself as it boots - but it does
+  // need the click-through flag, which is main-process state.
   const win = windows.get(id);
-  if (win) {
-    win.setIgnoreMouseEvents(locked, { forward: true });
+  if (win && config) {
+    win.setIgnoreMouseEvents(shouldIgnoreMouse(config), { forward: true });
     win.webContents.send('widget:lockChanged', locked);
-    if (config) applyVisibility(config);
   }
   return locked;
 }
@@ -436,8 +518,25 @@ function setLocked(id, locked) {
 // everything" with no matching "re-lock everything" would leave every aura
 // click-catching with no obvious way out.
 function setAllUnlocked(unlocked) {
-  for (const config of widgetStore.getAll()) setLocked(config.id, !unlocked);
+  // force: false - see setLocked. Unlocking everything must not haul every aura the current
+  // profile has switched off onto the screen along with the ones you can actually see.
+  for (const config of widgetStore.getAll()) setLocked(config.id, !unlocked, { force: false });
   return unlocked;
+}
+
+// Note 4: a temporary "clear the screen" override for doing other UI work. Deliberately not
+// persisted (see masterHidden), and deliberately beats unlock (see shouldBeOnScreen).
+function setMasterHidden(hidden) {
+  const next = !!hidden;
+  if (next === masterHidden) return masterHidden;
+  masterHidden = next;
+  // One decision function rather than repeating the override rules here.
+  for (const config of widgetStore.getAll()) applyVisibility(config);
+  return masterHidden;
+}
+
+function isMasterHidden() {
+  return masterHidden;
 }
 
 function areAllUnlocked() {
@@ -481,6 +580,10 @@ function setDisplayMode(id, mode) {
   // Without this, turning an aura sound-only while EQ was unfocused left it hidden and therefore
   // deaf until the next focus change happened to correct it.
   applyVisibility(config);
+  // Switching to sound-only has to take the click-through flag with it, or an aura that was
+  // unlocked when the switch happened is left as an invisible click-eating rectangle.
+  const win = windows.get(id);
+  if (win && config) win.setIgnoreMouseEvents(shouldIgnoreMouse(config), { forward: true });
   return config;
 }
 
@@ -752,6 +855,14 @@ module.exports = {
   moveWidget,
   applyProfileVisibility,
   setForegroundHidden,
+  setMasterHidden,
+  isMasterHidden,
+  shouldBeAudible,
+  // Exported for test/visibility.test.js. Nothing in the app calls it from outside this module -
+  // it is exported because it is the single decision function for what appears on screen, and a
+  // rule this dense is worth being able to drive directly rather than infer from side effects.
+  shouldBeOnScreen,
+  shouldIgnoreMouse,
   setAllUnlocked,
   areAllUnlocked,
   setLocked,

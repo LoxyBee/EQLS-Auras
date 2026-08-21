@@ -808,7 +808,28 @@ backlog.
 
 #### #4 — QoL: a 'hide all auras' master toggle on the main menu, as a temporary override that clears the screen while doing UI work - possibly with a hotkey too
 
-`qol` · `small` (a few hours)
+`qol` · `small` (a few hours) · **built 20 August 2026, minus the hotkey**
+
+> **Built together with note 31, as one change.** The three decisions asked for below were taken
+> the way this note itself argues for them, rather than left waiting - say the word if any of
+> them is wrong and each is a small change:
+>
+> 1. **Where it lives:** the always-visible profile bar at the top, not the "All auras" card.
+>    The note's own argument decided it - you press this exactly when you cannot be bothered to
+>    navigate anywhere.
+> 2. **Precedence:** master-hide **beats unlocked**, deliberately. It exists to clear the screen,
+>    so "Hide auras" appearing to do nothing because something happened to be unlocked is
+>    precisely what would make the button useless.
+> 3. **Persistence:** **not** persisted. A forgotten hide surviving a restart looks exactly like
+>    "all my auras broke overnight". The button is loud while it is on for the same reason.
+>
+> **The hotkey is NOT built**, and it is the one part that genuinely needs your answer: a global
+> hotkey is swallowed before EverQuest ever sees it, so it has to be a key you never use in game.
+> Name one and it is a small addition.
+>
+> One thing worth knowing: a **sound-only aura is exempt** from this toggle, because it draws
+> nothing and there is nothing of it on screen to clear. Unticking its profiles is still how you
+> switch it off.
 
 Cheap, because the plumbing you need already exists twice over - foregroundHidden is the same
 shape of flag, and 'Unlock all auras' is the same shape of master control with its own IPC pair
@@ -1749,7 +1770,22 @@ never an auto-import, or a stranger can spawn auras in someone's overlay.
 
 #### #31 — Unlocking an aura to move it should put it on screen even when that aura is switched off for the current profile
 
-`qol` · `small` (a few hours)
+`qol` · `small` (a few hours) · **built 20 August 2026**
+
+> **Built together with note 4, as one change**, and your suggested split was taken: unlocking
+> **one** aura by hand forces it on screen even when the current profile has it switched off,
+> while **"Unlock all auras" does not** - otherwise unlocking everything dumps every aura you own
+> onto the screen at once. Re-locking hands it straight back to the normal rules.
+>
+> Both halves named below are done, including the second one: an aura with no window at all now
+> gets one created by the unlock. There was a third piece neither of us had spotted -
+> `createWidgetWindow` locks every window it makes, which would have re-locked the window the
+> unlock had just asked for, putting the button straight back to doing nothing.
+>
+> The risk below about alert sounds turned out to be **a real bug, and older than this note**:
+> hiding a window does not silence it. Fixed - profile membership now silences an aura as well as
+> hiding it, while auto-hide and master-hide deliberately do not, since hearing a buff about to
+> drop while you are tabbed out is most of the reason to have a sound at all.
 
 Much easier than it sounds. shouldBeOnScreen() already has exactly the right shape - it just
 tests the profile first: `if (!isVisibleForActiveProfile(config)) return false; if

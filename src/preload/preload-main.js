@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setShowAurasWhenAppFocused: (enabled) => ipcRenderer.invoke('settings:setShowAurasWhenAppFocused', enabled),
   getOverlayMasterState: () => ipcRenderer.invoke('overlay:getMasterState'),
   setOverlayAllUnlocked: (unlocked) => ipcRenderer.invoke('overlay:setAllUnlocked', unlocked),
+  setOverlayMasterHidden: (hidden) => ipcRenderer.invoke('overlay:setMasterHidden', hidden),
   setAutoHideOverlayEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoHideOverlay', enabled),
 
   getSpellbookState: () => ipcRenderer.invoke('spellbook:getState'),

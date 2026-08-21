@@ -188,6 +188,58 @@ test('a sound-only aura survives a share code, and its local sound files do not 
   assert.equal(imported.expireSoundId, null);
 });
 
+test('an import can tell you it is about to make Self Buffs stop drawing', () => {
+  // Applying a sound-only code to Self Buffs is a legitimate thing to want and a catastrophic
+  // thing to do by accident: Self Buffs cannot be deleted, so an unexpected one leaves the user
+  // staring at an empty screen. peekCode carries the mode so the confirm dialog can say so.
+  const store = newStore();
+  const silent = store.createSoundOnly('Silent');
+  const ordinary = store.create('Ordinary');
+
+  assert.equal(store.peekCode(store.exportCode(silent.id)).displayMode, 'sound-only');
+  // A code is a diff against the defaults, so an ordinary aura never carries displayMode at all -
+  // absent has to read as 'list', not as undefined.
+  assert.equal(store.peekCode(store.exportCode(ordinary.id)).displayMode, 'list');
+  assert.equal(store.peekCode('not a code'), null);
+
+  assert.match(
+    rendererSrc, /this code is for a SOUND ONLY aura/i,
+    'the Self Buffs confirm dialog no longer warns about a sound-only code'
+  );
+});
+
+test('the alert path refuses to make a noise for an aura that is switched off', () => {
+  // Hiding a window does not silence it: a hidden overlay keeps receiving the engine broadcasts
+  // and keeps running render(). The check therefore has to sit at the last point before a noise
+  // is actually made, which is playAlertSound - not at any of the places that decide what is on
+  // screen.
+  const fn = overlaySrc.match(/function playAlertSound\(kind\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn, 'playAlertSound has been renamed or restructured');
+  const body = fn[1].replace(/^\s*\/\/.*$/gm, '');
+  assert.match(body, /if \(!audible\) return;/, 'nothing stops a switched-off aura beeping');
+  // First statement in the body, before any branch that could play something.
+  assert.ok(
+    body.indexOf('if (!audible) return;') < body.indexOf('playCustomSound'),
+    'the guard must come before any playback path'
+  );
+  // And it has to actually be fed from the main process, in both directions.
+  assert.match(overlaySrc, /window\.eqOverlay\.getAudible\(widgetId\)/, 'never fetched at boot');
+  assert.match(overlaySrc, /window\.eqOverlay\.onAudibleChanged\(/, 'never updated on a profile switch');
+  assert.match(read('src', 'preload', 'preload-overlay.js'), /getAudible: \(widgetId\)/);
+  assert.match(read('src', 'preload', 'preload-overlay.js'), /widget:audibleChanged/);
+  assert.match(mainSrc, /ipcMain\.handle\('widget:isAudible'/);
+});
+
+test('the overlay wakes a suspended audio context', () => {
+  // An overlay window is click-through and never focused, so it can never receive the user
+  // gesture a suspended context waits for - if one ever suspended, nothing would wake it and the
+  // aura would go permanently, silently deaf.
+  const fn = overlaySrc.match(/function getAudioCtx\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn, 'getAudioCtx has been renamed or restructured');
+  assert.match(fn[1], /audioCtx\.state === 'suspended'/);
+  assert.match(fn[1], /audioCtx\.resume\(\)/);
+});
+
 // ---------------------------------------------------------------------------
 // Sound options on every aura type
 // ---------------------------------------------------------------------------

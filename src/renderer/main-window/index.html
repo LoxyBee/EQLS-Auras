@@ -43,6 +43,16 @@
       <div class="profile-chip-list" id="profile-chip-list"></div>
       <button class="profile-add-btn" id="profile-add-btn" title="Add a new loadout profile">+</button>
       <button class="profile-manage-btn" id="profile-manage-btn" title="Rename or delete loadout profiles">⚙</button>
+      <!-- Lives up here rather than on the Overlay Auras page deliberately: this is for the
+           moment you want the screen clear NOW, which is exactly the moment you do not want to
+           navigate somewhere first. Its state is loud (see .master-hide-btn.active) because the
+           override is temporary, does not survive a restart, and an aura that is hidden looks
+           identical to an aura that is broken. -->
+      <button
+        class="master-hide-btn"
+        id="master-hide-all-btn"
+        title="Temporarily clears every aura off the screen while you work. Changes no setting, and does not survive a restart."
+      >Hide auras</button>
     </div>
 
     <div class="app-body">
