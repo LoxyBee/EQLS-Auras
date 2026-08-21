@@ -269,7 +269,11 @@ body {
 }
 
 .sidebar {
-  width: 190px;
+  /* Width is driven by --sidebar-width, set inline on :root by initSidebarResize when a saved
+     width exists. The 190px here is the default AND the fallback - main-window.js mirrors the
+     same number, which is a duplication worth naming rather than pretending away: CSS needs it
+     to render before any script runs, and the drag maths needs it to clamp. */
+  width: var(--sidebar-width, 190px);
   flex-shrink: 0;
   background: var(--bg);
   border-right: 1px solid var(--line);
@@ -1730,4 +1734,36 @@ code {
 
 .modal-list button {
   flex-shrink: 0;
+}
+
+/* Sidebar drag handle. Four pixels wide but reaching further with a negative margin, so it is
+   comfortable to grab without taking any layout space of its own - the sidebar's own border
+   remains the visible edge. */
+#sidebar-resizer {
+  flex: 0 0 4px;
+  margin-left: -4px;
+  cursor: col-resize;
+  background: transparent;
+  /* The window is frameless and .title-bar is a drag region. This sits below it, but a resizer
+     that ever overlapped one would move the window instead of resizing - opt out and stop
+     worrying about it. */
+  -webkit-app-region: no-drag;
+  z-index: 2;
+}
+
+#sidebar-resizer:hover,
+#sidebar-resizer.dragging {
+  background: var(--accent);
+}
+
+/* While dragging, stop the pointer selecting text across the whole window and stop every child
+   swallowing the pointer events the drag needs. */
+body.sidebar-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+body.sidebar-resizing .page-container,
+body.sidebar-resizing .sidebar {
+  pointer-events: none;
 }

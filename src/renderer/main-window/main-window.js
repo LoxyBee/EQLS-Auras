@@ -26,6 +26,7 @@ async function init() {
   initKnownBuffsPanel();
   initCharacterSettingsPanel();
   initUiScale();
+  initSidebarResize();
 }
 
 // Custom title bar (UX_VISUAL_DESIGN.md / the frameless-window follow-up) -
@@ -2865,5 +2866,81 @@ function initUiScale() {
   resetBtn.addEventListener('click', () => {
     show(100);
     window.eqTracker.setUiScale(100);
+  });
+}
+
+// Drag-to-resize the sidebar.
+//
+// The width lives in a --sidebar-width custom property on :root rather than as an inline style on
+// the sidebar itself, so CSS keeps deciding how it is used and this only supplies the number.
+// 190 is repeated here and in main-window.css: CSS needs it to render before any script runs, and
+// the drag needs it to clamp. Named rather than pretended away.
+const SIDEBAR_MIN = 140;
+const SIDEBAR_MAX = 420;
+const SIDEBAR_DEFAULT = 190;
+
+function initSidebarResize() {
+  const handle = document.getElementById('sidebar-resizer');
+  const sidebar = document.querySelector('.sidebar');
+  if (!handle || !sidebar) return;
+
+  // Never widen the sidebar past what the window can show. Applied to what is DISPLAYED only -
+  // the stored preference is left alone, so a narrow window does not permanently shrink a width
+  // chosen in a wide one. The main process keeps the same split (see clampStoredSidebarWidth).
+  function fit(px) {
+    const roomForPages = 320;
+    const maxHere = Math.max(SIDEBAR_MIN, window.innerWidth - roomForPages);
+    return Math.min(maxHere, Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Math.round(px))));
+  }
+
+  let stored = SIDEBAR_DEFAULT;
+  function apply(px) {
+    document.documentElement.style.setProperty('--sidebar-width', `${fit(px)}px`);
+  }
+
+  window.eqTracker.getSidebarWidth().then((px) => {
+    stored = px || SIDEBAR_DEFAULT;
+    apply(stored);
+  });
+
+  // Re-fit on window resize, without touching the stored preference: shrink the window and the
+  // sidebar gives way, widen it again and the chosen width comes back.
+  window.addEventListener('resize', () => apply(stored));
+
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener('pointerdown', (e) => {
+    startX = e.clientX;
+    startWidth = sidebar.getBoundingClientRect().width;
+    // Pointer capture keeps the drag alive when the cursor outruns the 4px handle, which it will
+    // immediately. Without it the drag dies the moment the pointer leaves the element.
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('dragging');
+    document.body.classList.add('sidebar-resizing');
+    e.preventDefault();
+  });
+
+  handle.addEventListener('pointermove', (e) => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    apply(startWidth + (e.clientX - startX));
+  });
+
+  function endDrag(e) {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    handle.releasePointerCapture(e.pointerId);
+    handle.classList.remove('dragging');
+    document.body.classList.remove('sidebar-resizing');
+    // Persist what is on screen, then trust the main process's clamp as the record of truth.
+    const shown = Math.round(sidebar.getBoundingClientRect().width);
+    window.eqTracker.setSidebarWidth(shown).then((saved) => { stored = saved; });
+  }
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+
+  // Double-click restores the default, which is the quickest way out of a width that went wrong.
+  handle.addEventListener('dblclick', () => {
+    apply(SIDEBAR_DEFAULT);
+    window.eqTracker.setSidebarWidth(SIDEBAR_DEFAULT).then((saved) => { stored = saved; });
   });
 }

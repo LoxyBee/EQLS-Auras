@@ -62,6 +62,16 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // App text size (see applyUiScale in main.js). Set HERE, at web-contents creation, rather
+      // than after the page loads. Two reasons, and the second is the important one:
+      //   - applying it post-load means the window paints at 100% and then jumps, which looks
+      //     like a bug even though it is only late;
+      //   - a post-load listener has to be `.once`, and `.once` does not re-arm - so Ctrl+R
+      //     (kept alive deliberately for testing, see the View menu note in main.js) would
+      //     silently drop the window back to 100% with the setting still reading correctly.
+      // Clamping stays in main.js so the bounds are defined in exactly one place; a junk value
+      // here would only mean an odd first paint, corrected the moment the setting is touched.
+      zoomFactor: (Number(loadJson('uiScale', 100)) || 100) / 100,
     },
   });
 

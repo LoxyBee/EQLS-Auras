@@ -105,13 +105,31 @@ test('the UI scale control is wired end to end', () => {
   assert.match(main, /ipcMain\.handle\(\s*'ui:setScale'/, 'no main-process handler for ui:setScale');
 });
 
-test('the saved UI scale is re-applied on launch', () => {
-  // A zoom factor lives on the web contents, not on disk, so it resets to 1 every launch unless
-  // something puts it back - which reads as "the setting did not save" when it saved perfectly.
+test('the saved UI scale is applied at window creation, not after load', () => {
+  // A zoom factor lives on the web contents, not on disk, so it resets to 1 on every load unless
+  // something puts it back. Doing that with a post-load listener has to use `.once`, and `.once`
+  // does not re-arm - so Ctrl+R (kept alive deliberately for testing) silently dropped the window
+  // back to 100% while the setting still read correctly. Setting webPreferences.zoomFactor
+  // applies before first paint and survives a reload.
+  const mw = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'mainWindow.js'), 'utf8');
+  assert.match(mw, /zoomFactor:\s*\(Number\(loadJson\('uiScale'/, 'the saved scale is not applied at window creation');
+
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.ok(
+    !/did-finish-load[\s\S]{0,200}applyUiScale/.test(main),
+    'the scale is re-applied on did-finish-load as well. That listener is `.once` and does not ' +
+    're-arm on reload - drop it, webPreferences.zoomFactor already covers launch AND Ctrl+R.'
+  );
+});
+
+test('the UI scale is clamped on the way out, not only on the way in', () => {
+  // Returning the raw file contents means a hand-edited or truncated uiScale.json - say 5 -
+  // reaches the slider, whose own min silently pulls it to 80, so the number on screen and the
+  // zoom actually applied disagree with nothing reporting it.
   const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
   assert.match(
-    main, /did-finish-load[\s\S]{0,200}applyUiScale/,
-    'the saved scale is not re-applied after the page loads - applying it earlier is silently dropped'
+    main, /ipcMain\.handle\(\s*'ui:getScale',\s*\(\)\s*=>\s*clampUiScale\(/,
+    'ui:getScale returns the stored value unclamped'
   );
 });
 
@@ -123,6 +141,40 @@ test('the overlay is not scaled by the app text size setting', () => {
   const start = main.indexOf('function applyUiScale');
   const fn = main.slice(start, main.indexOf("ipcMain.handle('ui:getScale'", start));
   assert.ok(!/widgetManager|overlay/i.test(fn), 'applyUiScale reaches into the overlay - auras have their own size settings');
+});
+
+test('the sidebar resizer is wired end to end', () => {
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload', 'preload-main.js'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+
+  assert.ok(htmlIds.has('sidebar-resizer'), 'no resize handle in the markup');
+  assert.match(css, /var\(--sidebar-width/, 'the sidebar width is not driven by the custom property');
+  assert.match(js, /setPointerCapture/, 'no pointer capture - the drag dies the moment the cursor outruns the 4px handle');
+  assert.match(preload, /setSidebarWidth/, 'preload does not expose setSidebarWidth');
+  assert.match(main, /ipcMain\.handle\(\s*'ui:setSidebarWidth'/, 'no main-process handler to persist the width');
+});
+
+test('a narrow window cannot permanently shrink the saved sidebar width', () => {
+  // The subtle one, and the reason there are two clamps rather than one.
+  //
+  // Collapsing them is the obvious simplification and it quietly destroys the setting: launch once
+  // in a narrow window, the stored 320 is clamped down to fit, and the next save writes the
+  // shrunken number over the user's choice. Widen the window again and their width is gone.
+  //
+  // So the STORED value is only ever clamped to the preference range, never to the viewport.
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.match(
+    main, /ipcMain\.handle\(\s*'ui:getSidebarWidth',\s*\(\)\s*=>\s*clampStoredSidebarWidth\(/,
+    'the stored width is not read through the preference-range clamp'
+  );
+  const stored = main.slice(main.indexOf('function clampStoredSidebarWidth'), main.indexOf("ipcMain.handle('ui:getSidebarWidth'"));
+  assert.ok(
+    !/innerWidth|window\.|getBoundingClientRect|viewport/i.test(stored),
+    'clampStoredSidebarWidth consults the window size. It must not: that is what makes a narrow ' +
+    'window overwrite a width chosen in a wide one.'
+  );
+  // ...and the renderer's viewport fit must not be what gets persisted.
+  assert.match(js, /the stored preference is left alone/, 'the renderer no longer documents the two-clamp split');
 });
 
 test('modals opt out of the window drag region', () => {

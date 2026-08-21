@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
 
   getUiScale: () => ipcRenderer.invoke('ui:getScale'),
   setUiScale: (pct) => ipcRenderer.invoke('ui:setScale', pct),
+  getSidebarWidth: () => ipcRenderer.invoke('ui:getSidebarWidth'),
+  setSidebarWidth: (px) => ipcRenderer.invoke('ui:setSidebarWidth', px),
 
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:maximizeToggle'),

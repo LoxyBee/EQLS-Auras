@@ -112,9 +112,35 @@ yours.
 - [ ] **Reset returns to 100%.**
 - [ ] At 160%, check the **frameless title bar** still looks right and the
       window can still be dragged and closed.
+- [ ] **Auras must NOT rezoom.** Set 160%, then look at an aura. Chromium keys
+      zoom by origin within a session, and every window here loads a `file://`
+      page in the same session - so "it cannot leak" is an assumption, not
+      something the code enforces. If auras DO change size, say so: the fix is
+      to give them their own session partition.
+- [ ] **Ctrl+R does not reset it.** Reload the window at 130%. *Expect*: still
+      130%. An earlier version used a one-shot listener that did not re-arm.
 - [ ] At 160%, open a modal (Add aura) and check its content is reachable -
       a scaled-up modal is taller, which is exactly the case the drag-region
       fix above is about.
+
+### Resizable sidebar *(new - needs looking at)*
+
+- [ ] **Drag the edge of the sidebar.** *Expect*: it resizes smoothly, the
+      cursor becomes a horizontal resize arrow over the handle, and the drag
+      keeps working when the pointer moves fast enough to outrun the handle.
+- [ ] **It survives a restart.** Widen it, close, reopen. *Expect*: still wide.
+- [ ] **Double-click the handle** restores the default width.
+- [ ] **Shrink the window very narrow, then widen it again.** *Expect*: the
+      sidebar gives way while narrow, and your chosen width comes back when
+      there is room. It must NOT be permanently shrunk - that is the specific
+      bug the two-clamp split exists to prevent.
+- [ ] **Profile tooltips still escape the sidebar** rather than being clipped -
+      the reason a real handle was used instead of CSS `resize`.
+- [ ] **At 640px wide** (the minimum window width) the widest pages still read
+      sensibly. The page area gained `min-width: 0`, which changes how narrow
+      windows lay out independently of the sidebar.
+- [ ] **Combined with App text size at 160%**, both still behave - the sidebar
+      width is in CSS pixels, so zoom scales it too.
 
 ### Detrimental spells on enemies *(data landed, engine not yet changed)*
 

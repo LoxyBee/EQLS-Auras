@@ -62,6 +62,12 @@
       <button class="nav-btn" data-page="page-about">About</button>
     </nav>
 
+    <!-- Drag handle for the sidebar width. A real element rather than CSS `resize`, because
+         `resize` needs a non-visible overflow and the profile tooltips deliberately escape
+         the sidebar (see .tooltip-bubble at left:100%), so they would be clipped. -->
+    <div id="sidebar-resizer" role="separator" aria-orientation="vertical"
+         aria-label="Resize sidebar" title="Drag to resize"></div>
+
     <div class="page-container">
       <section id="page-tracker" class="page active">
         <h2 class="page-title">Buff Tracker</h2>

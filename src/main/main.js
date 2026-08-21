@@ -315,14 +315,6 @@ app.whenReady().then(() => {
   iconService.registerProtocol();
   soundService.registerProtocol();
   createMainWindow();
-  // Re-apply the saved UI scale. A zoom factor lives on the web contents, not on disk, so it
-  // resets to 1 on every launch unless something puts it back. Set on did-finish-load rather than
-  // straight away: applying it before the page has loaded is silently dropped, which reads as
-  // "the setting did not save" when it saved perfectly well.
-  {
-    const win = getMainWindow();
-    if (win) win.webContents.once('did-finish-load', () => applyUiScale(loadJson('uiScale', 100)));
-  }
   widgetManager.initWidgets();
   logService.init();
   // Part of the shutdown instrumentation above - this is the third quit path,
@@ -430,21 +422,61 @@ ipcMain.handle('buffs:setBardSong', (_event, { name, isBardSong }) => {
 // some of them wrong in ways only visible by eye. Zoom scales text, spacing and controls together
 // and cannot drift out of step with itself.
 //
-// It applies to THIS window's web contents only, so the overlay is untouched - which is right:
-// every aura already has its own icon, text and label sizes, and scaling those from here would
-// fight the per-aura settings.
+// Intended to apply to THIS window only. Auras must not scale with it - each already has its own
+// icon, text and label sizes, and scaling those from here would fight the per-aura settings.
+//
+// Stated as intent rather than as fact, deliberately. Chromium keys zoom by origin within a
+// session; every window here (main, each aura, the ambiguous popup) loads a file:// page with no
+// separate `partition`, and file:// URLs have an empty host. So "a zoom factor cannot leak between
+// them" is an assumption about Chromium's internals, not something this code enforces. It is on
+// the live checklist in TESTING.md to confirm by eye. If it ever does leak, the fix is to give the
+// aura windows their own session partition rather than to stop scaling.
 const UI_SCALE_MIN = 80;
 const UI_SCALE_MAX = 160;
 
+function clampUiScale(pct) {
+  return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Number(pct) || 100));
+}
+
 function applyUiScale(pct) {
-  const clamped = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Number(pct) || 100));
+  const clamped = clampUiScale(pct);
   const win = getMainWindow();
   // setZoomFactor throws on a destroyed webContents - reachable if this lands during shutdown.
   if (win && !win.isDestroyed()) win.webContents.setZoomFactor(clamped / 100);
   return clamped;
 }
 
-ipcMain.handle('ui:getScale', () => loadJson('uiScale', 100));
+// Clamped on the way OUT as well as in. Returning the raw file contents means a hand-edited or
+// truncated uiScale.json - say `5` - reaches the slider, whose own min silently pulls it to 80,
+// so the number on screen and the zoom actually applied disagree with nothing reporting it.
+ipcMain.handle('ui:getScale', () => clampUiScale(loadJson('uiScale', 100)));
+
+// Sidebar width. TWO clamps, deliberately, and the distinction is the whole point:
+//
+//   clampStoredSidebarWidth - the preference range. Applied when SAVING and when reading back.
+//   fitSidebarWidth         - additionally caps against the current window width.
+//
+// Collapsing them into one is the obvious simplification and it quietly destroys the setting:
+// launch once in a narrow window, the stored 320 gets clamped down to fit, and the next save
+// writes the shrunken number over the user's choice. Widen the window again and their width is
+// gone for good. Keeping the stored preference untouched means a narrow window renders narrow
+// and a wide one restores exactly what they picked.
+const SIDEBAR_MIN = 140;
+const SIDEBAR_MAX = 420;
+const SIDEBAR_DEFAULT = 190;
+
+function clampStoredSidebarWidth(px) {
+  const n = Number(px);
+  if (!Number.isFinite(n)) return SIDEBAR_DEFAULT;
+  return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(n)));
+}
+
+ipcMain.handle('ui:getSidebarWidth', () => clampStoredSidebarWidth(loadJson('sidebarWidth', SIDEBAR_DEFAULT)));
+ipcMain.handle('ui:setSidebarWidth', (_event, px) => {
+  const width = clampStoredSidebarWidth(px);
+  saveJson('sidebarWidth', width);
+  return width;
+});
 ipcMain.handle('ui:setScale', (_event, pct) => {
   const applied = applyUiScale(pct);
   saveJson('uiScale', applied);
