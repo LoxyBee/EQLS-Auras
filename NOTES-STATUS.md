@@ -1,0 +1,122 @@
+# Where every note stands
+
+All 39 of your notes, in order, with what is built and what is not. Written 21 Aug 2026.
+
+**Status words used here**
+
+| | |
+| --- | --- |
+| **DONE** | Built, tested, and there is a test suite that fails if someone breaks it. |
+| **PART** | Some of it works. The missing half is named. |
+| **NOT** | Not built. Nothing is stopping it. |
+| **BLOCKED** | Not built, and it cannot be until something specific arrives — named each time. |
+
+Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, not this one.
+
+---
+
+## 1–10
+
+| # | What you asked for | | Where it stands |
+| --- | --- | --- | --- |
+| 1 | Promised Renewal is 15s and never scales with AA | **DONE** | 15s, scaling off. Reuse corrected to your 18s — the game data says 21.5 and is wrong. |
+| 2 | First-aggro premade, placeholder in the meantime | **PART** | Placeholder is in the Add Aura list. The feature needs a log sample of a real pull showing both damage directions. |
+| 3 | Only remember 14 memorised spells | **DONE** | Capped at 14, oldest dropped, on load as well as on insert. |
+| 4 | One toggle to hide every aura, ideally a hotkey | **DONE** | Pause key. Unlocking an aura still shows it, which is what you wanted. |
+| 5 | Make "Reset remembered choices" look dangerous | **DONE** | Red. |
+| 6 | Aura name in the move box, click it to open its settings | **DONE** | |
+| 7 | Make the app's own text bigger | **DONE** | |
+| 8 | Merge same-duration buffs into one tile with a count | **DONE** | |
+| 9 | Triggers that need any-of / all-of several lines | **NOT** | A trigger is still one line of text. See the note under 10. |
+| 10 | A trigger that runs its duration then rolls into a cooldown | **NOT** | Same shape as 9. Both want the trigger model widened once rather than bent twice — worth doing together. |
+
+## 11–20
+
+| # | What you asked for | | Where it stands |
+| --- | --- | --- | --- |
+| 11 | Track AoE mez per mob, duration by rank, case-insensitive | **PART** | Per-mob tracking is built and working — see the paragraph below. Missing: the duration still comes from the roster, not from which rank you cast. |
+| 12 | One mez tile: soonest timer, count, mob name | **PART** | Falls out of note 8's merging, so same-named mobs already collapse into one counted tile. There is no mez-specific tile and no yellow-to-red-at-8s rule. |
+| 13 | Drag the sidebar wider | **DONE** | |
+| 14 | Buff-timer premade: pick a spell, pick self or ally | **DONE** | Now also offers "something you cast it at". |
+| 15 | Cooldown premade: pick a skill, get its recast countdown | **NOT** | **Its blocker is gone.** Recast times now exist on 989 of 1,052 spells. Nothing in the app reads them yet. Cheapest big win on the list. |
+| 16 | Debuff-on-an-enemy premade, resist alert, ally toggle | **PART** | Premade built. Resist alert built (note 17). Still open: the toggle for debuffs *an ally* applied — that one needs a decision from you, below. |
+| 17 | Mesmerize worked example: rank, per-mob timer, RESIST flash | **PART** | Per-mob timer built. RESIST flash built. Missing: remembering the rank from the cast line. |
+| 18 | Count same-named mobs from the land and resist lines | **NOT** | Two things you should know before this gets built — below. |
+| 19 | Damage parser premade, placeholder in the meantime | **PART** | Placeholder only. |
+| 20 | Travel guide premade, placeholder in the meantime | **PART** | Placeholder only. The feature needs zone-connection data that does not exist anywhere yet. |
+
+## 21–30
+
+| # | What you asked for | | Where it stands |
+| --- | --- | --- | --- |
+| 21 | An aura showing which loadout profile is active | **NOT** | **Unblocked.** It was waiting on the text-only aura, which shipped as note 23. Small job now. |
+| 22 | "Unlock all" only on the main Overlay Auras page | **DONE** | |
+| 23 | Text-only display style, own size, own dwell time | **DONE** | Built as a *type* chosen when you create the aura, not a fourth radio — you agreed to that change. The dwell time is a setting, default 6s. |
+| 24 | Detection priority rework, plus a song-pulse check | **PART** | Spellbook now outranks the gem list. Rival-caster tracking built. Missing: the post-cast song-pulse auto-resolve, which needs a log sample proving the 6s repeat. |
+| 25 | A disabled "Global recovery time" placeholder | **DONE** | |
+| 26 | Drop a stale timer when a buff gets overwritten | **BLOCKED** | Needs one log line of a real overwrite. **This is the only outstanding item that makes the app show something actively wrong**, so it is worth the one cast it costs you. |
+| 27 | Promote "Buffs shown" to its own section, add gem slots | **NOT** | Still a topic inside Configuration. Nothing blocking it. The biggest unbuilt thing on the list. |
+| 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Needs `detection-debug.log` from 19 Aug around 12:15. The debug log now names the rival caster, so if it happens again the evidence will be there. |
+| 29 | Put EverQuest back in front after answering a popup | **DONE** | |
+| 30 | Read share codes out of chat | **BLOCKED** | Needs the server's per-line character limit confirmed, and whether + and = survive a chat line. |
+
+## 31–39
+
+| # | What you asked for | | Where it stands |
+| --- | --- | --- | --- |
+| 31 | Unlocking an aura shows it even when its profile is off | **DONE** | |
+| 32 | Volume slider forgets its saved value; re-range it | **DONE** | Load bug fixed. You decided to keep it 0–100, so nothing else is outstanding. |
+| 33 | Can't click the name box in New loadout profile | **PART** | A fix is in — the modal now opts out of the window-drag region, which would cause exactly that. **Never reproduced**, so it needs you to confirm. |
+| 34 | Buff and Debuff premade templates with sensible defaults | **PART** | The buff half is note 14's premade; the debuff half is note 16's. There is no separate "Debuff template" beyond that. |
+| 35 | Archive the old roster, rebuild from the EQL spreadsheet | **DONE** | 1,052 spells, every one categorised. Old 11,337-entry roster archived, not deleted. |
+| 36 | Sound ping on an incoming trade request | **DONE** | |
+| 37 | Colour tile borders by spell type, with a toggle | **DONE** | On by default. |
+| 38 | Apply an aura only in a certain zone | **NOT** | **Confirmed not blocked** — the zone line is in your logs across 58 zones. Watch out for instances: `Befallen` and `Befallen 1 (Awakened)` are different strings. |
+| 39 | Write down the multi-trigger idea, don't build it | **DONE** | Recorded, correctly unbuilt. Same feature as note 9. |
+
+---
+
+## The four things worth reading properly
+
+**Notes 11, 16 and 17 were never actually blocked, and you were right about that.**
+`FEATURES.md` claimed there was not a single mez line in your logs. That was written from one log
+instead of all seven. Across all of them: 251 mez landings, 129 charms, 970 resists, 1,440
+wear-offs. The real blocker was something else entirely — a landing on someone else was only
+accepted if the name was one single word, and a mob is "a greater kobold". That is now fixed, but
+only for spells an aura has explicitly asked to watch on enemies. It has to be opt-in: relaxing it
+for everything would have let in around 160,000 landings, and 106,876 of those are two bard songs
+pulsing on every mob in earshot.
+
+**Note 18's starting assumption is wrong, and it matters.** It says a mez broken early by damage
+may print nothing. It prints `<Name> has been awakened by <Breaker>.` — 142 times in your logs,
+naming who broke it. Roughly four breaks in five emit it. But before building on that: for a mez
+*you* cast it is redundant, because the wear-off line arrives in the same second and always first
+(98 times out of 98).
+
+**Note 18's counting will read `x1` almost always, with your current book.** `Mesmerize` is
+single-target: 214 of your 239 casts produced exactly one landing and not one produced a genuine
+multi-landing. Every AoE case in your logs is somebody else's `Mesmerization VI` or `VII`. The
+counting idea is sound — two `a sonic bat` landings from one cast really is two bats, and two
+separate death lines confirm it — but the tile will not light up until you cast a ranked mez.
+
+**One decision I need from you, for note 16.** You asked for an optional toggle to also track
+debuffs an *ally* applied, for boss debuffing. It can be done, but it will be half a feature and
+you should know why before I build it: the line that says a debuff *ended* only ever appears for a
+spell **you** cast. One of your logs has 14 mez landings and zero wear-off lines, because all 14
+were a groupmate's. So an ally-applied debuff would show up correctly and then never end on time —
+only on a guessed timer, and the rank (which sets the duration) could only be inferred from their
+cast line. My suggestion is to show ally-applied debuffs **without a countdown** rather than with a
+made-up one, but it is your call.
+
+---
+
+## What I would do next, in order
+
+1. **Note 15, the cooldown premade.** Its blocker is stale, the data is there, and the picker from
+   note 14 already fits it. Biggest result for the least work.
+2. **Note 27, the "Buffs shown" section.** Largest unbuilt piece with nothing standing in its way,
+   and it changes how every aura is set up.
+3. **Note 26, overwrite detection.** The only open item that makes the app show something wrong.
+   Costs you one cast to unblock.
+4. **Note 21, the profile label.** Small, and note 23 already unblocked it.
+5. **Notes 9 and 10 together.** Widen the trigger model once. Notes 38 and 39 both sit behind it.
