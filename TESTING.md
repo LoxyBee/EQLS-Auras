@@ -26,7 +26,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a
 character standing in a zone. If it is red, nothing below is worth doing yet -
 read the failure text, it says what broke and why.
 
-Seventeen suites at the time of writing:
+Eighteen suites at the time of writing:
 
 | Suite | Guards |
 |---|---|
@@ -40,6 +40,7 @@ Seventeen suites at the time of writing:
 | `test/sound-only.test.js` | sound-only auras: the mode survives saving and sharing, a foreign mode cannot arrive by either import route, every aura type still carries every sound setting, and the overlay's early return stays between the alerts and the drawing |
 | `test/visibility.test.js` | the whole precedence model - profile membership as the on/off switch, "Hide auras" beating unlock, unlocking one aura beating its profile, and off meaning silent as well as invisible |
 | `test/move-box.test.js` | the name pill in the move box: that it opts out of the drag region (a click inside one never fires), that it does not swallow the draggable area, and that every hop from the pill to the settings page exists |
+| `test/buff-timer-premade.test.js` | the Buff timer premade: that it builds one-spell auras in a single call, offers only spells the app can detect, and refuses to offer ally tracking for a spell that has no third-person message |
 | `test/infinite-duration.test.js` | spells that never run out: that they are marked in the overrides file with a reason, that no sweep removes them, that nothing instant got marked by mistake, and the three places where `null <= 30` being true would have broken them |
 | `test/detection.test.js` | the detection engine's first real coverage - a landing starts a timer, its ended text stops it, a blocked buff never lands, someone else's cast is not counted as yours, and a spell with no duration produces no tile instead of an unkillable one |
 | `test/spellbook-diagnostic.test.js` | that the spellbook status says what is missing and how to fix it, rather than promising it will appear on its own |
@@ -301,6 +302,23 @@ a full bar, sorted to the bottom of the list, and they never disappear on their 
       marked them, because you named Fury and guessing on your behalf is how a wrong number gets
       into the roster. Confirm and they are a two-line addition to
       `tools/roster-overrides.json`, which now carries the instructions.
+
+### The "Buff timer" premade *(new - the first one that asks a question)*
+
+"+ Add aura" > Premade aura > **Buff timer**. Pick one spell, say whether you are watching it on
+yourself or on someone you cast it on, and the aura is built.
+
+- [ ] **Search for a buff you use** and pick it. *Expect*: a list that narrows as you type, each
+      entry saying how long the spell lasts and whether it can be watched on an ally.
+- [ ] **Create it on yourself and cast the spell.** *Expect*: one tile, counting down.
+- [ ] **Do it again with "Someone you cast it on"** for a spell you buff others with. *Expect*: it
+      tracks per person, the same as the Ally Buffs aura does.
+- [ ] **Find a spell where "Someone you cast it on" is greyed out.** *Expect*: an explanation
+      underneath saying the app has no message for that spell landing on someone else. 53 of the
+      720 trackable spells are like this. If one you rely on is in that group, tell me the exact
+      line the game prints when it lands on someone else and it becomes trackable.
+- [ ] **Search for something nonsense.** *Expect*: a message saying only spells with a landing
+      message can be tracked - not just "no results".
 
 ### Instant spells - nukes, heals, gates *(new - and this fixed the NaN tile)*
 

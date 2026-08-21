@@ -1041,6 +1041,13 @@ h4 {
   background: var(--panel-2);
 }
 
+/* An option that exists but cannot apply to what you have just picked. Dimmed rather than
+   removed, so it reads as "not possible for this spell" instead of the choice having moved. */
+label.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .premade-widget-choice:hover {
   background: var(--panel);
   border-color: var(--accent);

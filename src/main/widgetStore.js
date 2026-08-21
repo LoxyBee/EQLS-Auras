@@ -612,6 +612,28 @@ class WidgetStore {
     return widget;
   }
 
+  // The "buff timer" premade (note 14) - one named spell, on you or on an ally, built rather than
+  // configured by hand. There is no new detection here at all: both shapes were always supported
+  // aura configurations, and this is purely a guided way to reach one.
+  //
+  // Deliberately built in ONE call rather than by chaining four setters from the renderer. Each
+  // of those would be a separate IPC round trip that pushes a config change to the overlay, so
+  // the aura would visibly assemble itself - source, then filter, then name - on screen.
+  createBuffTimer(name, { spellName, source, activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name || spellName || 'Buff timer');
+    widget.buffSource = source === 'ally' ? 'ally' : 'self';
+    widget.buffFilterMode = 'explicit';
+    widget.buffNames = spellName ? [spellName] : [];
+    // One spell means one tile, so the four-wide grid a "show everything" aura wants would be
+    // three empty columns. defaultCustomWidget already picks 1 for exactly this reason; this is
+    // just being explicit that it matters here.
+    widget.iconsPerRow = 1;
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
   createSoundOnly(name, { activeProfileIds } = {}) {
     const widget = defaultCustomWidget(name);
     widget.displayMode = 'sound-only';

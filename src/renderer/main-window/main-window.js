@@ -1979,6 +1979,15 @@ function initWidgetsPanel() {
         'three strengths of the message.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'dispelled'),
     },
+    {
+      id: 'buff-timer',
+      name: 'Buff timer',
+      description:
+        'Pick one spell and whether you are watching it on yourself or on someone you cast it on, ' +
+        'and the aura is built for you. The only premade that asks a question first.',
+      // No create() - this one opens a panel instead. See renderPremadeList.
+      panel: 'buff-timer',
+    },
   ];
 
   // Not-yet-built premade ideas - shown as visible-but-disabled entries at
@@ -2035,6 +2044,117 @@ function initWidgetsPanel() {
     },
   ];
 
+  // ---- The buff-timer premade (note 14) --------------------------------------------------
+  //
+  // The first premade that asks something before it builds. Kept generic on purpose: the planned
+  // cooldown and enemy-debuff premades are the same shape - pick one spell, answer one question -
+  // and should reuse this rather than each growing their own picker.
+  const buffTimerSearch = document.getElementById('buff-timer-search');
+  const buffTimerListEl = document.getElementById('buff-timer-list');
+  const buffTimerChosenRow = document.getElementById('buff-timer-chosen-row');
+  const buffTimerChosenEl = document.getElementById('buff-timer-chosen');
+  const buffTimerSourceRow = document.getElementById('buff-timer-source-row');
+  const buffTimerAllyLabel = document.getElementById('buff-timer-ally-label');
+  const buffTimerAllyWarning = document.getElementById('buff-timer-ally-warning');
+  const buffTimerCreateRow = document.getElementById('buff-timer-create-row');
+  const buffTimerCreateBtn = document.getElementById('buff-timer-create-btn');
+
+  // The list is capped for the same reason the per-aura picker is: 720 trackable spells rendered
+  // at once is a long scroll nobody reads, and typing two letters is faster than any of it.
+  const BUFF_TIMER_RENDER_CAP = 40;
+  let trackableBuffs = [];
+  let buffTimerChoice = null;
+
+  function renderBuffTimerList() {
+    const query = buffTimerSearch.value.trim().toLowerCase();
+    buffTimerListEl.innerHTML = '';
+    if (!query) {
+      buffTimerListEl.innerHTML =
+        `<li class="empty">Type to search ${trackableBuffs.length} spells this app can track...</li>`;
+      return;
+    }
+    const matches = trackableBuffs.filter((b) => b.name.toLowerCase().includes(query));
+    if (!matches.length) {
+      // Says WHY rather than just "none". A spell can be perfectly real and still not be here,
+      // because the roster has no landing message for it - and that is a different problem from
+      // having spelled it wrong.
+      buffTimerListEl.innerHTML =
+        '<li class="empty">Nothing matching. Only spells the app has a landing message for can be tracked.</li>';
+      return;
+    }
+    for (const buff of matches.slice(0, BUFF_TIMER_RENDER_CAP)) {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'premade-widget-choice';
+      const strong = document.createElement('strong');
+      strong.textContent = buff.name;
+      const span = document.createElement('span');
+      const howLong = buff.infinite ? 'lasts until dispelled' : buff.durationSec ? `${buff.durationSec}s` : 'no duration';
+      span.textContent = buff.ally ? `${howLong} - can be watched on you or on an ally` : `${howLong} - on you only`;
+      btn.append(strong, span);
+      btn.addEventListener('click', () => chooseBuffTimerSpell(buff));
+      li.appendChild(btn);
+      buffTimerListEl.appendChild(li);
+    }
+    if (matches.length > BUFF_TIMER_RENDER_CAP) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = `...and ${matches.length - BUFF_TIMER_RENDER_CAP} more - keep typing to narrow it down.`;
+      buffTimerListEl.appendChild(li);
+    }
+  }
+
+  function chooseBuffTimerSpell(buff) {
+    buffTimerChoice = buff;
+    buffTimerChosenEl.textContent = buff.name;
+    buffTimerChosenRow.style.display = '';
+    buffTimerSourceRow.style.display = '';
+    buffTimerCreateRow.style.display = '';
+
+    // The risk note 14 names: offering "on an ally" for a spell whose roster entry has no
+    // third-person landing text builds an aura that silently never lights up. Disabled rather
+    // than hidden, with the reason, so it reads as "not possible for this spell" instead of the
+    // option having mysteriously moved.
+    const allyRadio = buffTimerAllyLabel.querySelector('input');
+    allyRadio.disabled = !buff.ally;
+    buffTimerAllyLabel.classList.toggle('disabled', !buff.ally);
+    if (!buff.ally) {
+      allyRadio.checked = false;
+      buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
+      buffTimerAllyWarning.textContent =
+        `The app has no message for "${buff.name}" landing on someone else, so it can only be ` +
+        'watched on you. An aura set to watch it on an ally would never light up.';
+      buffTimerAllyWarning.style.display = '';
+    } else {
+      buffTimerAllyWarning.style.display = 'none';
+    }
+  }
+
+  function resetBuffTimerPanel() {
+    buffTimerChoice = null;
+    buffTimerSearch.value = '';
+    buffTimerChosenRow.style.display = 'none';
+    buffTimerSourceRow.style.display = 'none';
+    buffTimerCreateRow.style.display = 'none';
+    buffTimerAllyWarning.style.display = 'none';
+    renderBuffTimerList();
+  }
+
+  buffTimerSearch.addEventListener('input', renderBuffTimerList);
+  buffTimerCreateBtn.addEventListener('click', () => {
+    if (!buffTimerChoice) return;
+    const source = buffTimerSourceRow.querySelector('input[name="buff-timer-source"]:checked').value;
+    // Named after the spell, because that is what the user just picked and searched for - having
+    // to name it as well would be a second question for no information.
+    window.eqTracker
+      .createBuffTimerWidget(buffTimerChoice.name, buffTimerChoice.name, source)
+      .then((config) => {
+        closeAddWidgetModal();
+        focusWidget(config.id);
+      });
+  });
+
   function renderPremadeList() {
     premadeListEl.innerHTML = '';
     for (const premade of PREMADE_WIDGETS) {
@@ -2048,6 +2168,17 @@ function initWidgetsPanel() {
       span.textContent = premade.description;
       btn.append(strong, span);
       btn.addEventListener('click', () => {
+        // A premade with a panel asks something first; the rest build immediately.
+        if (premade.panel) {
+          addWidgetPanels.forEach((panel) => {
+            panel.style.display = panel.id === `add-widget-${premade.panel}-panel` ? '' : 'none';
+          });
+          if (premade.panel === 'buff-timer') {
+            resetBuffTimerPanel();
+            buffTimerSearch.focus();
+          }
+          return;
+        }
         premade.create(premade.name).then((config) => {
           closeAddWidgetModal();
           focusWidget(config.id);
@@ -2082,6 +2213,13 @@ function initWidgetsPanel() {
   }
 
   function openAddWidgetModal() {
+    // Fetched once, when the modal opens, rather than held for the session: the roster changes
+    // when someone edits a buff on the Known Buffs page, and a stale list would offer a spell
+    // that can no longer be tracked.
+    window.eqTracker.getTrackableBuffs().then((buffs) => {
+      trackableBuffs = buffs;
+      renderBuffTimerList();
+    });
     showAddWidgetChoices();
     importCodeInput.value = '';
     importStatus.textContent = '';

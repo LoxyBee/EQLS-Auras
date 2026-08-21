@@ -692,7 +692,7 @@ line.
 | 11 | Track AoE mez per mob: start each timer from the land line (never the c... | core-feature | large | blocked |
 | 12 | Show mez as a single consolidated tile - the mob breaking soonest, a co... | feature | medium |  |
 | 13 | Make the main window's left sidebar resizable by dragging its edge | qol | small | **done** |
-| 14 | Premade "buff timer" aura: pick a spell from a dropdown and whether it'... | core-feature | medium |  |
+| 14 | Premade "buff timer" aura: pick a spell from a dropdown and whether it'... | core-feature | medium | **done** |
 | 15 | Premade "spell cooldown" aura: pick a skill from a dropdown and get a r... | core-feature | medium | blocked |
 | 16 | Premade "debuff on an enemy" aura (mez, malo, slow, etc.) that shows ev... | core-feature | needs-design | blocked |
 | 17 | Build the Mesmerization aura as the first worked example of the enemy-d... | feature | large | blocked |
@@ -702,7 +702,7 @@ line.
 | 21 | An in-game aura showing which loadout profile is currently active, appe... | qol | small | blocked |
 | 22 | Show the "All auras" master controls (Unlock all auras) only on the Ove... | qol | trivial | **done** |
 | 23 | Add a third display style, "Text only", alongside List and Icons - with... | core-feature | large | **done** |
-| 24 | Rework spell detection into the stated priority order - and add a new p... | core-feature | large | blocked |
+| 24 | Rework spell detection into the stated priority order - and add a new p... | core-feature | large | **partly done** |
 | 25 | Add a disabled "Global recovery time" entry to the premade aura list as... | qol | trivial | **done** |
 | 26 | Detect when a newly landed buff overwrites one that is already running,... | feature | needs-design | blocked |
 | 27 | Promote "Buffs shown" out of Configuration into its own section, sittin... | core-feature | large |  |
@@ -1224,7 +1224,29 @@ leaves the nav unusable, so clamp it to a sensible min and max.
 
 #### #14 — Premade "buff timer" aura: pick a spell from a dropdown and whether it's cast on you or on an ally, and have the aura built for you - and add it to the premade aura list
 
-`core-feature` · `medium` (about a day)
+`core-feature` · `medium` (about a day) · **built 20 August 2026**
+
+> **A searchable list, not a dropdown**, exactly as the note argues - though the number is now 720
+> trackable spells rather than 11,337 roster entries, because the roster rebuild threw out
+> everything this server does not have.
+>
+> **Only spells the app can actually detect are offered.** A spell with no landing message cannot
+> be tracked at all, so offering it would build an aura that never does anything.
+>
+> **The risk named below is handled the way it asks.** Ally tracking needs third-person landing
+> text, and 53 trackable spells do not have any. For those the "on an ally" option is **disabled
+> with the reason shown**, rather than hidden - hiding it reads as the option having moved, while
+> disabling it reads as "not possible for this spell". It also clears any ally choice already
+> made, so picking a self-only spell second cannot leave a selection that would build a dead aura.
+>
+> **Built generically, as the note asks.** It is the first premade that asks a question before
+> building, so the list now understands `panel` as well as `create` - the planned cooldown (15)
+> and enemy-debuff (16) premades are the same shape and should reuse this rather than each growing
+> their own picker.
+>
+> One thing not in the note: the aura is created in a SINGLE call rather than by chaining setters
+> from the renderer. Four IPC round trips would each push a config change to the overlay, so the
+> aura would visibly assemble itself on screen - source, then filter, then name.
 
 No new detection at all - "self buff on one named spell" and "ally buff on one named spell" are
 both already fully supported aura configurations. This is purely a guided way to create one,

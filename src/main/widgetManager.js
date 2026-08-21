@@ -237,6 +237,16 @@ function createTextAuraWidget(name, preset) {
   return config;
 }
 
+function createBuffTimerWidget(name, spellName, source) {
+  const config = widgetStore.createBuffTimer(name, {
+    spellName,
+    source,
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
 function createSoundOnlyWidget(name) {
   const config = widgetStore.createSoundOnly(name, { activeProfileIds: [getActiveProfileIdFn()] });
   // Still gets a real overlay window, exactly like every other aura. That window is where the
@@ -900,6 +910,7 @@ module.exports = {
   createAllyBuffsWidget,
   createSoundOnlyWidget,
   createTextAuraWidget,
+  createBuffTimerWidget,
   exportWidget,
   peekWidgetCode,
   importWidget,

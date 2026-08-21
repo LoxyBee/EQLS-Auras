@@ -120,6 +120,9 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createAllyBuffsWidget: (name) => ipcRenderer.invoke('widget:createAlly', { name }),
   createSoundOnlyWidget: (name) => ipcRenderer.invoke('widget:createSoundOnly', { name }),
   createTextAuraWidget: (name, preset) => ipcRenderer.invoke('widget:createTextAura', { name, preset }),
+  createBuffTimerWidget: (name, spellName, source) =>
+    ipcRenderer.invoke('widget:createBuffTimer', { name, spellName, source }),
+  getTrackableBuffs: () => ipcRenderer.invoke('buffs:trackable'),
   setWidgetTextAuraMessage: (id, value) => ipcRenderer.invoke('widget:setTextAuraMessage', { id, value }),
   setWidgetTextAuraSize: (id, value) => ipcRenderer.invoke('widget:setTextAuraSize', { id, value }),
   setWidgetTextAuraInstantSec: (id, value) =>

@@ -1180,6 +1180,43 @@
         <ul id="add-widget-premade-list" class="plain-list"></ul>
       </div>
 
+      <!-- The first premade that asks a question before it builds anything. Deliberately its own
+           panel rather than a dropdown on the list: 720 spells can be tracked, which is far past
+           what a dropdown can be used with, so it reuses the same search-as-you-type shape the
+           per-aura buff picker already uses. Built generically enough that the planned cooldown
+           and enemy-debuff premades can reuse it rather than each growing their own. -->
+      <div id="add-widget-buff-timer-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <p class="hint">
+          Pick one spell and whether you are watching it on yourself or on someone you cast it on.
+          The aura is built for you with sensible defaults, and you can change anything afterwards.
+        </p>
+        <div class="row">
+          <input
+            type="text"
+            id="buff-timer-search"
+            class="text-input"
+            placeholder="Search spells you can track..."
+          />
+        </div>
+        <ul id="buff-timer-list" class="buff-list modal-list"></ul>
+        <div class="row" id="buff-timer-chosen-row" style="display:none">
+          <span class="label">Watching:</span>
+          <strong id="buff-timer-chosen"></strong>
+        </div>
+        <div class="row" id="buff-timer-source-row" style="display:none">
+          <span class="label">On:</span>
+          <label><input type="radio" name="buff-timer-source" value="self" checked /> Yourself</label>
+          <label id="buff-timer-ally-label">
+            <input type="radio" name="buff-timer-source" value="ally" /> Someone you cast it on
+          </label>
+        </div>
+        <p class="hint" id="buff-timer-ally-warning" style="display:none"></p>
+        <div class="row" id="buff-timer-create-row" style="display:none">
+          <button type="button" id="buff-timer-create-btn" class="btn-prominent">Create this aura</button>
+        </div>
+      </div>
+
       <div id="add-widget-custom-panel" class="add-widget-panel" style="display:none">
         <button type="button" class="add-widget-back">&larr; Back</button>
         <div class="row">

@@ -631,6 +631,23 @@ ipcMain.handle('widget:createSoundOnly', (_event, { name }) => widgetManager.cre
 ipcMain.handle('widget:createTextAura', (_event, { name, preset }) =>
   widgetManager.createTextAuraWidget(name, preset)
 );
+ipcMain.handle('widget:createBuffTimer', (_event, { name, spellName, source }) =>
+  widgetManager.createBuffTimerWidget(name, spellName, source)
+);
+// Only the spells that can actually be tracked, and which of the two ways each one supports.
+// The picker needs this to avoid offering "on an ally" for a spell whose roster entry has no
+// third-person landing text - that would build an aura which silently never lights up.
+ipcMain.handle('buffs:trackable', () =>
+  buffStore
+    .getAll()
+    .filter((e) => e.landingText && String(e.landingText).trim())
+    .map((e) => ({
+      name: e.name,
+      ally: !!(e.othersLandingSuffix && String(e.othersLandingSuffix).trim()),
+      durationSec: typeof e.durationSec === 'number' ? e.durationSec : null,
+      infinite: !!e.infiniteDuration,
+    }))
+);
 ipcMain.handle('widget:setTextAuraMessage', (_event, { id, value }) =>
   widgetManager.setTextAuraMessage(id, value)
 );
