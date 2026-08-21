@@ -36,10 +36,12 @@ at the repo root ships.
 
 ## 2. Current state
 
-**17 commits ahead of `da698b4`. Working tree clean** apart from the untracked personal file.
+**23 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
+`.gitignore` - it was staged once by a careless `git add -A` and amended straight back out, and
+the ignore entry is what makes that command safe to type here at all.
 
 ```
-npm test   ->  8 suites, 62 cases, green
+npm test   ->  11 suites, 106 cases, green
 ```
 
 | Suite | Cases | Guards |
@@ -51,7 +53,16 @@ npm test   ->  8 suites, 62 cases, green
 | `test/focus-game.test.js` | 6 | refocusing EverQuest |
 | `test/renderer-wiring.test.js` | 13 | renderer structure, sliders, drag regions, scale, sidebar |
 | `test/trade-ping.test.js` | 7 | the trade-request pattern, against real logs |
+| `test/sound-only.test.js` | 21 | sound-only auras, both import routes, sound parity across aura types |
+| `test/visibility.test.js` | 14 | the whole on-screen / audible precedence model |
+| `test/move-box.test.js` | 9 | the move-box name pill and its drag-region trap |
 | `tools/lib/xlsx.test.js` | 7 | the spreadsheet reader |
+
+**`test/visibility.test.js` uses a new technique worth knowing about:** it replaces `electron` in
+the require cache with a small fake before requiring `widgetManager.js`, which lets the real
+manager be driven directly. It proves this app's decision logic and nothing about how a real
+BrowserWindow behaves, and the suite says so at the top. Use it again where the decision is dense;
+do not use it where the Electron behaviour itself is the thing in question.
 
 Baseline update when a roster change is intended: `node test/roster.test.js --update`.
 
@@ -164,6 +175,42 @@ user's hand-made buffs. **The tests caught that within a minute of being written
 
 ---
 
+### Since the compaction — sound-only auras, and the visibility model
+
+**Sound-only auras (asked directly, 20 Aug).** A third `displayMode`, not a fourth `kind`. As a
+mode, every filter, buff source, custom timer and sound setting keeps working untouched, any aura
+can be switched to it and back losslessly, and the share-code path, profiles and the aura list
+needed no new concept. It keeps its overlay window - that window is where the sound comes from,
+and `overlay.js` already owns the entire alert pipeline, so the change is one early `return`
+placed between the alerts firing and the DOM being built.
+
+**A real bug surfaced by that work: hiding a window never silenced it.** A hidden overlay keeps
+receiving engine broadcasts and keeps running `render()`, which is where the alert sounds fire.
+Invisible and silent were the same thing until an aura could be nothing but sound. The rule now:
+profile membership silences (it is the on/off switch); the screen-clearing rules deliberately do
+not, because hearing a buff about to drop while tabbed out is most of the point.
+
+**Visibility precedence (notes 4 + 31 + 6, build order step 5).** `shouldBeOnScreen` now carries
+the model at the top of the function - ON/OFF rules versus SCREEN-CLEARING rules - and its clause
+order IS the behaviour. Master hide beats unlock, deliberately. Per-aura unlock beats profile-off;
+"Unlock all auras" does not. Sound-only is exempt from screen-clearing and never from profile.
+
+**Not obvious, learned the hard way here:**
+
+- `createWidgetWindow` locks every window it creates. The window created BY an unlock is the one
+  exception; without the `runtimeLock.has` guard the unlock is overwritten the moment it works.
+- A sound-only aura must stay click-through however it is locked, or an unlocked one is an
+  invisible rectangle over the game swallowing clicks.
+- `applyCodeToSelfBuffs` patches in place via `update()`, which does NOT run `normalizeWidget`.
+  It is the one import route that skips the guards, and Self Buffs is the one aura that cannot be
+  deleted to escape a bad value.
+- A click listener inside a `-webkit-app-region: drag` box never fires. No error, no console
+  output. The move-box name must be an explicit no-drag child, and small.
+- Matching source text for `drag` also matches `no-drag`. Capture and compare exactly, and strip
+  comments first, or the test passes against prose describing the rule.
+
+---
+
 ## 5. Open — needs Shara
 
 1. ~~The 0–200 volume range (note 32b).~~ **Closed 20 Aug 2026** — Shara: "keep the volume slider
@@ -172,7 +219,14 @@ user's hand-made buffs. **The tests caught that within a minute of being written
    no already-minted share code changes meaning.
 2. **Note 33** — does the profile name box fail every time, or only in a small window? If it fails
    maximised, my diagnosis is wrong and the real cause is unfound.
-3. Everything in `TESTING.md`'s **NEEDS THE LIVE CLIENT** section is unverified.
+3. **Note 4's hotkey** — not built. A `globalShortcut` is swallowed before EverQuest sees it, so
+   it has to be a key she never uses in game. Needs her to name one, or to say skip it.
+4. **Note 8's two interpretations** — "the player name" on a merged tile (the recipient, or her
+   own character?), and "same duration" (the full duration, or landed in the same burst?). Both
+   are flagged in the note itself. This is what blocks build order step 6.
+5. **Should copying a share code say that a custom sound FILE does not travel?** For a list aura
+   that is a cosmetic loss; for a sound-only aura the sound IS the aura.
+6. Everything in `TESTING.md`'s **NEEDS THE LIVE CLIENT** section is unverified.
 
 ---
 
@@ -180,15 +234,13 @@ user's hand-made buffs. **The tests caught that within a minute of being written
 
 `FEATURES.md` holds all 39 raw notes, sorted, with a 13-step build order and twelve groups.
 
-- Steps **1–4 done** (placeholders, small correctness, main-window chrome, alert layer).
-- **Next: step 5** — notes **4 + 31 together**, the aura visibility precedence model. They must
-  land as one change or they fight over which override wins.
-  - The relevant code is `widgetManager.shouldBeOnScreen`, which today puts profile membership
-    ABOVE unlock, so an aura toggled off for the current profile cannot be moved. Note 31 wants
-    unlock to beat profile membership; note 4 adds a master hide-all that must slot into the same
-    precedence.
-- Then step 6 (note 8, merged tiles), step 7 (note 23, text-only mode — unblocks four others),
-  step 8 (note 35 data), step 9 (note 24, detection rework), and so on.
+- Steps **1–5 done** (placeholders, small correctness, main-window chrome, alert layer, and the
+  visibility precedence model: notes 4, 31 and 6). Plus the sound-only aura, asked for directly.
+- **Next: step 6** — note **8**, merged tiles. **Blocked on two interpretations** (see Open above);
+  the count badge is the reusable half and note 12 wants the identical one, so build it once.
+- Then step 7 (note 23, text-only mode — unblocks four others; **half its groundwork is already
+  laid** by the sound-only display mode, see the box on that note), step 8 (note 35 data),
+  step 9 (note 24, detection rework), and so on.
 - **18 of 39 notes are blocked** on a real log line, a decision, or data that does not exist. They
   are listed together in `FEATURES.md` with exactly what is missing.
 
