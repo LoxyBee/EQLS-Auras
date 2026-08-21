@@ -27,6 +27,7 @@ async function init() {
   initCharacterSettingsPanel();
   initUiScale();
   initSidebarResize();
+  initTradePing();
 }
 
 // Custom title bar (UX_VISUAL_DESIGN.md / the frameless-window follow-up) -
@@ -2942,5 +2943,81 @@ function initSidebarResize() {
   handle.addEventListener('dblclick', () => {
     apply(SIDEBAR_DEFAULT);
     window.eqTracker.setSidebarWidth(SIDEBAR_DEFAULT).then((saved) => { stored = saved; });
+  });
+}
+
+// Sound-only alert for an incoming trade request.
+//
+// The first alert in the app that draws nothing. Every other sound is a per-aura setting fired
+// from a tile changing state, so it needs an aura to exist and a tile to appear. A trade request
+// wants neither - it is a nudge, and building it as an aura would put a countdown on screen for
+// something with no duration.
+//
+// It lives entirely in this window, with no new plumbing, because the settings renderer already
+// receives every log line: logService broadcasts `log:line` for the raw feed on the Log page and
+// preload exposes onLogLine. This just listens to the same stream. The window is alive for the
+// app's whole lifetime (closing it quits the app), so there is no case where the app is running
+// and this listener is not.
+//
+// Deliberately NOT firing on completion or cancellation: the note asked for the request, which is
+// the one that needs attention while you are looking at something else. The other lines are in
+// the log if they are ever wanted.
+const TRADE_REQUEST_PATTERN = /^([A-Za-z]+) is interested in making a trade\.$/;
+
+function initTradePing() {
+  const checkbox = document.getElementById('trade-ping-checkbox');
+  const testBtn = document.getElementById('trade-ping-test-btn');
+  if (!checkbox) return;
+
+  let enabled = false;
+  let audioCtx = null;
+
+  // Two quick notes, the same shape as the overlay's alert beep. Built here rather than shared
+  // with overlay.js because the two windows cannot share a module - and an AudioContext is
+  // created lazily, since one made before any user interaction starts suspended.
+  function ping() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtx;
+      if (ctx.state === 'suspended') ctx.resume();
+      [[880, 0], [1320, 120]].forEach(([freq, delayMs]) => {
+        const startAt = ctx.currentTime + delayMs / 1000;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(0.18, startAt + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.11);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(startAt);
+        osc.stop(startAt + 0.13);
+      });
+    } catch {
+      // No audio device, or a context the browser refuses to start. A missed ping is not worth
+      // an error dialog over.
+    }
+  }
+
+  window.eqTracker.getTradePing().then((on) => { enabled = on; checkbox.checked = on; });
+
+  checkbox.addEventListener('change', () => {
+    enabled = checkbox.checked;
+    window.eqTracker.setTradePing(enabled);
+    // Play on enabling so it is obvious what was just turned on, and so the AudioContext is
+    // created from a real click rather than from a log line arriving with no user gesture behind
+    // it - which is the situation browsers refuse to start audio in.
+    if (enabled) ping();
+  });
+
+  testBtn.addEventListener('click', ping);
+
+  window.eqTracker.onLogLine((line) => {
+    if (!enabled) return;
+    // Timestamps are stripped the same way the detection engine does it, so a line is matched on
+    // its text alone.
+    const stripped = String(line).replace(/^\[[^\]]+\]\s*/, '').trim();
+    if (TRADE_REQUEST_PATTERN.test(stripped)) ping();
   });
 }

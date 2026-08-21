@@ -471,6 +471,13 @@ function clampStoredSidebarWidth(px) {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(n)));
 }
 
+ipcMain.handle('ui:getTradePing', () => loadJson('tradePingEnabled', false) === true);
+ipcMain.handle('ui:setTradePing', (_event, enabled) => {
+  const on = enabled === true;
+  saveJson('tradePingEnabled', on);
+  return on;
+});
+
 ipcMain.handle('ui:getSidebarWidth', () => clampStoredSidebarWidth(loadJson('sidebarWidth', SIDEBAR_DEFAULT)));
 ipcMain.handle('ui:setSidebarWidth', (_event, px) => {
   const width = clampStoredSidebarWidth(px);

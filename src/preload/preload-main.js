@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setUiScale: (pct) => ipcRenderer.invoke('ui:setScale', pct),
   getSidebarWidth: () => ipcRenderer.invoke('ui:getSidebarWidth'),
   setSidebarWidth: (px) => ipcRenderer.invoke('ui:setSidebarWidth', px),
+  getTradePing: () => ipcRenderer.invoke('ui:getTradePing'),
+  setTradePing: (enabled) => ipcRenderer.invoke('ui:setTradePing', enabled),
 
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:maximizeToggle'),

@@ -142,6 +142,26 @@ yours.
 - [ ] **Combined with App text size at 160%**, both still behave - the sidebar
       width is in CSS pixels, so zoom scales it too.
 
+### Trade request ping *(new - needs looking at)*
+
+The line pattern is tested against your real logs; whether a sound comes out of
+your speakers is not testable here.
+
+- [ ] **Turn it on in Setup > Trade requests.** *Expect*: a two-note ping the
+      moment you enable it, confirming what was just switched on.
+- [ ] **Test button** plays the same ping.
+- [ ] **Have someone request a trade.** *Expect*: the ping fires once, and
+      nothing appears on screen - this is the first sound in the app with no
+      tile behind it.
+- [ ] **Complete or cancel that trade.** *Expect*: NO further ping. Only the
+      request pings, deliberately.
+- [ ] **It survives a restart** with the checkbox still ticked.
+- [ ] **With the setting off**, a trade request pings nothing.
+- [ ] Worth one check: **does it ping when the settings window is minimised?**
+      It lives in that window's renderer. The window stays alive for the app's
+      whole lifetime, so it should - but browsers throttle background timers,
+      and if it turns out to miss pings while minimised, say so.
+
 ### Detrimental spells on enemies *(data landed, engine not yet changed)*
 
 The roster now carries all 327 detrimental spells with their real text, and
