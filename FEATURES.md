@@ -131,9 +131,29 @@ backlog so the note numbers stay traceable to what you originally wrote.
 > "a new aura type should also be added as a pure sound aura, with a premade option to create
 > one. sound options should also be available for all aura types if not already."
 
-**Built as a third display style, not a fourth kind of aura.** That was the one real design
+> **Moved, 20 August 2026.** It shipped as a Display style radio beside List and Icons. When the
+> text aura was designed you said a radio per mode "might cause confusion with all the options,
+> and my goal is accessibility over all" - and that argument applies to this one just as well, so
+> **Custom sound aura** now sits in the custom list beside Custom buff aura, Custom timer aura and
+> Custom text aura, and the Display style radios are hidden on one.
+>
+> The generic "Sound only" **premade entry was removed** as part of the same move rather than as
+> an extra. The premade panel is for auras "already set up for a specific purpose"; a blank sound
+> aura is not one, and leaving it in both places would have been two routes to the identical
+> thing - exactly the option overload the move exists to reduce.
+>
+> It also gained what the text aura has: it can be pointed at **your own text triggers**, not just
+> buffs. Both types exist to react to something happening, and that is as often a line of log text
+> as it is a buff.
+>
+> One consequence worth knowing: like a text aura, a sound aura can no longer be converted back
+> into a list. It is a type now, fixed when it is made - the same way a custom timer aura's source
+> always has been.
+
+**Built as a display MODE underneath, not a fourth kind of aura.** That was the one real design
 decision and it is worth writing down, because the obvious reading of "a new aura type" points
-the other way. Every filter, buff source, custom timer and sound setting the app already has
+the other way. Where it is CHOSEN is a separate question, and the answer to that changed later -
+see the box above. Every filter, buff source, custom timer and sound setting the app already has
 keeps working untouched; any existing aura can be switched to Sound only and back without
 losing a single setting; and nothing in the share-code path, the profile system or the aura list
 had to learn a new concept. A fourth kind would have meant teaching all of that about another

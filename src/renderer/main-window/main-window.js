@@ -1047,6 +1047,7 @@ function initWidgetsPanel() {
   const importStatus = document.getElementById('modal-import-widget-status');
   const premadeListEl = document.getElementById('add-widget-premade-list');
   const modalAddTextWidgetBtn = document.getElementById('modal-add-text-widget-btn');
+  const modalAddSoundWidgetBtn = document.getElementById('modal-add-sound-widget-btn');
   const modalNewWidgetNameInput = document.getElementById('modal-new-widget-name');
   const modalAddBuffWidgetBtn = document.getElementById('modal-add-buff-widget-btn');
   const modalAddTimerWidgetBtn = document.getElementById('modal-add-timer-widget-btn');
@@ -1428,8 +1429,13 @@ function initWidgetsPanel() {
     textMessageRowEl.style.display = isTextAura ? '' : 'none';
     textAuraSizeRowEl.style.display = isTextAura ? '' : 'none';
     textHintEl.style.display = isTextAura ? '' : 'none';
-    displayModeRowEl.style.display = isTextAura ? 'none' : '';
-    buffSourceTimerLabelEl.style.display = isTextAura ? '' : 'none';
+    // Both of these are TYPES now, chosen once in the add-aura flow beside Custom buff aura and
+    // Custom timer aura - so neither offers Display style at all. It was a radio for sound-only
+    // first, and the owner's reasoning for text applies to it just as well: a fourth option on
+    // every aura is a fourth thing to read and rule out on every aura, and two different ways of
+    // answering "what kind of aura is this" is worse than either one on its own.
+    displayModeRowEl.style.display = isTextAura || isSoundOnly ? 'none' : '';
+    buffSourceTimerLabelEl.style.display = isTextAura || isSoundOnly ? '' : 'none';
     iconOnlySettings.style.display = isIcons ? '' : 'none';
     iconPositionSettings.style.display = isIcons ? '' : 'none';
     iconLabelSectionEl.style.display = isIcons ? '' : 'none';
@@ -1492,10 +1498,12 @@ function initWidgetsPanel() {
     // Add Widget modal's two distinct buttons) and never offers this
     // toggle - same reasoning as the two builtin kinds having a fixed,
     // implied source (Self Buffs always self, Ally Buffs always ally).
+    // An announcer type keeps its source row even once it is on text triggers, because that is the
+    // one choice it is allowed to change its mind about. Every other aura hides the row as soon
+    // as it is a timer aura, since the source is fixed at creation.
+    const announcer = widget.displayMode === 'text' || widget.displayMode === 'sound-only';
     buffSourceRow.style.display =
-      widget.kind === 'custom' && (widget.displayMode === 'text' || widget.buffSource !== 'customTimer')
-        ? ''
-        : 'none';
+      widget.kind === 'custom' && (announcer || widget.buffSource !== 'customTimer') ? '' : 'none';
     buffSourceRadios.forEach((r) => (r.checked = r.value === (widget.buffSource || 'self')));
     displayModeRadios.forEach((r) => (r.checked = r.value === widget.displayMode));
     timerFormatRadios.forEach((r) => (r.checked = r.value === widget.timerFormat));
@@ -1917,15 +1925,6 @@ function initWidgetsPanel() {
       create: (name) => window.eqTracker.createAllyBuffsWidget(name),
     },
     {
-      id: 'sound-only',
-      name: 'Sound only',
-      description:
-        'Draws nothing at all - no tiles, no box on screen, ever. It just makes a noise when ' +
-        'something you have picked lands, runs out, or is about to. Choose what it listens for ' +
-        'and which sound it plays on the settings page it opens on.',
-      create: (name) => window.eqTracker.createSoundOnlyWidget(name),
-    },
-    {
       id: 'dispelled',
       name: 'You Have Been Dispelled',
       description:
@@ -2081,6 +2080,14 @@ function initWidgetsPanel() {
   }
   modalAddBuffWidgetBtn.addEventListener('click', () => addWidget());
   modalAddTimerWidgetBtn.addEventListener('click', () => addWidget('customTimer'));
+  modalAddSoundWidgetBtn.addEventListener('click', () => {
+    const name = modalNewWidgetNameInput.value.trim();
+    if (!name) return;
+    window.eqTracker.createSoundOnlyWidget(name).then((config) => {
+      closeAddWidgetModal();
+      focusWidget(config.id);
+    });
+  });
   modalAddTextWidgetBtn.addEventListener('click', () => {
     const name = modalNewWidgetNameInput.value.trim();
     if (!name) return;

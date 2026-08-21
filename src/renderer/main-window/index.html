@@ -263,9 +263,9 @@
                 <span class="label">Buffs shown:</span>
                 <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
                 <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
-                <!-- Text auras only. Every other aura has its source fixed when it is created;
-                     a text aura is meant to be able to announce anything the app can see, so it
-                     is the one type where this can be changed afterwards. -->
+                <!-- The two announcer types only - text and sound-only. Every other aura has its
+                     source fixed when it is created; these two are meant to be able to react to
+                     anything the app can see, so they are where this can be changed afterwards. -->
                 <label id="widget-buff-source-timer-label" style="display:none">
                   <input type="radio" name="widget-buff-source" value="customTimer" /> Your own text triggers
                 </label>
@@ -274,7 +274,6 @@
                 <span class="label">Display style:</span>
                 <label><input type="radio" name="widget-display-mode" value="list" /> List</label>
                 <label><input type="radio" name="widget-display-mode" value="icons" /> Icons</label>
-                <label><input type="radio" name="widget-display-mode" value="sound-only" /> Sound only</label>
               </div>
               <div class="row" id="widget-text-message-row">
                 <span class="label">Say:</span>
@@ -1155,6 +1154,13 @@
         <button type="button" class="add-widget-choice" id="modal-add-timer-widget-btn">
           <strong>Custom timer aura</strong>
           <span>Define your own countdown timers, triggered by exact lines of log text.</span>
+        </button>
+        <button type="button" class="add-widget-choice" id="modal-add-sound-widget-btn">
+          <strong>Custom sound aura</strong>
+          <span>
+            Makes a noise and draws nothing at all - no tile, not even when unlocked. Point it at a
+            buff or at your own line of log text.
+          </span>
         </button>
         <button type="button" class="add-widget-choice" id="modal-add-text-widget-btn">
           <strong>Custom text aura</strong>

@@ -183,8 +183,13 @@ because there is nothing of it on screen to hide and a hidden window is one
 Chromium is entitled to throttle. That reasoning is sound but it has not been
 observed, and if it is wrong the symptom is a missed alert, not an error.
 
-- [ ] **Add one from "+ Add aura" > Premade aura > Sound only.** *Expect*: it
-      lands on its own settings page, drawing nothing anywhere on screen.
+- [ ] **Add one from "+ Add aura" > Custom aura > Custom sound aura.** *Expect*: it lands on its
+      own settings page, drawing nothing anywhere on screen. It used to be a Display style radio
+      and a premade; both are gone, so check there is now exactly ONE way to make one.
+- [ ] **Check the Display style radios are not shown** on a sound aura or a text aura, and that
+      List and Icons are the only two options on your other auras.
+- [ ] **Switch a sound aura's "Buffs shown" to "Your own text triggers"** and add one. *Expect*:
+      the option is there, and the trigger makes the noise.
 - [ ] **The settings page hides what cannot apply**: no Sort by, no Opacity, no
       Unlock/Reset position, no Timer text or Alerts sections. Sounds, Buffs
       shown, profiles and the name box all stay.

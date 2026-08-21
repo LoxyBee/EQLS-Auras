@@ -122,8 +122,9 @@ test('it is NOT offered as a fourth Display style radio', () => {
   assert.ok(!values.includes('text'), 'text has been added as a Display style radio');
   assert.match(html, /id="modal-add-text-widget-btn"/, 'the creation button is missing');
   assert.match(rendererSrc, /window\.eqTracker\.createTextAuraWidget\(name\)/);
-  // And the radios are hidden altogether on one, since the type is fixed at creation.
-  assert.match(rendererSrc, /displayModeRowEl\.style\.display = isTextAura \? 'none' : ''/);
+  // And the radios are hidden altogether on one, since the type is fixed at creation. Sound-only
+  // auras were moved onto the same footing afterwards, so both share this line.
+  assert.match(rendererSrc, /displayModeRowEl\.style\.display = isTextAura \|\| isSoundOnly \? 'none' : ''/);
 });
 
 test('its own text size is separate from the shared one', () => {
@@ -285,15 +286,26 @@ test('its settings travel in a share code', () => {
   assert.equal(imported.textAuraSize, 72);
 });
 
-test('a text aura can be pointed at any source, including its own triggers', () => {
+test('an announcer aura can be pointed at any source, including its own triggers', () => {
   // "text only aura should be able to track everything other auras can track". Every other aura
-  // has its source fixed at creation; this is the one type where it can be changed afterwards.
+  // has its source fixed at creation; the two announcer types - text and sound-only - are where
+  // it can be changed afterwards, because reacting to a line of log text is as much their job as
+  // reacting to a buff. Both of their buttons in the add-aura list promise exactly that, and an
+  // option promised in the copy and refused by the code is worse than one never offered.
   assert.match(html, /id="widget-buff-source-timer-label"/, 'the third source option is missing');
-  assert.match(rendererSrc, /buffSourceTimerLabelEl\.style\.display = isTextAura \? '' : 'none'/);
+  assert.match(
+    rendererSrc,
+    /buffSourceTimerLabelEl\.style\.display = isTextAura \|\| isSoundOnly \? '' : 'none'/,
+    'the third source option is not shown for both announcer types'
+  );
   const fn = managerSrc.match(/function setBuffSource\(id, source\) \{([\s\S]*?)\n\}/);
   assert.ok(fn, 'setBuffSource has been restructured');
-  assert.match(fn[1], /isTextAura\(current\)/, 'the source coercion no longer allows it');
+  assert.match(fn[1], /isTextAura\(current\) \|\| isSoundOnly\(current\)/, 'the coercion no longer allows it');
+  assert.match(fn[1], /'customTimer'/, 'triggers are no longer an accepted source at all');
   assert.doesNotMatch(fn[1], /source === 'ally' \? 'ally' : 'self'/, 'the old two-way coercion is back');
+
+  // And the row itself has to stay visible once one IS on triggers, or the choice is one-way.
+  assert.match(rendererSrc, /const announcer = widget\.displayMode === 'text' \|\| widget\.displayMode === 'sound-only';/);
 });
 
 // ---------------------------------------------------------------------------

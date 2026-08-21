@@ -148,9 +148,18 @@ test('the Sound only premade starts silent, watching nothing, with an expire sou
   assert.equal(w.alertVolume, 100, 'the volume slider is 0-100 and 100 is the default - see note 32');
 });
 
-test('the premade is offered in the add-aura list and reaches a real IPC channel', () => {
-  assert.match(rendererSrc, /id: 'sound-only'/, 'no Sound only entry in PREMADE_WIDGETS');
+test('it is offered in the custom list and reaches a real IPC channel', () => {
+  // It began life as a Display style radio and a "Premade aura" entry. Both are gone: the owner
+  // moved it into the custom list beside Custom buff aura, Custom timer aura and Custom text
+  // aura, which is where someone deciding what KIND of thing to make is already looking.
+  //
+  // Removing the premade entry was part of that rather than an extra. The premade panel is for
+  // auras "already set up for a specific purpose"; a blank sound aura is not one, and leaving it
+  // in both places would have been two routes to the identical thing - exactly the option
+  // overload the move exists to reduce.
+  assert.match(html, /id="modal-add-sound-widget-btn"/, 'the creation button is missing');
   assert.match(rendererSrc, /window\.eqTracker\.createSoundOnlyWidget\(name\)/);
+  assert.doesNotMatch(rendererSrc, /id: 'sound-only'/, 'it is back in the premade list as well');
   // Every hop has to exist or the button throws on click: preload bridge, then main handler.
   assert.match(preloadSrc, /createSoundOnlyWidget: \(name\) => ipcRenderer\.invoke\('widget:createSoundOnly'/);
   assert.match(mainSrc, /ipcMain\.handle\('widget:createSoundOnly'/);
@@ -429,16 +438,18 @@ test('the sound-only body class is applied by the overlay and honoured by its st
 // The settings window
 // ---------------------------------------------------------------------------
 
-test('Sound only is offered as a display style, spelled the way the store expects', () => {
+test('Display style offers exactly the two modes that ARE styles', () => {
+  // 'sound-only' and 'text' are both real display modes underneath, and neither is a radio.
+  // They are TYPES, chosen once when the aura is made. The owner's reasoning: a radio per mode
+  // means every extra mode adds something to read and rule out on every aura you own, and the
+  // goal is accessibility. This assertion is what stops either quietly reappearing as one.
   const values = [...html.matchAll(/name="widget-display-mode" value="([^"]+)"/g)].map((m) => m[1]);
-  // 'text' is a real display mode but deliberately NOT a radio here - a text aura is chosen once,
-  // at creation, beside "Custom buff aura" and "Custom timer aura". The owner's call, on the
-  // grounds that a fourth radio on every aura is a fourth thing to read and rule out on every
-  // aura. This assertion is what stops it quietly appearing as one.
-  assert.deepEqual(values, ['list', 'icons', 'sound-only']);
+  assert.deepEqual(values, ['list', 'icons']);
   // A radio whose value the store rejects would silently save as 'list' and look like the
   // setting simply did not stick.
   for (const v of values) assert.equal(normalizeDisplayMode(v), v);
+  // And the whole row is hidden on the two types, rather than shown with nothing useful in it.
+  assert.match(rendererSrc, /displayModeRowEl\.style\.display = isTextAura \|\| isSoundOnly \? 'none' : ''/);
 });
 
 test('the controls a sound-only aura cannot use are hidden, not left dead on screen', () => {

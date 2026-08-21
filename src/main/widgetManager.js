@@ -855,12 +855,17 @@ function setBuffFilter(id, mode, names) {
 }
 
 function setBuffSource(id, source) {
-  // 'customTimer' is accepted ONLY for a text aura. Every other aura has its source fixed when it
-  // is created, deliberately - see defaultCustomWidget's note on the field - and this coercion is
-  // what enforces that. A text aura is the exception because its whole purpose is to announce
-  // something, and the thing worth announcing is as often a line of log text as it is a buff.
+  // 'customTimer' is accepted only for the two ANNOUNCER types - text and sound-only. Every
+  // other aura has its source fixed when it is created, deliberately (see defaultCustomWidget's
+  // note on the field), and this coercion is what enforces that.
+  //
+  // Those two are the exception because their whole purpose is to react to something happening,
+  // and the thing worth reacting to is as often a line of log text as it is a buff. Both of their
+  // buttons in the add-aura list say so in as many words, which is the other reason this has to
+  // hold: an option promised in the copy and refused by the code is worse than one never offered.
   const current = widgetStore.getById(id);
-  const allowed = isTextAura(current) ? ['self', 'ally', 'customTimer'] : ['self', 'ally'];
+  const isAnnouncer = isTextAura(current) || isSoundOnly(current);
+  const allowed = isAnnouncer ? ['self', 'ally', 'customTimer'] : ['self', 'ally'];
   const config = widgetStore.update(id, { buffSource: allowed.includes(source) ? source : 'self' });
   pushConfigChanged(id);
   return config;
