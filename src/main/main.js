@@ -35,7 +35,9 @@ const { ICON_SETS } = require('./iconExtractor');
 const { SpellbookService } = require('./spellbookService');
 const { resolveInstallRoot } = require('./eqLocator');
 const { tagBardSongs } = require('./bardSongTagger');
-const { backfillBardSongs } = require('./rosterBackfill');
+// rosterBackfill is intentionally NOT wired up any more - see applyInstallRoot for why.
+// Kept as a require so the module stays discoverable rather than looking like dead code.
+const { backfillBardSongs: _unusedBackfillBardSongs } = require('./rosterBackfill');
 const { saveSnapshot, loadSnapshot } = require('./sessionSnapshot');
 const gameSpellData = require('./gameSpellData');
 const { loadJson, saveJson } = require('./store');
@@ -219,14 +221,28 @@ function applyInstallRoot(eqFolder) {
   currentInstallRoot = resolveInstallRoot(eqFolder);
   iconService.setEqFolder(currentInstallRoot);
   spellbookService.setInstallRoot(currentInstallRoot);
-  // Both are cheap and idempotent (they only write when they actually change
-  // something), so running them on every launch costs nothing after the first
-  // - and they self-heal if the roster is ever re-seeded or re-mined.
+  // Tagging is cheap and idempotent - it only writes when it actually changes something - so
+  // running it every launch costs nothing after the first, and it self-heals after a re-seed.
   //
-  // Backfill runs before tagging so newly added songs arrive already flagged
-  // and don't need a second pass.
-  const added = backfillBardSongs(currentInstallRoot, buffStore);
-  if (added) debugLog(`Backfilled ${added} bard songs into the roster from spells_us.txt`);
+  // BARD-SONG BACKFILL IS DELIBERATELY NO LONGER RUN. Its module is left intact for reference.
+  //
+  // It existed to undo a mining mistake: the old roster was built by filtering the client's spell
+  // file on "duration > 0", which threw away 386 real bard songs that carry 0 there, so backfill
+  // re-read spells_us.txt on every launch and put them back.
+  //
+  // The roster is no longer mined, so there is nothing to undo. It is built from the curated
+  // EQ Legends spreadsheet - the definitive list of what this server actually has - and songs sit
+  // in it on the same footing as everything else. Running backfill against that re-reads the
+  // client's file, which carries the spells of EVERY EverQuest version, and pushes back in
+  // everything this server does not have. Measured on this install: +1,499 entries, taking the
+  // roster from 1,052 to about 2,551.
+  //
+  // Size is not the real cost. "Is this landing line unique?" is judged by counting roster
+  // entries, so every re-added spell votes on ambiguity it has no business voting on - which is
+  // precisely what the rebuild set out to remove. See the note at the top of tools/build-roster.js.
+  //
+  // If a bard song really is missing, it belongs in the spreadsheet: one rebuild then fixes it
+  // for everyone, instead of each install quietly healing itself into a different roster.
   const tagged = tagBardSongs(currentInstallRoot, buffStore);
   if (tagged) debugLog(`Tagged ${tagged} existing roster entries as bard songs`);
 }
