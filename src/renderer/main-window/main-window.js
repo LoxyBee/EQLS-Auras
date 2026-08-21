@@ -936,6 +936,12 @@ function initWidgetsPanel() {
   const widgetsNavBtn = document.getElementById('widgets-nav-btn');
   const introCard = document.getElementById('widgets-intro-card');
   const iconSetCard = document.getElementById('icon-set-card');
+  // "Unlock all auras" and the two auto-hide checkboxes act on EVERY aura at once, so they belong
+  // on the Overlay Auras overview and nowhere else. Left always-visible they sat at the top of
+  // each individual aura's settings, directly above that aura's own "Unlock to move" - two
+  // controls a few centimetres apart, one scoped to everything and one to the thing you are
+  // looking at, which is exactly the arrangement that gets the wrong one pressed.
+  const allAurasCard = document.getElementById('all-auras-card');
 
   const settingsPanel = document.getElementById('widget-settings-panel');
   const settingsTitle = document.getElementById('widget-settings-title');
@@ -1362,6 +1368,7 @@ function initWidgetsPanel() {
     selectedBuffsSectionEl.style.display = 'none';
     introCard.style.display = '';
     iconSetCard.style.display = '';
+    allAurasCard.style.display = '';
   }
 
   // Icon size/icons-per-row/timer-text-position only mean anything in Icon
@@ -1398,6 +1405,7 @@ function initWidgetsPanel() {
     }
     introCard.style.display = 'none';
     iconSetCard.style.display = 'none';
+    allAurasCard.style.display = 'none';
     settingsPanel.style.display = '';
     exportCodeRow.style.display = 'none';
     exportCodeOutput.value = '';
