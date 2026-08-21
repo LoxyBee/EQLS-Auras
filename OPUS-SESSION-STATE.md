@@ -36,12 +36,12 @@ at the repo root ships.
 
 ## 2. Current state
 
-**41 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
+**44 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
 `.gitignore` - it was staged once by a careless `git add -A` and amended straight back out, and
 the ignore entry is what makes that command safe to type here at all.
 
 ```
-npm test   ->  17 suites, 217 cases, green
+npm test   ->  18 suites, 234 cases, green
 ```
 
 | Suite | Cases | Guards |
@@ -61,6 +61,7 @@ npm test   ->  17 suites, 217 cases, green
 | `test/category-borders.test.js` | 13 | coloured edges: roster, overlay and stylesheet must agree |
 | `test/detection.test.js` | 21 | the detection engine's coverage: tiers, the veto, instants |
 | `test/infinite-duration.test.js` | 14 | spells that never run out, and the null-comparison traps |
+| `test/buff-timer-premade.test.js` | 11 | the Buff timer premade, and what it refuses to offer |
 | `test/spellbook-diagnostic.test.js` | 6 | the spellbook status says what to do, not "it will appear" |
 | `tools/lib/xlsx.test.js` | 7 | the spreadsheet reader |
 
@@ -410,6 +411,34 @@ and the ally sweep. Expect it anywhere a number is optional.
    three cases above. What is left is small: Frenzy and Rage look like Fury and are listed as
    candidates in the overrides file rather than marked, and the six-second display life for an
    instant is an invented number worth arguing with.
+
+---
+
+### THE ROSTER REBUILD KEEPS UNBLOCKING THINGS - check before believing any "blocked"
+
+This has now happened three times, and it will happen again. A note written before the rebuild
+says something is impossible; the rebuild quietly made it possible; nobody connected the two.
+
+- **Note 37** (coloured borders) said "the app has NO idea what type any spell is". Every entry
+  now carries `category` and `scaleCategory`. Several days -> a few hours. **Built.**
+- **Note 35** (the roster itself) was marked blocked on the spreadsheet's empty text columns. The
+  game's own files had them. **Done, and it was the priority fix.**
+- **Note 15** (cooldown premade) is marked blocked on "per-spell recast seconds do not exist
+  anywhere in this project". **989 of 1,052 entries now carry `reuseSec`**, mined from the game
+  data with the field position verified the way the note demands. Distribution is credible: median
+  1.5s, which is the global recovery floor, with 199 spells in the 10-60s band. It needs Shara to
+  confirm one or two against the real client before a countdown is built on it, and then it is
+  buildable.
+
+**Before sizing anything that says a spell property is unavailable, look at a roster entry.** They
+now carry: category, scaleCategory, classes, level, manaCost, castSec, reuseSec, targets, iconId,
+landingText, othersLandingSuffix, endedText, durationSec, infiniteDuration.
+
+### The premade list can now ask a question
+
+Note 14 made `PREMADE_WIDGETS` understand `panel` as well as `create`. Notes 15, 16 and 34 are
+the same shape - pick one spell, answer one question - and should reuse the buff-timer panel
+rather than each growing their own picker. That was note 14's own advice and it is worth keeping.
 
 ---
 
