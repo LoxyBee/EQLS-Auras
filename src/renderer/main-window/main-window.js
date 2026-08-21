@@ -312,12 +312,28 @@ function initCharacterSettingsPanel() {
 
 function initDetectionSettingsPanel() {
   const spellbookStatusEl = document.getElementById('spellbook-status');
+  const spellbookMissingHintEl = document.getElementById('spellbook-missing-hint');
+  const spellbookMissingWhereEl = document.getElementById('spellbook-missing-where');
   const memorizedStatusEl = document.getElementById('memorized-spells-status');
 
   window.eqTracker.getSpellbookState().then((state) => {
-    spellbookStatusEl.textContent = state.filePath
-      ? `Found - ${state.spellCount} spells (${state.filePath})`
-      : 'Not found yet - will pick it up automatically once detected.';
+    if (state.filePath) {
+      spellbookStatusEl.textContent = `Found - ${state.spellCount} spells (${state.filePath})`;
+      spellbookStatusEl.classList.remove('warn');
+      spellbookMissingHintEl.style.display = 'none';
+      return;
+    }
+    // The old message here said it would "pick it up automatically once detected", which is not
+    // true and is expensive to believe: the game does not write this file on its own, so nothing
+    // was ever going to detect anything, and meanwhile every buff message shared between several
+    // spells was being thrown away for want of it. Say what is missing, where, and that it takes
+    // a command in game to create.
+    spellbookStatusEl.textContent = 'Not found - see below';
+    spellbookStatusEl.classList.add('warn');
+    spellbookMissingHintEl.style.display = '';
+    const where = state.folder ? `in ${state.folder}` : 'in your EQ install folder';
+    const named = state.fileNamePattern ? `named "${state.fileNamePattern}"` : 'ending in "-Spellbook.txt"';
+    spellbookMissingWhereEl.textContent = `Looking for a file ${named} ${where}.`;
   });
 
   // The empty state is the important one and is styled as a warning, not a

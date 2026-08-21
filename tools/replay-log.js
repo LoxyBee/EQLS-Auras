@@ -19,6 +19,17 @@
  * NOT A TEST. It needs the owner's own logs, which are not in the repository, so it cannot run in
  * the suite. It is a measuring instrument for a human to point at a change.
  *
+ * THE SPELLBOOK IS A VARIABLE, AND BY DEFAULT IT IS EMPTY. The engine's strongest tool for
+ * deciding whether an ambiguous buff message is the player's own is their spellbook file, and
+ * without one it cannot narrow anything. Pass --spellbook <path> to replay WITH one; leave it off
+ * to replay without.
+ *
+ * Leaving it off is not a shortcut - it is the owner's actual situation. That file has never
+ * existed on her machine, so a replay without one is what her sessions really looked like. It is
+ * also why the numbers are so lopsided: across 1.6 million lines, 14,650 ambiguous landings were
+ * discarded outright as "not your spellbook" and about 11,000 more became prompts for the same
+ * reason. Compare the two modes before concluding anything about the ambiguity tiers.
+ *
  * TWO DELIBERATE DEPARTURES FROM REAL TIME, both so the same input always gives the same output:
  *
  *   1. The one-second tick is stopped. Replaying hours of play in a second means almost nothing
@@ -33,6 +44,7 @@ const path = require('node:path');
 const { BuffStore } = require('../src/main/buffStore');
 const { BuffEngine } = require('../src/main/buffEngine');
 const { FALLBACK_CONFIRM_WINDOW_MS } = require('../src/main/buffParser');
+const { SpellbookService } = require('../src/main/spellbookService');
 
 const DEFAULT_LOGS = [
   'C:/Users/Lindsey/Desktop/eqlog_Shara_rivervale_2026-08-19.txt',
@@ -61,11 +73,21 @@ function memoryStore(initial = {}) {
  * buffsChanged fires on every tick and every expiry too, so counting those would drown the signal
  * in noise. These four are the actual decisions.
  */
-async function replay(files) {
+async function replay(files, spellbookPath = null) {
   const store = memoryStore();
   const buffStore = new BuffStore(store);
   const engine = new BuffEngine(buffStore, store);
   engine.stop(); // see the header - determinism
+
+  // Reaches past the service's own file-finding, which needs an install root and a character name
+  // it has no way to know here. _load is the only internal touched, and only by this tool.
+  if (spellbookPath) {
+    const svc = new SpellbookService();
+    svc.filePath = spellbookPath;
+    svc._load();
+    engine.setSpellbookCheckFn((name) => svc.has(name));
+    console.log(`  with spellbook: ${svc.getCount()} spells from ${spellbookPath}`);
+  }
 
   // WHICH CHECK DECIDED, and how often. The engine narrates every decision through _debugLog with
   // a distinct sentence per check, so tallying those sentences - with the spell names and quoted
@@ -130,6 +152,7 @@ async function replay(files) {
   const sorted = (m) => Object.fromEntries([...m.entries()].sort(([a], [b]) => a.localeCompare(b)));
   return {
     files,
+    spellbookPath,
     lineCount,
     landed: sorted(landed),
     allyLanded: sorted(allyLanded),
@@ -154,6 +177,13 @@ function diff(beforePath, afterPath) {
 
   if (before.lineCount !== after.lineCount) {
     console.log(`WARNING: different line counts (${before.lineCount} vs ${after.lineCount}) - not comparable`);
+  }
+  if ((before.spellbookPath || null) !== (after.spellbookPath || null)) {
+    console.log(
+      `WARNING: one side had a spellbook and the other did not (${before.spellbookPath} vs ` +
+      `${after.spellbookPath}). That changes the ambiguity tiers enormously - this is a comparison ` +
+      `of two different situations, not of a code change.`
+    );
   }
 
   let regressions = 0;
@@ -216,10 +246,14 @@ async function main() {
 
   const outAt = args.indexOf('--out');
   const out = outAt >= 0 ? args[outAt + 1] : null;
+  const bookAt = args.indexOf('--spellbook');
+  const spellbook = bookAt >= 0 ? args[bookAt + 1] : null;
   // Skip the flag AND its value; everything else left over is a log path. The earlier version
   // compared against outAt + 1 even when there was no --out at all, which made outAt + 1 zero and
   // silently threw away the first path given.
-  const given = args.filter((a, i) => !a.startsWith('--') && !(outAt >= 0 && i === outAt + 1));
+  const given = args.filter(
+    (a, i) => !a.startsWith('--') && !(outAt >= 0 && i === outAt + 1) && !(bookAt >= 0 && i === bookAt + 1)
+  );
   const files = (given.length ? given : DEFAULT_LOGS).filter((f) => {
     if (fs.existsSync(f)) return true;
     console.log(`skipping (not found): ${f}`);
@@ -231,7 +265,7 @@ async function main() {
   }
 
   console.log(`Replaying ${files.length} log(s)...`);
-  const result = await replay(files);
+  const result = await replay(files, spellbook);
   console.log(`\n${result.lineCount} lines`);
   for (const [k, v] of Object.entries(result.totals)) console.log(`  ${k.padEnd(24)} ${v}`);
 

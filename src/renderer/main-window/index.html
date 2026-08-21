@@ -864,8 +864,22 @@
           <p class="hint">
             Your character's own spellbook is used to resolve ambiguous buff messages (EQ reuses a
             lot of generic text across many different spells) down to whichever one you actually have.
-            Auto-detected from your EQ install folder above.
+            Read from your EQ install folder above.
           </p>
+          <div id="spellbook-missing-hint" style="display:none">
+            <p class="hint warn-hint">
+              <strong>This is worth fixing.</strong> EverQuest reuses the same buff message across
+              many different spells, and without your spellbook the app cannot tell which of them
+              was yours - so it ignores them. On one recent session that was over 700 buff messages
+              thrown away.
+            </p>
+            <p class="hint">
+              The game does not write this file on its own; you have to ask it to, with your
+              client's output-file command for your spellbook, while logged in on this character.
+              It only needs doing again when you scribe something new.
+            </p>
+            <p class="hint" id="spellbook-missing-where"></p>
+          </div>
           <p class="hint">
             Which spells you currently have <em>memorized</em> is tracked separately and shown on the
             Buff Tracker page under "Detection status" - that's live gem state, not the spellbook file.

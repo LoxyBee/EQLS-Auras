@@ -599,6 +599,7 @@ ipcMain.handle('settings:setCharacter', (_event, settings) => {
 ipcMain.handle('spellbook:getState', () => ({
   filePath: spellbookService.getFilePath(),
   spellCount: spellbookService.getCount(),
+  ...spellbookService.getExpectation(),
 }));
 ipcMain.handle('spellbook:getMemorized', () => memorizedWithIcons());
 ipcMain.handle('spellbook:forgetMemorized', (_event, name) => buffEngine.removeMemorized(name));
