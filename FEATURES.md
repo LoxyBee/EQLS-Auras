@@ -1680,23 +1680,27 @@ so a never-expiring tile needs a deliberate answer there rather than falling thr
 > three strings and is provably behaviour-neutral. It also unblocks note 28, which is waiting on
 > the log being able to name a cause.
 >
-> **(B) /outputfile spells before memorized gems — DECLINED, and the reason is worth reading.**
-> The stated premise is that a loadout swap never prints that you un-memorised anything. On this
-> server it does: `CLAUDE.md` records a swap producing roughly fourteen forget/memorize lines in
-> fifteen seconds, and your logs contain **1,816 "You forget X." lines**, every one of which the
-> engine already acts on. So across the very event cited as justification, the gem list is the one
-> that TRACKS the change and the /outputfile dump is the one that goes stale — the reorder promotes
-> the staler source.
+> **(B) /outputfile spells before memorized gems — BUILT. I argued against it first and I was
+> wrong.**
 >
-> It would also lose work. "Checked before" means moving the whole spellbook block above the gem
-> block, and that block ends by QUEUING a question whenever the spellbook narrows to more than one.
-> Every line where the spellbook leaves two candidates but exactly one is in a gem would stop
-> resolving itself and start asking. Measured on one real day: the gem check decides 24 landings,
-> the spellbook check 6, and **they never disagreed once**.
+> I read 1,816 `You forget X.` lines in your logs and concluded that loadout swaps announce
+> themselves, so the gem list could not go stale and the reorder promoted the weaker source. Your
+> correction: those lines are what a **manual** un-memorise prints. A full EQ Legends loadout
+> swap — every gem at once, potentially to another class — **prints nothing at all**. There is no
+> line for the app to see, so after one of those the gem list is simply wrong and nothing in the
+> log can say so. The spellbook file cannot go stale that way.
 >
-> If you still want it after reading that, the only non-lossy shape is "consult both, and when they
-> each narrow to exactly one different spell, prefer the spellbook" — which is code for a case that
-> occurred zero times in 1.6 million lines.
+> The lesson for me is worth writing down: I measured the *presence* of a signal and inferred what
+> produced it. 1,816 forget lines are perfectly consistent with "swaps are silent and she
+> un-memorises by hand a lot", and I never considered that reading.
+>
+> **What was built is the reorder without the cost I found.** Only the "spellbook narrows to
+> exactly one" check moved above the gem check. The block that QUEUES a question when the
+> spellbook leaves *more* than one deliberately stayed below both — moving the whole section would
+> have dragged that up too, and every line where the spellbook leaves two candidates but exactly
+> one is in a gem would have stopped resolving itself and started asking. So the spellbook is
+> consulted first and wins when the two disagree, and the gems still narrow everything the
+> spellbook cannot. Order changed; nothing lost.
 >
 > **(A) "Every check if not passed should continue, not end" — NOT BUILDABLE AS WRITTEN, and the
 > restructure would be actively dangerous.** Three things:
@@ -1716,6 +1720,26 @@ so a never-expiring tile needs a deliberate answer there rather than falling thr
 > answer first and otherwise QUEUE the choice instead of logging IGNORED. That can only turn a
 > silent drop into a landing you confirmed once, or one prompt. **It needs your answer first** —
 > see the questions at the end of this note.
+>
+> **SPELLS THAT NEVER RUN OUT — BUILT.** Your answer to the no-duration question was that some of
+> those spells are not missing a duration, they are genuinely unlimited, and you named **Yaulp** and
+> **Fury**. Those now land as tiles with no countdown at all — an ∞ instead of a number, a full
+> bar, sorted to the BOTTOM of the list rather than the top, and never swept away. They end when
+> their ended text arrives, exactly as before.
+>
+> All three Yaulp ranks are marked, not just the base spell: they share landing and ended text, and
+> marking only one would make the app behave differently depending on which rank you happen to have
+> scribed.
+>
+> **To add more, edit `tools/roster-overrides.json`** — it now carries the instructions and refuses
+> an entry that does not record who verified it. Frenzy and Rage share Fury's exact ended text and
+> are very likely the same, but you named Fury, so they are listed there as candidates rather than
+> marked on your behalf. The wider list of 31 non-instant spells with no duration is there too.
+>
+> Three places needed guarding, all the same trap: `remainingSec` is `null` for these, and
+> `null <= 30` is **true** in JavaScript. Without those guards a permanent buff would sit there
+> coloured as though seconds from expiring, beep an about-to-expire warning once a loop interval
+> forever, and sort to the top of the list as the most urgent thing on screen.
 >
 > **AND A LIVE BUG FOUND ON THE WAY — NOT fixed, because fixing it costs more than it saves and
 > the choice is yours.** 275 roster entries carry a landing text and no duration. Multiplying an

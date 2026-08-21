@@ -26,7 +26,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a
 character standing in a zone. If it is red, nothing below is worth doing yet -
 read the failure text, it says what broke and why.
 
-Sixteen suites at the time of writing:
+Seventeen suites at the time of writing:
 
 | Suite | Guards |
 |---|---|
@@ -40,6 +40,7 @@ Sixteen suites at the time of writing:
 | `test/sound-only.test.js` | sound-only auras: the mode survives saving and sharing, a foreign mode cannot arrive by either import route, every aura type still carries every sound setting, and the overlay's early return stays between the alerts and the drawing |
 | `test/visibility.test.js` | the whole precedence model - profile membership as the on/off switch, "Hide auras" beating unlock, unlocking one aura beating its profile, and off meaning silent as well as invisible |
 | `test/move-box.test.js` | the name pill in the move box: that it opts out of the drag region (a click inside one never fires), that it does not swallow the draggable area, and that every hop from the pill to the settings page exists |
+| `test/infinite-duration.test.js` | spells that never run out: that they are marked in the overrides file with a reason, that no sweep removes them, that nothing instant got marked by mistake, and the three places where `null <= 30` being true would have broken them |
 | `test/detection.test.js` | the detection engine's first real coverage - a landing starts a timer, its ended text stops it, a blocked buff never lands, someone else's cast is not counted as yours, and a spell with no duration produces no tile instead of an unkillable one |
 | `test/spellbook-diagnostic.test.js` | that the spellbook status says what is missing and how to fix it, rather than promising it will appear on its own |
 | `test/category-borders.test.js` | the coloured edges: that the roster's categories, the overlay's list and the stylesheet's colours all still agree, since a spell whose category nothing has a colour for loses its edge silently |
@@ -282,7 +283,26 @@ is why nobody went looking. It now says what is missing and why it matters.
 - [ ] **If you are willing, send the file back with the repo.** The before/after numbers above are
       measured against a reconstruction; a real one would make them exact.
 
-### A buff that never goes away *(FOUND, measured, NOT fixed - needs your decision)*
+### Spells that never run out *(new - Yaulp and Fury)*
+
+You said some of the zero-duration spells are genuinely unlimited rather than missing a number,
+and named Yaulp and Fury. Those now show a tile with **an infinity symbol instead of a countdown**,
+a full bar, sorted to the bottom of the list, and they never disappear on their own.
+
+- [ ] **Cast Yaulp** (any rank - all three are marked) **and Fury.** *Expect*: a tile that shows
+      an infinity sign where the timer would be, and stays.
+- [ ] **Let one end** - dispelled, zoned, or however it normally goes. *Expect*: the tile
+      disappears when the game says it has faded.
+- [ ] **Check it is NOT coloured red** as though it were about to expire, and does not set off a
+      warning sound. Those two were real traps in the code and are guarded, but worth seeing.
+- [ ] **Check where it sits in the list.** *Expect*: at the bottom, not the top - it is the least
+      urgent thing on screen, not the most.
+- [ ] **Frenzy and Rage share Fury's exact fade message** and are probably the same. I have NOT
+      marked them, because you named Fury and guessing on your behalf is how a wrong number gets
+      into the roster. Confirm and they are a two-line addition to
+      `tools/roster-overrides.json`, which now carries the instructions.
+
+### A buff that never goes away *(the OTHER no-duration spells - still needs your decision)*
 
 275 spells in the roster have a landing message but no duration. When one of those landed, the app
 worked out its expiry as "not a number", and the once-a-second cleanup asks "is the expiry time in

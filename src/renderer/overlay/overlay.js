@@ -185,6 +185,13 @@ function checkSoundWarnings(visible) {
   const now = Date.now();
   for (const buff of visible) {
     const key = keyFor(buff);
+    // Nothing that never runs out can be "about to run out". Skipped explicitly because
+    // `null > thresholdSec` is false, so the check below would otherwise treat it as in the
+    // warning window and beep about it once a loop interval, forever.
+    if (buff.infinite) {
+      warnedAt.delete(key);
+      continue;
+    }
     if (buff.remainingSec > thresholdSec) {
       // Back above the threshold means whatever this tile is counting down was renewed or
       // replaced, so the fact that it was warned about no longer applies - it must be able to
@@ -210,7 +217,15 @@ function checkSoundWarnings(visible) {
   }
 }
 
+// The symbol, not a word, and not a blank. A blank reads as "the timer is broken"; "forever" is
+// too wide for an icon tile at any sensible size.
+const INFINITE_LABEL = '\u221e';
+
 function formatTime(totalSec, format) {
+  // A buff that never runs out has no remaining time - null, deliberately, so it cannot be
+  // mistaken for zero anywhere. Checked first, before any format branch, because every one of
+  // them would otherwise print "null" or NaN.
+  if (totalSec === null) return INFINITE_LABEL;
   if (format === 'seconds-only') return `${totalSec}`;
   if (format === 'rounded-minutes') {
     // Under a minute, rounding up to whole minutes ("1m") is misleading
@@ -580,7 +595,10 @@ function applyTilePositionedTextStyle(el, low, anchor, textSize, wrap, color) {
 
 function updateRef(ref, buff, isIcon) {
   const threshold = currentConfig.lowTimeThresholdSec ?? 30;
-  const low = threshold > 0 && buff.remainingSec <= threshold;
+  // !buff.infinite matters more than it looks: remainingSec is null for one of those, and
+  // `null <= 30` is TRUE in JavaScript - so without this a buff that never runs out would sit
+  // there permanently coloured as though it were seconds from expiring.
+  const low = !buff.infinite && threshold > 0 && buff.remainingSec <= threshold;
   ref.root.classList.toggle('low', low);
   // A text aura has no countdown to update - it says its piece and disappears when whatever it is
   // watching ends. Checked rather than assumed, because it is the first tile without one.
@@ -600,7 +618,12 @@ function updateRef(ref, buff, isIcon) {
       );
     }
   } else {
-    const pct = buff.durationSec > 0 ? Math.max(0, Math.min(100, (buff.remainingSec / buff.durationSec) * 100)) : 0;
+    // A full bar for a buff that never depletes. An empty one would say the opposite of the truth.
+    const pct = buff.infinite
+      ? 100
+      : buff.durationSec > 0
+        ? Math.max(0, Math.min(100, (buff.remainingSec / buff.durationSec) * 100))
+        : 0;
     ref.barEl.style.width = `${pct}%`;
     updateRowIcon(ref, buff);
   }

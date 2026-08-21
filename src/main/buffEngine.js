@@ -407,9 +407,10 @@ class BuffEngine extends EventEmitter {
       return;
     }
 
-    // Gem swaps - you can only ever cast what's currently memorized, so
-    // this is a stronger disambiguation signal than "ever scribed" (see
-    // the ambiguous-candidates handling below, which checks this first).
+    // Gem swaps. A useful disambiguation signal, but NOT a trusted one, and the ambiguous-
+    // candidates handling below now checks the spellbook first because of it: manually
+    // un-memorising a spell prints "You forget X.", but a full EQ Legends loadout swap prints
+    // nothing at all, so after one of those this list is silently wrong.
     const forgotten = matchForgetSpell(line);
     if (forgotten) {
       this.currentlyMemorized.delete(forgotten.toLowerCase());
@@ -681,24 +682,26 @@ class BuffEngine extends EventEmitter {
         return;
       }
 
-      // Checked before the broader "ever scribed" spellbook narrowing below -
-      // you can only ever cast what's currently memorized in a gem slot, so
-      // this is strictly stronger evidence. Matters most for spells that
-      // share landing text with an older/different rank the player scribed
-      // at some point in the past but doesn't have loaded right now (e.g.
-      // several stat-buff ranks accumulated while leveling) - "ever
-      // scribed" alone can't tell those apart, "currently memorized" can.
-      const memorizedCandidates = candidates.filter((c) => this.currentlyMemorized.has(c.name.toLowerCase()));
-      if (!otherCastMatch && memorizedCandidates.length === 1) {
-        if (inBurst) this.burstUntil = Date.now() + BURST_WINDOW_MS;
-        this._debugLog(
-          `LANDED "${memorizedCandidates[0].name}" - ambiguous text "${stripped}" narrowed to 1 by currently-memorized gem`
-        );
-        this._land(memorizedCandidates[0]);
-        this._checkForEndedBuffs(line);
-        return;
-      }
-
+      // THE SPELLBOOK IS CHECKED BEFORE THE GEMS, and the order was reversed deliberately.
+      //
+      // The old comment here claimed "currently memorized" was strictly stronger evidence than
+      // "ever scribed". On this server it is not, and the owner had to correct me on it: manually
+      // un-memorising a spell DOES print "You forget X.", but a full EQ Legends LOADOUT SWAP -
+      // the thing that changes every gem at once, including to another class - prints nothing at
+      // all. There is no line for the app to see, so after one of those the gem list is simply
+      // wrong, and nothing in the log can tell it so.
+      //
+      // The spellbook file cannot go stale that way. It is a snapshot of what this character has
+      // scribed, and a loadout swap does not change that. It is the weaker filter in the sense
+      // that it narrows less often, but it is the more TRUSTWORTHY one, and trustworthy beats
+      // narrow when the two disagree.
+      //
+      // What did NOT move is the block below that queues a question when the spellbook leaves
+      // more than one candidate. Moving the whole spellbook section above the gem check would
+      // have dragged that with it, and every line where the spellbook leaves two candidates but
+      // exactly one is in a gem would have stopped resolving itself and started asking. Measured
+      // against 1.6 million lines before touching anything: the gem check decides 24 landings and
+      // the spellbook check 6, so that is a real cost for no gain. Order changed; nothing lost.
       if (!otherCastMatch && selfCandidates.length === 1) {
         // Spellbook narrows it to exactly one thing I actually know, with
         // no sign anyone else just cast any of the candidates either - safe
@@ -707,6 +710,20 @@ class BuffEngine extends EventEmitter {
         if (inBurst) this.burstUntil = Date.now() + BURST_WINDOW_MS;
         this._debugLog(`LANDED "${selfCandidates[0].name}" - ambiguous text "${stripped}" narrowed to 1 by spellbook`);
         this._land(selfCandidates[0]);
+        this._checkForEndedBuffs(line);
+        return;
+      }
+
+      // Gems second: still worth having, because it narrows in plenty of cases the spellbook
+      // cannot, and after a loadout swap it is wrong rather than useless - it just cannot be
+      // trusted OVER the spellbook when the two disagree.
+      const memorizedCandidates = candidates.filter((c) => this.currentlyMemorized.has(c.name.toLowerCase()));
+      if (!otherCastMatch && memorizedCandidates.length === 1) {
+        if (inBurst) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+        this._debugLog(
+          `LANDED "${memorizedCandidates[0].name}" - ambiguous text "${stripped}" narrowed to 1 by currently-memorized gem`
+        );
+        this._land(memorizedCandidates[0]);
         this._checkForEndedBuffs(line);
         return;
       }
@@ -943,6 +960,22 @@ class BuffEngine extends EventEmitter {
       return;
     }
     const key = known.name.toLowerCase();
+    // A spell that genuinely never runs out - Yaulp, Fury - marked in tools/roster-overrides.json,
+    // which is also where to add more. It is a different thing from a spell the spreadsheet simply
+    // has no duration for: this one lasts until it is dispelled, or you zone, or its ended text
+    // arrives. null rather than Infinity, because Infinity survives arithmetic and would quietly
+    // produce an Infinity countdown somewhere downstream; null cannot be mistaken for a number.
+    if (known.infiniteDuration) {
+      this.activeBuffs.set(key, {
+        name: known.name,
+        durationSec: null,
+        expiresAt: null,
+        infinite: true,
+        endedText: known.endedText || null,
+      });
+      this.emit('buffsChanged', this.getActiveBuffs());
+      return;
+    }
     const effectiveDurationSec = this._scaledDuration(known);
     this.activeBuffs.set(key, {
       name: known.name,
@@ -963,6 +996,11 @@ class BuffEngine extends EventEmitter {
       return;
     }
     const key = `${allyName.toLowerCase()}::${known.name.toLowerCase()}`;
+    if (known.infiniteDuration) {
+      this.allyBuffs.set(key, { name: known.name, allyName, durationSec: null, expiresAt: null, infinite: true });
+      this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+      return;
+    }
     const effectiveDurationSec = this._scaledDuration(known);
     this.allyBuffs.set(key, {
       name: known.name,
@@ -1184,11 +1222,18 @@ class BuffEngine extends EventEmitter {
   _tick() {
     const now = Date.now();
     for (const [key, buff] of this.activeBuffs) {
+      // An infinite buff has no expiry to compare against and must survive every sweep - it ends
+      // when its ended text arrives, when the player dismisses it, or not at all.
+      if (buff.infinite) continue;
       if (buff.expiresAt <= now) this.activeBuffs.delete(key);
     }
     this.emit('buffsChanged', this.getActiveBuffs());
 
     for (const [key, buff] of this.allyBuffs) {
+      // Same reasoning as the self sweep above - an ally can carry a buff that never runs out
+      // too, and it has no expiry to compare against. Missing this half was caught by a test that
+      // deliberately checked both maps rather than assuming one implied the other.
+      if (buff.infinite) continue;
       if (buff.expiresAt <= now) this.allyBuffs.delete(key);
     }
     // Unconditional every tick, same as buffsChanged above - the overlay's
@@ -1341,7 +1386,10 @@ class BuffEngine extends EventEmitter {
         return {
           name: b.name,
           durationSec: b.durationSec,
-          remainingSec: Math.max(0, Math.round((b.expiresAt - now) / 1000)),
+          // null, not a number, for a buff that never runs out. Everything downstream checks for
+          // it rather than trying to render a countdown that has no end.
+          remainingSec: b.infinite ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
+          infinite: !!b.infinite,
           showOnOverlay: known ? known.showOnOverlay !== false : true,
           // != null, not a truthy check - icon id 0 is a real, pickable
           // icon (the picker's first thumbnail), not "no icon".
@@ -1354,7 +1402,15 @@ class BuffEngine extends EventEmitter {
           spellCategory: known?.scaleCategory || null,
         };
       })
-      .sort((a, b) => a.remainingSec - b.remainingSec);
+      // A buff that never runs out sorts LAST. remainingSec is null for those, and plain
+      // subtraction would treat null as zero and put them at the top as if they were about to
+      // expire - the opposite of the truth, in the position the eye goes to first.
+      .sort((a, b) => {
+        if (a.infinite && b.infinite) return 0;
+        if (a.infinite) return 1;
+        if (b.infinite) return -1;
+        return a.remainingSec - b.remainingSec;
+      });
   }
 
   // Same shape as getActiveBuffs() plus allyName, so widget rendering code
@@ -1369,7 +1425,10 @@ class BuffEngine extends EventEmitter {
           name: b.name,
           allyName: b.allyName,
           durationSec: b.durationSec,
-          remainingSec: Math.max(0, Math.round((b.expiresAt - now) / 1000)),
+          // null, not a number, for a buff that never runs out. Everything downstream checks for
+          // it rather than trying to render a countdown that has no end.
+          remainingSec: b.infinite ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
+          infinite: !!b.infinite,
           showOnOverlay: known ? known.showOnOverlay !== false : true,
           // != null, not a truthy check - icon id 0 is a real, pickable
           // icon (the picker's first thumbnail), not "no icon".
@@ -1382,7 +1441,15 @@ class BuffEngine extends EventEmitter {
           spellCategory: known?.scaleCategory || null,
         };
       })
-      .sort((a, b) => a.remainingSec - b.remainingSec);
+      // A buff that never runs out sorts LAST. remainingSec is null for those, and plain
+      // subtraction would treat null as zero and put them at the top as if they were about to
+      // expire - the opposite of the truth, in the position the eye goes to first.
+      .sort((a, b) => {
+        if (a.infinite && b.infinite) return 0;
+        if (a.infinite) return 1;
+        if (b.infinite) return -1;
+        return a.remainingSec - b.remainingSec;
+      });
   }
 
   getUnknownBuffs() {

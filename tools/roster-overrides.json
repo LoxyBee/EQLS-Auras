@@ -6,7 +6,44 @@
     "survives the next roster rebuild instead of being silently undone by it - and so nobody has to",
     "guess later whether a number was measured or assumed.",
     "",
-    "Format:  \"<exact spell name>\": { \"why\": \"...\", \"set\": { <fields to overwrite> } }"
+    "Format:  \"<exact spell name>\": { \"why\": \"...\", \"set\": { <fields to overwrite> } }",
+    "",
+    "TO MARK A SPELL AS LASTING FOREVER, add:  \"set\": { \"infiniteDuration\": true }",
+    "Search this file for infiniteDuration to see the ones already marked. A spell marked that way",
+    "shows a tile with no countdown that stays until its ended text arrives - it is for spells the",
+    "spreadsheet gives no duration BECAUSE they genuinely have none, as opposed to instants like",
+    "nukes and heals, which have no duration because they do not last at all."
+  ],
+
+  "Yaulp": {
+    "why": "Shara, 20 August 2026: named as an example of a spell the spreadsheet gives no duration for because it genuinely lasts until dispelled or zoned, not because it is instant.",
+    "set": { "infiniteDuration": true }
+  },
+
+  "Yaulp II": {
+    "why": "A rank of Yaulp - identical landing and ended text - so it gets the same treatment. Marking only the base spell would leave the rank Shara actually casts still broken.",
+    "set": { "infiniteDuration": true }
+  },
+
+  "Yaulp III": {
+    "why": "A rank of Yaulp, same as Yaulp II - identical landing and ended text, so it gets the same treatment for the same reason. Leaving a rank unmarked would mean the spell behaves differently depending on which one the player happens to have scribed.",
+    "set": { "infiniteDuration": true }
+  },
+
+  "Fury": {
+    "why": "Shara, 20 August 2026: named alongside Yaulp as an example of a genuinely unlimited-duration spell.",
+    "set": { "infiniteDuration": true }
+  },
+
+  "_CANDIDATES": [
+    "NOT marked, because nobody has confirmed them - listed so the next person does not have to",
+    "rediscover them. Frenzy and Rage share Fury's exact ended text (\"Your frenzy fades.\") and are",
+    "the same berserk family, so they are very likely infinite too. Shara named Fury, not those, and",
+    "guessing on her behalf is how a confident wrong number gets into the roster.",
+    "",
+    "The wider list worth reviewing: 31 roster entries have a landing text, no duration, and are NOT",
+    "nukes or heals. Armor of Protection, Barbcoat, Wolf Form, Shrink, Feign Death, Banshee Aura,",
+    "O'Keil's Levity, Melanie's Mellifluous Motion, Minor Familiar, Cassindra's Chorus of Clarity."
   ],
 
   "Promised Renewal": {

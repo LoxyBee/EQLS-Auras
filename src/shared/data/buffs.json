@@ -5837,7 +5837,8 @@
   "castSec": 2,
   "reuseSec": 30,
   "targets": "Self",
-  "landingTextSharedBy": 3
+  "landingTextSharedBy": 3,
+  "infiniteDuration": true
  },
  {
   "name": "Fury of Air",
@@ -17242,7 +17243,8 @@
   "castSec": 0.5,
   "reuseSec": 18,
   "targets": "Self",
-  "landingTextSharedBy": 14
+  "landingTextSharedBy": 14,
+  "infiniteDuration": true
  },
  {
   "name": "Yaulp II",
@@ -17260,7 +17262,8 @@
   "castSec": 0.5,
   "reuseSec": 18,
   "targets": "Self",
-  "landingTextSharedBy": 14
+  "landingTextSharedBy": 14,
+  "infiniteDuration": true
  },
  {
   "name": "Yaulp III",
@@ -17278,7 +17281,8 @@
   "castSec": 0.5,
   "reuseSec": 18,
   "targets": "Self",
-  "landingTextSharedBy": 14
+  "landingTextSharedBy": 14,
+  "infiniteDuration": true
  },
  {
   "name": "Yegoreff's Animation",

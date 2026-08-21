@@ -16,6 +16,8 @@
  */
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { test, report } = require('./harness');
 const { BuffStore } = require('../src/main/buffStore');
 const { BuffEngine } = require('../src/main/buffEngine');
@@ -214,6 +216,74 @@ test('a party change still clears the veto', () => {
   assert.equal(engine._hasRecentOtherCast('Spirit of the Puma'), true);
   engine.handleLine('You have been removed from the group.');
   assert.equal(engine._hasRecentOtherCast('Spirit of the Puma'), false, 'a stale veto would hide your own buffs');
+});
+
+// ---------------------------------------------------------------------------
+// Which evidence wins when a buff message could be several spells
+// ---------------------------------------------------------------------------
+
+test('the spellbook is trusted over the memorized gems when they disagree', () => {
+  // The owner had to correct me on this one. Manually un-memorising a spell DOES print
+  // "You forget X." - but a full EQ Legends loadout swap, which changes every gem at once and
+  // can change class, prints nothing at all. So after one of those the gem list is silently
+  // wrong and no log line can say so, while the spellbook cannot go stale that way.
+  //
+  // Driven through the real engine with two candidates that share a landing message: one in
+  // the spellbook, a different one in a gem. The spellbook must win.
+  const { engine, buffStore, log } = makeEngine();
+  const shared = buffStore.getAll().filter((e) => e.landingText === "You feel yourself falling.");
+  const pair = shared.length >= 2 ? shared : buffStore.getAll()
+    .reduce((acc, e) => {
+      if (!e.landingText) return acc;
+      (acc.byText[e.landingText] = acc.byText[e.landingText] || []).push(e);
+      if (acc.byText[e.landingText].length === 2 && !acc.found) acc.found = acc.byText[e.landingText];
+      return acc;
+    }, { byText: {}, found: null }).found;
+  assert.ok(pair && pair.length >= 2, 'no ambiguous landing text in the roster to test with');
+  const [inBook, inGem] = pair;
+
+  engine.setSpellbookCheckFn((name) => name === inBook.name);
+  engine._rememberMemorized(inGem.name);
+  engine.handleLine(inBook.landingText);
+
+  assert.deepEqual(
+    names(engine), [inBook.name],
+    'the spellbook has to win - the gem list is the one that goes wrong after a loadout swap'
+  );
+  assert.ok(log.some((m) => m.includes('narrowed to 1 by spellbook')));
+});
+
+test('the gems still narrow when the spellbook cannot', () => {
+  // Demoting the gem check must not mean discarding it. With no spellbook at all it is the
+  // only narrowing the app has, and that is the owner situation today.
+  const { engine, buffStore, log } = makeEngine();
+  const byText = {};
+  let pair = null;
+  for (const e of buffStore.getAll()) {
+    if (!e.landingText) continue;
+    (byText[e.landingText] = byText[e.landingText] || []).push(e);
+    if (byText[e.landingText].length === 2 && !pair) pair = byText[e.landingText];
+  }
+  assert.ok(pair, "no ambiguous landing text in the roster to test with");
+
+  engine._rememberMemorized(pair[1].name);
+  engine.handleLine(pair[0].landingText);
+  assert.deepEqual(names(engine), [pair[1].name]);
+  assert.ok(log.some((m) => m.includes('narrowed to 1 by currently-memorized gem')));
+});
+
+test('the order in the source is spellbook, then gems, then the question', () => {
+  // The reorder had one trap: moving the whole spellbook section above the gem check would
+  // have dragged with it the block that QUEUES a question when the spellbook leaves more than
+  // one candidate - and every line that the gems resolve today would have started asking
+  // instead. Only the single-candidate check moved.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'buffEngine.js'), 'utf8');
+  const book = src.indexOf('narrowed to 1 by spellbook');
+  const gems = src.indexOf('narrowed to 1 by currently-memorized gem');
+  const ask = src.indexOf('spellbook narrowed to ${selfCandidates.length} candidates');
+  assert.ok(book >= 0 && gems >= 0 && ask >= 0, 'one of the three narrowing paths has gone');
+  assert.ok(book < gems, 'the spellbook must be consulted before the gems');
+  assert.ok(gems < ask, 'the gems must still get their turn before the user is asked');
 });
 
 module.exports = () => report('detection');
