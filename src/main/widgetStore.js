@@ -48,6 +48,15 @@ function isSoundOnly(widget) {
   return !!widget && widget.displayMode === 'sound-only';
 }
 
+// 1 to 60. The ceiling is not arbitrary: buffEngine keeps an instant for 60 seconds and no
+// longer, so a larger number here would be a promise the engine cannot keep.
+const MAX_INSTANT_DISPLAY_SEC = 60;
+
+function clampInstantSec(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 6;
+  return Math.min(MAX_INSTANT_DISPLAY_SEC, Math.max(1, Math.round(value)));
+}
+
 function isTextAura(widget) {
   return !!widget && widget.displayMode === 'text';
 }
@@ -97,6 +106,10 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // also drives list rows and icon labels, and the whole point of an announcement is that it
     // can be much bigger than that without dragging every other aura's text up with it.
     textAuraSize: 32,
+    // Text auras only. How long an INSTANT - a nuke, a heal, something with no duration at all -
+    // stays on screen after it happens. Six by default, because a number that has to be found and
+    // set before the feature works at all is a feature most people never see working.
+    textAuraInstantSec: 6,
     hideBardSongs: true,
     maxDurationFilterSec: 0, // 0 = no cutoff
     soundOnLand: false,
@@ -235,6 +248,10 @@ function defaultCustomWidget(name) {
     // also drives list rows and icon labels, and the whole point of an announcement is that it
     // can be much bigger than that without dragging every other aura's text up with it.
     textAuraSize: 32,
+    // Text auras only. How long an INSTANT - a nuke, a heal, something with no duration at all -
+    // stays on screen after it happens. Six by default, because a number that has to be found and
+    // set before the feature works at all is a feature most people never see working.
+    textAuraInstantSec: 6,
     soundOnLand: false,
     soundOnExpire: false,
     soundWarningSec: 0,
@@ -325,6 +342,7 @@ const SHAREABLE_FIELDS = [
   'categoryBordersEnabled',
   'textAuraMessage',
   'textAuraSize',
+  'textAuraInstantSec',
   'soundOnLand',
   'soundOnExpire',
   'soundWarningSec',
@@ -409,6 +427,10 @@ function normalizeWidget(widget) {
     categoryBordersEnabled: widget.categoryBordersEnabled !== false,
     textAuraMessage: typeof widget.textAuraMessage === 'string' ? widget.textAuraMessage : '',
     textAuraSize: typeof widget.textAuraSize === 'number' ? widget.textAuraSize : 32,
+    // Clamped to the engine's own retention ceiling. A share code asking for five minutes would
+    // otherwise produce an aura that silently shows its text for sixty seconds and no longer,
+    // which looks like the setting not working rather than like a limit.
+    textAuraInstantSec: clampInstantSec(widget.textAuraInstantSec),
     hideBardSongs: !!widget.hideBardSongs,
     timerTextColor: typeof widget.timerTextColor === 'string' ? widget.timerTextColor : '#f0f1f5',
     groupAllyBuffs: !!widget.groupAllyBuffs,
@@ -865,4 +887,6 @@ module.exports = {
   normalizeDisplayMode,
   isSoundOnly,
   isTextAura,
+  clampInstantSec,
+  MAX_INSTANT_DISPLAY_SEC,
 };

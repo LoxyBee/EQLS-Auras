@@ -284,6 +284,16 @@
                 <input type="range" id="widget-text-size-slider" min="12" max="120" step="2" />
                 <span id="widget-text-size-value" class="slider-value">32px</span>
               </div>
+              <div class="row" id="widget-text-instant-row">
+                <span class="label">Show events for:</span>
+                <input type="range" id="widget-text-instant-slider" min="1" max="60" step="1" />
+                <span id="widget-text-instant-value" class="slider-value">6s</span>
+              </div>
+              <p class="hint" id="widget-text-instant-hint">
+                Only applies to spells that have no duration at all - a nuke, a heal, a gate. They
+                happen rather than run, so there is nothing to count down; this is simply how long
+                the words stay up afterwards.
+              </p>
               <p class="hint" id="widget-text-hint">
                 This aura draws one line of words and nothing else - no icon, no countdown. It shows
                 while whatever it is watching is active, and it only ever shows <strong>one</strong>
@@ -874,10 +884,13 @@
               thrown away.
             </p>
             <p class="hint">
-              The game does not write this file on its own; you have to ask it to, with your
-              client's output-file command for your spellbook, while logged in on this character.
-              It only needs doing again when you scribe something new.
+              The game does not write this file on its own. Type this in game, logged in on this
+              character, and it only needs doing again when you scribe something new:
             </p>
+            <div class="row command-row">
+              <code id="spellbook-command">/outputfile spellbook</code>
+              <button type="button" id="copy-spellbook-command-btn">Copy</button>
+            </div>
             <p class="hint" id="spellbook-missing-where"></p>
           </div>
           <p class="hint">

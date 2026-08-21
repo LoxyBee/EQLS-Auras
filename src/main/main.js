@@ -635,6 +635,9 @@ ipcMain.handle('widget:setTextAuraMessage', (_event, { id, value }) =>
   widgetManager.setTextAuraMessage(id, value)
 );
 ipcMain.handle('widget:setTextAuraSize', (_event, { id, value }) => widgetManager.setTextAuraSize(id, value));
+ipcMain.handle('widget:setTextAuraInstantSec', (_event, { id, value }) =>
+  widgetManager.setTextAuraInstantSec(id, value)
+);
 ipcMain.handle('widget:setMergeSameDuration', (_event, { id, value }) =>
   widgetManager.setMergeSameDuration(id, value)
 );

@@ -122,6 +122,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createTextAuraWidget: (name, preset) => ipcRenderer.invoke('widget:createTextAura', { name, preset }),
   setWidgetTextAuraMessage: (id, value) => ipcRenderer.invoke('widget:setTextAuraMessage', { id, value }),
   setWidgetTextAuraSize: (id, value) => ipcRenderer.invoke('widget:setTextAuraSize', { id, value }),
+  setWidgetTextAuraInstantSec: (id, value) =>
+    ipcRenderer.invoke('widget:setTextAuraInstantSec', { id, value }),
   setWidgetMergeSameDuration: (id, value) =>
     ipcRenderer.invoke('widget:setMergeSameDuration', { id, value }),
   setWidgetCategoryBorders: (id, value) => ipcRenderer.invoke('widget:setCategoryBorders', { id, value }),

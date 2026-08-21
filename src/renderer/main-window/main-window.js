@@ -314,6 +314,18 @@ function initDetectionSettingsPanel() {
   const spellbookStatusEl = document.getElementById('spellbook-status');
   const spellbookMissingHintEl = document.getElementById('spellbook-missing-hint');
   const spellbookMissingWhereEl = document.getElementById('spellbook-missing-where');
+  const spellbookCommandEl = document.getElementById('spellbook-command');
+  const copySpellbookCommandBtn = document.getElementById('copy-spellbook-command-btn');
+
+  // Copied from the element rather than from a second copy of the string in here - one source for
+  // the command, so the button can never quietly offer something different from what is displayed.
+  copySpellbookCommandBtn.addEventListener('click', () => {
+    navigator.clipboard?.writeText(spellbookCommandEl.textContent.trim()).catch(() => {});
+    copySpellbookCommandBtn.textContent = 'Copied!';
+    setTimeout(() => {
+      copySpellbookCommandBtn.textContent = 'Copy';
+    }, 1500);
+  });
   const memorizedStatusEl = document.getElementById('memorized-spells-status');
 
   window.eqTracker.getSpellbookState().then((state) => {
@@ -1014,6 +1026,10 @@ function initWidgetsPanel() {
   const textAuraSizeValueEl = document.getElementById('widget-text-size-value');
   const textAuraSizeRowEl = document.getElementById('widget-text-size-row');
   const textHintEl = document.getElementById('widget-text-hint');
+  const textInstantSlider = document.getElementById('widget-text-instant-slider');
+  const textInstantValueEl = document.getElementById('widget-text-instant-value');
+  const textInstantRowEl = document.getElementById('widget-text-instant-row');
+  const textInstantHintEl = document.getElementById('widget-text-instant-hint');
   const displayModeRowEl = document.getElementById('widget-display-mode-row');
   const buffSourceTimerLabelEl = document.getElementById('widget-buff-source-timer-label');
   const categoryBordersCheckbox = document.getElementById('widget-category-borders-checkbox');
@@ -1447,6 +1463,8 @@ function initWidgetsPanel() {
     const isTextAura = displayMode === 'text';
     textMessageRowEl.style.display = isTextAura ? '' : 'none';
     textAuraSizeRowEl.style.display = isTextAura ? '' : 'none';
+    textInstantRowEl.style.display = isTextAura ? '' : 'none';
+    textInstantHintEl.style.display = isTextAura ? '' : 'none';
     textHintEl.style.display = isTextAura ? '' : 'none';
     // Both of these are TYPES now, chosen once in the add-aura flow beside Custom buff aura and
     // Custom timer aura - so neither offers Display style at all. It was a radio for sound-only
@@ -1556,6 +1574,9 @@ function initWidgetsPanel() {
     const textAuraSize = widget.textAuraSize || 32;
     textAuraSizeSlider.value = String(textAuraSize);
     textAuraSizeValueEl.textContent = `${textAuraSize}px`;
+    const instantSec = widget.textAuraInstantSec || 6;
+    textInstantSlider.value = String(instantSec);
+    textInstantValueEl.textContent = `${instantSec}s`;
     soundLandCheckbox.checked = !!widget.soundOnLand;
     soundExpireCheckbox.checked = !!widget.soundOnExpire;
     const warningSec = widget.soundWarningSec || 0;
@@ -2213,6 +2234,11 @@ function initWidgetsPanel() {
   });
   textMessageInput.addEventListener('change', () => {
     window.eqTracker.setWidgetTextAuraMessage(selectedId, textMessageInput.value);
+  });
+  textInstantSlider.addEventListener('input', () => {
+    const seconds = Number(textInstantSlider.value);
+    textInstantValueEl.textContent = `${seconds}s`;
+    window.eqTracker.setWidgetTextAuraInstantSec(selectedId, seconds);
   });
   textAuraSizeSlider.addEventListener('input', () => {
     const size = Number(textAuraSizeSlider.value);

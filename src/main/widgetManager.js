@@ -1,6 +1,6 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
-const { WidgetStore, normalizeDisplayMode, isSoundOnly, isTextAura } = require('./widgetStore');
+const { WidgetStore, normalizeDisplayMode, isSoundOnly, isTextAura, clampInstantSec } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
@@ -663,6 +663,14 @@ function setTextAuraMessage(id, message) {
   return config;
 }
 
+function setTextAuraInstantSec(id, seconds) {
+  // Clamped in the store rather than here, so a share code goes through the same gate a slider
+  // does - see clampInstantSec.
+  const config = widgetStore.update(id, { textAuraInstantSec: clampInstantSec(Number(seconds)) });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setTextAuraSize(id, size) {
   const config = widgetStore.update(id, { textAuraSize: Number(size) || 32 });
   pushConfigChanged(id);
@@ -929,6 +937,7 @@ module.exports = {
   setCategoryBorders,
   setTextAuraMessage,
   setTextAuraSize,
+  setTextAuraInstantSec,
   setHideBardSongs,
   setMaxDurationFilter,
   setShowRowIcon,

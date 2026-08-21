@@ -781,7 +781,16 @@ function visibleBuffs(buffs) {
   // active list feeding every aura - refusing to land would take them away from the two kinds of
   // aura that are supposed to have them.
   const drawsCountdowns = currentConfig.displayMode !== 'sound-only' && currentConfig.displayMode !== 'text';
-  if (drawsCountdowns) filtered = filtered.filter((b) => !b.instant);
+  if (drawsCountdowns) {
+    filtered = filtered.filter((b) => !b.instant);
+  } else {
+    // The engine keeps an instant for a full minute so that ANY aura can still be showing it.
+    // Each aura then decides for itself how long that is - "Show events for" on a text aura,
+    // default six seconds. Without this every text aura would show every nuke for sixty seconds.
+    const showFor = currentConfig.textAuraInstantSec || 6;
+    const now = Date.now();
+    filtered = filtered.filter((b) => !b.instant || !b.landedAt || now - b.landedAt <= showFor * 1000);
+  }
 
   // Merged AFTER filtering and BEFORE sorting. After filtering, or an excluded buff would still
   // be counted in a badge; before sorting, so the merged tile takes its place in the order by the
@@ -910,6 +919,10 @@ let warningsSuppressedOnce = false;
 // signal regardless of whether the buff was ever technically absent.
 const lastRemainingSec = new Map();
 
+// The same idea for instants, which have no remaining time to compare. Keyed the same way, holding
+// the moment each one last happened.
+const lastInstantLandedAt = new Map();
+
 // Not the first ever render for this widget window - guards sound alerts
 // (but not the landing glow, which already handled this) so opening the
 // widget or reloading it doesn't fire a "landed" sound for every buff
@@ -939,9 +952,22 @@ function render(buffs) {
   const soundLandedRaw = new Set();
   for (const b of buffs) {
     const key = keyFor(b);
+    // An INSTANT has no remaining time to watch rise, so the renewal test below can never see a
+    // second cast of one - it would beep for the first nuke and then stay silent for every one
+    // after it until the entry aged out. landedAt changes on every landing, which is the only
+    // signal that says "this happened again".
+    if (b.instant) {
+      const prevLanded = lastInstantLandedAt.get(key);
+      if (prevLanded === undefined || b.landedAt !== prevLanded) soundLandedRaw.add(key);
+      lastInstantLandedAt.set(key, b.landedAt);
+      continue;
+    }
     const prevRemaining = lastRemainingSec.get(key);
     if (prevRemaining === undefined || b.remainingSec > prevRemaining) soundLandedRaw.add(key);
     lastRemainingSec.set(key, b.remainingSec);
+  }
+  for (const key of lastInstantLandedAt.keys()) {
+    if (!rawSet.has(key)) lastInstantLandedAt.delete(key);
   }
   for (const key of lastRemainingSec.keys()) {
     if (!rawSet.has(key)) lastRemainingSec.delete(key);

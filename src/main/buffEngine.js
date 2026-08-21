@@ -23,14 +23,14 @@ const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
 const TICK_INTERVAL_MS = 1000;
 
-// How long an INSTANT stays in the active list - a spell the roster has no duration for and which
-// is not marked as lasting forever, i.e. something that happened rather than something running.
+// How long an INSTANT is kept available - a spell the roster has no duration for and which is not
+// marked as lasting forever, i.e. something that happened rather than something running.
 //
-// Deliberately not zero. A sound aura only needs the landing, but a text aura has to keep the
-// words on screen long enough to read, and an entry that expired in the tick it arrived would give
-// it nothing to draw. It is a display choice, not a claim about the game - durationSec stays null
-// so no countdown can ever be rendered from it.
-const INSTANT_DISPLAY_SEC = 6;
+// This is a RETENTION ceiling, not the display time. How long a text aura actually shows one is
+// that aura's own setting (textAuraInstantSec, default 6), so the engine has to hold onto it for
+// at least as long as the most patient aura might want - hence the cap, which matches the slider's
+// maximum. Nothing draws a countdown from it either way: durationSec stays null.
+const INSTANT_RETENTION_SEC = 60;
 
 // A character has fourteen spell gems, so at most fourteen spells can be memorized at once.
 //
@@ -683,7 +683,16 @@ class BuffEngine extends EventEmitter {
       // concrete otherCastMatch evidence pointing at a genuinely different
       // candidate, which should win over "something happens to already be
       // running".
-      const activeCandidate = candidates.find((c) => this.activeBuffs.has(c.name.toLowerCase()));
+      // Instants excluded deliberately. This tier exists because an ambiguous landing text is far
+      // more likely to be a renewal of something already running than a different spell from the
+      // same family starting up - but an instant is not running, it is a thing that happened, and
+      // it is only still in the list because the engine holds onto it for the text auras. Letting
+      // one act as evidence would mean a nuke cast a minute ago silently deciding what a later
+      // ambiguous line was.
+      const activeCandidate = candidates.find((c) => {
+        const entry = this.activeBuffs.get(c.name.toLowerCase());
+        return entry && !entry.instant;
+      });
       if (activeCandidate && (!otherCastMatch || otherCastMatch.name === activeCandidate.name)) {
         this._debugLog(`RENEWED "${activeCandidate.name}" - ambiguous text "${stripped}" matches an already-active buff`);
         this._land(activeCandidate);
@@ -1002,7 +1011,11 @@ class BuffEngine extends EventEmitter {
       this.activeBuffs.set(key, {
         name: known.name,
         durationSec: null,
-        expiresAt: Date.now() + INSTANT_DISPLAY_SEC * 1000,
+        expiresAt: Date.now() + INSTANT_RETENTION_SEC * 1000,
+        // When it happened, so an aura can show it for its own chosen number of seconds - and so a
+        // second cast can be told apart from the first one still sitting in the list, which is
+        // what makes the sound fire again rather than once.
+        landedAt: Date.now(),
         instant: true,
         endedText: known.endedText || null,
       });
@@ -1039,7 +1052,11 @@ class BuffEngine extends EventEmitter {
         name: known.name,
         allyName,
         durationSec: null,
-        expiresAt: Date.now() + INSTANT_DISPLAY_SEC * 1000,
+        expiresAt: Date.now() + INSTANT_RETENTION_SEC * 1000,
+        // When it happened, so an aura can show it for its own chosen number of seconds - and so a
+        // second cast can be told apart from the first one still sitting in the list, which is
+        // what makes the sound fire again rather than once.
+        landedAt: Date.now(),
         instant: true,
       });
       this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
@@ -1436,6 +1453,7 @@ class BuffEngine extends EventEmitter {
           // An event rather than a running buff. The overlay uses this to keep it off auras that
           // draw countdowns, and to allow it on the two that do not.
           instant: !!b.instant,
+          landedAt: b.landedAt || null,
           showOnOverlay: known ? known.showOnOverlay !== false : true,
           // != null, not a truthy check - icon id 0 is a real, pickable
           // icon (the picker's first thumbnail), not "no icon".
@@ -1484,6 +1502,7 @@ class BuffEngine extends EventEmitter {
           // An event rather than a running buff. The overlay uses this to keep it off auras that
           // draw countdowns, and to allow it on the two that do not.
           instant: !!b.instant,
+          landedAt: b.landedAt || null,
           showOnOverlay: known ? known.showOnOverlay !== false : true,
           // != null, not a truthy check - icon id 0 is a real, pickable
           // icon (the picker's first thumbnail), not "no icon".

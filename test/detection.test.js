@@ -149,7 +149,12 @@ test('the overlay keeps instants off auras that draw countdowns', () => {
     overlay,
     /const drawsCountdowns = currentConfig\.displayMode !== 'sound-only' && currentConfig\.displayMode !== 'text';/
   );
-  assert.match(overlay, /if \(drawsCountdowns\) filtered = filtered\.filter\(\(b\) => !b\.instant\);/);
+  assert.match(overlay, /if \(drawsCountdowns\) \{\s*\n\s*filtered = filtered\.filter\(\(b\) => !b\.instant\);/);
+
+  // And the other half: an aura that does NOT draw countdowns keeps them, for its own number of
+  // seconds rather than the full minute the engine holds them.
+  assert.match(overlay, /const showFor = currentConfig\.textAuraInstantSec \|\| 6;/);
+  assert.match(overlay, /now - b\.landedAt <= showFor \* 1000/);
 });
 
 test('a duration that IS known behaves correctly', () => {
@@ -311,5 +316,43 @@ test('the order in the source is spellbook, then gems, then the question', () =>
   assert.ok(gems < ask, 'the gems must still get their turn before the user is asked');
 });
 
+
+test('an instant is kept long enough for any aura to want it', () => {
+  // The engine holds one for a minute so the most patient aura can still be showing it; how
+  // long it is actually DRAWN is the aura setting. Holding for six would have made a longer
+  // setting silently impossible.
+  const { engine, buffStore } = makeEngine();
+  engine._land(buffStore.getByName('Alliance'));
+  const entry = [...engine.activeBuffs.values()][0];
+  const heldSec = Math.round((entry.expiresAt - Date.now()) / 1000);
+  assert.ok(heldSec >= 55, `held for only ${heldSec}s - a 60s aura setting could not work`);
+});
+
+test('every landing of an instant is a separate event', () => {
+  // A nuke cast twice is two events. remainingSec is null for both, so the usual "did the timer
+  // go back up" test can never see the second one - the sound would fire once and then stay
+  // silent until the entry aged out. landedAt is what distinguishes them.
+  const { engine, buffStore } = makeEngine();
+  const spell = buffStore.getByName('Alliance');
+  engine._land(spell);
+  const first = engine.getActiveBuffs()[0].landedAt;
+  assert.ok(first, "an instant must record when it happened");
+
+  const entry = [...engine.activeBuffs.values()][0];
+  entry.landedAt -= 5000; // stand in for time passing, so the next landing is distinguishable
+  engine._land(spell);
+  assert.notEqual(engine.getActiveBuffs()[0].landedAt, entry.landedAt, "a second cast must look new");
+});
+
+test('an instant is never treated as an already-running buff', () => {
+  // The renewal tier exists because an ambiguous landing is usually a renewal of something
+  // running. An instant is not running - it is only still in the list because the engine holds
+  // it for the text auras - so letting it act as evidence would mean a nuke from a minute ago
+  // silently deciding what a later ambiguous line was.
+  const src2 = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'buffEngine.js'), 'utf8');
+  const m = src2.match(/const activeCandidate = candidates\.find\(\(c\) => \{([\s\S]*?)\}\);/);
+  assert.ok(m, 'the renewal tier has been restructured');
+  assert.match(m[1], /!entry\.instant/, 'an instant can still stand in as an active buff');
+});
 module.exports = () => report('detection');
 if (require.main === module) process.exit(report('detection') ? 1 : 0);

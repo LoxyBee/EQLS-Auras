@@ -24,7 +24,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, report } = require('./harness');
-const { WidgetStore, DISPLAY_MODES, isTextAura, TEXT_AURA_PRESETS } = require('../src/main/widgetStore');
+const {
+  WidgetStore,
+  DISPLAY_MODES,
+  isTextAura,
+  TEXT_AURA_PRESETS,
+  clampInstantSec,
+  MAX_INSTANT_DISPLAY_SEC,
+} = require('../src/main/widgetStore');
 
 const ROOT = path.join(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
@@ -381,6 +388,56 @@ test('the controls a text aura cannot use are hidden', () => {
   assert.match(src, /timerTextTopicEl\.style\.display = isSoundOnly \|\| isTextAura \? 'none' : ''/);
   // The list-mode groups show for anything that is not icon mode, so they need the extra clause.
   assert.match(src, /if \(isTextAura\) \{/);
+});
+
+
+// ---------------------------------------------------------------------------
+// How long an instant stays up
+// ---------------------------------------------------------------------------
+
+test('a text aura decides for itself how long an event stays on screen', () => {
+  // Shara: "the 6 second display for text only auras should be a setting the user can do for
+  // themselves. default it to 6 though, incase the user forgets to change it."
+  const store = newStore();
+  const w = store.createTextAura('Announcer');
+  assert.equal(w.textAuraInstantSec, 6, 'it has to work without anyone finding the setting first');
+
+  store.update(w.id, { textAuraInstantSec: 20 });
+  const imported = store.importCode(store.exportCode(w.id));
+  assert.equal(imported.textAuraInstantSec, 20, 'it should travel in a share code');
+});
+
+test('an impossible number is brought back to something the engine can honour', () => {
+  // The engine keeps an instant for sixty seconds and no longer, so a share code asking for five
+  // minutes would produce an aura that silently stopped at sixty - which looks like the setting
+  // not working rather than like a limit.
+  assert.equal(clampInstantSec(6), 6);
+  assert.equal(clampInstantSec(999), MAX_INSTANT_DISPLAY_SEC);
+  assert.equal(clampInstantSec(0), 1, 'zero would mean it never appears at all');
+  assert.equal(clampInstantSec(-5), 1);
+  assert.equal(clampInstantSec(undefined), 6, 'missing means the default, not zero');
+  assert.equal(clampInstantSec('soon'), 6);
+
+  const engineSrc = read('src', 'main', 'buffEngine.js');
+  const m = engineSrc.match(/const INSTANT_RETENTION_SEC = (\d+);/);
+  assert.ok(m, 'the engine retention constant has been renamed');
+  assert.equal(
+    Number(m[1]), MAX_INSTANT_DISPLAY_SEC,
+    'the slider maximum and the engine retention must be the same number, or the top of the ' +
+    'slider is a promise the engine cannot keep'
+  );
+});
+
+test('the setting is reachable, populated, and hidden on other aura types', () => {
+  assert.match(html, /id="widget-text-instant-slider"/, 'the control is missing');
+  assert.match(rendererSrc, /textInstantSlider\.value = String\(instantSec\)/, 'never populated');
+  assert.match(rendererSrc, /setWidgetTextAuraInstantSec\(selectedId, seconds\)/);
+  assert.match(rendererSrc, /textInstantRowEl\.style\.display = isTextAura \? '' : 'none'/);
+  // The slider bounds have to agree with the clamp, or the UI offers what the store refuses.
+  const bounds = html.match(/id="widget-text-instant-slider"[^>]*min="(\d+)"[^>]*max="(\d+)"/);
+  assert.ok(bounds, 'the slider has no bounds');
+  assert.equal(Number(bounds[1]), 1);
+  assert.equal(Number(bounds[2]), MAX_INSTANT_DISPLAY_SEC);
 });
 
 module.exports = () => report('text-aura');

@@ -278,8 +278,8 @@ is why nobody went looking. It now says what is missing and why it matters.
       gone.
 - [ ] **Play a session and compare.** *Expect*: noticeably fewer ambiguity prompts, and buffs
       appearing that used to be silently missing.
-- [ ] **Tell me the exact command you used** - the hint text deliberately does not name one,
-      because I did not want to print the wrong syntax.
+- [ ] The command is **`/outputfile spellbook`**, shown on the Setup page with a **Copy** button
+      next to it.
 - [ ] **If you are willing, send the file back with the repo.** The before/after numbers above are
       measured against a reconstruction; a real one would make them exact.
 
@@ -314,9 +314,12 @@ or resisted". That is now how it works.
       noise when the spell goes off, with nothing drawn.
 - [ ] **Make a text aura and point it at the same spell.** *Expect*: the words appear briefly and
       then clear themselves.
-- [ ] **Worth knowing:** the "briefly" is six seconds, and it is the only number in this the app
-      invented. It exists so a text aura has something on screen long enough to read. Say if it
-      should be longer, shorter, or a setting.
+- [ ] **"Briefly" is now yours to set.** A text aura has a **Show events for** slider, 1 to 60
+      seconds, defaulting to 6 so it works without anyone going looking for it. Change it and
+      check the words stay up for as long as you asked.
+- [ ] **Cast the same nuke twice in a row on a sound aura.** *Expect*: it makes the noise BOTH
+      times. An event has no timer to watch go back up, so this needed its own handling - the
+      first version would have beeped once and then gone quiet.
 
 ### The older no-duration measurement *(kept for the record - the fix above supersedes it)*
 

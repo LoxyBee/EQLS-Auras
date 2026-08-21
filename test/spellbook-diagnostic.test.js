@@ -71,7 +71,14 @@ test('the missing state says what to do about it, and what it costs', () => {
   assert.match(block[0], /ignores them|thrown away/i, 'it does not say what is being lost');
   // The action, or knowing the cost is just bad news.
   assert.match(block[0], /does not write this file on its own/i, 'it does not say the file is manual');
-  assert.match(block[0], /output-file command/i, 'it does not say how to create it');
+  // The command itself, named exactly, because "your client's output-file command" is the sort of
+  // phrase that leaves someone still guessing. Shara supplied it.
+  assert.match(html, /<code id="spellbook-command">\/outputfile spellbook<\/code>/,
+    'the exact command is not shown');
+  assert.match(rendererSrc, /copySpellbookCommandBtn\.addEventListener/, 'there is no copy button');
+  // Copied from the element, so the button cannot drift from what is on screen.
+  assert.match(rendererSrc, /writeText\(spellbookCommandEl\.textContent\.trim\(\)\)/,
+    'the button copies its own copy of the string rather than the one displayed');
   // And where, filled in at runtime from the real paths.
   assert.match(html, /id="spellbook-missing-where"/);
   assert.match(rendererSrc, /spellbookMissingWhereEl\.textContent = /);
