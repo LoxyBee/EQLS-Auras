@@ -54,8 +54,8 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 23 | Text-only display style, own size, own dwell time | **DONE** | Built as a *type* chosen when you create the aura, not a fourth radio — you agreed to that change. The dwell time is a setting, default 6s. |
 | 24 | Detection priority rework, plus a song-pulse check | **PART** | Spellbook now outranks the gem list. Rival-caster tracking built. Missing: the post-cast song-pulse auto-resolve, which needs a log sample proving the 6s repeat. |
 | 25 | A disabled "Global recovery time" placeholder | **DONE** | Still a placeholder. The `castOf` trigger note 15 introduced is the piece it needs, when you want it built. |
-| 26 | Drop a stale timer when a buff gets overwritten | **PART** | Done for buffs on other people — the game announces it. Not done for buffs on yourself; there is no line for it. |
-| 27 | Promote "Buffs shown" to its own section, add gem slots | **PART** | Now a top-level card between Display & size and Configuration. Gem slots not built — waiting on your go-ahead. |
+| 26 | Drop a stale timer when a buff gets overwritten | **PART** | Overwrites and refused casts both handled for buffs on other people. Buffs on yourself still can't be told apart. |
+| 27 | Promote "Buffs shown" to its own section, add gem slots | **DONE** | Own card, gem slots, "+" slot, buffs and debuffs kept apart. Your existing auras were not touched. |
 | 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Needs `detection-debug.log` from 19 Aug around 12:15. The debug log now names the rival caster, so if it happens again the evidence will be there. |
 | 29 | Put EverQuest back in front after answering a popup | **DONE** | |
 | 30 | Read share codes out of chat | **BLOCKED** | Needs the server's per-line character limit confirmed, and whether + and = survive a chat line. |
@@ -123,22 +123,19 @@ decisions rather than yours, and both are worth overruling if you disagree:
 
 ## Three things I need from you
 
-**Note 27 — the gem slots.** The section move is done. The gem-slot half changes how an aura
-stores which spells it watches, and that is the one change in this whole backlog that could empty
-auras you have already set up. I want your go-ahead specifically for that, not a general yes to
-note 27. When you give it, I will version-gate the change so old auras convert rather than break.
-
 **Note 21 — should the label switch itself on?** Now that it is a setting rather than an aura, the
 auto-enable you asked for is much less annoying than auto-creating would have been: it would tick
 the box once, the first time you make a second loadout. Say the word. Also: show "Default" while
 you are on the default loadout, or stay blank? Blank means the label vanishing is itself the
 signal, which reads like a bug.
 
-**Note 26 — mostly answered, and the answer was simpler than the question.** The research came
-back and it turns out there are no buff "types" in the game at all. "HP type 1" is what players
-call the Courage/Center/Daring/Bravery line — the engine works in twelve numbered effect slots,
-and two spells clash only when they put the same effect in the same numbered slot. The app has no
-slot data and could not work it out.
+**Note 26 — and a correction I owe you.** I told you there are no buff "types". That was wrong of
+me: your spreadsheet's category column carries **HP Buff (Line 1)** (17 spells) and **HP Buff
+(Line 2)** (3), it is in the app's roster too, and 28 of the 33 blocked pairs in your logs share a
+category. My own research agent found this and I failed to pass it on. What I should have said is
+narrower: the *engine* works in numbered effect slots rather than named types, so the app cannot
+compute conflicts from first principles — but your line grouping is real, it is in your data, and
+it predicts most of them.
 
 None of which matters, because the game just says so: **"Your Shield of Thistles spell on Avenrae
 has been overwritten."** 109 of those in your logs, always the same shape, naming both spell and
