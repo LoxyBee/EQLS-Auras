@@ -54,7 +54,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 23 | Text-only display style, own size, own dwell time | **DONE** | Built as a *type* chosen when you create the aura, not a fourth radio — you agreed to that change. The dwell time is a setting, default 6s. |
 | 24 | Detection priority rework, plus a song-pulse check | **PART** | Spellbook now outranks the gem list. Rival-caster tracking built. Missing: the post-cast song-pulse auto-resolve, which needs a log sample proving the 6s repeat. |
 | 25 | A disabled "Global recovery time" placeholder | **DONE** | Still a placeholder. The `castOf` trigger note 15 introduced is the piece it needs, when you want it built. |
-| 26 | Drop a stale timer when a buff gets overwritten | **BLOCKED** | Under research. Your logs turn out to hold 189 real stacking conflicts, so there is more evidence than anyone thought. |
+| 26 | Drop a stale timer when a buff gets overwritten | **PART** | Done for buffs on other people — the game announces it. Not done for buffs on yourself; there is no line for it. |
 | 27 | Promote "Buffs shown" to its own section, add gem slots | **PART** | Now a top-level card between Display & size and Configuration. Gem slots not built — waiting on your go-ahead. |
 | 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Needs `detection-debug.log` from 19 Aug around 12:15. The debug log now names the rival caster, so if it happens again the evidence will be there. |
 | 29 | Put EverQuest back in front after answering a popup | **DONE** | |
@@ -134,10 +134,23 @@ the box once, the first time you make a second loadout. Say the word. Also: show
 you are on the default loadout, or stay blank? Blank means the label vanishing is itself the
 signal, which reads like a bug.
 
-**Note 26 — research is running, no action needed from you yet.** Two agents are on it. Your logs
-turn out to contain 189 real stacking conflicts of the form "Your Protection of Rock spell did not
-take hold on Avenrae. (Blocked by Bravery.)", which is far more evidence than the note assumed
-existed. I will come back when I know whether the rule is derivable from what the app can see.
+**Note 26 — mostly answered, and the answer was simpler than the question.** The research came
+back and it turns out there are no buff "types" in the game at all. "HP type 1" is what players
+call the Courage/Center/Daring/Bravery line — the engine works in twelve numbered effect slots,
+and two spells clash only when they put the same effect in the same numbered slot. The app has no
+slot data and could not work it out.
+
+None of which matters, because the game just says so: **"Your Shield of Thistles spell on Avenrae
+has been overwritten."** 109 of those in your logs, always the same shape, naming both spell and
+target. So it is done for buffs on other people.
+
+**What is left of it, and it is a real question.** There is no such line for a buff on *yourself* —
+none at all, not even a "worn off". The only signal is each spell's own fade message, which the app
+already reads. The problem is that some spells share one: Nimble and Agility both say "Your agility
+fades", and Symbol of Pinzarn and Symbol of Naltron both say "The mystic symbol fades". When one of
+those overwrites the other, the app sees one fade message and cannot tell which of the two ended. I
+have left it alone rather than guess. If self-buff overwrites matter to you, say so and I will work
+out how far a best guess can be trusted.
 
 ## What I would do next, in order
 
