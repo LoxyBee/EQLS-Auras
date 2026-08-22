@@ -28,7 +28,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 7 | Make the app's own text bigger | **DONE** | |
 | 8 | Merge same-duration buffs into one tile with a count | **DONE** | |
 | 9 | Triggers that need any-of / all-of several lines | **NOT** | A trigger is still one line of text. See the note under 10. |
-| 10 | A trigger that runs its duration then rolls into a cooldown | **NOT** | Same shape as 9. Both want the trigger model widened once rather than bent twice — worth doing together. |
+| 10 | A trigger that runs its duration then rolls into a cooldown | **NOT** | Cheaper than it was: note 15 built both halves separately, so this is joining them rather than inventing them. |
 
 ## 11–20
 
@@ -38,7 +38,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 12 | One mez tile: soonest timer, count, mob name | **PART** | Falls out of note 8's merging, so same-named mobs already collapse into one counted tile. There is no mez-specific tile and no yellow-to-red-at-8s rule. |
 | 13 | Drag the sidebar wider | **DONE** | |
 | 14 | Buff-timer premade: pick a spell, pick self or ally | **DONE** | Now also offers "something you cast it at". |
-| 15 | Cooldown premade: pick a skill, get its recast countdown | **NOT** | **Its blocker is gone.** Recast times now exist on 989 of 1,052 spells. Nothing in the app reads them yet. Cheapest big win on the list. |
+| 15 | Cooldown premade: pick a skill, get its recast countdown | **DONE** | Add Aura -> Cooldown timer. Recast pre-filled and editable. Works with the ranked spells you cast. |
 | 16 | Debuff-on-an-enemy premade, resist alert, ally toggle | **DONE** | All three. The ally part is built as you specified it on 21 Aug — a warning, not a timer. See below. |
 | 17 | Mesmerize worked example: rank, per-mob timer, RESIST flash | **PART** | Per-mob timer built. RESIST flash built. Missing: using the rank to set *your own* mez duration — though the app now reads the rank off other people's casts and shows it. |
 | 18 | Count same-named mobs from the land and resist lines | **NOT** | Two things you should know before this gets built — below. |
@@ -49,11 +49,11 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 
 | # | What you asked for | | Where it stands |
 | --- | --- | --- | --- |
-| 21 | An aura showing which loadout profile is active | **NOT** | **Unblocked.** It was waiting on the text-only aura, which shipped as note 23. Small job now. |
+| 21 | An aura showing which loadout profile is active | **PART** | Built as Add Aura -> Loadout label. Missing only the auto-create, which I left out on purpose — see below. |
 | 22 | "Unlock all" only on the main Overlay Auras page | **DONE** | |
 | 23 | Text-only display style, own size, own dwell time | **DONE** | Built as a *type* chosen when you create the aura, not a fourth radio — you agreed to that change. The dwell time is a setting, default 6s. |
 | 24 | Detection priority rework, plus a song-pulse check | **PART** | Spellbook now outranks the gem list. Rival-caster tracking built. Missing: the post-cast song-pulse auto-resolve, which needs a log sample proving the 6s repeat. |
-| 25 | A disabled "Global recovery time" placeholder | **DONE** | |
+| 25 | A disabled "Global recovery time" placeholder | **DONE** | Still a placeholder. The `castOf` trigger note 15 introduced is the piece it needs, when you want it built. |
 | 26 | Drop a stale timer when a buff gets overwritten | **BLOCKED** | Needs one log line of a real overwrite. **This is the only outstanding item that makes the app show something actively wrong**, so it is worth the one cast it costs you. |
 | 27 | Promote "Buffs shown" to its own section, add gem slots | **NOT** | Still a topic inside Configuration. Nothing blocking it. The biggest unbuilt thing on the list. |
 | 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Needs `detection-debug.log` from 19 Aug around 12:15. The debug log now names the rival caster, so if it happens again the evidence will be there. |
@@ -121,13 +121,31 @@ decisions rather than yours, and both are worth overruling if you disagree:
 
 ---
 
+## Three things I need from you
+
+**Note 21 — should the loadout label create itself?** Your note asks for it to appear
+automatically once you have a second loadout. I built everything except that. An aura that creates
+itself is also an aura that comes back after you delete it, and your note says the same. If you
+want it, I will add it version-gated so it can only ever happen once. Also: should it show
+"Default" when you are on the default loadout, or stay blank? Blank means the label disappearing is
+itself the signal, which reads like a bug.
+
+**Note 27 — two questions before I start.** There is already a row labelled "Buffs shown:" in
+Display & size that picks whether an aura watches you, an ally or timers. If "Buffs shown" also
+becomes its own section, there are two things with that name on one screen. I would rename the
+existing one to something like "Watching:" — say if you would rather it went the other way. And the
+gem-slot half changes how an aura stores its picked spells, which is the one change that could
+empty auras you have already set up, so I want your go-ahead before touching it rather than after.
+
+**Note 26 — one cast from you unblocks it.** Overwrite a buff with a stronger version and send me
+the lines. It is still the only outstanding item that makes the app show something actively wrong.
+
 ## What I would do next, in order
 
-1. **Note 15, the cooldown premade.** Its blocker is stale, the data is there, and the picker from
-   note 14 already fits it. Biggest result for the least work.
-2. **Note 27, the "Buffs shown" section.** Largest unbuilt piece with nothing standing in its way,
-   and it changes how every aura is set up.
-3. **Note 26, overwrite detection.** The only open item that makes the app show something wrong.
+1. **Note 27, the "Buffs shown" section.** Largest unbuilt piece. Needs the two answers above.
+2. **Note 26, overwrite detection.** The only open item that makes the app show something wrong.
    Costs you one cast to unblock.
-4. **Note 21, the profile label.** Small, and note 23 already unblocked it.
-5. **Notes 9 and 10 together.** Widen the trigger model once. Notes 38 and 39 both sit behind it.
+3. **Notes 9 and 10 together.** Widen the trigger model once. Note 10 is cheaper now that the
+   cooldown half exists. Notes 38 and 39 both sit behind it.
+4. **Note 12, the mez tile.** Now that mez tracking works, the counted tile is worth revisiting.
+5. **Note 2, 19, 20** — all three need log samples or data that does not exist yet.
