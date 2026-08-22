@@ -447,6 +447,14 @@ function initDetectionSettingsPanel() {
 
   const autoHideCheckbox = document.getElementById('auto-hide-overlay-checkbox');
   const showAurasAppFocusedCheckbox = document.getElementById('show-auras-app-focused-checkbox');
+  // Filled in from whichever hotkey actually registered, rather than hard-coded. The markup used
+  // to say "or press Pause" while Electron was refusing that key outright, so the one readout of
+  // the feature was also the thing telling everyone it worked.
+  const masterHideHintEl = document.getElementById('master-hide-hint');
+  window.eqTracker.getHideHotkey().then((key) => {
+    masterHideHintEl.textContent = key ? `or press ${HOTKEY_LABELS[key] || key}` : '';
+  });
+
   const loadoutLabelCheckbox = document.getElementById('loadout-label-checkbox');
   window.eqTracker.getLoadoutLabel().then((enabled) => {
     loadoutLabelCheckbox.checked = !!enabled;
@@ -2398,6 +2406,12 @@ function initWidgetsPanel() {
         focusWidget(config.id);
       });
   });
+
+  // Electron's accelerator spelling is not how anyone reads a key off their keyboard.
+  const HOTKEY_LABELS = {
+    ScrollLock: 'Scroll Lock',
+    'Alt+Shift+H': 'Alt+Shift+H',
+  };
 
   function renderPremadeList() {
     premadeListEl.innerHTML = '';

@@ -136,6 +136,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetTrackOnEnemies: (id, value) => ipcRenderer.invoke('widget:setTrackOnEnemies', { id, value }),
   setWidgetAllyDebuffAlert: (id, value) => ipcRenderer.invoke('widget:setAllyDebuffAlert', { id, value }),
   setWidgetAlwaysOn: (id, value) => ipcRenderer.invoke('widget:setAlwaysOn', { id, value }),
+  getHideHotkey: () => ipcRenderer.invoke('settings:getHideHotkey'),
   getLoadoutLabel: () => ipcRenderer.invoke('settings:getLoadoutLabel'),
   setLoadoutLabel: (enabled) => ipcRenderer.invoke('settings:setLoadoutLabel', enabled),
   setWidgetShowOnAllProfiles: (id, value) =>

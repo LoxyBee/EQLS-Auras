@@ -768,6 +768,27 @@ roughly one every few hours of play. Nothing stopped being *detected*; things
 stop being *shown* once they are over. If you would rather they stayed put,
 say so - it is one line to put back.
 
+## The hide-auras hotkey (it never worked)
+
+**It was Pause, and Pause has never once worked.** Electron refuses that key
+outright, and refuses it by throwing rather than by saying no - so the code that
+was there to handle "another program owns this key" never ran, and the top bar
+cheerfully said "or press Pause" the whole time. No test caught it because none
+of them start the actual app. Nine seconds of launching it did.
+
+**It is Scroll Lock now** - same corner of the keyboard, equally unused in game.
+If something else on your machine owns Scroll Lock it falls back to Alt+Shift+H
+and the hint in the top bar tells you which one you actually got.
+
+- [ ] **Press Scroll Lock in game.** Every aura should vanish; press again and
+      they come back.
+- [ ] **The hint next to the "Hide auras" button names the key you actually
+      have.**
+- [ ] **The button and the key agree** - use one, then the other, and the button
+      should look right both times.
+- [ ] If Scroll Lock is wrong for you, say so - it is one line, and any key
+      Electron accepts will do.
+
 ## Stale timers when a buff is replaced (note 26)
 
 This turned out to need no stacking rules at all - the game announces it.
@@ -793,10 +814,16 @@ Two casts across your whole log history stop being credited as landings, both
 Dexterity, both cases where the cast demonstrably failed and the app was
 attributing a later landing to it. Nothing else moved.
 
-**Still not done: buffs on YOURSELF being overwritten.** There is no line for
-it - the app has to rely on each spell's own "fades" message, which it already
-does. Where two spells share that message (Nimble and Agility both say "Your
-agility fades") it cannot tell which one ended. Left alone rather than guessed.
+**Buffs on yourself are covered too - I was wrong about this twice.** I said the
+app could not tell Nimble from Agility because they share a fade message. It
+can: it only matters if both are running at once, and the stacking rule that
+causes the overwrite is the same rule that stops that happening. Verified with
+Skin like Wood being replaced by Skin like Steel, which share a fade message
+with nineteen other spells.
+
+- [ ] **Overbuff yourself** - cast a weaker buff on yourself, then a stronger one
+      of the same line. The first tile should go and the second appear, with the
+      longer duration.
 
 ## "Buffs shown" is its own card, with gem slots
 

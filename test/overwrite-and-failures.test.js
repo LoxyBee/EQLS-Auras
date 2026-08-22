@@ -94,6 +94,50 @@ test('an overwrite for something not being tracked does nothing bad', () => {
 });
 
 // ---------------------------------------------------------------------------
+// A buff on YOURSELF being replaced
+// ---------------------------------------------------------------------------
+
+test('a self buff replaced by a better one hands over cleanly', () => {
+  // I said twice that this could not be worked out, because Skin like Wood and Skin like Steel
+  // both fade with "Your skin returns to normal." and the app could not tell which had ended.
+  // That was wrong, and Shara said so. It only matters if BOTH are running at once, and the
+  // stacking rule that causes the overwrite is the same rule that prevents that. Whichever one
+  // the app is actually holding is the one the fade belongs to.
+  //
+  // The app never has to decide which spell is "better" either. The game decides and then reports
+  // both halves - the old one fading and the new one landing - and following that is enough.
+  const e = engine();
+  feed(e, 'You begin casting Skin like Wood.', 'Your skin turns hard as wood.');
+  assert.deepEqual(e.getActiveBuffs().map((b) => b.name), ['Skin like Wood']);
+
+  feed(e, 'You begin casting Skin like Steel.');
+  assert.deepEqual(e.getActiveBuffs().map((b) => b.name), ['Skin like Wood'], 'it went early');
+
+  feed(e, 'Your skin returns to normal.');
+  assert.deepEqual(e.getActiveBuffs().map((b) => b.name), [], 'the replaced buff is still counting down');
+
+  feed(e, 'Your skin turns hard as steel.');
+  const now = e.getActiveBuffs();
+  assert.deepEqual(now.map((b) => b.name), ['Skin like Steel']);
+  assert.ok(now[0].remainingSec > 1620, "the new buff inherited the old one's duration");
+});
+
+test('the shared fade text is real, and widespread', () => {
+  // 90 ended texts are shared by more than one spell, so this is not one awkward pair - it is the
+  // normal case, and it works.
+  const roster = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'shared', 'data', 'buffs.json'), 'utf8'));
+  const byText = {};
+  for (const entry of roster) {
+    if (!entry.endedText) continue;
+    (byText[entry.endedText] = byText[entry.endedText] || []).push(entry.name);
+  }
+  const shared = Object.values(byText).filter((v) => v.length > 1);
+  assert.ok(shared.length > 50, `only ${shared.length} shared ended texts - has the roster changed?`);
+  const skin = byText['Your skin returns to normal.'] || [];
+  assert.ok(skin.includes('Skin like Wood') && skin.includes('Skin like Steel'), 'the worked example is stale');
+});
+
+// ---------------------------------------------------------------------------
 // The failure patterns, every one counted against the logs
 // ---------------------------------------------------------------------------
 

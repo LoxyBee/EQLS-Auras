@@ -314,28 +314,42 @@ test('the four clauses of shouldBeOnScreen are in the order the notes require', 
   assert.ok(at('masterHidden') < at('foregroundHidden'));
 });
 
-test('the Pause hotkey toggles master hide, and gives the key back on quit', () => {
-  // Chosen by the owner because she never uses it in game, which is the only thing that makes a
-  // global shortcut safe here: it is grabbed at OS level and EverQuest never sees the key at all
-  // while this app runs. Structural, because globalShortcut needs a real Electron app.
+test('the hide-auras hotkey is one Electron will actually accept', () => {
+  // This test used to assert globalShortcut.register('Pause'), and its own comment said
+  // "register() fails by returning false, not by throwing". Both were wrong, and the belief is
+  // what let it ship: Electron THROWS on 'Pause', so the graceful fallback never ran and the
+  // hotkey never once worked - while the top bar said "or press Pause".
+  //
+  // Verified by registering it in a real Electron process: 'Pause' throws, ScrollLock,
+  // PrintScreen, F13 and modifier chords all register. No unit test can catch this class of
+  // failure, which is why tools/smoke-launch.js exists.
   const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
 
-  assert.match(main, /globalShortcut\.register\('Pause'/, 'the hotkey is not registered');
+  assert.match(main, /const HIDE_HOTKEYS = \[/, 'the hotkey list is gone');
+  const list = main.match(/const HIDE_HOTKEYS = \[([^\]]*)\]/)[1];
+  assert.doesNotMatch(list, /'Pause'/, "'Pause' is not a valid Electron accelerator - it throws");
+  assert.ok(list.split(',').filter((x) => x.trim()).length >= 2, 'no fallback if the first key is taken');
+
+  // Registration must be inside a try, or one bad accelerator takes down startup - which is
+  // exactly what happened.
+  const loop = main.match(/for \(const accelerator of HIDE_HOTKEYS\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(loop, 'the registration loop has been restructured');
+  assert.match(loop[1], /try \{/, 'an accelerator Electron refuses would crash startup again');
+  assert.match(loop[1], /catch \(err\)/);
+  assert.match(loop[1], /globalShortcut\.register\(accelerator, toggleMasterHidden\)/);
+
   assert.match(
     main, /globalShortcut\.unregisterAll\(\)/,
     'without this the key stays captured from EverQuest after the app has quit'
   );
   const quit = main.match(/app\.on\('will-quit'[\s\S]*?\n\}\);/);
   assert.ok(quit && /unregisterAll/.test(quit[0]), 'the release must happen on will-quit');
+});
 
-  // register() fails by returning false, not by throwing, when another app already owns the key.
-  // The button in the top bar has to keep working in that case - the shortcut is never the only
-  // way to reach this.
-  assert.match(main, /if \(!hotkeyRegistered\)/, 'a failed registration is not noticed');
-
-  // And the toggle has to be the same one the button uses, not a second copy of the rule.
-  const handler = main.match(/globalShortcut\.register\('Pause', \(\) => \{([\s\S]*?)\n  \}\)/);
-  assert.ok(handler, 'the hotkey handler has been restructured');
+test('the hotkey does the same thing the button does', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const handler = main.match(/const toggleMasterHidden = \(\) => \{([\s\S]*?)\n {2}\};/);
+  assert.ok(handler, 'toggleMasterHidden has been renamed or restructured');
   assert.match(handler[1], /widgetManager\.setMasterHidden\(!widgetManager\.isMasterHidden\(\)\)/);
   assert.match(
     handler[1], /overlay:masterStateChanged/,
@@ -347,6 +361,22 @@ test('the Pause hotkey toggles master hide, and gives the key back on quit', () 
     path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8'
   );
   assert.match(renderer, /onOverlayMasterStateChanged\(\(\) => refreshMasterButtons\(\)\)/);
+});
+
+test('the hint names the key that actually registered', () => {
+  // The markup said "or press Pause" for as long as Pause did not work. Whatever it says now has
+  // to come from the registration, not from someone typing it.
+  const html = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'index.html'), 'utf8'
+  );
+  const renderer = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8'
+  );
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.match(html, /id="master-hide-hint"><\/span>/, 'the hint is hard-coded in the markup again');
+  assert.match(renderer, /getHideHotkey\(\)/);
+  assert.match(renderer, /masterHideHintEl\.textContent = key \?/);
+  assert.match(main, /ipcMain\.handle\('settings:getHideHotkey'/);
 });
 
 process.on('exit', () => {

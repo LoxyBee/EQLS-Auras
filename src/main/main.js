@@ -90,6 +90,9 @@ widgetManager.setActiveProfileNameFn(() => {
   const active = profileStore.getAll().find((pr) => pr.id === profileStore.getActiveId());
   return active ? active.name : '';
 });
+// The hide-auras hotkey that actually registered at startup, or null. See HIDE_HOTKEYS below.
+let hideHotkey = null;
+
 const customTimerEngine = new CustomTimerEngine();
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
@@ -354,7 +357,7 @@ app.whenReady().then(() => {
   // Registration can genuinely fail (another app already owns the key), and it fails by
   // returning false rather than throwing - so it is logged and the button in the top bar carries
   // on working either way. The shortcut is never the only way to reach this.
-  const hotkeyRegistered = globalShortcut.register('Pause', () => {
+  const toggleMasterHidden = () => {
     const hidden = widgetManager.setMasterHidden(!widgetManager.isMasterHidden());
     const settingsWin = getMainWindow();
     // Keep the button in the top bar honest - it is the only readout of a state that is
@@ -362,10 +365,33 @@ app.whenReady().then(() => {
     if (settingsWin && !settingsWin.isDestroyed()) {
       settingsWin.webContents.send('overlay:masterStateChanged', { masterHidden: hidden });
     }
-  });
-  if (!hotkeyRegistered) {
-    debugLog('Could not register the Pause hotkey - another application already owns it');
+  };
+
+  // Tried in order, first one that takes wins.
+  //
+  // It was 'Pause', which the owner picked because she never uses it in game - and Electron does
+  // not accept it. Not "returns false": globalShortcut.register THROWS on it, so the graceful
+  // "another application owns it" branch below never ran and the hotkey has never once worked.
+  // Nothing caught it because no unit test launches Electron; it took starting the actual app.
+  //
+  // Scroll Lock is the honest substitute - the same corner of the keyboard, equally unused in
+  // game. The chord is there in case something else already owns Scroll Lock, so the feature
+  // degrades to a worse key rather than to nothing.
+  const HIDE_HOTKEYS = ['ScrollLock', 'Alt+Shift+H'];
+  for (const accelerator of HIDE_HOTKEYS) {
+    try {
+      if (globalShortcut.register(accelerator, toggleMasterHidden)) {
+        hideHotkey = accelerator;
+        break;
+      }
+      debugLog(`Hide-auras hotkey "${accelerator}" is owned by another application - trying the next one`);
+    } catch (err) {
+      // An accelerator this build of Electron will not parse. Caught rather than allowed to take
+      // down startup, which is what the old code did.
+      debugLog(`Hide-auras hotkey "${accelerator}" was refused by Electron: ${err.message}`);
+    }
   }
+  if (!hideHotkey) debugLog('No hide-auras hotkey could be registered - the button still works');
 
   applyInstallRoot(logService.getState().eqFolder);
 
@@ -731,6 +757,9 @@ ipcMain.handle('widget:setAllyDebuffAlert', (_event, { id, value }) =>
 ipcMain.handle('widget:setAlwaysOn', (_event, { id, value }) => widgetManager.setAlwaysOn(id, value));
 // Note 21's global switch. On the Overlay Auras page beside the other app-wide aura settings,
 // not in Add Aura - it is a permanent option rather than something you build.
+// Which key actually took, so the hint in the top bar names the one that works rather than the
+// one that was asked for. Null when none of them registered.
+ipcMain.handle('settings:getHideHotkey', () => hideHotkey);
 ipcMain.handle('settings:getLoadoutLabel', () => widgetManager.isLoadoutLabelEnabled());
 ipcMain.handle('settings:setLoadoutLabel', (_event, enabled) =>
   widgetManager.setLoadoutLabelEnabled(enabled).enabled
