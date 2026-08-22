@@ -768,6 +768,23 @@ roughly one every few hours of play. Nothing stopped being *detected*; things
 stop being *shown* once they are over. If you would rather they stayed put,
 say so - it is one line to put back.
 
+## "Buffs shown" is its own card now
+
+- [ ] **Open any aura's settings.** "Buffs shown" should be a card of its own
+      between **Display & size** and **Configuration**, not a collapsible row
+      buried inside Configuration.
+- [ ] **Everything in it still works** - the search, the tick list, "Currently
+      selected", "Track buffs cast on me by others", hide bard songs, the
+      maximum-duration slider.
+- [ ] **The row in Display & size now says "Watching:" instead of "Buffs
+      shown:".** It picks whether the aura watches you, an ally, or your own
+      text triggers - so it was never really "buffs shown", and two things with
+      that name on one screen would have been worse. Tell me if you would
+      rather it said something else.
+
+The gem-slot half of that note is **not** built - see the question at the
+bottom of NOTES-STATUS.md.
+
 ## The loadout label
 
 **Overlay Auras page -> "Loadout label" -> tick "Show which loadout is active".**

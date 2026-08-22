@@ -278,7 +278,7 @@
               </p>
 
               <div class="row" id="widget-buff-source-row">
-                <span class="label">Buffs shown:</span>
+                <span class="label">Watching:</span>
                 <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
                 <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
                 <!-- The two announcer types only - text and sound-only. Every other aura has its
@@ -489,6 +489,63 @@
             </div>
 
             <!-- Configuration block: collapsible topics live together here -->
+            <!-- Note 27. A top-level block, not a topic inside Configuration. Shara: "buffs
+                 shown ... should be a top level category/card the same as display and size."
+                 It is the one thing on this panel you change most and it was three clicks down. -->
+            <div class="block" id="widget-buff-filter-card">
+              <p class="block-cap">Buffs shown</p>
+              <p class="hint" id="widget-buff-filter-hint"></p>
+              <div id="widget-track-others-row" style="display:none">
+                <div class="row">
+                  <label><input type="checkbox" id="widget-track-others-checkbox" /> Track buffs cast on me by others</label>
+                  <span class="experimental-badge">Experimental</span>
+                </div>
+                <p class="hint">
+                  Off by default - only your own buffs are tracked. When on, an ambiguous buff that isn't
+                  in your spellbook (most likely a group-mate's cast) queues up for you to pick which one
+                  it was, and remembers your choice until your group's membership changes.
+                  Telling your own casts from an ally's isn't always possible from the log alone, so
+                  expect some misattribution while this is on.
+                </p>
+              </div>
+              <div id="widget-self-buffs-filters" style="display:none">
+                <div class="row">
+                  <label><input type="checkbox" id="widget-hide-bard-songs-checkbox" /> Show bard songs</label>
+                  <span class="experimental-badge">Experimental</span>
+                </div>
+                <p class="hint">
+                  Off by default - bard songs re-sing constantly and are hard to tell apart from an
+                  ally's, so they're kept out of this list unless you ask for them. Songs are identified
+                  from your EverQuest install's own spell data (any spell only a bard can cast), plus any
+                  spell seen cast with "singing" instead of "casting". <strong>This does not distinguish
+                  your own songs from a group-mate's</strong> - that isn't reliably knowable from the log,
+                  so expect an ally's songs to appear here too.
+                </p>
+                <div class="row">
+                  <span class="label">Hide buffs longer than:</span>
+                  <input type="range" id="widget-max-duration-slider" min="0" max="240" step="5" />
+                  <span id="widget-max-duration-value" class="slider-value">off</span>
+                </div>
+                <p class="hint">Duration is in minutes. Set to 0 to turn this filter off.</p>
+              </div>
+              <div id="widget-selected-buffs-section" style="display:none">
+                <h4 class="settings-subsection-title">Currently selected</h4>
+                <p class="hint">
+                  Always shown here regardless of search, so a buff picked earlier stays easy to find and
+                  uncheck - with thousands of known buffs, scrolling/searching the full list below to find
+                  an already-checked one isn't practical.
+                </p>
+                <ul id="widget-selected-buffs-list" class="buff-list known-buff-list"></ul>
+              </div>
+              <input
+                type="search"
+                id="widget-buff-filter-search"
+                class="text-input search-input"
+                placeholder="Search buffs..."
+              />
+              <ul id="widget-buff-filter-list" class="buff-list known-buff-list"></ul>
+            </div>
+
             <div class="block">
               <p class="block-cap">Configuration</p>
 
@@ -702,65 +759,6 @@
                 </div></div>
               </div>
 
-              <div class="topic open" id="widget-buff-filter-card" data-topic>
-                <button type="button" class="topic-head" data-toggle>
-                  <span class="chev"></span>
-                  <span class="topic-title">Buffs shown</span>
-                  <span class="topic-summary" id="topic-buffs-shown-summary"></span>
-                </button>
-                <div class="topic-body"><div class="topic-body-inner">
-                  <p class="hint" id="widget-buff-filter-hint"></p>
-                  <div id="widget-track-others-row" style="display:none">
-                    <div class="row">
-                      <label><input type="checkbox" id="widget-track-others-checkbox" /> Track buffs cast on me by others</label>
-                      <span class="experimental-badge">Experimental</span>
-                    </div>
-                    <p class="hint">
-                      Off by default - only your own buffs are tracked. When on, an ambiguous buff that isn't
-                      in your spellbook (most likely a group-mate's cast) queues up for you to pick which one
-                      it was, and remembers your choice until your group's membership changes.
-                      Telling your own casts from an ally's isn't always possible from the log alone, so
-                      expect some misattribution while this is on.
-                    </p>
-                  </div>
-                  <div id="widget-self-buffs-filters" style="display:none">
-                    <div class="row">
-                      <label><input type="checkbox" id="widget-hide-bard-songs-checkbox" /> Show bard songs</label>
-                      <span class="experimental-badge">Experimental</span>
-                    </div>
-                    <p class="hint">
-                      Off by default - bard songs re-sing constantly and are hard to tell apart from an
-                      ally's, so they're kept out of this list unless you ask for them. Songs are identified
-                      from your EverQuest install's own spell data (any spell only a bard can cast), plus any
-                      spell seen cast with "singing" instead of "casting". <strong>This does not distinguish
-                      your own songs from a group-mate's</strong> - that isn't reliably knowable from the log,
-                      so expect an ally's songs to appear here too.
-                    </p>
-                    <div class="row">
-                      <span class="label">Hide buffs longer than:</span>
-                      <input type="range" id="widget-max-duration-slider" min="0" max="240" step="5" />
-                      <span id="widget-max-duration-value" class="slider-value">off</span>
-                    </div>
-                    <p class="hint">Duration is in minutes. Set to 0 to turn this filter off.</p>
-                  </div>
-                  <div id="widget-selected-buffs-section" style="display:none">
-                    <h4 class="settings-subsection-title">Currently selected</h4>
-                    <p class="hint">
-                      Always shown here regardless of search, so a buff picked earlier stays easy to find and
-                      uncheck - with thousands of known buffs, scrolling/searching the full list below to find
-                      an already-checked one isn't practical.
-                    </p>
-                    <ul id="widget-selected-buffs-list" class="buff-list known-buff-list"></ul>
-                  </div>
-                  <input
-                    type="search"
-                    id="widget-buff-filter-search"
-                    class="text-input search-input"
-                    placeholder="Search buffs..."
-                  />
-                  <ul id="widget-buff-filter-list" class="buff-list known-buff-list"></ul>
-                </div></div>
-              </div>
 
             </div>
 
