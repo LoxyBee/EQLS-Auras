@@ -91,6 +91,9 @@ buffEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setSpellbookCheckFn((name) => spellbookService.has(name));
 // See buffEngine.setEnemyDebuffNamesFn - which spells any aura has asked to watch on enemies.
 buffEngine.setEnemyDebuffNamesFn(() => widgetManager.getEnemyDebuffNames());
+// See buffEngine.setAllyDebuffAlertNamesFn - spells a text aura wants a warning about when
+// somebody else casts them.
+buffEngine.setAllyDebuffAlertNamesFn(() => widgetManager.getAllyDebuffAlertNames());
 // Suppresses "which bard song was that?" prompts when no aura would show the
 // answer anyway - songs are opt-in and off by default, so without this the
 // prompts kept arriving for something deliberately hidden. Checks live widget
@@ -675,6 +678,9 @@ ipcMain.handle('widget:setCategoryBorders', (_event, { id, value }) =>
 );
 ipcMain.handle('widget:setTrackOnEnemies', (_event, { id, value }) =>
   widgetManager.setTrackOnEnemies(id, value)
+);
+ipcMain.handle('widget:setAllyDebuffAlert', (_event, { id, value }) =>
+  widgetManager.setAllyDebuffAlert(id, value)
 );
 ipcMain.handle('widget:export', (_event, id) => widgetManager.exportWidget(id));
 ipcMain.handle('widget:peekCode', (_event, code) => widgetManager.peekWidgetCode(code));

@@ -105,6 +105,12 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // landings across the owner's logs, 100,000 of them from two bard songs pulsing on everything
     // in range. Opting in per aura bounds it by what someone actually asked to see.
     trackOnEnemies: false,
+    // Note 16, answered by Shara on 21 August. A TEXT aura can warn that somebody else has cast
+    // one of the spells it watches - "be careful", rather than a countdown on a debuff that is
+    // not yours. She ruled out the timer herself: an ally's debuff has no ending line in the log,
+    // so any duration shown for it would be invented, and "a text alert to be careful, and not a
+    // standalone timer that may be inaccurate" is what she asked for instead.
+    allyDebuffAlert: false,
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -254,6 +260,12 @@ function defaultCustomWidget(name) {
     // landings across the owner's logs, 100,000 of them from two bard songs pulsing on everything
     // in range. Opting in per aura bounds it by what someone actually asked to see.
     trackOnEnemies: false,
+    // Note 16, answered by Shara on 21 August. A TEXT aura can warn that somebody else has cast
+    // one of the spells it watches - "be careful", rather than a countdown on a debuff that is
+    // not yours. She ruled out the timer herself: an ally's debuff has no ending line in the log,
+    // so any duration shown for it would be invented, and "a text alert to be careful, and not a
+    // standalone timer that may be inaccurate" is what she asked for instead.
+    allyDebuffAlert: false,
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -355,6 +367,7 @@ const SHAREABLE_FIELDS = [
   'mergeSameDuration',
   'categoryBordersEnabled',
   'trackOnEnemies',
+  'allyDebuffAlert',
   'textAuraMessage',
   'textAuraSize',
   'textAuraInstantSec',
@@ -441,6 +454,7 @@ function normalizeWidget(widget) {
     // after upgrading, which is called out in TESTING.md rather than left as a surprise.
     categoryBordersEnabled: widget.categoryBordersEnabled !== false,
     trackOnEnemies: !!widget.trackOnEnemies,
+    allyDebuffAlert: !!widget.allyDebuffAlert,
     textAuraMessage: typeof widget.textAuraMessage === 'string' ? widget.textAuraMessage : '',
     textAuraSize: typeof widget.textAuraSize === 'number' ? widget.textAuraSize : 32,
     // Clamped to the engine's own retention ceiling. A share code asking for five minutes would
@@ -527,6 +541,26 @@ const TEXT_AURA_PRESETS = {
       },
     ],
   }),
+  // Note 16 as Shara specified it on 21 August: a warning that somebody else has cast a debuff,
+  // not a timer on one. It ships watching the mez and charm family because that is the case she
+  // described - do not break a groupmate's mez - and the buff list is editable like any other
+  // aura's, so adding slows or snares is a tick each.
+  //
+  // The message names the caster rather than saying "a party member", because half the
+  // third-person mez and charm casts in her logs are mobs and the log line does not distinguish
+  // them. See the comment on _alertAllyCast in buffEngine.
+  allyCast: () => ({
+    buffSource: 'ally',
+    buffFilterMode: 'explicit',
+    buffNames: ['Mesmerize', 'Mesmerization', 'Dazzle', 'Charm', 'Allure', 'Beguile', 'Cajoling Whispers'],
+    allyDebuffAlert: true,
+    textAuraMessage: '{caster} cast {spell} - careful',
+    textAuraSize: 36,
+    // Longer than the 6s default. This one is a warning about something that will still be true
+    // in a few seconds, not a flash confirming something that already happened.
+    textAuraInstantSec: 8,
+  }),
+
   dispelled: () => ({
     buffSource: 'customTimer',
     textAuraMessage: 'DISPELLED',

@@ -768,6 +768,37 @@ roughly one every few hours of play. Nothing stopped being *detected*; things
 stop being *shown* once they are over. If you would rather they stayed put,
 say so - it is one line to put back.
 
+## Someone else casting a mez
+
+Add Aura -> **Someone else cast a mez**. Or tick **"Warn me when someone else
+casts these"** on any text-only aura.
+
+This is your design, built the way you specified it: a warning, no countdown.
+
+- [ ] **When a groupmate casts a mez, the warning appears** and names them -
+      "Lumbarin cast Mesmerization VII - careful".
+- [ ] **It appears as they START casting**, roughly two seconds before the mez
+      actually lands. That is deliberate: a warning after the fact is too late
+      to stop you swinging. The cost is that a cast which gets resisted still
+      warns you - about one time in ten.
+- [ ] **It names whoever cast it rather than saying "a party member".** In your
+      logs, half the mez and charm casts by other people are mobs - ``A
+      Teir`Dal ranger``, "A negotiator" - and the game's line does not say
+      which is which. Naming them is right every time, and a mob casting mez is
+      worth knowing about too. Say the word if you would rather it only ever
+      mentioned actual group members and I will explain what that costs.
+- [ ] **Your own casts never trigger it.**
+- [ ] **There is no timer on it, anywhere.** If you ever see a countdown on one
+      of these, that is a bug - report it.
+- [ ] **It watches the whole mez and charm family out of the box** - Mesmerize,
+      Mesmerization, Dazzle, Charm, Allure, Beguile, Cajoling Whispers. Adding
+      slows or snares is a tick each in the aura's buff list.
+- [ ] **Picking "Mesmerization" catches the ranks people actually cast** - VI
+      and VII both warn, and the warning says which rank it was.
+
+You can reword it. In the aura's **Say:** box, `{caster}` becomes whoever cast
+it and `{spell}` becomes what they cast.
+
 ## The RESIST flash
 
 Add Aura -> **Resist flash**. One aura, covers every spell you cast - you do not

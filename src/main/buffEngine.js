@@ -309,6 +309,33 @@ class BuffEngine extends EventEmitter {
     this.enemyDebuffNamesFn = fn;
   }
 
+  // fn() => Set of lowercased spell names some TEXT aura has asked to be warned about when
+  // somebody else casts them. Shara's design, and it is a better one than either option I put to
+  // her: not a timer on somebody else's debuff, which could only ever be guessed, but a warning
+  // that one has been cast - "be careful", not "here is a countdown".
+  //
+  // Same injection shape as the enemy list above, for the same reason: this engine has to stay
+  // runnable in a plain Node test and in tools/replay-log.js, neither of which has Electron.
+  setAllyDebuffAlertNamesFn(fn) {
+    this.allyDebuffAlertNamesFn = fn;
+  }
+
+  // Whether a spell somebody else just started casting is one an aura asked to be warned about.
+  //
+  // Checks the rank-stripped name too. The owner's groupmates cast "Mesmerization VI" and
+  // "Mesmerization VII"; the roster entry, and therefore what she picks in the buff list, is
+  // "Mesmerization". Matching only the literal string would mean picking the spell and never
+  // being warned about the two ranks anyone actually casts.
+  _isAlertedAllyCast(spellName) {
+    if (!this.allyDebuffAlertNamesFn) return null;
+    const names = this.allyDebuffAlertNamesFn();
+    if (!names || !names.size) return null;
+    const raw = spellName.toLowerCase();
+    if (names.has(raw)) return spellName;
+    const base = stripRankSuffix(spellName);
+    return names.has(base.toLowerCase()) ? spellName : null;
+  }
+
   _isWatchedOnEnemies(name) {
     if (!this.enemyDebuffNamesFn) return false;
     const names = this.enemyDebuffNamesFn();
@@ -465,6 +492,7 @@ class BuffEngine extends EventEmitter {
     const otherCast = matchOtherCastBegin(line);
     if (otherCast) {
       this.recentOtherCasts.set(otherCast.spellName.toLowerCase(), otherCast.casterName);
+      this._alertAllyCast(otherCast);
       this._checkForEndedBuffs(line);
       return;
     }
@@ -943,6 +971,50 @@ class BuffEngine extends EventEmitter {
         return; // a line only ever reports one buff fading
       }
     }
+  }
+
+  // Warns that somebody else has cast a debuff you asked to be told about.
+  //
+  // Fires on the CAST line rather than on the landing, deliberately and with a cost. The cost is
+  // that a cast which is resisted or interrupted still warns - about one in ten. What it buys is
+  // roughly two seconds of notice, measured: 96% of landings in the owner's logs arrive exactly
+  // two seconds after the cast line. For a warning whose whole job is "do not break this mez",
+  // arriving before it lands is the point. The landing line would be more certain and too late.
+  //
+  // It also names the caster, which the landing line cannot: "<Name> has been mesmerized." says
+  // who it happened TO and never who did it.
+  //
+  // NOT filtered to group members, and NOT described as a party member. Two reasons, both from
+  // her own logs. Half the third-person mez and charm casts in them are mobs - "A Teir`Dal
+  // ranger", "A negotiator" - so a message claiming "a party member" would be wrong about half
+  // the time, whereas naming the caster is right every time and a mob casting mez is a warning
+  // worth having too. And gating on the group roster would make the whole feature silently dead
+  // whenever the app starts mid-session, because membership is only ever learned from join and
+  // leave lines seen live. Depending on that was already a bug in this engine once.
+  _alertAllyCast(otherCast) {
+    const spellName = this._isAlertedAllyCast(otherCast.spellName);
+    if (!spellName) return;
+    const caster = otherCast.casterName;
+    // Keyed by caster and spell so the same person recasting replaces their own entry rather than
+    // stacking up, and so two different people casting the same thing are two warnings.
+    const key = `allycast::${caster.toLowerCase()}::${spellName.toLowerCase()}`;
+    this.allyBuffs.set(key, {
+      name: spellName,
+      allyName: caster,
+      durationSec: null,
+      expiresAt: Date.now() + INSTANT_RETENTION_SEC * 1000,
+      // An event, not something running. instant is what keeps it off every aura that draws a
+      // countdown - which is exactly what she asked for: "a text alert to be careful, and not a
+      // standalone timer that may be inaccurate."
+      instant: true,
+      landedAt: Date.now(),
+      // Not onEnemy. The name on this entry is the CASTER, not a target, so treating it as a
+      // debuff sitting on somebody would be wrong in the one place it matters.
+      onEnemy: false,
+      allyCast: true,
+    });
+    this._debugLog(`ALLY CAST ALERT "${spellName}" by "${caster}"`);
+    this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
   }
 
   // Ends a debuff on something you are fighting, from the three lines the game actually prints
@@ -1642,6 +1714,9 @@ class BuffEngine extends EventEmitter {
           // Whether this landed on something you are fighting rather than on a groupmate. An aura
           // uses it to show one and not the other; nothing in the engine decides on it.
           onEnemy: !!b.onEnemy,
+          // Somebody else started casting this. An aura shows it only if it asked to be warned;
+          // see the allyCast filter in the overlay.
+          allyCast: !!b.allyCast,
           durationSec: b.durationSec,
           // null, not a number, for a buff that never runs out. Everything downstream checks for
           // it rather than trying to render a countdown that has no end.

@@ -1034,6 +1034,9 @@ function initWidgetsPanel() {
   const buffSourceTimerLabelEl = document.getElementById('widget-buff-source-timer-label');
   const categoryBordersCheckbox = document.getElementById('widget-category-borders-checkbox');
   const trackEnemiesCheckbox = document.getElementById('widget-track-enemies-checkbox');
+  const allyAlertCheckbox = document.getElementById('widget-ally-alert-checkbox');
+  const allyAlertRowEl = document.getElementById('widget-ally-alert-row');
+  const allyAlertHintEl = document.getElementById('widget-ally-alert-hint');
   const enemiesRowEl = document.getElementById('widget-enemies-row');
   const enemiesHintEl = document.getElementById('widget-enemies-hint');
   const bordersRowEl = document.getElementById('widget-borders-row');
@@ -1468,6 +1471,10 @@ function initWidgetsPanel() {
     textAuraSizeRowEl.style.display = isTextAura ? '' : 'none';
     textInstantRowEl.style.display = isTextAura ? '' : 'none';
     textInstantHintEl.style.display = isTextAura ? '' : 'none';
+    // Her wording: "a toggle under text only custom creation". It belongs to this aura type and
+    // nowhere else - the warning has no duration, so there is nothing for a tile aura to draw.
+    allyAlertRowEl.style.display = isTextAura ? '' : 'none';
+    allyAlertHintEl.style.display = isTextAura ? '' : 'none';
     textHintEl.style.display = isTextAura ? '' : 'none';
     // Both of these are TYPES now, chosen once in the add-aura flow beside Custom buff aura and
     // Custom timer aura - so neither offers Display style at all. It was a radio for sound-only
@@ -1574,6 +1581,7 @@ function initWidgetsPanel() {
     mergeCheckbox.checked = !!widget.mergeSameDuration;
     categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
     trackEnemiesCheckbox.checked = !!widget.trackOnEnemies;
+    allyAlertCheckbox.checked = !!widget.allyDebuffAlert;
     textMessageInput.value = widget.textAuraMessage || '';
     const textAuraSize = widget.textAuraSize || 32;
     textAuraSizeSlider.value = String(textAuraSize);
@@ -2003,6 +2011,15 @@ function initWidgetsPanel() {
         'every spell at once, not one you have to pick - useful for mez and charm, where a resist ' +
         'is the difference between a mob standing still and a mob hitting you.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'resisted'),
+    },
+    {
+      id: 'ally-cast',
+      name: 'Someone else cast a mez',
+      description:
+        'Warns you when a groupmate - or anything else - starts casting a mez or charm, so you ' +
+        'know not to break it. A warning, not a countdown: the game never says when somebody ' +
+        "else's debuff ends, so a timer here would be invented.",
+      create: (name) => window.eqTracker.createTextAuraWidget(name, 'allyCast'),
     },
     {
       id: 'buff-timer',
@@ -2460,6 +2477,9 @@ function initWidgetsPanel() {
   });
   trackEnemiesCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetTrackOnEnemies(selectedId, trackEnemiesCheckbox.checked);
+  });
+  allyAlertCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetAllyDebuffAlert(selectedId, allyAlertCheckbox.checked);
   });
   mergeCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetMergeSameDuration(selectedId, mergeCheckbox.checked).then(refreshWidgets);

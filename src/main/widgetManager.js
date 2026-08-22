@@ -671,6 +671,12 @@ function setTrackOnEnemies(id, enabled) {
   return config;
 }
 
+function setAllyDebuffAlert(id, enabled) {
+  const config = widgetStore.update(id, { allyDebuffAlert: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setMergeSameDuration(id, enabled) {
   const config = widgetStore.update(id, { mergeSameDuration: !!enabled });
   pushConfigChanged(id);
@@ -924,6 +930,20 @@ function getEnemyDebuffNames() {
   return names;
 }
 
+// Every spell any TEXT aura has asked to be warned about when somebody else casts it.
+//
+// Same shape and the same reasoning as getEnemyDebuffNames above, including not filtering by the
+// active profile: what the engine is willing to notice should not depend on which loadout happens
+// to be selected.
+function getAllyDebuffAlertNames() {
+  const names = new Set();
+  for (const config of widgetStore.getAll()) {
+    if (!config.allyDebuffAlert) continue;
+    for (const name of config.buffNames || []) names.add(String(name).toLowerCase());
+  }
+  return names;
+}
+
 function getAllWidgetConfigs() {
   return widgetStore.getAll();
 }
@@ -976,6 +996,7 @@ module.exports = {
   setMergeSameDuration,
   setCategoryBorders,
   setTrackOnEnemies,
+  setAllyDebuffAlert,
   setTextAuraMessage,
   setTextAuraSize,
   setTextAuraInstantSec,
@@ -1017,5 +1038,6 @@ module.exports = {
   fitToContent,
   getAllWidgetConfigs,
   getEnemyDebuffNames,
+  getAllyDebuffAlertNames,
   getWidgetConfig,
 };

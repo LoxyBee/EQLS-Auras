@@ -331,9 +331,24 @@ function buildTextTile(buff) {
   return { root, timeEl: null, barEl: null, iconWrapEl: null, labelEl: null, lastIconUrl: undefined };
 }
 
+// What a text aura actually says.
+//
+// {caster} and {spell} are substituted so one aura can cover a whole list of spells and still say
+// which one just happened, and who by. Shara's example wording was "Party member has cast
+// Mesmerize on a creature"; the tokens are what let her write that for real, with the actual name
+// in it, instead of a fixed line that is only right for one spell.
+//
+// Substituted for every text aura, not just the warning ones - a token in a message that resolved
+// on some auras and printed literally on others would be a worse rule than either.
 function textFor(buff) {
   const message = (currentConfig.textAuraMessage || '').trim();
-  return message || displayName(buff);
+  if (!message) return displayName(buff);
+  if (!message.includes('{')) return message;
+  return message
+    .replace(/\{caster\}/g, buff.allyName || '')
+    .replace(/\{spell\}/g, buff.name || '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function applyTextAuraStyle(el) {
@@ -770,6 +785,13 @@ function visibleBuffs(buffs) {
     const nameSet = new Set((currentConfig.buffNames || []).map((n) => n.toLowerCase()));
     filtered = buffs.filter((b) => nameSet.has(b.name.toLowerCase()));
   }
+  // SOMEBODY ELSE'S CAST - a warning, not a buff. Only the aura that asked to be warned draws
+  // these; every other aura must never see them, or an ordinary Ally Buffs aura would start
+  // showing entries whose name is the caster rather than the person carrying a buff.
+  if (!currentConfig.allyDebuffAlert) {
+    filtered = filtered.filter((b) => !b.allyCast);
+  }
+
   // ENEMIES - a debuff on something you are fighting, rather than a buff on a groupmate.
   //
   // The engine marks these; the aura decides whether it wants them. Without this the Ally Buffs

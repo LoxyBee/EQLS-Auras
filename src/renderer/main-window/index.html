@@ -279,6 +279,26 @@
                 <span class="label">Say:</span>
                 <input type="text" id="widget-text-message-input" class="text-input" placeholder="DISPELLED" />
               </div>
+              <div class="row" id="widget-ally-alert-row">
+                <label>
+                  <input type="checkbox" id="widget-ally-alert-checkbox" />
+                  Warn me when someone else casts these
+                </label>
+              </div>
+              <p class="hint" id="widget-ally-alert-hint">
+                For a groupmate's mez, charm or snare. It warns you that one has been cast so you
+                know to be careful - it does not show a countdown, because the game never prints a
+                line telling anyone when somebody else's debuff ends, so any timer here would be
+                invented. The warning appears as the cast starts, about two seconds before the
+                spell lands, which is the point of it.
+                <br /><br />
+                Write <code>{caster}</code> in the message above for whoever cast it and
+                <code>{spell}</code> for what they cast - so
+                <code>{caster} cast {spell} - be careful</code> shows as
+                "Lumbarin cast Mesmerization VII - be careful". The caster is named rather than
+                called a party member because mobs cast these too, and the log line does not say
+                which is which.
+              </p>
               <div class="row" id="widget-text-size-row">
                 <span class="label">Text size:</span>
                 <input type="range" id="widget-text-size-slider" min="12" max="120" step="2" />
