@@ -22,7 +22,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 1 | Promised Renewal is 15s and never scales with AA | **DONE** | 15s, scaling off. Reuse corrected to your 18s — the game data says 21.5 and is wrong. |
 | 2 | First-aggro premade, placeholder in the meantime | **PART** | Placeholder is in the Add Aura list. The feature needs a log sample of a real pull showing both damage directions. |
 | 3 | Only remember 14 memorised spells | **DONE** | Capped at 14, oldest dropped, on load as well as on insert. |
-| 4 | One toggle to hide every aura, ideally a hotkey | **DONE** | Pause key. Unlocking an aura still shows it, which is what you wanted. |
+| 4 | One toggle to hide every aura, ideally a hotkey | **DONE** | **Scroll Lock**, not Pause — Electron refuses Pause outright and the hotkey had never worked. |
 | 5 | Make "Reset remembered choices" look dangerous | **DONE** | Red. |
 | 6 | Aura name in the move box, click it to open its settings | **DONE** | |
 | 7 | Make the app's own text bigger | **DONE** | |
@@ -54,7 +54,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 23 | Text-only display style, own size, own dwell time | **DONE** | Built as a *type* chosen when you create the aura, not a fourth radio — you agreed to that change. The dwell time is a setting, default 6s. |
 | 24 | Detection priority rework, plus a song-pulse check | **PART** | Spellbook now outranks the gem list. Rival-caster tracking built. Missing: the post-cast song-pulse auto-resolve, which needs a log sample proving the 6s repeat. |
 | 25 | A disabled "Global recovery time" placeholder | **DONE** | Still a placeholder. The `castOf` trigger note 15 introduced is the piece it needs, when you want it built. |
-| 26 | Drop a stale timer when a buff gets overwritten | **PART** | Overwrites and refused casts both handled for buffs on other people. Buffs on yourself still can't be told apart. |
+| 26 | Drop a stale timer when a buff gets overwritten | **DONE** | Overwrites, refused casts, and buffs on yourself. I was wrong that self buffs could not be told apart. |
 | 27 | Promote "Buffs shown" to its own section, add gem slots | **DONE** | Own card, gem slots, "+" slot, buffs and debuffs kept apart. Your existing auras were not touched. |
 | 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Needs `detection-debug.log` from 19 Aug around 12:15. The debug log now names the rival caster, so if it happens again the evidence will be there. |
 | 29 | Put EverQuest back in front after answering a popup | **DONE** | |
@@ -71,7 +71,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 35 | Archive the old roster, rebuild from the EQL spreadsheet | **DONE** | 1,052 spells, every one categorised. Old 11,337-entry roster archived, not deleted. |
 | 36 | Sound ping on an incoming trade request | **DONE** | |
 | 37 | Colour tile borders by spell type, with a toggle | **DONE** | On by default. |
-| 38 | Apply an aura only in a certain zone | **NOT** | **Confirmed not blocked** — the zone line is in your logs across 58 zones. Watch out for instances: `Befallen` and `Befallen 1 (Awakened)` are different strings. |
+| 38 | Apply an aura only in a certain zone | **NOT** | Fully scoped, ready to build. 66 zones, not 58. One real trap found — see below. |
 | 39 | Write down the multi-trigger idea, don't build it | **DONE** | Recorded, correctly unbuilt. Same feature as note 9. |
 
 ---
@@ -128,6 +128,19 @@ auto-enable you asked for is much less annoying than auto-creating would have be
 the box once, the first time you make a second loadout. Say the word. Also: show "Default" while
 you are on the default loadout, or stay blank? Blank means the label vanishing is itself the
 signal, which reads like a bug.
+
+**Note 38 — ready to build, with one thing for you to decide.** The groundwork is done. Your logs
+have **66** distinct zones, not the 58 the note claims, and 21 of them first appeared on a single
+day after two weeks of play — so a list that only learns zones as you visit them would look broken
+for a long while. I would ship the 66 as a starting list and let you type others.
+
+The decision: `The Plane of Fear` and `The Plane of Fear - Group` are different zones with
+different layouts. Should an aura gated to one apply to the other? I would say no. Instance tiers
+like `Befallen 1 (Awakened)` I would treat as the same place as `Befallen`.
+
+One trap found: a player quoted the game in General chat and typed "You have entered Everfrost."
+A careless match would think you had zoned. Exactly one such line in 1.5 million, and anchoring on
+the timestamp removes it.
 
 **Note 26 — and a correction I owe you.** I told you there are no buff "types". That was wrong of
 me: your spreadsheet's category column carries **HP Buff (Line 1)** (17 spells) and **HP Buff
