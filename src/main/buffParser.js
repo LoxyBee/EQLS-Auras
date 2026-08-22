@@ -88,20 +88,46 @@ const GROUP_MEMBER_LEFT_PATTERN = /^(.+) has left the group\.$/;
 // roster clear that immediately follows.
 const GROUP_JOIN_ACCEPTED_PATTERN = /^You notify (.+) that you agree to join the group\.$/;
 
+// Lines that mean the cast in progress is not going to land. Only consulted while a cast is
+// pending, so a stray match costs one cancelled timer rather than anything permanent.
+//
+// EVERY PATTERN HERE WAS COUNTED AGAINST THE OWNER'S 1,521,971 REAL LOG LINES, and the counts are
+// beside them. The previous list was written from memory of EverQuest's wording and nine of its
+// twelve patterns matched nothing whatsoever - "Your spell fizzles" (the game says "Your <Spell>
+// spell fizzles!"), "would not take hold" (it says "did not take hold"), "Your spell is
+// interrupted" (it says "Your <Spell> spell is interrupted."). If you add one, count it first.
 const FAILURE_PATTERNS = [
-  /Your spell fizzles/i,
-  /casting has been interrupted/i,
-  /Your spell is interrupted/i,
-  /resisted the .*spell/i,
-  /would not take hold/i,
-  /would not have taken hold/i,
-  /You can.t see your target/i,
-  /unable to reach your target/i,
-  /Insufficient Mana/i,
-  /You cannot cast spells (here|while)/i,
-  /out of range/i,
-  /you are unable to/i,
+  // Named-spell failures. Unambiguous: the line says which spell, so it cannot be about anything
+  // else the player was doing.
+  /^Your .+ spell fizzles!$/i,                        // 1
+  /^Your .+ spell is interrupted\.$/i,                // 571
+  /^Your .+ spell did not take hold/i,                // 189 - stacking, see matchOverwritten
+  // Names no spell, but it is one exact whole line and measures free.
+  /^Insufficient Mana to cast this spell!$/i,         // 389
 ];
+
+// DELIBERATELY NOT HERE, having been tried and measured:
+//
+//   /^Your target is too far away, get closer!$/i    2,959
+//   /^You cannot see your target\.$/i                  464
+//   /^Your target is out of range, get closer!$/i       46
+//   /^You cannot perform that action right now\.$/i     41
+//   /^You must first select a target for this spell!$/i  303
+//
+// They look like cast failures and they are real lines, but they name no spell and they are not
+// only about casting - they fire for anything needing range or line of sight. Adding them
+// cancelled 883 more pending casts and cost two spells that then never landed at all: with the
+// pending cast gone, the landing that followed had no cast to be matched against and fell through
+// to the ambiguous tier instead. Every pattern above names a spell, which is what makes it safe.
+//
+// Measured against 1,521,971 lines: with the four range/target lines in, distinct buffs landed
+// dropped 129 -> 127. "You must first select a target" looks safer than those - it is one exact
+// whole line and can only be about a spell - and it still cost one, 129 -> 128, so it is out too.
+// With only the list above, distinct buffs stays at 129 and 570 failed casts are still cancelled.
+//
+// The lesson, since it cost two measurements to learn: whether a pattern is safe has nothing to do
+// with how obviously it means "the cast failed". It depends on whether cancelling the pending cast
+// takes away the only thing that was disambiguating the landing which follows.
 
 // Common sentence openers EQ uses for "an effect just happened to you" text.
 // Deliberately narrow (anchored to the start of the line) to avoid matching
@@ -295,6 +321,23 @@ function matchAwakened(line) {
 // resolve it the same way it resolves a cast name.
 const OWN_INTERRUPT_PATTERN = /^Your (.+) spell is interrupted\.$/;
 
+// "Your Shield of Thistles spell on Avenrae has been overwritten."  (109 lines, one shape, no
+// exceptions.)
+//
+// Note 26, and it turns out to be the whole of it for a buff on somebody else. The note assumed
+// the app would have to model EverQuest's stacking rules to know when a buff had been replaced.
+// It does not: the game says so, and it names both the spell and the target.
+//
+// The counterpart for a buff on YOURSELF is the spell's own endedText, which the app already
+// handles - there is no "worn off" line for a self buff at all. The 112 lines that look like one
+// are every last one of them "Your pet's <Spell> spell has worn off."
+const OVERWRITTEN_PATTERN = /^Your (.+) spell on (.+) has been overwritten\.$/;
+
+function matchOverwritten(line) {
+  const m = OVERWRITTEN_PATTERN.exec(stripTimestamp(line));
+  return m ? { spellName: m[1], targetName: m[2] } : null;
+}
+
 function matchOwnInterrupt(line) {
   const m = OWN_INTERRUPT_PATTERN.exec(stripTimestamp(line));
   return m ? m[1] : null;
@@ -316,6 +359,7 @@ module.exports = {
   matchGroupMemberJoined,
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
+  matchOverwritten,
   matchOwnInterrupt,
   matchOthersWornOff,
   matchSlain,

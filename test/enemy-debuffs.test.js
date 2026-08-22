@@ -216,16 +216,43 @@ test('an ending line for one mob leaves another mob alone', () => {
   assert.deepEqual(names(e), ['a sonic bat::Mesmerize']);
 });
 
-test('ending lines do not touch buffs on groupmates', () => {
-  // Scoped to enemy landings on purpose. A buff on an ally has never been cleared by anything but
-  // its own timer, and changing that here would alter what is on screen for people who never asked
-  // for enemy tracking at all.
+test('a groupmate dying does not forget their buffs', () => {
+  // The death and break lines name only a TARGET, not a spell, so they stay limited to enemy
+  // entries. A mob dying means its debuffs are gone; a groupmate dying means they will probably be
+  // rezzed with their buffs intact, and forgetting them would be the app inventing a change the
+  // log never reported.
   const e = engine(['Mesmerize']);
   feed(e, 'You begin casting Spirit of Wolf.', 'Marrowbane is surrounded by a brief lupine aura.');
   const before = names(e);
   assert.ok(before.includes('Marrowbane::Spirit of Wolf'), 'the ally buff did not land - nothing is being tested');
-  feed(e, 'Your Spirit of Wolf spell has worn off of Marrowbane.', 'Marrowbane has been slain by a gnoll!');
-  assert.deepEqual(names(e), before, 'an ally buff was cleared by an enemy-debuff ending line');
+  feed(e, 'Marrowbane has been slain by a gnoll!', 'Marrowbane has been awakened by Shara.');
+  assert.deepEqual(names(e), before, 'a groupmate dying cleared their buffs');
+});
+
+test('a line naming the spell AND the target does clear an ally buff', () => {
+  // Note 26, and the deliberate change of mind. This was scoped to enemies only when enemy
+  // tracking went in, to avoid altering anything nobody had asked about. Shara has since asked
+  // for note 26 specifically, and these two lines are the answer to it: they name the spell and
+  // the target, so there is nothing to guess and no reason to hold back.
+  for (const ending of [
+    'Your Spirit of Wolf spell has worn off of Marrowbane.',
+    'Your Spirit of Wolf spell on Marrowbane has been overwritten.',
+  ]) {
+    const e = engine(null);
+    feed(e, 'You begin casting Spirit of Wolf.', 'Marrowbane is surrounded by a brief lupine aura.');
+    assert.ok(names(e).includes('Marrowbane::Spirit of Wolf'), 'the ally buff did not land');
+    feed(e, ending);
+    assert.deepEqual(names(e), [], `not cleared by: ${ending}`);
+  }
+});
+
+test('an overwrite of a different spell, or on a different target, is left alone', () => {
+  const e = engine(null);
+  feed(e, 'You begin casting Spirit of Wolf.', 'Marrowbane is surrounded by a brief lupine aura.');
+  feed(e, 'Your Spirit of Wolf spell on Avenrae has been overwritten.');
+  assert.deepEqual(names(e), ['Marrowbane::Spirit of Wolf'], 'the wrong target was cleared');
+  feed(e, 'Your Bravery spell on Marrowbane has been overwritten.');
+  assert.deepEqual(names(e), ['Marrowbane::Spirit of Wolf'], 'the wrong spell was cleared');
 });
 
 // ---------------------------------------------------------------------------

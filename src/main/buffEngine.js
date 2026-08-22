@@ -8,6 +8,7 @@ const {
   matchForgetSpell,
   matchHealBySpell,
   matchOthersWornOff,
+  matchOverwritten,
   matchSlain,
   matchAwakened,
   matchGroupMemberJoined,
@@ -963,7 +964,7 @@ class BuffEngine extends EventEmitter {
   _checkForEndedBuffs(line) {
     // Runs first, and does not return early, because it reads different line shapes from the self
     // loop below - letting one starve the other would be a silent, ordering-dependent bug.
-    this._checkForEndedEnemyDebuffs(line);
+    this._checkForEndedAllyBuffs(line);
     for (const [key, buff] of this.activeBuffs) {
       if (buff.endedText && line.includes(buff.endedText)) {
         this.activeBuffs.delete(key);
@@ -1017,16 +1018,17 @@ class BuffEngine extends EventEmitter {
     this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
   }
 
-  // Ends a debuff on something you are fighting, from the three lines the game actually prints
-  // for it (see the pattern comments in buffParser).
+  // Ends a buff or debuff on somebody else, from the lines the game actually prints for it (see
+  // the pattern comments in buffParser).
   //
-  // Deliberately limited to entries marked onEnemy. A buff on a groupmate has never been cleared
-  // by anything but its own timer, and widening that here would change what is on screen today
-  // for people who have not asked for any of this - "Your Spirit of Wolf spell has worn off of
-  // Marrowbane." would start removing tiles that currently sit there until they run out. That
-  // change is probably an improvement and is worth making on purpose, with the owner looking at
-  // it, rather than as a side effect of adding mez tracking.
-  _checkForEndedEnemyDebuffs(line) {
+  // Two of these name the spell AND the target, so they are unambiguous and apply to every ally
+  // entry - that is note 26, and it is the whole of it for a buff on somebody else. The note
+  // assumed the app would have to model EverQuest's stacking rules to know a buff had been
+  // replaced. It does not: the game says so outright.
+  //
+  // The other two name only a target, so they stay limited to entries marked onEnemy. A groupmate
+  // dying is not a reason to forget their buffs - they may be rezzed - whereas a mob dying is.
+  _checkForEndedAllyBuffs(line) {
     let changed = false;
     const drop = (key) => {
       this.allyBuffs.delete(key);
@@ -1038,8 +1040,22 @@ class BuffEngine extends EventEmitter {
     if (worn) {
       const key = `${worn.targetName.toLowerCase()}::${worn.spellName.toLowerCase()}`;
       const entry = this.allyBuffs.get(key);
-      if (entry && entry.onEnemy) {
-        this._debugLog(`ENEMY DEBUFF ENDED "${entry.name}" on "${entry.allyName}" - the log says it wore off`);
+      if (entry) {
+        this._debugLog(`ALLY BUFF ENDED "${entry.name}" on "${entry.allyName}" - the log says it wore off`);
+        drop(key);
+      }
+    }
+
+    // Note 26. The stale timer this whole note is about: a buff replaced by a better one, which
+    // the app would otherwise keep counting down for the rest of its duration. 109 of these in
+    // the owner's logs, one shape, no exceptions - and it names both spell and target, so nothing
+    // has to be guessed about which tile to remove.
+    const over = matchOverwritten(line);
+    if (over) {
+      const key = `${over.targetName.toLowerCase()}::${over.spellName.toLowerCase()}`;
+      const entry = this.allyBuffs.get(key);
+      if (entry) {
+        this._debugLog(`ALLY BUFF ENDED "${entry.name}" on "${entry.allyName}" - overwritten by a better one`);
         drop(key);
       }
     }

@@ -768,6 +768,36 @@ roughly one every few hours of play. Nothing stopped being *detected*; things
 stop being *shown* once they are over. If you would rather they stayed put,
 say so - it is one line to put back.
 
+## Stale timers when a buff is replaced (note 26)
+
+This turned out to need no stacking rules at all - the game announces it.
+
+- [ ] **Overbuff a groupmate.** Cast a weaker buff on someone, then a stronger
+      one of the same line. The weaker tile should disappear when the game says
+      "Your <spell> spell on <name> has been overwritten", not keep counting
+      down.
+- [ ] **A buff wearing off a groupmate clears its tile** rather than running to
+      zero on the app's own guess.
+- [ ] **A groupmate dying does NOT clear their buffs.** They will probably be
+      rezzed, and forgetting is the app inventing a change the log never
+      reported. A mob dying still clears its debuffs.
+
+**What changed underneath, worth knowing.** Nine of the twelve "this cast
+failed" patterns in the app matched nothing at all - they were written from
+memory of EverQuest's wording rather than from your logs. The game says "Your
+<spell> spell fizzles!", not "Your spell fizzles"; "did not take hold", not
+"would not take hold". Fixed, and every pattern now carries the count it was
+measured at.
+
+Two casts across your whole log history stop being credited as landings, both
+Dexterity, both cases where the cast demonstrably failed and the app was
+attributing a later landing to it. Nothing else moved.
+
+**Still not done: buffs on YOURSELF being overwritten.** There is no line for
+it - the app has to rely on each spell's own "fades" message, which it already
+does. Where two spells share that message (Nimble and Agility both say "Your
+agility fades") it cannot tell which one ended. Left alone rather than guessed.
+
 ## "Buffs shown" is its own card now
 
 - [ ] **Open any aura's settings.** "Buffs shown" should be a card of its own
