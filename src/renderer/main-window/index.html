@@ -233,6 +233,10 @@
               <div class="row">
                 <span class="label">Show on profiles:</span>
                 <div id="widget-profiles-toggles" class="profile-toggle-list"></div>
+                <label id="widget-all-profiles-row">
+                  <input type="checkbox" id="widget-all-profiles-checkbox" />
+                  Show on every loadout, including ones I make later
+                </label>
               </div>
               <p class="hint">
                 This aura is on screen only while one of the ticked profiles is the active one.
@@ -279,6 +283,17 @@
                 <span class="label">Say:</span>
                 <input type="text" id="widget-text-message-input" class="text-input" placeholder="DISPELLED" />
               </div>
+              <div class="row" id="widget-always-on-row">
+                <label>
+                  <input type="checkbox" id="widget-always-on-checkbox" />
+                  Always on screen, with nothing to wait for
+                </label>
+              </div>
+              <p class="hint" id="widget-always-on-hint">
+                For an aura that just says something and stays, rather than one that appears when
+                a spell lands. Write <code>{profile}</code> in the message above to show which
+                loadout is active.
+              </p>
               <div class="row" id="widget-ally-alert-row">
                 <label>
                   <input type="checkbox" id="widget-ally-alert-checkbox" />

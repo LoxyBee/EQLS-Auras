@@ -18,6 +18,13 @@ function setActiveProfileIdFn(fn) {
   getActiveProfileIdFn = fn;
 }
 
+// The active profile's NAME, for note 21's label. Separate from the id function above because the
+// id is an opaque string nobody wants to read, and the two are wanted in different places.
+let getActiveProfileNameFn = () => '';
+function setActiveProfileNameFn(fn) {
+  getActiveProfileNameFn = fn;
+}
+
 const windows = new Map(); // id -> BrowserWindow
 // Lock state lives purely in memory, never read from widgetStore at window
 // creation time - every widget always starts locked/click-through on
@@ -65,6 +72,9 @@ const forceShown = new Set(); // ids
 // the currently active profile, so an empty list only ever results from the
 // user deliberately unticking everything.
 function isVisibleForActiveProfile(config) {
+  // Note 21. An aura that belongs to every profile, present and future - which a list of ids
+  // cannot express, because it would have to name profiles that do not exist yet.
+  if (config.showOnAllProfiles) return true;
   const ids = config.activeProfileIds || [];
   return ids.includes(getActiveProfileIdFn());
 }
@@ -340,7 +350,16 @@ function moveWidget(id, direction) {
 function pushConfigChanged(id) {
   const win = windows.get(id);
   const config = widgetStore.getById(id);
-  if (win && config) win.webContents.send('widget:configChanged', config);
+  if (win && config) win.webContents.send('widget:configChanged', withActiveProfile(config));
+}
+
+// The active profile's name travels WITH the config rather than on a channel of its own.
+//
+// It is computed, never stored - putting it in widgets.json would mean every aura carrying a
+// stale copy of a name that can be renamed or deleted underneath it. The overlay only ever needs
+// it to draw, and the config is already pushed on every change that could matter.
+function withActiveProfile(config) {
+  return { ...config, activeProfileName: getActiveProfileNameFn() };
 }
 
 // Both modes size their window's HEIGHT to exactly what their content
@@ -486,7 +505,13 @@ function applyVisibility(config) {
 // so a switch has to re-evaluate every widget, not just the ones the user
 // touched.
 function applyProfileVisibility() {
-  for (const config of widgetStore.getAll()) applyVisibility(config);
+  for (const config of widgetStore.getAll()) {
+    applyVisibility(config);
+    // Pushed as well as shown/hidden, because note 21's label has to change what it SAYS on a
+    // profile switch, not just whether it is on screen. Visibility alone would leave it reading
+    // the old profile's name until something unrelated happened to refresh it.
+    pushConfigChanged(config.id);
+  }
 }
 
 // Called by main.js on every game-focus change, only while the auto-hide
@@ -684,6 +709,21 @@ function setTrackOnEnemies(id, enabled) {
 
 function setAllyDebuffAlert(id, enabled) {
   const config = widgetStore.update(id, { allyDebuffAlert: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setAlwaysOn(id, enabled) {
+  const config = widgetStore.update(id, { alwaysOn: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
+// Note 21. Changes whether the aura is on screen right now, so it has to re-apply visibility as
+// well as push - unlike every other per-aura toggle, which only changes how it draws.
+function setShowOnAllProfiles(id, enabled) {
+  const config = widgetStore.update(id, { showOnAllProfiles: !!enabled });
+  if (config) applyVisibility(config);
   pushConfigChanged(id);
   return config;
 }
@@ -966,6 +1006,7 @@ function getWidgetConfig(id) {
 module.exports = {
   initWidgets,
   setActiveProfileIdFn,
+  setActiveProfileNameFn,
   createCustomWidget,
   createAllyBuffsWidget,
   createSoundOnlyWidget,
@@ -1009,6 +1050,8 @@ module.exports = {
   setCategoryBorders,
   setTrackOnEnemies,
   setAllyDebuffAlert,
+  setAlwaysOn,
+  setShowOnAllProfiles,
   setTextAuraMessage,
   setTextAuraSize,
   setTextAuraInstantSec,

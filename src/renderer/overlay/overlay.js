@@ -346,7 +346,11 @@ function textFor(buff) {
   if (!message.includes('{')) return message;
   return message
     .replace(/\{caster\}/g, buff.allyName || '')
-    .replace(/\{spell\}/g, buff.name || '')
+    // Never the synthetic always-on name - that string is an internal key, not something to put
+    // in front of anyone.
+    .replace(/\{spell\}/g, buff.name === ALWAYS_ON_KEY ? '' : buff.name || '')
+    // Note 21. Pushed with the config rather than stored, so it is right the instant you switch.
+    .replace(/\{profile\}/g, currentConfig.activeProfileName || '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -766,7 +770,41 @@ function anyMemberIn(buff, set) {
   return memberKeys(buff).some((key) => set.has(key));
 }
 
+// Note 21. An aura with nothing to watch still has something to say.
+//
+// Every other aura on screen exists because a buff arrived. This one has no event behind it at
+// all, so there is no buff to hand the renderer and it would draw an empty box for ever. One
+// synthetic entry, made here rather than in the engine, because nothing about it is detection -
+// the main process has no reason to invent a buff that never landed.
+//
+// The name is deliberately not a real spell name. keyFor() and the landing-glow and sound paths
+// all key off it, and a synthetic entry colliding with a real buff's key would make one of them
+// flash or beep for the other.
+const ALWAYS_ON_KEY = '__always-on__';
+
+function alwaysOnEntry() {
+  return {
+    name: ALWAYS_ON_KEY,
+    allyName: null,
+    durationSec: null,
+    remainingSec: null,
+    infinite: true,
+    instant: false,
+    landedAt: null,
+    showOnOverlay: true,
+    iconUrl: null,
+    isBardSong: false,
+    spellCategory: null,
+    onEnemy: false,
+    allyCast: false,
+  };
+}
+
 function visibleBuffs(buffs) {
+  // Before every filter below it, because none of them apply: there is nothing to include or
+  // exclude, no duration to cap, and no source to read from.
+  if (currentConfig.alwaysOn) return [alwaysOnEntry()];
+
   let filtered;
   if (currentConfig.buffFilterMode === 'all') {
     filtered = buffs.filter((b) => b.showOnOverlay !== false);

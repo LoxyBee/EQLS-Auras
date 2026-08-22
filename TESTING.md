@@ -768,6 +768,33 @@ roughly one every few hours of play. Nothing stopped being *detected*; things
 stop being *shown* once they are over. If you would rather they stayed put,
 say so - it is one line to put back.
 
+## The loadout label
+
+Add Aura -> **Loadout label**. Put it wherever you want it.
+
+- [ ] **It shows the active loadout's name and stays there** - no countdown,
+      nothing to wait for.
+- [ ] **Switch loadout and it changes immediately**, without you touching
+      anything.
+- [ ] **It is still there on a loadout you create AFTER making the label.**
+      This is the whole point of it, and it is the thing most likely to be
+      wrong. Make a new profile, switch to it, and check the label is still on
+      screen showing the new name.
+- [ ] **Rename a loadout and the label follows.**
+- [ ] **You can turn it off.** In its settings, untick "Show on every loadout,
+      including ones I make later". Unticking the individual loadouts will NOT
+      turn it off while that box is ticked - that is deliberate, but tell me if
+      it reads wrong.
+
+You can reword it - `{profile}` in the **Say:** box becomes the loadout name,
+so "Loadout: {profile}" works.
+
+**One thing I did not build, on purpose.** Your note asks for this aura to
+appear automatically once you have a second loadout. I left that out: an aura
+that creates itself is also an aura that comes back after you delete it, and
+you would have to keep deleting it. Say the word and I will add it, version-
+gated so it only ever happens once.
+
 ## Cooldown timers
 
 Add Aura -> **Cooldown timer**. Pick a spell, check the number, create.

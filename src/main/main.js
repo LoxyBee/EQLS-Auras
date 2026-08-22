@@ -80,6 +80,12 @@ buffEngine.setActiveProfileId(profileStore.getActiveId());
 // whichever profile is currently active, not always just the default one
 // - see widgetManager.js's getActiveProfileIdFn doc.
 widgetManager.setActiveProfileIdFn(() => profileStore.getActiveId());
+// Note 21's label reads this. Looked up fresh on every push rather than cached, so renaming a
+// profile shows immediately and a deleted one cannot leave a stale name on screen.
+widgetManager.setActiveProfileNameFn(() => {
+  const active = profileStore.getAll().find((pr) => pr.id === profileStore.getActiveId());
+  return active ? active.name : '';
+});
 const customTimerEngine = new CustomTimerEngine();
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
@@ -717,6 +723,10 @@ ipcMain.handle('widget:setTrackOnEnemies', (_event, { id, value }) =>
 );
 ipcMain.handle('widget:setAllyDebuffAlert', (_event, { id, value }) =>
   widgetManager.setAllyDebuffAlert(id, value)
+);
+ipcMain.handle('widget:setAlwaysOn', (_event, { id, value }) => widgetManager.setAlwaysOn(id, value));
+ipcMain.handle('widget:setShowOnAllProfiles', (_event, { id, value }) =>
+  widgetManager.setShowOnAllProfiles(id, value)
 );
 ipcMain.handle('widget:export', (_event, id) => widgetManager.exportWidget(id));
 ipcMain.handle('widget:peekCode', (_event, code) => widgetManager.peekWidgetCode(code));

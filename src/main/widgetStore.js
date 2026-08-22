@@ -111,6 +111,15 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // so any duration shown for it would be invented, and "a text alert to be careful, and not a
     // standalone timer that may be inaccurate" is what she asked for instead.
     allyDebuffAlert: false,
+    // Note 21. A text aura with nothing to watch, that simply says something and stays. Every
+    // other aura is driven by a buff arriving; this one has no event at all, so without this the
+    // overlay has nothing to build a tile from and draws an empty box for ever.
+    alwaysOn: false,
+    // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
+    // so a label telling you WHICH profile is active would vanish the moment you switched to a
+    // profile it was not a member of - exactly the situation it exists to help with. This makes it
+    // a member of all of them, including ones created later, which a list of ids cannot do.
+    showOnAllProfiles: false,
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -266,6 +275,15 @@ function defaultCustomWidget(name) {
     // so any duration shown for it would be invented, and "a text alert to be careful, and not a
     // standalone timer that may be inaccurate" is what she asked for instead.
     allyDebuffAlert: false,
+    // Note 21. A text aura with nothing to watch, that simply says something and stays. Every
+    // other aura is driven by a buff arriving; this one has no event at all, so without this the
+    // overlay has nothing to build a tile from and draws an empty box for ever.
+    alwaysOn: false,
+    // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
+    // so a label telling you WHICH profile is active would vanish the moment you switched to a
+    // profile it was not a member of - exactly the situation it exists to help with. This makes it
+    // a member of all of them, including ones created later, which a list of ids cannot do.
+    showOnAllProfiles: false,
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -368,6 +386,8 @@ const SHAREABLE_FIELDS = [
   'categoryBordersEnabled',
   'trackOnEnemies',
   'allyDebuffAlert',
+  'alwaysOn',
+  'showOnAllProfiles',
   'textAuraMessage',
   'textAuraSize',
   'textAuraInstantSec',
@@ -455,6 +475,8 @@ function normalizeWidget(widget) {
     categoryBordersEnabled: widget.categoryBordersEnabled !== false,
     trackOnEnemies: !!widget.trackOnEnemies,
     allyDebuffAlert: !!widget.allyDebuffAlert,
+    alwaysOn: !!widget.alwaysOn,
+    showOnAllProfiles: !!widget.showOnAllProfiles,
     textAuraMessage: typeof widget.textAuraMessage === 'string' ? widget.textAuraMessage : '',
     textAuraSize: typeof widget.textAuraSize === 'number' ? widget.textAuraSize : 32,
     // Clamped to the engine's own retention ceiling. A share code asking for five minutes would
@@ -541,6 +563,24 @@ const TEXT_AURA_PRESETS = {
       },
     ],
   }),
+  // Note 21. Which loadout profile is active, on screen, permanently.
+  //
+  // A member of every profile rather than of a list, because the one moment it has to be right is
+  // the moment you switch - and a list written when it was created cannot contain a profile that
+  // does not exist yet.
+  //
+  // NOT auto-created when a second profile appears, which is what the note asks for. That part is
+  // left for her to confirm: an aura that creates itself is also an aura that comes back after you
+  // delete it, and the note says so itself. Making it a premade she adds once is the version of
+  // this that cannot annoy anyone.
+  profileLabel: () => ({
+    buffSource: 'customTimer',
+    alwaysOn: true,
+    showOnAllProfiles: true,
+    textAuraMessage: '{profile}',
+    textAuraSize: 24,
+  }),
+
   // Note 16 as Shara specified it on 21 August: a warning that somebody else has cast a debuff,
   // not a timer on one. It ships watching the mez and charm family because that is the case she
   // described - do not break a groupmate's mez - and the buff list is editable like any other

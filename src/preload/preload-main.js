@@ -135,6 +135,9 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetCategoryBorders: (id, value) => ipcRenderer.invoke('widget:setCategoryBorders', { id, value }),
   setWidgetTrackOnEnemies: (id, value) => ipcRenderer.invoke('widget:setTrackOnEnemies', { id, value }),
   setWidgetAllyDebuffAlert: (id, value) => ipcRenderer.invoke('widget:setAllyDebuffAlert', { id, value }),
+  setWidgetAlwaysOn: (id, value) => ipcRenderer.invoke('widget:setAlwaysOn', { id, value }),
+  setWidgetShowOnAllProfiles: (id, value) =>
+    ipcRenderer.invoke('widget:setShowOnAllProfiles', { id, value }),
   onOpenWidgetSettings: (callback) => {
     ipcRenderer.on('widget:openSettings', (_event, id) => callback(id));
   },

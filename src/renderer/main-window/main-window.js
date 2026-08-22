@@ -1035,6 +1035,10 @@ function initWidgetsPanel() {
   const categoryBordersCheckbox = document.getElementById('widget-category-borders-checkbox');
   const trackEnemiesCheckbox = document.getElementById('widget-track-enemies-checkbox');
   const allyAlertCheckbox = document.getElementById('widget-ally-alert-checkbox');
+  const alwaysOnCheckbox = document.getElementById('widget-always-on-checkbox');
+  const alwaysOnRowEl = document.getElementById('widget-always-on-row');
+  const alwaysOnHintEl = document.getElementById('widget-always-on-hint');
+  const allProfilesCheckbox = document.getElementById('widget-all-profiles-checkbox');
   const allyAlertRowEl = document.getElementById('widget-ally-alert-row');
   const allyAlertHintEl = document.getElementById('widget-ally-alert-hint');
   const enemiesRowEl = document.getElementById('widget-enemies-row');
@@ -1475,6 +1479,10 @@ function initWidgetsPanel() {
     // nowhere else - the warning has no duration, so there is nothing for a tile aura to draw.
     allyAlertRowEl.style.display = isTextAura ? '' : 'none';
     allyAlertHintEl.style.display = isTextAura ? '' : 'none';
+    // An aura with nothing to wait for only makes sense where there is something to say without
+    // an event behind it, which is the text mode and nothing else.
+    alwaysOnRowEl.style.display = isTextAura ? '' : 'none';
+    alwaysOnHintEl.style.display = isTextAura ? '' : 'none';
     textHintEl.style.display = isTextAura ? '' : 'none';
     // Both of these are TYPES now, chosen once in the add-aura flow beside Custom buff aura and
     // Custom timer aura - so neither offers Display style at all. It was a radio for sound-only
@@ -1582,6 +1590,8 @@ function initWidgetsPanel() {
     categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
     trackEnemiesCheckbox.checked = !!widget.trackOnEnemies;
     allyAlertCheckbox.checked = !!widget.allyDebuffAlert;
+    alwaysOnCheckbox.checked = !!widget.alwaysOn;
+    allProfilesCheckbox.checked = !!widget.showOnAllProfiles;
     textMessageInput.value = widget.textAuraMessage || '';
     const textAuraSize = widget.textAuraSize || 32;
     textAuraSizeSlider.value = String(textAuraSize);
@@ -2011,6 +2021,15 @@ function initWidgetsPanel() {
         'every spell at once, not one you have to pick - useful for mez and charm, where a resist ' +
         'is the difference between a mob standing still and a mob hitting you.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'resisted'),
+    },
+    {
+      id: 'profile-label',
+      name: 'Loadout label',
+      description:
+        'Shows which loadout profile is active, permanently, wherever you put it. It belongs to ' +
+        'every profile including ones you make later, so it never disappears at the moment you ' +
+        'most want to read it.',
+      create: (name) => window.eqTracker.createTextAuraWidget(name, 'profileLabel'),
     },
     {
       id: 'ally-cast',
@@ -2543,6 +2562,14 @@ function initWidgetsPanel() {
   });
   allyAlertCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetAllyDebuffAlert(selectedId, allyAlertCheckbox.checked);
+  });
+  alwaysOnCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetAlwaysOn(selectedId, alwaysOnCheckbox.checked);
+  });
+  allProfilesCheckbox.addEventListener('change', () => {
+    // refreshWidgets, because this changes whether the aura is on screen right now - the per-
+    // profile tick boxes beside it do the same for the same reason.
+    window.eqTracker.setWidgetShowOnAllProfiles(selectedId, allProfilesCheckbox.checked).then(refreshWidgets);
   });
   mergeCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetMergeSameDuration(selectedId, mergeCheckbox.checked).then(refreshWidgets);
