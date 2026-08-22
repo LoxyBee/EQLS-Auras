@@ -333,6 +333,26 @@ const OWN_INTERRUPT_PATTERN = /^Your (.+) spell is interrupted\.$/;
 // are every last one of them "Your pet's <Spell> spell has worn off."
 const OVERWRITTEN_PATTERN = /^Your (.+) spell on (.+) has been overwritten\.$/;
 
+// "Your Protection of Rock spell did not take hold on Avenrae. (Blocked by Bravery.)"
+//
+// The other half of note 26, and the half that matters more: a cast that was REFUSED because
+// something better is already there. 189 in the owner's logs - 133 naming a target, 51 on herself,
+// 5 with no blocker named at all.
+//
+// It is already treated as a cast failure by FAILURE_PATTERNS, which is what stops a tile
+// appearing. This matcher exists to pull the three names out so the debug log can say WHICH buff
+// won, which is the only record anywhere of what actually stacks on this server.
+//
+// The blocker clause is optional on purpose. All 5 lines without it are real, and a cast that
+// failed with no reason given is still a cast that failed.
+const NO_HOLD_PATTERN = /^Your (.+) spell did not take hold(?: on (.+?))?\.(?: \(Blocked by (.+)\.\))?$/;
+
+function matchDidNotTakeHold(line) {
+  const m = NO_HOLD_PATTERN.exec(stripTimestamp(line));
+  if (!m) return null;
+  return { spellName: m[1], targetName: m[2] || null, blockedBy: m[3] || null };
+}
+
 function matchOverwritten(line) {
   const m = OVERWRITTEN_PATTERN.exec(stripTimestamp(line));
   return m ? { spellName: m[1], targetName: m[2] } : null;
@@ -359,6 +379,7 @@ module.exports = {
   matchGroupMemberJoined,
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
+  matchDidNotTakeHold,
   matchOverwritten,
   matchOwnInterrupt,
   matchOthersWornOff,

@@ -8,6 +8,7 @@ const {
   matchForgetSpell,
   matchHealBySpell,
   matchOthersWornOff,
+  matchDidNotTakeHold,
   matchOverwritten,
   matchSlain,
   matchAwakened,
@@ -423,6 +424,7 @@ class BuffEngine extends EventEmitter {
 
   handleLine(line) {
     const stripped = stripTimestamp(line);
+    this._noteRefusedCast(line);
 
     // Not itself a party-change line (isPartyChangeLine below doesn't match
     // it) - stash the name and let the self-join handling just below pick
@@ -1016,6 +1018,30 @@ class BuffEngine extends EventEmitter {
     });
     this._debugLog(`ALLY CAST ALERT "${spellName}" by "${caster}"`);
     this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+  }
+
+  // A cast the game refused because something better is already there.
+  //
+  // Recorded on EVERY line, not only while a cast is pending. The first version of this sat inside
+  // the pending-cast branch and caught 27 of the 189 in the owner's logs - the other 162 arrive
+  // when nothing is pending, because a group-buff burst has no per-spell cast line to be pending
+  // about. Those are exactly the ones worth having.
+  //
+  // It only WRITES TO THE LOG. Nothing is removed, and that is the important part: "did not take
+  // hold" means the new cast failed, not that the old buff went anywhere. Eleven of these are
+  // Talisman of Tnarg blocked by Talisman of Tnarg - a rebuff bouncing off one that is still
+  // running - and dropping that tile would take away the buff she actually has.
+  //
+  // Not applying a tile for the refused cast is handled elsewhere and needs nothing here: with no
+  // landing message there is nothing to land, and FAILURE_PATTERNS cancels the pending cast so no
+  // fallback can invent one.
+  _noteRefusedCast(line) {
+    const noHold = matchDidNotTakeHold(line);
+    if (!noHold) return;
+    this._debugLog(
+      `REFUSED "${noHold.spellName}"${noHold.targetName ? ` on "${noHold.targetName}"` : ' on you'}` +
+        `${noHold.blockedBy ? ` - blocked by "${noHold.blockedBy}", which stays` : ' - no reason given'}`
+    );
   }
 
   // Ends a buff or debuff on somebody else, from the lines the game actually prints for it (see

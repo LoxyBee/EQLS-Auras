@@ -277,17 +277,6 @@
                 disconnected)? "Reset position" brings it back to a corner of your main screen.
               </p>
 
-              <div class="row" id="widget-buff-source-row">
-                <span class="label">Watching:</span>
-                <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
-                <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
-                <!-- The two announcer types only - text and sound-only. Every other aura has its
-                     source fixed when it is created; these two are meant to be able to react to
-                     anything the app can see, so they are where this can be changed afterwards. -->
-                <label id="widget-buff-source-timer-label" style="display:none">
-                  <input type="radio" name="widget-buff-source" value="customTimer" /> Your own text triggers
-                </label>
-              </div>
               <div class="row" id="widget-display-mode-row">
                 <span class="label">Display style:</span>
                 <label><input type="radio" name="widget-display-mode" value="list" /> List</label>
@@ -494,6 +483,22 @@
                  It is the one thing on this panel you change most and it was three clicks down. -->
             <div class="block" id="widget-buff-filter-card">
               <p class="block-cap">Buffs shown</p>
+              <!-- Shara, 22 August: "if 21's buff watching is similar in scope to buffs shown,
+                   just place everything is watching under buffs shown. 1 category is better than 2."
+                   It was in Display & size, which is about how an aura LOOKS - this is about what it
+                   watches, which is what this whole card is. -->
+              <div class="row" id="widget-buff-source-row">
+                <span class="label">Watching:</span>
+                <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
+                <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
+                <!-- The two announcer types only - text and sound-only. Every other aura has its
+                     source fixed when it is created; these two are meant to be able to react to
+                     anything the app can see, so they are where this can be changed afterwards. -->
+                <label id="widget-buff-source-timer-label" style="display:none">
+                  <input type="radio" name="widget-buff-source" value="customTimer" /> Your own text triggers
+                </label>
+              </div>
+
               <p class="hint" id="widget-buff-filter-hint"></p>
               <div id="widget-track-others-row" style="display:none">
                 <div class="row">

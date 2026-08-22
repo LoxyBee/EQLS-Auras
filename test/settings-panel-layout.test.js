@@ -103,6 +103,19 @@ test('nothing references the removed summary span', () => {
   assert.doesNotMatch(rendererSrc, /topic-buffs-shown-summary/);
 });
 
+test('what an aura watches all lives in one card', () => {
+  // Shara, 22 August: "just place everything is watching under buffs shown. 1 category is better
+  // than 2." The source picker was in Display & size, which is about how an aura LOOKS. What it
+  // watches is what this card is for.
+  const card = panel.slice(panel.indexOf('id="widget-buff-filter-card"'));
+  const own = card.slice(0, card.indexOf('<div class="block"'));
+  assert.ok(own.includes('id="widget-buff-source-row"'), 'the source picker is not in the Buffs shown card');
+  assert.ok(own.includes('id="widget-buff-filter-list"'), 'the filter list left the card');
+  // And it is no longer up in Display & size.
+  const display = panel.slice(panel.indexOf('block-cap">Display'), panel.indexOf('id="widget-buff-filter-card"'));
+  assert.ok(!display.includes('id="widget-buff-source-row"'), 'the source picker is still in Display & size');
+});
+
 test('the two things called "Buffs shown" are not both called that any more', () => {
   // Display & size has a row that picks whether an aura watches you, an ally, or text triggers.
   // It was labelled "Buffs shown:" - which would have been the second thing with that name on the
