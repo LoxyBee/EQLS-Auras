@@ -2031,6 +2031,15 @@ function initWidgetsPanel() {
       panel: 'buff-timer',
     },
     {
+      id: 'cooldown-timer',
+      name: 'Cooldown timer',
+      description:
+        'Pick a spell and get a countdown to when you can cast it again, rather than how long it ' +
+        'lasts. The recast time is filled in for you, and you can correct it.',
+      panel: 'buff-timer',
+      mode: 'cooldown',
+    },
+    {
       id: 'enemy-debuff',
       name: 'Debuff on an enemy',
       description:
@@ -2058,12 +2067,6 @@ function initWidgetsPanel() {
     // The rest of the roadmap, shown in the app rather than only in FEATURES.md. Listing something
     // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
     // it looks to anyone using the app who did not write it.
-    {
-      name: 'Cooldown timer',
-      description:
-        'Pick a spell and get a countdown for when it can be cast again, rather than how long it ' +
-        'lasts. Not built yet.',
-    },
     {
       name: 'First aggro',
       description:
@@ -2101,30 +2104,45 @@ function initWidgetsPanel() {
   const buffTimerEnemyLabel = document.getElementById('buff-timer-enemy-label');
   const buffTimerEnemyWarning = document.getElementById('buff-timer-enemy-warning');
   const buffTimerCreateRow = document.getElementById('buff-timer-create-row');
+  const buffTimerCooldownRow = document.getElementById('buff-timer-cooldown-row');
+  const buffTimerCooldownInput = document.getElementById('buff-timer-cooldown-input');
+  const buffTimerCooldownHint = document.getElementById('buff-timer-cooldown-hint');
   const buffTimerCreateBtn = document.getElementById('buff-timer-create-btn');
 
   // The list is capped for the same reason the per-aura picker is: 720 trackable spells rendered
   // at once is a long scroll nobody reads, and typing two letters is faster than any of it.
   const BUFF_TIMER_RENDER_CAP = 40;
   let trackableBuffs = [];
+  let castableBuffs = [];
   let buffTimerChoice = null;
   let buffTimerPreferredSource = 'self';
+  // 'buff' or 'cooldown'. The picker is the same either way; what differs is which list it shows,
+  // which question it asks underneath, and what it builds. Note 15 said the cooldown premade
+  // should reuse note 14's panel rather than growing a second one over the same spells.
+  let buffTimerMode = 'buff';
+
+  function buffTimerPool() {
+    return buffTimerMode === 'cooldown' ? castableBuffs : trackableBuffs;
+  }
 
   function renderBuffTimerList() {
     const query = buffTimerSearch.value.trim().toLowerCase();
+    const pool = buffTimerPool();
     buffTimerListEl.innerHTML = '';
     if (!query) {
-      buffTimerListEl.innerHTML =
-        `<li class="empty">Type to search ${trackableBuffs.length} spells this app can track...</li>`;
+      const what = buffTimerMode === 'cooldown' ? 'spells with a recast time' : 'spells this app can track';
+      buffTimerListEl.innerHTML = `<li class="empty">Type to search ${pool.length} ${what}...</li>`;
       return;
     }
-    const matches = trackableBuffs.filter((b) => b.name.toLowerCase().includes(query));
+    const matches = pool.filter((b) => b.name.toLowerCase().includes(query));
     if (!matches.length) {
       // Says WHY rather than just "none". A spell can be perfectly real and still not be here,
       // because the roster has no landing message for it - and that is a different problem from
       // having spelled it wrong.
       buffTimerListEl.innerHTML =
-        '<li class="empty">Nothing matching. Only spells the app has a landing message for can be tracked.</li>';
+        buffTimerMode === 'cooldown'
+          ? '<li class="empty">Nothing matching. Only spells with a recast longer than the global cooldown are here.</li>'
+          : '<li class="empty">Nothing matching. Only spells the app has a landing message for can be tracked.</li>';
       return;
     }
     for (const buff of matches.slice(0, BUFF_TIMER_RENDER_CAP)) {
@@ -2135,13 +2153,17 @@ function initWidgetsPanel() {
       const strong = document.createElement('strong');
       strong.textContent = buff.name;
       const span = document.createElement('span');
-      const howLong = buff.infinite ? 'lasts until dispelled' : buff.durationSec ? `${buff.durationSec}s` : 'no duration';
-      const where = buff.enemy
-        ? 'on you, an ally, or something you cast it at'
-        : buff.ally
-          ? 'on you or on an ally'
-          : 'on you only';
-      span.textContent = `${howLong} - ${where}`;
+      if (buffTimerMode === 'cooldown') {
+        span.textContent = `${buff.reuseSec}s recast + ${buff.castSec}s cast = ${buff.cooldownSec}s`;
+      } else {
+        const howLong = buff.infinite ? 'lasts until dispelled' : buff.durationSec ? `${buff.durationSec}s` : 'no duration';
+        const where = buff.enemy
+          ? 'on you, an ally, or something you cast it at'
+          : buff.ally
+            ? 'on you or on an ally'
+            : 'on you only';
+        span.textContent = `${howLong} - ${where}`;
+      }
       btn.append(strong, span);
       btn.addEventListener('click', () => chooseBuffTimerSpell(buff));
       li.appendChild(btn);
@@ -2159,8 +2181,29 @@ function initWidgetsPanel() {
     buffTimerChoice = buff;
     buffTimerChosenEl.textContent = buff.name;
     buffTimerChosenRow.style.display = '';
-    buffTimerSourceRow.style.display = '';
     buffTimerCreateRow.style.display = '';
+
+    if (buffTimerMode === 'cooldown') {
+      // No "on:" question - a cooldown is always your own. The one thing worth asking is the
+      // number, pre-filled and editable, because recast times are mined rather than measured and
+      // of the two checked in game one was wrong. Presenting it as a fact would be overclaiming.
+      buffTimerSourceRow.style.display = 'none';
+      buffTimerAllyWarning.style.display = 'none';
+      buffTimerEnemyWarning.style.display = 'none';
+      buffTimerCooldownRow.style.display = '';
+      buffTimerCooldownHint.style.display = '';
+      buffTimerCooldownInput.value = String(buff.cooldownSec);
+      buffTimerCooldownHint.textContent =
+        `${buff.reuseSec}s recast plus ${buff.castSec}s casting time. The recast starts when the ` +
+        'cast finishes and this timer starts when it begins, which is why the two are added. ' +
+        'Recast times come from the game data and are usually right but not always - change it ' +
+        'here if the game disagrees, and the aura keeps whatever you set.';
+      return;
+    }
+
+    buffTimerCooldownRow.style.display = 'none';
+    buffTimerCooldownHint.style.display = 'none';
+    buffTimerSourceRow.style.display = '';
 
     // The risk note 14 names: offering "on an ally" for a spell whose roster entry has no
     // third-person landing text builds an aura that silently never lights up. Disabled rather
@@ -2211,7 +2254,8 @@ function initWidgetsPanel() {
 
   // preferredSource is what the premade that opened this panel came for - the radios still show
   // all three, so the choice is visible rather than hidden, it just starts on the likely one.
-  function resetBuffTimerPanel(preferredSource) {
+  function resetBuffTimerPanel(preferredSource, mode) {
+    buffTimerMode = mode === 'cooldown' ? 'cooldown' : 'buff';
     buffTimerPreferredSource = preferredSource === 'enemy' || preferredSource === 'ally' ? preferredSource : 'self';
     buffTimerChoice = null;
     buffTimerSearch.value = '';
@@ -2220,6 +2264,8 @@ function initWidgetsPanel() {
     buffTimerCreateRow.style.display = 'none';
     buffTimerAllyWarning.style.display = 'none';
     buffTimerEnemyWarning.style.display = 'none';
+    buffTimerCooldownRow.style.display = 'none';
+    buffTimerCooldownHint.style.display = 'none';
     buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
     renderBuffTimerList();
   }
@@ -2227,6 +2273,19 @@ function initWidgetsPanel() {
   buffTimerSearch.addEventListener('input', renderBuffTimerList);
   buffTimerCreateBtn.addEventListener('click', () => {
     if (!buffTimerChoice) return;
+    if (buffTimerMode === 'cooldown') {
+      const typed = Number(buffTimerCooldownInput.value);
+      // Falls back to the mined figure rather than refusing, so an empty or nonsense box still
+      // builds something useful instead of doing nothing and explaining nothing.
+      const cooldownSec = Number.isFinite(typed) && typed > 0 ? typed : buffTimerChoice.cooldownSec;
+      window.eqTracker
+        .createCooldownTimerWidget(buffTimerChoice.name, buffTimerChoice.name, cooldownSec, buffTimerChoice.iconId)
+        .then((config) => {
+          closeAddWidgetModal();
+          focusWidget(config.id);
+        });
+      return;
+    }
     const source = buffTimerSourceRow.querySelector('input[name="buff-timer-source"]:checked').value;
     // Named after the spell, because that is what the user just picked and searched for - having
     // to name it as well would be a second question for no information.
@@ -2257,7 +2316,7 @@ function initWidgetsPanel() {
             panel.style.display = panel.id === `add-widget-${premade.panel}-panel` ? '' : 'none';
           });
           if (premade.panel === 'buff-timer') {
-            resetBuffTimerPanel(premade.defaultSource);
+            resetBuffTimerPanel(premade.defaultSource, premade.mode);
             buffTimerSearch.focus();
           }
           return;
@@ -2307,6 +2366,10 @@ function initWidgetsPanel() {
     // that can no longer be tracked.
     window.eqTracker.getTrackableBuffs().then((buffs) => {
       trackableBuffs = buffs;
+      renderBuffTimerList();
+    });
+    window.eqTracker.getCastableBuffs().then((buffs) => {
+      castableBuffs = buffs;
       renderBuffTimerList();
     });
     showAddWidgetChoices();

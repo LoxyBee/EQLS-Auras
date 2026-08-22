@@ -85,6 +85,13 @@ const customTimerEngine = new CustomTimerEngine();
 // separate store - injected rather than required directly since
 // widgetManager pulls in Electron's screen/BrowserWindow.
 customTimerEngine.setGetWidgetsFn(() => widgetManager.getAllWidgetConfigs());
+// See customTimerEngine._resolveCastName. getByName tries the exact name first and only then the
+// rank-stripped one, which is what tells a mote rank ("Cannibalize V" -> Cannibalize) apart from a
+// spell whose name merely ends in a numeral ("Yaulp III" -> itself).
+customTimerEngine.setResolveSpellFn((name) => {
+  const known = buffStore.getByName(name);
+  return known ? known.name : null;
+});
 const iconService = new IconService();
 const spellbookService = new SpellbookService();
 buffEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
@@ -639,6 +646,35 @@ ipcMain.handle('widget:createTextAura', (_event, { name, preset }) =>
 ipcMain.handle('widget:createBuffTimer', (_event, { name, spellName, source }) =>
   widgetManager.createBuffTimerWidget(name, spellName, source)
 );
+ipcMain.handle('widget:createCooldownTimer', (_event, { name, spellName, cooldownSec, iconId }) =>
+  widgetManager.createCooldownTimerWidget(name, spellName, cooldownSec, iconId)
+);
+// Spells worth a cooldown countdown - note 15.
+//
+// A DIFFERENT list from the trackable one below, deliberately. A cooldown is started by the cast
+// line, so it needs no landing text at all: filtering this the same way would drop 158 of the 478
+// candidates, a third of them, for a reason that does not apply.
+//
+// Anything at 1.5s or under is excluded. That is the global cooldown every spell shares, not a
+// per-spell recast, and it is 511 of the 989 entries that carry the field - half the list would
+// be a countdown that finishes before it can be read.
+ipcMain.handle('buffs:castable', () =>
+  buffStore
+    .getAll()
+    .filter((e) => typeof e.reuseSec === 'number' && e.reuseSec > 1.5)
+    .map((e) => ({
+      name: e.name,
+      reuseSec: e.reuseSec,
+      castSec: typeof e.castSec === 'number' ? e.castSec : 0,
+      // What the timer actually counts. See widgetStore.createCooldownTimer for why the cast time
+      // is part of it: the recast clock starts when the cast finishes, and the timer starts when
+      // it begins.
+      cooldownSec: e.reuseSec + (typeof e.castSec === 'number' ? e.castSec : 0),
+      iconId: e.iconId ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+);
+
 // Only the spells that can actually be tracked, and which of the two ways each one supports.
 // The picker needs this to avoid offering "on an ally" for a spell whose roster entry has no
 // third-person landing text - that would build an aura which silently never lights up.

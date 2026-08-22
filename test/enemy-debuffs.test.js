@@ -408,14 +408,17 @@ test('picking an unsupported spell does not leave a disabled radio selected', ()
   assert.match(fn, /if \(preferred && !preferred\.disabled\) preferred\.checked = true;/);
 });
 
-test('both premades share one panel', () => {
+test('every spell-picking premade shares one panel', () => {
   // The alternative is a second picker over the same 720 spells, which is the thing note 14 was
   // written generically to avoid.
   const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
   assert.match(renderer, /id: 'enemy-debuff',/, 'no Debuff on an enemy entry in the premade list');
   assert.match(renderer, /defaultSource: 'enemy',/);
+  // Three now - Buff timer, Cooldown timer and Debuff on an enemy - and that is the point of
+  // having built the panel generically. A second picker over the same spells is what note 14 was
+  // written to avoid.
   const panels = renderer.match(/panel: 'buff-timer',/g) || [];
-  assert.equal(panels.length, 2, 'the two premades should point at the same panel');
+  assert.ok(panels.length >= 3, `only ${panels.length} premades share the panel`);
 });
 
 test('the third option exists in the markup', () => {

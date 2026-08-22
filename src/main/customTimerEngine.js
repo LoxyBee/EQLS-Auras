@@ -1,5 +1,11 @@
 const { EventEmitter } = require('events');
-const { stripTimestamp } = require('./buffParser');
+const {
+  stripTimestamp,
+  matchCastBegin,
+  matchSingingBegin,
+  matchOwnInterrupt,
+  stripRankSuffix,
+} = require('./buffParser');
 
 const TICK_INTERVAL_MS = 1000;
 
@@ -28,6 +34,25 @@ class CustomTimerEngine extends EventEmitter {
 
   setGetWidgetsFn(fn) {
     this.getWidgetsFn = fn;
+  }
+
+  // fn(castName) => the roster's name for that cast, or null.
+  //
+  // Needed only by the 'castOf' trigger mode below. Injected rather than requiring buffStore, so
+  // this engine stays instantiable in a plain Node test - same reason as setGetWidgetsFn above.
+  // Without it, 'castOf' falls back to stripping any trailing numeral as a rank.
+  //
+  // buffStore.getByName already does exactly the right thing and I wrote a worse copy of it first:
+  // it tries the exact name, and only then falls back to the rank-stripped one. That ordering is
+  // what tells "Promised Renewal VII" (a mote tier of Promised Renewal) apart from "Yaulp III" (a
+  // different spell that happens to end in a numeral), and there are ten of the latter kind.
+  setResolveSpellFn(fn) {
+    this.resolveSpellFn = fn;
+  }
+
+  _resolveCastName(castName) {
+    if (this.resolveSpellFn) return this.resolveSpellFn(castName) || castName;
+    return stripRankSuffix(castName);
   }
 
   // Same DI reasoning as BuffEngine.setIconUrlFn - lets iconService control
@@ -60,6 +85,9 @@ class CustomTimerEngine extends EventEmitter {
     // is always consistently cased anyway, so this can't introduce any
     // ambiguity there - it only ever helps the user-typed-chat case.
     const lowerLine = strippedLine.toLowerCase();
+    // Parsed once, not per timer. Null for any line that is not the player starting a cast.
+    const castName = matchCastBegin(strippedLine) || matchSingingBegin(strippedLine);
+    const castSpell = castName ? this._resolveCastName(castName) : null;
     const matches = [];
     for (const widget of this.getWidgetsFn()) {
       for (const timer of widget.customTimers || []) {
@@ -71,7 +99,18 @@ class CustomTimerEngine extends EventEmitter {
         // "contains" exists for the lines the game writes with a name in the middle of them -
         // "Orc centurion resisted your Mesmerize!" is never going to match a fixed string, because
         // the mob's name is part of it. Opt-in per timer, so nothing already set up changes.
-        const hit = timer.triggerMatch === 'contains' ? lowerLine.includes(trigger) : trigger === lowerLine;
+        let hit;
+        if (timer.triggerMatch === 'castOf') {
+          // triggerText is a SPELL NAME here, not a line. Purpose-built for cooldowns, because
+          // neither of the other two modes can do this job: exact never matches a ranked cast, and
+          // contains on "You begin casting Fire" also matches Fire Bolt, Fire Flux and four more.
+          // Thirteen spells in the roster are a prefix of another one.
+          hit = castSpell !== null && castSpell.toLowerCase() === trigger;
+        } else if (timer.triggerMatch === 'contains') {
+          hit = lowerLine.includes(trigger);
+        } else {
+          hit = trigger === lowerLine;
+        }
         if (hit) matches.push(timer);
       }
     }
@@ -98,6 +137,27 @@ class CustomTimerEngine extends EventEmitter {
     }
     if (endedAny) this.emit('activeChanged', this.getActive());
 
+    // A cast that never finished starts no recast clock. Only 'castOf' timers are cancelled: they
+    // are the ones started by a cast line, so they are the only ones that can be wrong about this.
+    // A timer the user built by hand out of arbitrary text is left alone, because nothing here
+    // knows what its trigger meant.
+    //
+    // 16% of the owner's casts are interrupted, so a cooldown that ignored this would regularly
+    // sit on screen claiming a spell was unavailable when it was ready to cast - which is worse
+    // than showing nothing, because it is the answer she would act on.
+    const interrupted = matchOwnInterrupt(line);
+    if (interrupted) {
+      const spell = this._resolveCastName(interrupted).toLowerCase();
+      let cancelled = false;
+      for (const [key, timer] of this.activeTimers) {
+        if (timer.triggerMatch !== 'castOf') continue;
+        if (String(timer.triggerText || '').toLowerCase() !== spell) continue;
+        this.activeTimers.delete(key);
+        cancelled = true;
+      }
+      if (cancelled) this.emit('activeChanged', this.getActive());
+    }
+
     // Checked unconditionally, not "else" - a line ending one timer
     // shouldn't stop it from also starting a different one (or restarting
     // the same one) if it happens to match a trigger too.
@@ -114,6 +174,10 @@ class CustomTimerEngine extends EventEmitter {
         durationSec: match.durationSec,
         expiresAt: Date.now() + match.durationSec * 1000,
         endedText: match.endedText || null,
+        // Carried through so an interrupt can find and cancel this again. Without them the check
+        // above has an id and a name and no way to tell what kind of timer it is looking at.
+        triggerMatch: match.triggerMatch || undefined,
+        triggerText: match.triggerText || undefined,
       });
     }
     this.emit('activeChanged', this.getActive());

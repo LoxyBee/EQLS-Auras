@@ -283,6 +283,23 @@ function matchAwakened(line) {
   return m ? m[1] : null;
 }
 
+// "Your Superior Healing spell is interrupted."  (571 of the owner's own; 1,141 more belong to
+// other people and are deliberately not matched here - theirs start with a name, not "Your").
+//
+// Matters for cooldowns. A recast clock only starts if the cast actually finished, and 16% of her
+// casts are interrupted, so a countdown started on the cast line has to be taken back when this
+// arrives or it will sit there claiming a spell is unavailable when it is ready.
+//
+// The spell is named without its rank in almost every case - "Your Superior Healing spell is
+// interrupted." even though the cast line said "Superior Healing III" - so the caller should
+// resolve it the same way it resolves a cast name.
+const OWN_INTERRUPT_PATTERN = /^Your (.+) spell is interrupted\.$/;
+
+function matchOwnInterrupt(line) {
+  const m = OWN_INTERRUPT_PATTERN.exec(stripTimestamp(line));
+  return m ? m[1] : null;
+}
+
 function looksLikeLandingMessage(line) {
   const stripped = line.replace(TIMESTAMP_PREFIX, '');
   return LANDING_HINT_PATTERNS.some((pattern) => pattern.test(stripped));
@@ -299,6 +316,7 @@ module.exports = {
   matchGroupMemberJoined,
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
+  matchOwnInterrupt,
   matchOthersWornOff,
   matchSlain,
   matchAwakened,

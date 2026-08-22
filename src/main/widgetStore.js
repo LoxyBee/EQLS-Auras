@@ -722,6 +722,43 @@ class WidgetStore {
     return widget;
   }
 
+  // Note 15. A countdown to when a spell can be cast again, rather than how long it lasts.
+  //
+  // cooldownSec is castSec + reuseSec, and the addition is not a fudge - it is measured. The
+  // recast clock starts when a cast COMPLETES, not when it begins, and this timer starts on the
+  // cast line because that is the only line guaranteed to appear. Promised Renewal has an 18s
+  // recast and a 3s cast, and the gap between consecutive casts in the owner's logs peaks at
+  // exactly 21s. Counting the recast alone would call the spell ready three seconds early, every
+  // time - and it also explains the mined 21.5s figure that looked wrong against her in-game 18s:
+  // it was recast plus cast all along.
+  //
+  // Editable afterwards, and that matters. Recast times are mined and are right most of the time
+  // but not always - of two checked in game, one was wrong. This is a good default, not a fact.
+  createCooldownTimer(name, { spellName, cooldownSec, iconId, activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name || spellName || 'Cooldown');
+    widget.buffSource = 'customTimer';
+    widget.iconsPerRow = 1;
+    widget.customTimers = [
+      {
+        id: crypto.randomUUID(),
+        name: spellName,
+        durationSec: cooldownSec,
+        // The SPELL, not a line of text - see customTimerEngine's castOf mode. It is what makes
+        // "You begin casting Cannibalize V." start the Cannibalize cooldown without also letting
+        // "Fire" start on "Fire Bolt".
+        triggerText: spellName,
+        triggerMatch: 'castOf',
+        endedText: '',
+        iconId: iconId ?? undefined,
+      },
+    ];
+    widget.buffNames = [spellName];
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
   createSoundOnly(name, { activeProfileIds } = {}) {
     const widget = defaultCustomWidget(name);
     widget.displayMode = 'sound-only';

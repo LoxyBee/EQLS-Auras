@@ -237,6 +237,17 @@ function createTextAuraWidget(name, preset) {
   return config;
 }
 
+function createCooldownTimerWidget(name, spellName, cooldownSec, iconId) {
+  const config = widgetStore.createCooldownTimer(name, {
+    spellName,
+    cooldownSec,
+    iconId,
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
 function createBuffTimerWidget(name, spellName, source) {
   const config = widgetStore.createBuffTimer(name, {
     spellName,
@@ -960,6 +971,7 @@ module.exports = {
   createSoundOnlyWidget,
   createTextAuraWidget,
   createBuffTimerWidget,
+  createCooldownTimerWidget,
   exportWidget,
   peekWidgetCode,
   importWidget,

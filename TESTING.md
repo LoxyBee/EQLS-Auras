@@ -768,6 +768,34 @@ roughly one every few hours of play. Nothing stopped being *detected*; things
 stop being *shown* once they are over. If you would rather they stayed put,
 say so - it is one line to put back.
 
+## Cooldown timers
+
+Add Aura -> **Cooldown timer**. Pick a spell, check the number, create.
+
+- [ ] **Cast the spell and a countdown appears**, ending when you can cast it
+      again.
+- [ ] **It works for the ranked spells you actually cast.** You pick "Promised
+      Renewal" from the list, but you cast "Promised Renewal VII" - that has to
+      start it, and so do V and IX. This is the single thing most likely to be
+      wrong, so please check it first.
+- [ ] **The number is recast plus cast time.** Promised Renewal shows 21s: 18s
+      recast plus 3s casting. The recast clock starts when the cast finishes
+      but the timer starts when you begin, so the two are added. Your
+      consecutive casts in the logs cluster at exactly 21s, which is where this
+      came from - but a stopwatch check would be welcome.
+- [ ] **An interrupted cast leaves no timer running.** Start a cast, get hit,
+      have it interrupt - the countdown should vanish rather than sit there
+      saying the spell is unavailable.
+- [ ] **Somebody else's interrupt does not clear yours.**
+- [ ] **You can change the recast time before creating it**, and it keeps what
+      you set. Recast times come from the game data and are usually right but
+      not always - of the two you checked, one was wrong - so if any spell
+      looks off, the number is yours to correct.
+
+Two things it does NOT do yet, so they are not bugs: it does not shorten the
+recast for higher mote tiers (the sheet says 2% per tier), and it does not
+handle a spell that has both a duration and a cooldown - that is note 10.
+
 ## Someone else casting a mez
 
 Add Aura -> **Someone else cast a mez**. Or tick **"Warn me when someone else
