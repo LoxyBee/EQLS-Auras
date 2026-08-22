@@ -80,6 +80,10 @@ buffEngine.setActiveProfileId(profileStore.getActiveId());
 // whichever profile is currently active, not always just the default one
 // - see widgetManager.js's getActiveProfileIdFn doc.
 widgetManager.setActiveProfileIdFn(() => profileStore.getActiveId());
+// Note 21. Restored before any window is built, so the label is either there from the first
+// frame or not at all - appearing a moment later would read as a glitch.
+widgetManager.setSaveLoadoutLabelEnabledFn((enabled) => saveJson('loadoutLabelEnabled', enabled));
+widgetManager.setLoadoutLabelEnabledState(loadJson('loadoutLabelEnabled', false));
 // Note 21's label reads this. Looked up fresh on every push rather than cached, so renaming a
 // profile shows immediately and a deleted one cannot leave a stale name on screen.
 widgetManager.setActiveProfileNameFn(() => {
@@ -725,6 +729,12 @@ ipcMain.handle('widget:setAllyDebuffAlert', (_event, { id, value }) =>
   widgetManager.setAllyDebuffAlert(id, value)
 );
 ipcMain.handle('widget:setAlwaysOn', (_event, { id, value }) => widgetManager.setAlwaysOn(id, value));
+// Note 21's global switch. On the Overlay Auras page beside the other app-wide aura settings,
+// not in Add Aura - it is a permanent option rather than something you build.
+ipcMain.handle('settings:getLoadoutLabel', () => widgetManager.isLoadoutLabelEnabled());
+ipcMain.handle('settings:setLoadoutLabel', (_event, enabled) =>
+  widgetManager.setLoadoutLabelEnabled(enabled).enabled
+);
 ipcMain.handle('widget:setShowOnAllProfiles', (_event, { id, value }) =>
   widgetManager.setShowOnAllProfiles(id, value)
 );

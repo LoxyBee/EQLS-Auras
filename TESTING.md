@@ -770,30 +770,29 @@ say so - it is one line to put back.
 
 ## The loadout label
 
-Add Aura -> **Loadout label**. Put it wherever you want it.
+**Overlay Auras page -> "Loadout label" -> tick "Show which loadout is active".**
+Not in Add Aura - it is a permanent setting, the way you asked.
 
-- [ ] **It shows the active loadout's name and stays there** - no countdown,
-      nothing to wait for.
-- [ ] **Switch loadout and it changes immediately**, without you touching
-      anything.
-- [ ] **It is still there on a loadout you create AFTER making the label.**
-      This is the whole point of it, and it is the thing most likely to be
-      wrong. Make a new profile, switch to it, and check the label is still on
-      screen showing the new name.
+- [ ] **Ticking it puts a label on screen** with the current loadout's name.
+- [ ] **Switch loadout and it changes immediately.**
+- [ ] **Drag it where you want it, then untick and re-tick.** It should come
+      back in the same place - turning it off hides it rather than throwing it
+      away.
+- [ ] **It is still there on a loadout you create AFTER turning it on.** This
+      is the whole point of it and the most likely thing to be wrong. Make a
+      new loadout, switch to it, check the label is still there with the new
+      name.
 - [ ] **Rename a loadout and the label follows.**
-- [ ] **You can turn it off.** In its settings, untick "Show on every loadout,
-      including ones I make later". Unticking the individual loadouts will NOT
-      turn it off while that box is ticked - that is deliberate, but tell me if
-      it reads wrong.
+- [ ] **It survives a restart** - both the setting and where you put it.
+- [ ] **"Hide auras" still hides it**, and it comes back with everything else.
 
-You can reword it - `{profile}` in the **Say:** box becomes the loadout name,
-so "Loadout: {profile}" works.
+You can reword and resize it in its own settings like any aura - `{profile}` in
+the **Say:** box becomes the loadout name, so "Loadout: {profile}" works.
 
-**One thing I did not build, on purpose.** Your note asks for this aura to
-appear automatically once you have a second loadout. I left that out: an aura
-that creates itself is also an aura that comes back after you delete it, and
-you would have to keep deleting it. Say the word and I will add it, version-
-gated so it only ever happens once.
+**Still not built, still your call.** Your note asks for it to appear
+automatically once you have a second loadout. Now that it is a setting rather
+than an aura, auto-enabling is less annoying than auto-creating was - it would
+just tick this box once. Say if you want that.
 
 ## Cooldown timers
 

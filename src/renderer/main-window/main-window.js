@@ -447,6 +447,16 @@ function initDetectionSettingsPanel() {
 
   const autoHideCheckbox = document.getElementById('auto-hide-overlay-checkbox');
   const showAurasAppFocusedCheckbox = document.getElementById('show-auras-app-focused-checkbox');
+  const loadoutLabelCheckbox = document.getElementById('loadout-label-checkbox');
+  window.eqTracker.getLoadoutLabel().then((enabled) => {
+    loadoutLabelCheckbox.checked = !!enabled;
+  });
+  loadoutLabelCheckbox.addEventListener('change', () => {
+    // refreshWidgets, because turning it on creates the label the first time and it should appear
+    // in the aura list straight away rather than after the next unrelated refresh.
+    window.eqTracker.setLoadoutLabel(loadoutLabelCheckbox.checked).then(refreshWidgets);
+  });
+
   window.eqTracker.getShowAurasWhenAppFocused().then((enabled) => {
     showAurasAppFocusedCheckbox.checked = enabled;
   });
@@ -2021,15 +2031,6 @@ function initWidgetsPanel() {
         'every spell at once, not one you have to pick - useful for mez and charm, where a resist ' +
         'is the difference between a mob standing still and a mob hitting you.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'resisted'),
-    },
-    {
-      id: 'profile-label',
-      name: 'Loadout label',
-      description:
-        'Shows which loadout profile is active, permanently, wherever you put it. It belongs to ' +
-        'every profile including ones you make later, so it never disappears at the moment you ' +
-        'most want to read it.',
-      create: (name) => window.eqTracker.createTextAuraWidget(name, 'profileLabel'),
     },
     {
       id: 'ally-cast',

@@ -531,6 +531,11 @@ function normalizeWidget(widget) {
 //
 // Three definitions, one tile: a text aura only ever draws one thing, and no single log line can
 // match two of these anyway.
+// One reserved kind, so there can only ever be one of these and nothing else can be mistaken for
+// it. Exported because widgetManager decides visibility by kind and the renderer hides it from the
+// delete button - three files have to agree on the string, so none of them should spell it.
+const LOADOUT_LABEL_KIND = 'loadout-label-builtin';
+
 const TEXT_AURA_PRESETS = {
   // Note 17's red RESIST flash, at the 1.4 seconds she asked for.
   //
@@ -563,24 +568,6 @@ const TEXT_AURA_PRESETS = {
       },
     ],
   }),
-  // Note 21. Which loadout profile is active, on screen, permanently.
-  //
-  // A member of every profile rather than of a list, because the one moment it has to be right is
-  // the moment you switch - and a list written when it was created cannot contain a profile that
-  // does not exist yet.
-  //
-  // NOT auto-created when a second profile appears, which is what the note asks for. That part is
-  // left for her to confirm: an aura that creates itself is also an aura that comes back after you
-  // delete it, and the note says so itself. Making it a premade she adds once is the version of
-  // this that cannot annoy anyone.
-  profileLabel: () => ({
-    buffSource: 'customTimer',
-    alwaysOn: true,
-    showOnAllProfiles: true,
-    textAuraMessage: '{profile}',
-    textAuraSize: 24,
-  }),
-
   // Note 16 as Shara specified it on 21 August: a warning that somebody else has cast a debuff,
   // not a timer on one. It ships watching the mez and charm family because that is the case she
   // described - do not break a groupmate's mez - and the buff list is editable like any other
@@ -613,7 +600,30 @@ const TEXT_AURA_PRESETS = {
   }),
 };
 
+// Note 21, as Shara redirected it on 21 August: the loadout label is a global option, not
+// something you build in Add Aura. "It should be a permanent option that is not tied to creating
+// an aura."
+//
+// It is still a widget underneath, and that is deliberate rather than lazy: everything it needs -
+// a position you can drag, locking, opacity, sizing, surviving a restart - already exists for
+// widgets and would otherwise have to be written again for one label. What Shara asked for is
+// where the SWITCH lives and that it is permanent, and both of those are true here. It never
+// appears in Add Aura, it is created once the first time it is switched on, and switching it off
+// hides it rather than deleting it, so its position is still there when it comes back.
+function defaultLoadoutLabelWidget() {
+  const widget = defaultCustomWidget('Loadout label');
+  widget.kind = LOADOUT_LABEL_KIND;
+  widget.displayMode = 'text';
+  widget.buffSource = 'customTimer';
+  widget.alwaysOn = true;
+  widget.showOnAllProfiles = true;
+  widget.textAuraMessage = '{profile}';
+  widget.textAuraSize = 24;
+  return widget;
+}
+
 function defaultsForKind(kind, name) {
+  if (kind === LOADOUT_LABEL_KIND) return defaultLoadoutLabelWidget();
   if (kind === 'self-buffs-builtin') return defaultSelfBuffsWidget();
   if (kind === 'ally-buffs-builtin') return defaultAllyBuffsWidget(name);
   return defaultCustomWidget(name);
@@ -794,6 +804,22 @@ class WidgetStore {
     ];
     widget.buffNames = [spellName];
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
+  // The one loadout label, or null. There is never more than one - see ensureLoadoutLabel.
+  getLoadoutLabel() {
+    return this.data.widgets.find((w) => w.kind === LOADOUT_LABEL_KIND) || null;
+  }
+
+  // Created on first use rather than seeded for everyone, so someone who never turns it on never
+  // has it in their widgets.json at all.
+  ensureLoadoutLabel() {
+    const existing = this.getLoadoutLabel();
+    if (existing) return existing;
+    const widget = defaultLoadoutLabelWidget();
     this.data.widgets.push(widget);
     this._save();
     return widget;
@@ -1073,6 +1099,7 @@ class WidgetStore {
 
 module.exports = {
   WidgetStore,
+  LOADOUT_LABEL_KIND,
   DISPLAY_MODES,
   TEXT_AURA_PRESETS,
   normalizeDisplayMode,

@@ -1,6 +1,6 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
-const { WidgetStore, normalizeDisplayMode, isSoundOnly, isTextAura, clampInstantSec } = require('./widgetStore');
+const { WidgetStore, LOADOUT_LABEL_KIND, normalizeDisplayMode, isSoundOnly, isTextAura, clampInstantSec } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
@@ -438,7 +438,20 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
 // because it has nothing on the screen to clear.
 //
 // The order below IS the behaviour. Each clause has a reason it sits where it does.
+// Note 21. The global switch, off until someone turns it on. Held here rather than on the widget
+// because it is app-wide config, which is what Shara asked for - the label is a permanent option,
+// not something you build and then have to remember you built.
+let loadoutLabelEnabled = false;
+function setLoadoutLabelEnabledState(enabled) {
+  loadoutLabelEnabled = !!enabled;
+}
+
 function shouldBeOnScreen(config) {
+  // Note 21. Switched off means off, whatever anything else says. It only ever returns FALSE here
+  // and then falls through, so the label still obeys master hide and the focus auto-hide like
+  // every other aura - restating those rules here would be two copies to keep in step.
+  if (config.kind === LOADOUT_LABEL_KIND && !loadoutLabelEnabled) return false;
+
   // Note 31: unlocking one aura BY HAND puts it on screen even when the current profile has it
   // switched off, and re-locking hands it straight back to the normal rules. forceShown rather
   // than isUnlocked, so "Unlock all auras" does not drag every switched-off aura onto the screen
@@ -711,6 +724,30 @@ function setAllyDebuffAlert(id, enabled) {
   const config = widgetStore.update(id, { allyDebuffAlert: !!enabled });
   pushConfigChanged(id);
   return config;
+}
+
+// Creates the label the first time it is switched on, then only ever shows and hides it. Deleting
+// and recreating would throw away wherever she dragged it to, which is the one thing about it she
+// will have taken any trouble over.
+function setLoadoutLabelEnabled(enabled) {
+  setLoadoutLabelEnabledState(enabled);
+  saveLoadoutLabelEnabledFn(!!enabled);
+  const config = enabled ? widgetStore.ensureLoadoutLabel() : widgetStore.getLoadoutLabel();
+  if (!config) return { enabled: !!enabled, config: null };
+  if (enabled && !windows.has(config.id)) createWidgetWindow(config);
+  applyVisibility(config);
+  pushConfigChanged(config.id);
+  return { enabled: !!enabled, config };
+}
+
+// Persisting is the caller's job - widgetManager has no store of its own for app-wide settings.
+let saveLoadoutLabelEnabledFn = () => {};
+function setSaveLoadoutLabelEnabledFn(fn) {
+  saveLoadoutLabelEnabledFn = fn;
+}
+
+function isLoadoutLabelEnabled() {
+  return loadoutLabelEnabled;
 }
 
 function setAlwaysOn(id, enabled) {
@@ -1052,6 +1089,10 @@ module.exports = {
   setAllyDebuffAlert,
   setAlwaysOn,
   setShowOnAllProfiles,
+  setLoadoutLabelEnabled,
+  setLoadoutLabelEnabledState,
+  setSaveLoadoutLabelEnabledFn,
+  isLoadoutLabelEnabled,
   setTextAuraMessage,
   setTextAuraSize,
   setTextAuraInstantSec,

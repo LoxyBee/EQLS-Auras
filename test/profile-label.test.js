@@ -14,10 +14,19 @@
  * The second is that every render path is driven by a buff arriving, and this aura has no event
  * behind it at all - hence alwaysOn and one synthetic entry.
  *
- * NOT built: the note also asks for the aura to create itself when a second profile appears. That
- * is left for the owner to confirm, because an aura that creates itself is also an aura that comes
- * back after you delete it - the note says so itself, and it is the one part of this that could
- * annoy rather than help.
+ * WHERE THE SWITCH LIVES. Shara redirected this on 21 August: "it should be a part of global
+ * config, not add aura... a permanent option that is not tied to creating an aura", to keep the
+ * Add Aura list from bloating. So it is a checkbox on the Overlay Auras page beside the other
+ * app-wide aura settings, and there is no premade for it at all.
+ *
+ * It is still a widget underneath, and that is a choice worth defending rather than an accident:
+ * a draggable position, locking, opacity, sizing and surviving a restart all exist for widgets
+ * already, and writing them again for one label would be the actual bloat. What she asked for is
+ * that the switch be permanent and not require building an aura, and both hold.
+ *
+ * NOT built: the note also asks for the label to appear automatically once a second profile
+ * exists. Left for her to confirm, because a thing that creates itself is also a thing that comes
+ * back after you delete it - the note says so itself.
  */
 
 const assert = require('node:assert/strict');
@@ -69,7 +78,7 @@ test('the label survives a profile that did not exist when it was made', () => {
   // The single thing this feature is for. An ordinary aura fails this by design; the label must
   // not, or it disappears at the one moment it has something to say.
   const store = newStore();
-  const label = store.createTextAura('Loadout', { preset: 'profileLabel' });
+  const label = store.ensureLoadoutLabel();
   assert.equal(visibleOn(label, 'a-profile-created-next-week'), true);
 });
 
@@ -134,7 +143,7 @@ test('its name cannot collide with a real spell', () => {
 });
 
 test('the internal key never reaches the screen', () => {
-  const label = newStore().createTextAura('L', { preset: 'profileLabel' });
+  const label = newStore().ensureLoadoutLabel();
   const shown = renderText({ ...label, textAuraMessage: '{spell}{profile}', activeProfileName: 'Healing' },
     { name: ALWAYS_ON_KEY, allyName: null });
   assert.equal(shown, 'Healing');
@@ -146,7 +155,7 @@ test('the internal key never reaches the screen', () => {
 // ---------------------------------------------------------------------------
 
 test('it shows the active profile name', () => {
-  const label = newStore().createTextAura('L', { preset: 'profileLabel' });
+  const label = newStore().ensureLoadoutLabel();
   const entry = { name: ALWAYS_ON_KEY, allyName: null };
   for (const name of ['Default', 'Cleric healing', 'Bard pulling']) {
     assert.equal(renderText({ ...label, activeProfileName: name }, entry), name);
@@ -154,7 +163,7 @@ test('it shows the active profile name', () => {
 });
 
 test('the wording is hers to change', () => {
-  const label = newStore().createTextAura('L', { preset: 'profileLabel' });
+  const label = newStore().ensureLoadoutLabel();
   const entry = { name: ALWAYS_ON_KEY, allyName: null };
   assert.equal(
     renderText({ ...label, textAuraMessage: 'Loadout: {profile}', activeProfileName: 'Bard pulling' }, entry),
@@ -178,7 +187,7 @@ test('the overlay really substitutes the profile token', () => {
 
 test('the name is computed, never stored on the aura', () => {
   // Stored, every aura would carry a stale copy of a name that can be renamed or deleted under it.
-  const label = newStore().createTextAura('L', { preset: 'profileLabel' });
+  const label = newStore().ensureLoadoutLabel();
   assert.equal(label.activeProfileName, undefined, 'the profile name is being persisted');
   assert.match(managerSrc, /function withActiveProfile\(config\) \{/);
   assert.match(managerSrc, /activeProfileName: getActiveProfileNameFn\(\)/);
@@ -204,14 +213,72 @@ test('the name is looked up fresh each time', () => {
 // Reaching it
 // ---------------------------------------------------------------------------
 
-test('the premade builds it ready to use', () => {
-  const w = newStore().createTextAura('Loadout', { preset: 'profileLabel' });
+test('it is NOT in Add Aura', () => {
+  // Her instruction. The Add Aura list is going to be long enough without permanent app settings
+  // living in it.
+  assert.doesNotMatch(rendererSrc, /id: 'profile-label',/, 'the loadout label is back in Add Aura');
+  assert.doesNotMatch(rendererSrc, /'profileLabel'/, 'the premade preset is still referenced');
+  const storeSrc = read('src', 'main', 'widgetStore.js');
+  assert.doesNotMatch(storeSrc, /profileLabel:/, 'the dead preset is still in the store');
+});
+
+test('the switch is a global setting, beside the other app-wide aura settings', () => {
+  assert.match(html, /id="loadout-label-checkbox"/, 'no global toggle');
+  assert.match(mainSrc, /ipcMain\.handle\('settings:getLoadoutLabel'/);
+  assert.match(mainSrc, /ipcMain\.handle\('settings:setLoadoutLabel'/);
+  assert.match(preloadSrc, /getLoadoutLabel:/);
+  assert.match(preloadSrc, /setLoadoutLabel:/);
+  assert.match(rendererSrc, /loadoutLabelCheckbox\.addEventListener\('change'/);
+  assert.match(rendererSrc, /loadoutLabelCheckbox\.checked = !!enabled;/, 'it never shows its saved state');
+  // On the Overlay Auras page with the other app-wide settings, not on a widget's own panel.
+  const page = html.slice(html.indexOf('id="page-overlay"'), html.indexOf('id="widget-settings-panel"'));
+  assert.match(page, /id="loadout-label-checkbox"/, 'the toggle is not on the Overlay Auras page');
+});
+
+test('it is off until switched on, and remembers', () => {
+  assert.match(mainSrc, /widgetManager\.setLoadoutLabelEnabledState\(loadJson\('loadoutLabelEnabled', false\)\)/,
+    'not restored at boot, or not defaulting to off');
+  assert.match(mainSrc, /setSaveLoadoutLabelEnabledFn/, 'the setting is never persisted');
+  const fn = managerSrc.match(/function setLoadoutLabelEnabled\(enabled\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn, 'setLoadoutLabelEnabled has been renamed or restructured');
+  assert.match(fn[1], /saveLoadoutLabelEnabledFn\(!!enabled\)/);
+});
+
+test('the widget is created on first use, then only hidden', () => {
+  // Deleting and recreating would throw away wherever she dragged it, which is the one thing
+  // about it she will have taken any trouble over.
+  const fn = managerSrc.match(/function setLoadoutLabelEnabled\(enabled\) \{([\s\S]*?)\n\}/)[1];
+  assert.match(fn, /widgetStore\.ensureLoadoutLabel\(\)/);
+  assert.doesNotMatch(fn, /delete|remove/i, 'switching it off must not destroy the label');
+
+  const store = newStore();
+  assert.equal(store.getLoadoutLabel(), null, 'the label should not exist until asked for');
+  const first = store.ensureLoadoutLabel();
+  assert.ok(first, 'ensureLoadoutLabel built nothing');
+  assert.equal(store.ensureLoadoutLabel().id, first.id, 'a second call made a second label');
+  assert.equal(store.getAll().filter((w) => w.kind === 'loadout-label-builtin').length, 1);
+});
+
+test('what it is created as', () => {
+  const w = newStore().ensureLoadoutLabel();
+  assert.equal(w.kind, 'loadout-label-builtin');
   assert.equal(w.displayMode, 'text');
   assert.equal(w.alwaysOn, true);
   assert.equal(w.showOnAllProfiles, true);
   assert.equal(w.textAuraMessage, '{profile}');
-  assert.match(rendererSrc, /id: 'profile-label',/, 'no Loadout label premade');
-  assert.match(rendererSrc, /createTextAuraWidget\(name, 'profileLabel'\)/);
+});
+
+test('the switch decides whether it is on screen, and nothing else does', () => {
+  const fn = managerSrc.match(/function shouldBeOnScreen\(config\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn, 'shouldBeOnScreen has been restructured');
+  assert.match(fn[1], /config\.kind === LOADOUT_LABEL_KIND && !loadoutLabelEnabled/);
+  // Only ever returns false and falls through, so master hide and the focus auto-hide still apply
+  // to it - restating those here would be a second copy to keep in step.
+  assert.doesNotMatch(
+    fn[1].slice(0, fn[1].indexOf('isSoundOnly')),
+    /masterHidden/,
+    'the label clause re-implements master hide instead of falling through to it'
+  );
 });
 
 test('both settings are off by default and survive a share code', () => {
