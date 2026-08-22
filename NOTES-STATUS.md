@@ -39,8 +39,8 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 13 | Drag the sidebar wider | **DONE** | |
 | 14 | Buff-timer premade: pick a spell, pick self or ally | **DONE** | Now also offers "something you cast it at". |
 | 15 | Cooldown premade: pick a skill, get its recast countdown | **NOT** | **Its blocker is gone.** Recast times now exist on 989 of 1,052 spells. Nothing in the app reads them yet. Cheapest big win on the list. |
-| 16 | Debuff-on-an-enemy premade, resist alert, ally toggle | **PART** | Premade built. Resist alert built (note 17). Still open: the toggle for debuffs *an ally* applied — that one needs a decision from you, below. |
-| 17 | Mesmerize worked example: rank, per-mob timer, RESIST flash | **PART** | Per-mob timer built. RESIST flash built. Missing: remembering the rank from the cast line. |
+| 16 | Debuff-on-an-enemy premade, resist alert, ally toggle | **DONE** | All three. The ally part is built as you specified it on 21 Aug — a warning, not a timer. See below. |
+| 17 | Mesmerize worked example: rank, per-mob timer, RESIST flash | **PART** | Per-mob timer built. RESIST flash built. Missing: using the rank to set *your own* mez duration — though the app now reads the rank off other people's casts and shows it. |
 | 18 | Count same-named mobs from the land and resist lines | **NOT** | Two things you should know before this gets built — below. |
 | 19 | Damage parser premade, placeholder in the meantime | **PART** | Placeholder only. |
 | 20 | Travel guide premade, placeholder in the meantime | **PART** | Placeholder only. The feature needs zone-connection data that does not exist anywhere yet. |
@@ -76,7 +76,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 
 ---
 
-## The four things worth reading properly
+## The things worth reading properly
 
 **Notes 11, 16 and 17 were never actually blocked, and you were right about that.**
 `FEATURES.md` claimed there was not a single mez line in your logs. That was written from one log
@@ -99,14 +99,25 @@ multi-landing. Every AoE case in your logs is somebody else's `Mesmerization VI`
 counting idea is sound — two `a sonic bat` landings from one cast really is two bats, and two
 separate death lines confirm it — but the tile will not light up until you cast a ranked mez.
 
-**One decision I need from you, for note 16.** You asked for an optional toggle to also track
-debuffs an *ally* applied, for boss debuffing. It can be done, but it will be half a feature and
-you should know why before I build it: the line that says a debuff *ended* only ever appears for a
-spell **you** cast. One of your logs has 14 mez landings and zero wear-off lines, because all 14
-were a groupmate's. So an ally-applied debuff would show up correctly and then never end on time —
-only on a guessed timer, and the rank (which sets the duration) could only be inferred from their
-cast line. My suggestion is to show ally-applied debuffs **without a countdown** rather than with a
-made-up one, but it is your call.
+**Note 16's last piece is built, and your answer was better than either option I offered.** I had
+put two to you — an ally's debuff without a countdown, or not at all. You picked a third: make it a
+*warning* rather than a tracker. That dissolves the problem instead of working around it, because a
+warning has no duration to be wrong about.
+
+It is a toggle on text-only auras, where you asked for it, plus a premade. Two things in it are my
+decisions rather than yours, and both are worth overruling if you disagree:
+
+- **It fires as they start casting, not when the mez lands.** About two seconds earlier — 96% of
+  landings in your logs arrive exactly two seconds after the cast line. A warning that arrives
+  after the mez is already on is too late to stop you swinging. The cost is that a cast which gets
+  resisted still warns you, roughly one time in ten.
+- **It names whoever cast it rather than saying "a party member".** Half the mez and charm casts by
+  other people in your logs are mobs — ``A Teir`Dal ranger`` 13 times, "A negotiator" 6 — and the
+  game's line does not distinguish them. So "a party member has cast" would have been wrong about
+  half the time it fired. Naming them is right every time, and a mob casting mez is worth knowing
+  about too. I could restrict it to actual group members, but the app only learns who is in your
+  group from join and leave lines it sees live, so it would go silently dead every time you start
+  the app mid-session. Say the word if you want it anyway.
 
 ---
 
