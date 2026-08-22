@@ -49,13 +49,13 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 
 | # | What you asked for | | Where it stands |
 | --- | --- | --- | --- |
-| 21 | An aura showing which loadout profile is active | **PART** | Built as Add Aura -> Loadout label. Missing only the auto-create, which I left out on purpose — see below. |
+| 21 | An aura showing which loadout profile is active | **PART** | A global toggle on the Overlay Auras page, as you asked — not in Add Aura. Missing only the auto-enable. |
 | 22 | "Unlock all" only on the main Overlay Auras page | **DONE** | |
 | 23 | Text-only display style, own size, own dwell time | **DONE** | Built as a *type* chosen when you create the aura, not a fourth radio — you agreed to that change. The dwell time is a setting, default 6s. |
 | 24 | Detection priority rework, plus a song-pulse check | **PART** | Spellbook now outranks the gem list. Rival-caster tracking built. Missing: the post-cast song-pulse auto-resolve, which needs a log sample proving the 6s repeat. |
 | 25 | A disabled "Global recovery time" placeholder | **DONE** | Still a placeholder. The `castOf` trigger note 15 introduced is the piece it needs, when you want it built. |
-| 26 | Drop a stale timer when a buff gets overwritten | **BLOCKED** | Needs one log line of a real overwrite. **This is the only outstanding item that makes the app show something actively wrong**, so it is worth the one cast it costs you. |
-| 27 | Promote "Buffs shown" to its own section, add gem slots | **NOT** | Still a topic inside Configuration. Nothing blocking it. The biggest unbuilt thing on the list. |
+| 26 | Drop a stale timer when a buff gets overwritten | **BLOCKED** | Under research. Your logs turn out to hold 189 real stacking conflicts, so there is more evidence than anyone thought. |
+| 27 | Promote "Buffs shown" to its own section, add gem slots | **PART** | Now a top-level card between Display & size and Configuration. Gem slots not built — waiting on your go-ahead. |
 | 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Needs `detection-debug.log` from 19 Aug around 12:15. The debug log now names the rival caster, so if it happens again the evidence will be there. |
 | 29 | Put EverQuest back in front after answering a popup | **DONE** | |
 | 30 | Read share codes out of chat | **BLOCKED** | Needs the server's per-line character limit confirmed, and whether + and = survive a chat line. |
@@ -123,22 +123,21 @@ decisions rather than yours, and both are worth overruling if you disagree:
 
 ## Three things I need from you
 
-**Note 21 — should the loadout label create itself?** Your note asks for it to appear
-automatically once you have a second loadout. I built everything except that. An aura that creates
-itself is also an aura that comes back after you delete it, and your note says the same. If you
-want it, I will add it version-gated so it can only ever happen once. Also: should it show
-"Default" when you are on the default loadout, or stay blank? Blank means the label disappearing is
-itself the signal, which reads like a bug.
+**Note 27 — the gem slots.** The section move is done. The gem-slot half changes how an aura
+stores which spells it watches, and that is the one change in this whole backlog that could empty
+auras you have already set up. I want your go-ahead specifically for that, not a general yes to
+note 27. When you give it, I will version-gate the change so old auras convert rather than break.
 
-**Note 27 — two questions before I start.** There is already a row labelled "Buffs shown:" in
-Display & size that picks whether an aura watches you, an ally or timers. If "Buffs shown" also
-becomes its own section, there are two things with that name on one screen. I would rename the
-existing one to something like "Watching:" — say if you would rather it went the other way. And the
-gem-slot half changes how an aura stores its picked spells, which is the one change that could
-empty auras you have already set up, so I want your go-ahead before touching it rather than after.
+**Note 21 — should the label switch itself on?** Now that it is a setting rather than an aura, the
+auto-enable you asked for is much less annoying than auto-creating would have been: it would tick
+the box once, the first time you make a second loadout. Say the word. Also: show "Default" while
+you are on the default loadout, or stay blank? Blank means the label vanishing is itself the
+signal, which reads like a bug.
 
-**Note 26 — one cast from you unblocks it.** Overwrite a buff with a stronger version and send me
-the lines. It is still the only outstanding item that makes the app show something actively wrong.
+**Note 26 — research is running, no action needed from you yet.** Two agents are on it. Your logs
+turn out to contain 189 real stacking conflicts of the form "Your Protection of Rock spell did not
+take hold on Avenrae. (Blocked by Bravery.)", which is far more evidence than the note assumed
+existed. I will come back when I know whether the rule is derivable from what the app can see.
 
 ## What I would do next, in order
 
