@@ -1662,6 +1662,15 @@ function initWidgetsPanel() {
     renderWidgetProfilesChecklist(widget);
   }
 
+  // One line under the gem row for the one thing that can be refused. Cleared on the next
+  // successful change, so it never lingers as a complaint about something already fixed.
+  function setBuffFilterNotice(text) {
+    const el = document.getElementById('widget-buff-filter-notice');
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = text ? '' : 'none';
+  }
+
   function renderBuffFilter(widget) {
     // Custom timers are a wholly separate concept from buff-picking (own
     // card, own heading - see widget-custom-timers-card) - not a "buffs
@@ -1748,22 +1757,65 @@ function initWidgetsPanel() {
   // easily scroll off past the search-capped list (KNOWN_BUFF_RENDER_CAP)
   // or never appear at all unless searched for by its exact name, making it
   // effectively impossible to find and uncheck otherwise.
+  // Note 27's second half. What this aura watches, as a row of spell icons rather than a list of
+  // ticked names - "the gem slot look will be better than a raw list", and it is: eight ticked
+  // rows is a wall of text, eight icons is something you read at a glance.
+  //
+  // NOTHING ABOUT THE STORED DATA CHANGES. The note's Risk warned that turning buffNames into
+  // ordered slots with icons, without a migration, would empty every aura anyone had set up. That
+  // turned out to be avoidable rather than worth risking: the slot order IS the array order, and
+  // the icon belongs to the spell rather than to the slot, so buffNames stays the flat array of
+  // names it has always been and the gems are purely how it is drawn. No migration, nothing to
+  // convert, and a share code from before this still imports.
   function renderSelectedBuffsList(widget) {
     const names = widget.buffNames || [];
-    selectedBuffsSectionEl.style.display = names.length > 0 ? '' : 'none';
+    // The section stays up even when empty, unlike the old list - the "+" slot is how you add the
+    // first spell, so hiding the row until something is in it hid the only way in.
+    selectedBuffsSectionEl.style.display = '';
     selectedBuffsListEl.innerHTML = '';
+
     for (const name of names) {
-      const li = document.createElement('li');
-      const label = document.createElement('label');
-      label.className = 'overlay-toggle-label';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = true;
-      cb.addEventListener('change', () => toggleBuffFilterName(widget, name, cb.checked));
-      label.append(cb, document.createTextNode(name));
-      li.appendChild(label);
-      selectedBuffsListEl.appendChild(li);
+      selectedBuffsListEl.appendChild(buildGemSlot(widget, name));
     }
+
+    // The "+" slot. Note 27 asks for it by name, and it is what makes the row self-explanatory:
+    // an empty picker with a plus in it reads as "put something here" without a caption.
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'gem-slot gem-add';
+    add.title = 'Add a spell to this aura';
+    add.textContent = '+';
+    add.addEventListener('click', () => {
+      filterSearch.focus();
+      filterSearch.select();
+    });
+    selectedBuffsListEl.appendChild(add);
+  }
+
+  function buildGemSlot(widget, name) {
+    const known = allKnownBuffs.find((b) => b.name === name);
+    const slot = document.createElement('button');
+    slot.type = 'button';
+    slot.className = 'gem-slot';
+    // The name in a tooltip rather than under the icon. EQ icons are not distinctive enough to
+    // identify a spell from alone, and a caption under each one turns the row back into the list
+    // this replaced.
+    slot.title = `${name} - click to stop watching it`;
+    if (known && known.iconUrl) {
+      const img = document.createElement('img');
+      img.src = known.iconUrl;
+      img.alt = '';
+      slot.appendChild(img);
+    } else {
+      // A spell with no icon still needs to be removable, so it gets its initial rather than an
+      // empty square that looks like a rendering fault.
+      const initial = document.createElement('span');
+      initial.className = 'gem-initial';
+      initial.textContent = name.charAt(0).toUpperCase();
+      slot.appendChild(initial);
+    }
+    slot.addEventListener('click', () => toggleBuffFilterName(widget, name, false));
+    return slot;
   }
 
   trackOthersCheckbox.addEventListener('change', () => {
@@ -1956,7 +2008,37 @@ function initWidgetsPanel() {
     }
   }
 
+  // Note 27: "Buffs and debuffs can never share one aura." Enforced when adding rather than
+  // filtered out of the picker, because the reason has to be sayable - a spell silently missing
+  // from a search is indistinguishable from the app not knowing it.
+  function conflictsWithPicked(widget, name) {
+    const picked = widget.buffNames || [];
+    if (!picked.length) return null;
+    const known = allKnownBuffs.find((b) => b.name === name);
+    if (!known) return null;
+    const isDet = (b) => b && (b.kind === 'det' || b.scaleCategory === 'debuff' || b.scaleCategory === 'charm');
+    const incoming = isDet(known);
+    for (const other of picked) {
+      const existing = allKnownBuffs.find((b) => b.name === other);
+      if (!existing) continue;
+      if (isDet(existing) !== incoming) return other;
+    }
+    return null;
+  }
+
   function toggleBuffFilterName(widget, name, checked) {
+    if (checked) {
+      const clash = conflictsWithPicked(widget, name);
+      if (clash) {
+        setBuffFilterNotice(
+          `"${name}" and "${clash}" cannot share an aura - one is a buff and the other is a debuff. ` +
+            'Make a second aura for it.'
+        );
+        applyBuffFilterSearch();
+        return;
+      }
+    }
+    setBuffFilterNotice('');
     const current = new Set(widget.buffNames || []);
     if (checked) current.add(name);
     else current.delete(name);

@@ -1144,6 +1144,33 @@ label.disabled {
   font-family: var(--sans);
 }
 
+/* Note 27's "+" slot. It ADDS, so it must not inherit the danger-red remove hover above - the
+   two are one click apart in the same row, and a plus that turns into a red cross on hover is
+   telling you the opposite of what it does. */
+.gem-slot.gem-add {
+  border-style: dashed;
+  color: var(--ink-mut);
+  font-family: var(--sans);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.gem-slot.gem-add:hover {
+  border-color: var(--accent, var(--ink-mut));
+  border-style: solid;
+  color: var(--ink);
+}
+
+.gem-slot.gem-add:hover img,
+.gem-slot.gem-add:hover::after {
+  content: none;
+  opacity: 1;
+}
+
+.danger-hint {
+  color: var(--danger);
+}
+
 .gem-slot img {
   width: 100%;
   height: 100%;

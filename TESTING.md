@@ -798,22 +798,24 @@ it - the app has to rely on each spell's own "fades" message, which it already
 does. Where two spells share that message (Nimble and Agility both say "Your
 agility fades") it cannot tell which one ended. Left alone rather than guessed.
 
-## "Buffs shown" is its own card now
+## "Buffs shown" is its own card, with gem slots
 
-- [ ] **Open any aura's settings.** "Buffs shown" should be a card of its own
-      between **Display & size** and **Configuration**, not a collapsible row
-      buried inside Configuration.
-- [ ] **Everything in it still works** - the search, the tick list, "Currently
-      selected", "Track buffs cast on me by others", hide bard songs, the
-      maximum-duration slider.
-- [ ] **The row in Display & size now says "Watching:" instead of "Buffs
-      shown:".** It picks whether the aura watches you, an ally, or your own
-      text triggers - so it was never really "buffs shown", and two things with
-      that name on one screen would have been worse. Tell me if you would
-      rather it said something else.
-
-The gem-slot half of that note is **not** built - see the question at the
-bottom of NOTES-STATUS.md.
+- [ ] **Open any aura's settings.** "Buffs shown" is a card of its own between
+      **Display & size** and **Configuration**.
+- [ ] **What the aura watches is now a row of spell icons**, not a list of
+      ticked names. Hover one to see which spell it is; click it to stop
+      watching it.
+- [ ] **The dashed "+" slot** focuses the search box. It stays visible even
+      when nothing is picked, because otherwise there is no way to add the
+      first one.
+- [ ] **Your existing auras still have their spells.** Nothing about how they
+      are stored changed - the gems are just how the same list is drawn - so
+      this should be true, but it is the thing to check first.
+- [ ] **Try to add a debuff to an aura that has buffs in it.** It should refuse
+      and say why, rather than silently not appearing. Same the other way
+      round.
+- [ ] **The picker row "Watching:"** (you / an ally / your own text triggers)
+      has moved up into this card, out of Display & size.
 
 ## The loadout label
 
