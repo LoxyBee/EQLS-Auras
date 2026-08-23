@@ -1168,6 +1168,21 @@ function initWidgetsPanel() {
   const newTimerSecondsInput = document.getElementById('widget-new-timer-seconds');
   const newTimerCooldownInput = document.getElementById('widget-new-timer-cooldown');
   const newTimerMatchRadios = document.querySelectorAll('input[name="widget-new-timer-match"]');
+
+  // The Cooldown section is collapsed unless the timer being edited has one. Its summary says the
+  // value when closed, so a set cooldown is never invisible just because the section is shut -
+  // which is the one way a collapsible section can actively mislead.
+  function setTimerCooldownOpen(open) {
+    const topic = document.getElementById('topic-timer-cooldown');
+    const summary = document.getElementById('timer-cooldown-summary');
+    topic.classList.toggle('open', open);
+    const secs = Number(newTimerCooldownInput.value) || 0;
+    summary.textContent = secs > 0 ? `${secs}s` : '';
+  }
+  newTimerCooldownInput.addEventListener('input', () => {
+    const secs = Number(newTimerCooldownInput.value) || 0;
+    document.getElementById('timer-cooldown-summary').textContent = secs > 0 ? `${secs}s` : '';
+  });
   const newTimerTriggerInput = document.getElementById('widget-new-timer-trigger');
   const newTimerEndedInput = document.getElementById('widget-new-timer-ended');
   renderTriggerTypeChoices();
@@ -1940,6 +1955,7 @@ function initWidgetsPanel() {
     newTimerMinutesInput.value = '';
     newTimerSecondsInput.value = '';
     newTimerCooldownInput.value = '';
+    setTimerCooldownOpen(false);
     newTimerMatchRadios.forEach((r) => (r.checked = r.value === 'exact'));
     newTimerTriggerInput.value = '';
     newTimerEndedInput.value = '';
@@ -1971,6 +1987,9 @@ function initWidgetsPanel() {
     // Blank, not "0", when there is no cooldown - a zero in the box reads as a cooldown of no
     // length rather than as no cooldown at all.
     newTimerCooldownInput.value = timer.cooldownSec ? String(timer.cooldownSec) : '';
+    // Open it if this timer actually uses one, so editing does not hide the setting behind a
+    // closed section the person cannot see they have already set.
+    setTimerCooldownOpen(!!timer.cooldownSec);
     // castOf lands on "exactly" here because there is no radio for it - it is built by the
     // cooldown premade from a spell name rather than typed, and offering it as a third option
     // would need a spell picker in this form. Editing such a timer keeps its mode regardless:

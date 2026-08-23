@@ -256,5 +256,28 @@ test('a chat-built trigger is always exact', () => {
   assert.match(fn[1], /mode === 'raw' &&/);
 });
 
+test('the cooldown fields are out of the way until wanted', () => {
+  // Shara, 23 August: "not a full sub panel, but just an auto expanding options menu toggle button
+  // like other menu's so that the options are invisible when not used." Same .topic pattern as
+  // every other collapsible section, so it behaves the way the rest of the app already does.
+  assert.match(html, /<div class="topic" id="topic-timer-cooldown" data-topic>/);
+  assert.match(html, /<span class="topic-title">Cooldown<\/span>/);
+  // It must be a real topic, or initTopicToggles throws on the button inside it.
+  const block = html.slice(html.indexOf('id="topic-timer-cooldown"'));
+  assert.match(block.slice(0, 400), /class="topic-head" data-toggle/);
+});
+
+test('a cooldown that is set is never hidden by the section being shut', () => {
+  // The one way a collapsible section can actively mislead: a value set, the section closed, and
+  // nothing on screen saying so. The summary carries it, and editing a timer that has one opens
+  // the section.
+  assert.match(html, /id="timer-cooldown-summary"/);
+  assert.match(rendererSrc, /setTimerCooldownOpen\(!!timer\.cooldownSec\)/, 'editing hides an existing cooldown');
+  assert.match(rendererSrc, /setTimerCooldownOpen\(false\)/, 'the section stays open for the next timer');
+  const fn = rendererSrc.match(/function setTimerCooldownOpen\(open\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'setTimerCooldownOpen has been renamed');
+  assert.match(fn[1], /summary\.textContent/, 'a closed section says nothing about what is set');
+});
+
 module.exports = () => report('cooldown-phase');
 if (require.main === module) process.exit(report('cooldown-phase') ? 1 : 0);

@@ -795,9 +795,11 @@ could only be reached by a premade until now.
 - [ ] **Build a "containing" timer and check it fires.** Be specific with the
       text — a short word set to "containing" will fire on nearly every line.
 
-Not built: the "toggle that opens its own menu" wording in your note. This is
-the one-field version, which the note itself suggested as the cheap one. Say if
-you want the sub-panel.
+The cooldown field sits behind a **Cooldown** section that expands like the
+other collapsible sections, so it is out of the way unless you want it. If a
+timer has one set, the section shows the value beside its title even when shut,
+and opens by itself when you edit that timer — a setting hidden behind a closed
+section is the one way a collapsible menu can actively mislead.
 
 ## Counting mobs with the same name (notes 12 and 18)
 

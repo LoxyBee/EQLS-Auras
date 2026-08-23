@@ -1388,16 +1388,30 @@
             <input type="number" id="widget-new-timer-seconds" min="0" max="59" step="1" placeholder="sec" class="duration-input" />
             <span class="duration-unit">s</span>
           </div>
-          <div class="row">
-            <span class="label">Then cooldown:</span>
-            <input type="number" id="widget-new-timer-cooldown" min="0" step="1" placeholder="none" class="duration-input" />
-            <span class="duration-unit">s</span>
+          <!-- Shara, 23 August: "not a full sub panel, but just an auto expanding options menu
+               toggle button like other menu's so that the options are invisible when not used."
+               The same .topic pattern as every collapsible section on the settings page, so it
+               behaves the way the rest of the app already does. -->
+          <div class="topic" id="topic-timer-cooldown" data-topic>
+            <button type="button" class="topic-head" data-toggle>
+              <span class="chev"></span>
+              <span class="topic-title">Cooldown</span>
+              <span class="topic-summary" id="timer-cooldown-summary"></span>
+            </button>
+            <div class="topic-body"><div class="topic-body-inner">
+              <div class="row">
+                <span class="label">Then cooldown:</span>
+                <input type="number" id="widget-new-timer-cooldown" min="0" step="1" placeholder="none" class="duration-input" />
+                <span class="duration-unit">s</span>
+              </div>
+              <p class="hint">
+                Optional. When the duration above runs out, the same tile keeps counting - down to
+                when you can use the thing again. The tile dims and goes dashed while it is cooling
+                down, so the number never means two things at once. Leave it empty and the tile
+                just ends.
+              </p>
+            </div></div>
           </div>
-          <p class="hint">
-            Optional. When the duration above runs out, the same tile keeps counting - down to when
-            you can use the thing again. The tile dims and goes dashed while it is cooling down, so
-            the number never means two things at once. Leave it empty and the tile just ends.
-          </p>
         </div>
       </div>
       <div id="widget-new-timer-icon-picker" style="display:none"></div>
