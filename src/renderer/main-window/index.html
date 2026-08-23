@@ -252,6 +252,26 @@
                   Show on every loadout, including ones I make later
                 </label>
               </div>
+              <div class="row" id="widget-zones-row">
+                <span class="label">Only in:</span>
+                <input
+                  type="text"
+                  id="widget-zone-input"
+                  class="text-input"
+                  list="known-zones"
+                  placeholder="Any zone - start typing to limit it"
+                />
+                <button type="button" id="widget-zone-add-btn">Add</button>
+              </div>
+              <datalist id="known-zones"></datalist>
+              <div id="widget-zone-list" class="profile-toggle-list"></div>
+              <p class="hint" id="widget-zone-hint">
+                Leave this empty and the aura shows everywhere. Zones are exactly as the game names
+                them, so <code>Befallen</code> and <code>Befallen 1 (Awakened)</code> are separate -
+                add each one you want. The list offers the 66 zones seen in your logs and accepts
+                anything you type.
+              </p>
+              <p class="hint" id="widget-zone-warning" style="display:none"></p>
               <p class="hint">
                 This aura is on screen only while one of the ticked profiles is the active one.
                 Untick them all to switch it off entirely - that works as a plain on/off even if you

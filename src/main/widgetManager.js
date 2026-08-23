@@ -1,5 +1,6 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
+const { isVisibleInZone } = require('../shared/zoneVisibility');
 const { WidgetStore, LOADOUT_LABEL_KIND, normalizeDisplayMode, isSoundOnly, isTextAura, clampInstantSec } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
@@ -446,6 +447,29 @@ function setLoadoutLabelEnabledState(enabled) {
   loadoutLabelEnabled = !!enabled;
 }
 
+// Note 38. Where the player is, or null when the app has not been told yet - which is the normal
+// state until the first zone change after launch. See visibleInZones in widgetStore for why null
+// has to mean "show everything" rather than "hide everything".
+let currentZone = null;
+function setCurrentZone(zone) {
+  const next = zone || null;
+  if (next === currentZone) return false;
+  currentZone = next;
+  return true;
+}
+function getCurrentZone() {
+  return currentZone;
+}
+
+// Whether this aura is allowed in the zone the player is in. The rule itself lives in
+// shared/zoneVisibility so a test can call it rather than a copy of it - see that file. Exported
+// so the settings window can say WHY an aura is not on screen, because an aura missing for an
+// unexplained reason is the failure this project keeps having and a zone rule is a new way to
+// have it.
+function isVisibleInCurrentZone(config) {
+  return isVisibleInZone(config.visibleInZones, currentZone);
+}
+
 function shouldBeOnScreen(config) {
   // Note 21. Switched off means off, whatever anything else says. It only ever returns FALSE here
   // and then falls through, so the label still obeys master hide and the focus auto-hide like
@@ -457,6 +481,11 @@ function shouldBeOnScreen(config) {
   // than isUnlocked, so "Unlock all auras" does not drag every switched-off aura onto the screen
   // with it.
   if (!isVisibleForActiveProfile(config) && !forceShown.has(config.id)) return false;
+
+  // Note 38, beside the profile check because it is the same kind of rule - this aura does not
+  // belong here right now - and honouring the same manual override, so unlocking an aura to move
+  // it still works in the wrong zone.
+  if (!isVisibleInCurrentZone(config) && !forceShown.has(config.id)) return false;
 
   // A sound-only aura draws nothing, so being on screen costs it nothing and hiding it buys
   // nothing. Hiding it would be actively harmful: a hidden window is one Chromium is entitled to
@@ -758,6 +787,22 @@ function setAlwaysOn(id, enabled) {
 
 // Note 21. Changes whether the aura is on screen right now, so it has to re-apply visibility as
 // well as push - unlike every other per-aura toggle, which only changes how it draws.
+function setVisibleInZones(id, zones) {
+  const clean = Array.isArray(zones) ? zones.filter((z) => typeof z === 'string' && z.trim()) : [];
+  const config = widgetStore.update(id, { visibleInZones: clean });
+  if (config) applyVisibility(config);
+  pushConfigChanged(id);
+  return config;
+}
+
+// Called when the log says the player has changed zone. Re-evaluates every aura, because a zone
+// change can both hide and show, and only pushes work when the zone actually changed.
+function applyZoneChange(zone) {
+  if (!setCurrentZone(zone)) return currentZone;
+  for (const config of widgetStore.getAll()) applyVisibility(config);
+  return currentZone;
+}
+
 function setShowOnAllProfiles(id, enabled) {
   const config = widgetStore.update(id, { showOnAllProfiles: !!enabled });
   if (config) applyVisibility(config);
@@ -1089,6 +1134,10 @@ module.exports = {
   setAllyDebuffAlert,
   setAlwaysOn,
   setShowOnAllProfiles,
+  setVisibleInZones,
+  applyZoneChange,
+  getCurrentZone,
+  isVisibleInCurrentZone,
   setLoadoutLabelEnabled,
   setLoadoutLabelEnabledState,
   setSaveLoadoutLabelEnabledFn,

@@ -139,6 +139,10 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getHideHotkey: () => ipcRenderer.invoke('settings:getHideHotkey'),
   getLoadoutLabel: () => ipcRenderer.invoke('settings:getLoadoutLabel'),
   setLoadoutLabel: (enabled) => ipcRenderer.invoke('settings:setLoadoutLabel', enabled),
+  getCurrentZone: () => ipcRenderer.invoke('zone:current'),
+  getKnownZones: () => ipcRenderer.invoke('zone:known'),
+  setWidgetVisibleInZones: (id, zones) => ipcRenderer.invoke('widget:setVisibleInZones', { id, zones }),
+  onZoneChanged: (cb) => ipcRenderer.on('zone:changed', (_e, zone) => cb(zone)),
   setWidgetShowOnAllProfiles: (id, value) =>
     ipcRenderer.invoke('widget:setShowOnAllProfiles', { id, value }),
   onOpenWidgetSettings: (callback) => {

@@ -347,6 +347,40 @@ const OVERWRITTEN_PATTERN = /^Your (.+) spell on (.+) has been overwritten\.$/;
 // failed with no reason given is still a cast that failed.
 const NO_HOLD_PATTERN = /^Your (.+) spell did not take hold(?: on (.+?))?\.(?: \(Blocked by (.+)\.\))?$/;
 
+// "You have entered The Ruins of Old Guk 1 (Awakened)."  (225 lines, one shape)
+//
+// Note 38. The ONLY line that names the zone you are in - there is no periodic announcement and
+// no way to ask. `LOADING, PLEASE WAIT...` fires on every zone change and carries no name.
+//
+// ANCHORED ON THE TIMESTAMP, and that is not tidiness. Anyone can type this sentence into General
+// chat, and one person did:
+//
+//   [Mon Aug 17 02:01:16 2026] Maryona tells General:1, 'Back in 2000 playing my DE Mage, went to
+//   explore Permafrost. ... Loading, please wait... You have entered Everfrost. ...'
+//
+// An unanchored lazy match pulls "Everfrost" out of that - a real zone name, from a stranger's
+// chat, silently moving the app to a zone the player has never been in. Anchored: 225 matches
+// instead of 226, and the one it drops is that line.
+//
+// Greedy to the end is then safe: no zone name in 1,521,971 lines contains a full stop.
+const ZONE_PATTERN =
+  /^\[[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2} \d{4}\] You have entered (.+)\.$/;
+
+// Not a zone, despite the identical opening. Absent from this owner's logs but a real EverQuest
+// line, so it is excluded on purpose rather than by luck.
+const NOT_A_ZONE_PREFIX = /^an area where /i;
+
+function matchZoneChange(line) {
+  // Matched against the RAW line, timestamp and all. logWatcher splits incoming data on CRLF as
+  // well as LF, so no trailing carriage return ever reaches here. An offline script that reads a
+  // log file itself must strip its own line endings first - four of these logs are CRLF, and an
+  // end-anchored pattern silently finds nothing on them otherwise.
+  const m = ZONE_PATTERN.exec(String(line));
+  if (!m) return null;
+  if (NOT_A_ZONE_PREFIX.test(m[1])) return null;
+  return m[1];
+}
+
 function matchDidNotTakeHold(line) {
   const m = NO_HOLD_PATTERN.exec(stripTimestamp(line));
   if (!m) return null;
@@ -379,6 +413,7 @@ module.exports = {
   matchGroupMemberJoined,
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
+  matchZoneChange,
   matchDidNotTakeHold,
   matchOverwritten,
   matchOwnInterrupt,

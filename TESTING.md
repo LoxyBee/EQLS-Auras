@@ -768,6 +768,37 @@ roughly one every few hours of play. Nothing stopped being *detected*; things
 stop being *shown* once they are over. If you would rather they stayed put,
 say so - it is one line to put back.
 
+## Zone-gated auras (note 38)
+
+In an aura's settings, under the loadout toggles: **"Only in:"**. Leave it empty
+and the aura shows everywhere. Type a zone and press Enter, or pick from the
+list, to limit it.
+
+- [ ] **Limit an aura to the zone you are in.** It should stay on screen.
+- [ ] **Zone somewhere else.** It should disappear, and its settings should say
+      *"Hidden right now: you are in X, which is not on its list."*
+- [ ] **Zone back.** It returns.
+- [ ] **Click a zone chip to remove it.** With none left, the aura shows
+      everywhere again.
+- [ ] **Instances are separate, as you asked.** An aura limited to `Befallen`
+      will NOT show in `Befallen 1 (Awakened)` — add each one you want. Same for
+      `The Plane of Fear` and `The Plane of Fear - Group`.
+- [ ] **Unlocking an aura still shows it in the wrong zone**, so you can move it
+      wherever you happen to be standing.
+
+**One thing worth knowing before it surprises you.** The app only learns which
+zone you are in when you *change* zone — the game prints nothing otherwise, and
+there is no way to ask. So if you start the app while already sitting somewhere,
+it does not know where you are until you next zone. **Zone-gated auras show
+anyway during that window**, and the settings panel says so. That is deliberate:
+in your logs the wait for the next zone line, from a random start, averages
+about 55 minutes of play and once ran five hours. An aura silently missing for
+five hours with no explanation is far worse than one showing where you did not
+ask for it.
+
+The zone box offers the 66 zones seen in your logs and accepts anything you
+type, so a zone you have not visited yet costs one line of typing.
+
 ## The hide-auras hotkey (it never worked)
 
 **It was Pause, and Pause has never once worked.** Electron refuses that key

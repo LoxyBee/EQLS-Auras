@@ -455,6 +455,26 @@ function initDetectionSettingsPanel() {
     masterHideHintEl.textContent = key ? `or press ${HOTKEY_LABELS[key] || key}` : '';
   });
 
+  // Note 38. Where the player is, kept current from the same broadcast that re-evaluates
+  // visibility in the main process, so the "hidden here" warning below cannot drift from reality.
+  let currentZone = null;
+  window.eqTracker.getCurrentZone().then((z) => {
+    currentZone = z;
+    if (selectedId) renderWidgetZones(findWidget(selectedId));
+  });
+  window.eqTracker.onZoneChanged((z) => {
+    currentZone = z;
+    if (selectedId) renderWidgetZones(findWidget(selectedId));
+  });
+  window.eqTracker.getKnownZones().then((zones) => {
+    const list = document.getElementById('known-zones');
+    for (const z of zones) {
+      const opt = document.createElement('option');
+      opt.value = z;
+      list.appendChild(opt);
+    }
+  });
+
   const loadoutLabelCheckbox = document.getElementById('loadout-label-checkbox');
   window.eqTracker.getLoadoutLabel().then((enabled) => {
     loadoutLabelCheckbox.checked = !!enabled;
@@ -1344,6 +1364,48 @@ function initWidgetsPanel() {
   // entirely - see isVisibleForActiveProfile), so it has to be readable at a
   // glance. Rendered even when only one profile exists, because with one
   // profile it IS the plain enable/disable switch.
+  // Note 38. The zones an aura is limited to, as removable chips.
+  //
+  // The warning underneath is the part that matters. A zone rule is a NEW way for an aura to be
+  // missing with no explanation, which is the failure this project keeps having - so when the rule
+  // is what is hiding it, the panel says so and names the zone you are actually in.
+  function renderWidgetZones(widget) {
+    if (!widget) return;
+    const zones = widget.visibleInZones || [];
+    const listEl = document.getElementById('widget-zone-list');
+    const warnEl = document.getElementById('widget-zone-warning');
+    listEl.innerHTML = '';
+    for (const zone of zones) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'profile-toggle on';
+      chip.title = 'Stop limiting this aura to ' + zone;
+      chip.textContent = zone + '  x';
+      chip.addEventListener('click', () => {
+        const next = (findWidget(widget.id)?.visibleInZones || []).filter((z) => z !== zone);
+        window.eqTracker.setWidgetVisibleInZones(widget.id, next).then(refreshWidgets);
+      });
+      listEl.appendChild(chip);
+    }
+
+    if (!zones.length) {
+      warnEl.style.display = 'none';
+    } else if (!currentZone) {
+      warnEl.textContent =
+        'This aura is limited to ' + zones.length + ' zone' + (zones.length === 1 ? '' : 's') +
+        ", but the app does not know where you are yet - it only finds out when you change zone. " +
+        'Until then the aura shows anyway, which is deliberate: a missing aura you cannot explain ' +
+        'is worse than one showing where you did not ask for it.';
+      warnEl.style.display = '';
+    } else if (!zones.includes(currentZone)) {
+      warnEl.textContent =
+        'Hidden right now: you are in "' + currentZone + '", which is not on its list.';
+      warnEl.style.display = '';
+    } else {
+      warnEl.style.display = 'none';
+    }
+  }
+
   function renderWidgetProfilesChecklist(widget) {
     widgetProfilesTogglesEl.innerHTML = '';
     window.eqTracker.getProfiles().then((profiles) => {
@@ -1668,6 +1730,7 @@ function initWidgetsPanel() {
     renderBuffFilter(widget);
     renderActiveBuffsForWidget(widget);
     renderWidgetProfilesChecklist(widget);
+    renderWidgetZones(widget);
   }
 
   // One line under the gem row for the one thing that can be refused. Cleared on the next
@@ -2663,6 +2726,31 @@ function initWidgetsPanel() {
   alwaysOnCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetAlwaysOn(selectedId, alwaysOnCheckbox.checked);
   });
+  const zoneInput = document.getElementById('widget-zone-input');
+  const zoneAddBtn = document.getElementById('widget-zone-add-btn');
+  function addZoneToSelected() {
+    const zone = zoneInput.value.trim();
+    if (!zone || !selectedId) return;
+    const current = findWidget(selectedId)?.visibleInZones || [];
+    if (current.includes(zone)) {
+      zoneInput.value = '';
+      return;
+    }
+    window.eqTracker.setWidgetVisibleInZones(selectedId, [...current, zone]).then(() => {
+      zoneInput.value = '';
+      refreshWidgets();
+    });
+  }
+  zoneAddBtn.addEventListener('click', addZoneToSelected);
+  zoneInput.addEventListener('keydown', (e) => {
+    // Enter adds it. Typing a zone name and pressing Enter is what everyone does with a box like
+    // this, and having it do nothing reads as the box being broken.
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addZoneToSelected();
+    }
+  });
+
   allProfilesCheckbox.addEventListener('change', () => {
     // refreshWidgets, because this changes whether the aura is on screen right now - the per-
     // profile tick boxes beside it do the same for the same reason.

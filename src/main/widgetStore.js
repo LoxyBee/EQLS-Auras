@@ -120,6 +120,19 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
     // a member of all of them, including ones created later, which a list of ids cannot do.
     showOnAllProfiles: false,
+    // Note 38. Zone names this aura is limited to. EMPTY MEANS EVERYWHERE, and that polarity is
+    // the whole safety argument: the app often cannot tell which zone you are in, because the only
+    // line that says so is the one printed when you change zone. Start the app mid-session and the
+    // expected wait for that line is about 55 minutes of play, with a five-hour case in these
+    // logs. If unknown meant hidden, every zone-gated aura would vanish after a restart and stay
+    // vanished, silently, with the app unable to say why. Unknown therefore means shown: a false
+    // positive is visible and self-corrects the moment you zone, a false negative is invisible and
+    // lasts a session.
+    //
+    // Zone strings are stored exactly as the game prints them, with no collapsing - Shara, 22
+    // August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
+    // "The Plane of Fear" and "The Plane of Fear - Group".
+    visibleInZones: [],
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -284,6 +297,19 @@ function defaultCustomWidget(name) {
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
     // a member of all of them, including ones created later, which a list of ids cannot do.
     showOnAllProfiles: false,
+    // Note 38. Zone names this aura is limited to. EMPTY MEANS EVERYWHERE, and that polarity is
+    // the whole safety argument: the app often cannot tell which zone you are in, because the only
+    // line that says so is the one printed when you change zone. Start the app mid-session and the
+    // expected wait for that line is about 55 minutes of play, with a five-hour case in these
+    // logs. If unknown meant hidden, every zone-gated aura would vanish after a restart and stay
+    // vanished, silently, with the app unable to say why. Unknown therefore means shown: a false
+    // positive is visible and self-corrects the moment you zone, a false negative is invisible and
+    // lasts a session.
+    //
+    // Zone strings are stored exactly as the game prints them, with no collapsing - Shara, 22
+    // August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
+    // "The Plane of Fear" and "The Plane of Fear - Group".
+    visibleInZones: [],
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -388,6 +414,7 @@ const SHAREABLE_FIELDS = [
   'allyDebuffAlert',
   'alwaysOn',
   'showOnAllProfiles',
+  'visibleInZones',
   'textAuraMessage',
   'textAuraSize',
   'textAuraInstantSec',
@@ -477,6 +504,10 @@ function normalizeWidget(widget) {
     allyDebuffAlert: !!widget.allyDebuffAlert,
     alwaysOn: !!widget.alwaysOn,
     showOnAllProfiles: !!widget.showOnAllProfiles,
+    // Fails open. A corrupted or absent value becomes "everywhere" rather than "nowhere", for the
+    // reason in the field comment above - the polarity lives here so it cannot be got wrong by a
+    // caller.
+    visibleInZones: Array.isArray(widget.visibleInZones) ? widget.visibleInZones : [],
     textAuraMessage: typeof widget.textAuraMessage === 'string' ? widget.textAuraMessage : '',
     textAuraSize: typeof widget.textAuraSize === 'number' ? widget.textAuraSize : 32,
     // Clamped to the engine's own retention ceiling. A share code asking for five minutes would

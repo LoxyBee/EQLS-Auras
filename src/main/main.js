@@ -27,6 +27,9 @@ const fs = require('fs');
 const { ipcMain, protocol, BrowserWindow, Menu, globalShortcut } = require('electron');
 const { createMainWindow, getMainWindow } = require('./mainWindow');
 const { LogService } = require('./logService');
+// Note 38. The zone matcher lives with the other log-line patterns; the seed list is data.
+const { matchZoneChange } = require('./buffParser');
+const KNOWN_ZONES = require('../shared/data/zones');
 const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
@@ -206,6 +209,16 @@ function broadcast(channel, payload) {
 
 logService.watcher.on('line', (line) => buffEngine.handleLine(line));
 logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
+// Note 38. A third listener rather than a hook inside one of the engines - neither of them is
+// about where you are, and a zone is not a buff.
+logService.watcher.on('line', (line) => {
+  const zone = matchZoneChange(line);
+  if (!zone) return;
+  const changed = widgetManager.applyZoneChange(zone);
+  debugLog(`ZONE now "${changed}"`);
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) win.webContents.send('zone:changed', changed);
+});
 logService.watcher.on('status', (status) => {
   if (status.currentFilePath) {
     const baseName = path.basename(status.currentFilePath, path.extname(status.currentFilePath)).replace(/^eqlog_/i, '');
@@ -760,6 +773,11 @@ ipcMain.handle('widget:setAlwaysOn', (_event, { id, value }) => widgetManager.se
 // Which key actually took, so the hint in the top bar names the one that works rather than the
 // one that was asked for. Null when none of them registered.
 ipcMain.handle('settings:getHideHotkey', () => hideHotkey);
+ipcMain.handle('zone:current', () => widgetManager.getCurrentZone());
+ipcMain.handle('zone:known', () => KNOWN_ZONES);
+ipcMain.handle('widget:setVisibleInZones', (_event, { id, zones }) =>
+  widgetManager.setVisibleInZones(id, zones)
+);
 ipcMain.handle('settings:getLoadoutLabel', () => widgetManager.isLoadoutLabelEnabled());
 ipcMain.handle('settings:setLoadoutLabel', (_event, enabled) =>
   widgetManager.setLoadoutLabelEnabled(enabled).enabled
