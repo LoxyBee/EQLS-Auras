@@ -118,6 +118,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   listWidgets: () => ipcRenderer.invoke('widget:list'),
   createWidget: (name, buffSource) => ipcRenderer.invoke('widget:create', { name, buffSource }),
   createAllyBuffsWidget: (name) => ipcRenderer.invoke('widget:createAlly', { name }),
+  createDebuffWidget: (name) => ipcRenderer.invoke('widget:createDebuff', { name }),
   createSoundOnlyWidget: (name) => ipcRenderer.invoke('widget:createSoundOnly', { name }),
   createTextAuraWidget: (name, preset) => ipcRenderer.invoke('widget:createTextAura', { name, preset }),
   getCastableBuffs: () => ipcRenderer.invoke('buffs:castable'),

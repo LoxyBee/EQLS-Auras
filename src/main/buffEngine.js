@@ -54,6 +54,29 @@ const MOB_NAME_MAX_WORDS = 6;
 // entry in the mez family - Mesmerize, Mesmerization, Dazzle - shares this exact landing text.
 const MEZ_LANDING_SUFFIX = ' has been mesmerized.';
 
+// Note 24's post-cast repeat check. A bard song re-lands on a fixed pulse and an ordinary buff
+// does not, so a landing text that comes back one pulse later is a song and one that does not is
+// a buff. That is the only signal in the log that separates them, and it needs no user at all.
+//
+// SIX SECONDS, measured rather than assumed: across the owner's 1,521,971 log lines, the gap
+// between consecutive repeats of an identical line is 6s on 314,324 occasions - four times the
+// next most common gap, and every one of the ten most repeated lines pulses at 6s. Shara said it
+// was 6 and it is.
+//
+// The tolerance exists because the log's resolution is one second and a pulse can be reported a
+// tick either side. Deliberately not wider: at +/-2 a slow rebuff cycle starts looking like a
+// pulse.
+//
+// DORMANT ON THE CURRENT ROSTER, and worth knowing before anyone debugs why it never fires. The
+// check can only decide a landing text shared between exactly one bard song and something that is
+// not a song, and the rebuilt roster has NONE: 108 landing texts are shared by two or more spells
+// and not one of them is that shape. The note was written against the old 11,337-entry roster,
+// where the collision existed; note 35 removed it by replacing the roster rather than by fixing
+// this. Kept because the ambiguity returns the moment a song is added whose landing text an
+// ordinary spell already uses, and because the pulse interval itself is wanted elsewhere.
+const SONG_PULSE_SEC = 6;
+const SONG_PULSE_TOLERANCE_SEC = 1;
+
 // A character has fourteen spell gems, so at most fourteen spells can be memorized at once.
 //
 // currentlyMemorized can nevertheless drift above that, because it is built purely from
@@ -1466,6 +1489,17 @@ class BuffEngine extends EventEmitter {
     this.bardSongsVisibleFn = fn;
   }
 
+  // The one bard song among candidates that are NOT all songs, or null.
+  //
+  // Both halves matter. If every candidate is a song the repeat says nothing about which, and if
+  // none is, a repeat is just the buff being recast. Only a split set can be decided this way.
+  _songAmongSplitCandidates(candidates) {
+    const songs = candidates.filter((c) => c.isBardSong);
+    if (songs.length !== 1) return null;
+    if (songs.length === candidates.length) return null;
+    return songs[0];
+  }
+
   _queueAmbiguousCast(text, candidates, isSelf) {
     if (this._shouldSuppressAsHiddenBardSongs(candidates)) {
       this._debugLog(
@@ -1475,6 +1509,22 @@ class BuffEngine extends EventEmitter {
     }
     const existing = this.ambiguousCasts.get(text);
     if (existing) {
+      // Note 24. The same text, one pulse later, when the candidates are split between a bard song
+      // and something that is not one: only the song could have re-landed on its own, so this
+      // answers a question the app would otherwise have had to ask.
+      const sinceSec = (Date.now() - existing.lastSeenAt) / 1000;
+      const isPulse = Math.abs(sinceSec - SONG_PULSE_SEC) <= SONG_PULSE_TOLERANCE_SEC;
+      const song = isPulse ? this._songAmongSplitCandidates(candidates) : null;
+      if (song) {
+        this._debugLog(
+          `LANDED "${song.name}" - ambiguous text "${text}" repeated after ${sinceSec.toFixed(1)}s, ` +
+            'which is a song pulse - nothing else re-lands on its own'
+        );
+        this.ambiguousCasts.delete(text);
+        this._land(song);
+        this.emit('ambiguousCastsChanged', this.getAmbiguousCasts());
+        return;
+      }
       existing.lastSeenAt = Date.now();
       existing.isSelf = isSelf;
       existing.profileId = this.activeProfileId;

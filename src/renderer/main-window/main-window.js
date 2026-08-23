@@ -2642,6 +2642,16 @@ function initWidgetsPanel() {
     });
   }
   modalAddBuffWidgetBtn.addEventListener('click', () => addWidget());
+  // Not addWidget('ally') - a debuff aura needs the enemy switch on as well, and doing that from
+  // here would be two IPC round trips with the aura visibly reconfiguring itself between them.
+  document.getElementById('modal-add-debuff-widget-btn').addEventListener('click', () => {
+    const name = modalNewWidgetNameInput.value.trim();
+    if (!name) return;
+    window.eqTracker.createDebuffWidget(name).then((config) => {
+      closeAddWidgetModal();
+      focusWidget(config.id);
+    });
+  });
   modalAddTimerWidgetBtn.addEventListener('click', () => addWidget('customTimer'));
   modalAddSoundWidgetBtn.addEventListener('click', () => {
     const name = modalNewWidgetNameInput.value.trim();

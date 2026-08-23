@@ -801,6 +801,35 @@ timer has one set, the section shows the value beside its title even when shut,
 and opens by itself when you edit that timer — a setting hidden behind a closed
 section is the one way a collapsible menu can actively mislead.
 
+## A "Custom debuff aura" type (note 34)
+
+Add Aura -> Custom -> **Custom debuff aura**, beside Custom buff aura.
+
+- [ ] **It comes out already set up to watch enemies.** A debuff on a mob
+      arrives as a landing on "not you", so it needs the ally source AND the
+      enemy switch - two settings in two places, neither obviously about
+      debuffs. That is what this type saves you.
+- [ ] **Add a mez to it and it tracks mobs**, showing their names.
+- [ ] **A Custom buff aura is unchanged** and still comes out watching you.
+
+## The song-pulse check (note 24) — built, but it cannot fire yet
+
+You said the 6-second pulse is real and I did not need proof. You were right,
+and the logs are emphatic: across 1.5M lines the gap between repeats of an
+identical line is 6 seconds **314,324 times**, four times more than any other
+gap, and all ten of the most-repeated lines pulse at 6s. The number is in the
+code with that measurement beside it.
+
+**But the thing it was meant to fix no longer exists.** The check decides a
+landing message shared between one bard song and one ordinary spell — and after
+the roster rebuild there are none. 108 messages are shared between two or more
+spells; not one is that pairing. The old 11,337-entry roster had them; replacing
+it removed them.
+
+So there is nothing for you to test here. The code is in, with a test that will
+fail the day a song and a spell share a message again, so it gets checked
+properly the first time it can actually run.
+
 ## Counting mobs with the same name (notes 12 and 18)
 
 - [ ] **AoE mez three "a greater kobold" and the tile should say x3.** One

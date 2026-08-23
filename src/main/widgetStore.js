@@ -861,6 +861,28 @@ class WidgetStore {
     return widget;
   }
 
+  // Note 34's second half. Shara, 23 August: "buff AND debuff need their own custom templates.
+  // add a debuff template."
+  //
+  // It is an ally-source aura with enemy watching already on, which is the combination nobody
+  // would find by themselves: a debuff on a mob arrives as a landing on "not you", so it comes
+  // through the ALLY list, and the enemy switch is what widens the recipient check enough to
+  // accept a name like "a greater kobold". Two settings, in two different places, neither of them
+  // obviously about debuffs. That is exactly what a template is for.
+  //
+  // The note was blocked on "real log samples for detrimental spells on this server - the land
+  // line, the resist line and the worn-off line". All three have since been counted against
+  // 1,521,971 lines, so the block is gone rather than waived.
+  createDebuff(name, { activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name);
+    widget.buffSource = 'ally';
+    widget.trackOnEnemies = true;
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
   createSoundOnly(name, { activeProfileIds } = {}) {
     const widget = defaultCustomWidget(name);
     widget.displayMode = 'sound-only';

@@ -744,6 +744,7 @@ ipcMain.handle('widget:isAudible', (_event, id) => {
 });
 ipcMain.handle('widget:create', (_event, { name, buffSource }) => widgetManager.createCustomWidget(name, { buffSource }));
 ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAllyBuffsWidget(name));
+ipcMain.handle('widget:createDebuff', (_event, { name }) => widgetManager.createDebuffWidget(name));
 ipcMain.handle('widget:createSoundOnly', (_event, { name }) => widgetManager.createSoundOnlyWidget(name));
 ipcMain.handle('widget:createTextAura', (_event, { name, preset }) =>
   widgetManager.createTextAuraWidget(name, preset)
