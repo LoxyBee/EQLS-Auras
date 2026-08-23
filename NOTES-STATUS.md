@@ -10,6 +10,7 @@ All 39 of your notes, in order, with what is built and what is not. Written 21 A
 | **PART** | Some of it works. The missing half is named. |
 | **NOT** | Not built. Nothing is stopping it. |
 | **BLOCKED** | Not built, and it cannot be until something specific arrives — named each time. |
+| **SKIPPED** | You have told me not to build it. |
 
 Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, not this one.
 
@@ -20,7 +21,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | # | What you asked for | | Where it stands |
 | --- | --- | --- | --- |
 | 1 | Promised Renewal is 15s and never scales with AA | **DONE** | 15s, scaling off. Reuse corrected to your 18s — the game data says 21.5 and is wrong. |
-| 2 | First-aggro premade, placeholder in the meantime | **PART** | Placeholder is in the Add Aura list. The feature needs a log sample of a real pull showing both damage directions. |
+| 2 | First-aggro premade, placeholder in the meantime | **SKIPPED** | Your call, 23 Aug — you have solved this elsewhere and will bring it yourself. The placeholder stays. |
 | 3 | Only remember 14 memorised spells | **DONE** | Capped at 14, oldest dropped, on load as well as on insert. |
 | 4 | One toggle to hide every aura, ideally a hotkey | **DONE** | **Scroll Lock**, not Pause — Electron refuses Pause outright and the hotkey had never worked. |
 | 5 | Make "Reset remembered choices" look dangerous | **DONE** | Red. |
@@ -56,7 +57,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 25 | A disabled "Global recovery time" placeholder | **DONE** | Still a placeholder. The `castOf` trigger note 15 introduced is the piece it needs, when you want it built. |
 | 26 | Drop a stale timer when a buff gets overwritten | **DONE** | Overwrites, refused casts, and buffs on yourself. I was wrong that self buffs could not be told apart. |
 | 27 | Promote "Buffs shown" to its own section, add gem slots | **DONE** | Own card, gem slots, "+" slot, buffs and debuffs kept apart. Your existing auras were not touched. |
-| 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Needs `detection-debug.log` from 19 Aug around 12:15. The debug log now names the rival caster, so if it happens again the evidence will be there. |
+| 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Needs a detection log from the next time it happens. The log is findable now — see below. |
 | 29 | Put EverQuest back in front after answering a popup | **DONE** | |
 | 30 | Read share codes out of chat | **BLOCKED** | Needs the server's per-line character limit confirmed, and whether + and = survive a chat line. |
 
@@ -148,6 +149,22 @@ fades", and Symbol of Pinzarn and Symbol of Naltron both say "The mystic symbol 
 those overwrites the other, the app sees one fade message and cannot tell which of the two ended. I
 have left it alone rather than guess. If self-buff overwrites matter to you, say so and I will work
 out how far a best guess can be trusted.
+
+## The detection log exists now, and you can find it
+
+You said it did not exist. It did — as a loose file called `detection-debug.log` in
+`%APPDATA%/EQ Buff Tracker`, sitting among `Cache`, `Code Cache`, `DawnGraphiteCache`, `GPUCache`,
+`Local Storage` and `Network`. That is not a reasonable place to expect anyone to look, and note 28
+sat blocked for days on evidence that was being written the whole time. Your report was right even
+though the file was there.
+
+It now lives in a **detection-logs** folder, one file per day named by the date, old ones cleaned
+up after a fortnight. **Log page → Diagnostics → "Open the detection log folder"**, with the full
+path printed beside the button so you can reach it when the app is not running. Your old file was
+moved into the folder rather than thrown away.
+
+**Note 3, recorded:** cooldowns and negative/reverse detection are separate mechanics. That
+comparison was mine and it was wrong; nothing is built on it.
 
 ## Note 9 — half of it already works, and you may not need the other half
 
