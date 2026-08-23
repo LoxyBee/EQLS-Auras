@@ -168,6 +168,16 @@ class CustomTimerEngine extends EventEmitter {
     // icons, meant to both show at once), and keying by name would let the
     // second activation silently overwrite the first in the Map.
     for (const match of matches) {
+      // Note 10's Risk, and it is real: this overwrites an active entry whenever the trigger text
+      // is seen again. For a plain timer that is right - seeing the line again means it happened
+      // again. For one in its COOLDOWN phase it is wrong twice over: the ability is not available,
+      // so the line cannot mean it was used, and restarting would hide a cooldown the player is
+      // waiting on behind a fresh duration.
+      //
+      // The line is far likelier to be an echo, a second target, or somebody else's. Ignored.
+      const running = this.activeTimers.get(match.id);
+      if (running && running.phase === 'cooldown') continue;
+
       this.activeTimers.set(match.id, {
         id: match.id,
         name: match.name,
@@ -178,6 +188,12 @@ class CustomTimerEngine extends EventEmitter {
         // above has an id and a name and no way to tell what kind of timer it is looking at.
         triggerMatch: match.triggerMatch || undefined,
         triggerText: match.triggerText || undefined,
+        // Note 10. 'duration' or 'cooldown'. Always starts as 'duration' - even a timer whose only
+        // useful number is the cooldown runs its duration first, because that is what the trigger
+        // line reported. cooldownSec rides along so _tick does not have to look the definition up
+        // again, and so a restored snapshot can transition without one.
+        phase: 'duration',
+        cooldownSec: match.cooldownSec || 0,
       });
     }
     this.emit('activeChanged', this.getActive());
@@ -209,7 +225,18 @@ class CustomTimerEngine extends EventEmitter {
   _tick() {
     const now = Date.now();
     for (const [key, timer] of this.activeTimers) {
-      if (timer.expiresAt <= now) this.activeTimers.delete(key);
+      if (timer.expiresAt > now) continue;
+
+      // Note 10. A timer with a cooldown does not end when its duration does - it rolls straight
+      // into counting down to when the ability is ready again. Two phases, one tile.
+      //
+      // Only from 'duration', never from 'cooldown', or a timer with a cooldown could never end.
+      if (timer.phase === 'duration' && timer.cooldownSec > 0) {
+        timer.phase = 'cooldown';
+        timer.expiresAt = now + timer.cooldownSec * 1000;
+        continue;
+      }
+      this.activeTimers.delete(key);
     }
     // Unconditional every tick, matching BuffEngine's self-buffs tick - the
     // overlay's countdown text needs a fresh broadcast every second to
@@ -244,6 +271,10 @@ class CustomTimerEngine extends EventEmitter {
           name: t.name,
           durationSec: t.durationSec,
           remainingSec: Math.max(0, Math.round((t.expiresAt - now) / 1000)),
+          // Note 10: "if the tile doesn't visibly say which phase it is in, the number on screen is
+          // actively misleading". Sent so the overlay can show the difference; nothing here decides
+          // what that looks like.
+          phase: t.phase || 'duration',
           showOnOverlay: true,
           // != null, not a truthy check - icon id 0 is a real, pickable icon.
           iconUrl: def?.iconId != null ? this.iconUrlFn(def.iconId) : null,

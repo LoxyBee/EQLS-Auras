@@ -838,13 +838,22 @@ ipcMain.on('widget:reportContentSize', (_event, { id, width, height, originX }) 
 ipcMain.handle('widget:setOpacity', (_event, { id, value }) => widgetManager.setOpacity(id, value));
 ipcMain.handle('widget:setBuffFilter', (_event, { id, mode, names }) => widgetManager.setBuffFilter(id, mode, names));
 ipcMain.handle('widget:setBuffSource', (_event, { id, source }) => widgetManager.setBuffSource(id, source));
-ipcMain.handle('widget:addCustomTimer', (_event, { id, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId }) =>
-  widgetManager.addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId })
+// Named fields rather than a spread, so nothing arrives from the renderer that the store has not
+// been told to expect. The cost is that a new field has to be added HERE too - cooldownSec was
+// added to the form, the store and the engine and still did nothing until this line changed.
+ipcMain.handle(
+  'widget:addCustomTimer',
+  (_event, { id, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) =>
+    widgetManager.addCustomTimer(id, {
+      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec,
+    })
 );
 ipcMain.handle(
   'widget:updateCustomTimer',
-  (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId }) =>
-    widgetManager.updateCustomTimer(id, timerId, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId })
+  (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec }) =>
+    widgetManager.updateCustomTimer(id, timerId, {
+      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec,
+    })
 );
 ipcMain.handle('widget:removeCustomTimer', (_event, { id, timerId }) => widgetManager.removeCustomTimer(id, timerId));
 ipcMain.handle('widget:excludeBuff', (_event, { id, name }) => widgetManager.excludeBuff(id, name));

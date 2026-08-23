@@ -1383,6 +1383,16 @@
             <input type="number" id="widget-new-timer-seconds" min="0" max="59" step="1" placeholder="sec" class="duration-input" />
             <span class="duration-unit">s</span>
           </div>
+          <div class="row">
+            <span class="label">Then cooldown:</span>
+            <input type="number" id="widget-new-timer-cooldown" min="0" step="1" placeholder="none" class="duration-input" />
+            <span class="duration-unit">s</span>
+          </div>
+          <p class="hint">
+            Optional. When the duration above runs out, the same tile keeps counting - down to when
+            you can use the thing again. The tile dims and goes dashed while it is cooling down, so
+            the number never means two things at once. Leave it empty and the tile just ends.
+          </p>
         </div>
       </div>
       <div id="widget-new-timer-icon-picker" style="display:none"></div>

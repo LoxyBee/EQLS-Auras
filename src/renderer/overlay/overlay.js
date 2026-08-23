@@ -619,6 +619,15 @@ function updateRef(ref, buff, isIcon) {
   // there permanently coloured as though it were seconds from expiring.
   const low = !buff.infinite && threshold > 0 && buff.remainingSec <= threshold;
   ref.root.classList.toggle('low', low);
+
+  // Note 10: "if the tile doesn't visibly say which phase it is in, the number on screen is
+  // actively misleading". A cooldown counts down to when you CAN use something; a duration counts
+  // down to when you can no longer rely on it. Same tile, same digits, opposite meanings - so the
+  // cooldown phase is dimmed and outlined, and the tooltip says which it is in words.
+  const cooling = buff.phase === 'cooldown';
+  ref.root.classList.toggle('cooldown-phase', cooling);
+  if (cooling) ref.root.title = `${displayName(buff)} - cooling down, ready in ${buff.remainingSec}s`;
+  else if (ref.root.title) ref.root.title = '';
   // A text aura has no countdown to update - it says its piece and disappears when whatever it is
   // watching ends. Checked rather than assumed, because it is the first tile without one.
   if (!ref.timeEl) return;

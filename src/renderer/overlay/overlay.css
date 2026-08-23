@@ -272,6 +272,17 @@ body.sound-only #content-wrap {
 
    width:max-content so the plate hugs the words: a fixed width would either clip a long message
    or leave a wide dark bar sitting over the game when the message is short. */
+/* Note 10. The cooldown half of a two-phase timer.
+   A cooldown counts down to when you CAN use something; a duration counts down to when you can no
+   longer rely on it. Identical digits, opposite meanings - so the cooldown reads as "not ready
+   yet": dimmed, and outlined rather than filled. Deliberately NOT a colour, because colour on a
+   tile already means spell category (note 37) and time running out (.low). */
+.cooldown-phase {
+  opacity: 0.55;
+  outline: 1px dashed currentColor;
+  outline-offset: -2px;
+}
+
 .text-tile {
   width: max-content;
   max-width: 100%;

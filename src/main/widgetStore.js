@@ -567,6 +567,11 @@ function normalizeWidget(widget) {
 // delete button - three files have to agree on the string, so none of them should spell it.
 const LOADOUT_LABEL_KIND = 'loadout-label-builtin';
 
+// The trigger modes customTimerEngine understands. Anything else is exact whole-line matching.
+// Kept beside the store rather than in the engine because this is the list the store validates
+// against, and a mode missing from HERE is a mode that silently stops working.
+const TRIGGER_MATCH_MODES = ['contains', 'castOf'];
+
 const TEXT_AURA_PRESETS = {
   // Note 17's red RESIST flash, at the 1.4 seconds she asked for.
   //
@@ -873,7 +878,7 @@ class WidgetStore {
   // pick step) so the existing explicit-buffNames-filter rendering path in
   // overlay.js already isolates this widget's own timers out of the
   // engine's combined active list, with zero special-casing needed there.
-  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch }) {
+  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) {
     const widget = this.getById(id);
     if (!widget) return null;
     const timer = {
@@ -898,7 +903,16 @@ class WidgetStore {
       // 'contains' or undefined. See customTimerEngine._findTriggerMatches - for a game line with
       // a name in the middle of it, which no fixed string can ever equal. Left undefined rather
       // than defaulted to 'exact' so every timer already saved stays byte-identical.
-      triggerMatch: triggerMatch === 'contains' ? 'contains' : undefined,
+      // Whitelisted rather than passed through, so a typo becomes plain exact matching instead of
+      // a mode the engine does not recognise. 'castOf' was missing from this list while castOf
+      // timers existed - the cooldown premade only worked because it writes the timer object
+      // directly and never comes through here, so anything routed this way was silently
+      // downgraded to exact and would never have fired.
+      triggerMatch: TRIGGER_MATCH_MODES.includes(triggerMatch) ? triggerMatch : undefined,
+      // Note 10. Seconds to count down AFTER the duration runs out, before the ability is ready
+      // again. Undefined rather than 0 when unset, so a timer that has never used this stays
+      // byte-identical to one written before the feature existed.
+      cooldownSec: Number(cooldownSec) > 0 ? Number(cooldownSec) : undefined,
     };
     widget.customTimers = [...(widget.customTimers || []), timer];
     widget.buffNames = widget.customTimers.map((t) => t.name);
@@ -906,7 +920,7 @@ class WidgetStore {
     return widget;
   }
 
-  updateCustomTimer(id, timerId, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId }) {
+  updateCustomTimer(id, timerId, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec }) {
     const widget = this.getById(id);
     if (!widget) return null;
     const timer = (widget.customTimers || []).find((t) => t.id === timerId);
@@ -918,6 +932,13 @@ class WidgetStore {
     timer.triggerChat = triggerChat || undefined; // see addCustomTimer's comment
     timer.endedChat = endedChat || undefined;
     timer.iconId = iconId ?? undefined; // see addCustomTimer's comment on why not ||
+    // Only touched when the caller actually said something about it. An empty box sends 0 and
+    // clears it, which is right; a caller that has never heard of the field leaves it alone, which
+    // is also right. Rewriting unconditionally meant any code path not yet updated for a new field
+    // would silently wipe it - the same shape of bug as the castOf drop above.
+    if (cooldownSec !== undefined) {
+      timer.cooldownSec = Number(cooldownSec) > 0 ? Number(cooldownSec) : undefined;
+    }
     widget.buffNames = widget.customTimers.map((t) => t.name);
     this._save();
     return widget;

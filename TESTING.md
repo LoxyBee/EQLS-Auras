@@ -768,6 +768,27 @@ roughly one every few hours of play. Nothing stopped being *detected*; things
 stop being *shown* once they are over. If you would rather they stayed put,
 say so - it is one line to put back.
 
+## Timers that roll into a cooldown (note 10)
+
+On a custom timer, under Duration, there is now **"Then cooldown: N s"**.
+Optional — leave it empty and nothing changes.
+
+- [ ] **Set one up with both.** When the duration runs out the same tile keeps
+      counting, down to when you can use the thing again, then disappears.
+- [ ] **The tile looks different while cooling down** — dimmed and dashed — and
+      hovering it says "cooling down, ready in Ns". A cooldown and a duration
+      show the same digits and mean opposite things, so the tile has to say
+      which.
+- [ ] **The trigger line arriving again DURING the cooldown does nothing.**
+      That is deliberate: the ability is not available, so the line cannot mean
+      you used it, and restarting would hide the countdown you are waiting on.
+- [ ] **During the duration, the trigger still restarts it**, as it always has.
+- [ ] **Editing a timer keeps its cooldown**, and emptying the box removes it.
+
+Not built: the "toggle that opens its own menu" wording in your note. This is
+the one-field version, which the note itself suggested as the cheap one. Say if
+you want the sub-panel.
+
 ## Zone-gated auras (note 38)
 
 In an aura's settings, under the loadout toggles: **"Only in:"**. Leave it empty

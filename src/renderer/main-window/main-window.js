@@ -1157,6 +1157,7 @@ function initWidgetsPanel() {
   const newTimerNameInput = document.getElementById('widget-new-timer-name');
   const newTimerMinutesInput = document.getElementById('widget-new-timer-minutes');
   const newTimerSecondsInput = document.getElementById('widget-new-timer-seconds');
+  const newTimerCooldownInput = document.getElementById('widget-new-timer-cooldown');
   const newTimerTriggerInput = document.getElementById('widget-new-timer-trigger');
   const newTimerEndedInput = document.getElementById('widget-new-timer-ended');
   renderTriggerTypeChoices();
@@ -1928,6 +1929,7 @@ function initWidgetsPanel() {
     newTimerNameInput.value = '';
     newTimerMinutesInput.value = '';
     newTimerSecondsInput.value = '';
+    newTimerCooldownInput.value = '';
     newTimerTriggerInput.value = '';
     newTimerEndedInput.value = '';
     newTimerModeRadios.forEach((r) => (r.checked = r.value === 'chat'));
@@ -1955,6 +1957,9 @@ function initWidgetsPanel() {
     newTimerNameInput.value = timer.name;
     newTimerMinutesInput.value = String(Math.floor(timer.durationSec / 60));
     newTimerSecondsInput.value = String(timer.durationSec % 60);
+    // Blank, not "0", when there is no cooldown - a zero in the box reads as a cooldown of no
+    // length rather than as no cooldown at all.
+    newTimerCooldownInput.value = timer.cooldownSec ? String(timer.cooldownSec) : '';
     // Restores whichever mode this timer was actually built in - triggerChat
     // only exists on a timer set up via the chat-message builder; anything
     // else (including every timer that predates that feature) only ever had a
@@ -2919,6 +2924,8 @@ function initWidgetsPanel() {
       triggerChat,
       endedChat,
       iconId: newTimerIconId,
+      // Note 10. Empty means no cooldown, which is what every timer that existed before this had.
+      cooldownSec: Number(newTimerCooldownInput.value) || 0,
     };
   }
 
