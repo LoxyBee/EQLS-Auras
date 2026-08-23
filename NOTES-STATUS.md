@@ -36,13 +36,13 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | # | What you asked for | | Where it stands |
 | --- | --- | --- | --- |
 | 11 | Track AoE mez per mob, duration by rank, case-insensitive | **PART** | Per-mob tracking is built and working — see the paragraph below. Missing: the duration still comes from the roster, not from which rank you cast. |
-| 12 | One mez tile: soonest timer, count, mob name | **PART** | Falls out of note 8's merging, so same-named mobs already collapse into one counted tile. There is no mez-specific tile and no yellow-to-red-at-8s rule. |
+| 12 | One mez tile: soonest timer, count, mob name | **DONE** | x2 for two kobolds, down to x1 as they die, no count shown at 1. Soonest timer. |
 | 13 | Drag the sidebar wider | **DONE** | |
 | 14 | Buff-timer premade: pick a spell, pick self or ally | **DONE** | Now also offers "something you cast it at". |
 | 15 | Cooldown premade: pick a skill, get its recast countdown | **DONE** | Add Aura -> Cooldown timer. Recast pre-filled and editable. Works with the ranked spells you cast. |
 | 16 | Debuff-on-an-enemy premade, resist alert, ally toggle | **DONE** | All three. The ally part is built as you specified it on 21 Aug — a warning, not a timer. See below. |
 | 17 | Mesmerize worked example: rank, per-mob timer, RESIST flash | **PART** | Per-mob timer built. RESIST flash built. Missing: using the rank to set *your own* mez duration — though the app now reads the rank off other people's casts and shows it. |
-| 18 | Count same-named mobs from the land and resist lines | **NOT** | Two things you should know before this gets built — below. |
+| 18 | Count same-named mobs from the land and resist lines | **DONE** | Counted from the land lines, decremented as each ends. Resist lines not used — they were not needed. |
 | 19 | Damage parser premade, placeholder in the meantime | **PART** | Placeholder only. |
 | 20 | Travel guide premade, placeholder in the meantime | **PART** | Placeholder only. The feature needs zone-connection data that does not exist anywhere yet. |
 
@@ -165,6 +165,17 @@ moved into the folder rather than thrown away.
 
 **Note 3, recorded:** cooldowns and negative/reverse detection are separate mechanics. That
 comparison was mine and it was wrong; nothing is built on it.
+
+## Still open, and what each needs
+
+**Note 9's "all of these lines"** — you answered the display half: nothing shows until both have
+fired. Still undecided is the window. If line A fires this morning and line B tonight, does the
+timer start? I would guess not, but unbounded is the literal reading of "until the other happens"
+and I would rather you told me than have me pick. A minute? Five? Any time until you restart?
+
+**The loadout-profile modal** — merging the "+" and "⚙" buttons on the profile bar into one modal
+that adds, deletes and configures, with the loadout-label toggle moved into it and switched on
+automatically when you make a second profile. Not started. No questions, just work.
 
 ## Note 9 — half of it already works, and you may not need the other half
 
