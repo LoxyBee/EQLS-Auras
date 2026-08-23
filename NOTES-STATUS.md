@@ -27,8 +27,8 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 6 | Aura name in the move box, click it to open its settings | **DONE** | |
 | 7 | Make the app's own text bigger | **DONE** | |
 | 8 | Merge same-duration buffs into one tile with a count | **DONE** | |
-| 9 | Triggers that need any-of / all-of several lines | **NOT** | A trigger is still one line of text. See the note under 10. |
-| 10 | A trigger that runs its duration then rolls into a cooldown | **NOT** | Cheaper than it was: note 15 built both halves separately, so this is joining them rather than inventing them. |
+| 9 | Triggers that need any-of / all-of several lines | **PART** | "Any-of" already works — see below. "All-of" is not built and needs three answers from you. |
+| 10 | A trigger that runs its duration then rolls into a cooldown | **DONE** | "Then cooldown" on the timer form. Tile dims and says which phase. Not the sub-panel version. |
 
 ## 11–20
 
@@ -148,6 +148,20 @@ fades", and Symbol of Pinzarn and Symbol of Naltron both say "The mystic symbol 
 those overwrites the other, the app sees one fade message and cannot tell which of the two ended. I
 have left it alone rather than guess. If self-buff overwrites matter to you, say so and I will work
 out how far a best guess can be trusted.
+
+## Note 9 — half of it already works, and you may not need the other half
+
+**"Any of these lines"** is achievable today and always was: make two timers on the same aura with
+the same name and different trigger text, and both fire. The dispel announcer in the app is exactly
+that — one name, three trigger lines. What was missing was a way to make the *kind* of match you
+wanted, and that is now on the form.
+
+**"All of these lines"** is genuinely not built, and your own note said it could not be estimated
+because three things are undecided. They still are:
+
+- Over what window must both lines arrive? A minute? Any time until you restart?
+- Does anything show on screen while it is waiting for the second line?
+- If only half ever arrives, does it expire, and after how long?
 
 ## What I would do next, in order
 
