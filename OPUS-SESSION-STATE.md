@@ -451,3 +451,89 @@ rather than each growing their own picker. That was note 14's own advice and it 
 - Claims are measured, not asserted. Where something is an assumption it says so — see the zoom
   comment in `main.js`, which was rewritten after review for exactly this.
 - Fan out subagents for comprehension and design; write code in one voice.
+
+---
+
+## 8. Continuity: 21-23 August (written before a context compaction)
+
+**State: 76 commits ahead of `da698b4`, 30 suites / 451 cases green, tree clean.**
+`npm test` passes. `node tools/smoke-launch.js` starts the real app clean. `npm run dist` builds.
+
+### The standing rules, restated because they are easy to lose
+
+- `PERSONAL COPY DO NOT TOUCH.md` is off limits. It is in `.gitignore`; never open it.
+- EverQuest runs on this machine. Launching the app is allowed; **driving it with synthetic
+  clicks is not** — a stray click once landed in the game window.
+- Push to `samusmylove47-maker/EQLSAuras` (the Director exchange) is granted. **`LoxyBee/EQLS-Auras`
+  is read-only** — never push the app repo.
+- Commit as `Claude (Opus 5) <noreply@anthropic.com>` via `-c user.name=... -c user.email=...`.
+- "If any functionality is lost during this process that is to be considered a failure."
+
+### Notes closed since section 7
+
+15 (cooldown premade), 16, 17 (RESIST flash), 21 (loadout label, as a global setting), 26
+(overwrites), 27 (Buffs shown card + gem slots), 38 (zone gating), 10 (duration→cooldown), 12 and
+18 (counting mobs that share a name). Note 2 is **SKIPPED** at her instruction.
+
+`NOTES-STATUS.md` is the live record — 28 DONE, 10 PART, 1 NOT, 3 BLOCKED, 2 SKIPPED.
+
+### The two things still to build, and her answers in full
+
+**A. The loadout-profile modal (her answer 4, 23 Aug).** Not started.
+> "when you make a second loadout, it should turn on the display, but the toggle to turn it off
+> should be on the same menu that the create extra profile is on, if this means a modal, then make
+> one. probably the "add" and "settings" buttons on the profile bar can become one button that
+> opens a modal to add, delete, and change profile options."
+
+So: merge `#profile-add-btn` and `#profile-manage-btn` (`index.html`, profile bar) into one button
+opening a modal that adds, deletes and configures profiles; move the loadout-label toggle
+(currently on the Overlay Auras page, `#loadout-label-checkbox`) into it; and auto-enable the label
+the first time a second profile is created — version-gated so it happens once and does not come
+back after she turns it off.
+
+**B. All-of triggers (note 9, her answer 1, 23 Aug).** Not started. Two answers now in:
+> "nothing shown when half is done, only show when both are active. if one is active, it should be
+> invisible to the player until the other happens."
+> "the time window should be whatever each individual trigger has. this kind of functionality will
+> primarily be used for 'if in this zone (no duration check), and this thing happens', so limiting
+> it to checks happen within a set time frame is not something i want."
+
+**This changes the model and the change matters.** There is no global AND-window. Each PART of the
+condition is satisfied for its own duration after it fires, and a part with no duration — a zone
+check — stays satisfied until it stops being true. The timer runs while **all** parts are
+simultaneously satisfied, and shows nothing at all until then. That is a state intersection, not
+an event-pair with a timeout, and it is why the zone example is the primary use case.
+
+### What is blocking each PART note (she asked for this on return)
+
+- **9** — see B above; half of it (any-of) already works by giving two timers the same name.
+- **11** — duration still comes from the roster, not from the rank in the cast line.
+- **19, 20** — placeholders only. 20 needs zone-connectivity data that exists nowhere.
+- **21** — auto-enable, which is part of A above.
+- **23, 24, 32, 33, 34** — each has one named gap in `NOTES-STATUS.md`; 33 needs her to confirm a
+  fix that was never reproduced.
+- **26** — done for others' buffs and for self buffs; nothing outstanding that is not research.
+
+### Hard-won facts that must not be relearned
+
+- **`globalShortcut.register('Pause')` THROWS in Electron.** It is not a valid accelerator. The
+  hide-auras hotkey is `ScrollLock`, falling back to `Alt+Shift+H`, each inside a `try`.
+- **No unit test starts Electron.** `tools/smoke-launch.js` exists because of that; run it after
+  any change to `main.js`, a preload, or window creation.
+- **Testing a rule by reproducing it in the test file has failed four times** — every copy passed
+  while the real rule was inverted. `src/shared/zoneVisibility.js` exists so the test can import
+  the real function. Prefer that; where impossible, add a source-level assertion as well.
+- **A value crossing four layers where one enumerates fields is this codebase's commonest defect.**
+  `cooldownSec`, `triggerMatch` and `castOf` each shipped correct-but-unreachable. Always add an
+  end-to-end test naming every layer.
+- **The logs are CRLF.** `logWatcher` and `tools/replay-log.js` split on `/\r?\n/` and are fine; an
+  ad-hoc script that splits on `\n` silently finds nothing with a `$`-anchored pattern.
+- **Anchor any pattern that reads a game line on the timestamp.** A player typed
+  "You have entered Everfrost." into General chat; unanchored, that relocates the app.
+- **The detection log is `%APPDATA%/EQ Buff Tracker/detection-logs/detection-YYYY-MM-DD.log`.**
+  It was previously a loose file nobody could find, which blocked note 28 for days.
+- Measure detection changes with `node tools/replay-log.js --out X.json` then `--diff before after`.
+  Baseline with nothing opted in: **129 buffs, 211,546 landings, 840 ally landings, 27 prompts,
+  91 unknown texts.** Any drop in the first number is a regression until proven otherwise.
+
+*Session C, 2026-08-23.*
