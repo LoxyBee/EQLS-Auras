@@ -799,6 +799,23 @@ Not built: the "toggle that opens its own menu" wording in your note. This is
 the one-field version, which the note itself suggested as the cheap one. Say if
 you want the sub-panel.
 
+## Counting mobs with the same name (notes 12 and 18)
+
+- [ ] **AoE mez three "a greater kobold" and the tile should say x3.** One
+      tile, not three rows.
+- [ ] **Kill one — it becomes x2. Kill another — x1.** At x1 the count
+      disappears entirely rather than showing "x1".
+- [ ] **The countdown is the one breaking soonest**, not the last.
+- [ ] **A mez wearing off, a mob dying, and a mez being broken each remove
+      exactly one**, not all of them.
+- [ ] **Buffing a groupmate three times still shows one**, with no count. A
+      re-buff is a refresh, not a second target.
+
+Worth knowing what this cannot do: the game never distinguishes two mobs with
+the same name, so when one of three kobolds wakes up the app knows only that
+*one* did. It drops the one closest to expiring, which is the best guess
+available and is right nearly always.
+
 ## Zone-gated auras (note 38)
 
 In an aura's settings, under the loadout toggles: **"Only in:"**. Leave it empty

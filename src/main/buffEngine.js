@@ -1020,6 +1020,27 @@ class BuffEngine extends EventEmitter {
     this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
   }
 
+  // One of several identically-named mobs has lost this debuff. Drops the SOONEST instance, which
+  // is the one the countdown was showing and the likeliest to be the one that ended, and only
+  // removes the entry entirely when the last one goes.
+  //
+  // Returns true if anything changed, so callers can decide whether to emit.
+  _dropOneInstance(key) {
+    const entry = this.allyBuffs.get(key);
+    if (!entry) return false;
+    if (!Array.isArray(entry.instances) || entry.instances.length <= 1) {
+      this.allyBuffs.delete(key);
+      return true;
+    }
+    // Exactly one, by index. The first version filtered by value and removed every instance
+    // sharing the soonest expiry - which is the normal case, not an edge one: an AoE mez lands on
+    // three mobs in the same millisecond, so all three carried the same timestamp and one death
+    // wiped the lot.
+    entry.instances.splice(entry.instances.indexOf(Math.min(...entry.instances)), 1);
+    entry.expiresAt = Math.min(...entry.instances);
+    return true;
+  }
+
   // A cast the game refused because something better is already there.
   //
   // Recorded on EVERY line, not only while a cast is pending. The first version of this sat inside
@@ -1068,7 +1089,10 @@ class BuffEngine extends EventEmitter {
       const entry = this.allyBuffs.get(key);
       if (entry) {
         this._debugLog(`ALLY BUFF ENDED "${entry.name}" on "${entry.allyName}" - the log says it wore off`);
-        drop(key);
+        // One of them, not all of them. The wear-off line names a mob NAME, and if three kobolds
+        // are mezzed it can only mean one of the three.
+        this._dropOneInstance(key);
+        changed = true;
       }
     }
 
@@ -1094,7 +1118,8 @@ class BuffEngine extends EventEmitter {
       for (const [key, entry] of this.allyBuffs) {
         if (entry.onEnemy && key.startsWith(prefix)) {
           this._debugLog(`ENEMY DEBUFF ENDED "${entry.name}" on "${entry.allyName}" - it died`);
-          drop(key);
+          this._dropOneInstance(key);
+          changed = true;
         }
       }
     }
@@ -1115,7 +1140,8 @@ class BuffEngine extends EventEmitter {
         const known = this.buffStore.getByName(entry.name);
         if (known && known.othersLandingSuffix === MEZ_LANDING_SUFFIX) {
           this._debugLog(`ENEMY DEBUFF ENDED "${entry.name}" on "${entry.allyName}" - the mez was broken`);
-          drop(key);
+          this._dropOneInstance(key);
+          changed = true;
         }
       }
     }
@@ -1320,11 +1346,28 @@ class BuffEngine extends EventEmitter {
       this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
       return;
     }
+    // Notes 12 and 18. Two mobs called "a greater kobold" are two mobs, and the key cannot tell
+    // them apart - the log never gives them separate identities. So instead of one entry that the
+    // second landing overwrites, the entry holds ONE EXPIRY PER INSTANCE.
+    //
+    // Shara, 23 August: "2 kobolds should list as x2, when one dies, it should be reduced to x1."
+    // The count is how many are running; the countdown shown is the SOONEST of them, because for a
+    // mez the number that matters is when the next one wakes up.
+    //
+    // Only for things cast at enemies. A buff on a groupmate has one recipient by definition, and
+    // a second landing there is a refresh rather than a second target.
+    const expiresAt = Date.now() + effectiveDurationSec * 1000;
+    const existing = this.allyBuffs.get(key);
+    const instances =
+      onEnemy && existing && Array.isArray(existing.instances) ? [...existing.instances, expiresAt] : [expiresAt];
     this.allyBuffs.set(key, {
       name: known.name,
       allyName,
       durationSec: effectiveDurationSec,
-      expiresAt: Date.now() + effectiveDurationSec * 1000,
+      // Kept in step with instances at all times - it is the soonest one, and everything
+      // downstream still reads expiresAt without knowing instances exist.
+      expiresAt: Math.min(...instances),
+      instances,
       onEnemy,
     });
     this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
@@ -1553,6 +1596,21 @@ class BuffEngine extends EventEmitter {
       // too, and it has no expiry to compare against. Missing this half was caught by a test that
       // deliberately checked both maps rather than assuming one implied the other.
       if (buff.infinite) continue;
+
+      // Notes 12/18. expiresAt is the SOONEST of possibly several instances, so expiring it must
+      // drop that one instance and leave the rest running. Deleting the whole entry here would
+      // take five mezzed kobolds off the screen the moment the first one woke up.
+      if (Array.isArray(buff.instances) && buff.instances.length > 1) {
+        const alive = buff.instances.filter((t) => t > now);
+        if (alive.length === buff.instances.length) continue;
+        if (!alive.length) {
+          this.allyBuffs.delete(key);
+          continue;
+        }
+        buff.instances = alive;
+        buff.expiresAt = Math.min(...alive);
+        continue;
+      }
       if (buff.expiresAt <= now) this.allyBuffs.delete(key);
     }
     // Unconditional every tick, same as buffsChanged above - the overlay's
@@ -1759,6 +1817,9 @@ class BuffEngine extends EventEmitter {
           // Somebody else started casting this. An aura shows it only if it asked to be warned;
           // see the allyCast filter in the overlay.
           allyCast: !!b.allyCast,
+          // How many identically-named mobs currently have this on them. 1 for everything else,
+          // and the overlay shows nothing at 1 - "x1" is noise on every tile in the game.
+          count: Array.isArray(b.instances) ? b.instances.length : 1,
           durationSec: b.durationSec,
           // null, not a number, for a buff that never runs out. Everything downstream checks for
           // it rather than trying to render a countdown that has no end.

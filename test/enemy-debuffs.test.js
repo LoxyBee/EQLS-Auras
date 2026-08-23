@@ -455,5 +455,82 @@ test('the third option exists in the markup', () => {
   assert.match(html, /id="buff-timer-enemy-warning"/);
 });
 
+// ---------------------------------------------------------------------------
+// Counting identically-named mobs - notes 12 and 18
+// ---------------------------------------------------------------------------
+
+test('three mobs with the same name count as three', () => {
+  // Shara, 23 August: "2 kobolds should list as x2, when one dies, it should be reduced to x1."
+  // The log gives them no separate identity, so the entry holds one expiry per instance.
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Mesmerize.');
+  for (let i = 0; i < 3; i += 1) feed(e, 'a greater kobold has been mesmerized.');
+  assert.equal(e.getActiveAllyBuffs()[0].count, 3);
+});
+
+test('each way one can end removes exactly one', () => {
+  // Not all of them. The first version filtered instances by value, and because an AoE mez lands
+  // on every mob in the same millisecond they all shared a timestamp - so one death wiped the lot.
+  for (const ending of [
+    'A greater kobold has been slain by Avenrae!',
+    'Your Mesmerize spell has worn off of a greater kobold.',
+    'A greater kobold has been awakened by Shara.',
+  ]) {
+    const e = engine(['Mesmerize']);
+    feed(e, 'You begin casting Mesmerize.');
+    for (let i = 0; i < 3; i += 1) feed(e, 'a greater kobold has been mesmerized.');
+    feed(e, ending);
+    assert.equal(e.getActiveAllyBuffs()[0].count, 2, `wrong count after: ${ending}`);
+  }
+});
+
+test('the last one ending clears the tile', () => {
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Mesmerize.');
+  feed(e, 'a greater kobold has been mesmerized.');
+  feed(e, 'a greater kobold has been mesmerized.');
+  feed(e, 'A greater kobold has been slain by Avenrae!');
+  feed(e, 'A greater kobold has been slain by Avenrae!');
+  assert.deepEqual(names(e), []);
+});
+
+test('a buff on a groupmate does not accumulate a count', () => {
+  // Re-buffing one person is a refresh, not a second target. Only things cast AT something can
+  // have several recipients sharing a name.
+  const e = engine(null);
+  for (let i = 0; i < 3; i += 1) {
+    feed(e, 'You begin casting Spirit of Wolf.', 'Marrowbane is surrounded by a brief lupine aura.');
+  }
+  const buff = e.getActiveAllyBuffs().find((b) => b.name === 'Spirit of Wolf');
+  assert.ok(buff);
+  assert.equal(buff.count, 1, 'refreshing a groupmate buff counted it twice');
+});
+
+test('the countdown shown is the soonest of them', () => {
+  // For a mez the number that matters is when the NEXT one wakes up, not the last.
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Mesmerize.', 'a greater kobold has been mesmerized.');
+  const entry = [...e.allyBuffs.values()][0];
+  entry.instances = [Date.now() + 90000, Date.now() + 5000];
+  entry.expiresAt = Math.min(...entry.instances);
+  assert.equal(e.getActiveAllyBuffs()[0].remainingSec, 5);
+
+  // The check above sets the instances by hand, so it cannot see the LANDING path picking the
+  // wrong one - two mezzes landing in this test land in the same millisecond and every choice
+  // looks identical. Pinned at the source instead.
+  const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'buffEngine.js'), 'utf8');
+  assert.match(src, /expiresAt: Math\.min\(\.\.\.instances\)/, 'a landing takes the last expiry, not the soonest');
+  assert.match(src, /entry\.expiresAt = Math\.min\(\.\.\.entry\.instances\)/, 'removing one takes the wrong new soonest');
+});
+
+test('a count of one is never shown', () => {
+  // Her instruction, and it is enforced in one place rather than at each call site.
+  const overlay = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'overlay', 'overlay.js'), 'utf8');
+  const fn = overlay.match(/function countFor\(buff\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn, 'countFor has been renamed or restructured');
+  assert.match(fn[1], /buff\.count > 1/, 'a count of 1 would be drawn');
+  assert.match(fn[1], /return null;/);
+});
+
 module.exports = () => report('enemy-debuffs');
 if (require.main === module) process.exit(report('enemy-debuffs') ? 1 : 0);

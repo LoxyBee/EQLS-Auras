@@ -306,12 +306,24 @@ function shouldGroupByAlly(visible) {
 // Note 8's count, and deliberately ONE builder rather than two. Note 12 wants the identical badge
 // on a different kind of merged tile, and two copies of a thing described as "the same badge" is
 // how they end up not being the same badge.
-function buildCountBadge(count) {
+function buildCountBadge(count, why) {
   const badge = document.createElement('span');
   badge.className = 'count-badge';
   badge.textContent = `\u00d7${count}`;
-  badge.title = `${count} buffs merged into this one`;
+  badge.title = why || (count + ' buffs merged into this one');
   return badge;
+}
+
+// Note 12. How many of this tile there really are: merged buffs on one target, or - for something
+// cast at enemies - how many identically-named mobs are carrying it right now.
+//
+// Shara, 23 August: "a count of x1 should not be displayed, only display count when multiple
+// exist." Both sources are 1 in the ordinary case, so returning null there is what enforces it,
+// once, rather than at each call site.
+function countFor(buff) {
+  if (buff.mergedCount > 1) return { n: buff.mergedCount, why: buff.mergedCount + ' buffs merged into this one' };
+  if (buff.count > 1) return { n: buff.count, why: buff.count + ' of them have this on right now' };
+  return null;
 }
 
 // A TEXT AURA's whole rendering: one line of words, and nothing else. No icon, no countdown, no
@@ -418,7 +430,8 @@ function buildListRow(buff) {
 
   content.append(bar, name, time);
   // Between the name and the time, so the countdown stays where the eye already looks for it.
-  if (buff.mergedCount > 1) content.insertBefore(buildCountBadge(buff.mergedCount), time);
+  const listCount = countFor(buff);
+  if (listCount) content.insertBefore(buildCountBadge(listCount.n, listCount.why), time);
 
   const ref = { root, timeEl: time, barEl: bar, iconWrapEl: null, lastIconUrl: undefined };
   if (currentConfig.showRowIcon) {
@@ -469,7 +482,8 @@ function buildIconTile(buff) {
   updateTileIcon(ref, buff);
   // Appended after the icon so it draws over it - .buff-tile is position:relative and the badge
   // is absolutely placed in its corner.
-  if (buff.mergedCount > 1) root.appendChild(buildCountBadge(buff.mergedCount));
+  const iconCount = countFor(buff);
+  if (iconCount) root.appendChild(buildCountBadge(iconCount.n, iconCount.why));
 
   // Read once at build time, not tracked for later updates - a name only
   // ever changes by way of a different buff replacing this tile entirely

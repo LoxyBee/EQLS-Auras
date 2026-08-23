@@ -428,10 +428,13 @@ test('merging happens after filtering and before sorting', () => {
 });
 
 test('the count badge is built in exactly one place', () => {
-  // Note 12 wants the identical badge on a different kind of merged tile. Two copies of a thing
-  // described as "the same badge" is how they stop being the same badge.
+  // Note 12 wanted the identical badge on a different kind of merged tile, and has since arrived:
+  // a mez tile counting identically-named mobs. Both go through countFor and then this one
+  // builder, which is what the note asked for - two copies of a thing described as "the same
+  // badge" is how they stop being the same badge.
   assert.equal((overlaySrc.match(/function buildCountBadge\(/g) || []).length, 1);
-  assert.equal((overlaySrc.match(/buildCountBadge\(buff\.mergedCount\)/g) || []).length, 2,
+  assert.equal((overlaySrc.match(/function countFor\(/g) || []).length, 1, 'two ways to decide the count');
+  assert.equal((overlaySrc.match(/buildCountBadge\([a-zA-Z]+Count\.n, [a-zA-Z]+Count\.why\)/g) || []).length, 2,
     'both list rows and icon tiles should use it');
   assert.match(overlayCss, /\.count-badge \{/);
   assert.match(overlayCss, /\.buff-tile \.count-badge \{/, 'icon mode needs its own placement');
