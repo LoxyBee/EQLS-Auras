@@ -1203,6 +1203,87 @@ function initWidgetsPanel() {
     const secs = Number(newTimerCooldownInput.value) || 0;
     document.getElementById('timer-cooldown-summary').textContent = secs > 0 ? `${secs}s` : '';
   });
+  // Note 9's all-of. Held here while the modal is open and written out with the rest of the form,
+  // so a half-built condition list is never saved onto a timer by accident.
+  let timerConditions = [];
+  const timerConditionsListEl = document.getElementById('timer-conditions-list');
+  const timerConditionKindSelect = document.getElementById('timer-condition-kind');
+  const timerConditionTextInput = document.getElementById('timer-condition-text');
+  const timerConditionMatchSelect = document.getElementById('timer-condition-match');
+  const timerConditionHoldInput = document.getElementById('timer-condition-hold');
+  const timerConditionZoneSelect = document.getElementById('timer-condition-zone');
+  const timerConditionLineRow = document.getElementById('timer-condition-line-row');
+  const timerConditionZoneRow = document.getElementById('timer-condition-zone-row');
+  const timerConditionAddBtn = document.getElementById('timer-condition-add');
+
+  function describeCondition(part) {
+    if (part.kind === 'zone') return `In ${part.zone}`;
+    const how = part.triggerMatch === 'contains' ? 'contains' : 'is exactly';
+    return `Line ${how} "${part.triggerText}" (${part.holdSec || 30}s)`;
+  }
+
+  function renderTimerConditions() {
+    timerConditionsListEl.innerHTML = '';
+    for (const [i, part] of timerConditions.entries()) {
+      const li = document.createElement('li');
+      li.className = 'row';
+      const span = document.createElement('span');
+      span.textContent = describeCondition(part);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'link-btn';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => {
+        timerConditions.splice(i, 1);
+        renderTimerConditions();
+      });
+      li.append(span, remove);
+      timerConditionsListEl.appendChild(li);
+    }
+    // The summary on the closed section, so a set condition is never hidden by the section being
+    // shut - see the same argument on the Cooldown section.
+    const summary = document.getElementById('timer-conditions-summary');
+    summary.textContent = timerConditions.length
+      ? `${timerConditions.length} condition${timerConditions.length === 1 ? '' : 's'}`
+      : '';
+  }
+
+  function updateConditionKindVisibility() {
+    const zone = timerConditionKindSelect.value === 'zone';
+    timerConditionLineRow.style.display = zone ? 'none' : '';
+    timerConditionZoneRow.style.display = zone ? '' : 'none';
+    if (zone && !timerConditionZoneSelect.options.length) {
+      window.eqTracker.getTravelZones().then((zones) => {
+        for (const z of zones) {
+          const opt = document.createElement('option');
+          opt.value = z;
+          opt.textContent = z;
+          timerConditionZoneSelect.appendChild(opt);
+        }
+      });
+    }
+  }
+  timerConditionKindSelect.addEventListener('change', updateConditionKindVisibility);
+
+  timerConditionAddBtn.addEventListener('click', () => {
+    if (timerConditionKindSelect.value === 'zone') {
+      const zone = timerConditionZoneSelect.value;
+      if (!zone) return;
+      timerConditions.push({ kind: 'zone', zone });
+    } else {
+      const triggerText = timerConditionTextInput.value.trim();
+      if (!triggerText) return;
+      const part = { kind: 'line', triggerText };
+      if (timerConditionMatchSelect.value === 'contains') part.triggerMatch = 'contains';
+      const hold = Number(timerConditionHoldInput.value);
+      if (hold > 0) part.holdSec = Math.round(hold);
+      timerConditions.push(part);
+      timerConditionTextInput.value = '';
+      timerConditionHoldInput.value = '';
+    }
+    renderTimerConditions();
+  });
+
   const newTimerTriggerInput = document.getElementById('widget-new-timer-trigger');
   const newTimerEndedInput = document.getElementById('widget-new-timer-ended');
   renderTriggerTypeChoices();
@@ -1990,6 +2071,13 @@ function initWidgetsPanel() {
     newTimerSecondsInput.value = '';
     newTimerCooldownInput.value = '';
     setTimerCooldownOpen(false);
+    timerConditions = [];
+    renderTimerConditions();
+    document.getElementById('topic-timer-conditions').classList.remove('open');
+    timerConditionKindSelect.value = 'line';
+    timerConditionTextInput.value = '';
+    timerConditionHoldInput.value = '';
+    updateConditionKindVisibility();
     newTimerMatchRadios.forEach((r) => (r.checked = r.value === 'exact'));
     newTimerTriggerInput.value = '';
     newTimerEndedInput.value = '';
@@ -2024,6 +2112,12 @@ function initWidgetsPanel() {
     // Open it if this timer actually uses one, so editing does not hide the setting behind a
     // closed section the person cannot see they have already set.
     setTimerCooldownOpen(!!timer.cooldownSec);
+    // Copied, not referenced - editing the list must not change the saved timer until Save is
+    // pressed, and splicing the live array would do exactly that.
+    timerConditions = (timer.allOf || []).map((p) => ({ ...p }));
+    renderTimerConditions();
+    // Opened when this timer actually has conditions, for the same reason the cooldown section is.
+    document.getElementById('topic-timer-conditions').classList.toggle('open', timerConditions.length > 0);
     // castOf lands on "exactly" here because there is no radio for it - it is built by the
     // cooldown premade from a spell name rather than typed, and offering it as a third option
     // would need a spell picker in this form. Editing such a timer keeps its mode regardless:
@@ -3107,6 +3201,10 @@ function initWidgetsPanel() {
         mode === 'raw' && [...newTimerMatchRadios].find((r) => r.checked)?.value === 'contains'
           ? 'contains'
           : undefined,
+      // Note 9. Always sent, including as an empty array - updateCustomTimer only writes the field
+      // when the caller mentions it, so sending nothing would make it impossible to REMOVE the
+      // last condition from a timer that has one.
+      allOf: timerConditions,
     };
   }
 

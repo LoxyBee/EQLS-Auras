@@ -32,7 +32,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 6 | Aura name in the move box, click it to open its settings | **DONE** | |
 | 7 | Make the app's own text bigger | **DONE** | |
 | 8 | Merge same-duration buffs into one tile with a count | **DONE** | |
-| 9 | Triggers that need any-of / all-of several lines | **PART** | "Any-of" already works. "All-of" is designed and answered but not yet built — see below. |
+| 9 | Triggers that need any-of / all-of several lines | **DONE** | Both halves built. "All-of" follows your 23 August answer: no shared window, each part holds for its own time, a zone part holds until you leave. |
 | 10 | A trigger that runs its duration then rolls into a cooldown | **DONE** | "Then cooldown" on the timer form. Tile dims and says which phase. Not the sub-panel version. |
 
 ## 11–20
@@ -72,7 +72,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 31 | Unlocking an aura shows it even when its profile is off | **DONE** | |
 | 32 | Volume slider forgets its saved value; re-range it | **DONE** | Load bug fixed. You decided to keep it 0–100, so nothing else is outstanding. |
 | 33 | Can't click the name box in New loadout profile | **DONE** | Fix is in. It is in TESTING.md for you to confirm — which is a test, not outstanding work. |
-| 34 | Buff and Debuff premade templates with sensible defaults | **PART** | The buff half is note 14's premade; the debuff half is note 16's. There is no separate "Debuff template" beyond that. |
+| 34 | Buff and Debuff premade templates with sensible defaults | **DONE** | Both exist as their own choices in Add Aura. "Custom debuff aura" builds one set to watch the things you cast at, which is the separate template you asked for. This row was stale, not the work. |
 | 35 | Archive the old roster, rebuild from the EQL spreadsheet | **DONE** | 1,052 spells, every one categorised. Old 11,337-entry roster archived, not deleted. |
 | 36 | Sound ping on an incoming trade request | **DONE** | |
 | 37 | Colour tile borders by spell type, with a toggle | **DONE** | On by default. |

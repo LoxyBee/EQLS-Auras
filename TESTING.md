@@ -1201,6 +1201,48 @@ purpose in nine ways and the tests caught eight; the ninth is explained in a
 comment, because two mechanisms in the code agree and neither is observable
 alone.
 
+## Timers that need more than one thing to be true (note 9)
+
+Your answer settled the design: "the time window should be whatever each
+individual trigger has... limiting it to checks happen within a set time frame
+is not something i want." So there is no shared window - each condition carries
+its own, and a zone condition has none at all.
+
+On any custom timer, in the Add/Edit timer box, there is a new collapsed
+section: **Extra conditions**. Add conditions there and the timer only starts
+when all of them are true at once.
+
+- [ ] **Two lines.** Add two line conditions and make one happen. Nothing should
+      appear - not a dimmed tile, not a partial one, nothing. Make the second
+      happen and the timer should start.
+- [ ] **Order should not matter.** Try it the other way round.
+- [ ] **Let one go stale.** Give a condition a short time (say 5s), trigger it,
+      wait past that, then trigger the other. Nothing should start.
+- [ ] **A zone plus a line** - the case you said this is mainly for. Add "You
+      are in a zone" and one line condition. It should fire only in that zone.
+- [ ] **It should not re-fire on every line afterwards.** A zone condition never
+      lapses, so this is the one I would most expect to go wrong: once it has
+      fired, unrelated chat should not keep restarting it.
+- [ ] **The section summary.** Close Extra conditions and it should still say
+      how many you have set, so a condition is never invisible.
+- [ ] **Remove them all** and the timer should go back to firing on its plain
+      trigger line rather than becoming one that never fires.
+
+If the app does not know what zone you are in yet, a zone condition counts as
+satisfied rather than blocking. That is deliberate - it only learns the zone
+when you cross a line, so treating "unknown" as "wrong zone" would leave the
+timer dead for a whole session if you started in the right place.
+
+## Debuff template (note 34)
+
+You said "buff AND debuff need their own custom templates. add a debuff
+template." Checking this properly: it was already built and I had it marked as
+half-done, which was wrong - the row was stale, not the work.
+
+- [ ] **+ Add aura -> Custom debuff aura.** It should make an aura already set
+      to watch the things you cast spells AT, showing each target's name,
+      without you having to change any settings afterwards.
+
 ---
 
 ## Confirmed

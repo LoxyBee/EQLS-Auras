@@ -603,6 +603,39 @@ function normalizeWidget(widget) {
 // One reserved kind, so there can only ever be one of these and nothing else can be mistaken for
 // it. Exported because widgetManager decides visibility by kind and the renderer hides it from the
 // delete button - three files have to agree on the string, so none of them should spell it.
+/**
+ * Note 9. Cleans an all-of list on the way in.
+ *
+ * Every field is checked rather than trusted, because a share code is a path by which values this
+ * app never wrote can arrive - and an unrecognised part is worse than a missing one: the timer
+ * would sit there never firing, with nothing on screen to say why.
+ *
+ * A part that survives is either a zone check naming a zone, or a line check with text to match.
+ * Anything else is dropped, and a list left with nothing in it becomes undefined, which means the
+ * timer falls back to its plain trigger rather than becoming unfireable.
+ */
+function normalizeAllOf(allOf) {
+  if (!Array.isArray(allOf)) return undefined;
+  const clean = [];
+  for (const raw of allOf) {
+    if (!raw || typeof raw !== 'object') continue;
+    if (raw.kind === 'zone') {
+      const zone = typeof raw.zone === 'string' ? raw.zone.trim() : '';
+      if (zone) clean.push({ kind: 'zone', zone });
+      continue;
+    }
+    const triggerText = typeof raw.triggerText === 'string' ? raw.triggerText.trim() : '';
+    if (!triggerText) continue;
+    const part = { kind: 'line', triggerText };
+    if (TRIGGER_MATCH_MODES.includes(raw.triggerMatch)) part.triggerMatch = raw.triggerMatch;
+    // Left off entirely when unset, so customTimerEngine's default applies rather than a zero
+    // being written here and read there as "satisfied for no time at all".
+    if (Number(raw.holdSec) > 0) part.holdSec = Math.round(Number(raw.holdSec));
+    clean.push(part);
+  }
+  return clean.length ? clean : undefined;
+}
+
 const LOADOUT_LABEL_KIND = 'loadout-label-builtin';
 
 // The trigger modes customTimerEngine understands. Anything else is exact whole-line matching.
@@ -985,7 +1018,7 @@ class WidgetStore {
   // pick step) so the existing explicit-buffNames-filter rendering path in
   // overlay.js already isolates this widget's own timers out of the
   // engine's combined active list, with zero special-casing needed there.
-  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) {
+  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, allOf }) {
     const widget = this.getById(id);
     if (!widget) return null;
     const timer = {
@@ -1020,6 +1053,9 @@ class WidgetStore {
       // again. Undefined rather than 0 when unset, so a timer that has never used this stays
       // byte-identical to one written before the feature existed.
       cooldownSec: Number(cooldownSec) > 0 ? Number(cooldownSec) : undefined,
+      // Note 9. Extra conditions that must ALL be true before this fires. Undefined rather than an
+      // empty array when unset, so a timer that has never used it stays byte-identical.
+      allOf: normalizeAllOf(allOf),
     };
     widget.customTimers = [...(widget.customTimers || []), timer];
     widget.buffNames = widget.customTimers.map((t) => t.name);
@@ -1027,7 +1063,7 @@ class WidgetStore {
     return widget;
   }
 
-  updateCustomTimer(id, timerId, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec }) {
+  updateCustomTimer(id, timerId, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec, allOf }) {
     const widget = this.getById(id);
     if (!widget) return null;
     const timer = (widget.customTimers || []).find((t) => t.id === timerId);
@@ -1045,6 +1081,11 @@ class WidgetStore {
     // would silently wipe it - the same shape of bug as the castOf drop above.
     if (cooldownSec !== undefined) {
       timer.cooldownSec = Number(cooldownSec) > 0 ? Number(cooldownSec) : undefined;
+    }
+    // Same rule, and for the same reason - see the comment above. A caller that says nothing about
+    // the conditions must not silently delete them.
+    if (allOf !== undefined) {
+      timer.allOf = normalizeAllOf(allOf);
     }
     widget.buffNames = widget.customTimers.map((t) => t.name);
     this._save();

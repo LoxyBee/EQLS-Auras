@@ -23,17 +23,58 @@ const TICK_INTERVAL_MS = 1000;
 // directly) for the same reason BuffEngine injects setSpellbookCheckFn -
 // widgetManager pulls in Electron's screen/BrowserWindow, which would
 // break instantiating this engine in a plain Node test script.
+// Note 9. Whether this definition is governed by an all-of list. An empty array is deliberately
+// NOT an all-of: a timer whose conditions have all been deleted should fall back to its plain
+// trigger text rather than become a timer that can never fire and gives no sign why.
+function hasAllOf(timer) {
+  return Array.isArray(timer.allOf) && timer.allOf.length > 0;
+}
+
+// How long a line part counts as satisfied once seen. Per part, never shared - see the comment on
+// _isPartSatisfied for why there is no global window. Thirty seconds is only the default for a
+// part created without one; clamped because a share code can carry a number this app never wrote.
+const DEFAULT_PART_HOLD_SEC = 30;
+const MAX_PART_HOLD_SEC = 3600;
+
+function partHoldSec(part) {
+  const raw = part.holdSec;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return DEFAULT_PART_HOLD_SEC;
+  return Math.min(MAX_PART_HOLD_SEC, Math.round(raw));
+}
+
+// The same three match modes an ordinary trigger has, so a part is not a second, subtly different
+// kind of trigger that people have to learn separately.
+function lineMatchesPart(part, lowerLine, castSpell) {
+  const trigger = String(part.triggerText || '').toLowerCase();
+  if (!trigger) return false;
+  if (part.triggerMatch === 'castOf') return castSpell !== null && castSpell.toLowerCase() === trigger;
+  if (part.triggerMatch === 'contains') return lowerLine.includes(trigger);
+  return trigger === lowerLine;
+}
+
 class CustomTimerEngine extends EventEmitter {
   constructor() {
     super();
     this.activeTimers = new Map(); // lowercased name -> { name, durationSec, expiresAt, endedText }
     this.getWidgetsFn = () => [];
     this.iconUrlFn = () => null;
+    // Note 9's all-of. "<timer id>#<part index>" -> the moment that part stops counting as
+    // satisfied. Only LINE parts appear here; a zone part is asked about rather than remembered,
+    // because where you are is already tracked elsewhere and a second copy of it could go stale.
+    this.partSatisfiedUntil = new Map();
+    this.getCurrentZoneFn = () => null;
     this.tickTimer = setInterval(() => this._tick(), TICK_INTERVAL_MS);
   }
 
   setGetWidgetsFn(fn) {
     this.getWidgetsFn = fn;
+  }
+
+  // Note 9. Where the player is, for an all-of part that asks about a zone. Injected for the same
+  // reason as the two below it - widgetManager pulls in Electron, and this engine has to stay
+  // instantiable in a plain Node test.
+  setCurrentZoneFn(fn) {
+    if (typeof fn === 'function') this.getCurrentZoneFn = fn;
   }
 
   // fn(castName) => the roster's name for that cast, or null.
@@ -75,6 +116,14 @@ class CustomTimerEngine extends EventEmitter {
   // same trigger text given two different icons) both count as
   // independently activated. Returning only the first match here used to
   // mean the second one was never even considered.
+  // The spell this line is the player starting to cast, or null. Pulled out of
+  // _findTriggerMatches so the all-of path uses the same answer rather than a second copy of the
+  // question - the two must never disagree about what a castOf part means.
+  _castSpellFor(strippedLine) {
+    const castName = matchCastBegin(strippedLine) || matchSingingBegin(strippedLine);
+    return castName ? this._resolveCastName(castName) : null;
+  }
+
   _findTriggerMatches(strippedLine) {
     // Case-insensitive - unlike every other exact-text match in this app
     // (landing text, ended text, etc.), a custom timer's trigger text is
@@ -86,11 +135,14 @@ class CustomTimerEngine extends EventEmitter {
     // ambiguity there - it only ever helps the user-typed-chat case.
     const lowerLine = strippedLine.toLowerCase();
     // Parsed once, not per timer. Null for any line that is not the player starting a cast.
-    const castName = matchCastBegin(strippedLine) || matchSingingBegin(strippedLine);
-    const castSpell = castName ? this._resolveCastName(castName) : null;
+    const castSpell = this._castSpellFor(strippedLine);
     const matches = [];
     for (const widget of this.getWidgetsFn()) {
       for (const timer of widget.customTimers || []) {
+        // Note 9. A timer with an all-of list is governed by that list and nothing else. Letting
+        // its plain triggerText fire it too would mean the extra conditions could be skipped by
+        // the very line they were added to qualify.
+        if (hasAllOf(timer)) continue;
         if (!timer.triggerText) continue;
         const trigger = timer.triggerText.toLowerCase();
         // Exact by default, and that default is why this stayed exact for so long: a trigger of
@@ -115,6 +167,79 @@ class CustomTimerEngine extends EventEmitter {
       }
     }
     return matches;
+  }
+
+  /**
+   * Note 9's all-of, built to the shape Shara settled on 23 August.
+   *
+   * "the time window should be whatever each individual trigger has. this kind of functionality
+   * will primarily be used for 'if in this zone (no duration check), and this thing happens', so
+   * limiting it to checks happen within a set time frame is not something i want."
+   *
+   * So there is NO shared window. Each part carries its own, and the two kinds of part answer
+   * "am I currently true?" differently:
+   *
+   *   line - true for holdSec after the line was last seen. Its own clock, nobody else's.
+   *   zone - true while you are standing there. No clock at all; being somewhere does not expire.
+   *
+   * And nothing appears on screen until every part is true at once - her answer to the earlier
+   * question was "nothing shown when half is done, only show when both are active. if one is
+   * active, it should be invisible to the player until the other happens." A half-satisfied
+   * all-of is therefore state and not a tile.
+   */
+  _isPartSatisfied(timerId, part, index, now) {
+    if (part && part.kind === 'zone') {
+      const here = this.getCurrentZoneFn();
+      // No zone known yet is NOT the same as being in the wrong one. The app often cannot tell
+      // where you are - it learns from a zone line, and one only arrives when you cross. Treating
+      // unknown as false would make a zone-gated timer silently dead for a whole session started
+      // in the wrong place; the same call the rest of the app makes on this question.
+      if (!here) return true;
+      return String(part.zone || '').toLowerCase() === here.toLowerCase();
+    }
+    const until = this.partSatisfiedUntil.get(`${timerId}#${index}`);
+    return until !== undefined && until > now;
+  }
+
+  // Marks the LINE parts this log line satisfies. Separate from the check above so that seeing a
+  // line and asking whether the whole condition holds stay two different questions - a part can be
+  // re-satisfied by a line that does not complete the set, which is the ordinary case.
+  _markSatisfiedParts(strippedLine, lowerLine, castSpell, now) {
+    for (const widget of this.getWidgetsFn()) {
+      for (const timer of widget.customTimers || []) {
+        if (!hasAllOf(timer)) continue;
+        timer.allOf.forEach((part, index) => {
+          if (!part || part.kind === 'zone') return;
+          if (!part.triggerText) return;
+          if (!lineMatchesPart(part, lowerLine, castSpell)) return;
+          const holdSec = partHoldSec(part);
+          this.partSatisfiedUntil.set(`${timer.id}#${index}`, now + holdSec * 1000);
+        });
+      }
+    }
+  }
+
+  // Every all-of timer whose parts are all true right now.
+  _findSatisfiedAllOf(now) {
+    const ready = [];
+    for (const widget of this.getWidgetsFn()) {
+      for (const timer of widget.customTimers || []) {
+        if (!hasAllOf(timer)) continue;
+        const all = timer.allOf.every((part, index) => this._isPartSatisfied(timer.id, part, index, now));
+        if (all) ready.push(timer);
+      }
+    }
+    return ready;
+  }
+
+  // Once it has fired, the line parts start again from nothing. Without this the timer would
+  // re-fire on every subsequent line for as long as the parts happened to still hold - and a zone
+  // part holds indefinitely, so "in this zone AND this happened" would retrigger forever.
+  _clearLineParts(timer) {
+    timer.allOf.forEach((part, index) => {
+      if (part && part.kind === 'zone') return;
+      this.partSatisfiedUntil.delete(`${timer.id}#${index}`);
+    });
   }
 
   handleLine(line) {
@@ -161,8 +286,18 @@ class CustomTimerEngine extends EventEmitter {
     // Checked unconditionally, not "else" - a line ending one timer
     // shouldn't stop it from also starting a different one (or restarting
     // the same one) if it happens to match a trigger too.
-    const matches = this._findTriggerMatches(stripped);
+    // Note 9. Marked first, then evaluated, so a single line can satisfy the last outstanding part
+    // and fire the timer in the same pass rather than waiting for the next line to notice.
+    const now = Date.now();
+    // The STRIPPED line, lowercased - the same text _findTriggerMatches compares against. The
+    // timestamped one is right there in scope and would silently break every exact-match part,
+    // since no trigger text anyone types begins with "[wed aug 19 ...]".
+    this._markSatisfiedParts(stripped, stripped.toLowerCase(), this._castSpellFor(stripped), now);
+    const ready = this._findSatisfiedAllOf(now);
+
+    const matches = this._findTriggerMatches(stripped).concat(ready);
     if (matches.length === 0) return;
+    const readySet = new Set(ready);
     // Keyed by the definition's own id, not its name - two definitions are
     // allowed to share a display name (e.g. same trigger text, different
     // icons, meant to both show at once), and keying by name would let the
@@ -177,6 +312,9 @@ class CustomTimerEngine extends EventEmitter {
       // The line is far likelier to be an echo, a second target, or somebody else's. Ignored.
       const running = this.activeTimers.get(match.id);
       if (running && running.phase === 'cooldown') continue;
+      // Note 9. An all-of that has fired hands its parts back empty, so the next firing needs the
+      // whole condition to come true again rather than riding on a zone part that never lapses.
+      if (readySet.has(match)) this._clearLineParts(match);
 
       this.activeTimers.set(match.id, {
         id: match.id,

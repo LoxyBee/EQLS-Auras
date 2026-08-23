@@ -139,6 +139,9 @@ buffEngine.setBardSongsVisibleFn(() =>
   widgetManager.getAllWidgetConfigs().some((w) => w.hideBardSongs === false)
 );
 customTimerEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
+// Note 9. A zone part in an all-of condition asks where you are. Pull-based, so it reads the same
+// zone the rest of the app is using rather than keeping a copy that could fall behind.
+customTimerEngine.setCurrentZoneFn(() => widgetManager.getCurrentZone());
 buffEngine.setTrackOthersEnabled(loadJson('trackOthersEnabled', false));
 buffEngine.setBlockedNames(loadJson('blockedBuffs', []));
 
@@ -1027,16 +1030,20 @@ ipcMain.handle('widget:setBuffSource', (_event, { id, source }) => widgetManager
 // added to the form, the store and the engine and still did nothing until this line changed.
 ipcMain.handle(
   'widget:addCustomTimer',
-  (_event, { id, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) =>
+  // Note 9's allOf is listed here as well as everywhere else it passes through. This handler
+  // destructures a fixed set of names, so a field missing from the list is silently dropped rather
+  // than erroring - which is exactly how castOf timers came to be impossible to create through the
+  // UI while looking like they worked.
+  (_event, { id, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, allOf }) =>
     widgetManager.addCustomTimer(id, {
-      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec,
+      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, allOf,
     })
 );
 ipcMain.handle(
   'widget:updateCustomTimer',
-  (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec }) =>
+  (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec, allOf }) =>
     widgetManager.updateCustomTimer(id, timerId, {
-      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec,
+      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec, allOf,
     })
 );
 ipcMain.handle('widget:removeCustomTimer', (_event, { id, timerId }) => widgetManager.removeCustomTimer(id, timerId));

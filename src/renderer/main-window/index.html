@@ -1487,6 +1487,52 @@
                toggle button like other menu's so that the options are invisible when not used."
                The same .topic pattern as every collapsible section on the settings page, so it
                behaves the way the rest of the app already does. -->
+          <!-- Note 9's all-of. Collapsed by default and summarised when shut, the same as the
+               Cooldown section beside it - a condition someone has set must never be invisible
+               just because the section is closed, since a timer that has stopped firing with no
+               visible reason is exactly the failure this whole section can cause. -->
+          <div class="topic" id="topic-timer-conditions" data-topic>
+            <button type="button" class="topic-head" data-toggle>
+              <span class="chev"></span>
+              <span class="topic-title">Extra conditions</span>
+              <span class="topic-summary" id="timer-conditions-summary"></span>
+            </button>
+            <div class="topic-body"><div class="topic-body-inner">
+              <p class="hint">
+                Optional. Add conditions here and the timer only starts when <em>all</em> of them
+                are true at once, instead of on the trigger line alone. Nothing appears on screen
+                while only some of them are - a half-finished condition is invisible.
+              </p>
+              <ul id="timer-conditions-list" class="plain-list"></ul>
+              <div class="row">
+                <select id="timer-condition-kind" class="text-input">
+                  <option value="line">A line appears</option>
+                  <option value="zone">You are in a zone</option>
+                </select>
+              </div>
+              <div class="row" id="timer-condition-line-row">
+                <input type="text" id="timer-condition-text" class="text-input" placeholder="Text to match" />
+                <select id="timer-condition-match" class="text-input">
+                  <option value="exact">exactly</option>
+                  <option value="contains">contains</option>
+                </select>
+                <input type="number" id="timer-condition-hold" min="1" max="3600" step="1" placeholder="30" class="duration-input" />
+                <span class="duration-unit">s</span>
+              </div>
+              <div class="row" id="timer-condition-zone-row" style="display:none">
+                <select id="timer-condition-zone" class="text-input"></select>
+              </div>
+              <div class="row">
+                <button type="button" id="timer-condition-add" class="btn-prominent">Add condition</button>
+              </div>
+              <p class="hint">
+                The seconds box is how long that line keeps counting as true after it appears - its
+                own clock, not a shared one. A zone condition has no clock: you are somewhere until
+                you leave.
+              </p>
+            </div></div>
+          </div>
+
           <div class="topic" id="topic-timer-cooldown" data-topic>
             <button type="button" class="topic-head" data-toggle>
               <span class="chev"></span>
