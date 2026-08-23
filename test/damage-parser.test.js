@@ -1,0 +1,294 @@
+'use strict';
+/**
+ * Note 19 - the damage parser.
+ *
+ * Two things are being tested here and they are worth naming separately.
+ *
+ * FIRST, that the line patterns match the wordings that are actually in the owner's logs. Every
+ * literal line in this file was copied out of them, not written from memory. That distinction is
+ * the whole reason this suite exists in the shape it does: the last time this codebase wrote log
+ * patterns from memory, nine of twelve matched nothing across 1.5 million lines and the feature
+ * they powered had never once fired, while its tests - written from the same memory - all passed.
+ * A test that agrees with a wrong pattern proves nothing.
+ *
+ * SECOND, that the friend/enemy bootstrap does what its comment claims. That is the part with real
+ * logic in it, and the part where a plausible-looking mistake would quietly halve the numbers.
+ *
+ * Both import the real modules. Nothing here reimplements a rule in order to check it - a
+ * reproduced copy passed four times in this project while the real rule was inverted.
+ */
+
+const assert = require('node:assert/strict');
+const { test, report } = require('./harness');
+const { parseDamageLine } = require('../src/shared/damageLines');
+const { DamageEngine, formatDamage } = require('../src/main/damageEngine');
+
+const T = '[Wed Aug 19 21:14:02 2026] ';
+
+// ---------------------------------------------------------------------------
+// The line patterns
+// ---------------------------------------------------------------------------
+
+test('your own spell damage names you as the attacker', () => {
+  const hit = parseDamageLine(`${T}Fright has taken 394 damage from your Envenomed Bolt IV.`);
+  assert.deepEqual(hit, { attacker: 'You', target: 'Fright', amount: 394, kind: 'spell' });
+});
+
+test('your own melee damage names you as the attacker', () => {
+  const hit = parseDamageLine(`${T}You crush a wan ghoul knight for 60 points of damage.`);
+  assert.deepEqual(hit, { attacker: 'You', target: 'a wan ghoul knight', amount: 60, kind: 'melee' });
+});
+
+// The single most important case in the file. 44,508 lines in the owner's logs have an
+// apostrophe-s inside the SPELL name, and the obvious reading - that the possessive names the
+// caster - is wrong on every one of them. The "by" suffix is the attacker.
+test("a possessive in the spell name is not the caster", () => {
+  const hit = parseDamageLine(
+    `${T}A pledge familiar has taken 32 damage from Denon's Disruptive Discord V by Avenrae.`
+  );
+  assert.equal(hit.attacker, 'Avenrae', 'the name after "by" is the attacker');
+  assert.equal(hit.target, 'A pledge familiar');
+  assert.equal(hit.amount, 32);
+});
+
+// And here the possessive IS the attacker - the opposite of the line above. The two shapes were
+// measured separately for exactly this reason.
+test('a damage shield credits the person wearing it', () => {
+  const hit = parseDamageLine(
+    `${T}A zol ghoul knight is pierced by Avenrae's thorns for 8 points of non-melee damage.`
+  );
+  assert.deepEqual(hit, { attacker: 'Avenrae', target: 'A zol ghoul knight', amount: 8, kind: 'shield' });
+});
+
+test('someone else melee is read with both sides', () => {
+  const hit = parseDamageLine(`${T}Avenrae slashes a zol ghoul knight for 47 points of damage.`);
+  assert.deepEqual(hit, { attacker: 'Avenrae', target: 'a zol ghoul knight', amount: 47, kind: 'melee' });
+});
+
+test('a monster casting a spell is read the same way, attacker and all', () => {
+  const hit = parseDamageLine(`${T}Avenrae has taken 40 damage from Heat Blood by a soul seductress.`);
+  assert.equal(hit.attacker, 'a soul seductress');
+  assert.equal(hit.target, 'Avenrae');
+});
+
+// "You gain party experience!!" begins with "You gain" and contains no damage. An earlier,
+// looser pattern counted 2,990 experience lines as melee swings.
+test('lines that are not damage are not damage', () => {
+  for (const line of [
+    'You gain party experience!!',
+    'You have gained a level!',
+    'Your Plague III spell has worn off of Fright.',
+    'A zol ghoul knight has been slain by Avenrae!',
+    '',
+  ]) {
+    assert.equal(parseDamageLine(`${T}${line}`), null, `should not parse: ${line}`);
+  }
+});
+
+test('a line with no timestamp still parses', () => {
+  // The replay tools and the snapshot path both hand over bare lines.
+  assert.equal(parseDamageLine('You crush a wan ghoul knight for 60 points of damage.').amount, 60);
+});
+
+// ---------------------------------------------------------------------------
+// The friend/enemy bootstrap
+// ---------------------------------------------------------------------------
+
+// Rule 1. Nothing is known at the start except that you are on your own side.
+test('your own damage proves its target is an enemy', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  assert.ok(e.enemies.has('fright'));
+  assert.equal(e.byAttacker.get('You').damage, 100);
+});
+
+// Rule 2, and the reason the meter is not just a self-parser.
+test('anyone damaging a known enemy is counted as a friend', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Avenrae slashes Fright for 300 points of damage.`, 1000);
+  assert.ok(e.friends.has('avenrae'));
+  assert.equal(e.byAttacker.get('Avenrae').damage, 300);
+});
+
+// Rule 3, and the one that took the credited share of a real log day from 22% to 65%. Without it,
+// a groupmate fighting mobs you never personally touch contributes nothing.
+test('anyone damaging a known friend is an enemy, and their damage is not counted', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Avenrae slashes Fright for 300 points of damage.`, 1000);
+  // Avenrae is now known to be a person. So whatever hits him is a monster...
+  e.handleLine(`${T}A flouting gargoyle hits Avenrae for 31 points of damage.`, 1000);
+  assert.ok(e.enemies.has('a flouting gargoyle'));
+  assert.equal(e.byAttacker.has('A flouting gargoyle'), false, 'incoming damage must not be counted');
+  // ...and now that the gargoyle is known to be a monster, Avenrae hitting IT counts, even though
+  // you never touched it yourself. This is the chain the note needed.
+  e.handleLine(`${T}Avenrae slashes A flouting gargoyle for 55 points of damage.`, 1000);
+  assert.equal(e.byAttacker.get('Avenrae').damage, 355);
+});
+
+test('damage aimed at you is never counted as damage you did', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Fright hits YOU for 31 points of damage.`, 1000);
+  assert.equal(e.byAttacker.get('You').damage, 100, 'the 31 was incoming');
+  assert.equal(e.totalDamage, 100);
+});
+
+// The opening seconds of a pull, which arrive before anything has proved the mob is a mob.
+test('lines held before the mob was known are credited once it is', () => {
+  const e = new DamageEngine();
+  // Nothing is known yet, so neither of these can be placed.
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 200 points of damage.`, 1000);
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 100 points of damage.`, 1000);
+  assert.equal(e.totalDamage, 0);
+  assert.equal(e.pending.length, 2);
+  // Now you hit it, which proves what it is - and the two held lines belong to this fight.
+  e.handleLine(`${T}a zol ghoul knight has taken 50 damage from your Plague III.`, 2000);
+  assert.equal(e.totalDamage, 350, 'the two held lines were credited too');
+  assert.equal(e.pending.length, 0);
+});
+
+test('a held line older than the fight timeout is dropped, not credited', () => {
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 999 points of damage.`, 1000);
+  // Thirty seconds later. That hit belonged to some earlier fight, not this one.
+  e.handleLine(`${T}a zol ghoul knight has taken 50 damage from your Plague III.`, 31000);
+  assert.equal(e.totalDamage, 50);
+});
+
+// The log writes your name two different ways depending on which side of the verb you are on.
+test('the shouted YOU is the same person as You', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}A flouting gargoyle hits YOU for 31 points of damage.`, 1000);
+  assert.ok(e.enemies.has('a flouting gargoyle'), 'hitting you makes it an enemy without you acting');
+  assert.equal(e.totalDamage, 0, 'but being hit is not damage you did');
+});
+
+// ---------------------------------------------------------------------------
+// Fights
+// ---------------------------------------------------------------------------
+
+test('a fight ends after the timeout and the meter clears', () => {
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  assert.equal(e.getActive(1000).length, 2); // Total + You
+  e.tick(5000);
+  assert.equal(e.getActive(5000).length, 2, 'still inside the timeout');
+  e.tick(20000);
+  assert.deepEqual(e.getActive(20000), [], 'cleared once the fight went quiet');
+});
+
+test('a new fight starts clean rather than adding to the last one', () => {
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Fright has taken 700 damage from your Plague III.`, 60000);
+  assert.equal(e.totalDamage, 700, 'the first fight is over and does not carry forward');
+});
+
+// Forgetting them would make every pull re-bootstrap from your own first hit, losing the opening
+// of each one - which is the gap the bootstrap exists to close.
+test('a fight ending does not forget which things are enemies', () => {
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  e.tick(60000);
+  assert.ok(e.enemies.has('fright'), 'still known to be a monster');
+  // So a groupmate opening the next pull on it counts from the very first swing.
+  e.handleLine(`${T}Avenrae slashes Fright for 42 points of damage.`, 61000);
+  assert.equal(e.byAttacker.get('Avenrae').damage, 42);
+});
+
+test('the timeout is clamped rather than trusted', () => {
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 0 });
+  assert.ok(e.timeoutSec >= 1, 'a zero timeout would end every fight the instant it began');
+  e.setOptions({ fightTimeoutSec: 99999 });
+  assert.ok(e.timeoutSec <= 600);
+  e.setOptions({ fightTimeoutSec: Number.NaN });
+  assert.ok(Number.isFinite(e.timeoutSec));
+});
+
+// ---------------------------------------------------------------------------
+// The rows the overlay draws
+// ---------------------------------------------------------------------------
+
+test('rows are biggest first, with a total on top', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Avenrae slashes Fright for 300 points of damage.`, 1000);
+  const rows = e.getActive(1000);
+  assert.deepEqual(rows.map((r) => r.name), ['Total', 'Avenrae', 'You']);
+  assert.match(rows[1].valueText, /^300\s+75%$/);
+  assert.match(rows[2].valueText, /^100\s+25%$/);
+});
+
+// The two fields that let a damage row reuse the buff renderer, and the reason no second renderer
+// was written. If either name changes, the meter silently draws countdowns instead of numbers.
+test('a row carries valueText and barPercent and no timer', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  const row = e.getActive(1000).find((r) => r.name === 'You');
+  assert.equal(typeof row.valueText, 'string');
+  assert.equal(typeof row.barPercent, 'number');
+  assert.equal(row.remainingSec, null, 'nothing here counts down');
+  assert.equal(row.instant, false, 'and nothing here is an instant, which would make it beep');
+});
+
+test('the bar shows each row against the biggest, not against the total', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Avenrae slashes Fright for 300 points of damage.`, 1000);
+  const rows = e.getActive(1000);
+  assert.equal(rows.find((r) => r.name === 'Avenrae').barPercent, 100, 'the biggest row fills its bar');
+  assert.ok(Math.abs(rows.find((r) => r.name === 'You').barPercent - 33.33) < 0.1);
+});
+
+test('an idle engine draws nothing at all', () => {
+  assert.deepEqual(new DamageEngine().getActive(1000), []);
+});
+
+// A fight one second long divided a total by a zero-length window before this was clamped.
+test('the rate on the first hit of a fight is a number', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  const total = e.getActive(1000)[0];
+  assert.match(total.valueText, /100\/s$/);
+  assert.ok(!/Infinity|NaN/.test(total.valueText));
+});
+
+test('big numbers shorten and small ones do not', () => {
+  assert.equal(formatDamage(999), '999');
+  assert.equal(formatDamage(9999), '9999');
+  assert.equal(formatDamage(10000), '10.0k');
+  assert.equal(formatDamage(195700), '195.7k');
+  assert.equal(formatDamage(2500000), '2.50m');
+});
+
+// ---------------------------------------------------------------------------
+// Seeding from debuffs, for a character who does not attack
+// ---------------------------------------------------------------------------
+
+test('something you merely mezzed counts as an enemy', () => {
+  const e = new DamageEngine();
+  e.setKnownEnemiesFn(() => ['a zol ghoul knight']);
+  // No attack of your own anywhere - this character only debuffs.
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 47 points of damage.`, 1000);
+  assert.equal(e.byAttacker.get('Avenrae').damage, 47);
+});
+
+test('the enemy seed is read live, not copied once', () => {
+  const e = new DamageEngine();
+  let mezzed = [];
+  e.setKnownEnemiesFn(() => mezzed);
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 47 points of damage.`, 1000);
+  assert.equal(e.totalDamage, 0, 'nothing known yet');
+  mezzed = ['a zol ghoul knight'];
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 10 points of damage.`, 1500);
+  assert.equal(e.totalDamage, 57, 'the held line was credited once the mez was known');
+});
+
+report();

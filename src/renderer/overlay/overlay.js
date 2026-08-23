@@ -645,7 +645,12 @@ function updateRef(ref, buff, isIcon) {
   // A text aura has no countdown to update - it says its piece and disappears when whatever it is
   // watching ends. Checked rather than assumed, because it is the first tile without one.
   if (!ref.timeEl) return;
-  ref.timeEl.textContent = formatTime(buff.remainingSec, currentConfig.timerFormat);
+  // Note 19. A tile carrying valueText is not counting anything down - it is a damage meter row,
+  // and this is where its number goes. Two lines rather than a second renderer: every list
+  // setting the aura already has (row height, text size, colours, anchor, drag, per-loadout
+  // visibility) then applies to it for free. Inert for every other aura, which never sets it.
+  ref.timeEl.textContent =
+    buff.valueText != null ? buff.valueText : formatTime(buff.remainingSec, currentConfig.timerFormat);
   if (isIcon) {
     updateTileIcon(ref, buff);
     applyTilePositionedTextStyle(ref.timeEl, low, currentConfig.contentAnchor || 'bottom-center', currentConfig.textSize || 10, false, currentConfig.timerTextColor);
@@ -661,11 +666,16 @@ function updateRef(ref, buff, isIcon) {
     }
   } else {
     // A full bar for a buff that never depletes. An empty one would say the opposite of the truth.
-    const pct = buff.infinite
-      ? 100
-      : buff.durationSec > 0
-        ? Math.max(0, Math.min(100, (buff.remainingSec / buff.durationSec) * 100))
-        : 0;
+    // barPercent before the infinite check, or a damage row - which IS infinite, having no
+    // expiry - would draw every bar full and show nothing about who is doing what.
+    const pct =
+      typeof buff.barPercent === 'number'
+        ? Math.max(0, Math.min(100, buff.barPercent))
+        : buff.infinite
+          ? 100
+          : buff.durationSec > 0
+            ? Math.max(0, Math.min(100, (buff.remainingSec / buff.durationSec) * 100))
+            : 0;
     ref.barEl.style.width = `${pct}%`;
     updateRowIcon(ref, buff);
   }
@@ -827,6 +837,23 @@ function visibleBuffs(buffs) {
   // Before every filter below it, because none of them apply: there is nothing to include or
   // exclude, no duration to cap, and no source to read from.
   if (currentConfig.alwaysOn) return [alwaysOnEntry()];
+
+  // Note 19, and here for the same reason. A damage meter's rows are people, not spells, so every
+  // filter below is about something these rows do not have: there is no buff list to match a
+  // player's name against, no bard song to hide, and no duration to cap. Leaving them to fall
+  // through would filter the meter to nothing - buffFilterMode is 'explicit' on a custom aura and
+  // no attacker's name is ever in buffNames.
+  //
+  // The meter's own two display settings are applied HERE rather than in the engine, which is what
+  // lets two damage auras differ on them while sharing one engine and one set of numbers.
+  if (currentConfig.buffSource === 'damage') {
+    let rows = buffs;
+    // Your row only. It hides the others rather than un-counting them, so the percentage still
+    // reads as your share of the whole fight.
+    if (currentConfig.mineOnly) rows = rows.filter((b) => b.name === 'You' || b.name === 'Total');
+    if (currentConfig.showTotalRow === false) rows = rows.filter((b) => b.name !== 'Total');
+    return rows;
+  }
 
   let filtered;
   if (currentConfig.buffFilterMode === 'all') {
@@ -1261,10 +1288,15 @@ function render(buffs) {
 let lastSelfBuffs = [];
 let lastAllyBuffs = [];
 let lastCustomTimers = [];
+let lastDamageRows = [];
 
 function currentSourceBuffs() {
   if (currentConfig.buffSource === 'ally') return lastAllyBuffs;
   if (currentConfig.buffSource === 'customTimer') return lastCustomTimers;
+  // Note 19. Rows arrive already sorted biggest-first from damageEngine, which is why a damage
+  // meter is created with sortOrder 'default' - see createDamageMeter. Any other sort order would
+  // reorder them by a time remaining they deliberately do not have.
+  if (currentConfig.buffSource === 'damage') return lastDamageRows;
   return lastSelfBuffs;
 }
 
@@ -1462,6 +1494,15 @@ window.eqOverlay.getActiveCustomTimers().then((timers) => {
 });
 window.eqOverlay.onActiveCustomTimersChanged((timers) => {
   lastCustomTimers = timers;
+  render(currentSourceBuffs());
+});
+
+window.eqOverlay.getActiveDamage().then((rows) => {
+  lastDamageRows = rows;
+  render(currentSourceBuffs());
+});
+window.eqOverlay.onActiveDamageChanged((rows) => {
+  lastDamageRows = rows;
   render(currentSourceBuffs());
 });
 

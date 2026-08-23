@@ -33,6 +33,7 @@ const KNOWN_ZONES = require('../shared/data/zones');
 const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
+const { DamageEngine } = require('./damageEngine');
 const { IconService } = require('./iconService');
 const { ICON_SETS } = require('./iconExtractor');
 const { SpellbookService } = require('./spellbookService');
@@ -97,6 +98,7 @@ widgetManager.setActiveProfileNameFn(() => {
 let hideHotkey = null;
 
 const customTimerEngine = new CustomTimerEngine();
+const damageEngine = new DamageEngine();
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
 // widgetManager pulls in Electron's screen/BrowserWindow.
@@ -114,6 +116,15 @@ buffEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setSpellbookCheckFn((name) => spellbookService.has(name));
 // See buffEngine.setEnemyDebuffNamesFn - which spells any aura has asked to watch on enemies.
 buffEngine.setEnemyDebuffNamesFn(() => widgetManager.getEnemyDebuffNames());
+// Note 19. Anything you have mezzed, snared or slowed is a thing you are fighting, which seeds the
+// damage meter's enemy set for a character who debuffs rather than attacks. Pull-based like the
+// line above it, so a mob mezzed a second ago counts without anything having to push an update.
+damageEngine.setKnownEnemiesFn(() =>
+  buffEngine
+    .getActiveAllyBuffs()
+    .filter((b) => b.onEnemy && b.allyName)
+    .map((b) => b.allyName)
+);
 // See buffEngine.setAllyDebuffAlertNamesFn - spells a text aura wants a warning about when
 // somebody else casts them.
 buffEngine.setAllyDebuffAlertNamesFn(() => widgetManager.getAllyDebuffAlertNames());
@@ -265,6 +276,9 @@ function broadcast(channel, payload) {
 
 logService.watcher.on('line', (line) => buffEngine.handleLine(line));
 logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
+// Note 19. A fourth listener for the same reason as the third: damage is not a buff, and giving
+// buffEngine a second job would mean every future change to either having to think about both.
+logService.watcher.on('line', (line) => damageEngine.handleLine(line));
 // Note 38. A third listener rather than a hook inside one of the engines - neither of them is
 // about where you are, and a zone is not a buff.
 logService.watcher.on('line', (line) => {
@@ -374,6 +388,30 @@ customTimerEngine.on('activeChanged', (timers) => {
   broadcast('customTimers:active', timers);
   saveSessionSnapshotSoon();
 });
+damageEngine.on('activeChanged', (rows) => broadcast('damage:active', rows));
+// The longest timeout any damage aura asks for - see setOptions for why the longest and not the
+// shortest. Recomputed on any widget change rather than read per line, because it changes when
+// someone edits a setting and at no other time.
+function refreshDamageOptions() {
+  const timeouts = widgetManager
+    .getAllWidgetConfigs()
+    .filter((w) => w.buffSource === 'damage')
+    .map((w) => w.fightTimeoutSec)
+    .filter((n) => typeof n === 'number' && Number.isFinite(n));
+  if (timeouts.length) damageEngine.setOptions({ fightTimeoutSec: Math.max(...timeouts) });
+}
+// A fight that ends in silence produces no log line to notice it with, so the meter needs a clock
+// of its own to clear itself. One second, which is as often as the number could change anyway -
+// timestamps in the log have one-second resolution. Deliberately NOT saved into the session
+// snapshot: a damage total from before a restart is not the current fight, and restoring one
+// would be showing a number that means nothing.
+setInterval(() => {
+  // Re-read alongside the tick rather than on a widget-changed hook. It is a filter over a handful
+  // of configs once a second, and doing it here means the setting can never be left stale by a
+  // path that edits a widget without remembering to call this.
+  refreshDamageOptions();
+  damageEngine.tick();
+}, 1000);
 buffEngine.on('unknownBuffsChanged', (buffs) => broadcast('buffs:unknown', buffs));
 buffEngine.on('ambiguousCastsChanged', (casts) => {
   broadcast('buffs:ambiguous', casts);
@@ -501,6 +539,7 @@ ipcMain.handle('log:archiveNow', () => logService.archiveNow());
 ipcMain.handle('buffs:getActive', () => buffEngine.getActiveBuffs());
 ipcMain.handle('buffs:getActiveAllies', () => buffEngine.getActiveAllyBuffs());
 
+ipcMain.handle('damage:getActive', () => damageEngine.getActive());
 ipcMain.handle('customTimers:getActive', () => customTimerEngine.getActive());
 ipcMain.handle('customTimers:removeActive', (_event, id) => customTimerEngine.removeActive(id));
 ipcMain.handle('buffs:getUnknown', () => buffEngine.getUnknownBuffs());
@@ -745,6 +784,9 @@ ipcMain.handle('widget:isAudible', (_event, id) => {
 ipcMain.handle('widget:create', (_event, { name, buffSource }) => widgetManager.createCustomWidget(name, { buffSource }));
 ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAllyBuffsWidget(name));
 ipcMain.handle('widget:createDebuff', (_event, { name }) => widgetManager.createDebuffWidget(name));
+ipcMain.handle('widget:createDamageMeter', (_event, { name, mineOnly }) =>
+  widgetManager.createDamageMeterWidget(name, mineOnly)
+);
 ipcMain.handle('widget:createSoundOnly', (_event, { name }) => widgetManager.createSoundOnlyWidget(name));
 ipcMain.handle('widget:createTextAura', (_event, { name, preset }) =>
   widgetManager.createTextAuraWidget(name, preset)
@@ -823,6 +865,9 @@ ipcMain.handle('widget:setTrackOnEnemies', (_event, { id, value }) =>
 );
 ipcMain.handle('widget:setAllyDebuffAlert', (_event, { id, value }) =>
   widgetManager.setAllyDebuffAlert(id, value)
+);
+ipcMain.handle('widget:setDamageOptions', (_event, { id, options }) =>
+  widgetManager.setDamageOptions(id, options)
 );
 ipcMain.handle('widget:setAlwaysOn', (_event, { id, value }) => widgetManager.setAlwaysOn(id, value));
 // Note 21's global switch. On the Overlay Auras page beside the other app-wide aura settings,

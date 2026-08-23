@@ -47,7 +47,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 16 | Debuff-on-an-enemy premade, resist alert, ally toggle | **DONE** | All three. The ally part is built as you specified it on 21 Aug — a warning, not a timer. See below. |
 | 17 | Mesmerize worked example: rank, per-mob timer, RESIST flash | **PART** | Per-mob timer built. RESIST flash built. Missing: using the rank to set *your own* mez duration — though the app now reads the rank off other people's casts and shows it. |
 | 18 | Count same-named mobs from the land and resist lines | **DONE** | Counted from the land lines, decremented as each ends. Resist lines not used — they were not needed. |
-| 19 | Damage parser premade, placeholder in the meantime | **PART** | Placeholder only. |
+| 19 | Damage parser premade, placeholder in the meantime | **DONE** | Built. The placeholder is gone because the real one replaces it. |
 | 20 | Travel guide premade, placeholder in the meantime | **PART** | Placeholder only. The feature needs zone-connection data that does not exist anywhere yet. |
 
 ## 21–30
@@ -205,4 +205,4 @@ because three things are undecided. They still are:
 3. **Notes 9 and 10 together.** Widen the trigger model once. Note 10 is cheaper now that the
    cooldown half exists. Notes 38 and 39 both sit behind it.
 4. **Note 12, the mez tile.** Now that mez tracking works, the counted tile is worth revisiting.
-5. **Note 2, 19, 20** — all three need log samples or data that does not exist yet.
+5. **Note 2** — needs log samples that do not exist yet. (Notes 19 and 20 were on this line and are off it: 19 needed no samples in the end, and 20's data was found online.)

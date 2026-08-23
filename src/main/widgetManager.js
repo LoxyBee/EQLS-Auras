@@ -275,6 +275,15 @@ function createDebuffWidget(name) {
   return config;
 }
 
+function createDamageMeterWidget(name, mineOnly) {
+  const config = widgetStore.createDamageMeter(name, {
+    mineOnly,
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
 function createSoundOnlyWidget(name) {
   const config = widgetStore.createSoundOnly(name, { activeProfileIds: [getActiveProfileIdFn()] });
   // Still gets a real overlay window, exactly like every other aura. That window is where the
@@ -785,6 +794,24 @@ function isLoadoutLabelEnabled() {
   return loadoutLabelEnabled;
 }
 
+// Note 19. One setter for the damage meter's three options rather than three, because they are
+// one subject and a caller that changes two of them should not need two round trips.
+//
+// The timeout is clamped HERE and not only in the slider's min/max: a share code is the one path
+// by which a number this app never wrote can arrive, and a fightTimeoutSec of zero would end every
+// fight the instant it started.
+function setDamageOptions(id, { fightTimeoutSec, mineOnly, showTotalRow } = {}) {
+  const changes = {};
+  if (typeof fightTimeoutSec === 'number' && Number.isFinite(fightTimeoutSec)) {
+    changes.fightTimeoutSec = Math.min(600, Math.max(1, Math.round(fightTimeoutSec)));
+  }
+  if (typeof mineOnly === 'boolean') changes.mineOnly = mineOnly;
+  if (typeof showTotalRow === 'boolean') changes.showTotalRow = showTotalRow;
+  const config = widgetStore.update(id, changes);
+  pushConfigChanged(id);
+  return config;
+}
+
 function setAlwaysOn(id, enabled) {
   const config = widgetStore.update(id, { alwaysOn: !!enabled });
   pushConfigChanged(id);
@@ -1098,6 +1125,8 @@ module.exports = {
   createCustomWidget,
   createAllyBuffsWidget,
   createDebuffWidget,
+  createDamageMeterWidget,
+  setDamageOptions,
   createSoundOnlyWidget,
   createTextAuraWidget,
   createBuffTimerWidget,

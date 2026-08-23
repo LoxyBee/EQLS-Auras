@@ -1096,6 +1096,11 @@ function initWidgetsPanel() {
   const allProfilesCheckbox = document.getElementById('widget-all-profiles-checkbox');
   const allyAlertRowEl = document.getElementById('widget-ally-alert-row');
   const allyAlertHintEl = document.getElementById('widget-ally-alert-hint');
+  const damageSettingsEl = document.getElementById('widget-damage-settings');
+  const fightTimeoutSlider = document.getElementById('widget-fight-timeout-slider');
+  const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
+  const mineOnlyCheckbox = document.getElementById('widget-mine-only-checkbox');
+  const totalRowCheckbox = document.getElementById('widget-total-row-checkbox');
   const enemiesRowEl = document.getElementById('widget-enemies-row');
   const enemiesHintEl = document.getElementById('widget-enemies-hint');
   const bordersRowEl = document.getElementById('widget-borders-row');
@@ -1703,6 +1708,14 @@ function initWidgetsPanel() {
     mergeCheckbox.checked = !!widget.mergeSameDuration;
     categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
     trackEnemiesCheckbox.checked = !!widget.trackOnEnemies;
+    const fightTimeout = typeof widget.fightTimeoutSec === 'number' ? widget.fightTimeoutSec : 10;
+    fightTimeoutSlider.value = String(fightTimeout);
+    fightTimeoutValueEl.textContent = `${fightTimeout}s`;
+    mineOnlyCheckbox.checked = !!widget.mineOnly;
+    // Defaulted ON, so the check is against false rather than for true - an aura saved before this
+    // setting existed has no value at all, and treating that as "off" would silently remove the
+    // total line from a meter that has always shown one.
+    totalRowCheckbox.checked = widget.showTotalRow !== false;
     allyAlertCheckbox.checked = !!widget.allyDebuffAlert;
     alwaysOnCheckbox.checked = !!widget.alwaysOn;
     allProfilesCheckbox.checked = !!widget.showOnAllProfiles;
@@ -1803,6 +1816,10 @@ function initWidgetsPanel() {
     // NOT gated on sound-only the way the grouping options above are. An aura that only makes a
     // noise is a perfectly good way to hear that a mez landed or was resisted, which is the case
     // the owner asked for when she said instants belong on sound and text auras.
+    // Note 19. Nothing in this group means anything to an aura that is not a damage meter, and a
+    // fight timeout on a buff aura would be a live control that changes nothing.
+    damageSettingsEl.style.display = widget.buffSource === 'damage' ? '' : 'none';
+
     const canWatchEnemies = widget.kind === 'ally-buffs-builtin' || widget.buffSource === 'ally';
     enemiesRowEl.style.display = canWatchEnemies ? '' : 'none';
     enemiesHintEl.style.display = canWatchEnemies ? '' : 'none';
@@ -2261,6 +2278,17 @@ function initWidgetsPanel() {
       mode: 'cooldown',
     },
     {
+      id: 'damage-parser',
+      // The SAME name as the planned entry it replaces, which is what makes renderPremadeList's
+      // filter drop that one. Renaming it here would leave the app offering both.
+      name: 'Damage parser',
+      description:
+        'A live damage readout for the fight you are in: everyone hitting what you are fighting, ' +
+        'biggest first, with a total and a rate. It works out who is on your side from the log ' +
+        'itself, so there is no group list to keep up to date.',
+      create: (name) => window.eqTracker.createDamageMeterWidget(name, false),
+    },
+    {
       id: 'enemy-debuff',
       name: 'Debuff on an enemy',
       description:
@@ -2293,10 +2321,6 @@ function initWidgetsPanel() {
       description:
         'Shows who hit the boss first, or who the boss hit first. Not built yet - and it can only ' +
         'ever be as complete as your own log, which does not see everything across a raid.',
-    },
-    {
-      name: 'Damage parser',
-      description: 'A running damage readout built from the combat log. Not built yet.',
     },
     {
       name: 'Travel guide',
@@ -2775,6 +2799,18 @@ function initWidgetsPanel() {
   categoryBordersCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetCategoryBorders(selectedId, categoryBordersCheckbox.checked);
   });
+  fightTimeoutSlider.addEventListener('input', () => {
+    const sec = Number(fightTimeoutSlider.value);
+    fightTimeoutValueEl.textContent = `${sec}s`;
+    window.eqTracker.setWidgetDamageOptions(selectedId, { fightTimeoutSec: sec });
+  });
+  mineOnlyCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetDamageOptions(selectedId, { mineOnly: mineOnlyCheckbox.checked });
+  });
+  totalRowCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetDamageOptions(selectedId, { showTotalRow: totalRowCheckbox.checked });
+  });
+
   trackEnemiesCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetTrackOnEnemies(selectedId, trackEnemiesCheckbox.checked);
   });

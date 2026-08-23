@@ -353,6 +353,47 @@
                 shown" says it does, so pick what it listens for there, then choose when it should
                 make a noise.
               </p>
+              <!-- Note 19. Only ever shown on a damage meter - see the buffSource check in
+                   main-window.js. Its own group rather than three loose rows, because none of
+                   them mean anything on any other aura. -->
+              <div id="widget-damage-settings" style="display:none">
+                <h4 class="settings-subsection-title">Damage meter</h4>
+                <div class="row">
+                  <label for="widget-fight-timeout-slider">A fight ends after</label>
+                  <input type="range" id="widget-fight-timeout-slider" min="3" max="60" step="1" />
+                  <span id="widget-fight-timeout-value" class="slider-value"></span>
+                </div>
+                <p class="hint">
+                  How long the meter waits, with nothing being damaged, before it decides the fight
+                  is over and clears itself. There is no line in the log that says "fight over", so
+                  this is the only way to know - which means it is always a bit of a guess. Too
+                  short and one slow pull reads as two fights; too long and a quick chain of pulls
+                  all add up into one. Ten seconds suits most things.
+                </p>
+                <div class="row">
+                  <label>
+                    <input type="checkbox" id="widget-mine-only-checkbox" />
+                    Only show my own row
+                  </label>
+                </div>
+                <p class="hint">
+                  Hides everyone else's row. It does not stop them being counted, so the percentage
+                  beside your name still means your share of the whole fight - which is usually the
+                  number you wanted.
+                </p>
+                <div class="row">
+                  <label>
+                    <input type="checkbox" id="widget-total-row-checkbox" />
+                    Show the total line at the top
+                  </label>
+                </div>
+                <p class="hint">
+                  The fight's whole damage and its rate per second. The rows underneath cannot show
+                  a rate of their own - the log does not record how long each person was swinging
+                  for - so this is where that number lives.
+                </p>
+              </div>
+
               <div class="row" id="widget-enemies-row">
                 <label>
                   <input type="checkbox" id="widget-track-enemies-checkbox" />

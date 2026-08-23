@@ -184,9 +184,17 @@ test('and it never triggers the about-to-expire sound', () => {
 });
 
 test('its bar is full, not empty', () => {
-  const m = overlaySrc.match(/const pct = ([\s\S]*?);\r?\n/);
+  // The assignment wraps onto its own line now that note 19's barPercent sits in front of the
+  // infinite check, so this tolerates a newline after the "=". The rule being tested is unchanged.
+  const m = overlaySrc.match(/const pct =\s*([\s\S]*?);\r?\n/);
   assert.ok(m, 'the bar calculation has been restructured');
   assert.match(m[1], /buff\.infinite\s*\n?\s*\?\s*100/, 'an empty bar says the opposite of the truth');
+  // Note 19. A damage row IS infinite - it has no expiry - so if barPercent stopped being read
+  // first, every row in the meter would draw a full bar and the comparison would show nothing.
+  assert.ok(
+    m[1].indexOf('barPercent') >= 0 && m[1].indexOf('barPercent') < m[1].indexOf('buff.infinite'),
+    'barPercent has to be read before the infinite check, or a damage meter draws every bar full'
+  );
 });
 
 module.exports = () => report('infinite-duration');

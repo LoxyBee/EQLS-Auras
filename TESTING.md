@@ -1069,6 +1069,57 @@ the one item where I genuinely do not know whether it is fixed.
   **if it happens again, check `detection-debug.log` for `SHUTDOWN:` lines**
   and report which one appears. That identifies the cause.
 
+## Damage parser (note 19)
+
+New premade, in **+ Add aura -> Premade aura -> Damage parser**. It replaces
+the greyed-out "Damage parser" that used to sit in the Not-built-yet list, so
+you should now see exactly one of them and it should be clickable.
+
+What it does: one row per person for the fight you are in, biggest first, with
+a total line on top carrying the fight's damage and its rate per second. It
+works out who is on your side from the log itself - there is no group list to
+keep up to date, and no setting to tell it who your friends are.
+
+- [ ] **Make one and pull something.** Rows should appear as damage happens and
+      the numbers should climb. The percentages should add up to 100.
+- [ ] **Stop fighting for ten seconds.** The whole thing should clear itself.
+      Then pull again - it should start from zero, not carry the last fight
+      forward.
+- [ ] **Check it counts your groupmates, not the mobs.** A monster hitting you
+      must never get a row. If you ever see a mob's name in the list, tell me
+      what the line in the log looked like - that is the one thing here that
+      could go wrong in a way I cannot see from your logs.
+- [ ] **Check the numbers are believable.** Not exact - I have no way to verify
+      against the game - but if someone's damage looks wildly wrong, say whose
+      and roughly by how much.
+
+Three settings on the aura's own page, under **Damage meter**:
+
+- [ ] **A fight ends after** (3-60s, default 10). Lower it and a slow pull
+      should split into two fights; raise it and a chain of quick pulls should
+      join into one.
+- [ ] **Only show my own row.** Hides everyone else. Your percentage should
+      still be your share of the *whole* fight, not jump to 100%.
+- [ ] **Show the total line at the top.** Off should remove just that row.
+
+Two things I want to flag rather than have you discover:
+
+- **On your character it will mostly show other people.** That is correct, not
+  broken. Across your 1.5 million logged lines your own damage is 2,712 lines
+  against roughly 346,000 from everyone else, so a meter showing only you would
+  be nearly empty. That measurement is why it defaults to showing the group.
+- **It learns who is who from your own attacks.** If you play a session where
+  you never damage or debuff anything at all, it may stay empty. Mez, snare and
+  slow count as well as nukes, so this should be rare - but if you get an empty
+  meter during a fight, that is the likely reason and I want to know.
+
+What I verified myself, so you do not have to: replayed against a full day of
+your log, it reads 14,235 damage lines and credits 9,306 of them (the rest are
+monsters hitting you, correctly left out), with nothing left unclassified. On
+your largest log it found a five-person fight totalling 195.7k at 369/s. The
+line patterns and the friend/enemy rules were each broken on purpose in nine
+different ways and the tests caught all nine.
+
 ---
 
 ## Confirmed

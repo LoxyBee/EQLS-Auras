@@ -14,6 +14,10 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onActiveCustomTimersChanged: (callback) => {
     ipcRenderer.on('customTimers:active', (_event, timers) => callback(timers));
   },
+  getActiveDamage: () => ipcRenderer.invoke('damage:getActive'),
+  onActiveDamageChanged: (callback) => {
+    ipcRenderer.on('damage:active', (_event, rows) => callback(rows));
+  },
   getLockState: (widgetId) => ipcRenderer.invoke('widget:isLocked', widgetId),
   onLockChanged: (callback) => {
     ipcRenderer.on('widget:lockChanged', (_event, locked) => callback(locked));

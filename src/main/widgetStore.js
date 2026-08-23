@@ -115,6 +115,23 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // other aura is driven by a buff arriving; this one has no event at all, so without this the
     // overlay has nothing to build a tile from and draws an empty box for ever.
     alwaysOn: false,
+    // Note 19, the damage meter's three settings. They live on the aura rather than in global
+    // settings because two meters are a reasonable thing to want - one showing the whole group and
+    // one showing only you - and a global setting would make that impossible.
+    //
+    // Ten seconds of no damage ends the fight. Every EQ parser picks a number here and every
+    // number is somewhat wrong; a slow pull with a long pause in it reads as two fights, and a
+    // fast chain of pulls reads as one. Settable rather than fixed because the right value depends
+    // on what is being fought, which the app cannot know.
+    fightTimeoutSec: 10,
+    // Count only your own damage. Off by default on measurement, not taste: across the owner's
+    // 1,521,971 logged lines her character deals 2,712 damage lines against roughly 346,000 from
+    // everyone else, so a meter defaulting to "just mine" would be an almost empty box for her.
+    mineOnly: false,
+    // The leading row carrying the fight's total and its rate. The per-attacker rows below it
+    // cannot show a rate - each attacker's own share of the elapsed time is not something the log
+    // records - so this is where the number people actually quote comes from.
+    showTotalRow: true,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -292,6 +309,23 @@ function defaultCustomWidget(name) {
     // other aura is driven by a buff arriving; this one has no event at all, so without this the
     // overlay has nothing to build a tile from and draws an empty box for ever.
     alwaysOn: false,
+    // Note 19, the damage meter's three settings. They live on the aura rather than in global
+    // settings because two meters are a reasonable thing to want - one showing the whole group and
+    // one showing only you - and a global setting would make that impossible.
+    //
+    // Ten seconds of no damage ends the fight. Every EQ parser picks a number here and every
+    // number is somewhat wrong; a slow pull with a long pause in it reads as two fights, and a
+    // fast chain of pulls reads as one. Settable rather than fixed because the right value depends
+    // on what is being fought, which the app cannot know.
+    fightTimeoutSec: 10,
+    // Count only your own damage. Off by default on measurement, not taste: across the owner's
+    // 1,521,971 logged lines her character deals 2,712 damage lines against roughly 346,000 from
+    // everyone else, so a meter defaulting to "just mine" would be an almost empty box for her.
+    mineOnly: false,
+    // The leading row carrying the fight's total and its rate. The per-attacker rows below it
+    // cannot show a rate - each attacker's own share of the elapsed time is not something the log
+    // records - so this is where the number people actually quote comes from.
+    showTotalRow: true,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -413,6 +447,9 @@ const SHAREABLE_FIELDS = [
   'trackOnEnemies',
   'allyDebuffAlert',
   'alwaysOn',
+  'fightTimeoutSec',
+  'mineOnly',
+  'showTotalRow',
   'showOnAllProfiles',
   'visibleInZones',
   'textAuraMessage',
@@ -839,6 +876,32 @@ class WidgetStore {
       },
     ];
     widget.buffNames = [spellName];
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
+  // Note 19. The damage meter.
+  //
+  // A plain custom aura with buffSource 'damage', not a new kind. That is the whole reason this
+  // method is six lines: every setting an aura already has - row height, text size, colours,
+  // anchor, opacity, dragging, per-loadout visibility, zone limits, share codes - applies to it
+  // without any of them learning a new concept.
+  createDamageMeter(name, { mineOnly = false, activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name || 'Damage');
+    widget.buffSource = 'damage';
+    // Rows arrive from damageEngine already sorted biggest-first. Any other order would re-sort
+    // them by a time remaining they deliberately do not have, which would scramble them.
+    widget.sortOrder = 'default';
+    // Wider than the default: a row is a name, a number and a percentage, where an ordinary aura's
+    // row is a name and a countdown.
+    widget.listWidth = 260;
+    widget.mineOnly = !!mineOnly;
+    // Nothing lands and nothing expires, so the landing glow has no event to fire on and would
+    // simply never run. Off explicitly rather than left on and inert, so the settings page does
+    // not offer a switch that cannot do anything.
+    widget.landingGlowEnabled = false;
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
