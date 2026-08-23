@@ -1096,6 +1096,13 @@ function initWidgetsPanel() {
   const allProfilesCheckbox = document.getElementById('widget-all-profiles-checkbox');
   const allyAlertRowEl = document.getElementById('widget-ally-alert-row');
   const allyAlertHintEl = document.getElementById('widget-ally-alert-hint');
+  const travelSettingsEl = document.getElementById('widget-travel-settings');
+  const travelDestinationSelect = document.getElementById('widget-travel-destination');
+  const travelSearchInput = document.getElementById('travel-destination-search');
+  const travelListEl = document.getElementById('travel-destination-list');
+  // Fetched once and reused by both the create panel and the settings dropdown. The zone graph is
+  // a static file, so unlike the buff roster there is nothing here that goes stale mid-session.
+  let travelZones = [];
   const damageSettingsEl = document.getElementById('widget-damage-settings');
   const fightTimeoutSlider = document.getElementById('widget-fight-timeout-slider');
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
@@ -1819,6 +1826,8 @@ function initWidgetsPanel() {
     // Note 19. Nothing in this group means anything to an aura that is not a damage meter, and a
     // fight timeout on a buff aura would be a live control that changes nothing.
     damageSettingsEl.style.display = widget.buffSource === 'damage' ? '' : 'none';
+    travelSettingsEl.style.display = widget.buffSource === 'travel' ? '' : 'none';
+    if (widget.buffSource === 'travel') populateTravelDestinations(widget.travelDestination);
 
     const canWatchEnemies = widget.kind === 'ally-buffs-builtin' || widget.buffSource === 'ally';
     enemiesRowEl.style.display = canWatchEnemies ? '' : 'none';
@@ -2278,6 +2287,16 @@ function initWidgetsPanel() {
       mode: 'cooldown',
     },
     {
+      id: 'travel-guide',
+      // Same name as the roadmap entry it replaces, so renderPremadeList's filter drops that one.
+      name: 'Travel guide',
+      description:
+        'The shortest way from where you are to wherever you pick, one step per line. It uses ' +
+        'the travel spells you have actually scribed, and it follows you - the directions ' +
+        'change as you zone.',
+      panel: 'travel-guide',
+    },
+    {
       id: 'damage-parser',
       // The SAME name as the planned entry it replaces, which is what makes renderPremadeList's
       // filter drop that one. Renaming it here would leave the app offering both.
@@ -2321,12 +2340,6 @@ function initWidgetsPanel() {
       description:
         'Shows who hit the boss first, or who the boss hit first. Not built yet - and it can only ' +
         'ever be as complete as your own log, which does not see everything across a raid.',
-    },
-    {
-      name: 'Travel guide',
-      description:
-        'Knows which travel spells you have scribed and shows the shortest route somewhere. ' +
-        'Not built yet.',
     },
     {
       name: 'Global recovery',
@@ -2570,6 +2583,18 @@ function initWidgetsPanel() {
             resetBuffTimerPanel(premade.defaultSource, premade.mode);
             buffTimerSearch.focus();
           }
+          if (premade.panel === 'travel-guide') {
+            travelSearchInput.value = '';
+            if (travelZones.length) {
+              renderTravelDestinationList();
+            } else {
+              window.eqTracker.getTravelZones().then((zones) => {
+                travelZones = zones;
+                renderTravelDestinationList();
+              });
+            }
+            travelSearchInput.focus();
+          }
           return;
         }
         premade.create(premade.name).then((config) => {
@@ -2799,6 +2824,67 @@ function initWidgetsPanel() {
   categoryBordersCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetCategoryBorders(selectedId, categoryBordersCheckbox.checked);
   });
+  // Note 20. The destination dropdown on an existing aura's settings page.
+  function populateTravelDestinations(selected) {
+    const build = () => {
+      travelDestinationSelect.innerHTML = '';
+      // A blank first option so an aura with no destination yet shows nothing chosen, rather than
+      // silently claiming to be routing to whichever zone happens to sort first.
+      const blank = document.createElement('option');
+      blank.value = '';
+      blank.textContent = '- pick a destination -';
+      travelDestinationSelect.appendChild(blank);
+      for (const zone of travelZones) {
+        const opt = document.createElement('option');
+        opt.value = zone;
+        opt.textContent = zone;
+        travelDestinationSelect.appendChild(opt);
+      }
+      travelDestinationSelect.value = selected || '';
+    };
+    if (travelZones.length) return build();
+    window.eqTracker.getTravelZones().then((zones) => {
+      travelZones = zones;
+      build();
+    });
+  }
+
+  travelDestinationSelect.addEventListener('change', () => {
+    window.eqTracker.setWidgetTravelDestination(selectedId, travelDestinationSelect.value);
+  });
+
+  // Note 20. The list in the create panel. A filtered list rather than a dropdown, because 104
+  // zones is more than anyone wants to scroll and the names are the thing people half-remember.
+  function renderTravelDestinationList() {
+    const term = travelSearchInput.value.trim().toLowerCase();
+    const matches = travelZones.filter((z) => !term || z.toLowerCase().includes(term));
+    travelListEl.innerHTML = '';
+    if (!matches.length) {
+      const li = document.createElement('li');
+      li.className = 'hint';
+      li.textContent = 'No zone by that name.';
+      travelListEl.appendChild(li);
+      return;
+    }
+    for (const zone of matches.slice(0, 60)) {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'premade-widget-choice';
+      btn.textContent = zone;
+      btn.addEventListener('click', () => {
+        window.eqTracker.createTravelGuideWidget(`To ${zone}`, zone).then((config) => {
+          closeAddWidgetModal();
+          focusWidget(config.id);
+        });
+      });
+      li.appendChild(btn);
+      travelListEl.appendChild(li);
+    }
+  }
+
+  travelSearchInput.addEventListener('input', renderTravelDestinationList);
+
   fightTimeoutSlider.addEventListener('input', () => {
     const sec = Number(fightTimeoutSlider.value);
     fightTimeoutValueEl.textContent = `${sec}s`;

@@ -275,6 +275,23 @@ function createDebuffWidget(name) {
   return config;
 }
 
+function createTravelGuideWidget(name, destination) {
+  const config = widgetStore.createTravelGuide(name, {
+    destination,
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
+function setTravelDestination(id, destination) {
+  const config = widgetStore.update(id, {
+    travelDestination: typeof destination === 'string' ? destination : '',
+  });
+  pushConfigChanged(id);
+  return config;
+}
+
 function createDamageMeterWidget(name, mineOnly) {
   const config = widgetStore.createDamageMeter(name, {
     mineOnly,
@@ -1127,6 +1144,8 @@ module.exports = {
   createDebuffWidget,
   createDamageMeterWidget,
   setDamageOptions,
+  createTravelGuideWidget,
+  setTravelDestination,
   createSoundOnlyWidget,
   createTextAuraWidget,
   createBuffTimerWidget,

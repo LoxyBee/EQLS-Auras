@@ -65,9 +65,17 @@ function entriesIn(arrayName) {
 }
 
 test('both lists are found and neither is empty', () => {
-  // If either lookup silently returned nothing, every check below would pass vacuously.
+  // If either lookup silently returned nothing, every check below would pass vacuously. namesIn
+  // already asserts the array itself was found, so this is guarding against a bracket scan that
+  // finds the array and then extracts no names from it.
   assert.ok(namesIn('PREMADE_WIDGETS').length >= 4, 'no built premades found');
-  assert.ok(namesIn('PLANNED_PREMADE_WIDGETS').length >= 4, 'no planned premades found');
+  // Deliberately 1 and not a larger floor. The roadmap SHRINKS as things get built - Damage parser
+  // and Travel guide both left it on 23 August, taking it from five entries to three - so any
+  // number above one is a countdown to a test that fails for the good reason that the work got
+  // done. If it ever reaches zero, delete this line rather than raising the floor: an empty
+  // roadmap is a real state, and the vacuous-pass risk it guards is handled by namesIn's own
+  // assertion that the array exists.
+  assert.ok(namesIn('PLANNED_PREMADE_WIDGETS').length >= 1, 'no planned premades found');
 });
 
 test('nothing appears in both the built list and the roadmap', () => {
@@ -99,7 +107,8 @@ test('every roadmap entry says it is not built', () => {
   // The greyed-out styling carries the meaning on screen; the words have to carry it too, or a
   // roadmap entry reads as a feature that is simply not working.
   const entries = entriesIn('PLANNED_PREMADE_WIDGETS');
-  assert.ok(entries.length >= 4, `only split the roadmap into ${entries.length} entries`);
+  // Same reasoning as the floor above - the roadmap shrinks as the roadmap gets built.
+  assert.ok(entries.length >= 1, `only split the roadmap into ${entries.length} entries`);
   assert.equal(
     entries.length,
     namesIn('PLANNED_PREMADE_WIDGETS').length,

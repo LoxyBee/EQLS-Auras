@@ -48,7 +48,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 17 | Mesmerize worked example: rank, per-mob timer, RESIST flash | **DONE** | Per-mob timer and RESIST flash were built. The rank now sets your own duration as well. Charm and mez carry the spreadsheet's +10%/tier unmeasured — every observation in your logs was cut short by the mob dying. |
 | 18 | Count same-named mobs from the land and resist lines | **DONE** | Counted from the land lines, decremented as each ends. Resist lines not used — they were not needed. |
 | 19 | Damage parser premade, placeholder in the meantime | **DONE** | Built. The placeholder is gone because the real one replaces it. |
-| 20 | Travel guide premade, placeholder in the meantime | **PART** | Placeholder only. The feature needs zone-connection data that does not exist anywhere yet. |
+| 20 | Travel guide premade that knows your travel spells | **DONE** | Unblocked by research and built. Zone graph plus 61 travel spells, sourced EQL-specific and cross-checked against three others. |
 
 ## 21–30
 

@@ -450,6 +450,7 @@ const SHAREABLE_FIELDS = [
   'fightTimeoutSec',
   'mineOnly',
   'showTotalRow',
+  'travelDestination',
   'showOnAllProfiles',
   'visibleInZones',
   'textAuraMessage',
@@ -876,6 +877,27 @@ class WidgetStore {
       },
     ];
     widget.buffNames = [spellName];
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
+  // Note 20. The travel guide.
+  //
+  // Another plain custom aura, this time with buffSource 'travel'. The destination is the only
+  // thing it needs from the user; where you are comes from the zone the app is already tracking
+  // for note 38, and which travel spells you have comes from the spellbook it is already reading.
+  createTravelGuide(name, { destination = '', activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name || 'Travel');
+    widget.buffSource = 'travel';
+    // The legs arrive in walking order. Any sort would shuffle the directions.
+    widget.sortOrder = 'default';
+    // A leg reads "Sail to Butcherblock Mountains", which is longer than a spell name.
+    widget.listWidth = 280;
+    widget.travelDestination = destination;
+    // Nothing lands and nothing expires, so the glow has no event to fire on.
+    widget.landingGlowEnabled = false;
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();

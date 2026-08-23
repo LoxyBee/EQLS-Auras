@@ -356,6 +356,20 @@
               <!-- Note 19. Only ever shown on a damage meter - see the buffSource check in
                    main-window.js. Its own group rather than three loose rows, because none of
                    them mean anything on any other aura. -->
+              <!-- Note 20. Shown only on a travel guide - see the buffSource check in
+                   main-window.js. -->
+              <div id="widget-travel-settings" style="display:none">
+                <h4 class="settings-subsection-title">Travel guide</h4>
+                <div class="row">
+                  <label for="widget-travel-destination">Destination</label>
+                  <select id="widget-travel-destination" class="text-input"></select>
+                </div>
+                <p class="hint">
+                  Change where this aura is pointing. The route updates the moment you pick, and
+                  again every time you enter a new zone.
+                </p>
+              </div>
+
               <div id="widget-damage-settings" style="display:none">
                 <h4 class="settings-subsection-title">Damage meter</h4>
                 <div class="row">
@@ -1326,6 +1340,33 @@
            what a dropdown can be used with, so it reuses the same search-as-you-type shape the
            per-aura buff picker already uses. Built generically enough that the planned cooldown
            and enemy-debuff premades can reuse it rather than each growing their own. -->
+      <!-- Note 20. Asks the one thing it cannot work out for itself. Where you are comes from the
+           zone lines the app already reads, and which travel spells you have comes from your
+           spellbook file, so the destination is the whole conversation. -->
+      <div id="add-widget-travel-guide-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <p class="hint">
+          Pick where you want to go. The aura works out the shortest way there from wherever you
+          currently are, and redraws itself every time you zone. It will use a travel spell if you
+          have one scribed that helps, and walk you there if you do not.
+        </p>
+        <div class="row">
+          <input
+            type="text"
+            id="travel-destination-search"
+            class="text-input"
+            placeholder="Search zones..."
+          />
+        </div>
+        <ul id="travel-destination-list" class="plain-list scroll-list"></ul>
+        <p class="hint">
+          Some zone names here are a best guess. The list covers every zone the route finder knows,
+          including ones you have never been to - a route from Faydwer to Antonica goes through the
+          Ocean of Tears whether you have seen it or not - and for those the exact in-game wording
+          could not be confirmed. Mostly it is a question of a leading &quot;The&quot;.
+        </p>
+      </div>
+
       <div id="add-widget-buff-timer-panel" class="add-widget-panel" style="display:none">
         <button type="button" class="add-widget-back">&larr; Back</button>
         <p class="hint">

@@ -34,6 +34,8 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
+const { findRoute, describeLeg, allZoneNames } = require('../shared/zoneRouting');
+const { TRAVEL_SPELLS } = require('../shared/data/zoneGraph');
 const { IconService } = require('./iconService');
 const { ICON_SETS } = require('./iconExtractor');
 const { SpellbookService } = require('./spellbookService');
@@ -288,6 +290,9 @@ logService.watcher.on('line', (line) => {
   debugLog(`ZONE now "${changed}"`);
   const win = getMainWindow();
   if (win && !win.isDestroyed()) win.webContents.send('zone:changed', changed);
+  // Note 20. Where you are is half of every route, so a zone line is the main thing that makes a
+  // travel aura redraw.
+  pushTravelRoutes();
 });
 logService.watcher.on('status', (status) => {
   if (status.currentFilePath) {
@@ -389,6 +394,67 @@ customTimerEngine.on('activeChanged', (timers) => {
   saveSessionSnapshotSoon();
 });
 damageEngine.on('activeChanged', (rows) => broadcast('damage:active', rows));
+
+/**
+ * Note 20. The route each travel aura is currently showing, keyed by aura id.
+ *
+ * Worked out HERE and not in the overlay, because the overlay runs with nodeIntegration off and
+ * cannot require the routing module. Broadcast as one map rather than per-window, so this needs no
+ * new per-window plumbing: each overlay picks its own id out of it and ignores the rest. The
+ * payload is a handful of legs per travel aura, which is nothing.
+ *
+ * Recomputed rather than cached because all three of its inputs move: the zone changes as she
+ * walks, the destination changes when she edits the aura, and the spellbook changes when she
+ * scribes something. A stale route is worse than no route - it points the wrong way.
+ */
+function scribedTravelSpellNames() {
+  return TRAVEL_SPELLS.map((s) => s.spell).filter((name) => spellbookService.has(name));
+}
+
+function travelRoutes() {
+  const zone = widgetManager.getCurrentZone();
+  const scribed = scribedTravelSpellNames();
+  const routes = {};
+  for (const w of widgetManager.getAllWidgetConfigs()) {
+    if (w.buffSource !== 'travel') continue;
+    routes[w.id] = travelRowsFor(w, zone, scribed);
+  }
+  return routes;
+}
+
+function travelRowsFor(widget, zone, scribed) {
+  const row = (name, valueText) => ({
+    name,
+    valueText: valueText || '',
+    barPercent: 0,
+    remainingSec: null,
+    durationSec: 0,
+    infinite: true,
+    instant: false,
+    landedAt: null,
+    showOnOverlay: true,
+    iconUrl: null,
+    isBardSong: false,
+    spellCategory: null,
+  });
+
+  // Each of these says WHY there is nothing to show. An aura that simply goes blank is the "empty
+  // aura and no way to tell why" this project keeps trying to avoid.
+  if (!widget.travelDestination) return [row('Pick a destination', '')];
+  if (!zone) return [row('Waiting for a zone line', 'walk through one')];
+
+  const result = findRoute(zone, widget.travelDestination, { scribedSpells: scribed });
+  if (result.reason === 'already-there') return [row(`You are in ${widget.travelDestination}`, '')];
+  if (!result.ok) {
+    return [row(`No route to ${widget.travelDestination}`, result.reason === 'unknown-zone' ? 'unknown zone' : '')];
+  }
+  return result.legs.map((leg, i) => row(describeLeg(leg), `${i + 1}/${result.legs.length}`));
+}
+
+// One place that both recomputes and sends, so no caller can do one without the other.
+function pushTravelRoutes() {
+  broadcast('travel:routes', travelRoutes());
+}
 // The longest timeout any damage aura asks for - see setOptions for why the longest and not the
 // shortest. Recomputed on any widget change rather than read per line, because it changes when
 // someone edits a setting and at no other time.
@@ -411,6 +477,10 @@ setInterval(() => {
   // path that edits a widget without remembering to call this.
   refreshDamageOptions();
   damageEngine.tick();
+  // Note 20. Catches the two inputs that change without a zone line - editing the destination and
+  // scribing a travel spell. Cheap: a breadth-first search over 104 nodes, only for auras that are
+  // actually travel guides, and almost always zero of them.
+  pushTravelRoutes();
 }, 1000);
 buffEngine.on('unknownBuffsChanged', (buffs) => broadcast('buffs:unknown', buffs));
 buffEngine.on('ambiguousCastsChanged', (casts) => {
@@ -540,6 +610,8 @@ ipcMain.handle('buffs:getActive', () => buffEngine.getActiveBuffs());
 ipcMain.handle('buffs:getActiveAllies', () => buffEngine.getActiveAllyBuffs());
 
 ipcMain.handle('damage:getActive', () => damageEngine.getActive());
+ipcMain.handle('travel:getRoutes', () => travelRoutes());
+ipcMain.handle('travel:getZones', () => allZoneNames());
 ipcMain.handle('customTimers:getActive', () => customTimerEngine.getActive());
 ipcMain.handle('customTimers:removeActive', (_event, id) => customTimerEngine.removeActive(id));
 ipcMain.handle('buffs:getUnknown', () => buffEngine.getUnknownBuffs());
@@ -786,6 +858,12 @@ ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAl
 ipcMain.handle('widget:createDebuff', (_event, { name }) => widgetManager.createDebuffWidget(name));
 ipcMain.handle('widget:createDamageMeter', (_event, { name, mineOnly }) =>
   widgetManager.createDamageMeterWidget(name, mineOnly)
+);
+ipcMain.handle('widget:createTravelGuide', (_event, { name, destination }) =>
+  widgetManager.createTravelGuideWidget(name, destination)
+);
+ipcMain.handle('widget:setTravelDestination', (_event, { id, destination }) =>
+  widgetManager.setTravelDestination(id, destination)
 );
 ipcMain.handle('widget:createSoundOnly', (_event, { name }) => widgetManager.createSoundOnlyWidget(name));
 ipcMain.handle('widget:createTextAura', (_event, { name, preset }) =>

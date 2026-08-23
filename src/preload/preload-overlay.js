@@ -14,6 +14,10 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onActiveCustomTimersChanged: (callback) => {
     ipcRenderer.on('customTimers:active', (_event, timers) => callback(timers));
   },
+  getTravelRoutes: () => ipcRenderer.invoke('travel:getRoutes'),
+  onTravelRoutesChanged: (callback) => {
+    ipcRenderer.on('travel:routes', (_event, routes) => callback(routes));
+  },
   getActiveDamage: () => ipcRenderer.invoke('damage:getActive'),
   onActiveDamageChanged: (callback) => {
     ipcRenderer.on('damage:active', (_event, rows) => callback(rows));

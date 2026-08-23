@@ -1157,6 +1157,50 @@ spell ran out, so I have nothing to check it against. Togor's Insects V should
 show 315 seconds against a base of 210. If it wears off noticeably early or
 late, that number is the suspect.
 
+## Travel guide (note 20)
+
+This was blocked on data that did not exist - a zone map plus a table of which
+travel spell drops you where. You said to send an agent after it, and the data
+was there: an EverQuest Legends-specific zone graph, cross-checked against three
+other sources. 66 of 66 of the zones you have actually visited resolved.
+
+New premade in **+ Add aura -> Premade aura -> Travel guide**. Pick a
+destination and it shows the shortest way there from wherever you are, one step
+per line, redrawing every time you zone.
+
+- [ ] **Make one pointing somewhere far away and walk about.** The list should
+      shorten as you get closer, and the top line should always be the next
+      thing to do.
+- [ ] **Arrive.** It should say "You are in <zone>" rather than going blank.
+- [ ] **Check it uses your travel spells.** If you have a portal or a Circle
+      scribed that helps, it should say "Cast <spell>" instead of walking you.
+      If it offers a spell you do NOT have, that is a bug - tell me which.
+- [ ] **Change the destination** on the aura's settings page under **Travel
+      guide**. The route should update immediately.
+- [ ] **Boats and portals should be named as such** - "Sail to" and "Portal to"
+      rather than "Go to".
+
+Three things to know:
+
+- **Some zone names in the list are a guess.** 38 of the 104 are zones you have
+  never entered, so I have no record of EQL's exact wording for them - usually
+  it is a question of a leading "The". They have to be in the list because real
+  routes pass through them (Faydwer to Antonica goes via the Ocean of Tears). If
+  you see a name that is wrong, tell me the right one and I will correct it.
+- **Instance tiers are entered, not walked into.** Route to "Befallen 3 (Fused)"
+  and the last line says "Enter Befallen 3 (Fused)" once you are standing in
+  Befallen, because there is no zone line into a specific tier.
+- **One pair I could not resolve**: "Permafrost Keep" and "The Permafrost
+  Caverns - Group". Classic EverQuest has one zone there; your app's list has
+  two names. I have treated them as the same place. If they are actually two
+  different zones in EQL, routing to the second will send you to the wrong door.
+
+What I checked myself: all 5,852 ordered pairs between the 77 real places route,
+and all 10,712 pairs once instance tiers are included. The router was broken on
+purpose in nine ways and the tests caught eight; the ninth is explained in a
+comment, because two mechanisms in the code agree and neither is observable
+alone.
+
 ---
 
 ## Confirmed

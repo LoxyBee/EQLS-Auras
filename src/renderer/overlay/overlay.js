@@ -846,6 +846,11 @@ function visibleBuffs(buffs) {
   //
   // The meter's own two display settings are applied HERE rather than in the engine, which is what
   // lets two damage auras differ on them while sharing one engine and one set of numbers.
+  // Note 20, and the same argument as the damage meter below it: a route's rows are directions,
+  // not spells, so there is no buff list to match them against and no duration to cap. The main
+  // process has already decided what this aura shows.
+  if (currentConfig.buffSource === 'travel') return buffs;
+
   if (currentConfig.buffSource === 'damage') {
     let rows = buffs;
     // Your row only. It hides the others rather than un-counting them, so the percentage still
@@ -1289,6 +1294,9 @@ let lastSelfBuffs = [];
 let lastAllyBuffs = [];
 let lastCustomTimers = [];
 let lastDamageRows = [];
+// Note 20. Keyed by aura id - one broadcast carries every travel aura's route and each window
+// takes its own. See pushTravelRoutes in main.js for why it is shaped that way.
+let lastTravelRoutes = {};
 
 function currentSourceBuffs() {
   if (currentConfig.buffSource === 'ally') return lastAllyBuffs;
@@ -1297,6 +1305,7 @@ function currentSourceBuffs() {
   // meter is created with sortOrder 'default' - see createDamageMeter. Any other sort order would
   // reorder them by a time remaining they deliberately do not have.
   if (currentConfig.buffSource === 'damage') return lastDamageRows;
+  if (currentConfig.buffSource === 'travel') return lastTravelRoutes[widgetId] || [];
   return lastSelfBuffs;
 }
 
@@ -1494,6 +1503,15 @@ window.eqOverlay.getActiveCustomTimers().then((timers) => {
 });
 window.eqOverlay.onActiveCustomTimersChanged((timers) => {
   lastCustomTimers = timers;
+  render(currentSourceBuffs());
+});
+
+window.eqOverlay.getTravelRoutes().then((routes) => {
+  lastTravelRoutes = routes;
+  render(currentSourceBuffs());
+});
+window.eqOverlay.onTravelRoutesChanged((routes) => {
+  lastTravelRoutes = routes;
   render(currentSourceBuffs());
 });
 
