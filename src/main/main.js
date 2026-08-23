@@ -934,6 +934,22 @@ ipcMain.handle('profiles:create', (_event, { name, widgetIdsToMigrate }) => {
       widgetManager.setActiveProfileIds(id, [...widget.activeProfileIds, profile.id]);
     }
   }
+  // Note 21. The loadout label turns itself on the first time a SECOND loadout exists - with only
+  // one there is nothing for it to tell you, and by the time there are two it is the moment it
+  // starts being useful.
+  //
+  // ONCE, EVER. Gated on a flag of its own rather than on the profile count, because otherwise
+  // switching it off and later adding a third loadout turns it back on, and she has to keep
+  // switching it off forever. The note warned about exactly that shape.
+  if (!loadJson('loadoutLabelAutoOffered', false) && profileStore.getAll().length >= 2) {
+    saveJson('loadoutLabelAutoOffered', true);
+    if (!widgetManager.isLoadoutLabelEnabled()) {
+      widgetManager.setLoadoutLabelEnabled(true);
+      debugLog('Loadout label switched on automatically - a second loadout now exists');
+      const win = getMainWindow();
+      if (win && !win.isDestroyed()) win.webContents.send('settings:loadoutLabelChanged', true);
+    }
+  }
   broadcast('profiles:changed', profileStore.getAll());
   return profile;
 });

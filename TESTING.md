@@ -925,31 +925,29 @@ with nineteen other spells.
 - [ ] **The picker row "Watching:"** (you / an ally / your own text triggers)
       has moved up into this card, out of Display & size.
 
-## The loadout label
+## Loadouts, and the loadout label
 
-**Overlay Auras page -> "Loadout label" -> tick "Show which loadout is active".**
-Not in Add Aura - it is a permanent setting, the way you asked.
+The profile bar has **one** button now, "Loadouts", where the "+" and the cog
+used to be. It opens a modal that adds, renames and deletes loadouts, and holds
+the loadout-label switch.
 
-- [ ] **Ticking it puts a label on screen** with the current loadout's name.
-- [ ] **Switch loadout and it changes immediately.**
-- [ ] **Drag it where you want it, then untick and re-tick.** It should come
-      back in the same place - turning it off hides it rather than throwing it
-      away.
-- [ ] **It is still there on a loadout you create AFTER turning it on.** This
-      is the whole point of it and the most likely thing to be wrong. Make a
-      new loadout, switch to it, check the label is still there with the new
-      name.
+- [ ] **The one button opens the modal**, and adding a loadout from inside it
+      still works exactly as the old "+" did.
+- [ ] **Make a second loadout and the label turns itself on**, without you
+      asking. With one loadout it has nothing to tell you.
+- [ ] **Turn it off, then make a third loadout — it must STAY off.** This is the
+      one I would check hardest. Gating on "do you have two loadouts" would turn
+      it back on every time you added one, and you would be switching it off
+      forever.
+- [ ] **The tick box shows the truth** when the label switched itself on — open
+      the modal and it should already be ticked.
+- [ ] **The label follows a switch immediately**, and is still there on a
+      loadout created after it.
+- [ ] **Drag it, untick, re-tick** — it comes back where you left it.
 - [ ] **Rename a loadout and the label follows.**
-- [ ] **It survives a restart** - both the setting and where you put it.
-- [ ] **"Hide auras" still hides it**, and it comes back with everything else.
 
-You can reword and resize it in its own settings like any aura - `{profile}` in
-the **Say:** box becomes the loadout name, so "Loadout: {profile}" works.
-
-**Still not built, still your call.** Your note asks for it to appear
-automatically once you have a second loadout. Now that it is a setting rather
-than an aura, auto-enabling is less annoying than auto-creating was - it would
-just tick this box once. Say if you want that.
+You can reword and resize it in its own settings like any aura — `{profile}` in
+the **Say:** box becomes the loadout name.
 
 ## Cooldown timers
 

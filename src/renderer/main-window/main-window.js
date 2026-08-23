@@ -251,7 +251,9 @@ function initProfileBar() {
     nameInput.focus();
   }
 
-  setupModalToggle('create-profile-modal-backdrop', 'profile-add-btn', 'close-create-profile-modal', populateCreateProfileChecklist);
+  // The add flow is now reached from inside the Loadouts modal rather than from its own button on
+  // the bar. Its modal is untouched - only the way in changed.
+  setupModalToggle('create-profile-modal-backdrop', 'manage-profiles-add-btn', 'close-create-profile-modal', populateCreateProfileChecklist);
 
   submitBtn.addEventListener('click', () => {
     const name = nameInput.value.trim();
@@ -487,6 +489,12 @@ function initDetectionSettingsPanel() {
   const loadoutLabelCheckbox = document.getElementById('loadout-label-checkbox');
   window.eqTracker.getLoadoutLabel().then((enabled) => {
     loadoutLabelCheckbox.checked = !!enabled;
+  });
+  // It can now switch itself on, so the box has to hear about it - otherwise she opens the modal
+  // and finds an unticked box next to a label that is plainly on screen.
+  window.eqTracker.onLoadoutLabelChanged((enabled) => {
+    loadoutLabelCheckbox.checked = !!enabled;
+    refreshWidgets();
   });
   loadoutLabelCheckbox.addEventListener('change', () => {
     // refreshWidgets, because turning it on creates the label the first time and it should appear

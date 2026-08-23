@@ -14,19 +14,20 @@
  * The second is that every render path is driven by a buff arriving, and this aura has no event
  * behind it at all - hence alwaysOn and one synthetic entry.
  *
- * WHERE THE SWITCH LIVES. Shara redirected this on 21 August: "it should be a part of global
- * config, not add aura... a permanent option that is not tied to creating an aura", to keep the
- * Add Aura list from bloating. So it is a checkbox on the Overlay Auras page beside the other
- * app-wide aura settings, and there is no premade for it at all.
+ * WHERE THE SWITCH LIVES, twice corrected. On 21 August: "it should be a part of global config,
+ * not add aura... a permanent option that is not tied to creating an aura" - so the premade went.
+ * On 23 August: "the toggle to turn it off should be on the same menu that the create extra
+ * profile is on" - so it now sits in the Loadouts modal, which is where loadouts are made and
+ * deleted. Both moves are the same instinct: put the control where its subject already is.
  *
  * It is still a widget underneath, and that is a choice worth defending rather than an accident:
  * a draggable position, locking, opacity, sizing and surviving a restart all exist for widgets
- * already, and writing them again for one label would be the actual bloat. What she asked for is
- * that the switch be permanent and not require building an aura, and both hold.
+ * already, and writing them again for one label would be the actual bloat.
  *
- * NOT built: the note also asks for the label to appear automatically once a second profile
- * exists. Left for her to confirm, because a thing that creates itself is also a thing that comes
- * back after you delete it - the note says so itself.
+ * AND IT NOW SWITCHES ITSELF ON, once, the first time a second loadout exists - with one loadout
+ * it has nothing to say. Gated on a flag of its own rather than on the profile count, because
+ * gating on the count means switching it off and later adding a third loadout turns it back on,
+ * forever. That is the failure the note warned about when it asked for this to be version-gated.
  */
 
 const assert = require('node:assert/strict');
@@ -222,7 +223,7 @@ test('it is NOT in Add Aura', () => {
   assert.doesNotMatch(storeSrc, /profileLabel:/, 'the dead preset is still in the store');
 });
 
-test('the switch is a global setting, beside the other app-wide aura settings', () => {
+test('the switch lives with the loadouts, not with the auras', () => {
   assert.match(html, /id="loadout-label-checkbox"/, 'no global toggle');
   assert.match(mainSrc, /ipcMain\.handle\('settings:getLoadoutLabel'/);
   assert.match(mainSrc, /ipcMain\.handle\('settings:setLoadoutLabel'/);
@@ -230,9 +231,23 @@ test('the switch is a global setting, beside the other app-wide aura settings', 
   assert.match(preloadSrc, /setLoadoutLabel:/);
   assert.match(rendererSrc, /loadoutLabelCheckbox\.addEventListener\('change'/);
   assert.match(rendererSrc, /loadoutLabelCheckbox\.checked = !!enabled;/, 'it never shows its saved state');
-  // On the Overlay Auras page with the other app-wide settings, not on a widget's own panel.
-  const page = html.slice(html.indexOf('id="page-overlay"'), html.indexOf('id="widget-settings-panel"'));
-  assert.match(page, /id="loadout-label-checkbox"/, 'the toggle is not on the Overlay Auras page');
+  // Moved on 23 August: "the toggle to turn it off should be on the same menu that the create
+  // extra profile is on". The label is about loadouts, so it belongs with them rather than in a
+  // list of aura settings - and that is now the same modal that creates and deletes them.
+  const modal = html.slice(html.indexOf('id="manage-profiles-modal-backdrop"'));
+  const own = modal.slice(0, modal.indexOf('id="add-widget-modal-backdrop"'));
+  assert.match(own, /id="loadout-label-checkbox"/, 'the toggle is not in the Loadouts modal');
+  assert.equal((html.match(/id="loadout-label-checkbox"/g) || []).length, 1, 'it was copied, not moved');
+});
+
+test('one button on the profile bar, not two', () => {
+  // Her words: "probably the 'add' and 'settings' buttons on the profile bar can become one button
+  // that opens a modal to add, delete, and change profile options."
+  assert.doesNotMatch(html, /id="profile-add-btn"/, 'the separate + button is still there');
+  assert.match(html, /id="profile-manage-btn"[^>]*>Loadouts</, 'the one button is not labelled');
+  // The add flow still exists - it is reached from inside the modal now.
+  assert.match(html, /id="manage-profiles-add-btn"/, 'no way to add a loadout any more');
+  assert.match(rendererSrc, /setupModalToggle\('create-profile-modal-backdrop', 'manage-profiles-add-btn'/);
 });
 
 test('it is off until switched on, and remembers', () => {
@@ -307,6 +322,41 @@ test('both toggles are wired end to end', () => {
 
 test('always-on is offered only where it means something', () => {
   assert.match(rendererSrc, /alwaysOnRowEl\.style\.display = isTextAura \? '' : 'none';/);
+});
+
+test('it switches itself on the first time a second loadout exists', () => {
+  // Her answer, 23 August: "when you make a second loadout, it should turn on the display".
+  const handler = mainSrc.match(/ipcMain\.handle\('profiles:create'[\s\S]*?\n\}\);/);
+  assert.ok(handler, "the profiles:create handler has been restructured");
+  assert.match(handler[0], /profileStore\.getAll\(\)\.length >= 2/);
+  assert.match(handler[0], /widgetManager\.setLoadoutLabelEnabled\(true\)/);
+});
+
+test('it can only ever do that once', () => {
+  // Gated on a flag of its own, NOT on the profile count. Otherwise switching it off and later
+  // adding a third loadout turns it back on, and she has to keep switching it off forever - which
+  // is exactly what the note warned about when it asked for this to be version-gated.
+  const handler = mainSrc.match(/ipcMain\.handle\('profiles:create'[\s\S]*?\n\}\);/)[0];
+  assert.match(handler, /loadJson\('loadoutLabelAutoOffered', false\)/);
+  assert.match(handler, /saveJson\('loadoutLabelAutoOffered', true\)/);
+  // The flag is written whether or not the label was already on, so a person who turned it on
+  // themselves before making a second loadout does not get it forced again later.
+  // The flag must be set OUTSIDE the "is it already on" check. Inside it, someone who switched the
+  // label on themselves before making a second loadout never gets the flag written, and the
+  // auto-enable is still armed the next time they turn it off.
+  const gate = handler.slice(handler.indexOf("loadJson('loadoutLabelAutoOffered'"));
+  const save = gate.indexOf("saveJson('loadoutLabelAutoOffered', true)");
+  const guard = gate.indexOf('if (!widgetManager.isLoadoutLabelEnabled())');
+  assert.ok(save >= 0 && guard >= 0, 'the auto-enable block has been restructured');
+  assert.ok(save < guard, 'the flag is set inside the already-on check, so it can arm itself again');
+});
+
+test('the box hears about it switching itself on', () => {
+  // Otherwise she opens the modal to an unticked box beside a label that is plainly on screen.
+  assert.match(mainSrc, /settings:loadoutLabelChanged/);
+  assert.match(preloadSrc, /onLoadoutLabelChanged:/);
+  assert.match(rendererSrc, /onLoadoutLabelChanged\(\(enabled\) => \{/);
+  assert.match(rendererSrc, /loadoutLabelCheckbox\.checked = !!enabled;[\s\S]{0,40}refreshWidgets\(\)/);
 });
 
 module.exports = () => report('profile-label');
