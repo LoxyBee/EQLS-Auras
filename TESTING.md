@@ -1120,6 +1120,43 @@ your largest log it found a five-person fight totalling 195.7k at 369/s. The
 line patterns and the friend/enemy rules were each broken on purpose in nine
 different ways and the tests caught all nine.
 
+## Buff durations now scale with spell rank (notes 11 and 17)
+
+You said duration should be "base duration from the roster, multiplied by the
+AA's, exaltations, and rank of the spell". That is in. The rank is the numeral
+outside the name field - the one the log prints when *you* cast something.
+
+- [ ] **Cast a ranked buff and check the countdown.** Spirit of the Puma VII
+      should start around 168 seconds if your duration AAs are maxed, against
+      60 at rank 0 with no AAs. The exact number depends on your AA setting in
+      the app, which is still 0 unless you have set it.
+- [ ] **Celestial Healing IV** should start at about 48 seconds on maxed AAs.
+- [ ] **Promised Renewal** should stay at 15 seconds at every rank. It ignores
+      both rank and AAs - measured across 225 of your castings.
+- [ ] **A groupmate's buff on you keeps its plain roster duration.** Their rank
+      is in the log, but nothing links which of their casts caused which
+      landing, so I left it unscaled rather than guess. If you see a groupmate's
+      buff timing out early, that is why, and it is worth telling me.
+
+**A bug this turned up, which you should know about because it would have hit
+you the moment you set your AA level.** The app was applying the AA duration
+bonus to *everything* - including debuffs, damage-over-time and mez. Your own
+logs say that is wrong: on 9 and 10 August, when your buffs measured x1.53,
+Curse measured 31-36 seconds against a base of 30 across 31 castings. If the
+bonus applied it would have been 45. So 155 roster entries would have started
+over-timing by up to 65% - a mez timer still counting down long after the mob
+woke up. The bonus is now for beneficial buffs only.
+
+- [ ] **Set your AA and exaltation levels, then check a mez.** Mesmerize should
+      NOT get longer when you raise them. Buffs should.
+
+Two rates I could not verify and want you to eyeball: **debuff and charm/mez
+duration per tier**. The spreadsheet says +10% per tier and marks it assumed;
+every observation of one in your logs was cut short by the mob dying before the
+spell ran out, so I have nothing to check it against. Togor's Insects V should
+show 315 seconds against a base of 210. If it wears off noticeably early or
+late, that number is the suspect.
+
 ---
 
 ## Confirmed

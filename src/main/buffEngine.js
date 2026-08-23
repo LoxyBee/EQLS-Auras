@@ -41,6 +41,27 @@ const INSTANT_RETENTION_SEC = 60;
 // being on an enemy, so an aura can choose to show those separately from buffs on groupmates.
 const ENEMY_SPELL_CATEGORIES = new Set(['debuff', 'charm', 'dot', 'nuke']);
 
+// Notes 11/17. Extra duration per mote tier, as a fraction of BASE - linear, not compounding. See
+// _scaledDuration for the measurements behind each one and for which of them are still the
+// spreadsheet's word rather than established fact.
+//
+// A category missing from here scales its duration not at all, which is the sheet's position for
+// nuke, heal and pet summon. Written as an absent key rather than an explicit zero so that adding
+// a category to the roster cannot silently inherit somebody else's rate.
+const MOTE_DURATION_RATES = {
+  buff: 0.1, // measured: Spirit of the Puma VII, n=24
+  charm: 0.1, // sheet only - never observed running to its natural end
+  debuff: 0.1, // sheet only, and the sheet itself marks it assumed
+  hot: 0.05, // measured: Celestial Healing IV, n=32
+  dot: 0.05, // sheet only
+};
+
+// Which categories the AA and Exaltation duration bonus applies to. Beneficial spells only,
+// measured rather than assumed - see the Curse figures in _scaledDuration. The set is the
+// whitelist and not a blacklist on purpose: a category nobody thought about gets no bonus, which
+// is a timer that is too short rather than one that outlives the thing it is timing.
+const BENEFICIAL_CATEGORIES = new Set(['buff', 'heal', 'hot', 'pet']);
+
 // What a mob name is allowed to look like. Real examples from the owner's logs: "a greater kobold",
 // "a Teir`Dal ranger", "an elite gnoll shaman", "Baron Telyx V`Zher", "the froglok shin lord".
 //
@@ -1265,9 +1286,65 @@ class BuffEngine extends EventEmitter {
   // spell that HAS an ended text with no countdown at all and let its ended text remove it (18
   // of the 31 qualify), and refuse the rest. That needs the overlay to draw a tile with no
   // timer, which is a real change rather than a guard.
+  /**
+   * Notes 11 and 17. How long a buff actually lasts, which is three things multiplied.
+   *
+   * BASE, from the roster.
+   *
+   * MOTE TIER, the Roman numeral outside the name field. Shara: "duration should be base duration
+   * from the roster, multiplied by the AA's, exaltations, and rank of the spell, which is listed
+   * in the chat log when the player (not an ally) cast's a spell." The rates come from the
+   * spreadsheet's "Spell Upgrades (motes)" sheet and are LINEAR against base, not compounding -
+   * the sheet says so itself (a nuke at tier 5 is "10% less mana... ~30% harder" against rates of
+   * 2% and 6% per tier), and the measurements below rule compounding out independently.
+   *
+   * Two of the sheet's rates were marked unverified and are now measured from her own logs:
+   *   - buff +10%/tier. Spirit of the Puma VII, base 60, AA band 1.65: linear predicts 168.3s and
+   *     the measured mode is 167 (n=24). Compounding predicts 192.9s, and 23 of those 24 fall
+   *     below it, so it is refuted rather than merely unsupported.
+   *   - hot +5%/tier. Celestial Healing IV, base 24: +5% predicts 47.5s and all 32 observations
+   *     are 48 or more. +10% predicts 55.4s and 28 of the 32 fall short of it.
+   * dot, debuff and charm carry the sheet's rates UNMEASURED, because every observation of them in
+   * her logs was cut short by the mob dying. They are the sheet's numbers, not established fact.
+   *
+   * AA AND EXALTATION, and here the code was WRONG rather than incomplete. It applied the
+   * multiplier to everything without a noDurationScaling flag, which is 155 roster entries of
+   * debuff, dot and charm. Measured: on 9 and 10 August, when her buffs measured x1.53, Curse
+   * (base 30) measured 31-36 seconds across 31 castings. If the multiplier applied it would be 45.
+   * It never comes near. The AA duration bonus is for beneficial buffs only, and without this gate
+   * those 155 entries would have started over-timing by up to 65% the moment she set her AA level
+   * in the app - a countdown still running long after the debuff had gone.
+   *
+   * ROUNDING happens ONCE, over the combined multiplier. The two multipliers are order-independent
+   * but rounding between them is not; doing it twice differs by up to a second.
+   */
   _scaledDuration(entry) {
-    const multiplier = entry.noDurationScaling ? 1 : this.durationMultiplierFn();
-    return Math.round(entry.durationSec * multiplier);
+    if (entry.noDurationScaling) return Math.round(entry.durationSec);
+    const rankMult = 1 + (MOTE_DURATION_RATES[entry.scaleCategory] || 0) * this._rankForEntry(entry);
+    const aaMult = BENEFICIAL_CATEGORIES.has(entry.scaleCategory) ? this.durationMultiplierFn() : 1;
+    return Math.round(entry.durationSec * rankMult * aaMult);
+  }
+
+  /**
+   * The mote tier of the cast that is landing right now, or 0.
+   *
+   * Read from the cast the engine is already holding rather than threaded through the sixteen call
+   * sites that can end in a landing. The name check is what makes that safe: the rank is applied
+   * only when the pending or just-confirmed cast IS this spell, so a stale cast of something else
+   * cannot lend its numeral to an unrelated landing.
+   *
+   * Returns 0 for anything cast by somebody else. Their rank IS in the log - "<Name> begins casting
+   * <X> VII." - but nothing here has established which of their casts produced which landing, and
+   * inventing that link would put a confidently wrong number on a groupmate's buff rather than an
+   * honestly unscaled one.
+   */
+  _rankForEntry(entry) {
+    const wanted = entry.name.toLowerCase();
+    for (const castName of [this.pendingCast?.name, this.recentSelfCast?.name]) {
+      if (!castName) continue;
+      if (stripRankSuffix(castName).toLowerCase() === wanted) return rankValue(castName);
+    }
+    return 0;
   }
 
   _land(known) {
