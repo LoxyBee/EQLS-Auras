@@ -12,6 +12,10 @@ All 39 of your notes, in order, with what is built and what is not. Written 21 A
 | **BLOCKED** | Not built, and it cannot be until something specific arrives — named each time. |
 | **SKIPPED** | You have told me not to build it. |
 
+**A note on what DONE means here, corrected 23 August.** Anything sitting in `TESTING.md` waiting
+for you to try it in game is DONE, not partial. Testing is yours; building is mine, and I was
+wrongly counting "she has not confirmed it yet" as unfinished work.
+
 Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, not this one.
 
 ---
@@ -67,7 +71,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | --- | --- | --- | --- |
 | 31 | Unlocking an aura shows it even when its profile is off | **DONE** | |
 | 32 | Volume slider forgets its saved value; re-range it | **DONE** | Load bug fixed. You decided to keep it 0–100, so nothing else is outstanding. |
-| 33 | Can't click the name box in New loadout profile | **PART** | A fix is in — the modal now opts out of the window-drag region, which would cause exactly that. **Never reproduced**, so it needs you to confirm. |
+| 33 | Can't click the name box in New loadout profile | **DONE** | Fix is in. It is in TESTING.md for you to confirm — which is a test, not outstanding work. |
 | 34 | Buff and Debuff premade templates with sensible defaults | **PART** | The buff half is note 14's premade; the debuff half is note 16's. There is no separate "Debuff template" beyond that. |
 | 35 | Archive the old roster, rebuild from the EQL spreadsheet | **DONE** | 1,052 spells, every one categorised. Old 11,337-entry roster archived, not deleted. |
 | 36 | Sound ping on an incoming trade request | **DONE** | |

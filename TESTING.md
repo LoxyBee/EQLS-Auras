@@ -1052,6 +1052,16 @@ pick which.
       2.4 seconds after the resist. If that reads as too long or too short,
       say so - the number is one line.
 
+## The name box in New loadout profile (note 33)
+
+You reported you could not click into it. A fix is in — the modal now opts out
+of the window-drag region, which is exactly what would swallow a click on a
+frameless window — but **I was never able to reproduce the fault**, so this is
+the one item where I genuinely do not know whether it is fixed.
+
+- [ ] **Loadouts -> Add a loadout, click the name box, type.** If it still will
+      not take focus, say so and I will look again with that confirmed.
+
 ## Stability
 
 - [ ] **App no longer closes itself.** It was observed exiting unprompted
