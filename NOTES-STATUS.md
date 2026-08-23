@@ -71,7 +71,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 35 | Archive the old roster, rebuild from the EQL spreadsheet | **DONE** | 1,052 spells, every one categorised. Old 11,337-entry roster archived, not deleted. |
 | 36 | Sound ping on an incoming trade request | **DONE** | |
 | 37 | Colour tile borders by spell type, with a toggle | **DONE** | On by default. |
-| 38 | Apply an aura only in a certain zone | **NOT** | Fully scoped, ready to build. 66 zones, not 58. One real trap found — see below. |
+| 38 | Apply an aura only in a certain zone | **DONE** | "Only in:" on each aura. Zones kept separate as you asked. Says so when the rule is hiding an aura. |
 | 39 | Write down the multi-trigger idea, don't build it | **DONE** | Recorded, correctly unbuilt. Same feature as note 9. |
 
 ---
@@ -128,19 +128,6 @@ auto-enable you asked for is much less annoying than auto-creating would have be
 the box once, the first time you make a second loadout. Say the word. Also: show "Default" while
 you are on the default loadout, or stay blank? Blank means the label vanishing is itself the
 signal, which reads like a bug.
-
-**Note 38 — ready to build, with one thing for you to decide.** The groundwork is done. Your logs
-have **66** distinct zones, not the 58 the note claims, and 21 of them first appeared on a single
-day after two weeks of play — so a list that only learns zones as you visit them would look broken
-for a long while. I would ship the 66 as a starting list and let you type others.
-
-The decision: `The Plane of Fear` and `The Plane of Fear - Group` are different zones with
-different layouts. Should an aura gated to one apply to the other? I would say no. Instance tiers
-like `Befallen 1 (Awakened)` I would treat as the same place as `Befallen`.
-
-One trap found: a player quoted the game in General chat and typed "You have entered Everfrost."
-A careless match would think you had zoned. Exactly one such line in 1.5 million, and anchoring on
-the timestamp removes it.
 
 **Note 26 — and a correction I owe you.** I told you there are no buff "types". That was wrong of
 me: your spreadsheet's category column carries **HP Buff (Line 1)** (17 spells) and **HP Buff
