@@ -24,7 +24,7 @@ const path = require('path');
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
 const fs = require('fs');
-const { ipcMain, protocol, BrowserWindow, Menu, globalShortcut } = require('electron');
+const { ipcMain, protocol, BrowserWindow, Menu, globalShortcut, shell } = require('electron');
 const { createMainWindow, getMainWindow } = require('./mainWindow');
 const { LogService } = require('./logService');
 // Note 38. The zone matcher lives with the other log-line patterns; the seed list is data.
@@ -164,17 +164,73 @@ if (autoHideOverlayEnabled) foregroundWatcher.start();
 // needing to manually trace the raw EQ log. Capped by truncating on
 // startup rather than mid-session, so a single write is never slowed down
 // by a size check.
-const DEBUG_LOG_PATH = path.join(app.getPath('userData'), 'detection-debug.log');
-const DEBUG_LOG_MAX_BYTES = 2 * 1024 * 1024;
-try {
-  if (fs.statSync(DEBUG_LOG_PATH).size > DEBUG_LOG_MAX_BYTES) fs.rmSync(DEBUG_LOG_PATH);
-} catch {
-  // Doesn't exist yet - nothing to trim.
+// ITS OWN FOLDER, ONE FILE PER DAY. Shara, 23 August: "I cannot provide this currently as that log
+// file doesn't exist. it should probably be created as an actual file in it's own folder, that
+// updates and is split per day."
+//
+// It did exist, and that is the more useful finding: it sat as a single loose file in
+// %APPDATA%/EQ Buff Tracker, in among Cache, Code Cache, DawnGraphiteCache, GPUCache, Local
+// Storage and Network. Nobody should be expected to find anything in there, and note 28 stayed
+// blocked for days on a file that had been written the whole time. A log nobody can reach is a log
+// that does not exist.
+//
+// Per day rather than one growing file, because the question asked of it is always "what happened
+// at that moment" - a date in the filename answers it before the file is even opened.
+const DEBUG_LOG_DIR = path.join(app.getPath('userData'), 'detection-logs');
+// Old files are deleted rather than kept forever. Two weeks is well past the point where anyone
+// would be investigating something, and it bounds the folder without a size check on every write.
+const DEBUG_LOG_KEEP_DAYS = 14;
+
+function debugLogDateStamp(d) {
+  // Local date, not ISO/UTC. The player's "yesterday evening" has to land in yesterday's file.
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
-function debugLog(message) {
-  const line = `[${new Date().toLocaleTimeString()}] ${message}`;
+
+function pruneOldDebugLogs() {
   try {
-    fs.appendFileSync(DEBUG_LOG_PATH, line + '\n');
+    const cutoff = Date.now() - DEBUG_LOG_KEEP_DAYS * 24 * 60 * 60 * 1000;
+    for (const name of fs.readdirSync(DEBUG_LOG_DIR)) {
+      if (!/^detection-\d{4}-\d{2}-\d{2}\.log$/.test(name)) continue;
+      const full = path.join(DEBUG_LOG_DIR, name);
+      if (fs.statSync(full).mtimeMs < cutoff) fs.rmSync(full);
+    }
+  } catch {
+    // Best-effort tidying. A folder that cannot be read is not a reason to fail to start.
+  }
+}
+
+try {
+  fs.mkdirSync(DEBUG_LOG_DIR, { recursive: true });
+  pruneOldDebugLogs();
+  // The old single file, if this install has one. Moved into the folder under the date it was last
+  // written rather than deleted - it may be the very thing someone is looking for.
+  const legacy = path.join(app.getPath('userData'), 'detection-debug.log');
+  if (fs.existsSync(legacy)) {
+    const stamp = debugLogDateStamp(fs.statSync(legacy).mtime);
+    const dest = path.join(DEBUG_LOG_DIR, `detection-${stamp}.log`);
+    if (fs.existsSync(dest)) fs.appendFileSync(dest, fs.readFileSync(legacy));
+    else fs.renameSync(legacy, dest);
+    if (fs.existsSync(legacy)) fs.rmSync(legacy);
+  }
+} catch {
+  // If the folder cannot be made, debugLog below fails quietly per write.
+}
+
+// Cached so the common path is a string compare rather than a date format on every line, and so
+// the rollover happens the first time a line is written after midnight rather than on a timer.
+let debugLogStamp = null;
+let debugLogPath = null;
+function debugLog(message) {
+  const now = new Date();
+  const line = `[${now.toLocaleTimeString()}] ${message}`;
+  try {
+    const stamp = debugLogDateStamp(now);
+    if (stamp !== debugLogStamp) {
+      debugLogStamp = stamp;
+      debugLogPath = path.join(DEBUG_LOG_DIR, `detection-${stamp}.log`);
+    }
+    fs.appendFileSync(debugLogPath, line + '\n');
   } catch {
     // Best-effort only - never let a logging failure break detection.
   }
@@ -773,6 +829,10 @@ ipcMain.handle('widget:setAlwaysOn', (_event, { id, value }) => widgetManager.se
 // Which key actually took, so the hint in the top bar names the one that works rather than the
 // one that was asked for. Null when none of them registered.
 ipcMain.handle('settings:getHideHotkey', () => hideHotkey);
+// The button that makes the whole thing reachable. Opening the folder rather than the file: the
+// question is nearly always "what happened on that day", which means picking one.
+ipcMain.handle('debug:openLogFolder', () => shell.openPath(DEBUG_LOG_DIR));
+ipcMain.handle('debug:logFolder', () => DEBUG_LOG_DIR);
 ipcMain.handle('zone:current', () => widgetManager.getCurrentZone());
 ipcMain.handle('zone:known', () => KNOWN_ZONES);
 ipcMain.handle('widget:setVisibleInZones', (_event, { id, zones }) =>

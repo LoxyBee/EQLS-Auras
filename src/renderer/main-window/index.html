@@ -1062,9 +1062,14 @@
               <h4>Detection log</h4>
               <p class="hint">
                 Live feed of every buff-detection decision (landed, queued for you, ignored, blocked)
-                and why - the same lines saved to detection-debug.log in the app's data folder, useful
-                for understanding a confusing moment without digging through the raw log yourself.
+                and why - useful for understanding a confusing moment without digging through the raw
+                log yourself. The same lines are saved to a file, one per day, so you can go back to
+                a moment that has already scrolled past.
               </p>
+              <div class="row">
+                <button type="button" id="open-debug-log-folder-btn">Open the detection log folder</button>
+                <span class="hint" id="debug-log-folder-path"></span>
+              </div>
               <div id="debug-line-feed" class="line-feed"></div>
             </div></div>
           </div>

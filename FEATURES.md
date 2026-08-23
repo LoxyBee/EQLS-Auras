@@ -1153,9 +1153,10 @@ working for free. The cost is the form and the display: if the tile doesn't visi
 phase it is in, the number on screen is actively misleading. Cheapest useful version is one
 extra "then count down N" field with the tile dimmed during cooldown; the "toggle that opens a
 menu" wording implies a sub-panel, which is the more expensive half. This is the same item as
-FEATURES.md's "Cooldown mode for custom trackers", where you had already asked whether one
-mechanism should cover both this and reverse/negative detection - that question is still open
-and is worth answering before either gets built.
+FEATURES.md's "Cooldown mode for custom trackers". It ALSO asked whether one mechanism should
+cover both this and reverse/negative detection - **answered on 23 August: no. They are separate
+mechanics and the comparison should never have been made.** It was mine, not hers. Nothing is
+built on it.
 
 **Risk:** handleLine unconditionally overwrites an active entry when the trigger text is seen
 again (customTimerEngine.js:101), so without an explicit rule the same line that started the

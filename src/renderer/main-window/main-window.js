@@ -475,6 +475,15 @@ function initDetectionSettingsPanel() {
     }
   });
 
+  // The detection log used to be a loose file in the app's data folder, next to Chromium's caches,
+  // and note 28 stayed blocked for days because nobody could find it. The path is shown as well as
+  // the button, so it can be reached without this app running at all.
+  const openDebugLogFolderBtn = document.getElementById('open-debug-log-folder-btn');
+  openDebugLogFolderBtn.addEventListener('click', () => window.eqTracker.openDebugLogFolder());
+  window.eqTracker.getDebugLogFolder().then((dir) => {
+    document.getElementById('debug-log-folder-path').textContent = dir;
+  });
+
   const loadoutLabelCheckbox = document.getElementById('loadout-label-checkbox');
   window.eqTracker.getLoadoutLabel().then((enabled) => {
     loadoutLabelCheckbox.checked = !!enabled;
