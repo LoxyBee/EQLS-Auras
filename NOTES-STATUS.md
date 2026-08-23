@@ -28,7 +28,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 6 | Aura name in the move box, click it to open its settings | **DONE** | |
 | 7 | Make the app's own text bigger | **DONE** | |
 | 8 | Merge same-duration buffs into one tile with a count | **DONE** | |
-| 9 | Triggers that need any-of / all-of several lines | **PART** | "Any-of" already works — see below. "All-of" is not built and needs three answers from you. |
+| 9 | Triggers that need any-of / all-of several lines | **PART** | "Any-of" already works. "All-of" is designed and answered but not yet built — see below. |
 | 10 | A trigger that runs its duration then rolls into a cooldown | **DONE** | "Then cooldown" on the timer form. Tile dims and says which phase. Not the sub-panel version. |
 
 ## 11–20
@@ -50,7 +50,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 
 | # | What you asked for | | Where it stands |
 | --- | --- | --- | --- |
-| 21 | An aura showing which loadout profile is active | **PART** | A global toggle on the Overlay Auras page, as you asked — not in Add Aura. Missing only the auto-enable. |
+| 21 | An aura showing which loadout profile is active | **DONE** | In the Loadouts modal, and switches itself on once when you make a second loadout. |
 | 22 | "Unlock all" only on the main Overlay Auras page | **DONE** | |
 | 23 | Text-only display style, own size, own dwell time | **DONE** | Built as a *type* chosen when you create the aura, not a fourth radio — you agreed to that change. The dwell time is a setting, default 6s. |
 | 24 | Detection priority rework, plus a song-pulse check | **PART** | Spellbook now outranks the gem list. Rival-caster tracking built. Missing: the post-cast song-pulse auto-resolve, which needs a log sample proving the 6s repeat. |
@@ -168,14 +168,16 @@ comparison was mine and it was wrong; nothing is built on it.
 
 ## Still open, and what each needs
 
-**Note 9's "all of these lines"** — you answered the display half: nothing shows until both have
-fired. Still undecided is the window. If line A fires this morning and line B tonight, does the
-timer start? I would guess not, but unbounded is the literal reading of "until the other happens"
-and I would rather you told me than have me pick. A minute? Five? Any time until you restart?
+**Note 9's "all of these lines"** — fully answered, not yet built. Your answer changed the design
+and it is worth writing down, because my assumption was wrong. I had been thinking of it as "two
+events within some window". You said: *"the time window should be whatever each individual trigger
+has... primarily be used for 'if in this zone (no duration check), and this thing happens'."*
 
-**The loadout-profile modal** — merging the "+" and "⚙" buttons on the profile bar into one modal
-that adds, deletes and configures, with the loadout-label toggle moved into it and switched on
-automatically when you make a second profile. Not started. No questions, just work.
+That is a different mechanism. Each part of the condition is **satisfied for its own duration**
+after it fires, and a part with no duration — a zone check — stays satisfied until it stops being
+true. The timer runs while all parts are satisfied at once, and shows nothing at all until then.
+A state intersection, not a pair of events with a stopwatch. That is why the zone example is the
+main use: a zone is a state, not something that happens.
 
 ## Note 9 — half of it already works, and you may not need the other half
 

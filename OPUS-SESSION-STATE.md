@@ -479,7 +479,7 @@ rather than each growing their own picker. That was note 14's own advice and it 
 
 ### The two things still to build, and her answers in full
 
-**A. The loadout-profile modal (her answer 4, 23 Aug).** Not started.
+**A. The loadout-profile modal (her answer 4, 23 Aug).** DONE at `f7507ff`. Left here for context.
 > "when you make a second loadout, it should turn on the display, but the toggle to turn it off
 > should be on the same menu that the create extra profile is on, if this means a modal, then make
 > one. probably the "add" and "settings" buttons on the profile bar can become one button that
@@ -498,7 +498,7 @@ back after she turns it off.
 > primarily be used for 'if in this zone (no duration check), and this thing happens', so limiting
 > it to checks happen within a set time frame is not something i want."
 
-**This changes the model and the change matters.** There is no global AND-window. Each PART of the
+**STILL TO BUILD. This changes the model and the change matters.** There is no global AND-window. Each PART of the
 condition is satisfied for its own duration after it fires, and a part with no duration — a zone
 check — stays satisfied until it stops being true. The timer runs while **all** parts are
 simultaneously satisfied, and shows nothing at all until then. That is a state intersection, not
