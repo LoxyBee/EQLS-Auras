@@ -1447,6 +1447,22 @@
           />
         </div>
         <div class="row">
+          <label>
+            <input type="radio" name="widget-new-timer-match" value="exact" checked />
+            the whole line, exactly
+          </label>
+          <label>
+            <input type="radio" name="widget-new-timer-match" value="contains" />
+            any line containing it
+          </label>
+        </div>
+        <p class="hint">
+          "Exactly" is the safe one and what every timer has used until now. Choose "containing" for
+          a line the game writes a name into - "Orc centurion resisted your Mesmerize!" will never
+          match a fixed string, but "resisted your Mesmerize" catches every one of them. Be
+          specific: a short word set to "containing" fires on almost every line.
+        </p>
+        <div class="row">
           <input
             type="text"
             id="widget-new-timer-ended"

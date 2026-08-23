@@ -1158,6 +1158,7 @@ function initWidgetsPanel() {
   const newTimerMinutesInput = document.getElementById('widget-new-timer-minutes');
   const newTimerSecondsInput = document.getElementById('widget-new-timer-seconds');
   const newTimerCooldownInput = document.getElementById('widget-new-timer-cooldown');
+  const newTimerMatchRadios = document.querySelectorAll('input[name="widget-new-timer-match"]');
   const newTimerTriggerInput = document.getElementById('widget-new-timer-trigger');
   const newTimerEndedInput = document.getElementById('widget-new-timer-ended');
   renderTriggerTypeChoices();
@@ -1930,6 +1931,7 @@ function initWidgetsPanel() {
     newTimerMinutesInput.value = '';
     newTimerSecondsInput.value = '';
     newTimerCooldownInput.value = '';
+    newTimerMatchRadios.forEach((r) => (r.checked = r.value === 'exact'));
     newTimerTriggerInput.value = '';
     newTimerEndedInput.value = '';
     newTimerModeRadios.forEach((r) => (r.checked = r.value === 'chat'));
@@ -1960,6 +1962,11 @@ function initWidgetsPanel() {
     // Blank, not "0", when there is no cooldown - a zero in the box reads as a cooldown of no
     // length rather than as no cooldown at all.
     newTimerCooldownInput.value = timer.cooldownSec ? String(timer.cooldownSec) : '';
+    // castOf lands on "exactly" here because there is no radio for it - it is built by the
+    // cooldown premade from a spell name rather than typed, and offering it as a third option
+    // would need a spell picker in this form. Editing such a timer keeps its mode regardless:
+    // updateCustomTimer does not accept triggerMatch, so it cannot overwrite it.
+    newTimerMatchRadios.forEach((r) => (r.checked = r.value === (timer.triggerMatch === 'contains' ? 'contains' : 'exact')));
     // Restores whichever mode this timer was actually built in - triggerChat
     // only exists on a timer set up via the chat-message builder; anything
     // else (including every timer that predates that feature) only ever had a
@@ -2926,6 +2933,12 @@ function initWidgetsPanel() {
       iconId: newTimerIconId,
       // Note 10. Empty means no cooldown, which is what every timer that existed before this had.
       cooldownSec: Number(newTimerCooldownInput.value) || 0,
+      // Only meaningful for a raw-text trigger. The chat builder writes a whole line it composed
+      // itself, so matching part of it would be matching part of something the user never typed.
+      triggerMatch:
+        mode === 'raw' && [...newTimerMatchRadios].find((r) => r.checked)?.value === 'contains'
+          ? 'contains'
+          : undefined,
     };
   }
 

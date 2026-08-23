@@ -236,5 +236,25 @@ test('a restart does not resurrect a cooldown as a running buff', () => {
   assert.equal(snap[0].cooldownSec, 60, 'the cooldown length is lost across a restart');
 });
 
+test('the contains mode is reachable from the form at all', () => {
+  // It existed in the engine and the store for a while and could only be reached by a premade -
+  // the timer form never sent a mode, so every hand-built timer was exact whether or not that was
+  // what the person wanted. A capability nobody can reach is not a capability.
+  assert.match(html, /name="widget-new-timer-match" value="contains"/, 'no way to choose it');
+  assert.match(rendererSrc, /triggerMatch:[\s\S]{0,20}mode === 'raw'/, 'the form never sends a mode');
+  assert.match(rendererSrc, /newTimerMatchRadios\.forEach\(\(r\) => \(r\.checked = r\.value === 'exact'\)\)/,
+    'the form does not reset to exact between timers');
+  const add = mainSrc.match(/'widget:addCustomTimer',([\s\S]*?)\n\);/);
+  assert.ok(add && /triggerMatch/.test(add[1]), 'the add handler drops the mode');
+});
+
+test('a chat-built trigger is always exact', () => {
+  // The chat builder composes a whole line itself. Matching part of a line the user never typed
+  // would be matching part of this app's own guess at what the line looks like.
+  const fn = rendererSrc.match(/function readTimerFormData\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'readTimerFormData has been restructured');
+  assert.match(fn[1], /mode === 'raw' &&/);
+});
+
 module.exports = () => report('cooldown-phase');
 if (require.main === module) process.exit(report('cooldown-phase') ? 1 : 0);

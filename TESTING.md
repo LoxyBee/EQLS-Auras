@@ -785,6 +785,16 @@ Optional — leave it empty and nothing changes.
 - [ ] **During the duration, the trigger still restarts it**, as it always has.
 - [ ] **Editing a timer keeps its cooldown**, and emptying the box removes it.
 
+**Also new on that form: how the trigger matches.** Two radios under the raw
+trigger box — *the whole line, exactly* (what every timer has always done) or
+*any line containing it*. The second is for lines the game writes a name into:
+"Orc centurion resisted your Mesmerize!" will never match a fixed string, but
+"resisted your Mesmerize" catches all of them. It existed in the engine and
+could only be reached by a premade until now.
+
+- [ ] **Build a "containing" timer and check it fires.** Be specific with the
+      text — a short word set to "containing" will fire on nearly every line.
+
 Not built: the "toggle that opens its own menu" wording in your note. This is
 the one-field version, which the note itself suggested as the cheap one. Say if
 you want the sub-panel.
