@@ -1334,17 +1334,20 @@ class BuffEngine extends EventEmitter {
    * set. Curse (base 30, a dot) measured 31-36 seconds across 31 castings on days when her buffs
    * measured x1.53; the multiplier would make it 45, and it never comes near.
    *
-   * The narrowing from "beneficial" to "buff" is Shara's correction of 23 August, and it is worth
-   * recording WHY the wider set looked right, because one measurement still appears to support it.
-   * Celestial Healing IV, a hot with a base of 24, measures 48 to 78 seconds - far more than the
-   * 29 that the mote tier alone predicts. That looked like evidence of the AA bonus applying to
-   * heals over time.
+   * The narrowing from "beneficial" to "buff" is Shara's correction of 23 August, and the
+   * measurement that made me get it wrong is worth recording. Celestial Healing IV, a hot with a
+   * base of 24, measures 48 to 78 seconds - far more than the 29 the mote tier alone predicts -
+   * and I read that as the AA bonus reaching heals over time.
    *
-   * It is not good evidence. A buff with a fixed duration measures tightly: Spirit of the Puma VII
-   * lands in a 14-second band across 24 castings. Celestial Healing IV spreads across 30 seconds
-   * and its median sits nowhere near either candidate prediction. That is not one duration measured
-   * with noise; it is the landing-to-wear-off gap for a heal over time not being its duration at
-   * all. An inference from a signal that shape should not outweigh someone who knows the game.
+   * It was recasting. Her words: "the celestial healing timer duration being different is due to
+   * refreshed casting." She re-casts the heal before the old one lapses, so the gap between landing
+   * and wear-off covers several casts rather than one duration. The spread was the tell - a
+   * fixed-duration buff measures inside a 14-second band and this one runs across 30 - and I read
+   * a wide spread as noise around one number instead of as several durations end to end.
+   *
+   * The behaviour that follows from it is already right, and tested: every landing recomputes,
+   * including a renewal, so a re-cast reapplies the calculation at whatever rank was just cast
+   * rather than extending by the old duration. See _land and the recast tests.
    *
    * ROUNDING happens ONCE, over the combined multiplier. The two multipliers are order-independent
    * but rounding between them is not; doing it twice differs by up to a second.

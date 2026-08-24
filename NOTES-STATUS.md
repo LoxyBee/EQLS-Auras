@@ -1,6 +1,20 @@
 # Where every note stands
 
-All 39 of your notes, in order, with what is built and what is not. Written 21 Aug 2026.
+All 39 of your notes, in order, with what is built and what is not. Written 21 Aug 2026, brought
+up to date 23 Aug.
+
+## The short version
+
+**37 done. 0 partial. 1 blocked. 1 skipped.**
+
+The two that are not done are not waiting on me:
+
+- **#28** needs the bug to happen once more. The detection log now records what opened the burst
+  and how long ago, which is the fact that was missing, so one occurrence should be enough.
+- **#2** you told me to skip — you have solved first-aggro elsewhere and will bring it yourself.
+
+Everything marked DONE is built and has a test suite behind it. It still wants your eyes in game;
+that list is `TESTING.md`.
 
 **Status words used here**
 

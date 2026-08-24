@@ -79,22 +79,23 @@ test('heal over time takes its tier but not the AA bonus', () => {
 });
 
 /**
- * The measurement that argued for the wider AA rule, kept as a record rather than deleted.
+ * The measurement that argued for the wider AA rule, and the reason it argued wrongly. SOLVED.
  *
- * Celestial Healing IV measures 48 to 78 seconds across 32 castings, median 51. The mote tier
- * alone predicts 29. That gap looked like the AA bonus applying to heals over time, and it is why
- * this suite originally asserted 48.
+ * Celestial Healing IV measures 48 to 78 seconds across 32 castings, median 51, where the mote
+ * tier alone predicts 29. I took that gap as evidence the AA bonus reached heals over time, and
+ * this suite originally asserted 48 because of it.
  *
- * It is not good evidence, and the shape of the data is what gives it away. A spell with a fixed
- * duration measures tightly - Spirit of the Puma VII lands within a 14-second band. Celestial
- * Healing IV spreads over 30 seconds and its median matches no candidate prediction. That is not
- * one duration measured with noise; it is the landing-to-wear-off gap for a heal over time not
- * being its duration at all.
+ * Shara, 23 August: "the celestial healing timer duration being different is due to refreshed
+ * casting." That is the answer, and it is much simpler than the one I reached for. She re-casts
+ * the heal on someone before the previous one lapses, so the landing-to-wear-off gap spans several
+ * casts rather than one duration - which is exactly why it spreads over 30 seconds where a
+ * fixed-duration buff sits inside 14. The wide spread was the clue, and I read it as noise around
+ * a single number instead of as several durations end to end.
  *
- * So the number here is the model's, and the divergence is recorded as an open question rather
- * than as a passing assertion. If it turns out to matter in game, this comment is the trail.
+ * Kept rather than deleted because it is the trail: the number that looked like evidence, and what
+ * it turned out to be. See the recast tests at the end of this file for the behaviour it implies.
  */
-test('the heal-over-time measurement is recorded as unexplained, not as agreement', () => {
+test('the heal-over-time measurement is explained by recasting, not by the AA bonus', () => {
   const e = afterCasting(makeEngine(1.65), 'Celestial Healing IV');
   const predicted = e._scaledDuration(spell('Celestial Healing', 24, 'hot'));
   const MEASURED_MIN = 48;
@@ -226,6 +227,56 @@ test('rounding happens once, over both multipliers together', () => {
 test('a tier X cast is handled, since one appears in the logs', () => {
   const e = afterCasting(makeEngine(1), 'Frenzied Spirit X');
   assert.equal(e._scaledDuration(spell('Frenzied Spirit', 100, 'buff')), 200); // 100 x (1 + 0.1 x 10)
+});
+
+// ---------------------------------------------------------------------------
+// Recasting
+// ---------------------------------------------------------------------------
+
+/**
+ * Shara, 23 August: "the celestial healing timer duration being different is due to refreshed
+ * casting. use the calculation and reapply it again on skill cast."
+ *
+ * It already worked that way, and this is the test that says so rather than a comment claiming it.
+ * Every landing - including a renewal of something already running - goes through _land, which
+ * calls _scaledDuration afresh and reads the rank off the cast that is landing NOW. Nothing caches
+ * a duration from the first cast.
+ *
+ * This also explains the measurement that puzzled me: Celestial Healing IV spreading over 48-78
+ * seconds is a heal being re-cast on someone before the old one lapsed, so the landing-to-wear-off
+ * gap spans several casts rather than one duration. That is why it was never evidence about the AA
+ * bonus, and her explanation is simpler than the one I reached for.
+ */
+test('recasting recomputes the duration rather than reusing the first one', () => {
+  const e = makeEngine(1);
+  const entry = spell('Spirit of the Puma', 60, 'buff');
+
+  afterCasting(e, 'Spirit of the Puma IV');
+  assert.equal(e._scaledDuration(entry), 84); // 60 x (1 + 0.1 x 4)
+
+  // The same spell cast again at a higher tier. If anything cached the first answer, this would
+  // still read 84.
+  afterCasting(e, 'Spirit of the Puma VII');
+  assert.equal(e._scaledDuration(entry), 102); // 60 x (1 + 0.1 x 7)
+
+  // And back down again, which a cache that only ever grew would also get wrong.
+  afterCasting(e, 'Spirit of the Puma II');
+  assert.equal(e._scaledDuration(entry), 72); // 60 x (1 + 0.1 x 2)
+});
+
+// The renewal path is the one that could plausibly have skipped the recalculation, because it is
+// reached when an ambiguous line matches something already running rather than by a fresh cast.
+// It goes through _land like everything else - checked here so a future shortcut cannot quietly
+// start extending a buff by its old duration.
+test('a renewal goes through the same landing path, so it rescales too', () => {
+  const src = require('node:fs').readFileSync(
+    require('node:path').join(__dirname, '..', 'src', 'main', 'buffEngine.js'),
+    'utf8'
+  );
+  const at = src.indexOf('RENEWED');
+  assert.notEqual(at, -1, 'the renewal path has been renamed');
+  const block = src.slice(at, at + 260);
+  assert.ok(block.includes('this._land('), 'a renewal that does not go through _land will not rescale');
 });
 
 module.exports = () => report('duration-scaling');

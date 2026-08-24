@@ -36,6 +36,10 @@ at the repo root ships.
 
 ## 2. Current state
 
+> **Superseded — see section 9 at the end of this file for the final state.** The numbers in this
+> section were true when it was written on 19 August and are kept because the reasoning around them
+> still is. As of 23 August it is **88 commits, 36 suites, 570 cases**.
+
 **44 commits ahead of `da698b4`. Working tree clean.** `PERSONAL COPY DO NOT TOUCH.md` is now in
 `.gitignore` - it was staged once by a careless `git add -A` and amended straight back out, and
 the ignore entry is what makes that command safe to type here at all.
@@ -506,6 +510,9 @@ an event-pair with a timeout, and it is why the zone example is the primary use 
 
 ### What is blocking each PART note (she asked for this on return)
 
+> **All of these are now closed.** Kept as a record of what was outstanding on 21 August and what
+> each one turned out to need. See section 9.
+
 - **9** — see B above; half of it (any-of) already works by giving two timers the same name.
 - **11** — duration still comes from the roster, not from the rank in the cast line.
 - **19, 20** — placeholders only. 20 needs zone-connectivity data that exists nowhere.
@@ -535,5 +542,83 @@ an event-pair with a timeout, and it is why the zone example is the primary use 
 - Measure detection changes with `node tools/replay-log.js --out X.json` then `--diff before after`.
   Baseline with nothing opted in: **129 buffs, 211,546 landings, 840 ally landings, 27 prompts,
   91 unknown texts.** Any drop in the first number is a regression until proven otherwise.
+
+## 9. Final state — 23 August 2026
+
+**This section is authoritative where it disagrees with anything above.**
+
+**88 commits ahead of `da698b4`. Working tree clean. Nothing pushed anywhere.**
+
+```
+node test/run.js          ->  36 suites, 570 cases, green
+node tools/smoke-launch.js ->  starts clean and stays up
+npm run dist               ->  NSIS installer builds
+node tools/replay-log.js   ->  identical to baseline on all five figures
+```
+
+### The backlog is closed
+
+**37 done, 0 partial, 1 blocked, 1 skipped.** `NOTES-STATUS.md` is the per-note detail.
+
+- **#28 blocked** on the bug recurring. The burst origin and its age are now written into the
+  detection log, so one more occurrence should be enough to diagnose it. That was the whole
+  intervention: it does not fix the bug, it makes the next report usable.
+- **#2 skipped** by Shara — she has solved first-aggro elsewhere and will bring it herself.
+
+### The seven notes closed in this final stretch
+
+19 (damage parser), 11/17 (rank scaling + the AA bug), 20 (travel guide), 9 (all-of triggers),
+30 (share codes from chat), 24 and 34 (both already done and marked wrong), 28 (made diagnosable).
+
+New modules: `damageEngine.js`, `shared/damageLines.js`, `shared/data/zoneGraph.js`,
+`shared/zoneRouting.js`, `shared/travelCommand.js`, `shared/shareCodeChat.js`. New suites:
+`damage-parser`, `duration-scaling`, `zone-routing`, `all-of-triggers`, `share-code-chat`.
+
+### Two corrections Shara made, and what they teach
+
+**"the AA should only apply to things marked as a BUFF. not just any beneficial."** I had gated it
+on buff/heal/hot/pet, reasoning that the bonus is for beneficial spells and those are the
+beneficial categories. That is inference presented as a measurement — the same failure mode as
+writing log patterns from memory, just better disguised.
+
+**"the celestial healing timer duration being different is due to refreshed casting."** I had a
+measurement that seemed to contradict her correction: Celestial Healing IV spans 48-78s where its
+tier predicts 29. Her explanation is simpler and right. The tell was in the data all along — a
+fixed-duration buff measures inside a 14-second band, and a 30-second spread is several casts end
+to end, not noise around one number.
+
+Both times the measurement was real and the *inference from it* was wrong. That is now gotcha #26,
+and the general rule is in CLAUDE.md's "Working with Shara": measure to get the number, not to
+decide whether to believe her.
+
+### Mutation testing found eight tests that proved nothing
+
+Worth listing, because the failure modes repeat:
+
+1. A test that `return`ed early when its fixture was absent — passed while asserting nothing.
+2. A structural check searching for `'});'`, a string absent from the file, so its slice ran to
+   the end and re-found the word it wanted elsewhere.
+3. The same check, once fixed, with a 900-character window that spilled into the *next* handler.
+4. Two timestamps compared that were taken in the same millisecond, so they matched either way.
+5. A flag asserted on a spell the flag could not possibly affect.
+6. An empty-list case that only sent the trigger line, missing that `[].every()` is vacuously true.
+7. and 8. Two examples chosen where a second mechanism covered for the one under test — the
+   fewer-spells tie-break, and the instance-tier exclusion.
+
+The last pair are the interesting ones: in both cases two mechanisms agreed, so neither could be
+killed alone. The resolution was not to delete the "redundant" one but to establish which actually
+holds the guarantee, and record that in the code. Both comments say so explicitly.
+
+### What is left, and it is not mine
+
+Nothing can be closed without Shara. In priority order:
+
+1. **Note 28** — send the `detection-logs` file next time Ally Buffs shows a buff she did not cast.
+2. **Debuff and charm tier rates** — the sheet says +10%/tier and marks it assumed; every
+   observation in her logs was cut short by the mob dying. Togor's Insects V should read 315s.
+3. **Inferred zone names** — 38 of 104, mostly the leading-"The" question.
+4. **The Permafrost pair** — one zone or two, unresolved.
+5. **Global recovery (#25)** is a placeholder *by design*; the `castOf` trigger is the piece it
+   needs if she ever wants it built.
 
 *Session C, 2026-08-23.*

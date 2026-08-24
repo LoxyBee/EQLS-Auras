@@ -1,81 +1,121 @@
-# Session Handoff — 2026-08-18
+# Session Handoff — 23 August 2026
+
+Written for whoever picks this up next, including Shara herself.
 
 ## Read these first, in this order
 
-1. **`CLAUDE.md`** — the durable source of truth. Project conventions, architecture, and 19 hard-won detection gotchas. The backlog at the bottom is prioritised.
-2. **`TESTING.md`** — everything built but **not yet confirmed in real gameplay**. This is large right now. Nothing in it counts as done until seen working in-game.
-3. **`FEATURES.md`** — wanted but not built. New capability only; bugs and architecture live in `CLAUDE.md`.
-4. This file — what happened in the last session and what state it left things in.
-
-## Status: dev build only
-
-Everything is in `npm start` (dev build). **`npm run dist` has NOT been run since a large amount of new code landed** — three new main-process modules exist that have never been packaged (`gameSpellData.js`, `rosterBackfill.js`, `sessionSnapshot.js`, plus `bardSongTagger.js`). Verifying the packaged build is a genuine outstanding risk, not a formality.
-
-Standing user preference: keep them on the dev build between sessions.
+1. **`NOTES-STATUS.md`** — the live status of your 39-note backlog, one row per note. Start here;
+   it is the answer to "what is done".
+2. **`TESTING.md`** — everything built but **not yet confirmed in game**. Large, and deliberately
+   so. Nothing in it counts as confirmed until you have seen it working.
+3. **`CLAUDE.md`** — the durable source of truth. Conventions, architecture, and 28 detection
+   gotchas that were each learned the hard way. Read the gotchas before touching detection.
+4. **`FEATURES.md`** — the original note-dump with the full reasoning behind each one.
+5. This file — what state the last session left things in.
 
 ---
 
-## THE TWO THINGS THAT ACTUALLY MATTER
+## Where it stands
 
-Everything else in this file is detail. These two are the substance.
+**37 of the 39 notes are done. 0 partial. 1 blocked. 1 skipped.**
 
-### 1. The detection engine is architecturally wrong (P0 in CLAUDE.md)
+- **#28 (blocked)** — Ally Buffs showed a buff you never cast. It cannot be diagnosed until it
+  happens again, and that is genuinely the only thing standing in the way. See below.
+- **#2 (skipped)** — first-aggro premade. Your call: you have solved this elsewhere and will bring
+  it yourself. The greyed-out placeholder stays in Add Aura.
 
-`buffEngine.js`'s `handleLine()` is a chain of tiers, each ending in `return`. When a tier matches on *text* but fails a *confidence* sub-check, it still returns — so the line is consumed and every later tier that might have resolved it correctly never runs. The user diagnosed this themselves: *"every check if not passed, should continue, not end the check."*
+**Verification state:** 36 test suites, 570 cases, all green. The app launches and stays up
+(`node tools/smoke-launch.js` — real Electron, clicks nothing). `npm run dist` builds the NSIS
+installer. The full-log replay is identical to baseline on all five figures.
 
-This has now produced misdetections from four separate directions. Several point fixes have been applied around it (burst-context memorized exemption, heal-proc auto-resolve, ally burst path) and **those may become redundant or need folding into the rework** — don't treat them as settled design.
+**Branch `feat/eql-roster-and-backlog`, based on `da698b4`. Nothing has been pushed anywhere.**
 
-**Nothing else on the backlog matters as much.** This is the app's actual job.
+---
 
-### 2. The roster is missing ~37,000 spells, and that silently corrupts detection
+## The one thing that needs you
 
-The original mining kept only spells with a duration field `> 0`. That dropped real, castable buffs — and a missing entry doesn't just hide a buff, it makes some *other* spell's shared landing text look **unique**, which promotes a guess into the highest-confidence auto-confirm tier.
+**Note 28.** The likeliest cause is a burst: activating something opens a short window, and a buff
+landing on a groupmate inside it gets credited to you even when somebody else cast it. It has been
+unprovable because the detection log said only `burst context` for both the correct case and the
+wrong one — a report of the bug and a report of normal operation read identically.
 
-Measured: **351 landing texts appear unique to the app but are shared in the game's own data.**
+That is fixed. The log now records what opened the burst and how long ago:
 
-Half-fixed: `rosterBackfill.js` restored 1,083 bard songs (roster 11,337 → 12,420). The non-song half is **still open** — including `Armor of Protection`, which is why a "You feel protected." prompt once offered four candidates none of which was the right answer.
+```
+ALLY LANDED "Spirit of the Puma" on "Avenrae" - burst context
+(burst opened 4.2s ago by "Cannibalize"), unique third-person landing text
+```
 
-There's a cheaper interim option written up in `CLAUDE.md`: build a shared-text veto index from raw game data and use it *only* to block the unique-text auto-confirm. No roster changes, no duration questions, kills the false-confidence problem on its own.
+The age is the diagnostic half. Half a second after you pressed something is plausibly yours;
+eight seconds later is probably somebody else's cast arriving inside your window.
+
+**When it next happens:** note the buff name and roughly the time, then send that day's file from
+the `detection-logs` folder. One occurrence should now be enough.
+
+---
+
+## Three things I could not verify, and would like your eyes on
+
+These are in `TESTING.md` too, but they are the ones that matter most because I had no way to
+settle them myself.
+
+1. **Debuff and charm/mez tier rates.** The spreadsheet says +10% per tier and marks it *assumed*.
+   Every observation of one in your logs was cut short by the mob dying before the spell ran out,
+   so I have nothing to check it against. Togor's Insects V should read **315s** against a base of
+   210. If it wears off noticeably early or late, that number is the suspect.
+2. **Zone names in the travel guide.** 38 of the 104 are places you have never entered, so their
+   exact EQL wording is inferred — mostly the question of a leading "The". They cannot be dropped;
+   real routes pass through them. If one reads wrong, tell me the right spelling.
+3. **The Permafrost pair.** Your zone list has both `Permafrost Keep` and
+   `The Permafrost Caverns - Group`; classic EverQuest has one zone there. I have treated them as
+   the same place. If they are actually two, routing to the second sends you to the wrong door.
 
 ---
 
 ## What landed this session
 
-### Detection / correctness
-- **Ally-buff tracking now works at all.** It had never fired once — the tier was gated on `recentSelfCast` (set only by a named cast line, which Quick Buff never produces) and on the recipient being a known group member (only learned from join/leave lines seen live). Both gates removed/bypassed; the recipient's name now comes from the landing line itself. Gotchas #17, #18.
-- **Quick-Buff bursts no longer ignore already-active buffs** — inside a burst window the not-memorized exclusion is skipped.
-- **Heal-proc auto-resolve** — `"You healed X for N hit points by <Spell>"` names the answer outright and resolves a queued ambiguous cast.
-- **Rank collapsing** — a landing text shared only by ranks of one spell resolves silently to the lowest rank instead of prompting. Genuinely different spells still prompt.
-- **Bard songs**: tagged from game data (1 → 1,430 tagged), backfilled into the roster, opt-in and off by default, prompts suppressed when no aura shows them.
-- **Per-buff "No AA scaling"** flag — some spells carry a fixed duration the duration-extension AAs never touch. Promised Renewal is set to 12s + excluded.
+Seven notes, each with its own commit carrying the full reasoning. Short version:
 
-### Behaviour / state
-- **Session restore** — live timers survive a restart within a 5-minute grace window. Gotcha #19.
-- **Memorized gems persist** across restarts, shown as a 14-slot gem bar on the landing page, click a gem to forget.
-- **Profile-gated aura visibility** — `activeProfileIds` is now the on/off control; the global "Show this aura" toggle is gone. Unticking every profile hides the aura.
-- **Auto-hide split into two settings**, the second (show while this app is focused) off by default. Unlocked auras are never auto-hidden.
-- **Shutdown instrumentation** — the app was seen exiting unprompted with no crash dump and no way to tell which of three quit paths fired. All are now logged.
-
-### UI
-Custom timer form is a modal with a data-driven trigger picker; ally buffs can group by player with headings (alphabetical, horizontal or vertical); window size/position persists; colour pickers and margin width wired up; overlay master controls consolidated onto the Overlay Auras page.
-
----
-
-## Open questions needing the user, not code
-
-- **Inferno Shield duration.** App shows ~24m; measured from the log it's 16–17½m against a 900s base. The user has confirmed this is **NOT** the AA-scaling exclusion — it's a separate problem, still undiagnosed.
-- **The non-song roster gap** — needs a decision on approach (re-mine vs veto index) before anyone builds it.
-- **`Promised Renewal XII`** was left at 18s. It has different landing text from the base spell, so it's a genuinely distinct spell whose real duration hasn't been measured.
-- **Bundled roster is stale.** All roster fixes are in the user's local data only. A fresh install still gets the broken roster; the bard half self-heals on launch, the rest doesn't.
+- **#19 Damage parser.** One row per attacker for the current fight. Direction is *derived* rather
+  than guessed from name shape — see gotcha #20, and note that `Fright` is a monster with a
+  one-word name, which is what kills the obvious approach.
+- **#11/#17 Rank scaling**, plus a bug that was already shipped: the AA duration bonus was being
+  applied to debuffs, DoTs and mez. 155 roster entries would have over-timed by up to 65% the
+  moment you set your AA level. Now `buff` only, per your correction.
+- **#20 Travel guide.** Zone graph sourced and cross-checked; routes from where you are to wherever
+  you say, using travel spells you have actually scribed. Destination set in game with
+  `/tell <zone>`.
+- **#9 All-of triggers**, to your design: no shared window, each condition holds for its own time,
+  a zone condition holds until you leave.
+- **#30 Share codes from chat.** Both blockers answered by measurement. It offers, never imports.
+- **#24 and #34** were already done and marked wrong. Checked rather than trusted.
+- **#28** made diagnosable, as above.
 
 ---
 
-## Working practices that have earned their place
+## Working practices that earned their place
 
-- **Measure, don't guess.** The user's real log and `spells_us.txt` have settled more questions this session than reasoning did — including catching two cases where a plausible-sounding theory was simply wrong. Field positions in the spell data were established by scanning every field against known values, not from docs.
-- **Isolated Node scripts** (mock `store`, real `BuffStore`/`BuffEngine`) before touching the live app. Caught real regressions.
-- **Watch out for tests that pass for the wrong reason.** One session-restore test "passed" while not actually exercising the thing it claimed to; it was only caught by checking the expected number appeared.
-- **Verify markup structurally** (duplicate ids, div balance, dangling `getElementById`, renderer→preload API) before every restart that touches HTML. This caught several breakages pre-flight.
-- **Do not use offset-based string slicing to edit HTML.** It silently deleted an unrelated modal this session. Use targeted edits.
-- **Beware bash eating backticks** in `python -c` heredocs — it stripped code references out of docs twice and produced an empty `debugLog()` call once.
-- Restart discipline: `taskkill //F //IM electron.exe //T` then `npm start`; `node --check` every touched file.
+- **Measure, don't guess.** Every log pattern in this codebase carries the count it matched across
+  your 1,521,971 lines. This is not decoration: the first time patterns were written from memory,
+  **nine of twelve matched nothing at all** and the feature they powered had never once fired —
+  while its tests, written from the same memory, all passed.
+- **Mutation testing, every time.** Break the rule on purpose, confirm the test fails, restore. It
+  caught **eight tests passing while proving nothing** this session alone. A green suite is not
+  evidence until it has been shown it can go red.
+- **Replay before and after anything touching detection.** `node tools/replay-log.js`. Baseline:
+  129 distinct buffs, 211,546 landings, 840 ally landings, 27 prompts, 91 unknown texts. All five
+  must match, because losing functionality counts as failure.
+- **Launch the app before saying it works.** `node tools/smoke-launch.js`. A
+  `globalShortcut.register('Pause')` that *throws* rather than returning false shipped past a green
+  suite once, and the UI advertised a hotkey that had never worked.
+- **When Shara states a game fact, that is evidence.** Twice this session a measurement appeared to
+  contradict her and she was right both times. Measure to get the number, not to decide whether to
+  believe her.
+
+## Hard rules, unchanged
+
+- **`PERSONAL COPY DO NOT TOUCH.md` is off limits.** In `.gitignore`, never opened, never
+  committed. That gitignore entry is the only thing that makes `git add -A` safe to type here.
+- **Do not push anywhere.** Nothing goes to `LoxyBee/EQLS-Auras` without Shara's explicit consent.
+- **EverQuest runs live on this machine.** Running the app is fine; driving it with synthetic
+  clicks is not — a stray automated click has already landed in her game window.
