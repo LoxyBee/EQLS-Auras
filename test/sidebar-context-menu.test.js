@@ -70,5 +70,25 @@ test('it looks like part of this app, not a browser default menu', () => {
   assert.match(css, /\.context-menu button\.danger\s*\{[^}]*color:\s*var\(--danger\)/);
 });
 
+// ---------------------------------------------------------------------------
+// focusWidget - a real bug, once the drag-reorder row also carried data-widget-id
+// ---------------------------------------------------------------------------
+
+test('focusWidget targets the actual nav button, not the row wrapping it', () => {
+  // Both the row (added for drag-to-reorder, this same file's earlier work) and the button inside
+  // it carry data-widget-id, and the row - the ancestor - comes first in document order. A bare
+  // `[data-widget-id="..."]` therefore matched the ROW, which has no data-page attribute, so
+  // activateNavButton(row) read pageId as undefined and turned every page's "active" class off -
+  // nothing left visible at all. Reported as "adding a new aura takes you to a blank menu rather
+  // than into the new aura directly," which is exactly what a page with no active section is.
+  const fn = js.match(/function focusWidget\(id\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'focusWidget has been restructured');
+  assert.match(
+    fn[1],
+    /submenuEl\.querySelector\(`button\.nav-sub-btn\[data-widget-id="\$\{id\}"\]`\)/,
+    'the selector is not specific to the button - the row would win the match again'
+  );
+});
+
 module.exports = () => report('sidebar-context-menu');
 if (require.main === module) process.exit(report('sidebar-context-menu') ? 1 : 0);

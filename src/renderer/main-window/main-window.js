@@ -1105,7 +1105,6 @@ function initWidgetsPanel() {
   const displayModeRowEl = document.getElementById('widget-display-mode-row');
   const buffSourceTimerLabelEl = document.getElementById('widget-buff-source-timer-label');
   const categoryBordersCheckbox = document.getElementById('widget-category-borders-checkbox');
-  const trackEnemiesCheckbox = document.getElementById('widget-track-enemies-checkbox');
   const allyAlertCheckbox = document.getElementById('widget-ally-alert-checkbox');
   const alwaysOnCheckbox = document.getElementById('widget-always-on-checkbox');
   const alwaysOnRowEl = document.getElementById('widget-always-on-row');
@@ -1119,8 +1118,6 @@ function initWidgetsPanel() {
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
   const mineOnlyCheckbox = document.getElementById('widget-mine-only-checkbox');
   const totalRowCheckbox = document.getElementById('widget-total-row-checkbox');
-  const enemiesRowEl = document.getElementById('widget-enemies-row');
-  const enemiesHintEl = document.getElementById('widget-enemies-hint');
   const bordersRowEl = document.getElementById('widget-borders-row');
   const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
@@ -1952,9 +1949,20 @@ function initWidgetsPanel() {
     // have read as - was never a real buffSource value at all, only a spellName+trackOnEnemies
     // combination the buff-timer picker builds. Simplest correct fix is not showing a choice that
     // was never really there: the row is hidden, the same as a customTimer aura's fixed source.
+    // trackOnEnemies is the same kind of exception as allyDebuffAlert just above, and for the same
+    // reason: on a Custom debuff aura buffSource:'ally' is a plumbing requirement (an enemy
+    // landing arrives through the same "not you" data path a real ally-buff landing does), not a
+    // real choice. Reported directly: "'buffs you've cast on allies' [is] enabled, but this has
+    // nothing to do with casting spells on an ally, it is enemies ONLY." A Custom debuff aura's
+    // enemy tracking is also no longer a toggle that could turn it off (see the removed "Also
+    // watch these spells on enemies" checkbox) - trackOnEnemies is permanently true for one from
+    // the moment it is created, so there is no "Watching:" choice left to show here either.
     const announcer = widget.displayMode === 'text' || widget.displayMode === 'sound-only';
     buffSourceRow.style.display =
-      widget.kind === 'custom' && !widget.allyDebuffAlert && (announcer || widget.buffSource !== 'customTimer')
+      widget.kind === 'custom' &&
+      !widget.allyDebuffAlert &&
+      !widget.trackOnEnemies &&
+      (announcer || widget.buffSource !== 'customTimer')
         ? ''
         : 'none';
     buffSourceRadios.forEach((r) => (r.checked = r.value === (widget.buffSource || 'self')));
@@ -1981,7 +1989,6 @@ function initWidgetsPanel() {
     landingGlowCheckbox.checked = widget.landingGlowEnabled !== false;
     mergeCheckbox.checked = !!widget.mergeSameDuration;
     categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
-    trackEnemiesCheckbox.checked = !!widget.trackOnEnemies;
     const fightTimeout = typeof widget.fightTimeoutSec === 'number' ? widget.fightTimeoutSec : 10;
     fightTimeoutSlider.value = String(fightTimeout);
     fightTimeoutValueEl.textContent = `${fightTimeout}s`;
@@ -2096,14 +2103,6 @@ function initWidgetsPanel() {
     travelSettingsEl.style.display = widget.buffSource === 'travel' ? '' : 'none';
     if (widget.buffSource === 'travel') showTravelDestination(widget.travelDestination);
 
-    // Deliberately NOT offered on the built-in Ally Buffs aura. Ally Buffs is for buffs you cast
-    // on people, full stop - a debuff on a mob is a different thing that happens to arrive through
-    // the same "landed on somebody who is not you" path, and offering the switch there invited
-    // mixing the two in one aura. Custom ally-source auras (which is what "Custom debuff aura"
-    // builds) still get it, because that is where debuff tracking is meant to live.
-    const canWatchEnemies = widget.kind !== 'ally-buffs-builtin' && widget.buffSource === 'ally';
-    enemiesRowEl.style.display = canWatchEnemies ? '' : 'none';
-    enemiesHintEl.style.display = canWatchEnemies ? '' : 'none';
     if (widget.buffSource === 'customTimer') {
       resetTimerForm();
       renderCustomTimersList(widget);
@@ -2143,13 +2142,14 @@ function initWidgetsPanel() {
       return;
     }
     filterCard.style.display = '';
-    // allyDebuffAlert gets its own wording: this list is not what shows ON this aura (nothing the
-    // owner casts is involved at all), it is which spells to warn about when somebody ELSE casts
-    // them - conflating the two is exactly the "built out of casting a buff on an ally" confusion
-    // this whole change is fixing.
+    // allyDebuffAlert and trackOnEnemies each get their own wording, for the same reason: neither
+    // is really "buffs shown on this aura." An alert aura watches somebody ELSE's cast; a debuff
+    // aura watches something the owner cast AT a target, not a buff at all.
     filterHint.textContent = widget.allyDebuffAlert
       ? 'Pick which spells to warn about when someone else casts them.'
-      : 'Pick which known buffs should show on this aura.';
+      : widget.trackOnEnemies
+        ? 'Pick which known debuffs this aura tracks on the things you cast them at.'
+        : 'Pick which known buffs should show on this aura.';
     filterSearch.style.display = '';
     selfBuffsFiltersEl.style.display = 'none';
     renderSelectedBuffsList(widget);
@@ -2620,7 +2620,14 @@ function initWidgetsPanel() {
   // custom creation, premade creation, and both import outcomes below.
   function focusWidget(id) {
     return refreshWidgets().then(() => {
-      const btn = submenuEl.querySelector(`[data-widget-id="${id}"]`);
+      // Must be button.nav-sub-btn specifically, not the bare attribute selector. Both the row
+      // (added for drag-to-reorder) and the button inside it carry data-widget-id, and the row -
+      // being the ancestor - comes first in document order, so a bare `[data-widget-id="..."]`
+      // matched IT. The row has no data-page, so activateNavButton(row) read pageId as undefined
+      // and toggled every .page's "active" class off - nothing whatsoever left visible. Reported
+      // as "adding a new aura takes you to a blank menu rather than into the new aura directly",
+      // which is exactly what a page with no active section looks like.
+      const btn = submenuEl.querySelector(`button.nav-sub-btn[data-widget-id="${id}"]`);
       if (btn) activateNavButton(btn);
       selectWidget(id);
     });
@@ -2654,15 +2661,6 @@ function initWidgetsPanel() {
         'every spell at once, not one you have to pick - useful for mez and charm, where a resist ' +
         'is the difference between a mob standing still and a mob hitting you.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'resisted'),
-    },
-    {
-      id: 'ally-cast',
-      name: 'Someone else cast a mez',
-      description:
-        'Warns you when a groupmate - or anything else - starts casting a mez or charm, so you ' +
-        'know not to break it. A warning, not a countdown: the game never says when somebody ' +
-        "else's debuff ends, so a timer here would be invented.",
-      create: (name) => window.eqTracker.createTextAuraWidget(name, 'allyCast'),
     },
     {
       id: 'buff-timer',
@@ -3295,9 +3293,6 @@ function initWidgetsPanel() {
     window.eqTracker.setWidgetDamageOptions(selectedId, { showTotalRow: totalRowCheckbox.checked });
   });
 
-  trackEnemiesCheckbox.addEventListener('change', () => {
-    window.eqTracker.setWidgetTrackOnEnemies(selectedId, trackEnemiesCheckbox.checked);
-  });
   allyAlertCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetAllyDebuffAlert(selectedId, allyAlertCheckbox.checked);
   });

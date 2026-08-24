@@ -358,13 +358,14 @@
                 </div>
               </div>
 
-              <div class="row" id="widget-enemies-row">
-                <label title="For mez, charm, snare and slow - things you cast AT something rather than on your group. The tile shows the target's name and clears when it dies, when the spell wears off, or when a mez is broken. Off by default: a mob's name is not a single word, so matching one is looser, and doing it for every spell at once would mean around 160,000 extra tiles. This applies only to the spells THIS aura watches.">
-                  <input type="checkbox" id="widget-track-enemies-checkbox" />
-                  Also watch these spells on enemies
-                </label>
-              </div>
-              <p class="hint" id="widget-enemies-hint"></p>
+              <!-- The "Also watch these spells on enemies" toggle that used to live here is gone,
+                   at the owner's instruction: it let a plain Custom buff aura opt into
+                   trackOnEnemies at runtime, but the buff/debuff picker is category-locked now
+                   (see isDetBuff/wantsDebuffs) - a buff aura can only ever pick buff-category
+                   spells, so there was never a debuff-category pick left for the toggle to apply
+                   to. Enemy tracking is now purely a property of which button built the aura -
+                   Custom debuff aura sets trackOnEnemies true forever at creation, Custom buff
+                   aura leaves it false forever - not a switch either kind can flip afterward. -->
               <div class="row" id="widget-borders-row">
                 <label title="Red for direct damage, amber for damage over time, green for heals, darker green for heals over time, blue for buffs, purple for debuffs, amber for pet spells, magenta for charms. Anything the roster has no type for keeps its normal edge.">
                   <input type="checkbox" id="widget-category-borders-checkbox" />
@@ -426,8 +427,22 @@
                 </div>
               </div>
 
-              <!-- Only meaningful on an aura showing buffs cast on other
-                   people - hidden entirely otherwise (see renderBuffFilter). -->
+              <div id="widget-icon-only-settings">
+                <div class="row">
+                  <span class="label">Icon size:</span>
+                  <input type="range" id="widget-icon-size-slider" min="24" max="96" step="2" />
+                  <span id="widget-icon-size-value" class="slider-value">46px</span>
+                </div>
+                <div class="row">
+                  <span class="label">Margin width:</span>
+                  <input type="range" id="widget-margin-width-slider" min="0" max="20" step="1" />
+                  <span id="widget-margin-width-value" class="slider-value">5px</span>
+                </div>
+              </div>
+
+              <!-- Only meaningful on an aura showing buffs cast on other people - hidden entirely
+                   otherwise (see renderBuffFilter). Moved below the icon-size/margin-width block
+                   at the owner's instruction, 2026-08-24. -->
               <div id="widget-ally-grouping-settings" style="display:none">
                 <div class="row">
                   <label><input type="checkbox" id="widget-group-ally-checkbox" /> Group by player</label>
@@ -439,19 +454,6 @@
                 </div>
                 <div class="row">
                   <label title="Grouping already puts the name in the heading and drops it from the buffs automatically. This drops it when grouping is off too."><input type="checkbox" id="widget-hide-ally-name-checkbox" /> Hide the player name on each buff</label>
-                </div>
-              </div>
-
-              <div id="widget-icon-only-settings">
-                <div class="row">
-                  <span class="label">Icon size:</span>
-                  <input type="range" id="widget-icon-size-slider" min="24" max="96" step="2" />
-                  <span id="widget-icon-size-value" class="slider-value">46px</span>
-                </div>
-                <div class="row">
-                  <span class="label">Margin width:</span>
-                  <input type="range" id="widget-margin-width-slider" min="0" max="20" step="1" />
-                  <span id="widget-margin-width-value" class="slider-value">5px</span>
                 </div>
               </div>
             </div>

@@ -182,5 +182,14 @@ test('"Show bard songs" is gone from both Self Buffs and Ally Buffs, at the owne
   assert.doesNotMatch(rendererSrc, /hideBardSongsCheckbox/, 'a dangling reference to the removed control');
 });
 
+test('Group by player / Hide the player name sit below icon size and margin width', () => {
+  // Owner's instruction, 2026-08-24 - pure reorder, no behaviour change. Guarded by DOM position
+  // rather than just existence, since existence alone would not catch it moving back above.
+  const iconOnlyAt = panel.indexOf('id="widget-icon-only-settings"');
+  const groupingAt = panel.indexOf('id="widget-ally-grouping-settings"');
+  assert.ok(iconOnlyAt >= 0 && groupingAt >= 0, 'one of the two blocks is missing');
+  assert.ok(iconOnlyAt < groupingAt, 'the grouping settings are not below icon size / margin width any more');
+});
+
 module.exports = () => report('settings-panel-layout');
 if (require.main === module) process.exit(report('settings-panel-layout') ? 1 : 0);

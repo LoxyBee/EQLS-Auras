@@ -349,5 +349,26 @@ test('the "Buffs shown" hint does not call this a list of buffs shown ON the aur
   );
 });
 
+// ---------------------------------------------------------------------------
+// The premade itself, deleted 24 Aug at the owner's instruction - the underlying
+// capability is not
+// ---------------------------------------------------------------------------
+
+test('the one-click premade is gone from the Add Aura list', () => {
+  const rendererSrc = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.doesNotMatch(rendererSrc, /id: 'ally-cast',/, "the 'Someone else cast a mez' premade entry is back");
+  assert.doesNotMatch(rendererSrc, /name: 'Someone else cast a mez'/);
+});
+
+test('the capability behind it still exists - reachable from Custom text aura by hand', () => {
+  // Only the guided one-click shortcut was removed. The preset a premade would have called stays,
+  // so an aura already built from it (before deletion) keeps working AND can still be reset to
+  // default - and anyone can still build the same thing manually: Custom text aura, tick "Warn me
+  // when someone else casts these", pick the mez/charm family.
+  assert.match(storeSrc, /allyCast: \(\) => \(\{/);
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="widget-ally-alert-checkbox"/);
+});
+
 module.exports = () => report('ally-cast-alert');
 if (require.main === module) process.exit(report('ally-cast-alert') ? 1 : 0);

@@ -327,45 +327,39 @@ test('an aura that did not ask for enemies does not draw them', () => {
   );
 });
 
-test('the toggle is reachable end to end', () => {
-  // Six files have to agree for one checkbox to do anything. Any one of them missing leaves a
-  // control that looks live and silently does nothing, which is worse than not offering it.
+test('the runtime toggle is gone - enemy tracking is fixed at creation now', () => {
+  // Reversed at the owner's instruction, 2026-08-24: "debuffs shouldn't need a toggle for this it
+  // should be base functionality. that is the point of it being a custom debuff." The toggle also
+  // had no legitimate use left once the buff/debuff picker became category-locked (see
+  // isDetBuff/wantsDebuffs in gem-slots.test.js) - a Custom buff aura can only ever pick
+  // buff-category spells, so there was never a debuff-category pick left for "also watch these on
+  // enemies" to apply to. trackOnEnemies itself is untouched: still a real stored field, still set
+  // permanently by createDebuff (true) vs the plain custom creator (false), still read everywhere
+  // detection and the picker filter need it - only the runtime checkbox that could flip it after
+  // creation is gone.
   const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'index.html'), 'utf8');
   const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
   const preload = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'preload-main.js'), 'utf8');
-  assert.match(html, /id="widget-track-enemies-checkbox"/, 'no checkbox');
-  assert.match(renderer, /trackEnemiesCheckbox\.addEventListener\('change'/, 'nothing listens to it');
-  assert.match(
-    renderer,
-    /trackEnemiesCheckbox\.checked = !!widget\.trackOnEnemies;/,
-    'it never shows its own saved state, so it reads as off every time the panel opens'
-  );
-  assert.match(preload, /setWidgetTrackOnEnemies:/, 'no bridge');
-  assert.match(mainSrc, /ipcMain\.handle\('widget:setTrackOnEnemies'/, 'no handler');
-  assert.match(managerSrc, /function setTrackOnEnemies\(id, enabled\)/, 'no manager function');
-  assert.match(managerSrc, /^ {2}setTrackOnEnemies,$/m, 'the manager function is not exported');
+  assert.doesNotMatch(html, /id="widget-track-enemies-checkbox"/, 'the checkbox is back');
+  assert.doesNotMatch(renderer, /trackEnemiesCheckbox/, 'a dangling reference to the removed control');
+  // The backend setter is deliberately left in place - harmless, and this project's precedent
+  // (hideBardSongs, showOnAllProfiles) is to leave a field's plumbing rather than migrate it away
+  // for no benefit. Nothing in the UI calls it any more, which is the point of this test.
+  assert.match(preload, /setWidgetTrackOnEnemies:/, 'the backend bridge was removed along with the UI');
+  assert.match(mainSrc, /ipcMain\.handle\('widget:setTrackOnEnemies'/);
+  assert.match(managerSrc, /function setTrackOnEnemies\(id, enabled\)/);
 });
 
-test('changing it pushes the new config to the overlay', () => {
-  // Without this the aura keeps the old setting until something unrelated happens to refresh it.
-  const fn = managerSrc.match(/function setTrackOnEnemies\(id, enabled\) \{([\s\S]*?)\n\}/);
-  assert.ok(fn, 'setTrackOnEnemies has been renamed or restructured');
-  assert.match(fn[1], /pushConfigChanged\(id\)/);
-});
-
-test('the toggle is hidden where it could not do anything', () => {
-  // An enemy landing goes into the ally list, so on a self-source aura this would widen detection
-  // and then draw nothing - the exact "empty aura and no way to tell why" it is meant to avoid.
+test('the "Watching:" row is hidden on a debuff aura too, not shown reading "allies"', () => {
+  // The other half of the same report: "'buffs you've cast on allies' [is] enabled, but this has
+  // nothing to do with casting spells on an ally, it is enemies ONLY." Same treatment as
+  // allyDebuffAlert (see ally-cast-alert.test.js) and for the same underlying reason -
+  // buffSource:'ally' on a debuff aura is a plumbing requirement, not a real choice, so showing it
+  // as a choice was actively wrong.
   const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
-  assert.match(renderer, /const canWatchEnemies =[\s\S]{0,140}buffSource === 'ally'/);
-  assert.match(renderer, /enemiesRowEl\.style\.display = canWatchEnemies \? '' : 'none';/);
-  assert.match(renderer, /enemiesHintEl\.style\.display = canWatchEnemies \? '' : 'none';/);
-
-  // Deliberately NOT excluded for sound-only, unlike the tile-grouping options beside it: an aura
-  // that only makes a noise is a perfectly good way to hear that a mez landed.
-  const block = renderer.match(/const canWatchEnemies =[\s\S]*?enemiesHintEl\.style\.display[^\n]*\n/);
-  assert.ok(block, 'the enemy visibility block has been restructured');
-  assert.doesNotMatch(block[0], /sound-only/);
+  const fn = renderer.match(/const announcer = widget\.displayMode === 'text'[\s\S]*?buffSourceRow\.style\.display =([\s\S]*?);/);
+  assert.ok(fn, 'the buffSourceRow visibility rule has been restructured');
+  assert.match(fn[1], /!widget\.trackOnEnemies/, 'a debuff aura still shows "Watching: Buffs you\'ve cast on allies"');
 });
 
 // ---------------------------------------------------------------------------
