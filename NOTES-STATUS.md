@@ -57,11 +57,11 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 21 | An aura showing which loadout profile is active | **DONE** | In the Loadouts modal, and switches itself on once when you make a second loadout. |
 | 22 | "Unlock all" only on the main Overlay Auras page | **DONE** | |
 | 23 | Text-only display style, own size, own dwell time | **DONE** | Built as a *type* chosen when you create the aura, not a fourth radio — you agreed to that change. The dwell time is a setting, default 6s. |
-| 24 | Detection priority rework, plus a song-pulse check | **PART** | Spellbook now outranks the gem list. Rival-caster tracking built. Missing: the post-cast song-pulse auto-resolve, which needs a log sample proving the 6s repeat. |
+| 24 | Detection priority rework, plus a song-pulse check | **DONE** | All three built, including the 6s pulse check — you were right and I measured 314,324 gaps at exactly 6s to confirm it. The pulse check is wired and currently has nothing to decide, because no landing text on the rebuilt roster is split song/non-song; a test fires if that changes. |
 | 25 | A disabled "Global recovery time" placeholder | **DONE** | Still a placeholder. The `castOf` trigger note 15 introduced is the piece it needs, when you want it built. |
 | 26 | Drop a stale timer when a buff gets overwritten | **DONE** | Overwrites, refused casts, and buffs on yourself. I was wrong that self buffs could not be told apart. |
 | 27 | Promote "Buffs shown" to its own section, add gem slots | **DONE** | Own card, gem slots, "+" slot, buffs and debuffs kept apart. Your existing auras were not touched. |
-| 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Needs a detection log from the next time it happens. The log is findable now — see below. |
+| 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Still needs it to happen once more — but the next time will be diagnosable. The log now records which of your actions opened the burst and how long ago, which is the missing fact that made a report of this indistinguishable from a correct landing. |
 | 29 | Put EverQuest back in front after answering a popup | **DONE** | |
 | 30 | Read share codes out of chat | **DONE** | Both blockers answered by measurement — you were right about + and =, and the line limit is at least 403 characters, which ordinary codes fit inside. It offers, never imports. |
 

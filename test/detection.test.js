@@ -354,5 +354,59 @@ test('an instant is never treated as an already-running buff', () => {
   assert.ok(m, 'the renewal tier has been restructured');
   assert.match(m[1], /!entry\.instant/, 'an instant can still stand in as an active buff');
 });
+// ---------------------------------------------------------------------------
+// Note 28 - making the next occurrence diagnosable
+// ---------------------------------------------------------------------------
+
+/**
+ * "Ally Buffs showed a buff you never cast."
+ *
+ * The likeliest cause is a burst: your own activation opens a window, and a landing on a groupmate
+ * inside it gets credited to you even though somebody else cast it. That has been unprovable
+ * because the log line said only "burst context" - which reads identically whether the landing was
+ * genuinely yours or not.
+ *
+ * The origin and its AGE are now recorded, and the age is the useful half: a landing credited to a
+ * burst that opened eight seconds ago is far likelier to be somebody else's cast arriving inside
+ * your window than one credited half a second after you pressed something.
+ *
+ * This does not fix the bug. It makes the next report of it diagnosable from the log she already
+ * has, rather than needing the whole thing to happen again under observation.
+ */
+test('a burst-context ally landing records what opened the burst', () => {
+  const { engine, buffStore, log } = makeEngine();
+  const pick = buffStore
+    .getAll()
+    .find((b) => b.othersLandingSuffix && buffStore.findAllByOthersLandingSuffix(b.othersLandingSuffix).length === 1);
+  assert.ok(pick, 'no unambiguous third-person landing text in the roster to test with');
+  engine.handleLine('[Wed Aug 19 21:14:02 2026] You activate Cannibalize.');
+  engine.handleLine(`[Wed Aug 19 21:14:06 2026] Avenrae${pick.othersLandingSuffix}`);
+  const landed = log.find((l) => l.startsWith('ALLY LANDED'));
+  assert.ok(landed, 'the ally landing was not logged at all');
+  assert.match(landed, /burst opened [\d.]+s ago by "Cannibalize"/);
+});
+
+// A burst can be extended by later landings, and the origin must survive that - otherwise the one
+// fact worth logging is overwritten by the very events being explained.
+test('extending a burst does not rewrite where it came from', () => {
+  const { engine, buffStore, log } = makeEngine();
+  const picks = buffStore
+    .getAll()
+    .filter((b) => b.othersLandingSuffix && buffStore.findAllByOthersLandingSuffix(b.othersLandingSuffix).length === 1)
+    .slice(0, 2);
+  assert.equal(picks.length, 2, 'need two unambiguous landing texts');
+  engine.handleLine('[Wed Aug 19 21:14:02 2026] You activate Cannibalize.');
+  engine.handleLine(`[Wed Aug 19 21:14:03 2026] Avenrae${picks[0].othersLandingSuffix}`);
+  engine.handleLine(`[Wed Aug 19 21:14:04 2026] Lasartik${picks[1].othersLandingSuffix}`);
+  const landings = log.filter((l) => l.startsWith('ALLY LANDED'));
+  assert.equal(landings.length, 2);
+  for (const line of landings) assert.match(line, /by "Cannibalize"/);
+});
+
+test('a landing with no burst behind it says so rather than inventing one', () => {
+  const { engine } = makeEngine();
+  assert.equal(engine.burstOpenedBy, null);
+  assert.match(engine._burstOrigin(), /burst origin unknown/);
+});
 module.exports = () => report('detection');
 if (require.main === module) process.exit(report('detection') ? 1 : 0);

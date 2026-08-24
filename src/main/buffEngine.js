@@ -171,6 +171,15 @@ class BuffEngine extends EventEmitter {
     this.store = store;
     this.pendingCast = null; // { name, timer, landingText }
     this.burstUntil = 0; // Date.now() timestamp - see matchActivate handling below
+    // Note 28. WHAT opened the current burst, and when. Nothing reads this to make a decision -
+    // it exists only so the detection log can say where a burst-context landing came from.
+    //
+    // That is the whole reason note 28 has been stuck. "Ally Buffs showed a buff you never cast"
+    // is almost certainly a burst crediting somebody else's cast to you, but the log line said
+    // only "burst context" - so a report of it could not be told apart from a correct landing
+    // without reproducing the whole session. Recording the origin means the NEXT occurrence is
+    // diagnosable from the log she already has, instead of needing it to happen a third time.
+    this.burstOpenedBy = null; // { text, at } | null
     this.activeBuffs = new Map(); // lowercased name -> { name, durationSec, expiresAt, endedText }
     this.unknownBuffs = new Map(); // lowercased name -> { name, lastSeenAt, dismissed }
     this.ambiguousCasts = new Map(); // landingText -> { text, candidateNames, lastSeenAt }
@@ -521,6 +530,10 @@ class BuffEngine extends EventEmitter {
     const activated = matchActivate(line);
     if (activated) {
       this.burstUntil = Date.now() + BURST_WINDOW_MS;
+      // Only set where a burst BEGINS, never where one is extended - the extensions are all
+      // downstream landings of the same burst, and overwriting this with each of them would erase
+      // the one fact worth logging.
+      this.burstOpenedBy = { text: activated, at: Date.now() };
       this._checkForEndedBuffs(line);
       return;
     }
@@ -659,14 +672,16 @@ class BuffEngine extends EventEmitter {
         const matches = this.buffStore.findAllByOthersLandingSuffix(suffix);
         if (matches.length > 1) {
           this._debugLog(
-            `ALLY AMBIGUOUS "${suffix}" on "${allyName}" - burst context, ${matches.length} candidates: ${matches.map((c) => c.name).join(', ')}`
+            `ALLY AMBIGUOUS "${suffix}" on "${allyName}" - burst context${this._burstOrigin()}, ${matches.length} candidates: ${matches.map((c) => c.name).join(', ')}`
           );
         } else if (matches.length === 1) {
           // Keep the burst alive the same way the self tiers do - a long
           // multi-buff burst shouldn't time out partway through just because
           // several of its landings went to other people.
           this.burstUntil = Date.now() + BURST_WINDOW_MS;
-          this._debugLog(`ALLY LANDED "${matches[0].name}" on "${allyName}" - burst context, unique third-person landing text`);
+          this._debugLog(
+            `ALLY LANDED "${matches[0].name}" on "${allyName}" - burst context${this._burstOrigin()}, unique third-person landing text`
+          );
           this._landOnAlly(matches[0], allyName);
           this._checkForEndedBuffs(line);
           return;
@@ -1570,6 +1585,19 @@ class BuffEngine extends EventEmitter {
   //
   // Both halves matter. If every candidate is a song the repeat says nothing about which, and if
   // none is, a repeat is just the buff being recast. Only a split set can be decided this way.
+  /**
+   * Note 28. Where the current burst came from, for the log only.
+   *
+   * Reads as ' (burst opened 4.2s ago by "Cannibalize")'. The AGE is the useful half: a landing
+   * credited to a burst that opened eight seconds ago is far likelier to be somebody else's cast
+   * arriving inside your window than one credited half a second after you pressed something.
+   */
+  _burstOrigin() {
+    if (!this.burstOpenedBy) return ' (burst origin unknown)';
+    const ageSec = ((Date.now() - this.burstOpenedBy.at) / 1000).toFixed(1);
+    return ` (burst opened ${ageSec}s ago by "${this.burstOpenedBy.text}")`;
+  }
+
   _songAmongSplitCandidates(candidates) {
     const songs = candidates.filter((c) => c.isBardSong);
     if (songs.length !== 1) return null;

@@ -1280,6 +1280,47 @@ than calling it invalid, so you know it is a length problem and not a bad code.
 If that turns out to bite in practice, tell me and I will split long codes
 across two lines.
 
+## The Ally Buffs bug, and why the next one will be enough (note 28)
+
+I still cannot fix this without seeing it happen once more, but I have stopped
+it needing to happen *twice*.
+
+My best guess at the cause: when you activate something, the app opens a short
+window and treats buff landings inside it as yours. If a groupmate casts on
+somebody during that window, it can get credited to you. The trouble was that
+the detection log said only "burst context" for both the correct case and the
+wrong one, so a report of it looked identical to normal operation.
+
+The log now records **what opened the window and how long ago**, like this:
+
+    ALLY LANDED "Spirit of the Puma" on "Avenrae" - burst context
+    (burst opened 4.2s ago by "Cannibalize"), unique third-person landing text
+
+The age is the telling part. Half a second after you pressed something is
+probably genuinely yours; eight seconds later is probably somebody else's cast
+arriving inside your window.
+
+- [ ] **Next time you see a buff on Ally Buffs you did not cast**, note the buff
+      name and roughly the time, then send me that day's file from the
+      `detection-logs` folder. With the burst origin in there I should be able
+      to say what happened without you having to reproduce it.
+
+## The song-pulse check (note 24)
+
+You said: "you do not need proof, it happens... the proof is that I told you it
+is." You were right, and I measured it anyway because the app needed a number to
+work with: across your 1,521,971 log lines, the gap between consecutive repeats
+of an identical line is exactly 6 seconds on **314,324** occasions - four times
+more often than any other gap.
+
+The check is built and wired. It is also, right now, **dormant** - it exists to
+break a tie between a song and a non-song sharing one landing text, and after
+the roster rebuild there are no such ties left. There is a test that fails if
+one ever appears, so it will not sit there rotting unnoticed.
+
+Nothing for you to test. Recorded here because you said "this 6 second timer
+check will be needed later", and this is me saying it is ready and waiting.
+
 ---
 
 ## Confirmed
