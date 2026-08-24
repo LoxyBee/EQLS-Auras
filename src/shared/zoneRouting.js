@@ -192,7 +192,53 @@ function describeLeg(leg) {
   return `${VIA_VERBS[leg.via] || 'Go to'} ${leg.to}`;
 }
 
+/**
+ * Note 20, as Shara specified it on 23 August: the destination is set by typing "/tell qeynos" in
+ * game, which the server answers with "Qeynos is not online at this time." - and that reply is the
+ * command. It is a neat trick, because a /tell name is one word with no spaces and the game echoes
+ * it back reliably, so nothing has to be typed into the app at all while playing.
+ *
+ * The catch is that one word is not a zone name. "qeynos" is not a zone; South Qeynos, North
+ * Qeynos, Qeynos Hills and The Qeynos Aqueduct System are. So resolution runs in a fixed order of
+ * decreasing certainty, and STOPS rather than guessing when several zones fit:
+ *
+ *   1. an exact display name              "rivervale"  -> Rivervale
+ *   2. an exact client short name         "qeynos"     -> South Qeynos
+ *   3. a unique match on part of a name   "faydark"    -> ambiguous, two of them
+ *
+ * Step 2 is what makes the common cases work, and it is not arbitrary: the short name IS what the
+ * game itself calls the zone, so it is the spelling a player already half-knows. Of the 107
+ * distinct words in these zone names, 61 are unique and 46 are not, which is why step 3 has to be
+ * able to fail.
+ *
+ * Returns { zone } | { ambiguous: [names] } | null.
+ */
+function resolveDestinationName(text) {
+  const wanted = normalize(text);
+  if (!wanted) return null;
+
+  const exact = BY_NORMALIZED.get(wanted);
+  if (exact) return { zone: exact };
+
+  // Instance tiers share their base's short name - 27 of them do - so a short-name match prefers
+  // the ordinary place. Nobody typing "qeynos" means the Awakened tier of it.
+  const byShort = Object.keys(ZONES).filter(
+    (n) => ZONES[n].shortName === wanted && !ZONES[n].isInstanceVariantOf
+  );
+  if (byShort.length === 1) return { zone: byShort[0] };
+
+  const partial = Object.keys(ZONES).filter(
+    (n) => !ZONES[n].isInstanceVariantOf && n.toLowerCase().includes(wanted)
+  );
+  if (partial.length === 1) return { zone: partial[0] };
+  // Sorted so the list a person reads is stable between attempts, and capped because a very short
+  // query can match a dozen zones and a wall of them is not an answer.
+  if (partial.length > 1) return { ambiguous: partial.sort((a, b) => a.localeCompare(b)).slice(0, 6) };
+  return null;
+}
+
 module.exports = {
+  resolveDestinationName,
   findRoute,
   describeLeg,
   resolveZoneName,

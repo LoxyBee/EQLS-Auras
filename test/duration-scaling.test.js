@@ -70,14 +70,35 @@ test('compounding is refuted, not merely unused', () => {
   assert.ok(d < 180, `${d}s would be the compounding answer, which the observations rule out`);
 });
 
-// Base 24, tier 4, AA 1.65. The sheet marked heal-over-time's duration rate "+5% ?" - a guess.
-// +5% predicts 47.5s and every one of 32 observations is 48 or more. +10% predicts 55.4s and 28
-// of the 32 fall short of it, which they could not do if it were true.
-test('heal over time uses +5% per tier, which the logs confirm and +10% fails', () => {
+// Base 24, tier 4. The sheet marked heal-over-time's duration rate "+5% ?" - a guess - and it
+// stays the sheet's number here, unmeasured, because the observation that appeared to confirm it
+// turned out not to be usable. See the note below.
+test('heal over time takes its tier but not the AA bonus', () => {
   const e = afterCasting(makeEngine(1.65), 'Celestial Healing IV');
-  const d = e._scaledDuration(spell('Celestial Healing', 24, 'hot'));
-  assert.equal(d, 48);
-  assert.ok(d < 55, 'a +10% rate would predict 55s, which 28 of 32 observations fall short of');
+  assert.equal(e._scaledDuration(spell('Celestial Healing', 24, 'hot')), 29); // 24 x 1.20, no AA
+});
+
+/**
+ * The measurement that argued for the wider AA rule, kept as a record rather than deleted.
+ *
+ * Celestial Healing IV measures 48 to 78 seconds across 32 castings, median 51. The mote tier
+ * alone predicts 29. That gap looked like the AA bonus applying to heals over time, and it is why
+ * this suite originally asserted 48.
+ *
+ * It is not good evidence, and the shape of the data is what gives it away. A spell with a fixed
+ * duration measures tightly - Spirit of the Puma VII lands within a 14-second band. Celestial
+ * Healing IV spreads over 30 seconds and its median matches no candidate prediction. That is not
+ * one duration measured with noise; it is the landing-to-wear-off gap for a heal over time not
+ * being its duration at all.
+ *
+ * So the number here is the model's, and the divergence is recorded as an open question rather
+ * than as a passing assertion. If it turns out to matter in game, this comment is the trail.
+ */
+test('the heal-over-time measurement is recorded as unexplained, not as agreement', () => {
+  const e = afterCasting(makeEngine(1.65), 'Celestial Healing IV');
+  const predicted = e._scaledDuration(spell('Celestial Healing', 24, 'hot'));
+  const MEASURED_MIN = 48;
+  assert.ok(predicted < MEASURED_MIN, 'if these ever agree, the open question above has been answered');
 });
 
 test('an unranked cast of the same spell gets no tier bonus', () => {
@@ -123,11 +144,15 @@ test('nor a debuff, nor a charm', () => {
   assert.equal(e._scaledDuration(spell('Mesmerize', 24, 'charm')), 24);
 });
 
-test('but it does extend a buff, a heal over time and a pet', () => {
+// Shara, 23 August: "the AA should only apply to things marked as a BUFF. not just any
+// beneficial." Heals, heals over time and pet summons are beneficial and do NOT get it - which is
+// the correction, and the reason this test names them one by one rather than testing 'buff' alone.
+test('the AA bonus reaches the buff category and nothing else', () => {
   const e = makeEngine(1.5);
-  assert.equal(e._scaledDuration(spell('Valor', 3240, 'buff')), 4860);
-  assert.equal(e._scaledDuration(spell('Celestial Healing', 24, 'hot')), 36);
-  assert.equal(e._scaledDuration(spell('Warder', 100, 'pet')), 150);
+  assert.equal(e._scaledDuration(spell('Valor', 3240, 'buff')), 4860); // 3240 x 1.5
+  assert.equal(e._scaledDuration(spell('Celestial Healing', 24, 'hot')), 24);
+  assert.equal(e._scaledDuration(spell('Superior Healing', 100, 'heal')), 100);
+  assert.equal(e._scaledDuration(spell('Warder', 100, 'pet')), 100);
 });
 
 // A whitelist, not a blacklist - so an unrecognised category is under-timed rather than left
@@ -185,9 +210,17 @@ test('nuke, heal and pet-summon durations do not scale with tier', () => {
 // Rounding once over the combined multiplier, not after each step. 7 x 1.05 = 7.35 rounds to 7;
 // rounding there first and then applying 1.5 gives 11 rather than the correct 11.
 test('rounding happens once, over both multipliers together', () => {
-  const e = afterCasting(makeEngine(1.5), 'Trickle IV');
-  // 7 x (1 + 0.05 x 4) x 1.5 = 12.6 -> 13. Two roundings would give round(round(8.4) x 1.5) = 12.
-  assert.equal(e._scaledDuration(spell('Trickle', 7, 'hot')), 13);
+  const e = afterCasting(makeEngine(1.5), 'Whisper VII');
+  // A BUFF, because that is now the only category both multipliers touch - which is the whole
+  // point of the test. 7 x (1 + 0.1 x 7) x 1.5 = 17.85 -> 18. Rounding after each step instead
+  // gives round(round(11.9) x 1.5) = round(12 x 1.5) = 18 as well, so the numbers are chosen to
+  // separate them: see the assertion below.
+  assert.equal(e._scaledDuration(spell('Whisper', 7, 'buff')), 18);
+  // 3 x 1.7 = 5.1, x 1.5 = 7.65 -> 8. Two roundings: round(5.1) = 5, x 1.5 = 7.5 -> 8. Still equal.
+  // 9 x 1.7 = 15.3, x 1.5 = 22.95 -> 23. Two roundings: round(15.3) = 15, x 1.5 = 22.5 -> 23.
+  // The separating case: 11 x 1.7 = 18.7, x 1.5 = 28.05 -> 28. Two roundings: round(18.7) = 19,
+  // x 1.5 = 28.5 -> 29. One rounding gives 28; rounding twice gives 29.
+  assert.equal(e._scaledDuration(spell('Whisper', 11, 'buff')), 28);
 });
 
 test('a tier X cast is handled, since one appears in the logs', () => {

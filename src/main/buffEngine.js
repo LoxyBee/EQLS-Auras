@@ -56,11 +56,17 @@ const MOTE_DURATION_RATES = {
   dot: 0.05, // sheet only
 };
 
-// Which categories the AA and Exaltation duration bonus applies to. Beneficial spells only,
-// measured rather than assumed - see the Curse figures in _scaledDuration. The set is the
-// whitelist and not a blacklist on purpose: a category nobody thought about gets no bonus, which
-// is a timer that is too short rather than one that outlives the thing it is timing.
-const BENEFICIAL_CATEGORIES = new Set(['buff', 'heal', 'hot', 'pet']);
+// Which categories the AA and Exaltation duration bonus applies to. BUFF ONLY - Shara, 23 August:
+// "the AA should only apply to things marked as a BUFF. not just any beneficial."
+//
+// I had this as buff, heal, hot and pet, on the reasoning that the bonus is for beneficial spells
+// and those are the beneficial categories. That was inference dressed up as a measurement, and it
+// was wrong. See _scaledDuration for the one observation that appeared to support the wider set
+// and why it does not.
+//
+// Still a whitelist rather than a blacklist: a category nobody thought about gets no bonus, which
+// is a timer that runs short rather than one that outlives the thing it is timing.
+const AA_SCALED_CATEGORIES = new Set(['buff']);
 
 // What a mob name is allowed to look like. Real examples from the owner's logs: "a greater kobold",
 // "a Teir`Dal ranger", "an elite gnoll shaman", "Baron Telyx V`Zher", "the froglok shin lord".
@@ -1322,13 +1328,23 @@ class BuffEngine extends EventEmitter {
    * dot, debuff and charm carry the sheet's rates UNMEASURED, because every observation of them in
    * her logs was cut short by the mob dying. They are the sheet's numbers, not established fact.
    *
-   * AA AND EXALTATION, and here the code was WRONG rather than incomplete. It applied the
-   * multiplier to everything without a noDurationScaling flag, which is 155 roster entries of
-   * debuff, dot and charm. Measured: on 9 and 10 August, when her buffs measured x1.53, Curse
-   * (base 30) measured 31-36 seconds across 31 castings. If the multiplier applied it would be 45.
-   * It never comes near. The AA duration bonus is for beneficial buffs only, and without this gate
-   * those 155 entries would have started over-timing by up to 65% the moment she set her AA level
-   * in the app - a countdown still running long after the debuff had gone.
+   * AA AND EXALTATION, applied to the BUFF category and nothing else. The code originally applied
+   * the multiplier to everything without a noDurationScaling flag, which is 155 roster entries of
+   * debuff, dot and charm - and those would have over-timed by up to 65% the moment an AA level was
+   * set. Curse (base 30, a dot) measured 31-36 seconds across 31 castings on days when her buffs
+   * measured x1.53; the multiplier would make it 45, and it never comes near.
+   *
+   * The narrowing from "beneficial" to "buff" is Shara's correction of 23 August, and it is worth
+   * recording WHY the wider set looked right, because one measurement still appears to support it.
+   * Celestial Healing IV, a hot with a base of 24, measures 48 to 78 seconds - far more than the
+   * 29 that the mote tier alone predicts. That looked like evidence of the AA bonus applying to
+   * heals over time.
+   *
+   * It is not good evidence. A buff with a fixed duration measures tightly: Spirit of the Puma VII
+   * lands in a 14-second band across 24 castings. Celestial Healing IV spreads across 30 seconds
+   * and its median sits nowhere near either candidate prediction. That is not one duration measured
+   * with noise; it is the landing-to-wear-off gap for a heal over time not being its duration at
+   * all. An inference from a signal that shape should not outweigh someone who knows the game.
    *
    * ROUNDING happens ONCE, over the combined multiplier. The two multipliers are order-independent
    * but rounding between them is not; doing it twice differs by up to a second.
@@ -1336,7 +1352,7 @@ class BuffEngine extends EventEmitter {
   _scaledDuration(entry) {
     if (entry.noDurationScaling) return Math.round(entry.durationSec);
     const rankMult = 1 + (MOTE_DURATION_RATES[entry.scaleCategory] || 0) * this._rankForEntry(entry);
-    const aaMult = BENEFICIAL_CATEGORIES.has(entry.scaleCategory) ? this.durationMultiplierFn() : 1;
+    const aaMult = AA_SCALED_CATEGORIES.has(entry.scaleCategory) ? this.durationMultiplierFn() : 1;
     return Math.round(entry.durationSec * rankMult * aaMult);
   }
 

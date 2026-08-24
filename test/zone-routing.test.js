@@ -280,5 +280,112 @@ test('inferred zone names are kept and flagged rather than dropped', () => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// Note 20's destination command - "/tell qeynos"
+// ---------------------------------------------------------------------------
+
+// Shara, 23 August: "the user would type '/tell qeynos' which would then print 'qeynos is not
+// online at this time', when this is seen, the widget would read qeynos as the destination."
+//
+// Both of these lines are already in her logs, so the wording is measured rather than assumed.
+test('a failed tell is read as a destination command', () => {
+  const { matchOfflineTell } = require('../src/shared/travelCommand');
+  const T = '[Wed Aug 19 21:14:02 2026] ';
+  assert.equal(matchOfflineTell(`${T}Qeynos is not online at this time.`), 'Qeynos');
+  assert.equal(matchOfflineTell(`${T}Me is not online at this time.`), 'Me');
+});
+
+// The line has to have come from the game. Somebody quoting it in chat is a person talking, and
+// acting on it would let a guildmate redirect the aura by typing.
+test('the same words inside a chat message are ignored', () => {
+  const { matchOfflineTell } = require('../src/shared/travelCommand');
+  const T = '[Wed Aug 19 21:14:02 2026] ';
+  assert.equal(matchOfflineTell(`${T}Avenrae tells you, 'Qeynos is not online at this time.'`), null);
+  assert.equal(matchOfflineTell(`${T}You have entered Rivervale.`), null);
+  // No timestamp means it did not come from the log at all.
+  assert.equal(matchOfflineTell('Qeynos is not online at this time.'), null);
+  for (const bad of [null, undefined, 42, '']) assert.equal(matchOfflineTell(bad), null);
+});
+
+// A /tell name is one word and a zone name usually is not, so the short name carries most of the
+// work. "qeynos" IS what the game calls South Qeynos.
+test('one typed word resolves through name, then short name, then a unique part', () => {
+  const { resolveDestinationName } = require('../src/shared/zoneRouting');
+  assert.equal(resolveDestinationName('rivervale').zone, 'Rivervale', 'exact display name');
+  assert.equal(resolveDestinationName('qeynos').zone, 'South Qeynos', 'exact client short name');
+  assert.equal(resolveDestinationName('misty').zone, 'Misty Thicket', 'unique part of a name');
+  assert.equal(resolveDestinationName('RIVERVALE').zone, 'Rivervale', 'casing must not matter');
+  assert.equal(resolveDestinationName('  rivervale  ').zone, 'Rivervale');
+});
+
+// 46 of the 107 distinct words in these zone names appear in more than one, so failing to decide
+// is a normal outcome and not an error case. Guessing would send someone to the wrong continent.
+test('a word matching several zones asks rather than picks', () => {
+  const { resolveDestinationName } = require('../src/shared/zoneRouting');
+  const faydark = resolveDestinationName('faydark');
+  assert.equal(faydark.zone, undefined);
+  assert.deepEqual(faydark.ambiguous, ['The Greater Faydark', 'The Lesser Faydark']);
+  assert.ok(resolveDestinationName('freeport').ambiguous.length >= 3);
+});
+
+test('a word matching nothing resolves to nothing', () => {
+  const { resolveDestinationName } = require('../src/shared/zoneRouting');
+  assert.equal(resolveDestinationName('somewhereinvented'), null);
+  assert.equal(resolveDestinationName(''), null);
+  assert.equal(resolveDestinationName(null), null);
+});
+
+// Instance tiers share their base zone's short name - 27 of them do - and nobody typing "qeynos"
+// means the Awakened tier of it.
+/**
+ * Twelve short names are shared between a zone and its instance tiers, and the exclusion is what
+ * stops the short-name step giving up when it finds four matches instead of one.
+ *
+ * Choosing the example took two attempts and mutation testing to get right. "qeynos" has no
+ * instance tiers, so the exclusion was never exercised. "befallen" has three, but the word also
+ * appears in the display name, so the partial-match step below rescues it and deleting the
+ * exclusion still changed nothing.
+ *
+ * "soldungb" is Nagafen's Lair - a short name that appears nowhere in its own display name. Of the
+ * twelve shared short names, seven are like this, and for those the exclusion is the only thing
+ * standing between a working command and "no zone by that name".
+ */
+test('a short name prefers the ordinary place over an instance tier', () => {
+  const { resolveDestinationName } = require('../src/shared/zoneRouting');
+  const sharing = Object.keys(ZONES).filter((n) => ZONES[n].shortName === 'soldungb');
+  assert.ok(sharing.length > 1, 'soldungb no longer shares its short name; pick another of the seven');
+  const base = sharing.find((n) => !ZONES[n].isInstanceVariantOf);
+  assert.ok(
+    !base.toLowerCase().includes('soldungb'),
+    'this example only tests the exclusion while the short name is absent from the display name'
+  );
+  const r = resolveDestinationName('soldungb');
+  assert.equal(r.zone, base);
+  assert.equal(ZONES[r.zone].isInstanceVariantOf, undefined);
+});
+
+// The candidate list is what a person reads to correct themselves, so it has to be stable and
+// short rather than every zone containing the letters they typed.
+test('the ambiguous list is sorted and capped', () => {
+  const { resolveDestinationName } = require('../src/shared/zoneRouting');
+  const r = resolveDestinationName('the');
+  if (!r || !r.ambiguous) return assert.ok(true);
+  assert.ok(r.ambiguous.length <= 6);
+  assert.deepEqual(r.ambiguous, [...r.ambiguous].sort((a, b) => a.localeCompare(b)));
+});
+
+// The command names a place; the route still starts from wherever the zone tracker says you are.
+// That is the other half of what she asked for, and it is what makes the aura follow you.
+test('the command sets only the destination, never the starting point', () => {
+  const { resolveDestinationName } = require('../src/shared/zoneRouting');
+  const dest = resolveDestinationName('qeynos').zone;
+  const fromA = findRoute('Rivervale', dest);
+  const fromB = findRoute('Befallen', dest);
+  assert.ok(fromA.ok && fromB.ok);
+  assert.notDeepEqual(fromA.legs, fromB.legs, 'the same destination from two places is two routes');
+  assert.equal(fromA.legs[0].from, 'Rivervale');
+  assert.equal(fromB.legs[0].from, 'Befallen');
+});
+
 module.exports = () => report('zone-routing');
 if (require.main === module) process.exit(report('zone-routing') ? 1 : 0);

@@ -368,6 +368,11 @@
                   Change where this aura is pointing. The route updates the moment you pick, and
                   again every time you enter a new zone.
                 </p>
+                <p class="hint">
+                  Or set it without leaving the game: type <code>/tell &lt;zone&gt;</code> and the
+                  game's "is not online at this time" reply becomes the destination. That changes
+                  every travel aura at once, since you are only ever going one place.
+                </p>
               </div>
 
               <div id="widget-damage-settings" style="display:none">
@@ -1349,6 +1354,14 @@
           Pick where you want to go. The aura works out the shortest way there from wherever you
           currently are, and redraws itself every time you zone. It will use a travel spell if you
           have one scribed that helps, and walk you there if you do not.
+        </p>
+        <p class="hint">
+          <strong>You can also change the destination from inside the game.</strong> Type
+          <code>/tell qeynos</code> and the game answers "Qeynos is not online at this time" - the
+          aura reads that as your new destination. One word only, since a /tell name cannot have
+          spaces in it, and it usually wants the short name the game itself uses:
+          <code>/tell qeynos</code> gets you South Qeynos. If the word could mean several zones the
+          aura lists them instead of guessing.
         </p>
         <div class="row">
           <input

@@ -34,7 +34,8 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
-const { findRoute, describeLeg, allZoneNames } = require('../shared/zoneRouting');
+const { findRoute, describeLeg, allZoneNames, resolveDestinationName } = require('../shared/zoneRouting');
+const { matchOfflineTell } = require('../shared/travelCommand');
 const { matchShareCodeInChat, splitReason } = require('../shared/shareCodeChat');
 const { TRAVEL_SPELLS } = require('../shared/data/zoneGraph');
 const { IconService } = require('./iconService');
@@ -430,6 +431,37 @@ customTimerEngine.on('activeChanged', (timers) => {
 damageEngine.on('activeChanged', (rows) => broadcast('damage:active', rows));
 
 /**
+ * Note 20's destination command. "/tell qeynos" in game, and the server's "Qeynos is not online at
+ * this time." is what arrives here.
+ *
+ * It sets the destination on EVERY travel aura rather than one of them. There is one player going
+ * one place; two travel auras pointing at different destinations would be a state nobody asked for
+ * and could not correct without opening both settings pages.
+ *
+ * Held here rather than saved on the widget when the word is ambiguous - "faydark" matches two
+ * zones - because a request the app could not carry out should not overwrite a destination that
+ * was working. The aura says which zones it could have meant and keeps showing the old route.
+ */
+let unresolvedTravelCommand = null; // { typed, candidates } | null
+
+logService.watcher.on('line', (line) => {
+  const typed = matchOfflineTell(line);
+  if (!typed) return;
+  const resolved = resolveDestinationName(typed);
+  if (resolved && resolved.zone) {
+    unresolvedTravelCommand = null;
+    for (const w of widgetManager.getAllWidgetConfigs()) {
+      if (w.buffSource === 'travel') widgetManager.setTravelDestination(w.id, resolved.zone);
+    }
+    debugLog(`TRAVEL destination set to "${resolved.zone}" by /tell ${typed}`);
+  } else {
+    unresolvedTravelCommand = { typed, candidates: resolved ? resolved.ambiguous : [] };
+    debugLog(`TRAVEL /tell ${typed} did not resolve to one zone`);
+  }
+  pushTravelRoutes();
+});
+
+/**
  * Note 20. The route each travel aura is currently showing, keyed by aura id.
  *
  * Worked out HERE and not in the overlay, because the overlay runs with nodeIntegration off and
@@ -474,7 +506,19 @@ function travelRowsFor(widget, zone, scribed) {
 
   // Each of these says WHY there is nothing to show. An aura that simply goes blank is the "empty
   // aura and no way to tell why" this project keeps trying to avoid.
-  if (!widget.travelDestination) return [row('Pick a destination', '')];
+  //
+  // The unresolved command comes first because it is the most recent thing the player did, and an
+  // aura still showing yesterday's route while silently ignoring what they just typed is the
+  // worst of the available behaviours.
+  if (unresolvedTravelCommand) {
+    const { typed, candidates } = unresolvedTravelCommand;
+    if (!candidates.length) return [row(`No zone called "${typed}"`, 'try /tell <zone>')];
+    return [
+      row(`"${typed}" could be any of these`, 'be more specific'),
+      ...candidates.map((c) => row(c, '')),
+    ];
+  }
+  if (!widget.travelDestination) return [row('Pick a destination, or /tell it', '')];
   if (!zone) return [row('Waiting for a zone line', 'walk through one')];
 
   const result = findRoute(zone, widget.travelDestination, { scribedSpells: scribed });
@@ -896,9 +940,14 @@ ipcMain.handle('widget:createDamageMeter', (_event, { name, mineOnly }) =>
 ipcMain.handle('widget:createTravelGuide', (_event, { name, destination }) =>
   widgetManager.createTravelGuideWidget(name, destination)
 );
-ipcMain.handle('widget:setTravelDestination', (_event, { id, destination }) =>
-  widgetManager.setTravelDestination(id, destination)
-);
+ipcMain.handle('widget:setTravelDestination', (_event, { id, destination }) => {
+  // Choosing one by hand answers whatever the last /tell could not, so the "which did you mean"
+  // message has to go - otherwise it sits on top of a destination that is now perfectly valid.
+  unresolvedTravelCommand = null;
+  const config = widgetManager.setTravelDestination(id, destination);
+  pushTravelRoutes();
+  return config;
+});
 ipcMain.handle('widget:createSoundOnly', (_event, { name }) => widgetManager.createSoundOnlyWidget(name));
 ipcMain.handle('widget:createTextAura', (_event, { name, preset }) =>
   widgetManager.createTextAuraWidget(name, preset)

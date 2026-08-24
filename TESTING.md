@@ -1150,6 +1150,25 @@ woke up. The bonus is now for beneficial buffs only.
 - [ ] **Set your AA and exaltation levels, then check a mez.** Mesmerize should
       NOT get longer when you raise them. Buffs should.
 
+**Corrected 23 August, on your instruction:** the AA bonus now applies to spells
+marked **buff** and nothing else. I had it applying to buff, heal, heal-over-time
+and pet summons, on the reasoning that the bonus is for beneficial spells and
+those are the beneficial categories. That was me inferring and calling it a
+measurement.
+
+One observation still looks like it disagrees, and I want to flag it rather than
+bury it. Celestial Healing IV measures 48 to 78 seconds across 32 castings; the
+mote tier alone predicts 29. I re-measured it myself rather than trusting the
+earlier number, and it holds. But I no longer think it is evidence of anything:
+a spell with a fixed duration measures *tightly* - Spirit of the Puma VII lands
+in a 14-second band - and a 30-second spread whose median matches no prediction
+is a sign that the landing-to-wear-off gap for a heal over time is not its
+duration at all. So I have followed your instruction and recorded the oddity in
+the code.
+
+- [ ] **If a heal-over-time countdown looks wrong in game**, that is the thing to
+      tell me about - it is the one number I could not reconcile.
+
 Two rates I could not verify and want you to eyeball: **debuff and charm/mez
 duration per tier**. The spreadsheet says +10% per tier and marks it assumed;
 every observation of one in your logs was cut short by the mob dying before the
@@ -1177,6 +1196,26 @@ per line, redrawing every time you zone.
       If it offers a spell you do NOT have, that is a bug - tell me which.
 - [ ] **Change the destination** on the aura's settings page under **Travel
       guide**. The route should update immediately.
+
+**Setting the destination from inside the game (added 23 August, your design).**
+Type `/tell qeynos` and the game answers "Qeynos is not online at this time" -
+the aura reads that as the new destination. Both of those lines were already in
+your logs, so I did not have to guess at the wording.
+
+- [ ] **`/tell rivervale`** should point every travel aura at Rivervale without
+      you touching the app.
+- [ ] **`/tell qeynos`** should give you South Qeynos. A /tell name cannot have
+      spaces, so one word has to do - and it prefers the short name the game
+      itself uses, which is what `qeynos` is.
+- [ ] **`/tell faydark`** should NOT pick one. It should list "The Greater
+      Faydark" and "The Lesser Faydark" and wait, because guessing would send
+      you to the wrong one.
+- [ ] **`/tell nonsense`** should say there is no zone by that name.
+- [ ] **The start of the route always comes from the zone tracker**, never from
+      the command - so after a `/tell`, walking to a different zone should
+      change the route without you retyping anything.
+- [ ] **Picking from the dropdown afterwards** should clear any "which did you
+      mean" message.
 - [ ] **Boats and portals should be named as such** - "Sail to" and "Portal to"
       rather than "Go to".
 
