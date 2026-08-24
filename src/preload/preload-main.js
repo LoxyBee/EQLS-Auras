@@ -175,6 +175,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   applyCodeToSelfBuffs: (code) => ipcRenderer.invoke('widget:applyCodeToSelfBuffs', code),
   deleteWidget: (id) => ipcRenderer.invoke('widget:delete', id),
   reorderWidgets: (orderedIds) => ipcRenderer.invoke('widget:reorder', { orderedIds }),
+  resetWidgetToDefault: (id) => ipcRenderer.invoke('widget:resetToDefault', { id }),
   setWidgetName: (id, name) => ipcRenderer.invoke('widget:setName', { id, value: name }),
   toggleWidgetLock: (id) => ipcRenderer.invoke('widget:toggleLock', id),
   resetWidgetPosition: (id) => ipcRenderer.invoke('widget:resetPosition', id),

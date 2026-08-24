@@ -311,5 +311,43 @@ test('the reasoning for firing on the cast line is written down', () => {
   assert.match(comment, /group|party/i, 'why it does not filter to the group is not explained');
 });
 
+// ---------------------------------------------------------------------------
+// The settings panel must not claim this is about buffs cast on allies
+// ---------------------------------------------------------------------------
+//
+// Reported directly: "the mez tracker still seems to be built out of an aura that is when you
+// cast a mez on an ally. this is fundamentally incorrect." The report is right about what the
+// panel SHOWS, even though buffSource:'ally' underneath is correct and has to stay - it is a
+// plumbing requirement (_alertAllyCast's entries only reach the overlay through the 'ally' data
+// source), not a real "watching" choice the way it is on every other custom aura. The fix is not
+// changing the source; it is not presenting a choice that was never really there.
+
+test('the "Watching:" row is hidden on an alert aura, not shown reading the wrong thing', () => {
+  const rendererSrc = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = rendererSrc.match(/const announcer = widget\.displayMode === 'text'[\s\S]*?buffSourceRow\.style\.display =([\s\S]*?);/);
+  assert.ok(fn, 'the buffSourceRow visibility rule has been restructured');
+  assert.match(fn[1], /!widget\.allyDebuffAlert/, 'an alert aura still shows "Watching: Buffs you\'ve cast on allies"');
+});
+
+test('its own buff/spell picker offers debuffs, not buffs, even though buffSource is ally', () => {
+  const rendererSrc = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = rendererSrc.match(/function applyBuffFilterSearch\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'applyBuffFilterSearch has been restructured');
+  assert.match(
+    fn[1],
+    /widget\.trackOnEnemies \|\| widget\.allyDebuffAlert/,
+    'mez/charm are debuffs regardless of who they land on - an alert aura not counted here would ' +
+      'offer a buff-only picker for a debuff family'
+  );
+});
+
+test('the "Buffs shown" hint does not call this a list of buffs shown ON the aura', () => {
+  const rendererSrc = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(
+    rendererSrc,
+    /widget\.allyDebuffAlert\s*\n?\s*\?\s*'Pick which spells to warn about when someone else casts them\.'/
+  );
+});
+
 module.exports = () => report('ally-cast-alert');
 if (require.main === module) process.exit(report('ally-cast-alert') ? 1 : 0);

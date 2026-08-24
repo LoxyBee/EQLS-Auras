@@ -814,6 +814,7 @@ class WidgetStore {
 
   createAllyBuffs(name, { activeProfileIds } = {}) {
     const widget = defaultAllyBuffsWidget(name);
+    widget.premadeOrigin = { kind: 'allyBuffs' };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -843,7 +844,12 @@ class WidgetStore {
   createTextAura(name, { preset, activeProfileIds } = {}) {
     const widget = defaultCustomWidget(name);
     widget.displayMode = 'text';
-    if (preset && TEXT_AURA_PRESETS[preset]) Object.assign(widget, TEXT_AURA_PRESETS[preset](widget));
+    if (preset && TEXT_AURA_PRESETS[preset]) {
+      Object.assign(widget, TEXT_AURA_PRESETS[preset](widget));
+      // Only a PRESET counts as a premade for "Reset to default" - a blank Custom text aura (no
+      // preset) has no recipe to reset back to, only whatever the user builds themselves.
+      widget.premadeOrigin = { kind: 'textAura', preset };
+    }
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -873,6 +879,7 @@ class WidgetStore {
     // three empty columns. defaultCustomWidget already picks 1 for exactly this reason; this is
     // just being explicit that it matters here.
     widget.iconsPerRow = 1;
+    widget.premadeOrigin = { kind: 'buffTimer', spellName, source };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -910,6 +917,7 @@ class WidgetStore {
       },
     ];
     widget.buffNames = [spellName];
+    widget.premadeOrigin = { kind: 'cooldownTimer', spellName, cooldownSec, iconId };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -1154,6 +1162,72 @@ class WidgetStore {
     const widget = this.getById(id);
     if (!widget || widget.deletable === false) return false;
     this.data.widgets = this.data.widgets.filter((w) => w.id !== id);
+    this._save();
+    return true;
+  }
+
+  // "Reset to default", at the owner's request - only ever shown on an aura built from a premade,
+  // for exactly the reason premadeOrigin exists: without a recorded recipe there is nothing to
+  // reset BACK to, only a guess at what the user might have originally meant.
+  //
+  // Rebuilds the fields that premade sets, from the SAME defaults each creator above uses -
+  // deliberately not just "restore a snapshot taken at creation time", because a snapshot would
+  // also restore whatever the roster/icon data looked like back then. Re-running today's defaults
+  // means a reset also picks up an icon added to the roster since, or a corrected recast time -
+  // which is what "default" should mean for something built from a fixed recipe, not a frozen copy
+  // of a moment in the past.
+  //
+  // id/name/position/width/height/activeProfileIds/visibleInZones/premadeOrigin itself are
+  // explicitly carried over rather than reset - this restores the aura's BEHAVIOUR back to the
+  // premade's defaults, not its place on screen, its profile membership, or its zone limits, none
+  // of which the premade had an opinion on in the first place.
+  resetToDefault(id) {
+    const widget = this.getById(id);
+    if (!widget || !widget.premadeOrigin) return false;
+    const origin = widget.premadeOrigin;
+    let fresh = null;
+    if (origin.kind === 'allyBuffs') {
+      fresh = defaultAllyBuffsWidget(widget.name);
+    } else if (origin.kind === 'textAura' && TEXT_AURA_PRESETS[origin.preset]) {
+      fresh = defaultCustomWidget(widget.name);
+      fresh.displayMode = 'text';
+      Object.assign(fresh, TEXT_AURA_PRESETS[origin.preset](fresh));
+    } else if (origin.kind === 'buffTimer') {
+      fresh = defaultCustomWidget(widget.name);
+      fresh.buffSource = origin.source === 'ally' || origin.source === 'enemy' ? 'ally' : 'self';
+      fresh.trackOnEnemies = origin.source === 'enemy';
+      fresh.buffFilterMode = 'explicit';
+      fresh.buffNames = origin.spellName ? [origin.spellName] : [];
+      fresh.iconsPerRow = 1;
+    } else if (origin.kind === 'cooldownTimer') {
+      fresh = defaultCustomWidget(widget.name);
+      fresh.buffSource = 'customTimer';
+      fresh.iconsPerRow = 1;
+      fresh.customTimers = [
+        {
+          id: crypto.randomUUID(),
+          name: origin.spellName,
+          durationSec: origin.cooldownSec,
+          triggerText: origin.spellName,
+          triggerMatch: 'castOf',
+          endedText: '',
+          iconId: origin.iconId ?? undefined,
+        },
+      ];
+      fresh.buffNames = [origin.spellName];
+    }
+    if (!fresh) return false;
+    const preserved = {
+      id: widget.id,
+      name: widget.name,
+      position: widget.position,
+      width: widget.width,
+      height: widget.height,
+      activeProfileIds: widget.activeProfileIds,
+      visibleInZones: widget.visibleInZones,
+      premadeOrigin: widget.premadeOrigin,
+    };
+    Object.assign(widget, fresh, preserved);
     this._save();
     return true;
   }

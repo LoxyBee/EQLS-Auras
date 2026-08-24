@@ -1044,6 +1044,7 @@ function initWidgetsPanel() {
   // looking at, which is exactly the arrangement that gets the wrong one pressed.
   const allAurasCard = document.getElementById('all-auras-card');
 
+  const pageOverlayTitleEl = document.getElementById('page-overlay-title');
   const settingsPanel = document.getElementById('widget-settings-panel');
   const settingsTitle = document.getElementById('widget-settings-title');
   const nameInput = document.getElementById('widget-name-input');
@@ -1179,6 +1180,8 @@ function initWidgetsPanel() {
 
   const activeBuffsCardEl = document.getElementById('widget-active-buffs-card');
   const manageCardEl = document.getElementById('widget-manage-card');
+  const resetWidgetRowEl = document.getElementById('reset-widget-row');
+  const resetWidgetBtn = document.getElementById('reset-widget-btn');
   const widgetProfilesTogglesEl = document.getElementById('widget-profiles-toggles');
   const activeBuffsListEl = document.getElementById('widget-active-buffs-list');
   const excludedBuffsSectionEl = document.getElementById('widget-excluded-buffs-section');
@@ -1395,6 +1398,7 @@ function initWidgetsPanel() {
   function renderActiveBuffsForWidget(widget) {
     activeBuffsCardEl.style.display = '';
     manageCardEl.style.display = '';
+    resetWidgetRowEl.style.display = widget.premadeOrigin ? '' : 'none';
     const buffs = filterActiveBuffsForWidget(widget);
     activeBuffsListEl.innerHTML = '';
     if (buffs.length === 0) {
@@ -1525,7 +1529,12 @@ function initWidgetsPanel() {
       chip.textContent = zone + '  x';
       chip.addEventListener('click', () => {
         const next = (findWidget(widget.id)?.visibleInZones || []).filter((z) => z !== zone);
-        window.eqTracker.setWidgetVisibleInZones(widget.id, next).then(refreshWidgets);
+        // refreshWidgets alone only rebuilds the sidebar - it never re-rendered THIS list, so a
+        // removed chip stayed on screen until you navigated away and back. Re-render this list
+        // explicitly, from the freshly reloaded widget, once refreshWidgets has actually updated it.
+        window.eqTracker.setWidgetVisibleInZones(widget.id, next).then(() =>
+          refreshWidgets().then(() => renderWidgetZones(findWidget(widget.id)))
+        );
       });
       listEl.appendChild(chip);
     }
@@ -1632,6 +1641,10 @@ function initWidgetsPanel() {
       row.addEventListener('dragleave', onSubRowDragLeave);
       row.addEventListener('drop', onSubRowDrop);
       row.addEventListener('dragend', onSubRowDragEnd);
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        openSidebarContextMenu(widget.id, e.clientX, e.clientY);
+      });
 
       row.appendChild(btn);
       submenuEl.insertBefore(row, addRow);
@@ -1692,8 +1705,93 @@ function initWidgetsPanel() {
     draggedWidgetId = null;
   }
 
+  // Right-click on a sidebar aura: Rename / Delete, at the owner's request. A DOM menu rather than
+  // Electron's native Menu module - the sidebar already does everything else in the renderer, and
+  // two items do not need a round trip through the main process (build the template there, send
+  // it over, wait for the click) to draw a box with two buttons in it.
+  const sidebarContextMenuEl = document.getElementById('sidebar-context-menu');
+  const sidebarContextRenameBtn = document.getElementById('sidebar-context-rename');
+  const sidebarContextDeleteBtn = document.getElementById('sidebar-context-delete');
+  let sidebarContextMenuWidgetId = null;
+
+  function openSidebarContextMenu(widgetId, x, y) {
+    sidebarContextMenuWidgetId = widgetId;
+    // Self Buffs cannot be deleted (see deleteBtn's own visibility rule above) - hidden here for
+    // the same reason, rather than left to show a confirm dialog that then silently does nothing.
+    const widget = findWidget(widgetId);
+    sidebarContextDeleteBtn.style.display = widget && widget.deletable === false ? 'none' : '';
+    sidebarContextMenuEl.style.display = 'block';
+    // Positioned, then clamped - a menu opened by right-clicking a row near the bottom of the
+    // window would otherwise draw itself partly off-screen, which on a frameless borderless window
+    // is not just ugly but unreachable (there is no OS chrome to push it back on screen for you).
+    const menuRect = sidebarContextMenuEl.getBoundingClientRect();
+    const maxX = window.innerWidth - menuRect.width - 4;
+    const maxY = window.innerHeight - menuRect.height - 4;
+    sidebarContextMenuEl.style.left = `${Math.max(4, Math.min(x, maxX))}px`;
+    sidebarContextMenuEl.style.top = `${Math.max(4, Math.min(y, maxY))}px`;
+  }
+
+  function closeSidebarContextMenu() {
+    sidebarContextMenuEl.style.display = 'none';
+    sidebarContextMenuWidgetId = null;
+  }
+
+  // Closes on a click anywhere else, or Escape - the two ways any other menu in this app (or in
+  // Windows generally) is expected to dismiss. Listening on the window rather than only outside
+  // the menu, because the menu's own buttons already act and close themselves before this would
+  // matter.
+  window.addEventListener('click', (e) => {
+    if (sidebarContextMenuEl.style.display !== 'none' && !sidebarContextMenuEl.contains(e.target)) {
+      closeSidebarContextMenu();
+    }
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSidebarContextMenu();
+  });
+  // A second right-click elsewhere should move the menu, not need a first click to dismiss it.
+  window.addEventListener('contextmenu', (e) => {
+    if (sidebarContextMenuEl.style.display !== 'none' && !e.defaultPrevented) closeSidebarContextMenu();
+  });
+
+  sidebarContextRenameBtn.addEventListener('click', () => {
+    const id = sidebarContextMenuWidgetId;
+    closeSidebarContextMenu();
+    const widget = findWidget(id);
+    if (!widget) return;
+    const name = window.prompt('Rename this aura:', widget.name);
+    if (name === null) return;
+    window.eqTracker.setWidgetName(id, name.trim() || 'Aura').then(refreshWidgets);
+  });
+
+  sidebarContextDeleteBtn.addEventListener('click', () => {
+    const id = sidebarContextMenuWidgetId;
+    closeSidebarContextMenu();
+    if (id) handleDelete(id);
+  });
+
+  // What the page title above the settings panel shows in place of "Overlay Auras" while one is
+  // selected - the owner's request, so the page says what KIND of aura you are looking at rather
+  // than a generic section label that never changes no matter which one you have open.
+  //
+  // Same signature checks used everywhere else in this file that already has to tell these apart
+  // (createDebuff sets buffSource:'ally' + trackOnEnemies:true; a "Custom buff aura" covers both
+  // self and ally under one type, matching the single "Custom buff aura" button that creates both
+  // - see the Add Aura modal) - not a new classification invented for this label alone.
+  function widgetTypeLabel(widget) {
+    if (widget.kind === 'self-buffs-builtin') return 'Self Buffs';
+    if (widget.kind === 'ally-buffs-builtin') return 'Ally Buffs';
+    if (widget.buffSource === 'damage') return 'Damage parser';
+    if (widget.buffSource === 'travel') return 'Travel guide';
+    if (widget.displayMode === 'sound-only') return 'Custom sound';
+    if (widget.displayMode === 'text') return 'Custom text';
+    if (widget.buffSource === 'customTimer') return 'Custom timer';
+    if (widget.buffSource === 'ally' && widget.trackOnEnemies) return 'Custom debuff';
+    return 'Custom buff';
+  }
+
   function deselectWidget() {
     selectedId = null;
+    pageOverlayTitleEl.textContent = 'Overlay Auras';
     settingsPanel.style.display = 'none';
     filterCard.style.display = 'none';
     customTimersCardEl.style.display = 'none';
@@ -1797,6 +1895,7 @@ function initWidgetsPanel() {
     selectedId = id;
     const widget = findWidget(id);
     if (!widget) {
+      pageOverlayTitleEl.textContent = 'Overlay Auras';
       settingsPanel.style.display = 'none';
       filterCard.style.display = 'none';
       customTimersCardEl.style.display = 'none';
@@ -1810,10 +1909,13 @@ function initWidgetsPanel() {
     iconSetCard.style.display = 'none';
     allAurasCard.style.display = 'none';
     settingsPanel.style.display = '';
+    pageOverlayTitleEl.textContent = widgetTypeLabel(widget);
     exportCodeRow.style.display = 'none';
     exportSoundWarningEl.style.display = 'none';
     exportCodeOutput.value = '';
-    settingsTitle.textContent = `${widget.name} settings`;
+    // Not the aura's name - the row above it (the name input) already says that, and repeating
+    // it here was the second thing on screen with the same information a click apart.
+    settingsTitle.textContent = 'Settings';
     nameInput.value = widget.name;
     // Self-vs-ally is a togglable choice on a self/ally custom widget, but
     // a "custom timer widget" fixes its source at creation time (see the
@@ -1823,9 +1925,22 @@ function initWidgetsPanel() {
     // An announcer type keeps its source row even once it is on text triggers, because that is the
     // one choice it is allowed to change its mind about. Every other aura hides the row as soon
     // as it is a timer aura, since the source is fixed at creation.
+    //
+    // allyDebuffAlert is the exception even among announcers, and the reason is worth being
+    // explicit about: buffSource:'ally' on THIS aura is not a real choice the way it is on every
+    // other custom aura - it is a plumbing requirement, because the alert entries _alertAllyCast
+    // writes live in the same collection real ally-buff landings do, and 'ally' is the only source
+    // that reads that collection at all. Showing the row as "Watching: Buffs you've cast on
+    // allies" was actively wrong: this aura is not about anything the OWNER casts, it is a warning
+    // about somebody else's cast, and "something you cast it at" - the option this premade should
+    // have read as - was never a real buffSource value at all, only a spellName+trackOnEnemies
+    // combination the buff-timer picker builds. Simplest correct fix is not showing a choice that
+    // was never really there: the row is hidden, the same as a customTimer aura's fixed source.
     const announcer = widget.displayMode === 'text' || widget.displayMode === 'sound-only';
     buffSourceRow.style.display =
-      widget.kind === 'custom' && (announcer || widget.buffSource !== 'customTimer') ? '' : 'none';
+      widget.kind === 'custom' && !widget.allyDebuffAlert && (announcer || widget.buffSource !== 'customTimer')
+        ? ''
+        : 'none';
     buffSourceRadios.forEach((r) => (r.checked = r.value === (widget.buffSource || 'self')));
     displayModeRadios.forEach((r) => (r.checked = r.value === widget.displayMode));
     timerFormatRadios.forEach((r) => (r.checked = r.value === widget.timerFormat));
@@ -2017,7 +2132,13 @@ function initWidgetsPanel() {
       return;
     }
     filterCard.style.display = '';
-    filterHint.textContent = 'Pick which known buffs should show on this aura.';
+    // allyDebuffAlert gets its own wording: this list is not what shows ON this aura (nothing the
+    // owner casts is involved at all), it is which spells to warn about when somebody ELSE casts
+    // them - conflating the two is exactly the "built out of casting a buff on an ally" confusion
+    // this whole change is fixing.
+    filterHint.textContent = widget.allyDebuffAlert
+      ? 'Pick which spells to warn about when someone else casts them.'
+      : 'Pick which known buffs should show on this aura.';
     filterSearch.style.display = '';
     selfBuffsFiltersEl.style.display = 'none';
     renderSelectedBuffsList(widget);
@@ -2290,12 +2411,33 @@ function initWidgetsPanel() {
     });
   }
 
+  // Whether the roster considers this a debuff (or charm), rather than an ordinary buff. The one
+  // rule the picker, the conflict check, and the no-match message all have to agree on - defined
+  // once here rather than three times, after the picker used to disagree with the rule that
+  // blocked adding what it had just offered.
+  function isDetBuff(b) {
+    return !!(b && (b.kind === 'det' || b.scaleCategory === 'debuff' || b.scaleCategory === 'charm'));
+  }
+
   function applyBuffFilterSearch() {
     const widget = findWidget(selectedId);
     if (!widget || widget.kind === 'self-buffs-builtin' || widget.kind === 'ally-buffs-builtin') return;
     if (widget.buffSource === 'customTimer') return;
     const query = filterSearch.value.trim().toLowerCase();
-    const filtered = query ? allKnownBuffs.filter((b) => b.name.toLowerCase().includes(query)) : allKnownBuffs;
+    // Filtered to the aura's own category BEFORE the search box even runs. Debuffs and buffs can
+    // never share an aura (note 27), so a debuff aura's picker showing buffs - or a buff aura's
+    // picker showing debuffs - was always going to end in the same "cannot share an aura" alert
+    // the moment it was ticked. Reported as exactly that: "if they cannot be added, they should
+    // not be in the list at all." Which category an aura wants is trackOnEnemies, not whatever
+    // happens to be picked already - that stays true even on a fresh aura with nothing picked yet,
+    // which buffNames alone could not answer.
+    //
+    // allyDebuffAlert counts as wanting debuffs too, even though trackOnEnemies is false on it -
+    // mez and charm are debuffs regardless of who they are cast on, and an ally-cast-alert aura
+    // (see the buffSourceRow comment above) exists specifically to watch that family.
+    const wantsDebuffs = !!(widget.trackOnEnemies || widget.allyDebuffAlert);
+    const inCategory = allKnownBuffs.filter((b) => isDetBuff(b) === wantsDebuffs);
+    const filtered = query ? inCategory.filter((b) => b.name.toLowerCase().includes(query)) : inCategory;
     const shown = filtered.slice(0, KNOWN_BUFF_RENDER_CAP);
     renderBuffFilterList(shown, filtered.length - shown.length, widget);
   }
@@ -2303,7 +2445,9 @@ function initWidgetsPanel() {
   function renderBuffFilterList(buffs, truncatedCount, widget) {
     filterListEl.innerHTML = '';
     if (buffs.length === 0) {
-      filterListEl.innerHTML = '<li class="empty">No matching buffs.</li>';
+      filterListEl.innerHTML = widget.trackOnEnemies || widget.allyDebuffAlert
+        ? '<li class="empty">No matching debuffs.</li>'
+        : '<li class="empty">No matching buffs.</li>';
       return;
     }
     const selectedNames = new Set((widget.buffNames || []).map((n) => n.toLowerCase()));
@@ -2327,20 +2471,20 @@ function initWidgetsPanel() {
     }
   }
 
-  // Note 27: "Buffs and debuffs can never share one aura." Enforced when adding rather than
-  // filtered out of the picker, because the reason has to be sayable - a spell silently missing
-  // from a search is indistinguishable from the app not knowing it.
+  // Note 27: "Buffs and debuffs can never share one aura." The picker itself now only ever offers
+  // one category (see applyBuffFilterSearch), so this should be unreachable through the UI - kept
+  // as a second layer rather than deleted, for anything that can still add a name outside the
+  // picker's own checkbox list (an imported share code, for one).
   function conflictsWithPicked(widget, name) {
     const picked = widget.buffNames || [];
     if (!picked.length) return null;
     const known = allKnownBuffs.find((b) => b.name === name);
     if (!known) return null;
-    const isDet = (b) => b && (b.kind === 'det' || b.scaleCategory === 'debuff' || b.scaleCategory === 'charm');
-    const incoming = isDet(known);
+    const incoming = isDetBuff(known);
     for (const other of picked) {
       const existing = allKnownBuffs.find((b) => b.name === other);
       if (!existing) continue;
-      if (isDet(existing) !== incoming) return other;
+      if (isDetBuff(existing) !== incoming) return other;
     }
     return null;
   }
@@ -2386,6 +2530,28 @@ function initWidgetsPanel() {
       refreshWidgets();
     });
   }
+
+  // "Reset to default" - only offered on an aura built from a premade (see premadeOrigin), which
+  // is what makes "default" a real, specific thing to reset back to rather than a guess. Confirmed
+  // the same way Delete is, because it is just as hard to undo - every setting changed since it
+  // was created is gone, not just the ones that happen to differ from the premade.
+  function handleReset(id) {
+    const widget = findWidget(id);
+    if (!widget) return;
+    const confirmed = window.confirm(
+      `Reset "${widget.name}" to how it was when it was first built? Every setting changed since ` +
+        "then is lost - its position and which profiles/zones it's limited to are the only things kept."
+    );
+    if (!confirmed) return;
+    window.eqTracker.resetWidgetToDefault(id).then(() => {
+      // Full reselect rather than patching individual fields - a reset can touch nearly
+      // everything (buff list, sounds, thresholds), and selectWidget already knows how to render
+      // all of it consistently from a fresh widget object.
+      refreshWidgets().then(() => selectWidget(id));
+    });
+  }
+
+  resetWidgetBtn.addEventListener('click', () => handleReset(selectedId));
 
   widgetsNavBtn.addEventListener('click', deselectWidget);
 
@@ -3139,7 +3305,11 @@ function initWidgetsPanel() {
     }
     window.eqTracker.setWidgetVisibleInZones(selectedId, [...current, zone]).then(() => {
       zoneInput.value = '';
-      refreshWidgets();
+      // Reported as "the name disappears and nothing else happens" - true, because refreshWidgets
+      // alone only rebuilds the sidebar submenu. It never re-rendered the chip list actually shown
+      // in this panel, so the zone WAS saved (a restart would show it) but nothing on screen said
+      // so. Re-render this list explicitly, from the freshly reloaded widget.
+      refreshWidgets().then(() => renderWidgetZones(findWidget(selectedId)));
     });
   }
   zoneAddBtn.addEventListener('click', addZoneToSelected);

@@ -1,17 +1,17 @@
 'use strict';
 /**
- * Note 6 - the aura's name in its blue move box, and clicking it to open that aura's settings.
+ * Note 6 - the aura's name in its blue move box, and reaching that aura's settings from it.
  *
- * The trap this suite exists for is a Chromium one. The whole move box carries
- * `-webkit-app-region: drag`, which is handled by the OS before the page ever sees the event, so
- * a click listener attached anywhere inside a drag region simply never fires. There is no error
- * and nothing in the console - the button is just dead. The name has to be an explicit no-drag
- * child, and it has to stay small, because every pixel of no-drag is a pixel you can no longer
- * grab the aura by.
+ * Reworked at the owner's instruction, 2026-08-24: the name used to be its own clickable button,
+ * which meant it had to be a no-drag hole cut out of the box's drag region (the Chromium trap this
+ * suite originally existed for - `-webkit-app-region: drag` is handled by the OS before the page
+ * ever sees a click, so a listener inside one is silently dead). That hole was small - "the tiny
+ * edge to open up an aura ... is too small" - and it competed with the drag region for the same
+ * pixels, one pixel of no-drag being one less pixel you could grab the aura by.
  *
- * A second, quieter trap: matching on "drag" also matches "no-drag". These tests capture the
- * declared value and compare it exactly, and strip comments first, after an earlier version of a
- * check like this passed against prose describing the rule rather than the rule itself.
+ * The name is now a plain label with no click handling of its own, riding along with the rest of
+ * the box. Reaching settings is now a right-click ANYWHERE on the box - one big target instead of
+ * one small one, using `contextmenu` rather than `click` so it never competes with the drag.
  */
 
 const assert = require('node:assert/strict');
@@ -46,28 +46,32 @@ test('the move box is still a drag region', () => {
   assert.equal(appRegionOf('.drag-overlay'), 'drag');
 });
 
-test('the name pill opts OUT of the drag region, or its click never fires', () => {
-  assert.equal(
-    appRegionOf('.drag-name'), 'no-drag',
-    'a click listener inside a Chromium drag region never fires, silently'
+test('the name is no longer carved out of the drag region', () => {
+  // It was a button once, and had to opt out of the drag region for its click to fire at all - see
+  // the old version of this file. Now that nothing inside the box has its own click handler, an
+  // explicit no-drag hole would only cost draggable area for no reason.
+  assert.notEqual(
+    appRegionOf('.drag-name'),
+    'no-drag',
+    'the name still opts out of the drag region, but nothing needs it to any more'
   );
 });
 
-test('the pill does not swallow the whole box', () => {
-  // Making too much of the box no-drag is exactly how you lose the ability to drag the aura you
-  // are trying to move. A max-width keeps a long aura name from becoming a full-width bar.
-  const rule = overlayCss.match(/\.drag-name\s*\{([^}]*)\}/);
-  assert.ok(rule, '.drag-name has been renamed or removed');
-  assert.match(rule[1], /max-width:/, 'without a max-width a long name eats the draggable area');
-  assert.match(rule[1], /white-space:\s*nowrap/, 'a wrapping name would grow the pill downwards too');
-});
-
-test('the pill lives inside the move box, and the hint text is still draggable', () => {
+test('the name is a label, not a button', () => {
   const box = overlayHtml.match(/<div id="drag-overlay"[\s\S]*?<\/div>/);
   assert.ok(box, 'the move box has been restructured');
-  assert.match(box[0], /id="drag-name"/, 'the name pill is not inside the move box');
-  // The hint sits in the no-drag box's flex column; it must not itself become a dead zone.
-  assert.equal(appRegionOf('.drag-hint'), 'drag');
+  assert.match(box[0], /<span id="drag-name"/, 'the name is not a plain element inside the box');
+  assert.doesNotMatch(box[0], /<button[^>]*id="drag-name"/, 'the name is still a button');
+});
+
+test('the name does not still eat the draggable area', () => {
+  // A max-width still matters even for a non-interactive label - without it a long aura name would
+  // grow the pill to the box's full width, and CSS has no way to tell "wide because of a long name"
+  // from "wide on purpose."
+  const rule = overlayCss.match(/\.drag-name\s*\{([^}]*)\}/);
+  assert.ok(rule, '.drag-name has been renamed or removed');
+  assert.match(rule[1], /max-width:/, 'without a max-width a long name grows past the box');
+  assert.match(rule[1], /white-space:\s*nowrap/, 'a wrapping name would grow the pill downwards too');
 });
 
 test('the name comes from the config, so renaming an aura updates the box', () => {
@@ -82,13 +86,24 @@ test('an empty name does not leave an empty pill sitting there', () => {
   assert.match(overlayCss, /\.drag-name:empty\s*\{\s*display:\s*none;/);
 });
 
-test('clicking the pill reaches the settings window, hop by hop', () => {
-  // Five hops, and a missing one anywhere is a button that does nothing with no error.
-  assert.match(overlayJs, /dragNameEl\.addEventListener\('click', \(\) => window\.eqOverlay\.openSettings\(widgetId\)\)/);
+test('right-clicking the box reaches the settings window, hop by hop', () => {
+  // Five hops, and a missing one anywhere is a right-click that does nothing with no error.
+  assert.match(
+    overlayJs,
+    /dragOverlayEl\.addEventListener\('contextmenu', \(e\) => \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*window\.eqOverlay\.openSettings\(widgetId\);/
+  );
   assert.match(preloadOverlay, /openSettings: \(widgetId\) => \{\s*ipcRenderer\.send\('widget:openSettings', widgetId\);/);
   assert.match(mainSrc, /ipcMain\.on\('widget:openSettings'/);
   assert.match(preloadMain, /onOpenWidgetSettings: \(callback\) => \{/);
   assert.match(rendererSrc, /window\.eqTracker\.onOpenWidgetSettings\(\(id\) => focusWidget\(id\)\)/);
+});
+
+test('the native right-click menu is suppressed, not stacked on top of', () => {
+  // Without preventDefault, right-clicking the box would open settings AND pop Chromium's own
+  // context menu over the game - the second half being the actual bug this guards.
+  const fn = overlayJs.match(/dragOverlayEl\.addEventListener\('contextmenu', \(e\) => \{([\s\S]*?)\n\}\);/);
+  assert.ok(fn, 'the contextmenu listener has been restructured');
+  assert.match(fn[1], /e\.preventDefault\(\);/);
 });
 
 test('the settings window is raised, not just messaged', () => {
@@ -103,7 +118,7 @@ test('the settings window is raised, not just messaged', () => {
 test('the listener is registered where focusWidget can be seen', () => {
   // focusWidget lives inside initWidgetsPanel's closure, so a listener registered next to the
   // other IPC wiring at the top of the file would be a ReferenceError at click time - which
-  // would not surface until someone actually clicked the pill.
+  // would not surface until someone actually right-clicked the box.
   const listener = rendererSrc.indexOf('onOpenWidgetSettings');
   const panel = rendererSrc.indexOf('function focusWidget(id)');
   assert.ok(listener >= 0 && panel >= 0);

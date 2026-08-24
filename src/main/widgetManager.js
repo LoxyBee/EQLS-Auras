@@ -384,6 +384,15 @@ function reorderWidgets(orderedIds) {
   return widgetStore.reorderWidgets(orderedIds);
 }
 
+function resetWidgetToDefault(id) {
+  const ok = widgetStore.resetToDefault(id);
+  // The running overlay window (if any) has a stale config in its own renderer memory until told
+  // otherwise - same as every other setter here, just one call resetting many fields at once
+  // instead of one call per field.
+  if (ok) pushConfigChanged(id);
+  return widgetStore.getById(id);
+}
+
 function pushConfigChanged(id) {
   const win = windows.get(id);
   const config = widgetStore.getById(id);
@@ -1162,6 +1171,7 @@ module.exports = {
   applyCodeToSelfBuffs,
   deleteWidget,
   reorderWidgets,
+  resetWidgetToDefault,
   applyProfileVisibility,
   setForegroundHidden,
   setMasterHidden,

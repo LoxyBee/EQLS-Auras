@@ -1092,6 +1092,7 @@ ipcMain.handle('widget:duplicate', (_event, id) => widgetManager.duplicateWidget
 ipcMain.handle('widget:applyCodeToSelfBuffs', (_event, code) => widgetManager.applyCodeToSelfBuffs(code));
 ipcMain.handle('widget:delete', (_event, id) => widgetManager.deleteWidget(id));
 ipcMain.handle('widget:reorder', (_event, { orderedIds }) => widgetManager.reorderWidgets(orderedIds));
+ipcMain.handle('widget:resetToDefault', (_event, { id }) => widgetManager.resetWidgetToDefault(id));
 ipcMain.handle('widget:setName', (_event, { id, value }) => widgetManager.setName(id, value));
 ipcMain.handle('widget:toggleLock', (_event, id) => widgetManager.toggleLock(id));
 ipcMain.handle('widget:resetPosition', (_event, id) => widgetManager.resetPosition(id));

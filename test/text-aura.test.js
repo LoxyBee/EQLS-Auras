@@ -440,5 +440,28 @@ test('the setting is reachable, populated, and hidden on other aura types', () =
   assert.equal(Number(bounds[2]), MAX_INSTANT_DISPLAY_SEC);
 });
 
+// ---------------------------------------------------------------------------
+// The width-creep bug (reported 24 Aug: "text auras width keeps creeping wider and wider
+// when unlocked to move it")
+// ---------------------------------------------------------------------------
+//
+// content-wrap has no CSS width rule of its own (display:flex, nothing else), so clearing its
+// inline width to '' left it a plain block box - which defaults to FILLING its containing block
+// (body, 100%), not shrinking to the text inside it. Every measurement in reportSizeIfChanged then
+// just read the window's own current width back at itself: the window resizes to width+8,
+// content-wrap re-fills to that new 100%, gets measured 8px wider, and so on with no ceiling. It
+// grows regardless of lock state - unlocking is just the only time anyone is watching closely
+// enough to see it happen.
+
+test('content-wrap shrink-wraps to the text instead of filling the window', () => {
+  const fn = overlaySrc.match(/if \(config\.displayMode === 'text'\) \{([\s\S]*?)\n {2}\} else if/);
+  assert.ok(fn, 'the text-mode branch of applyConfig has been restructured');
+  assert.match(
+    fn[1],
+    /contentWrap\.style\.width = 'max-content';/,
+    'an empty string here fills the window instead of shrinking to the text - the exact feedback loop reported as "creeping wider and wider"'
+  );
+});
+
 module.exports = () => report('text-aura');
 if (require.main === module) process.exit(report('text-aura') ? 1 : 0);

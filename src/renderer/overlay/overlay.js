@@ -5,8 +5,16 @@ const contentWrap = document.getElementById('content-wrap');
 const dragOverlayEl = document.getElementById('drag-overlay');
 const dragNameEl = document.getElementById('drag-name');
 
-// Note 6. Only reachable while unlocked, since the whole box is hidden otherwise.
-dragNameEl.addEventListener('click', () => window.eqOverlay.openSettings(widgetId));
+// Note 6, reworked at the owner's instruction: the name pill used to be its own clickable button,
+// which meant it also had to be a no-drag hole cut out of the draggable box - "the tiny edge to
+// open up an aura ... is too small". That button is gone. The name is now a plain label riding
+// along with the rest of the box, and right-clicking ANYWHERE on the box opens settings instead -
+// one big target instead of one small one, and it does not compete with left-click-drag for the
+// same pixels. Only reachable while unlocked, since the whole box is hidden otherwise.
+dragOverlayEl.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  window.eqOverlay.openSettings(widgetId);
+});
 
 // Used only until the real config arrives from getConfig() below - a
 // freshly created widget's window has to fully boot before that resolves,
@@ -1344,12 +1352,24 @@ function applyConfig(config) {
     // A text aura is sized by its words, not by a setting. Every explicit width the other two
     // modes set has to be cleared, or a line of 48px text is clipped to whatever "List width"
     // happened to be - which looks like the text being broken rather than the box being narrow.
+    //
+    // 'max-content', not '' (empty/auto). content-wrap has no CSS width rule of its own, so an
+    // empty string left it a plain block box, which defaults to FILLING its containing block
+    // (body, 100%) rather than shrinking to its text. That made every measurement in
+    // reportSizeIfChanged below just read the window's own current width back at itself: the
+    // window resizes to width+8, content-wrap re-fills to the new 100%, gets measured as 8px
+    // wider, and so on with no ceiling - a live version of the exact feedback loop this file's own
+    // CSS comment on #content-wrap warns about. Reported as the aura "creeping wider and wider"
+    // while unlocked - it grows on every resize regardless of lock state, but unlocking is the
+    // only time anyone is watching the window closely enough to see it happen.
+    // max-content makes content-wrap shrink-wrap to .text-tile's own max-content width instead,
+    // which is what actually decides the size and does not change just because the window did.
     currentOriginX = 0;
     listEl.style.maxWidth = '';
     listEl.style.margin = '';
     listEl.style.justifyContent = '';
     listEl.style.width = '';
-    contentWrap.style.width = '';
+    contentWrap.style.width = 'max-content';
     dragOverlayEl.style.position = '';
     dragOverlayEl.style.inset = '';
     dragOverlayEl.style.top = '';

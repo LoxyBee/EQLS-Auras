@@ -174,7 +174,7 @@
       </section>
 
       <section id="page-overlay" class="page">
-        <h2 class="page-title">Overlay Auras</h2>
+        <h2 class="page-title" id="page-overlay-title">Overlay Auras</h2>
 
         <div class="card" id="widgets-intro-card">
           <p class="hint">
@@ -729,6 +729,11 @@
                 <button id="copy-widget-code-btn">Copy</button>
               </div>
               <p class="hint" id="export-sound-warning" style="display:none"></p>
+              <!-- Only shown on an aura built from a premade (see premadeOrigin) - a hand-built
+                   Custom aura has no recorded recipe to reset back to. -->
+              <div class="row" id="reset-widget-row" style="display:none">
+                <button id="reset-widget-btn" class="btn-danger">Reset to default</button>
+              </div>
             </div>
 
           </div>
@@ -1620,6 +1625,14 @@
     <button type="button" id="share-code-offer-open" class="btn-prominent">Look at it</button>
     <button type="button" id="share-code-offer-dismiss" class="link-btn">Ignore</button>
   </div>
+
+  <!-- Right-click on a sidebar aura name. Positioned at the cursor on open, shown/hidden by JS
+       rather than a native Electron Menu - the sidebar already runs entirely in the renderer, and
+       two items do not need a round trip through the main process to draw. -->
+  <ul id="sidebar-context-menu" class="context-menu" style="display:none">
+    <li><button type="button" id="sidebar-context-rename">Rename</button></li>
+    <li><button type="button" id="sidebar-context-delete" class="danger">Delete</button></li>
+  </ul>
 
   <script src="main-window.js"></script>
 </body>

@@ -176,20 +176,43 @@ test('the split is real, not everything on one side', () => {
   assert.ok(det > 200 && det < roster.length - 200, `${det} of ${roster.length} classed detrimental`);
 });
 
-test('the refusal is enforced, and says why', () => {
-  const fn = rendererSrc.match(/function conflictsWithPicked\(widget, name\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(fn, 'conflictsWithPicked has been renamed or restructured');
+test('the shared category rule is defined once, and used by both the filter and the refusal', () => {
+  // isDetBuff used to be a copy living only inside conflictsWithPicked, which is how the picker
+  // and the refusal it backs could ever disagree about what counts as a debuff. Reported directly:
+  // "if they cannot be added, they should not be in the list at all" - a picker offering something
+  // its own refusal then blocks is the bug, not a display preference.
+  const fn = rendererSrc.match(/function isDetBuff\(b\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'isDetBuff has been renamed or restructured');
   assert.match(fn[1], /kind === 'det'/);
   assert.match(fn[1], /scaleCategory === 'charm'/, 'charm is not counted as detrimental');
+
+  const conflicts = rendererSrc.match(/function conflictsWithPicked\(widget, name\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(conflicts, 'conflictsWithPicked has been renamed or restructured');
+  assert.doesNotMatch(conflicts[1], /function isDet/, 'a second, local copy of the rule is back');
   // The comparison direction, pinned in the SOURCE. The checks above run against a reproduced
-  // copy of this function, which cannot notice the real one being inverted - and inverted, it
-  // refuses every valid pick and allows every invalid one.
-  assert.match(fn[1], /isDet\(existing\) !== incoming/, 'the clash test compares the wrong way round');
-  // Refused on add, with a message - not silently filtered out of the search, where a missing
-  // spell is indistinguishable from the app not knowing it.
+  // copy of the rule, which cannot notice the real one being inverted - and inverted, it refuses
+  // every valid pick and allows every invalid one.
+  assert.match(conflicts[1], /isDetBuff\(existing\) !== incoming/, 'the clash test compares the wrong way round');
+
+  // Refused on add too, kept as a second layer (a share code can still add a name outside the
+  // picker's own checkbox list) - not the only line of defence any more, but not removed either.
   assert.match(rendererSrc, /const clash = conflictsWithPicked\(widget, name\);/);
   assert.match(rendererSrc, /cannot share an aura/);
   assert.match(html, /id="widget-buff-filter-notice"/, 'nowhere to show the reason');
+});
+
+test('the picker itself only ever offers one category', () => {
+  // The primary fix, not just the belt-and-suspenders refusal above: a debuff aura's picker must
+  // never render a buff as a checkable option, and vice versa, or ticking it just walks straight
+  // into the refusal above having looked like a real choice.
+  const fn = rendererSrc.match(/function applyBuffFilterSearch\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'applyBuffFilterSearch has been restructured');
+  assert.match(fn[1], /isDetBuff\(b\) === wantsDebuffs/, 'the pool is not filtered to one category before rendering');
+  assert.match(
+    fn[1],
+    /wantsDebuffs = !!\(widget\.trackOnEnemies \|\| widget\.allyDebuffAlert\)/,
+    'an ally-cast-alert aura (mez/charm) must count as wanting debuffs too, or its own picker offers buffs'
+  );
 });
 
 test('the notice clears itself once something valid happens', () => {

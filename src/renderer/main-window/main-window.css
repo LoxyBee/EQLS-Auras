@@ -1922,3 +1922,40 @@ body.sidebar-resizing .page-container,
 body.sidebar-resizing .sidebar {
   pointer-events: none;
 }
+
+/* Right-click menu on a sidebar aura row. Positioned at the cursor by JS (top/left set inline),
+   everything else here is just appearance - matching .modal-card's palette so it reads as part of
+   the same app rather than a browser-default menu. */
+.context-menu {
+  position: fixed;
+  z-index: 50;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--accent-line);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  min-width: 140px;
+}
+
+.context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.context-menu button:hover {
+  background: var(--panel);
+}
+
+.context-menu button.danger {
+  color: var(--danger);
+}
