@@ -30,13 +30,21 @@ both are rebuilt by the commands above.
 
 ## Checking it still works
 
+**Run `npm install` first.** The test suite does not launch Electron, but one suite imports
+`widgetManager`, which imports Electron itself — so on a fresh copy it fails with
+`Cannot find module 'electron'` until the dependencies are there. The other 35 suites run without
+it.
+
 Three things, in increasing order of how much they prove:
 
 ```
-node test/run.js            36 suites, 570 cases. Fast, no Electron.
+node test/run.js            36 suites, 570 cases. Seconds, and launches nothing.
 node tools/smoke-launch.js  Starts the real app, holds, reports. Clicks nothing.
 node tools/replay-log.js    Runs 1.5 million real log lines through the real engine.
 ```
+
+`smoke-launch` exists because no unit test starts Electron, and a hotkey registration that
+*throws* rather than returning false once shipped past a completely green suite.
 
 The replay is the important one before shipping any detection change. Its baseline is **129
 distinct buffs, 211,546 landings, 840 ally landings, 27 prompts, 91 unknown texts** — all five
