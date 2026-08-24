@@ -199,11 +199,16 @@ test('it is not marked as a debuff sitting on an enemy', () => {
   assert.equal(e.getActiveAllyBuffs()[0].onEnemy, false);
 });
 
-test('an aura that did not ask for warnings never draws them', () => {
-  // Without this an ordinary Ally Buffs aura shows entries whose name is the caster rather than
-  // somebody carrying a buff.
-  assert.match(overlaySrc, /if \(!currentConfig\.allyDebuffAlert\) \{/);
-  assert.match(overlaySrc, /filtered = filtered\.filter\(\(b\) => !b\.allyCast\);/);
+test('an aura that did not ask for warnings never draws them, and an alert aura draws ONLY warnings', () => {
+  // A strict partition, not a one-way filter. The one-way version - strip alerts from an aura
+  // that did not ask for them, and leave everything else alone - let an alert aura (buffSource
+  // 'ally', buffNames full of mez/charm names) also show a REAL ally-buff landing for one of
+  // those names, if the owner genuinely cast one on a groupmate. Reported as "it's tracking
+  // buffs you've cast on allies" - the alert aura was never meant to show landings at all.
+  assert.match(
+    overlaySrc,
+    /filtered = filtered\.filter\(\(b\) => !!b\.allyCast === !!currentConfig\.allyDebuffAlert\);/
+  );
 });
 
 test('a countdown aura would drop it even if the filter were removed', () => {

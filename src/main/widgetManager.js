@@ -380,8 +380,8 @@ function deleteWidget(id) {
   return widgetStore.remove(id);
 }
 
-function moveWidget(id, direction) {
-  return widgetStore.move(id, direction);
+function reorderWidgets(orderedIds) {
+  return widgetStore.reorderWidgets(orderedIds);
 }
 
 function pushConfigChanged(id) {
@@ -1161,7 +1161,7 @@ module.exports = {
   duplicateWidget,
   applyCodeToSelfBuffs,
   deleteWidget,
-  moveWidget,
+  reorderWidgets,
   applyProfileVisibility,
   setForegroundHidden,
   setMasterHidden,

@@ -33,9 +33,11 @@ Cheap, low risk, no dependencies. Worth doing as one batch.
 
 Self-contained, a day or less each.
 
-- [ ] **Default alert sound on an incoming tell**, with a cooldown so a burst
-      of tells does not machine-gun the sound. Cooldown length probably wants
-      to be a setting, defaulting to a few seconds.
+- [~] **Alert sound on an incoming tell.** Built 24 Aug, under Setup > Trade
+      requests, next to the trade ping - off by default, matches `<Name>
+      tells you, '...'`. **Not done**: the cooldown so a burst of tells does
+      not machine-gun the sound. Cooldown length probably wants to be a
+      setting, defaulting to a few seconds.
 - [ ] **Death wipes buffs on whoever died.** EQ drops every buff on death, so
       the app should too rather than counting down timers for buffs that are
       already gone. Applies to the player AND to a groupmate whose ally buffs

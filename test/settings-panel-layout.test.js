@@ -110,7 +110,12 @@ test('what an aura watches all lives in one card', () => {
   const card = panel.slice(panel.indexOf('id="widget-buff-filter-card"'));
   const own = card.slice(0, card.indexOf('<div class="block"'));
   assert.ok(own.includes('id="widget-buff-source-row"'), 'the source picker is not in the Buffs shown card');
-  assert.ok(own.includes('id="widget-buff-filter-list"'), 'the filter list left the card');
+  assert.ok(own.includes('id="widget-selected-buffs-list"'), 'the gem bar left the card');
+  // The full search+list moved OUT into its own modal (owner's instruction, 2026-08-24: it was
+  // permanently visible under the gems, undoing the whole point of the compact gem row) - so it is
+  // deliberately absent from this card now. buff-picker-modal.test.js-equivalent coverage for that
+  // lives in gem-slots.test.js.
+  assert.ok(!own.includes('id="widget-buff-filter-list"'), 'the full list is back inside the card');
   // And it is no longer up in Display & size.
   const display = panel.slice(panel.indexOf('block-cap">Display'), panel.indexOf('id="widget-buff-filter-card"'));
   assert.ok(!display.includes('id="widget-buff-source-row"'), 'the source picker is still in Display & size');
@@ -143,11 +148,11 @@ test('the controls inside it all survived the move', () => {
     'widget-max-duration-value',
     'widget-selected-buffs-section',
     'widget-selected-buffs-list',
-    'widget-buff-filter-search',
-    'widget-buff-filter-list',
   ]) {
     assert.ok(own.includes(`id="${id}"`), `${id} was lost in the move`);
   }
+  // widget-buff-filter-search and widget-buff-filter-list live in buff-picker-modal-backdrop now,
+  // not in this card - see the test above.
 });
 
 module.exports = () => report('settings-panel-layout');

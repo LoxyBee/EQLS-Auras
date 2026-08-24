@@ -501,17 +501,12 @@
 
               </div>
               <div id="widget-selected-buffs-section" style="display:none">
-                <h4 class="settings-subsection-title" title="Always shown here regardless of search, so a buff picked earlier stays easy to find and remove - with a thousand known buffs, searching the list below for one you already picked is not practical.">Currently selected</h4>
+                <h4 class="settings-subsection-title">Currently selected</h4>
+                <!-- Click a gem to edit the picker with that spell in view, rather than deleting
+                     it outright - the picker itself is where removal happens now (uncheck it),
+                     so one accidental click can no longer lose a pick with no way back. -->
                 <div id="widget-selected-buffs-list" class="gem-bar"></div>
-                <p class="hint danger-hint" id="widget-buff-filter-notice" style="display:none"></p>
               </div>
-              <input
-                type="search"
-                id="widget-buff-filter-search"
-                class="text-input search-input"
-                placeholder="Search buffs..."
-              />
-              <ul id="widget-buff-filter-list" class="buff-list known-buff-list"></ul>
             </div>
 
             <div class="block">
@@ -876,14 +871,12 @@
               <input type="checkbox" id="trade-ping-checkbox" />
               Play a sound when someone asks to trade with you
             </label>
-            <button type="button" id="trade-ping-test-btn">Test</button>
           </div>
           <div class="row">
             <label title="Fires on an incoming tell, whichever channel it arrives on.">
               <input type="checkbox" id="tell-ping-checkbox" />
               Play a sound when you get a tell
             </label>
-            <button type="button" id="tell-ping-test-btn">Test</button>
           </div>
         </div>
 
@@ -1258,17 +1251,7 @@
           The aura is built for you with sensible defaults, and you can change anything afterwards.
         </p>
         <div class="row">
-          <input
-            type="text"
-            id="buff-timer-search"
-            class="text-input"
-            placeholder="Search spells you can track..."
-          />
-        </div>
-        <ul id="buff-timer-list" class="buff-list modal-list"></ul>
-        <div class="row" id="buff-timer-chosen-row" style="display:none">
-          <span class="label">Watching:</span>
-          <strong id="buff-timer-chosen"></strong>
+          <select id="buff-timer-select" class="text-input"></select>
         </div>
         <div class="row" id="buff-timer-source-row" style="display:none">
           <span class="label">On:</span>
@@ -1334,6 +1317,27 @@
   <!-- Every field visible and editable up front, for both adding and editing -
        replaces the old inline form where you had to click Edit on a list row
        to load its values into fields sitting elsewhere on the page. -->
+  <!-- The full spell search+list used to sit inline under the gem bar, permanently on screen -
+       the whole point of gems was to replace a long list with a compact row, and a full list
+       still open underneath undid that. Now it only exists here, in a modal, opened by the "+"
+       slot or by clicking an existing gem. -->
+  <div id="buff-picker-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Buffs shown</h3>
+        <button id="close-buff-picker-modal" class="modal-close">✕</button>
+      </div>
+      <input
+        type="search"
+        id="widget-buff-filter-search"
+        class="text-input search-input"
+        placeholder="Search buffs..."
+      />
+      <p class="hint danger-hint" id="widget-buff-filter-notice" style="display:none"></p>
+      <ul id="widget-buff-filter-list" class="buff-list known-buff-list modal-list"></ul>
+    </div>
+  </div>
+
   <div id="custom-timer-modal-backdrop" class="modal-backdrop" style="display:none">
     <div class="modal-card modal-card-wide">
       <div class="modal-header">

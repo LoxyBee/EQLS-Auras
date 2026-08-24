@@ -878,12 +878,15 @@ function visibleBuffs(buffs) {
     const nameSet = new Set((currentConfig.buffNames || []).map((n) => n.toLowerCase()));
     filtered = buffs.filter((b) => nameSet.has(b.name.toLowerCase()));
   }
-  // SOMEBODY ELSE'S CAST - a warning, not a buff. Only the aura that asked to be warned draws
-  // these; every other aura must never see them, or an ordinary Ally Buffs aura would start
-  // showing entries whose name is the caster rather than the person carrying a buff.
-  if (!currentConfig.allyDebuffAlert) {
-    filtered = filtered.filter((b) => !b.allyCast);
-  }
+  // SOMEBODY ELSE'S CAST - a warning, not a buff. This used to be one-directional (strip alerts
+  // from an aura that did not ask for them) and nothing stripped the other way, so an aura built
+  // FROM the "Someone else cast a mez" premade - buffSource 'ally', buffNames full of mez/charm
+  // spell names, exactly to receive these alerts - could ALSO show a real ally-buff landing for
+  // one of those names, if the owner genuinely cast one of them on a groupmate herself. Reported
+  // as "it's tracking buffs you've cast on allies", which is exactly what that gap let through.
+  // An alert aura and an ordinary Ally Buffs aura are now a strict partition of the same list -
+  // each end only ever sees its own kind, never the other's.
+  filtered = filtered.filter((b) => !!b.allyCast === !!currentConfig.allyDebuffAlert);
 
   // ENEMIES - a debuff on something you are fighting, rather than a buff on a groupmate.
   //

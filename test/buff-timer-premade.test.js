@@ -129,35 +129,32 @@ test('the ally option is disabled, with a reason, for a spell that cannot use it
 // The panel
 // ---------------------------------------------------------------------------
 
-test('it is a searchable list, not a dropdown', () => {
-  // 720 trackable spells is far past what a dropdown can be used with.
-  assert.match(html, /id="buff-timer-search"/, 'there is no search box');
-  assert.match(html, /id="buff-timer-list"/);
-  assert.doesNotMatch(html, /<select[^>]*id="buff-timer/, 'a dropdown cannot be used at this size');
-  assert.match(rendererSrc, /const BUFF_TIMER_RENDER_CAP = \d+;/, 'an uncapped list is a long scroll nobody reads');
+test('it is a real dropdown, not a search box over a capped list', () => {
+  // Reversed at the owner's instruction, 2026-08-24: a search box with a 40-result cap and an
+  // "...and N more - keep typing" dead end at the bottom was reported outright as "stupid
+  // functionality". A native <select> has no such cap - it scrolls, and typing a letter jumps to
+  // it, which a custom list was reimplementing badly.
+  assert.match(html, /id="buff-timer-select"/, 'no dropdown in the markup');
+  assert.doesNotMatch(html, /id="buff-timer-search"/, 'the old search box is back');
+  assert.doesNotMatch(html, /id="buff-timer-list"/, 'the old capped list is back');
+  assert.doesNotMatch(rendererSrc, /BUFF_TIMER_RENDER_CAP/, 'a render cap has no meaning for a <select>');
 });
 
-test('an empty box lists everything rather than demanding a search', () => {
-  const fn = rendererSrc.match(/function renderBuffTimerList\(\) \{([\s\S]*?)\n  \}/);
-  assert.ok(fn, 'renderBuffTimerList has been restructured');
-  // It used to print "Type to search 720 spells..." and render nothing until a query arrived, so
-  // a spell could only be found by someone who already knew its exact name - useless for browsing,
-  // which is what "it should be a drop down" was actually asking for. The empty query must now
-  // fall through to the whole pool.
+test('the dropdown is populated fresh whenever the pool or the mode changes', () => {
+  const fn = rendererSrc.match(/function populateBuffTimerSelect\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(fn, 'populateBuffTimerSelect has been renamed or restructured');
+  assert.match(fn[1], /buffTimerSelect\.innerHTML = '';/, 'stale options from the last pool would linger');
+  assert.match(fn[1], /buffTimerPool\(\)/, 'must read the mode-appropriate list, not always trackableBuffs');
+  assert.match(fn[1], /\.sort\(/, 'an unsorted 720-entry dropdown is as hard to use as no dropdown at all');
+});
+
+test('picking an option resolves back to the real buff object', () => {
+  // The <select>'s value is only ever a name (an option cannot hold a whole object), so the
+  // change handler has to look the buff back up in the current pool rather than trust the string.
   assert.match(
-    fn[1],
-    /query \? pool\.filter\([\s\S]*?\) : pool/,
-    'an empty query must show the full list, not a prompt'
+    rendererSrc,
+    /buffTimerSelect\.addEventListener\('change', \(\) => \{\s*\n\s*const buff = buffTimerPool\(\)\.find/
   );
-  assert.doesNotMatch(fn[1], /Type to search/, 'the type-to-search dead end is back');
-});
-
-test('the no-match state explains itself', () => {
-  const fn = rendererSrc.match(/function renderBuffTimerList\(\) \{([\s\S]*?)\n  \}/);
-  assert.ok(fn, 'renderBuffTimerList has been restructured');
-  // "None" is not enough: a spell can be perfectly real and still absent because the roster has
-  // no landing message for it, which is a different problem from a typo.
-  assert.match(fn[1], /landing message/, 'a no-match result does not say why something might be missing');
 });
 
 test('the premade opens the panel instead of building immediately', () => {

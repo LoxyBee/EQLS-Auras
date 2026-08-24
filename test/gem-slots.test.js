@@ -118,9 +118,14 @@ test('a spell with no icon still shows something removable', () => {
   assert.ok(noIcon.length > 0, 'every spell has an icon now - is the fallback still needed?');
 });
 
-test('clicking a gem removes that spell', () => {
+test('clicking a gem opens the picker, rather than deleting the spell outright', () => {
+  // Reversed at the owner's instruction, 2026-08-24: "the gem pickers ... cannot be edited, only
+  // deleted." One click used to be an irreversible remove. It now opens the same modal the "+"
+  // slot does, with this spell searched up - real removal still happens, by unchecking it there,
+  // but it is no longer one misclick away with no way back.
   const fn = rendererSrc.match(/function buildGemSlot\(widget, name\) \{([\s\S]*?)\n {2}\}/)[1];
-  assert.match(fn, /toggleBuffFilterName\(widget, name, false\)/);
+  assert.match(fn, /openBuffPickerModal\(name\)/);
+  assert.doesNotMatch(fn, /toggleBuffFilterName\(widget, name, false\)/, 'a click still deletes outright');
   assert.match(fn, /slot\.title = /, 'no tooltip - an EQ icon alone does not say which spell it is');
 });
 
@@ -128,13 +133,21 @@ test('there is a "+" slot, and it is the way in when nothing is picked', () => {
   const fn = rendererSrc.match(/function renderSelectedBuffsList\(widget\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderSelectedBuffsList has been restructured');
   assert.match(fn[1], /gem-slot gem-add/);
-  assert.match(fn[1], /filterSearch\.focus\(\)/, 'the + slot does not lead anywhere');
+  assert.match(fn[1], /openBuffPickerModal\(''\)/, 'the + slot does not lead anywhere');
   // The section must NOT hide itself when empty any more, or the + is unreachable.
   assert.doesNotMatch(
     fn[1],
     /selectedBuffsSectionEl\.style\.display = names\.length/,
     'the row hides when empty, which hides the only way to add the first spell'
   );
+});
+
+test('the picker lives in a modal, not permanently on screen under the gems', () => {
+  // The whole point of gems was to replace a long always-visible list with a compact row - a full
+  // search box and list still sitting open underneath the row undid that entirely.
+  assert.match(html, /id="buff-picker-modal-backdrop" class="modal-backdrop"/);
+  assert.match(rendererSrc, /function openBuffPickerModal\(searchTerm\) \{/);
+  assert.match(rendererSrc, /function closeBuffPickerModal\(\) \{/);
 });
 
 test('the + slot does not wear the danger hover that means "remove"', () => {

@@ -1192,6 +1192,8 @@ function initWidgetsPanel() {
   const filterListEl = document.getElementById('widget-buff-filter-list');
   const selectedBuffsSectionEl = document.getElementById('widget-selected-buffs-section');
   const selectedBuffsListEl = document.getElementById('widget-selected-buffs-list');
+  const buffPickerModalBackdrop = document.getElementById('buff-picker-modal-backdrop');
+  const closeBuffPickerModalBtn = document.getElementById('close-buff-picker-modal');
   const trackOthersRowEl = document.getElementById('widget-track-others-row');
   const trackOthersCheckbox = document.getElementById('widget-track-others-checkbox');
   const customTimersCardEl = document.getElementById('widget-custom-timers-card');
@@ -1585,7 +1587,7 @@ function initWidgetsPanel() {
   // Delete lives inside the settings panel itself, not here.
   function renderWidgetSubmenu() {
     submenuEl.querySelectorAll('.nav-sub-row').forEach((row) => row.remove());
-    widgets.forEach((widget, index) => {
+    widgets.forEach((widget) => {
       const row = document.createElement('div');
       row.className = 'nav-sub-row';
 
@@ -1623,33 +1625,71 @@ function initWidgetsPanel() {
         btn.appendChild(dotWrap);
       }
 
-      // Reordering just swaps this widget with its immediate neighbor in
-      // the stored list - getAll()/this submenu both render in array order,
-      // so that's the entire implementation. stopPropagation so a move
-      // click doesn't also select/navigate to the widget.
-      const upBtn = document.createElement('button');
-      upBtn.className = 'nav-sub-move-btn';
-      upBtn.textContent = '▲';
-      upBtn.title = 'Move up';
-      upBtn.disabled = index === 0;
-      upBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        window.eqTracker.moveWidget(widget.id, 'up').then(refreshWidgets);
-      });
+      row.dataset.widgetId = widget.id;
+      row.draggable = true;
+      row.addEventListener('dragstart', onSubRowDragStart);
+      row.addEventListener('dragover', onSubRowDragOver);
+      row.addEventListener('dragleave', onSubRowDragLeave);
+      row.addEventListener('drop', onSubRowDrop);
+      row.addEventListener('dragend', onSubRowDragEnd);
 
-      const downBtn = document.createElement('button');
-      downBtn.className = 'nav-sub-move-btn';
-      downBtn.textContent = '▼';
-      downBtn.title = 'Move down';
-      downBtn.disabled = index === widgets.length - 1;
-      downBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        window.eqTracker.moveWidget(widget.id, 'down').then(refreshWidgets);
-      });
-
-      row.append(btn, upBtn, downBtn);
+      row.appendChild(btn);
       submenuEl.insertBefore(row, addRow);
     });
+  }
+
+  // Drag-to-reorder, replacing the up/down arrows at the owner's instruction. Native HTML5 drag
+  // and drop rather than a pointer-tracking implementation, because the sidebar is a plain
+  // vertical list and that is exactly the case the browser's own drag events already handle -
+  // dragging state, drop targets, auto-scroll near an edge - without this app tracking any of it
+  // by hand.
+  //
+  // The list reorders itself in the DOM live as you drag over each row (so the gap you would drop
+  // into is visible before you let go), and the actual save happens once, on drop - not on every
+  // dragover, which fires continuously and would otherwise mean an IPC round trip per pixel of
+  // mouse movement.
+  let draggedWidgetId = null;
+
+  function onSubRowDragStart(e) {
+    draggedWidgetId = this.dataset.widgetId;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    // Firefox requires data to be set for a drag to start at all; Electron's Chromium does not
+    // strictly need it, but setting it costs nothing and keeps this correct if that ever changes.
+    e.dataTransfer.setData('text/plain', draggedWidgetId);
+  }
+
+  function onSubRowDragOver(e) {
+    e.preventDefault();
+    if (!draggedWidgetId || this.dataset.widgetId === draggedWidgetId) return;
+    e.dataTransfer.dropEffect = 'move';
+    const dragging = submenuEl.querySelector('.nav-sub-row.dragging');
+    if (!dragging) return;
+    // Which side of the hovered row to insert before/after, from where the pointer is within it -
+    // the upper half means "I want to land above this row," the lower half "below it." Without
+    // this a drag could only ever reorder by whole-row swaps, never past a single neighbor per
+    // dragover, because the target would always resolve to the same row regardless of intent.
+    const rect = this.getBoundingClientRect();
+    const before = e.clientY - rect.top < rect.height / 2;
+    this.parentElement.insertBefore(dragging, before ? this : this.nextSibling);
+  }
+
+  function onSubRowDragLeave() {
+    // Nothing to clean up on leave - the row only moves in the DOM on dragover of a NEW target,
+    // so a leave with no corresponding drop just means the drag continued over something else.
+  }
+
+  function onSubRowDrop(e) {
+    e.preventDefault();
+  }
+
+  function onSubRowDragEnd() {
+    this.classList.remove('dragging');
+    if (draggedWidgetId) {
+      const orderedIds = [...submenuEl.querySelectorAll('.nav-sub-row')].map((r) => r.dataset.widgetId);
+      window.eqTracker.reorderWidgets(orderedIds).then(refreshWidgets);
+    }
+    draggedWidgetId = null;
   }
 
   function deselectWidget() {
@@ -1752,6 +1792,8 @@ function initWidgetsPanel() {
   }
 
   function selectWidget(id) {
+    // A picker left open while switching to a different aura would go on editing the wrong one.
+    closeBuffPickerModal();
     selectedId = id;
     const widget = findWidget(id);
     if (!widget) {
@@ -2015,10 +2057,7 @@ function initWidgetsPanel() {
     add.className = 'gem-slot gem-add';
     add.title = 'Add a spell to this aura';
     add.textContent = '+';
-    add.addEventListener('click', () => {
-      filterSearch.focus();
-      filterSearch.select();
-    });
+    add.addEventListener('click', () => openBuffPickerModal(''));
     selectedBuffsListEl.appendChild(add);
   }
 
@@ -2030,7 +2069,7 @@ function initWidgetsPanel() {
     // The name in a tooltip rather than under the icon. EQ icons are not distinctive enough to
     // identify a spell from alone, and a caption under each one turns the row back into the list
     // this replaced.
-    slot.title = `${name} - click to stop watching it`;
+    slot.title = `${name} - click to edit`;
     if (known && known.iconUrl) {
       const img = document.createElement('img');
       img.src = known.iconUrl;
@@ -2044,8 +2083,31 @@ function initWidgetsPanel() {
       initial.textContent = name.charAt(0).toUpperCase();
       slot.appendChild(initial);
     }
-    slot.addEventListener('click', () => toggleBuffFilterName(widget, name, false));
+    // Opens the picker with this spell searched up, rather than removing it outright. Removal
+    // still happens - by unchecking it in the picker, same as any other spell - but a single
+    // click can no longer delete a pick with no way back. See the modal note above.
+    slot.addEventListener('click', () => openBuffPickerModal(name));
     return slot;
+  }
+
+  function openBuffPickerModal(searchTerm) {
+    if (!buffPickerModalBackdrop) return;
+    filterSearch.value = searchTerm;
+    applyBuffFilterSearch();
+    buffPickerModalBackdrop.style.display = 'flex';
+    filterSearch.focus();
+    filterSearch.select();
+  }
+
+  function closeBuffPickerModal() {
+    if (buffPickerModalBackdrop) buffPickerModalBackdrop.style.display = 'none';
+  }
+
+  if (closeBuffPickerModalBtn) closeBuffPickerModalBtn.addEventListener('click', closeBuffPickerModal);
+  if (buffPickerModalBackdrop) {
+    buffPickerModalBackdrop.addEventListener('click', (e) => {
+      if (e.target === buffPickerModalBackdrop) closeBuffPickerModal();
+    });
   }
 
   trackOthersCheckbox.addEventListener('change', () => {
@@ -2444,30 +2506,6 @@ function initWidgetsPanel() {
       mode: 'cooldown',
     },
     {
-      id: 'travel-guide',
-      // Same name as the roadmap entry it replaces, so renderPremadeList's filter drops that one.
-      name: 'Travel guide',
-      description:
-        'The shortest way from where you are to wherever you are going, one step per line. Set ' +
-        'the destination in game with /tell <zone> - it uses the travel spells you have actually ' +
-        'scribed, and the directions change as you zone.',
-      // Builds immediately. It used to open a zone picker; that asked you to choose a destination
-      // by alt-tabbing out of the game, which is backwards for an aura you use while travelling.
-      // /tell is the only way in, so there is nothing left to ask.
-      create: (name) => window.eqTracker.createTravelGuideWidget(name, ''),
-    },
-    {
-      id: 'damage-parser',
-      // The SAME name as the planned entry it replaces, which is what makes renderPremadeList's
-      // filter drop that one. Renaming it here would leave the app offering both.
-      name: 'Damage parser',
-      description:
-        'A live damage readout for the fight you are in: everyone hitting what you are fighting, ' +
-        'biggest first, with a total and a rate. It works out who is on your side from the log ' +
-        'itself, so there is no group list to keep up to date.',
-      create: (name) => window.eqTracker.createDamageMeterWidget(name, false),
-    },
-    {
       id: 'enemy-debuff',
       name: 'Debuff on an enemy',
       description:
@@ -2492,6 +2530,28 @@ function initWidgetsPanel() {
         'A dedicated aura for bard songs specifically (own filter/behavior separate from other self buffs, ' +
         'e.g. tuned for how often they auto-renew). Not built yet.',
     },
+    // Locked at the owner's instruction, 2026-08-24. Both were built and both were built wrong in
+    // the same way: a "standalone tool" aura (a route, a fight readout) was given the same
+    // settings-panel shape as an ordinary buff aura - a "Buffs shown" card offering a source and a
+    // spell picker that mean nothing for either of them. That shape needs its own design, not
+    // another patch on top of the buff-aura one. Existing Travel guide and Damage parser auras
+    // made before this change are untouched and keep working; this only closes the door on making
+    // new ones until the redesign lands. The working create() calls are still in this file, one
+    // scroll up in source history - nothing about the feature itself was removed.
+    {
+      name: 'Travel guide',
+      description:
+        'The shortest way from where you are to wherever you are going, driven entirely by /tell ' +
+        '<zone> in game. Built, but its settings page still looks like a buff aura\'s - offering a ' +
+        '"Buffs shown" picker that does nothing for a route. Locked until it gets its own layout.',
+    },
+    {
+      name: 'Damage parser',
+      description:
+        'A live damage readout for the fight you are in. Built, but its settings page still looks ' +
+        'like a buff aura\'s - offering a "Buffs shown" picker that does nothing for a damage row. ' +
+        'Locked until it gets its own layout.',
+    },
     // The rest of the roadmap, shown in the app rather than only in FEATURES.md. Listing something
     // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
     // it looks to anyone using the app who did not write it.
@@ -2512,10 +2572,7 @@ function initWidgetsPanel() {
   // The first premade that asks something before it builds. Kept generic on purpose: the planned
   // cooldown and enemy-debuff premades are the same shape - pick one spell, answer one question -
   // and should reuse this rather than each growing their own picker.
-  const buffTimerSearch = document.getElementById('buff-timer-search');
-  const buffTimerListEl = document.getElementById('buff-timer-list');
-  const buffTimerChosenRow = document.getElementById('buff-timer-chosen-row');
-  const buffTimerChosenEl = document.getElementById('buff-timer-chosen');
+  const buffTimerSelect = document.getElementById('buff-timer-select');
   const buffTimerSourceRow = document.getElementById('buff-timer-source-row');
   const buffTimerAllyLabel = document.getElementById('buff-timer-ally-label');
   const buffTimerAllyWarning = document.getElementById('buff-timer-ally-warning');
@@ -2527,9 +2584,6 @@ function initWidgetsPanel() {
   const buffTimerCooldownHint = document.getElementById('buff-timer-cooldown-hint');
   const buffTimerCreateBtn = document.getElementById('buff-timer-create-btn');
 
-  // The list is capped for the same reason the per-aura picker is: 720 trackable spells rendered
-  // at once is a long scroll nobody reads, and typing two letters is faster than any of it.
-  const BUFF_TIMER_RENDER_CAP = 40;
   let trackableBuffs = [];
   let castableBuffs = [];
   let buffTimerChoice = null;
@@ -2543,61 +2597,47 @@ function initWidgetsPanel() {
     return buffTimerMode === 'cooldown' ? castableBuffs : trackableBuffs;
   }
 
-  function renderBuffTimerList() {
-    const query = buffTimerSearch.value.trim().toLowerCase();
-    const pool = buffTimerPool();
-    buffTimerListEl.innerHTML = '';
-    // An empty box lists everything rather than saying "type to search". Requiring a query first
-    // meant you could only find a spell whose name you already knew exactly, which is no use for
-    // browsing - the whole complaint behind "it should be a drop down". The list is capped and
-    // scrolls, so showing it costs nothing, and typing still narrows it as before.
-    const matches = query ? pool.filter((b) => b.name.toLowerCase().includes(query)) : pool;
-    if (!matches.length) {
-      // Says WHY rather than just "none". A spell can be perfectly real and still not be here,
-      // because the roster has no landing message for it - and that is a different problem from
-      // having spelled it wrong.
-      buffTimerListEl.innerHTML =
-        buffTimerMode === 'cooldown'
-          ? '<li class="empty">Nothing matching. Only spells with a recast longer than the global cooldown are here.</li>'
-          : '<li class="empty">Nothing matching. Only spells the app has a landing message for can be tracked.</li>';
-      return;
+  function buffTimerOptionLabel(buff) {
+    if (buffTimerMode === 'cooldown') {
+      return `${buff.name} - ${buff.reuseSec}s recast + ${buff.castSec}s cast = ${buff.cooldownSec}s`;
     }
-    for (const buff of matches.slice(0, BUFF_TIMER_RENDER_CAP)) {
-      const li = document.createElement('li');
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'premade-widget-choice';
-      const strong = document.createElement('strong');
-      strong.textContent = buff.name;
-      const span = document.createElement('span');
-      if (buffTimerMode === 'cooldown') {
-        span.textContent = `${buff.reuseSec}s recast + ${buff.castSec}s cast = ${buff.cooldownSec}s`;
-      } else {
-        const howLong = buff.infinite ? 'lasts until dispelled' : buff.durationSec ? `${buff.durationSec}s` : 'no duration';
-        const where = buff.enemy
-          ? 'on you, an ally, or something you cast it at'
-          : buff.ally
-            ? 'on you or on an ally'
-            : 'on you only';
-        span.textContent = `${howLong} - ${where}`;
-      }
-      btn.append(strong, span);
-      btn.addEventListener('click', () => chooseBuffTimerSpell(buff));
-      li.appendChild(btn);
-      buffTimerListEl.appendChild(li);
-    }
-    if (matches.length > BUFF_TIMER_RENDER_CAP) {
-      const li = document.createElement('li');
-      li.className = 'empty';
-      li.textContent = `...and ${matches.length - BUFF_TIMER_RENDER_CAP} more - keep typing to narrow it down.`;
-      buffTimerListEl.appendChild(li);
-    }
+    const howLong = buff.infinite ? 'lasts until dispelled' : buff.durationSec ? `${buff.durationSec}s` : 'no duration';
+    const where = buff.enemy
+      ? 'on you, an ally, or something you cast it at'
+      : buff.ally
+        ? 'on you or on an ally'
+        : 'on you only';
+    return `${buff.name} - ${howLong} - ${where}`;
   }
+
+  // A real dropdown, not a search box over a capped list that told you to keep typing. Native
+  // <select> already does what that was trying to build by hand - type a letter to jump, scroll,
+  // or use arrow keys - and does it without a length limit or a "...and N more" dead end.
+  function populateBuffTimerSelect() {
+    const pool = buffTimerPool();
+    buffTimerSelect.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent =
+      buffTimerMode === 'cooldown' ? '- choose a spell with a recast time -' : '- choose a spell -';
+    buffTimerSelect.appendChild(placeholder);
+    const sorted = [...pool].sort((a, b) => a.name.localeCompare(b.name));
+    for (const buff of sorted) {
+      const opt = document.createElement('option');
+      opt.value = buff.name;
+      opt.textContent = buffTimerOptionLabel(buff);
+      buffTimerSelect.appendChild(opt);
+    }
+    buffTimerSelect.value = '';
+  }
+
+  buffTimerSelect.addEventListener('change', () => {
+    const buff = buffTimerPool().find((b) => b.name === buffTimerSelect.value);
+    if (buff) chooseBuffTimerSpell(buff);
+  });
 
   function chooseBuffTimerSpell(buff) {
     buffTimerChoice = buff;
-    buffTimerChosenEl.textContent = buff.name;
-    buffTimerChosenRow.style.display = '';
     buffTimerCreateRow.style.display = '';
 
     if (buffTimerMode === 'cooldown') {
@@ -2675,8 +2715,6 @@ function initWidgetsPanel() {
     buffTimerMode = mode === 'cooldown' ? 'cooldown' : 'buff';
     buffTimerPreferredSource = preferredSource === 'enemy' || preferredSource === 'ally' ? preferredSource : 'self';
     buffTimerChoice = null;
-    buffTimerSearch.value = '';
-    buffTimerChosenRow.style.display = 'none';
     buffTimerSourceRow.style.display = 'none';
     buffTimerCreateRow.style.display = 'none';
     buffTimerAllyWarning.style.display = 'none';
@@ -2684,10 +2722,8 @@ function initWidgetsPanel() {
     buffTimerCooldownRow.style.display = 'none';
     buffTimerCooldownHint.style.display = 'none';
     buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
-    renderBuffTimerList();
+    populateBuffTimerSelect();
   }
-
-  buffTimerSearch.addEventListener('input', renderBuffTimerList);
   buffTimerCreateBtn.addEventListener('click', () => {
     if (!buffTimerChoice) return;
     if (buffTimerMode === 'cooldown') {
@@ -2776,7 +2812,7 @@ function initWidgetsPanel() {
           });
           if (premade.panel === 'buff-timer') {
             resetBuffTimerPanel(premade.defaultSource, premade.mode);
-            buffTimerSearch.focus();
+            buffTimerSelect.focus();
           }
           return;
         }
@@ -2872,11 +2908,11 @@ function initWidgetsPanel() {
     // that can no longer be tracked.
     window.eqTracker.getTrackableBuffs().then((buffs) => {
       trackableBuffs = buffs;
-      renderBuffTimerList();
+      populateBuffTimerSelect();
     });
     window.eqTracker.getCastableBuffs().then((buffs) => {
       castableBuffs = buffs;
-      renderBuffTimerList();
+      populateBuffTimerSelect();
     });
     showAddWidgetChoices();
     importCodeInput.value = '';
@@ -4136,9 +4172,7 @@ function initMergeRule() {
 
 function initTradePing() {
   const checkbox = document.getElementById('trade-ping-checkbox');
-  const testBtn = document.getElementById('trade-ping-test-btn');
   const tellCheckbox = document.getElementById('tell-ping-checkbox');
-  const tellTestBtn = document.getElementById('tell-ping-test-btn');
   if (!checkbox) return;
 
   let enabled = false;
@@ -4184,8 +4218,6 @@ function initTradePing() {
     if (enabled) ping();
   });
 
-  testBtn.addEventListener('click', ping);
-
   if (tellCheckbox) {
     window.eqTracker.getTellPing().then((on) => { tellEnabled = on; tellCheckbox.checked = on; });
     tellCheckbox.addEventListener('change', () => {
@@ -4194,7 +4226,6 @@ function initTradePing() {
       if (tellEnabled) ping();
     });
   }
-  if (tellTestBtn) tellTestBtn.addEventListener('click', ping);
 
   window.eqTracker.onLogLine((line) => {
     if (!enabled && !tellEnabled) return;

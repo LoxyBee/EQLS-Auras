@@ -420,6 +420,14 @@ body {
   display: flex;
   align-items: stretch;
   gap: 2px;
+  /* The whole row is the drag handle - grab anywhere on it, not a separate handle element, since
+     the row is a single button-sized target and a dedicated handle would just be one more thing
+     to aim for on something already this small. */
+  cursor: grab;
+}
+
+.nav-sub-row.dragging {
+  opacity: 0.4;
 }
 
 .nav-sub-btn {
@@ -440,34 +448,12 @@ body {
 
 .nav-sub-name {
   flex: 1;
-  /* Flex items default to min-width:auto (their natural content width),
-     not 0 - without this, a long widget name would push the reorder
-     buttons out of the row instead of ellipsizing in place. */
+  /* Flex items default to min-width:auto (their natural content width), not 0 - without this a
+     long widget name would grow the row past the sidebar instead of ellipsizing in place. */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.nav-sub-move-btn {
-  flex-shrink: 0;
-  width: 18px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--ink-faint);
-  font-size: 9px;
-  cursor: pointer;
-}
-
-.nav-sub-move-btn:hover:not(:disabled) {
-  background: var(--panel);
-  color: var(--ink-mut);
-}
-
-.nav-sub-move-btn:disabled {
-  color: var(--line);
-  cursor: default;
 }
 
 .nav-sub-btn:hover {
@@ -1188,38 +1174,37 @@ label.disabled {
   position: relative;
 }
 
-/* Only filled gems are clickable (clicking forgets them) - the hover state
-   reads as "removable" rather than "selectable": the icon dims and a danger
-   ring appears, so it's obvious the click destroys something rather than
-   opening it. */
+/* Only filled gems are clickable - clicking opens the picker with this spell in view, so removal
+   (unchecking it there) is no longer a single accidental click away. The hover reads as
+   "selectable" rather than "removable": no danger colour, no cross - that language was for the
+   old delete-on-click behaviour and would now be telling you the opposite of what the click does. */
 .gem-slot:not(.gem-empty) {
   cursor: pointer;
 }
 
 .gem-slot:not(.gem-empty):hover {
-  border-color: var(--danger);
+  border-color: var(--accent, var(--ink-mut));
 }
 
 .gem-slot:not(.gem-empty):hover img {
-  opacity: 0.35;
+  opacity: 0.6;
 }
 
 .gem-slot:not(.gem-empty):hover::after {
-  content: '\00d7';
+  content: '\270e';
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--danger);
-  font-size: 20px;
+  color: var(--ink);
+  font-size: 18px;
   line-height: 1;
   font-family: var(--sans);
 }
 
-/* Note 27's "+" slot. It ADDS, so it must not inherit the danger-red remove hover above - the
-   two are one click apart in the same row, and a plus that turns into a red cross on hover is
-   telling you the opposite of what it does. */
+/* Note 27's "+" slot. Shares the accent-border hover above but keeps its own dashed style and
+   plus sign rather than the pencil - it opens the same picker, but there is nothing yet to edit. */
 .gem-slot.gem-add {
   border-style: dashed;
   color: var(--ink-mut);

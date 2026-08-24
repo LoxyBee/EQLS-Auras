@@ -101,6 +101,39 @@ partial, 1 blocked (#28, needs the bug to recur), 1 skipped (#2, her call).**
 The prose below is the older triage from an earlier pass. Most of it has been overtaken by that
 table and is kept for the reasoning, not the status — where the two disagree, the table is right.
 
+## Standalone-tool auras need their own settings-panel layout (added 24 Aug, locked pending design)
+
+**Travel guide and Damage parser are built and working, but locked out of the Add Aura premade
+list** as of 24 Aug — moved from `PREMADE_WIDGETS` to `PLANNED_PREMADE_WIDGETS` in
+`main-window.js`, so no *new* one can be created. Existing auras of either kind, made before the
+lock, are completely untouched and keep working exactly as they did — nothing about detection or
+the overlay changed, only whether the premade list offers to make another.
+
+**Why:** both reuse the ordinary per-aura settings panel — the one built for a buff aura, with a
+"Buffs shown" card offering a source (self/ally/enemy) and a spell picker. Neither means anything
+for these two: a route has no spell to pick and no source to be cast from; a damage meter's rows
+are attackers, not buffs. The owner's own words: *"custom standalone auras are not supposed to
+follow this same UI format."* This was flagged once before, in FEATURES.md's older `#19`/`#20`
+entries, and shipped anyway without resolving it — the lock is the second time this has come up,
+so treat it as confirmed rather than re-litigating whether it matters.
+
+**What needs designing, not yet started:** a settings-panel shape for a "standalone tool" aura kind
+that shows only what that tool actually has settings for — Travel guide's destination display and
+whatever the /tell-driven design still wants configurable; Damage parser's `fightTimeoutSec`,
+`mineOnly`, `showTotalRow` (all already real fields, already working, just currently sitting inside
+a card built for buffs). The two widgets' own `damageSettingsEl` / `travelSettingsEl` blocks in
+`index.html` already isolate their real controls — id="widget-damage-settings",
+id="widget-travel-settings" — so the fix is hiding the *rest* of the panel for these two kinds
+(Buffs shown, the source row, the display-mode radios that mean nothing for either), not building
+their controls from scratch.
+
+**To unlock again once designed:** add `id: 'travel-guide'` / `id: 'damage-parser'` entries back to
+`PREMADE_WIDGETS` in `main-window.js`, each with a `create()` calling
+`window.eqTracker.createTravelGuideWidget(name, '')` / `createDamageMeterWidget(name, false)` — the
+IPC channel, preload bridge and `widgetManager.js` functions behind both were never touched and
+still work end to end, only the premade-list entry that called them was removed — then delete the
+two matching entries from `PLANNED_PREMADE_WIDGETS`.
+
 ## Remaining backlog (see TaskList tool for live status)
 
 Historical numbering (#7, #13-#15) preserved from an earlier pass for continuity; everything else below is unnumbered, freshly triaged from a raw user note-dump into bugs-vs-features and rough time-to-execute. None of it has been scoped in detail yet - treat "quick/medium/large" as a sizing guess, not a commitment, and confirm design specifics with the user before starting anything in the Large bucket.

@@ -1158,19 +1158,27 @@ class WidgetStore {
     return true;
   }
 
-  // Swaps a widget with its immediate neighbor in the stored array -
-  // getAll()/the sidebar submenu both just render this.data.widgets in
-  // array order, so this is the whole implementation of "reorder the
-  // sidebar list." No-ops silently at either end rather than wrapping
-  // around, since "move up" on the first widget doing nothing is the less
-  // surprising behavior.
-  move(id, direction) {
-    const index = this.data.widgets.findIndex((w) => w.id === id);
-    if (index === -1) return false;
-    const targetIndex = index + (direction === 'up' ? -1 : 1);
-    if (targetIndex < 0 || targetIndex >= this.data.widgets.length) return false;
-    const [widget] = this.data.widgets.splice(index, 1);
-    this.data.widgets.splice(targetIndex, 0, widget);
+  // Replaced the up/down-arrow "move one step" control with drag-to-reorder, at the owner's
+  // instruction - the arrows are gone from the sidebar entirely now. getAll()/the sidebar both
+  // still just render this.data.widgets in array order, so reordering is still nothing more than
+  // rearranging this one array; only how the new order arrives changed.
+  //
+  // Takes the FULL list of ids in their new order, from the renderer's drag handler, rather than a
+  // single id and a target index - a drag already knows the whole resulting order, and recomputing
+  // an index from a drop position here would be redoing work the browser's dragover math already
+  // did, with more chances to get an off-by-one wrong.
+  //
+  // Defensive against a stale or partial list: any id in orderedIds that no longer exists is
+  // silently skipped, and any widget NOT named in orderedIds keeps its relative position, appended
+  // after the ones that were - so a reorder call built from a renderer snapshot that missed a
+  // widget (one created by another window between render and drop, say) degrades to "did nothing
+  // to the widget it didn't know about" rather than silently deleting it from the list.
+  reorderWidgets(orderedIds) {
+    const known = new Map(this.data.widgets.map((w) => [w.id, w]));
+    const reordered = orderedIds.map((id) => known.get(id)).filter(Boolean);
+    const placed = new Set(reordered.map((w) => w.id));
+    const leftover = this.data.widgets.filter((w) => !placed.has(w.id));
+    this.data.widgets = [...reordered, ...leftover];
     this._save();
     return true;
   }
