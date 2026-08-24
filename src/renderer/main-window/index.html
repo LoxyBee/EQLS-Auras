@@ -234,7 +234,7 @@
                    control, so it has to be visible at a glance. Fills the row
                    and wraps. -->
               <div class="row">
-                <span class="label">Show on profiles:</span>
+                <span class="label" title="Untick them all to switch this aura off entirely.">Show on profiles:</span>
                 <div id="widget-profiles-toggles" class="profile-toggle-list"></div>
                 <!-- There is deliberately no "show on every loadout" tick box here. It was a
                      second way to say the same thing as ticking the loadouts themselves, and two
@@ -251,23 +251,13 @@
                   class="text-input"
                   list="known-zones"
                   placeholder="Any zone - start typing to limit it"
+                  title="Leave empty to show everywhere. Zones are exactly as the game names them - Befallen and Befallen 1 (Awakened) are separate."
                 />
                 <button type="button" id="widget-zone-add-btn">Add</button>
               </div>
               <datalist id="known-zones"></datalist>
               <div id="widget-zone-list" class="profile-toggle-list"></div>
-              <p class="hint" id="widget-zone-hint">
-                Leave this empty and the aura shows everywhere. Zones are exactly as the game names
-                them, so <code>Befallen</code> and <code>Befallen 1 (Awakened)</code> are separate -
-                add each one you want. The list offers the 66 zones seen in your logs and accepts
-                anything you type.
-              </p>
               <p class="hint" id="widget-zone-warning" style="display:none"></p>
-              <p class="hint">
-                This aura is on screen only while one of the ticked profiles is the active one.
-                Untick them all to switch it off entirely - that works as a plain on/off even if you
-                only keep one profile.
-              </p>
             </div>
 
             <!-- Display & Size block: always visible -->
@@ -319,10 +309,7 @@
               <p class="hint" id="widget-text-instant-hint"></p>
               <p class="hint" id="widget-text-hint"></p>
               <p class="hint" id="widget-sound-only-hint" style="display:none">
-                This aura draws nothing at all - no tiles, and no dashed box when unlocked. It only
-                makes the sounds set up under Sounds below. It still watches exactly what "Buffs
-                shown" says it does, so pick what it listens for there, then choose when it should
-                make a noise.
+                Draws nothing on screen - only the sounds set up below.
               </p>
               <!-- Note 19. Only ever shown on a damage meter - see the buffSource check in
                    main-window.js. Its own group rather than three loose rows, because none of
@@ -356,39 +343,22 @@
               <div id="widget-damage-settings" style="display:none">
                 <h4 class="settings-subsection-title">Damage meter</h4>
                 <div class="row">
-                  <label for="widget-fight-timeout-slider">A fight ends after</label>
+                  <label for="widget-fight-timeout-slider" title="How long the meter waits with nothing damaged before it decides the fight is over. The log has no &quot;fight over&quot; line, so this is always a bit of a guess.">A fight ends after</label>
                   <input type="range" id="widget-fight-timeout-slider" min="3" max="60" step="1" />
                   <span id="widget-fight-timeout-value" class="slider-value"></span>
                 </div>
-                <p class="hint">
-                  How long the meter waits, with nothing being damaged, before it decides the fight
-                  is over and clears itself. There is no line in the log that says "fight over", so
-                  this is the only way to know - which means it is always a bit of a guess. Too
-                  short and one slow pull reads as two fights; too long and a quick chain of pulls
-                  all add up into one. Ten seconds suits most things.
-                </p>
                 <div class="row">
-                  <label>
+                  <label title="Your percentage still reflects your share of the whole fight - everyone else is still counted, just not shown.">
                     <input type="checkbox" id="widget-mine-only-checkbox" />
                     Only show my own row
                   </label>
                 </div>
-                <p class="hint">
-                  Hides everyone else's row. It does not stop them being counted, so the percentage
-                  beside your name still means your share of the whole fight - which is usually the
-                  number you wanted.
-                </p>
                 <div class="row">
-                  <label>
+                  <label title="The fight's whole damage and its rate per second - the only place a rate is shown, since the log does not record how long each person was swinging.">
                     <input type="checkbox" id="widget-total-row-checkbox" />
                     Show the total line at the top
                   </label>
                 </div>
-                <p class="hint">
-                  The fight's whole damage and its rate per second. The rows underneath cannot show
-                  a rate of their own - the log does not record how long each person was swinging
-                  for - so this is where that number lives.
-                </p>
               </div>
 
               <div class="row" id="widget-enemies-row">
@@ -439,16 +409,11 @@
                   <span id="widget-icons-per-row-value" class="slider-value">4</span>
                 </div>
                 <div class="row">
-                  <span class="label">Justification:</span>
+                  <span class="label" title="Where fewer buffs than &quot;Icons per row&quot; sit within the reserved space, rather than always flush left.">Justification:</span>
                   <label><input type="radio" name="widget-icon-justify" value="left" /> Left</label>
                   <label><input type="radio" name="widget-icon-justify" value="center" /> Center</label>
                   <label><input type="radio" name="widget-icon-justify" value="right" /> Right</label>
                 </div>
-                <p class="hint">
-                  With fewer buffs active than "Icons per row", this decides where they sit within that
-                  reserved space - e.g. a cap of 20 with just 1 buff active and "Center" selected puts it
-                  in the middle of the space 20 would take up, not flush to the left.
-                </p>
               </div>
 
               <div id="widget-list-only-settings">
@@ -458,14 +423,10 @@
                   <span id="widget-list-width-value" class="slider-value">220px</span>
                 </div>
                 <div class="row">
-                  <span class="label">Row size:</span>
+                  <span class="label" title="Independent of text size, same as icon size is.">Row size:</span>
                   <input type="range" id="widget-row-size-slider" min="18" max="60" step="1" />
                   <span id="widget-row-size-value" class="slider-value">28px</span>
                 </div>
-                <p class="hint">
-                  Row size is the height of each row, independent of text size - same as icon size is
-                  independent of text size. Height fits itself to however many buffs are currently shown.
-                </p>
               </div>
 
               <!-- Only meaningful on an aura showing buffs cast on other
@@ -474,23 +435,14 @@
                 <div class="row">
                   <label><input type="checkbox" id="widget-group-ally-checkbox" /> Group by player</label>
                 </div>
-                <p class="hint">
-                  Splits the aura into a section per person, with their name as a heading above their
-                  buffs, instead of one flat list.
-                </p>
                 <div class="row" id="widget-ally-direction-row">
                   <span class="label">Stack groups:</span>
                   <label><input type="radio" name="widget-ally-direction" value="vertical" /> Vertically</label>
                   <label><input type="radio" name="widget-ally-direction" value="horizontal" /> Side by side</label>
                 </div>
                 <div class="row">
-                  <label><input type="checkbox" id="widget-hide-ally-name-checkbox" /> Hide the player name on each buff</label>
+                  <label title="Grouping already puts the name in the heading and drops it from the buffs automatically. This drops it when grouping is off too."><input type="checkbox" id="widget-hide-ally-name-checkbox" /> Hide the player name on each buff</label>
                 </div>
-                <p class="hint">
-                  Buffs normally read "Avenrae: Shield of Flame". Grouping already puts the name in the
-                  heading, so it's dropped from the buffs automatically while grouping is on - this
-                  setting drops it when grouping is off too.
-                </p>
               </div>
 
               <div id="widget-icon-only-settings">
@@ -572,10 +524,7 @@
                   <span class="topic-summary" id="topic-custom-timers-summary"></span>
                 </button>
                 <div class="topic-body"><div class="topic-body-inner">
-                  <p class="hint">
-                    Timers defined here belong only to this aura. Each one needs a name, a duration, and
-                    something that starts it - a chat message, or any exact line from the log.
-                  </p>
+                  <p class="hint">Timers defined here belong only to this aura.</p>
                   <ul id="widget-custom-timers-list" class="buff-list known-buff-list"></ul>
                   <div class="row">
                     <button type="button" id="widget-add-timer-btn">+ Add timer</button>
@@ -622,7 +571,6 @@
                       <button type="button" class="anchor-cell" data-anchor="bottom-center" title="Bottom center"></button>
                       <button type="button" class="anchor-cell" data-anchor="bottom-right" title="Bottom right"></button>
                     </div>
-                    <p class="hint">Where the countdown label sits on top of each icon.</p>
                   </div>
                 </div></div>
               </div>
@@ -764,9 +712,7 @@
             <div class="block" id="widget-active-buffs-card" style="display:none">
               <p class="block-cap info">Active on this aura</p>
               <p class="hint" id="widget-active-buffs-hint">
-                Whatever's currently showing on this aura, live. "Remove" clears the tracked instance
-                (same as it ending naturally). "Don't track here" hides that buff from this aura only,
-                without affecting any other aura.
+                "Remove" ends it now. "Don't track here" hides it on this aura only.
               </p>
               <ul id="widget-active-buffs-list" class="buff-list"></ul>
               <div id="widget-excluded-buffs-section" style="display:none">
@@ -926,17 +872,19 @@
         <div class="card" id="trade-ping-card">
           <h3>Trade requests</h3>
           <div class="row">
-            <label>
+            <label title="Fires on &quot;&lt;Name&gt; is interested in making a trade.&quot; - the moment the request arrives, not when the trade completes or is cancelled. Draws nothing on screen; it is only ever a sound.">
               <input type="checkbox" id="trade-ping-checkbox" />
               Play a sound when someone asks to trade with you
             </label>
             <button type="button" id="trade-ping-test-btn">Test</button>
           </div>
-          <p class="hint">
-            Fires on <em>"&lt;Name&gt; is interested in making a trade."</em> - the moment the request
-            arrives, not when a trade completes or is cancelled. Unlike an aura's sounds this draws
-            nothing on screen; it is only ever a sound.
-          </p>
+          <div class="row">
+            <label title="Fires on an incoming tell, whichever channel it arrives on.">
+              <input type="checkbox" id="tell-ping-checkbox" />
+              Play a sound when you get a tell
+            </label>
+            <button type="button" id="tell-ping-test-btn">Test</button>
+          </div>
         </div>
 
         <div class="card" id="ui-scale-card">
@@ -1246,21 +1194,17 @@
       </div>
 
       <div id="add-widget-choices">
-        <button type="button" class="add-widget-choice" data-choice="import">
-          <strong>Import from code</strong>
-          <span>Paste a share code someone sent you to recreate their aura's exact settings.</span>
-        </button>
-        <button type="button" class="add-widget-choice" data-choice="chat">
-          <strong>Import from chat</strong>
-          <span>Aura codes people have pasted into chat this session, in case you dismissed one.</span>
-        </button>
         <button type="button" class="add-widget-choice" data-choice="premade">
           <strong>Premade aura</strong>
-          <span>Ready-made aura types built into the app, already set up for a specific purpose.</span>
         </button>
         <button type="button" class="add-widget-choice" data-choice="custom">
           <strong>Custom aura</strong>
-          <span>Start blank and pick exactly which buffs it shows yourself.</span>
+        </button>
+        <button type="button" class="add-widget-choice" data-choice="import">
+          <strong>Import from code</strong>
+        </button>
+        <button type="button" class="add-widget-choice" data-choice="chat">
+          <strong>Import from chat</strong>
         </button>
       </div>
 

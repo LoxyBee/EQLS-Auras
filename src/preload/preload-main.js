@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setMergeRule: (rule) => ipcRenderer.invoke('ui:setMergeRule', rule),
   getTradePing: () => ipcRenderer.invoke('ui:getTradePing'),
   setTradePing: (enabled) => ipcRenderer.invoke('ui:setTradePing', enabled),
+  getTellPing: () => ipcRenderer.invoke('ui:getTellPing'),
+  setTellPing: (enabled) => ipcRenderer.invoke('ui:setTellPing', enabled),
 
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:maximizeToggle'),

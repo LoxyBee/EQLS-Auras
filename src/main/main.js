@@ -854,6 +854,13 @@ ipcMain.handle('ui:setTradePing', (_event, enabled) => {
   return on;
 });
 
+ipcMain.handle('ui:getTellPing', () => loadJson('tellPingEnabled', false) === true);
+ipcMain.handle('ui:setTellPing', (_event, enabled) => {
+  const on = enabled === true;
+  saveJson('tellPingEnabled', on);
+  return on;
+});
+
 ipcMain.handle('ui:getSidebarWidth', () => clampStoredSidebarWidth(loadJson('sidebarWidth', SIDEBAR_DEFAULT)));
 ipcMain.handle('ui:setSidebarWidth', (_event, px) => {
   const width = clampStoredSidebarWidth(px);

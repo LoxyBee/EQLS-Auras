@@ -4112,6 +4112,11 @@ function initSidebarResize() {
 // the log if they are ever wanted.
 const TRADE_REQUEST_PATTERN = /^([A-Za-z]+) is interested in making a trade\.$/;
 
+// "<Name> tells you, '<message>'" - measured in shareCodeChat.js's own survey of the owner's logs
+// (44 occurrences). Kept separate from CHAT_PATTERN there rather than shared: that module also
+// matches guild/group/say/shout, all of which should stay silent here.
+const TELL_PATTERN = /^([A-Za-z]+) tells you, '.*'$/;
+
 // The app-wide half of note 8. A radio group rather than a per-aura setting because the owner
 // could not choose between the two readings and asked for both - which makes it something you
 // try, and a setting you try belongs somewhere you change it once, not on every aura.
@@ -4132,9 +4137,12 @@ function initMergeRule() {
 function initTradePing() {
   const checkbox = document.getElementById('trade-ping-checkbox');
   const testBtn = document.getElementById('trade-ping-test-btn');
+  const tellCheckbox = document.getElementById('tell-ping-checkbox');
+  const tellTestBtn = document.getElementById('tell-ping-test-btn');
   if (!checkbox) return;
 
   let enabled = false;
+  let tellEnabled = false;
   let audioCtx = null;
 
   // Two quick notes, the same shape as the overlay's alert beep. Built here rather than shared
@@ -4178,11 +4186,22 @@ function initTradePing() {
 
   testBtn.addEventListener('click', ping);
 
+  if (tellCheckbox) {
+    window.eqTracker.getTellPing().then((on) => { tellEnabled = on; tellCheckbox.checked = on; });
+    tellCheckbox.addEventListener('change', () => {
+      tellEnabled = tellCheckbox.checked;
+      window.eqTracker.setTellPing(tellEnabled);
+      if (tellEnabled) ping();
+    });
+  }
+  if (tellTestBtn) tellTestBtn.addEventListener('click', ping);
+
   window.eqTracker.onLogLine((line) => {
-    if (!enabled) return;
+    if (!enabled && !tellEnabled) return;
     // Timestamps are stripped the same way the detection engine does it, so a line is matched on
     // its text alone.
     const stripped = String(line).replace(/^\[[^\]]+\]\s*/, '').trim();
-    if (TRADE_REQUEST_PATTERN.test(stripped)) ping();
+    if (enabled && TRADE_REQUEST_PATTERN.test(stripped)) ping();
+    else if (tellEnabled && TELL_PATTERN.test(stripped)) ping();
   });
 }
