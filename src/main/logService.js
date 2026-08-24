@@ -70,6 +70,29 @@ class LogService {
     if (folder) shell.openPath(folder);
   }
 
+  // Where archiveNow() puts things, worked out the same way rather than stored, so the two can
+  // never disagree about which folder is meant. Returns null when there is no log yet, because
+  // the folder does not exist until the first archive is made.
+  archiveFolder() {
+    const currentPath = this.watcher.getStatus().currentFilePath;
+    if (!currentPath) return null;
+    return path.join(path.dirname(currentPath), 'Archive');
+  }
+
+  // Opening it CREATES it when it is not there yet. Otherwise the button does nothing at all
+  // before the first archive, which reads as broken rather than as empty.
+  openArchiveFolder() {
+    const folder = this.archiveFolder();
+    if (!folder) return { ok: false, error: 'No active log file, so there is no archive folder yet.' };
+    try {
+      fs.mkdirSync(folder, { recursive: true });
+      shell.openPath(folder);
+      return { ok: true, folder };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
   archiveNow() {
     const currentPath = this.watcher.getStatus().currentFilePath;
     if (!currentPath) {

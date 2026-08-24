@@ -236,10 +236,12 @@
               <div class="row">
                 <span class="label">Show on profiles:</span>
                 <div id="widget-profiles-toggles" class="profile-toggle-list"></div>
-                <label id="widget-all-profiles-row">
-                  <input type="checkbox" id="widget-all-profiles-checkbox" />
-                  Show on every loadout, including ones I make later
-                </label>
+                <!-- There is deliberately no "show on every loadout" tick box here. It was a
+                     second way to say the same thing as ticking the loadouts themselves, and two
+                     controls for one idea is exactly the confusion the loadout toggles were meant
+                     to end. The `showOnAllProfiles` field still exists in the store - the
+                     loadout-label aura sets it for itself, because a label naming the current
+                     loadout is meaningless on only some of them - but nothing here sets it. -->
               </div>
               <div class="row" id="widget-zones-row">
                 <span class="label">Only in:</span>
@@ -276,15 +278,10 @@
                    block: moving and resizing IS display, and they're the most
                    used controls in this panel - previously easy to miss. -->
               <div class="row position-controls" id="widget-position-row">
-                <button id="widget-lock-btn" class="btn-prominent">Unlock to move</button>
-                <button id="widget-reset-position-btn">Reset position</button>
+                <button id="widget-lock-btn" class="btn-prominent" title="While unlocked, click and drag anywhere on the aura to move it, and drag an edge to resize. Lock it again when done - while locked it is fully click-through.">Unlock to move</button>
+                <button id="widget-reset-position-btn" title="Lost an aura? Dragged off-screen, or its monitor disconnected? This brings it back to a corner of your main screen.">Reset position</button>
               </div>
-              <p class="hint" id="widget-position-hint">
-                While unlocked, click and drag anywhere on the aura to reposition it, and drag an edge
-                to resize it - then click Lock here when you're done. While locked, it's fully
-                click-through. Lost track of an aura (dragged off-screen, or its monitor got
-                disconnected)? "Reset position" brings it back to a corner of your main screen.
-              </p>
+              <p class="hint" id="widget-position-hint"></p>
 
               <div class="row" id="widget-display-mode-row">
                 <span class="label">Display style:</span>
@@ -292,61 +289,35 @@
                 <label><input type="radio" name="widget-display-mode" value="icons" /> Icons</label>
               </div>
               <div class="row" id="widget-text-message-row">
-                <span class="label">Say:</span>
+                <span class="label" title="A text aura draws one line of words and nothing else - no icon, no countdown - and only ever shows one thing at a time, however many you pick. Leave this blank to use the name of the buff or trigger itself.">Say:</span>
                 <input type="text" id="widget-text-message-input" class="text-input" placeholder="DISPELLED" />
               </div>
               <div class="row" id="widget-always-on-row">
-                <label>
+                <label title="For an aura that just says something and stays, rather than one that appears when a spell lands. Write {profile} in the message above to show which loadout is active.">
                   <input type="checkbox" id="widget-always-on-checkbox" />
                   Always on screen, with nothing to wait for
                 </label>
               </div>
-              <p class="hint" id="widget-always-on-hint">
-                For an aura that just says something and stays, rather than one that appears when
-                a spell lands. Write <code>{profile}</code> in the message above to show which
-                loadout is active.
-              </p>
+              <p class="hint" id="widget-always-on-hint"></p>
               <div class="row" id="widget-ally-alert-row">
-                <label>
+                <label title="For a groupmate's mez, charm or snare - warns you one has been cast so you know to be careful. No countdown: the game never prints a line saying when somebody else's debuff ends, so a timer would be invented. It fires as the cast starts, about two seconds before the spell lands. Write {caster} and {spell} in the message above - &quot;{caster} cast {spell} - be careful&quot;. The caster is named rather than called a party member because mobs cast these too.">
                   <input type="checkbox" id="widget-ally-alert-checkbox" />
                   Warn me when someone else casts these
                 </label>
               </div>
-              <p class="hint" id="widget-ally-alert-hint">
-                For a groupmate's mez, charm or snare. It warns you that one has been cast so you
-                know to be careful - it does not show a countdown, because the game never prints a
-                line telling anyone when somebody else's debuff ends, so any timer here would be
-                invented. The warning appears as the cast starts, about two seconds before the
-                spell lands, which is the point of it.
-                <br /><br />
-                Write <code>{caster}</code> in the message above for whoever cast it and
-                <code>{spell}</code> for what they cast - so
-                <code>{caster} cast {spell} - be careful</code> shows as
-                "Lumbarin cast Mesmerization VII - be careful". The caster is named rather than
-                called a party member because mobs cast these too, and the log line does not say
-                which is which.
-              </p>
+              <p class="hint" id="widget-ally-alert-hint"></p>
               <div class="row" id="widget-text-size-row">
                 <span class="label">Text size:</span>
                 <input type="range" id="widget-text-size-slider" min="12" max="120" step="2" />
                 <span id="widget-text-size-value" class="slider-value">32px</span>
               </div>
               <div class="row" id="widget-text-instant-row">
-                <span class="label">Show events for:</span>
+                <span class="label" title="Only applies to spells with no duration at all - a nuke, a heal, a gate. They happen rather than run, so there is nothing to count down; this is how long the words stay up afterwards.">Show events for:</span>
                 <input type="range" id="widget-text-instant-slider" min="1" max="60" step="1" />
                 <span id="widget-text-instant-value" class="slider-value">6s</span>
               </div>
-              <p class="hint" id="widget-text-instant-hint">
-                Only applies to spells that have no duration at all - a nuke, a heal, a gate. They
-                happen rather than run, so there is nothing to count down; this is simply how long
-                the words stay up afterwards.
-              </p>
-              <p class="hint" id="widget-text-hint">
-                This aura draws one line of words and nothing else - no icon, no countdown. It shows
-                while whatever it is watching is active, and it only ever shows <strong>one</strong>
-                thing at a time, however many you pick. Leave "Say" blank to use the name of the buff
-                or trigger itself.
-              </p>
+              <p class="hint" id="widget-text-instant-hint"></p>
+              <p class="hint" id="widget-text-hint"></p>
               <p class="hint" id="widget-sound-only-hint" style="display:none">
                 This aura draws nothing at all - no tiles, and no dashed box when unlocked. It only
                 makes the sounds set up under Sounds below. It still watches exactly what "Buffs
@@ -358,20 +329,27 @@
                    them mean anything on any other aura. -->
               <!-- Note 20. Shown only on a travel guide - see the buffSource check in
                    main-window.js. -->
+              <!-- Set from in game, never from here. The destination dropdown that used to live
+                   in this card has been removed at the owner's instruction: this aura is driven by
+                   /tell while you are playing, and a picker here meant setting your route by
+                   alt-tabbing out of the game you are trying to travel in. The current destination
+                   is shown read-only so the aura can still be identified at a glance. -->
               <div id="widget-travel-settings" style="display:none">
                 <h4 class="settings-subsection-title">Travel guide</h4>
                 <div class="row">
-                  <label for="widget-travel-destination">Destination</label>
-                  <select id="widget-travel-destination" class="text-input"></select>
+                  <span class="label">Going to:</span>
+                  <strong id="widget-travel-destination-current">Nowhere yet</strong>
                 </div>
                 <p class="hint">
-                  Change where this aura is pointing. The route updates the moment you pick, and
-                  again every time you enter a new zone.
+                  Set it from inside the game: type <code>/tell &lt;zone&gt;</code> and the game's
+                  "is not online at this time" reply becomes the destination -
+                  <code>/tell rivervale</code>, <code>/tell qeynos</code>. One word only, since a
+                  /tell name cannot have spaces. If the word could mean several zones the aura
+                  lists them and waits rather than guessing.
                 </p>
                 <p class="hint">
-                  Or set it without leaving the game: type <code>/tell &lt;zone&gt;</code> and the
-                  game's "is not online at this time" reply becomes the destination. That changes
-                  every travel aura at once, since you are only ever going one place.
+                  It changes every travel aura at once, since you are only ever going one place.
+                  Where you are coming from is always the zone you are actually in.
                 </p>
               </div>
 
@@ -414,43 +392,26 @@
               </div>
 
               <div class="row" id="widget-enemies-row">
-                <label>
+                <label title="For mez, charm, snare and slow - things you cast AT something rather than on your group. The tile shows the target's name and clears when it dies, when the spell wears off, or when a mez is broken. Off by default: a mob's name is not a single word, so matching one is looser, and doing it for every spell at once would mean around 160,000 extra tiles. This applies only to the spells THIS aura watches.">
                   <input type="checkbox" id="widget-track-enemies-checkbox" />
                   Also watch these spells on enemies
                 </label>
               </div>
-              <p class="hint" id="widget-enemies-hint">
-                For mez, charm, snare and slow - the things you cast AT something rather than on
-                your group. The tile shows the target's name, and clears when it dies, when the
-                spell wears off, or when a mez is broken. Off by default because a mob's name is
-                not a single word, so watching for one means accepting a much looser match, and
-                doing that for every spell at once would bury you: in one player's logs it would
-                have meant 160,000 extra tiles, most of them from two bard songs hitting
-                everything in earshot. Turning it on here applies only to the spells THIS aura
-                watches.
-              </p>
+              <p class="hint" id="widget-enemies-hint"></p>
               <div class="row" id="widget-borders-row">
-                <label>
+                <label title="Red for direct damage, amber for damage over time, green for heals, darker green for heals over time, blue for buffs, purple for debuffs, amber for pet spells, magenta for charms. Anything the roster has no type for keeps its normal edge.">
                   <input type="checkbox" id="widget-category-borders-checkbox" />
                   Colour each tile's edge by spell type
                 </label>
               </div>
-              <p class="hint" id="widget-borders-hint">
-                Red for direct damage and amber for damage over time, green for heals and darker
-                green for heals over time, blue for buffs, purple for debuffs, amber for pet spells
-                and magenta for charms. Anything the roster has no type for keeps its normal edge.
-              </p>
+              <p class="hint" id="widget-borders-hint"></p>
               <div class="row" id="widget-merge-row">
-                <label>
+                <label title="One tile instead of many, showing the soonest to run out and a count of how many are behind it - a full group buff is otherwise a wall of tiles. What counts as &quot;the same&quot; is set once for the whole app, on the Setup page.">
                   <input type="checkbox" id="widget-merge-checkbox" />
                   Merge buffs that share a duration into one tile
                 </label>
               </div>
-              <p class="hint" id="widget-merge-hint">
-                One tile instead of many, showing the soonest to run out and a count of how many are
-                behind it - a full group buff is otherwise a wall of tiles. Which buffs count as
-                "the same" is set once for the whole app, on the Setup page.
-              </p>
+              <p class="hint" id="widget-merge-hint"></p>
               <div class="row" id="widget-sort-order-row">
                 <span class="label">Sort by:</span>
                 <label><input type="radio" name="widget-sort-order" value="default" /> Cast order</label>
@@ -571,44 +532,24 @@
               <p class="hint" id="widget-buff-filter-hint"></p>
               <div id="widget-track-others-row" style="display:none">
                 <div class="row">
-                  <label><input type="checkbox" id="widget-track-others-checkbox" /> Track buffs cast on me by others</label>
+                  <label title="Off by default - only your own buffs are tracked. When on, an ambiguous buff that is not in your spellbook (most likely a group-mate's cast) queues up for you to pick which one it was, and the choice is remembered until your group changes. Telling your own casts from an ally's is not always possible from the log, so expect some misattribution while this is on."><input type="checkbox" id="widget-track-others-checkbox" /> Track buffs cast on me by others</label>
                   <span class="experimental-badge">Experimental</span>
                 </div>
-                <p class="hint">
-                  Off by default - only your own buffs are tracked. When on, an ambiguous buff that isn't
-                  in your spellbook (most likely a group-mate's cast) queues up for you to pick which one
-                  it was, and remembers your choice until your group's membership changes.
-                  Telling your own casts from an ally's isn't always possible from the log alone, so
-                  expect some misattribution while this is on.
-                </p>
               </div>
               <div id="widget-self-buffs-filters" style="display:none">
                 <div class="row">
-                  <label><input type="checkbox" id="widget-hide-bard-songs-checkbox" /> Show bard songs</label>
+                  <label title="Off by default - bard songs re-sing constantly and are hard to tell apart from an ally's, so they are kept out unless you ask for them. Songs are identified from your EverQuest install's own spell data (any spell only a bard can cast). This does NOT distinguish your own songs from a group-mate's - that is not reliably knowable from the log, so expect an ally's songs here too."><input type="checkbox" id="widget-hide-bard-songs-checkbox" /> Show bard songs</label>
                   <span class="experimental-badge">Experimental</span>
                 </div>
-                <p class="hint">
-                  Off by default - bard songs re-sing constantly and are hard to tell apart from an
-                  ally's, so they're kept out of this list unless you ask for them. Songs are identified
-                  from your EverQuest install's own spell data (any spell only a bard can cast), plus any
-                  spell seen cast with "singing" instead of "casting". <strong>This does not distinguish
-                  your own songs from a group-mate's</strong> - that isn't reliably knowable from the log,
-                  so expect an ally's songs to appear here too.
-                </p>
                 <div class="row">
-                  <span class="label">Hide buffs longer than:</span>
+                  <span class="label" title="In minutes. Set to 0 to turn this filter off.">Hide buffs longer than:</span>
                   <input type="range" id="widget-max-duration-slider" min="0" max="240" step="5" />
                   <span id="widget-max-duration-value" class="slider-value">off</span>
                 </div>
-                <p class="hint">Duration is in minutes. Set to 0 to turn this filter off.</p>
+
               </div>
               <div id="widget-selected-buffs-section" style="display:none">
-                <h4 class="settings-subsection-title">Currently selected</h4>
-                <p class="hint">
-                  Always shown here regardless of search, so a buff picked earlier stays easy to find and
-                  uncheck - with thousands of known buffs, scrolling/searching the full list below to find
-                  an already-checked one isn't practical.
-                </p>
+                <h4 class="settings-subsection-title" title="Always shown here regardless of search, so a buff picked earlier stays easy to find and remove - with a thousand known buffs, searching the list below for one you already picked is not practical.">Currently selected</h4>
                 <div id="widget-selected-buffs-list" class="gem-bar"></div>
                 <p class="hint danger-hint" id="widget-buff-filter-notice" style="display:none"></p>
               </div>
@@ -694,24 +635,12 @@
                 </button>
                 <div class="topic-body"><div class="topic-body-inner">
                   <div class="row">
-                    <label><input type="checkbox" id="widget-show-icon-label-checkbox" /> Show label</label>
+                    <label title="An extra bit of text showing the buff or timer's name on each icon. Can be wider than the icon itself, so a long name is not cut off."><input type="checkbox" id="widget-show-icon-label-checkbox" /> Show label</label>
                   </div>
-                  <p class="hint">
-                    An extra bit of text showing the buff or timer's name on each icon - useful when a
-                    toggle like this makes it worth naming what's what. Can be wider than the icon itself,
-                    so a long name isn't cut off.
-                  </p>
                   <div id="widget-icon-label-options" style="display:none">
                     <div class="row">
-                      <label><input type="checkbox" id="widget-wrap-text-checkbox" /> Wrap text to fit inside the icon</label>
+                      <label title="On: the label wraps and stays inside the icon's bounds - best when many icons are packed together. Off: it can spill past the icon rather than being cut off - better with one or a few icons. Only affects the label; timer text never needs to wrap."><input type="checkbox" id="widget-wrap-text-checkbox" /> Wrap text to fit inside the icon</label>
                     </div>
-                    <p class="hint">
-                      On: the label wraps and stays inside the icon's own bounds, best when many icons are
-                      packed together (like Self Buffs or Ally Buffs). Off: the label can spill past the icon
-                      rather than being cut off - usually better with just one or a few icons where there's
-                      room to spare. Only affects the label - the timer text is always short enough that it
-                      never needs to wrap.
-                    </p>
                     <div class="row">
                       <span class="label">Label size:</span>
                       <input type="range" id="widget-icon-label-size-slider" min="6" max="20" step="1" />
@@ -721,7 +650,6 @@
                       <span class="label">Text color:</span>
                       <input type="color" id="widget-label-text-color-picker" value="#f0f1f5" />
                     </div>
-                    <p class="hint">Not active yet.</p>
                     <div class="row">
                       <span class="label">Label position:</span>
                     </div>
@@ -748,16 +676,12 @@
                 </button>
                 <div class="topic-body"><div class="topic-body-inner">
                   <div class="row">
-                    <span class="label">Expiring-soon flash:</span>
+                    <span class="label" title="When a buff's remaining time drops under this, its tile flashes red. Set to 0 to turn the flash off for this aura.">Expiring-soon flash:</span>
                     <input type="range" id="widget-low-threshold-slider" min="0" max="120" step="5" />
                     <span id="widget-low-threshold-value" class="slider-value">30s</span>
                   </div>
-                  <p class="hint">
-                    When a buff's remaining time drops under this, its tile flashes red. Set to 0 to turn
-                    the flash off for this aura.
-                  </p>
                   <div class="row">
-                    <label><input type="checkbox" id="widget-landing-glow-checkbox" /> Glow when a buff lands</label>
+                    <label title="Flashes the tile briefly when the buff is first applied."><input type="checkbox" id="widget-landing-glow-checkbox" /> Glow when a buff lands</label>
                   </div>
                 </div></div>
               </div>
@@ -768,19 +692,15 @@
                   <span class="topic-title">Sounds</span>
                   <span class="topic-summary" id="topic-sounds-summary"></span>
                 </button>
+                <!-- Progressive disclosure: each sound's picker appears only once its own toggle
+                     is on, and the volume only once SOMETHING can make a noise. Explanations are
+                     title= tooltips rather than paragraphs, so the section is a list of controls
+                     rather than a wall of prose. -->
                 <div class="topic-body"><div class="topic-body-inner">
                   <div class="row">
-                    <span class="label">Volume:</span>
-                    <input type="range" id="widget-alert-volume-slider" min="0" max="100" step="5" />
-                    <span id="widget-alert-volume-value" class="slider-value">100%</span>
+                    <label title="Plays a sound the moment the buff is applied."><input type="checkbox" id="widget-sound-land-checkbox" /> Play a sound when a buff lands</label>
                   </div>
-                  <p class="hint">
-                    Applies to every alert sound on this aura - custom files and the default beeps alike.
-                  </p>
-                  <div class="row">
-                    <label><input type="checkbox" id="widget-sound-land-checkbox" /> Play a sound when a buff lands</label>
-                  </div>
-                  <div class="row sound-picker-row">
+                  <div class="row sound-picker-row" id="widget-sound-land-row">
                     <span class="label">Land sound:</span>
                     <button type="button" id="widget-sound-land-choose-btn">Choose sound...</button>
                     <button type="button" id="widget-sound-land-preview-btn" style="display:none">▶ Preview</button>
@@ -789,9 +709,9 @@
                   </div>
 
                   <div class="row">
-                    <label><input type="checkbox" id="widget-sound-expire-checkbox" /> Play a sound when a buff expires</label>
+                    <label title="Plays a sound the moment the buff runs out."><input type="checkbox" id="widget-sound-expire-checkbox" /> Play a sound when a buff expires</label>
                   </div>
-                  <div class="row sound-picker-row">
+                  <div class="row sound-picker-row" id="widget-sound-expire-row">
                     <span class="label">Expire sound:</span>
                     <button type="button" id="widget-sound-expire-choose-btn">Choose sound...</button>
                     <button type="button" id="widget-sound-expire-preview-btn" style="display:none">▶ Preview</button>
@@ -799,38 +719,41 @@
                     <button type="button" id="widget-sound-expire-reset-btn" style="display:none">Use default beep</button>
                   </div>
 
+                  <!-- A toggle in front of the slider, because a bare slider sitting at 0 does not
+                       read as "off", it reads as a setting nobody has got round to. The slider it
+                       reveals is still the stored value - see initSoundWarningToggle. -->
                   <div class="row">
-                    <span class="label">Warn before expiry:</span>
-                    <input type="range" id="widget-sound-warning-slider" min="0" max="60" step="5" />
-                    <span id="widget-sound-warning-value" class="slider-value">off</span>
+                    <label title="Plays a sound a set time before the buff runs out, while there is still time to recast."><input type="checkbox" id="widget-sound-warning-checkbox" /> Warn me before a buff expires</label>
                   </div>
-                  <p class="hint">
-                    Plays a sound once, this many seconds before a buff runs out. Set to 0 to turn it off.
-                  </p>
-                  <div class="row sound-picker-row">
-                    <span class="label">Warning sound:</span>
-                    <button type="button" id="widget-sound-warning-choose-btn">Choose sound...</button>
-                    <button type="button" id="widget-sound-warning-preview-btn" style="display:none">▶ Preview</button>
-                    <span id="widget-sound-warning-name" class="slider-value">Default beep</span>
-                    <button type="button" id="widget-sound-warning-reset-btn" style="display:none">Use default beep</button>
+                  <div id="widget-sound-warning-group">
+                    <div class="row">
+                      <span class="label" title="How many seconds before the buff runs out the warning plays.">Warn this early:</span>
+                      <input type="range" id="widget-sound-warning-slider" min="0" max="60" step="5" />
+                      <span id="widget-sound-warning-value" class="slider-value">off</span>
+                    </div>
+                    <div class="row sound-picker-row">
+                      <span class="label">Warning sound:</span>
+                      <button type="button" id="widget-sound-warning-choose-btn">Choose sound...</button>
+                      <button type="button" id="widget-sound-warning-preview-btn" style="display:none">▶ Preview</button>
+                      <span id="widget-sound-warning-name" class="slider-value">Default beep</span>
+                      <button type="button" id="widget-sound-warning-reset-btn" style="display:none">Use default beep</button>
+                    </div>
+                    <div class="row">
+                      <span class="label" title="Repeats the warning this often while the buff stays under the threshold, instead of playing once. 0 means a single warning.">Loop warning every:</span>
+                      <input type="range" id="widget-sound-loop-slider" min="0" max="10" step="1" />
+                      <span id="widget-sound-loop-value" class="slider-value">off</span>
+                    </div>
                   </div>
-                  <div class="row">
-                    <span class="label">Loop warning every:</span>
-                    <input type="range" id="widget-sound-loop-slider" min="0" max="10" step="1" />
-                    <span id="widget-sound-loop-value" class="slider-value">off</span>
+
+                  <div class="row" id="widget-alert-volume-row">
+                    <span class="label" title="Applies to every alert sound on this aura - custom files and the default beeps alike.">Volume:</span>
+                    <input type="range" id="widget-alert-volume-slider" min="0" max="100" step="5" />
+                    <span id="widget-alert-volume-value" class="slider-value">100%</span>
                   </div>
-                  <p class="hint">
-                    Repeats the warning sound this often for as long as the buff stays under the threshold
-                    above, instead of playing just once. Set to 0 for a single warning, same as before.
-                  </p>
 
                   <div class="row">
-                    <button type="button" id="widget-sound-open-folder-btn">📁 Open sounds folder</button>
+                    <button type="button" id="widget-sound-open-folder-btn" title="Opens the folder &quot;Choose sound...&quot; starts in - drop your own mp3/wav/ogg/m4a files in there to have them ready to pick from.">📁 Open sounds folder</button>
                   </div>
-                  <p class="hint">
-                    Opens the folder "Choose sound..." starts in - drop your own mp3/wav/ogg/m4a files in there
-                    to have them ready to pick from.
-                  </p>
                 </div></div>
               </div>
 
@@ -873,6 +796,75 @@
 
       <section id="page-settings" class="page">
         <h2 class="page-title">Setup</h2>
+
+        <h3 class="settings-page-section-title">Character setup</h3>
+
+        <div class="card">
+          <h3>Buff duration bonuses</h3>
+          <p class="hint">
+            These AA and Exaltation abilities extend how long buffs last. Set them to match your
+            character so tracked timers reflect your real, extended durations instead of the base
+            spell length. This applies to every tracked buff - it doesn't change what's detected,
+            only how long the countdown runs.
+          </p>
+          <div class="row">
+            <span class="label">Spell Casting Reinforcement (AA):</span>
+            <select id="aa-reinforcement-select">
+              <option value="0">Not trained (0%)</option>
+              <option value="1">Rank 1 (+5%)</option>
+              <option value="2">Rank 2 (+15%)</option>
+              <option value="3">Rank 3 (+30%)</option>
+              <option value="4">Rank 4 (+50%)</option>
+            </select>
+          </div>
+          <div class="row">
+            <span class="label">Extended Enhancement (Exaltation):</span>
+            <select id="exaltation-select">
+              <option value="0">Not trained (0%)</option>
+              <option value="1">Rank 1 (+5%)</option>
+              <option value="2">Rank 2 (+10%)</option>
+              <option value="3">Rank 3 (+15%)</option>
+            </select>
+          </div>
+          <div class="row">
+            <span class="label">Total bonus:</span>
+            <span id="character-bonus-total">+0%</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Spellbook detection</h3>
+          <div class="row">
+            <span class="label">Spellbook:</span>
+            <span id="spellbook-status">Checking...</span>
+          </div>
+          <p class="hint">
+            Your character's own spellbook is used to resolve ambiguous buff messages (EQ reuses a
+            lot of generic text across many different spells) down to whichever one you actually have.
+            Read from your EQ install folder above.
+          </p>
+          <div id="spellbook-missing-hint" style="display:none">
+            <p class="hint warn-hint">
+              <strong>This is worth fixing.</strong> EverQuest reuses the same buff message across
+              many different spells, and without your spellbook the app cannot tell which of them
+              was yours - so it ignores them. On one recent session that was over 700 buff messages
+              thrown away.
+            </p>
+            <p class="hint">
+              The game does not write this file on its own. Type this in game, logged in on this
+              character, and it only needs doing again when you scribe something new:
+            </p>
+            <div class="row command-row">
+              <code id="spellbook-command">/outputfile spellbook</code>
+              <button type="button" id="copy-spellbook-command-btn">Copy</button>
+            </div>
+            <p class="hint" id="spellbook-missing-where"></p>
+          </div>
+          <p class="hint">
+            Which spells you currently have <em>memorized</em> is tracked separately and shown on the
+            Buff Tracker page under "Detection status" - that's live gem state, not the spellbook file.
+          </p>
+        </div>
 
         <h3 class="settings-page-section-title">Client setup</h3>
 
@@ -949,10 +941,23 @@
 
         <div class="card" id="ui-scale-card">
           <h3>App text size</h3>
+          <!-- A dropdown, deliberately not a slider. Changing this rescales the whole window,
+               including the control being dragged - so the handle moved out from under the cursor
+               mid-drag and the thing was unusable. A dropdown commits one value on release,
+               after the pointer has already left the control. -->
           <div class="row">
             <span class="label">Size:</span>
-            <input type="range" id="ui-scale-slider" min="80" max="160" step="10" />
-            <span class="value" id="ui-scale-value">100%</span>
+            <select id="ui-scale-select" class="text-input">
+              <option value="80">80%</option>
+              <option value="90">90%</option>
+              <option value="100">100% (default)</option>
+              <option value="110">110%</option>
+              <option value="120">120%</option>
+              <option value="130">130%</option>
+              <option value="140">140%</option>
+              <option value="150">150%</option>
+              <option value="160">160%</option>
+            </select>
             <button type="button" id="ui-scale-reset-btn">Reset</button>
           </div>
           <p class="hint">
@@ -968,74 +973,6 @@
           <dl id="version-info"></dl>
         </div>
 
-        <h3 class="settings-page-section-title">Character setup</h3>
-
-        <div class="card">
-          <h3>Buff duration bonuses</h3>
-          <p class="hint">
-            These AA and Exaltation abilities extend how long buffs last. Set them to match your
-            character so tracked timers reflect your real, extended durations instead of the base
-            spell length. This applies to every tracked buff - it doesn't change what's detected,
-            only how long the countdown runs.
-          </p>
-          <div class="row">
-            <span class="label">Spell Casting Reinforcement (AA):</span>
-            <select id="aa-reinforcement-select">
-              <option value="0">Not trained (0%)</option>
-              <option value="1">Rank 1 (+5%)</option>
-              <option value="2">Rank 2 (+15%)</option>
-              <option value="3">Rank 3 (+30%)</option>
-              <option value="4">Rank 4 (+50%)</option>
-            </select>
-          </div>
-          <div class="row">
-            <span class="label">Extended Enhancement (Exaltation):</span>
-            <select id="exaltation-select">
-              <option value="0">Not trained (0%)</option>
-              <option value="1">Rank 1 (+5%)</option>
-              <option value="2">Rank 2 (+10%)</option>
-              <option value="3">Rank 3 (+15%)</option>
-            </select>
-          </div>
-          <div class="row">
-            <span class="label">Total bonus:</span>
-            <span id="character-bonus-total">+0%</span>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3>Spellbook detection</h3>
-          <div class="row">
-            <span class="label">Spellbook:</span>
-            <span id="spellbook-status">Checking...</span>
-          </div>
-          <p class="hint">
-            Your character's own spellbook is used to resolve ambiguous buff messages (EQ reuses a
-            lot of generic text across many different spells) down to whichever one you actually have.
-            Read from your EQ install folder above.
-          </p>
-          <div id="spellbook-missing-hint" style="display:none">
-            <p class="hint warn-hint">
-              <strong>This is worth fixing.</strong> EverQuest reuses the same buff message across
-              many different spells, and without your spellbook the app cannot tell which of them
-              was yours - so it ignores them. On one recent session that was over 700 buff messages
-              thrown away.
-            </p>
-            <p class="hint">
-              The game does not write this file on its own. Type this in game, logged in on this
-              character, and it only needs doing again when you scribe something new:
-            </p>
-            <div class="row command-row">
-              <code id="spellbook-command">/outputfile spellbook</code>
-              <button type="button" id="copy-spellbook-command-btn">Copy</button>
-            </div>
-            <p class="hint" id="spellbook-missing-where"></p>
-          </div>
-          <p class="hint">
-            Which spells you currently have <em>memorized</em> is tracked separately and shown on the
-            Buff Tracker page under "Detection status" - that's live gem state, not the spellbook file.
-          </p>
-        </div>
       </section>
 
       <section id="page-log" class="page">
@@ -1089,7 +1026,9 @@
           </div>
           <div class="row">
             <button id="archive-now-btn">Archive log now...</button>
+            <button id="open-archive-folder-btn">Open archive folder</button>
           </div>
+          <p class="hint" id="archive-folder-status"></p>
         </div>
 
         <div class="block">
@@ -1311,6 +1250,10 @@
           <strong>Import from code</strong>
           <span>Paste a share code someone sent you to recreate their aura's exact settings.</span>
         </button>
+        <button type="button" class="add-widget-choice" data-choice="chat">
+          <strong>Import from chat</strong>
+          <span>Aura codes people have pasted into chat this session, in case you dismissed one.</span>
+        </button>
         <button type="button" class="add-widget-choice" data-choice="premade">
           <strong>Premade aura</strong>
           <span>Ready-made aura types built into the app, already set up for a specific purpose.</span>
@@ -1335,9 +1278,21 @@
         <p class="hint" id="modal-import-widget-status"></p>
       </div>
 
+      <!-- Note 30's other half. The offer strip is easy to dismiss and appears while she is
+           playing; this is where you come looking for it afterwards. Read-only: picking one fills
+           the import box on the panel above, and nothing is applied without pressing Import. -->
+      <div id="add-widget-chat-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <p class="hint">
+          Aura codes people have pasted into any chat channel since the app started. Picking one
+          fills in the import box - it is not applied until you press Import.
+        </p>
+        <ul id="add-widget-chat-list" class="plain-list scroll-list"></ul>
+      </div>
+
       <div id="add-widget-premade-panel" class="add-widget-panel" style="display:none">
         <button type="button" class="add-widget-back">&larr; Back</button>
-        <ul id="add-widget-premade-list" class="plain-list"></ul>
+        <ul id="add-widget-premade-list" class="plain-list scroll-list"></ul>
       </div>
 
       <!-- The first premade that asks a question before it builds anything. Deliberately its own
@@ -1345,40 +1300,12 @@
            what a dropdown can be used with, so it reuses the same search-as-you-type shape the
            per-aura buff picker already uses. Built generically enough that the planned cooldown
            and enemy-debuff premades can reuse it rather than each growing their own. -->
-      <!-- Note 20. Asks the one thing it cannot work out for itself. Where you are comes from the
-           zone lines the app already reads, and which travel spells you have comes from your
-           spellbook file, so the destination is the whole conversation. -->
-      <div id="add-widget-travel-guide-panel" class="add-widget-panel" style="display:none">
-        <button type="button" class="add-widget-back">&larr; Back</button>
-        <p class="hint">
-          Pick where you want to go. The aura works out the shortest way there from wherever you
-          currently are, and redraws itself every time you zone. It will use a travel spell if you
-          have one scribed that helps, and walk you there if you do not.
-        </p>
-        <p class="hint">
-          <strong>You can also change the destination from inside the game.</strong> Type
-          <code>/tell qeynos</code> and the game answers "Qeynos is not online at this time" - the
-          aura reads that as your new destination. One word only, since a /tell name cannot have
-          spaces in it, and it usually wants the short name the game itself uses:
-          <code>/tell qeynos</code> gets you South Qeynos. If the word could mean several zones the
-          aura lists them instead of guessing.
-        </p>
-        <div class="row">
-          <input
-            type="text"
-            id="travel-destination-search"
-            class="text-input"
-            placeholder="Search zones..."
-          />
-        </div>
-        <ul id="travel-destination-list" class="plain-list scroll-list"></ul>
-        <p class="hint">
-          Some zone names here are a best guess. The list covers every zone the route finder knows,
-          including ones you have never been to - a route from Faydwer to Antonica goes through the
-          Ocean of Tears whether you have seen it or not - and for those the exact in-game wording
-          could not be confirmed. Mostly it is a question of a leading &quot;The&quot;.
-        </p>
-      </div>
+      <!-- Note 20's zone picker used to be here and has been removed deliberately. The travel
+           guide takes its destination from /tell in game and nothing else, so the premade now
+           builds immediately rather than asking. Nothing was lost with it: where you are comes
+           from the zone lines the app already reads, and which travel spells you have comes from
+           your spellbook file, so the destination was the only question - and /tell answers it
+           without leaving the game you are trying to travel in. -->
 
       <div id="add-widget-buff-timer-panel" class="add-widget-panel" style="display:none">
         <button type="button" class="add-widget-back">&larr; Back</button>

@@ -103,10 +103,19 @@ test('the real visibility check honours it, and checks it first', () => {
 });
 
 test('it can still be switched off', () => {
-  // The note assumed unticking every profile would do it. With show-on-all set, that does nothing
-  // at all - so the toggle is required rather than a nicety, or the label cannot be turned off
-  // without deleting it.
-  assert.match(html, /id="widget-all-profiles-checkbox"/, 'no way to turn it off');
+  // The label sets showOnAllProfiles for itself, so unticking loadouts cannot turn it off - it
+  // needs a switch of its own, and this is the check that one exists.
+  //
+  // That switch used to be the generic per-aura "Show on every loadout" tick box. That box has
+  // been removed at the owner's instruction (it was a second way to say what the loadout ticks
+  // already say), so the guarantee now rests on the label's OWN control in the Loadouts modal.
+  // If that ever goes, the label becomes impossible to turn off without deleting it.
+  assert.match(html, /id="loadout-label-checkbox"/, 'no way to turn the label off');
+  assert.doesNotMatch(
+    html,
+    /id="widget-all-profiles-checkbox"/,
+    'the per-aura show-on-every-loadout box is back'
+  );
   assert.match(managerSrc, /function setShowOnAllProfiles\(id, enabled\)/);
   const fn = managerSrc.match(/function setShowOnAllProfiles\(id, enabled\) \{([\s\S]*?)\n\}/);
   assert.match(fn[1], /applyVisibility\(config\)/, 'turning it off must take the aura off screen now');
@@ -306,18 +315,21 @@ test('both settings are off by default and survive a share code', () => {
   assert.match(storeSrc, /'showOnAllProfiles',/, 'showOnAllProfiles is not shareable');
 });
 
-test('both toggles are wired end to end', () => {
+test('always-on is wired end to end, and show-on-all survives without a tick box', () => {
   assert.match(html, /id="widget-always-on-checkbox"/);
   assert.match(rendererSrc, /alwaysOnCheckbox\.checked = !!widget\.alwaysOn;/);
-  assert.match(rendererSrc, /allProfilesCheckbox\.checked = !!widget\.showOnAllProfiles;/);
   assert.match(rendererSrc, /alwaysOnCheckbox\.addEventListener\('change'/);
-  assert.match(rendererSrc, /allProfilesCheckbox\.addEventListener\('change'/);
   assert.match(preloadSrc, /setWidgetAlwaysOn:/);
-  assert.match(preloadSrc, /setWidgetShowOnAllProfiles:/);
   assert.match(mainSrc, /ipcMain\.handle\('widget:setAlwaysOn'/);
-  assert.match(mainSrc, /ipcMain\.handle\('widget:setShowOnAllProfiles'/);
   assert.match(managerSrc, /^ {2}setAlwaysOn,$/m);
+
+  // showOnAllProfiles no longer has a tick box (removed at the owner's instruction), but the whole
+  // chain behind it must stay: the loadout label sets it for itself, so if any link here is
+  // "cleaned up" as dead code the label silently stops showing on every loadout.
+  assert.match(preloadSrc, /setWidgetShowOnAllProfiles:/);
+  assert.match(mainSrc, /ipcMain\.handle\('widget:setShowOnAllProfiles'/);
   assert.match(managerSrc, /^ {2}setShowOnAllProfiles,$/m);
+  assert.doesNotMatch(rendererSrc, /allProfilesCheckbox/, 'the removed tick box is being wired again');
 });
 
 test('always-on is offered only where it means something', () => {

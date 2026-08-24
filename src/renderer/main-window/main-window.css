@@ -991,6 +991,14 @@ h4 {
   margin: 0 0 8px;
 }
 
+/* An emptied hint must take no space at all, not an 8px gap where a paragraph used to be.
+   Several of these are emptied deliberately - their text moved into a title= tooltip on the
+   control it describes - and several others are filled in by script and are genuinely empty
+   until then. Both want the same thing: nothing until there is something to say. */
+.hint:empty {
+  display: none;
+}
+
 .hint a {
   color: var(--accent);
 }
@@ -1030,6 +1038,20 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Flex children default to min-height:auto, which means "never shrink below my content" - so
+     without this a tall panel pushed past the modal's max-height instead of scrolling inside it,
+     and the buttons at the bottom of a long premade list were simply unreachable on a small
+     window. This is what makes .scroll-list below able to do anything at all. */
+  min-height: 0;
+}
+
+/* Was used in the markup (#travel-destination-list) but never actually defined, so that list has
+   never scrolled - it just grew until it overflowed the modal. Defined here once and applied to
+   every long list inside a modal. */
+.scroll-list {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
 }
 
 .add-widget-back {
@@ -1052,6 +1074,33 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* Group headings inside the premade list. Not a button - it is a label, so it must not look
+   clickable or take focus when tabbing through the choices. */
+.premade-group-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 2px 4px;
+  border-bottom: 1px solid var(--accent-line);
+  margin-bottom: 2px;
+}
+
+.premade-group-heading:first-child {
+  padding-top: 2px;
+}
+
+.premade-group-heading strong {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.premade-group-heading span {
+  font-size: 11px;
+  color: var(--ink-dim);
 }
 
 .premade-widget-choice {

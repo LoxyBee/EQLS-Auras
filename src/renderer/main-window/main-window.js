@@ -660,6 +660,20 @@ function initLogPanel() {
     }
     renderState(await window.eqTracker.getLogState());
   });
+
+  // Archives go into an "Archive" folder beside the log, which is not somewhere anyone would
+  // think to look. The main process creates it if the first archive has not been made yet, so
+  // this never silently does nothing.
+  const openArchiveFolderBtn = document.getElementById('open-archive-folder-btn');
+  const archiveFolderStatusEl = document.getElementById('archive-folder-status');
+  if (openArchiveFolderBtn) {
+    openArchiveFolderBtn.addEventListener('click', async () => {
+      const result = await window.eqTracker.openArchiveFolder();
+      if (archiveFolderStatusEl) {
+        archiveFolderStatusEl.textContent = result.ok ? result.folder : result.error;
+      }
+    });
+  }
 }
 
 function formatTime(totalSec) {
@@ -1059,6 +1073,11 @@ function initWidgetsPanel() {
   const soundLandCheckbox = document.getElementById('widget-sound-land-checkbox');
   const soundExpireCheckbox = document.getElementById('widget-sound-expire-checkbox');
   const soundWarningSlider = document.getElementById('widget-sound-warning-slider');
+  const soundWarningCheckbox = document.getElementById('widget-sound-warning-checkbox');
+  const soundWarningGroupEl = document.getElementById('widget-sound-warning-group');
+  const soundLandRowEl = document.getElementById('widget-sound-land-row');
+  const soundExpireRowEl = document.getElementById('widget-sound-expire-row');
+  const alertVolumeRowEl = document.getElementById('widget-alert-volume-row');
   const soundWarningValueEl = document.getElementById('widget-sound-warning-value');
   const alertVolumeSlider = document.getElementById('widget-alert-volume-slider');
   const alertVolumeValueEl = document.getElementById('widget-alert-volume-value');
@@ -1093,16 +1112,10 @@ function initWidgetsPanel() {
   const alwaysOnCheckbox = document.getElementById('widget-always-on-checkbox');
   const alwaysOnRowEl = document.getElementById('widget-always-on-row');
   const alwaysOnHintEl = document.getElementById('widget-always-on-hint');
-  const allProfilesCheckbox = document.getElementById('widget-all-profiles-checkbox');
   const allyAlertRowEl = document.getElementById('widget-ally-alert-row');
   const allyAlertHintEl = document.getElementById('widget-ally-alert-hint');
   const travelSettingsEl = document.getElementById('widget-travel-settings');
-  const travelDestinationSelect = document.getElementById('widget-travel-destination');
-  const travelSearchInput = document.getElementById('travel-destination-search');
-  const travelListEl = document.getElementById('travel-destination-list');
-  // Fetched once and reused by both the create panel and the settings dropdown. The zone graph is
-  // a static file, so unlike the buff roster there is nothing here that goes stale mid-session.
-  let travelZones = [];
+  const travelDestinationCurrentEl = document.getElementById('widget-travel-destination-current');
   const damageSettingsEl = document.getElementById('widget-damage-settings');
   const fightTimeoutSlider = document.getElementById('widget-fight-timeout-slider');
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
@@ -1806,7 +1819,6 @@ function initWidgetsPanel() {
     totalRowCheckbox.checked = widget.showTotalRow !== false;
     allyAlertCheckbox.checked = !!widget.allyDebuffAlert;
     alwaysOnCheckbox.checked = !!widget.alwaysOn;
-    allProfilesCheckbox.checked = !!widget.showOnAllProfiles;
     textMessageInput.value = widget.textAuraMessage || '';
     const textAuraSize = widget.textAuraSize || 32;
     textAuraSizeSlider.value = String(textAuraSize);
@@ -1822,6 +1834,7 @@ function initWidgetsPanel() {
     const warningLoopSec = widget.soundWarningLoopSec || 0;
     soundWarningLoopSlider.value = warningLoopSec;
     soundWarningLoopValueEl.textContent = warningLoopSec === 0 ? 'off' : `${warningLoopSec}s`;
+    syncSoundDisclosure();
     // The volume slider was the one control in this panel never populated from the widget, so it
     // always showed the markup default rather than the aura's saved value. And because the input
     // carried no `value` attribute at all, an HTML range falls back to the midpoint of its own
@@ -1908,9 +1921,14 @@ function initWidgetsPanel() {
     // fight timeout on a buff aura would be a live control that changes nothing.
     damageSettingsEl.style.display = widget.buffSource === 'damage' ? '' : 'none';
     travelSettingsEl.style.display = widget.buffSource === 'travel' ? '' : 'none';
-    if (widget.buffSource === 'travel') populateTravelDestinations(widget.travelDestination);
+    if (widget.buffSource === 'travel') showTravelDestination(widget.travelDestination);
 
-    const canWatchEnemies = widget.kind === 'ally-buffs-builtin' || widget.buffSource === 'ally';
+    // Deliberately NOT offered on the built-in Ally Buffs aura. Ally Buffs is for buffs you cast
+    // on people, full stop - a debuff on a mob is a different thing that happens to arrive through
+    // the same "landed on somebody who is not you" path, and offering the switch there invited
+    // mixing the two in one aura. Custom ally-source auras (which is what "Custom debuff aura"
+    // builds) still get it, because that is where debuff tracking is meant to live.
+    const canWatchEnemies = widget.kind !== 'ally-buffs-builtin' && widget.buffSource === 'ally';
     enemiesRowEl.style.display = canWatchEnemies ? '' : 'none';
     enemiesHintEl.style.display = canWatchEnemies ? '' : 'none';
     if (widget.buffSource === 'customTimer') {
@@ -2430,10 +2448,13 @@ function initWidgetsPanel() {
       // Same name as the roadmap entry it replaces, so renderPremadeList's filter drops that one.
       name: 'Travel guide',
       description:
-        'The shortest way from where you are to wherever you pick, one step per line. It uses ' +
-        'the travel spells you have actually scribed, and it follows you - the directions ' +
-        'change as you zone.',
-      panel: 'travel-guide',
+        'The shortest way from where you are to wherever you are going, one step per line. Set ' +
+        'the destination in game with /tell <zone> - it uses the travel spells you have actually ' +
+        'scribed, and the directions change as you zone.',
+      // Builds immediately. It used to open a zone picker; that asked you to choose a destination
+      // by alt-tabbing out of the game, which is backwards for an aura you use while travelling.
+      // /tell is the only way in, so there is nothing left to ask.
+      create: (name) => window.eqTracker.createTravelGuideWidget(name, ''),
     },
     {
       id: 'damage-parser',
@@ -2526,12 +2547,11 @@ function initWidgetsPanel() {
     const query = buffTimerSearch.value.trim().toLowerCase();
     const pool = buffTimerPool();
     buffTimerListEl.innerHTML = '';
-    if (!query) {
-      const what = buffTimerMode === 'cooldown' ? 'spells with a recast time' : 'spells this app can track';
-      buffTimerListEl.innerHTML = `<li class="empty">Type to search ${pool.length} ${what}...</li>`;
-      return;
-    }
-    const matches = pool.filter((b) => b.name.toLowerCase().includes(query));
+    // An empty box lists everything rather than saying "type to search". Requiring a query first
+    // meant you could only find a spell whose name you already knew exactly, which is no use for
+    // browsing - the whole complaint behind "it should be a drop down". The list is capped and
+    // scrolls, so showing it costs nothing, and typing still narrows it as before.
+    const matches = query ? pool.filter((b) => b.name.toLowerCase().includes(query)) : pool;
     if (!matches.length) {
       // Says WHY rather than just "none". A spell can be perfectly real and still not be here,
       // because the roster has no landing message for it - and that is a different problem from
@@ -2700,9 +2720,45 @@ function initWidgetsPanel() {
     'Alt+Shift+H': 'Alt+Shift+H',
   };
 
+  // The two groups the list is split into, and what decides which a premade belongs to.
+  //
+  // "Shortcuts" are auras you could build yourself out of the ordinary settings - the premade just
+  // fills them in for you. "Standalone tools" are their own thing: a damage meter and a travel
+  // router are not a buff aura with different boxes ticked, and there is no sequence of clicks in
+  // the custom flow that produces one. Sorting by that distinction rather than by what each does
+  // means the answer to "could I have made this myself" is visible before you click.
+  const PREMADE_GROUPS = [
+    { id: 'shortcut', title: 'Shortcuts', hint: 'Ordinary auras, already set up. You could build any of these yourself.' },
+    { id: 'standalone', title: 'Standalone tools', hint: 'Their own kind of aura, with behaviour the custom settings cannot produce.' },
+  ];
+  const STANDALONE_PREMADES = new Set(['damage-parser', 'travel-guide']);
+
+  function renderPremadeGroupHeading(group) {
+    const li = document.createElement('li');
+    li.className = 'premade-group-heading';
+    const title = document.createElement('strong');
+    title.textContent = group.title;
+    const hint = document.createElement('span');
+    hint.textContent = group.hint;
+    li.append(title, hint);
+    premadeListEl.appendChild(li);
+  }
+
   function renderPremadeList() {
     premadeListEl.innerHTML = '';
-    for (const premade of PREMADE_WIDGETS) {
+    for (const group of PREMADE_GROUPS) {
+      const inGroup = PREMADE_WIDGETS.filter(
+        (p) => (STANDALONE_PREMADES.has(p.id) ? 'standalone' : 'shortcut') === group.id
+      );
+      if (!inGroup.length) continue;
+      renderPremadeGroupHeading(group);
+      for (const premade of inGroup) renderPremadeChoice(premade);
+    }
+    renderPlannedPremades();
+  }
+
+  function renderPremadeChoice(premade) {
+    {
       const li = document.createElement('li');
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -2722,18 +2778,6 @@ function initWidgetsPanel() {
             resetBuffTimerPanel(premade.defaultSource, premade.mode);
             buffTimerSearch.focus();
           }
-          if (premade.panel === 'travel-guide') {
-            travelSearchInput.value = '';
-            if (travelZones.length) {
-              renderTravelDestinationList();
-            } else {
-              window.eqTracker.getTravelZones().then((zones) => {
-                travelZones = zones;
-                renderTravelDestinationList();
-              });
-            }
-            travelSearchInput.focus();
-          }
           return;
         }
         premade.create(premade.name).then((config) => {
@@ -2744,13 +2788,20 @@ function initWidgetsPanel() {
       li.appendChild(btn);
       premadeListEl.appendChild(li);
     }
+  }
+
+  function renderPlannedPremades() {
     // A premade that has been BUILT must not still be sitting in the planned list, or the Add
     // Aura list offers it twice - once working, once greyed out as "Not built yet". That happened
     // to both Buff timer and Debuff on an enemy, because building one means adding an entry over
     // there and it is easy to forget to remove this one. Filtered rather than merely tested, so
     // the app is right even if someone adds a premade without reading the test.
     const builtNames = new Set(PREMADE_WIDGETS.map((p) => p.name));
-    for (const planned of PLANNED_PREMADE_WIDGETS.filter((p) => !builtNames.has(p.name))) {
+    const stillPlanned = PLANNED_PREMADE_WIDGETS.filter((p) => !builtNames.has(p.name));
+    if (stillPlanned.length) {
+      renderPremadeGroupHeading({ title: 'Not built yet', hint: 'Here so the roadmap is visible. These cannot be clicked.' });
+    }
+    for (const planned of stillPlanned) {
       const li = document.createElement('li');
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -2773,6 +2824,46 @@ function initWidgetsPanel() {
   function showAddWidgetChoices() {
     addWidgetChoicesEl.style.display = '';
     addWidgetPanels.forEach((panel) => (panel.style.display = 'none'));
+  }
+
+  // Codes seen in chat this session. Read-only by construction: the only thing picking one does is
+  // put its text in the import box on the Import-from-code panel, where the ordinary confirmations
+  // still apply. See gotcha #24 - nothing may import a chat code on sight.
+  function renderChatShareCodeList() {
+    const listEl = document.getElementById('add-widget-chat-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<li class="empty">Looking...</li>';
+    window.eqTracker.getRecentShareCodes().then((codes) => {
+      listEl.innerHTML = '';
+      if (!codes.length) {
+        listEl.innerHTML =
+          '<li class="empty">Nobody has pasted an aura code in chat since the app started.</li>';
+        return;
+      }
+      for (const entry of codes) {
+        const li = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'premade-widget-choice';
+        const strong = document.createElement('strong');
+        // A code that would not decode is still listed, saying so, rather than hidden - a code
+        // arriving cut off is a length problem worth seeing, not a reason to pretend it never came.
+        strong.textContent = entry.auraName || 'Could not be read';
+        const span = document.createElement('span');
+        const when = new Date(entry.at).toLocaleTimeString();
+        span.textContent = `from ${entry.sender} in ${entry.channel}, ${when}`;
+        btn.append(strong, span);
+        btn.addEventListener('click', () => {
+          importCodeInput.value = entry.code;
+          addWidgetPanels.forEach((panel) => {
+            panel.style.display = panel.id === 'add-widget-import-panel' ? '' : 'none';
+          });
+          importCodeInput.focus();
+        });
+        li.appendChild(btn);
+        listEl.appendChild(li);
+      }
+    });
   }
 
   function openAddWidgetModal() {
@@ -2814,53 +2905,57 @@ function initWidgetsPanel() {
       });
       if (btn.dataset.choice === 'custom') modalNewWidgetNameInput.focus();
       else if (btn.dataset.choice === 'import') importCodeInput.focus();
+      else if (btn.dataset.choice === 'chat') renderChatShareCodeList();
     });
   });
+
+  // The name box is optional, and that is a fix rather than a relaxation.
+  //
+  // Every one of these buttons used to begin `if (!name) return;`, so clicking any aura type
+  // without first typing a name did nothing at all - no aura, no error, no hint that the empty
+  // box above was the reason. Reported as "cannot select any custom debuff; clicking a menu icon
+  // does not create an aura", which is exactly what it looked like from outside. The type is
+  // already a perfectly good name, and every aura can be renamed afterwards.
+  function widgetName(fallback) {
+    return modalNewWidgetNameInput.value.trim() || fallback;
+  }
 
   // buffSource is undefined here for a plain buff widget (backend defaults
   // to 'self'; togglable to 'ally' afterward in settings) - 'customTimer'
   // for a timer widget locks that in permanently, never offered as a
   // settings toggle (see buffSourceRow visibility above).
-  function addWidget(buffSource) {
-    const name = modalNewWidgetNameInput.value.trim();
-    if (!name) return;
-    window.eqTracker.createWidget(name, buffSource).then((config) => {
+  function addWidget(buffSource, fallback) {
+    window.eqTracker.createWidget(widgetName(fallback), buffSource).then((config) => {
       closeAddWidgetModal();
       focusWidget(config.id);
     });
   }
-  modalAddBuffWidgetBtn.addEventListener('click', () => addWidget());
+  modalAddBuffWidgetBtn.addEventListener('click', () => addWidget(undefined, 'Custom buff aura'));
   // Not addWidget('ally') - a debuff aura needs the enemy switch on as well, and doing that from
   // here would be two IPC round trips with the aura visibly reconfiguring itself between them.
   document.getElementById('modal-add-debuff-widget-btn').addEventListener('click', () => {
-    const name = modalNewWidgetNameInput.value.trim();
-    if (!name) return;
-    window.eqTracker.createDebuffWidget(name).then((config) => {
+    window.eqTracker.createDebuffWidget(widgetName('Custom debuff aura')).then((config) => {
       closeAddWidgetModal();
       focusWidget(config.id);
     });
   });
-  modalAddTimerWidgetBtn.addEventListener('click', () => addWidget('customTimer'));
+  modalAddTimerWidgetBtn.addEventListener('click', () => addWidget('customTimer', 'Custom timer aura'));
   modalAddSoundWidgetBtn.addEventListener('click', () => {
-    const name = modalNewWidgetNameInput.value.trim();
-    if (!name) return;
-    window.eqTracker.createSoundOnlyWidget(name).then((config) => {
+    window.eqTracker.createSoundOnlyWidget(widgetName('Custom sound aura')).then((config) => {
       closeAddWidgetModal();
       focusWidget(config.id);
     });
   });
   modalAddTextWidgetBtn.addEventListener('click', () => {
-    const name = modalNewWidgetNameInput.value.trim();
-    if (!name) return;
     // Its own creator rather than createWidget with a flag: a text aura is a type, and it starts
     // with settings of its own that a plain custom aura has no use for.
-    window.eqTracker.createTextAuraWidget(name).then((config) => {
+    window.eqTracker.createTextAuraWidget(widgetName('Custom text aura')).then((config) => {
       closeAddWidgetModal();
       focusWidget(config.id);
     });
   });
   modalNewWidgetNameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') addWidget();
+    if (e.key === 'Enter') addWidget(undefined, 'Custom buff aura');
   });
 
   nameInput.addEventListener('change', () => {
@@ -2963,66 +3058,17 @@ function initWidgetsPanel() {
   categoryBordersCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetCategoryBorders(selectedId, categoryBordersCheckbox.checked);
   });
-  // Note 20. The destination dropdown on an existing aura's settings page.
-  function populateTravelDestinations(selected) {
-    const build = () => {
-      travelDestinationSelect.innerHTML = '';
-      // A blank first option so an aura with no destination yet shows nothing chosen, rather than
-      // silently claiming to be routing to whichever zone happens to sort first.
-      const blank = document.createElement('option');
-      blank.value = '';
-      blank.textContent = '- pick a destination -';
-      travelDestinationSelect.appendChild(blank);
-      for (const zone of travelZones) {
-        const opt = document.createElement('option');
-        opt.value = zone;
-        opt.textContent = zone;
-        travelDestinationSelect.appendChild(opt);
-      }
-      travelDestinationSelect.value = selected || '';
-    };
-    if (travelZones.length) return build();
-    window.eqTracker.getTravelZones().then((zones) => {
-      travelZones = zones;
-      build();
-    });
+  // Note 20. The destination is set with /tell in game, never from here.
+  //
+  // Both in-app pickers - the dropdown that was on this settings card, and the searchable zone
+  // list in the create panel - have been removed at the owner's instruction. Setting a travel
+  // destination meant alt-tabbing out of the game you were trying to travel in, which is backwards
+  // for the one aura whose whole job happens while you are moving. What is left is a read-out, so
+  // the aura can still be identified without guessing which one is pointing where.
+  function showTravelDestination(destination) {
+    if (!travelDestinationCurrentEl) return;
+    travelDestinationCurrentEl.textContent = destination || 'Nowhere yet - type /tell <zone> in game';
   }
-
-  travelDestinationSelect.addEventListener('change', () => {
-    window.eqTracker.setWidgetTravelDestination(selectedId, travelDestinationSelect.value);
-  });
-
-  // Note 20. The list in the create panel. A filtered list rather than a dropdown, because 104
-  // zones is more than anyone wants to scroll and the names are the thing people half-remember.
-  function renderTravelDestinationList() {
-    const term = travelSearchInput.value.trim().toLowerCase();
-    const matches = travelZones.filter((z) => !term || z.toLowerCase().includes(term));
-    travelListEl.innerHTML = '';
-    if (!matches.length) {
-      const li = document.createElement('li');
-      li.className = 'hint';
-      li.textContent = 'No zone by that name.';
-      travelListEl.appendChild(li);
-      return;
-    }
-    for (const zone of matches.slice(0, 60)) {
-      const li = document.createElement('li');
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'premade-widget-choice';
-      btn.textContent = zone;
-      btn.addEventListener('click', () => {
-        window.eqTracker.createTravelGuideWidget(`To ${zone}`, zone).then((config) => {
-          closeAddWidgetModal();
-          focusWidget(config.id);
-        });
-      });
-      li.appendChild(btn);
-      travelListEl.appendChild(li);
-    }
-  }
-
-  travelSearchInput.addEventListener('input', renderTravelDestinationList);
 
   fightTimeoutSlider.addEventListener('input', () => {
     const sec = Number(fightTimeoutSlider.value);
@@ -3070,18 +3116,15 @@ function initWidgetsPanel() {
     }
   });
 
-  allProfilesCheckbox.addEventListener('change', () => {
-    // refreshWidgets, because this changes whether the aura is on screen right now - the per-
-    // profile tick boxes beside it do the same for the same reason.
-    window.eqTracker.setWidgetShowOnAllProfiles(selectedId, allProfilesCheckbox.checked).then(refreshWidgets);
-  });
   mergeCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetMergeSameDuration(selectedId, mergeCheckbox.checked).then(refreshWidgets);
   });
   soundLandCheckbox.addEventListener('change', () => {
+    syncSoundDisclosure();
     window.eqTracker.setWidgetSoundOnLand(selectedId, soundLandCheckbox.checked);
   });
   soundExpireCheckbox.addEventListener('change', () => {
+    syncSoundDisclosure();
     window.eqTracker.setWidgetSoundOnExpire(selectedId, soundExpireCheckbox.checked);
   });
 
@@ -3152,6 +3195,39 @@ function initWidgetsPanel() {
     return render;
   }
 
+  // Progressive disclosure for the Sounds section.
+  //
+  // A picker for a sound that is switched off is a control that does nothing, and there were five
+  // of them stacked up. Each one now appears only with its own toggle, and the volume only when
+  // at least one of the three can actually make a noise - a volume slider on a silent aura is the
+  // clearest case of the same problem.
+  //
+  // The warning "toggle" is derived rather than stored: soundWarningSec > 0 IS the on state. That
+  // avoids adding a second persisted field that could disagree with the number it is meant to
+  // describe. Turning it on with no previous value picks 10s so it does something immediately;
+  // turning it off writes 0, which is what every existing aura already means by "off".
+  const DEFAULT_WARNING_SEC = 10;
+
+  function syncSoundDisclosure() {
+    const warnOn = Number(soundWarningSlider.value) > 0;
+    if (soundWarningCheckbox) soundWarningCheckbox.checked = warnOn;
+    if (soundLandRowEl) soundLandRowEl.style.display = soundLandCheckbox.checked ? '' : 'none';
+    if (soundExpireRowEl) soundExpireRowEl.style.display = soundExpireCheckbox.checked ? '' : 'none';
+    if (soundWarningGroupEl) soundWarningGroupEl.style.display = warnOn ? '' : 'none';
+    const anySound = soundLandCheckbox.checked || soundExpireCheckbox.checked || warnOn;
+    if (alertVolumeRowEl) alertVolumeRowEl.style.display = anySound ? '' : 'none';
+  }
+
+  if (soundWarningCheckbox) {
+    soundWarningCheckbox.addEventListener('change', () => {
+      const seconds = soundWarningCheckbox.checked ? DEFAULT_WARNING_SEC : 0;
+      soundWarningSlider.value = String(seconds);
+      soundWarningValueEl.textContent = seconds === 0 ? 'off' : `${seconds}s`;
+      window.eqTracker.setWidgetSoundWarningSec(selectedId, seconds);
+      syncSoundDisclosure();
+    });
+  }
+
   const renderLandSoundPicker = setupSoundPicker('land', 'setWidgetLandSoundId');
   const renderExpireSoundPicker = setupSoundPicker('expire', 'setWidgetExpireSoundId');
   const renderWarningSoundPicker = setupSoundPicker('warning', 'setWidgetWarningSoundId');
@@ -3159,6 +3235,7 @@ function initWidgetsPanel() {
     const seconds = Number(soundWarningSlider.value);
     soundWarningValueEl.textContent = seconds === 0 ? 'off' : `${seconds}s`;
     window.eqTracker.setWidgetSoundWarningSec(selectedId, seconds);
+    syncSoundDisclosure();
   });
   soundWarningLoopSlider.addEventListener('input', () => {
     const seconds = Number(soundWarningLoopSlider.value);
@@ -3911,25 +3988,28 @@ init();
 // slider fell into: an HTML range with no `value` attribute silently falls back to the midpoint
 // of its own range, so an unpopulated 80-160 slider would sit at 120 while the window rendered
 // at 100%.
+// A dropdown rather than a slider, and the reason is worth keeping: this setting rescales the
+// window it lives in. A slider applying on `input` moved itself out from under the cursor on the
+// first pixel of the drag, so the value jumped around and the control was effectively unusable.
+// A dropdown has no such feedback loop - one value, committed once, after the pointer has left.
 function initUiScale() {
-  const slider = document.getElementById('ui-scale-slider');
-  const valueEl = document.getElementById('ui-scale-value');
+  const select = document.getElementById('ui-scale-select');
   const resetBtn = document.getElementById('ui-scale-reset-btn');
-  if (!slider) return;
+  if (!select) return;
 
   function show(pct) {
-    slider.value = pct;
-    valueEl.textContent = `${pct}%`;
+    // Snap to the nearest offered step rather than leaving the box blank: a saved value from the
+    // old slider (which had its own steps) must still select something.
+    const options = Array.from(select.options).map((o) => Number(o.value));
+    const nearest = options.reduce((a, b) => (Math.abs(b - pct) < Math.abs(a - pct) ? b : a));
+    select.value = String(nearest);
   }
 
   window.eqTracker.getUiScale().then((pct) => show(pct || 100));
 
-  slider.addEventListener('input', () => {
-    const pct = Number(slider.value);
-    valueEl.textContent = `${pct}%`;
-    // Applied live on drag so the size can be judged by eye rather than by the number. The main
-    // process clamps and persists, and returns what it actually used.
-    window.eqTracker.setUiScale(pct);
+  select.addEventListener('change', () => {
+    // The main process clamps and persists, and returns what it actually used.
+    window.eqTracker.setUiScale(Number(select.value));
   });
 
   resetBtn.addEventListener('click', () => {

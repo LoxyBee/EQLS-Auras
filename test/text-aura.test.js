@@ -128,7 +128,7 @@ test('it is NOT offered as a fourth Display style radio', () => {
   const values = [...html.matchAll(/name="widget-display-mode" value="([^"]+)"/g)].map((m) => m[1]);
   assert.ok(!values.includes('text'), 'text has been added as a Display style radio');
   assert.match(html, /id="modal-add-text-widget-btn"/, 'the creation button is missing');
-  assert.match(rendererSrc, /window\.eqTracker\.createTextAuraWidget\(name\)/);
+  assert.match(rendererSrc, /window\.eqTracker\.createTextAuraWidget\(widgetName\(/);
   // And the radios are hidden altogether on one, since the type is fixed at creation. Sound-only
   // auras were moved onto the same footing afterwards, so both share this line.
   assert.match(rendererSrc, /displayModeRowEl\.style\.display = isTextAura \|\| isSoundOnly \? 'none' : ''/);

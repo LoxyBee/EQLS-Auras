@@ -137,10 +137,24 @@ test('it is a searchable list, not a dropdown', () => {
   assert.match(rendererSrc, /const BUFF_TIMER_RENDER_CAP = \d+;/, 'an uncapped list is a long scroll nobody reads');
 });
 
-test('the empty and no-match states explain themselves', () => {
+test('an empty box lists everything rather than demanding a search', () => {
   const fn = rendererSrc.match(/function renderBuffTimerList\(\) \{([\s\S]*?)\n  \}/);
   assert.ok(fn, 'renderBuffTimerList has been restructured');
-  assert.match(fn[1], /Type to search/, 'an empty list with no prompt looks broken');
+  // It used to print "Type to search 720 spells..." and render nothing until a query arrived, so
+  // a spell could only be found by someone who already knew its exact name - useless for browsing,
+  // which is what "it should be a drop down" was actually asking for. The empty query must now
+  // fall through to the whole pool.
+  assert.match(
+    fn[1],
+    /query \? pool\.filter\([\s\S]*?\) : pool/,
+    'an empty query must show the full list, not a prompt'
+  );
+  assert.doesNotMatch(fn[1], /Type to search/, 'the type-to-search dead end is back');
+});
+
+test('the no-match state explains itself', () => {
+  const fn = rendererSrc.match(/function renderBuffTimerList\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(fn, 'renderBuffTimerList has been restructured');
   // "None" is not enough: a spell can be perfectly real and still absent because the roster has
   // no landing message for it, which is a different problem from a typo.
   assert.match(fn[1], /landing message/, 'a no-match result does not say why something might be missing');

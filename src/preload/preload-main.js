@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   resetSplitFolder: () => ipcRenderer.invoke('log:resetSplitFolder'),
   openLogFolder: () => ipcRenderer.invoke('log:openFolder'),
   archiveLogNow: () => ipcRenderer.invoke('log:archiveNow'),
+  openArchiveFolder: () => ipcRenderer.invoke('log:openArchiveFolder'),
 
   getActiveBuffs: () => ipcRenderer.invoke('buffs:getActive'),
   getUnknownBuffs: () => ipcRenderer.invoke('buffs:getUnknown'),
@@ -128,6 +129,9 @@ contextBridge.exposeInMainWorld('eqTracker', {
   onShareCodeOffered: (callback) => {
     ipcRenderer.on('shareCode:offered', (_event, offer) => callback(offer));
   },
+  // Also receive-only: this LISTS codes seen in chat this session so a dismissed one can be found
+  // again from "+ Add aura". Picking one fills the ordinary import box; it does not import.
+  getRecentShareCodes: () => ipcRenderer.invoke('shareCode:recent'),
   createSoundOnlyWidget: (name) => ipcRenderer.invoke('widget:createSoundOnly', { name }),
   createTextAuraWidget: (name, preset) => ipcRenderer.invoke('widget:createTextAura', { name, preset }),
   getCastableBuffs: () => ipcRenderer.invoke('buffs:castable'),

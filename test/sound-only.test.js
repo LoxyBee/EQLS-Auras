@@ -158,7 +158,7 @@ test('it is offered in the custom list and reaches a real IPC channel', () => {
   // in both places would have been two routes to the identical thing - exactly the option
   // overload the move exists to reduce.
   assert.match(html, /id="modal-add-sound-widget-btn"/, 'the creation button is missing');
-  assert.match(rendererSrc, /window\.eqTracker\.createSoundOnlyWidget\(name\)/);
+  assert.match(rendererSrc, /window\.eqTracker\.createSoundOnlyWidget\(widgetName\(/);
   assert.doesNotMatch(rendererSrc, /id: 'sound-only'/, 'it is back in the premade list as well');
   // Every hop has to exist or the button throws on click: preload bridge, then main handler.
   assert.match(preloadSrc, /createSoundOnlyWidget: \(name\) => ipcRenderer\.invoke\('widget:createSoundOnly'/);

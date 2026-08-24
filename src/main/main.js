@@ -298,12 +298,34 @@ logService.watcher.on('line', (line) => damageEngine.handleLine(line));
  * that somebody quotes three times produces one offer rather than three.
  */
 const offeredShareCodes = new Set();
+
+// The offer strip is easy to miss and trivial to dismiss - it appears while she is playing, and
+// the one place it must not do is steal focus mid-fight. So a dismissed offer used to be gone for
+// good, with no way back to a code somebody had genuinely sent. These are kept for the session and
+// listed under "+ Add aura", which is where somebody goes when they want the aura, rather than
+// where they happened to be when it arrived.
+//
+// This is a READ-ONLY record. Nothing here imports: picking one still opens the ordinary import
+// screen with every confirmation it already has. See gotcha #24.
+const recentShareCodes = [];
+const RECENT_SHARE_CODE_CAP = 20;
+
+ipcMain.handle('shareCode:recent', () => recentShareCodes.slice().reverse());
+
 logService.watcher.on('line', (line) => {
   const found = matchShareCodeInChat(line);
   if (!found) return;
   if (offeredShareCodes.has(found.code)) return;
   offeredShareCodes.add(found.code);
   const peek = widgetManager.peekShareCode(found.code);
+  recentShareCodes.push({
+    sender: found.sender,
+    channel: found.channel,
+    code: found.code,
+    auraName: peek ? peek.name : null,
+    at: Date.now(),
+  });
+  if (recentShareCodes.length > RECENT_SHARE_CODE_CAP) recentShareCodes.shift();
   const win = getMainWindow();
   if (!win || win.isDestroyed()) return;
   win.webContents.send('shareCode:offered', {
@@ -683,6 +705,7 @@ ipcMain.handle('log:chooseSplitFolder', () => logService.chooseSplitFolder());
 ipcMain.handle('log:resetSplitFolder', () => logService.resetSplitFolder());
 ipcMain.handle('log:openFolder', () => logService.openLogFolder());
 ipcMain.handle('log:archiveNow', () => logService.archiveNow());
+ipcMain.handle('log:openArchiveFolder', () => logService.openArchiveFolder());
 
 ipcMain.handle('buffs:getActive', () => buffEngine.getActiveBuffs());
 ipcMain.handle('buffs:getActiveAllies', () => buffEngine.getActiveAllyBuffs());
@@ -821,7 +844,10 @@ ipcMain.handle('ui:setMergeRule', (_event, rule) => {
   return value;
 });
 
-ipcMain.handle('ui:getTradePing', () => loadJson('tradePingEnabled', false) === true);
+// Defaults ON, at the owner's request. Only the DEFAULT changed - anyone who has deliberately
+// switched it off has `false` stored and keeps it, because the stored value is read first and
+// this fallback is reached only when the setting has never been touched.
+ipcMain.handle('ui:getTradePing', () => loadJson('tradePingEnabled', true) === true);
 ipcMain.handle('ui:setTradePing', (_event, enabled) => {
   const on = enabled === true;
   saveJson('tradePingEnabled', on);

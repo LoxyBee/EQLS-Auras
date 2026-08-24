@@ -1,20 +1,37 @@
 # Testing checklist
 
-Everything built but not yet confirmed working **in real gameplay**. Isolated
-Node tests and clean restarts prove code paths run; they don't prove the app
-behaves correctly against the live log, so nothing counts as done until it's
-been seen working in-game.
+Everything built but not yet confirmed working **in real gameplay**. Isolated Node tests and clean
+restarts prove code paths run; they don't prove the app behaves correctly against the live log, so
+nothing counts as done until it's been seen working in-game.
 
 **Status key**
+
 - `[ ]` not yet tested live
 - `[x]` confirmed working in-game
-- `[!]` tested and FAILED - details inline, needs another pass
+- `[!]` tested and FAILED — details inline, needs another pass
 
-Mark items `[x]` as they're confirmed. When everything in a section is `[x]`,
-move the whole section to "Confirmed" at the bottom so the active list stays
-short.
+Mark items `[x]` as they're confirmed. When every item in a section is `[x]`, move the whole
+section to **[Confirmed](#confirmed)** at the bottom so the active list stays short.
+
+## Contents
+
+| | Group | What's in it |
+|---|---|---|
+| 0 | [Start here](#0--start-here) | The automated tests, and the two things to do before anything else |
+| 1 | [Detection and the roster](#1--detection-and-the-roster) | The app's actual job: deciding what landed and whose it was |
+| 2 | [Debuffs and enemies](#2--debuffs-and-enemies) | Mez, charm, snare, slow — things you cast *at* something |
+| 3 | [Making auras](#3--making-auras) | Premades, custom timers, trigger conditions |
+| 4 | [How auras look](#4--how-auras-look) | Tiles, colours, merging, text, the move box |
+| 5 | [When auras show](#5--when-auras-show) | Loadouts, zones, hiding, the hotkey |
+| 6 | [Sounds and alerts](#6--sounds-and-alerts) | Every noise the app makes |
+| 7 | [The app window](#7--the-app-window) | Text size, sidebar, share codes, QOL |
+| 8 | [Session, memory and stability](#8--session-memory-and-stability) | Restore, gem bar, crashes |
+| 9 | [Built, but nothing to test](#9--built-but-nothing-to-test) | Recorded so it isn't lost |
+| — | [Confirmed](#confirmed) | Done, kept as regression guards |
 
 ---
+
+# 0 — Start here
 
 ## Run the automated tests first
 
@@ -22,249 +39,49 @@ short.
 npm test
 ```
 
-Zero dependencies, a few seconds, and it covers a lot of what used to need a
-character standing in a zone. If it is red, nothing below is worth doing yet -
-read the failure text, it says what broke and why.
+Zero dependencies, a few seconds, and it covers a lot of what used to need a character standing in
+a zone. If it is red, nothing below is worth doing yet — read the failure text, it says what broke
+and why.
 
-Eighteen suites at the time of writing:
+**36 suites, 570 cases.** The ones worth knowing by name, because each guards something that broke
+for real once:
 
 | Suite | Guards |
 |---|---|
-| `test/pin.test.js` | the userData pin, including the realistic way to break it - adding a `require` above it in `main.js` |
-| `test/roster.test.js` | roster shape, and a snapshot of what detection can do, so a change that quietly costs coverage fails loudly |
-| `test/roster-migration.test.js` | the one-time roster replacement: custom buffs survive, overlay choices survive, it runs once, and it writes nothing into app data |
-| `test/memorized-cap.test.js` | the fourteen-gem cap, including re-memorising refreshing an entry and an oversized saved file healing on load |
-| `test/focus-game.test.js` | the refocus-EverQuest call: targets `eqgame` by process name, restores a minimised window, never throws |
-| `test/renderer-wiring.test.js` | the settings window's markup against its script: every id looked up exists, every slider is populated from the aura, modals opt out of the drag region |
-| `test/trade-ping.test.js` | the trade-request line pattern, run against your own real logs - it must fire on requests and on nothing else |
-| `test/sound-only.test.js` | sound-only auras: the mode survives saving and sharing, a foreign mode cannot arrive by either import route, every aura type still carries every sound setting, and the overlay's early return stays between the alerts and the drawing |
-| `test/visibility.test.js` | the whole precedence model - profile membership as the on/off switch, "Hide auras" beating unlock, unlocking one aura beating its profile, and off meaning silent as well as invisible |
-| `test/move-box.test.js` | the name pill in the move box: that it opts out of the drag region (a click inside one never fires), that it does not swallow the draggable area, and that every hop from the pill to the settings page exists |
-| `test/buff-timer-premade.test.js` | the Buff timer premade: that it builds one-spell auras in a single call, offers only spells the app can detect, and refuses to offer ally tracking for a spell that has no third-person message |
-| `test/infinite-duration.test.js` | spells that never run out: that they are marked in the overrides file with a reason, that no sweep removes them, that nothing instant got marked by mistake, and the three places where `null <= 30` being true would have broken them |
-| `test/detection.test.js` | the detection engine's first real coverage - a landing starts a timer, its ended text stops it, a blocked buff never lands, someone else's cast is not counted as yours, and a spell with no duration produces no tile instead of an unkillable one |
-| `test/spellbook-diagnostic.test.js` | that the spellbook status says what is missing and how to fix it, rather than promising it will appear on its own |
-| `test/category-borders.test.js` | the coloured edges: that the roster's categories, the overlay's list and the stylesheet's colours all still agree, since a spell whose category nothing has a colour for loses its edge silently |
-| `test/text-aura.test.js` | text auras: the one-tile rule, what the words say, that it never becomes a fourth Display style radio, and that the dispel announcer's attested trigger still appears in your own logs |
-| `test/merged-tiles.test.js` | the merging maths run for real - both rules, per-person bucketing, which member the tile names - plus the two places merging meets the rest of the overlay: glow and sound matching members rather than tile keys, and a changing count forcing a rebuild |
-| `tools/lib/xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
+| `pin.test.js` | the userData pin, including the realistic way to break it — adding a `require` above it in `main.js` |
+| `roster.test.js` | roster shape, and a snapshot of what detection can do, so a change that quietly costs coverage fails loudly |
+| `roster-migration.test.js` | the one-time roster replacement: custom buffs survive, overlay choices survive, it runs once, and it writes nothing into app data |
+| `detection.test.js` | a landing starts a timer, its ended text stops it, a blocked buff never lands, someone else's cast is not counted as yours, and a spell with no duration produces no tile instead of an unkillable one |
+| `memorized-cap.test.js` | the fourteen-gem cap, including re-memorising refreshing an entry and an oversized saved file healing on load |
+| `focus-game.test.js` | the refocus-EverQuest call: targets `eqgame` by process name, restores a minimised window, never throws |
+| `renderer-wiring.test.js` | the settings window's markup against its script: every id looked up exists, every slider is populated from the aura, modals opt out of the drag region |
+| `visibility.test.js` | the whole precedence model — profile membership as the on/off switch, "Hide auras" beating unlock, unlocking one aura beating its profile, and off meaning silent as well as invisible |
+| `infinite-duration.test.js` | spells that never run out, and the three places where `null <= 30` being true would have broken them |
+| `merged-tiles.test.js` | the merging maths, per-person bucketing, and glow/sound matching members rather than tile keys |
+| `overwrite-and-failures.test.js` | the twelve "this cast failed" patterns, nine of which once matched nothing at all |
+| `damage-parser.test.js` | the five damage wordings and the friend/enemy rules, each broken on purpose in nine ways |
+| `zone-routing.test.js` | all 10,712 routes, including the tie-break that looks like dead code and is not |
+| `xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
 
-If the roster capability snapshot fails after a deliberate roster change, read
-the printed delta, and if every moved number is intended:
+The other 22 cover cooldowns, enemy debuffs, gem slots, the resist flash, share codes, sound-only
+auras, text auras, the song pulse, zone gating, premades, the profile label and the settings panel
+layout.
+
+If the roster capability snapshot fails after a deliberate roster change, read the printed delta,
+and if every moved number is intended:
 
 ```
 node test/roster.test.js --update
 ```
 
----
+## Do these two first
 
-## NEEDS THE LIVE CLIENT - Shara only
+Everything else can wait behind them — the first costs you detection you are currently losing, and
+the second changes what the whole app is working from.
 
-Everything in this section was **deliberately not attempted** in the build
-environment. It needs EverQuest actually running, and driving the app by
-synthetic clicks while a real session is open is not safe - during this work a
-stray automated click landed in the game window, which is exactly the reason
-this section exists.
+### 1. Your spellbook file is missing, and it is costing you a lot
 
-Nothing here has been verified. Treat every item as unknown, not as working.
-
-### Refocus EverQuest after answering an ambiguous cast *(new)*
-
-The call itself is unit-tested; whether Windows honours it is not testable
-without a real desktop. Windows refuses foreground changes from a process that
-is not already foreground under some conditions, so this is the one that most
-plausibly does nothing in practice.
-
-- [ ] Answer an ambiguous cast popup with EQ behind it. *Expect*: EQ comes to
-      the front by itself, no alt-tab needed.
-- [ ] With **several** questions queued, answer the first. *Expect*: focus does
-      NOT jump to the game yet - it should only happen once the last one is
-      answered, or you get thrown out of the popup mid-way.
-- [ ] Answer a question with EQ **minimised**. *Expect*: the game is restored,
-      not merely focused.
-- [ ] Close EQ, trigger a question from a replayed log, answer it. *Expect*:
-      nothing happens and no error appears.
-
-### The un-clickable name box in "New loadout profile" *(fix applied, unconfirmed)*
-
-The window is frameless and its title bar is a drag region. Drag regions are
-hit-tested by Windows before the page sees the click, so modal content
-overlapping the top 32px cannot be clicked - the click moves the window instead.
-A tall modal in a short window centres far enough up for that to reach its first
-input, which fits the symptom. Modals now opt out of the drag region.
-
-**This was never reproduced, so the diagnosis may be wrong.**
-
-- [ ] Open the `+` new-profile dialog and click the name box. *Expect*: a
-      cursor appears and typing works.
-- [ ] Repeat with the window **as short as it goes** (480px minimum) and with
-      several auras configured, so the checklist makes the modal tall. This is
-      the case the theory predicts used to fail.
-- [ ] Repeat maximised. If it fails **here**, the diagnosis is wrong - say so,
-      because the real cause is then still unfound.
-
-### App text size *(new - needs looking at)*
-
-Scaling is done with Electron's zoom factor rather than by rewriting the
-stylesheet, because main-window.css carries 316 hardcoded px values across 39
-distinct sizes and converting all of them by hand, with no layout tests, would
-get some wrong in ways only visible by eye. Zoom scales text, spacing and
-controls together and cannot drift out of step with itself.
-
-The wiring is tested; how it *looks* is not. I attempted a screenshot and could
-not get a reliable one without stealing focus from the running game, so this is
-yours.
-
-- [ ] **Setup > App text size** moves the whole window together - text, padding,
-      buttons - with nothing clipped or overlapping at 80% or at 160%.
-- [ ] **It survives a restart.** Set 130%, close, reopen. *Expect*: still 130%,
-      and the slider reads 130 rather than snapping back.
-- [ ] **Your auras are unaffected** at every setting. They have their own sizes
-      per aura and must not move.
-- [ ] **Reset returns to 100%.**
-- [ ] At 160%, check the **frameless title bar** still looks right and the
-      window can still be dragged and closed.
-- [ ] **Auras must NOT rezoom.** Set 160%, then look at an aura. Chromium keys
-      zoom by origin within a session, and every window here loads a `file://`
-      page in the same session - so "it cannot leak" is an assumption, not
-      something the code enforces. If auras DO change size, say so: the fix is
-      to give them their own session partition.
-- [ ] **Ctrl+R does not reset it.** Reload the window at 130%. *Expect*: still
-      130%. An earlier version used a one-shot listener that did not re-arm.
-- [ ] At 160%, open a modal (Add aura) and check its content is reachable -
-      a scaled-up modal is taller, which is exactly the case the drag-region
-      fix above is about.
-
-### Resizable sidebar *(new - needs looking at)*
-
-- [ ] **Drag the edge of the sidebar.** *Expect*: it resizes smoothly, the
-      cursor becomes a horizontal resize arrow over the handle, and the drag
-      keeps working when the pointer moves fast enough to outrun the handle.
-- [ ] **It survives a restart.** Widen it, close, reopen. *Expect*: still wide.
-- [ ] **Double-click the handle** restores the default width.
-- [ ] **Shrink the window very narrow, then widen it again.** *Expect*: the
-      sidebar gives way while narrow, and your chosen width comes back when
-      there is room. It must NOT be permanently shrunk - that is the specific
-      bug the two-clamp split exists to prevent.
-- [ ] **Profile tooltips still escape the sidebar** rather than being clipped -
-      the reason a real handle was used instead of CSS `resize`.
-- [ ] **At 640px wide** (the minimum window width) the widest pages still read
-      sensibly. The page area gained `min-width: 0`, which changes how narrow
-      windows lay out independently of the sidebar.
-- [ ] **Combined with App text size at 160%**, both still behave - the sidebar
-      width is in CSS pixels, so zoom scales it too.
-
-### Trade request ping *(new - needs looking at)*
-
-The line pattern is tested against your real logs; whether a sound comes out of
-your speakers is not testable here.
-
-- [ ] **Turn it on in Setup > Trade requests.** *Expect*: a two-note ping the
-      moment you enable it, confirming what was just switched on.
-- [ ] **Test button** plays the same ping.
-- [ ] **Have someone request a trade.** *Expect*: the ping fires once, and
-      nothing appears on screen - this is the first sound in the app with no
-      tile behind it.
-- [ ] **Complete or cancel that trade.** *Expect*: NO further ping. Only the
-      request pings, deliberately.
-- [ ] **It survives a restart** with the checkbox still ticked.
-- [ ] **With the setting off**, a trade request pings nothing.
-- [ ] Worth one check: **does it ping when the settings window is minimised?**
-      It lives in that window's renderer. The window stays alive for the app's
-      whole lifetime, so it should - but browsers throttle background timers,
-      and if it turns out to miss pings while minimised, say so.
-
-### Sound-only auras *(new - needs looking at)*
-
-A new **Display style: Sound only**, plus a **Sound only** entry in the premade
-list. An aura in this mode draws nothing at all and exists purely to make a
-noise. Everything below is about whether the sound actually reaches your
-speakers and whether the aura truly leaves no mark on screen - neither of which
-can be checked without the client.
-
-The one thing worth watching hardest is the third item. A sound-only aura is
-deliberately exempt from the auto-hide-when-EverQuest-is-unfocused behaviour,
-because there is nothing of it on screen to hide and a hidden window is one
-Chromium is entitled to throttle. That reasoning is sound but it has not been
-observed, and if it is wrong the symptom is a missed alert, not an error.
-
-- [ ] **Add one from "+ Add aura" > Custom aura > Custom sound aura.** *Expect*: it lands on its
-      own settings page, drawing nothing anywhere on screen. It used to be a Display style radio
-      and a premade; both are gone, so check there is now exactly ONE way to make one.
-- [ ] **Check the Display style radios are not shown** on a sound aura or a text aura, and that
-      List and Icons are the only two options on your other auras.
-- [ ] **Switch a sound aura's "Buffs shown" to "Your own text triggers"** and add one. *Expect*:
-      the option is there, and the trigger makes the noise.
-- [ ] **The settings page hides what cannot apply**: no Sort by, no Opacity, no
-      Unlock/Reset position, no Timer text or Alerts sections. Sounds, Buffs
-      shown, profiles and the name box all stay.
-- [ ] **Pick a buff under "Buffs shown", leave "Play a sound when a buff
-      expires" on, and let that buff run out.** *Expect*: a sound, and nothing
-      drawn at any point.
-- [ ] **Do the same with EverQuest in focus, then with the app in focus and
-      EverQuest behind it, then with EverQuest minimised.** *Expect*: the sound
-      every time. If it goes quiet in any of those, say which - that is the
-      throttling question above, and it is the most likely thing to be wrong.
-- [ ] **Unlock it** (via "Unlock all auras" on the overview, since it has no
-      unlock button of its own). *Expect*: still nothing on screen - no dashed
-      blue box. Every other aura should still show theirs.
-- [ ] **Switch an existing aura that has tiles on screen to Sound only.**
-      *Expect*: its tiles disappear immediately, without waiting for a buff to
-      change, and it keeps making its sounds.
-- [ ] **Switch it back to List.** *Expect*: it returns exactly as it was -
-      same width, same opacity, same sort order. Nothing should have been lost.
-- [ ] **Untick every profile for it.** *Expect*: it goes silent. Profile
-      membership is still the on/off switch, and this is the check that it did
-      not get exempted along with everything else.
-- [ ] **Restart the app.** *Expect*: it is still sound-only, still silent on
-      screen, still audible.
-- [ ] **Export its share code and import it back.** *Expect*: the copy is
-      sound-only too. A custom sound FILE deliberately does not travel - the
-      copy falls back to the default beep, which is correct, not a bug.
-- [ ] **Pick a custom sound file for it, then press Export.** *Expect*: a line under the code
-      saying the file will NOT travel, worded more strongly than on an ordinary aura because for
-      this one the sound is the whole aura. With only the default beeps, no message at all.
-
-### Sounds on every aura type
-
-Sound settings were already available on every kind of aura; nothing needed
-adding. Worth one pass to confirm that is true in practice as well as in the
-markup.
-
-- [ ] Open the **Sounds** section on Self Buffs, on an Ally Buffs aura, on a
-      custom buff aura, and on a custom timer aura. *Expect*: the same
-      controls in all four, and the volume slider showing that aura's own
-      saved value rather than always 100%.
-- [ ] The volume slider stays **0-100**, as asked. If a sound is too quiet at
-      100, that is the source file, not the slider.
-
-### Hide all auras, and unlocking a switched-off aura *(new - needs looking at)*
-
-Notes 4 and 31, built as one change because separately they argue over which override wins.
-There is a new **Hide auras** button at the right-hand end of the profile bar, always visible.
-
-- [ ] **Press Hide auras.** *Expect*: every aura disappears at once, and the button turns red and
-      reads "Auras hidden - show". Press again and they all come back exactly as they were.
-- [ ] **Press the Pause key**, with EverQuest focused. *Expect*: exactly the same thing, and the
-      button in the app updates to match even though you never touched it.
-- [ ] **Confirm Pause does nothing in EverQuest any more** while the app is running. That is the
-      cost of a global hotkey and the reason you were asked to pick a key you do not use.
-- [ ] **Close the app and press Pause again.** *Expect*: EverQuest gets the key back.
-- [ ] **Unlock an aura, then press Hide auras.** *Expect*: it hides too. Hiding deliberately
-      beats unlocking - if that turns out to be the wrong way round for you, it is one line.
-- [ ] **Restart the app while auras are hidden.** *Expect*: they come back visible. The hide is
-      deliberately not remembered, so a forgotten one cannot look like a broken app.
-- [ ] **Untick every profile for an aura so it is switched off, then press its Unlock to move.**
-      *Expect*: it appears on screen so you can drag it, even though it is switched off. Lock it
-      again and it goes away. This did nothing at all before.
-- [ ] **Do the same but with "Unlock all auras" instead.** *Expect*: your switched-off auras stay
-      away. Only unlocking one by hand pulls it onto the screen.
-- [ ] **Move a switched-off aura while it is unlocked, then re-lock, then switch its profile back
-      on.** *Expect*: it is where you put it.
-
-### Your spellbook file is missing, and it is costing you a lot *(do this one first)*
-
-Across your eight logs - 1.6 million lines - **14,650 buff landings were thrown away** because the
+Across your eight logs — 1.6 million lines — **14,650 buff landings were thrown away** because the
 app could not tell whether they were yours, and about **11,000 more became questions** for the same
 reason. The cause is that `<Character>-<CLASS>-Spellbook.txt` has never existed in your EQ folder.
 EverQuest reuses the same buff wording across many spells; your spellbook is what tells the app
@@ -274,38 +91,334 @@ The Setup page used to say it would "pick it up automatically once detected", wh
 is why nobody went looking. It now says what is missing and why it matters.
 
 - [ ] **Run your client's output-file command for your spellbook**, logged in on that character,
-      then restart the app.
-- [ ] **Check Setup > Spellbook detection.** *Expect*: "Found - N spells", and the amber warning
+      then restart the app. The command is **`/outputfile spellbook`**, shown on the Setup page
+      with a **Copy** button next to it.
+- [ ] **Check Setup > Spellbook detection.** *Expect*: "Found — N spells", and the amber warning
       gone.
 - [ ] **Play a session and compare.** *Expect*: noticeably fewer ambiguity prompts, and buffs
       appearing that used to be silently missing.
-- [ ] The command is **`/outputfile spellbook`**, shown on the Setup page with a **Copy** button
-      next to it.
 - [ ] **If you are willing, send the file back with the repo.** The before/after numbers above are
       measured against a reconstruction; a real one would make them exact.
 
-### Spells that never run out *(new - Yaulp and Fury)*
+### 2. The new spell roster
 
-You said some of the zero-duration spells are genuinely unlimited rather than missing a number,
-and named Yaulp and Fury. Those now show a tile with **an infinity symbol instead of a countdown**,
-a full bar, sorted to the bottom of the list, and they never disappear on their own.
+The roster went from 11,337 generic EverQuest entries to the 1,052 spells this server actually has,
+rebuilt from the curated spreadsheet plus the game's own `spells_us.txt` / `spells_us_str.txt`. On
+first launch a one-time migration replaces the roster in your saved data. Automated tests cover the
+mechanics; these cover whether it is *right* in play.
 
-- [ ] **Cast Yaulp** (any rank - all three are marked) **and Fury.** *Expect*: a tile that shows
-      an infinity sign where the timer would be, and stays.
-- [ ] **Let one end** - dispelled, zoned, or however it normally goes. *Expect*: the tile
+Measured against the 19 Aug log before shipping: recognised landing lines went 45 → 83, and
+auto-confirmed 19 → 49. So expect **more** buffs to be picked up and **fewer** questions, not the
+reverse.
+
+- [ ] **First launch after the update.** *Expect*: the app starts normally, Known Buffs shows about
+      1,052 entries rather than 11,000+.
+- [ ] **Your auras still work.** Every aura you had configured still tracks the same buffs. *If any
+      aura went blank, stop and report which* — that is the one outcome that matters most.
+- [ ] **Fewer ambiguity prompts** for spells you cast often. Prompts should be noticeably rarer.
+- [ ] **No prompt asks you to choose between a spell and itself** (e.g. two ranks of Cannibalize).
+      Rank variants are collapsed; if one appears, the collapsing missed a case.
+- [ ] **Promised Renewal reads 15s**, not 18s or 12s, and does not grow with AA duration bonuses.
+- [ ] **Icons still render** on the overlay — the new roster carries icon ids for 1,051 of 1,052.
+- [ ] **A buff that used to be recognised no longer is.** Watch for this specifically. Five spells
+      in the whole roster genuinely cannot be detected (Calm-line spells that print no text at all)
+      — anything beyond those is a regression worth reporting.
+- [ ] **Bard songs** still detect and still sit at the right-hand end of the gem bar.
+
+**If something is badly wrong.** The old roster is at `archive/buffs-legacy-11337.json`, kept for
+reference. Do **not** copy it back over `src/shared/data/buffs.json` — the app has already migrated
+and it would re-introduce the ambiguity the rebuild removed. Report what broke instead; the roster
+is rebuildable from the spreadsheet in a minute with `node tools/build-roster.js --write`.
+
+---
+
+# 1 — Detection and the roster
+
+## The detection engine
+
+- [ ] **Quick Buff burst no longer ignores already-active buffs.** Restart the app while several
+      self-buffs are already up in-game (so the memorized gem bar starts empty/red), then trigger a
+      Quick Buff. *Expect*: nothing silently `IGNORED` that should have landed. Cross-check the
+      detection log for `IGNORED ... not currently memorized` lines that look wrong.
+- [ ] **Heal-proc auto-resolve.** Cast a buff whose landing text is ambiguous but which also procs
+      a heal message — Talisman of Altuna, Symbol of Naltron, Resolution. *Expect*: it resolves
+      silently instead of raising an ambiguous-cast prompt. The log should show
+      `auto-resolved by a heal-proc line`.
+- [ ] **Bard songs no longer wrongly IGNORED as "not memorized".** Sing your own songs and watch
+      the detection log. *Note*: only partly addressed — the underlying early-return bug (P0 in
+      `CLAUDE.md`) is NOT fixed, so this may still misbehave. Report what you see.
+
+**Where the detection log lives:** a `detection-logs` folder, one file per day, old ones cleaned up
+after a fortnight. **Log page → Diagnostics → "Open the detection log folder"**, with the full path
+printed beside the button so you can reach it when the app is not running.
+
+## Rank collapsing
+
+- [ ] **Ranked spells no longer prompt.** A landing text shared only by ranks of one spell (e.g.
+      "A soft mist surrounds you." — Shauri's Sonorous Clouding plus I/II/III) resolves silently to
+      the LOWEST rank. All ranks stay listed in Known Buffs — only the prompt is gone.
+- [ ] **Genuinely different spells still prompt.** "Your mind clears." (Brilliance vs Cassindra's
+      Chant of Clarity) must still ask.
+
+## Buff durations scale with spell rank (notes 11 and 17)
+
+You said duration should be "base duration from the roster, multiplied by the AA's, exaltations,
+and rank of the spell". That is in. The rank is the numeral outside the name field — the one the
+log prints when *you* cast something.
+
+- [ ] **Cast a ranked buff and check the countdown.** Spirit of the Puma VII should start around
+      168 seconds if your duration AAs are maxed, against 60 at rank 0 with no AAs. The exact
+      number depends on your AA setting in the app, which is still 0 unless you have set it.
+- [ ] **Celestial Healing IV** should start at about 48 seconds on maxed AAs.
+- [ ] **Promised Renewal** should stay at 15 seconds at every rank. It ignores both rank and AAs —
+      measured across 225 of your castings.
+- [ ] **A groupmate's buff on you keeps its plain roster duration.** Their rank is in the log, but
+      nothing links which of their casts caused which landing, so I left it unscaled rather than
+      guess. If you see a groupmate's buff timing out early, that is why, and it is worth telling
+      me.
+- [ ] **Set your AA and exaltation levels, then check a mez.** Mesmerize should NOT get longer when
+      you raise them. Buffs should.
+
+**A bug this turned up, which would have hit you the moment you set your AA level.** The app was
+applying the AA duration bonus to *everything* — including debuffs, damage-over-time and mez. Your
+own logs say that is wrong: on 9 and 10 August, when your buffs measured x1.53, Curse measured
+31–36 seconds against a base of 30 across 31 castings. If the bonus applied it would have been 45.
+So 155 roster entries would have started over-timing by up to 65% — a mez timer still counting down
+long after the mob woke up.
+
+**Corrected 23 August, on your instruction:** the AA bonus now applies to spells marked **buff** and
+nothing else. I had it applying to buff, heal, heal-over-time and pet summons, on the reasoning that
+the bonus is for beneficial spells and those are the beneficial categories. That was me inferring
+and calling it a measurement.
+
+One observation still looks like it disagrees, and I want to flag it rather than bury it.
+Celestial Healing IV measures 48 to 78 seconds across 32 castings; the mote tier alone predicts 29.
+I re-measured rather than trusting the earlier number, and it holds. But I no longer think it is
+evidence of anything: a fixed-duration spell measures *tightly* — Spirit of the Puma VII lands in a
+14-second band — and a 30-second spread whose median matches no prediction says the
+landing-to-wear-off gap for a heal over time is not its duration at all.
+
+- [ ] **If a heal-over-time countdown looks wrong in game**, that is the thing to tell me about —
+      it is the one number I could not reconcile.
+- [ ] **Debuff and charm/mez rates per tier.** The spreadsheet says +10% per tier and marks it
+      *assumed*; every observation in your logs was cut short by the mob dying before the spell ran
+      out, so I have nothing to check it against. **Togor's Insects V should show 315 seconds**
+      against a base of 210. If it wears off noticeably early or late, that number is the suspect.
+
+## Duration scaling exclusion
+
+- [ ] **"No AA scaling"** in Known Buffs. Tick it on Promised Renewal. *Expect*: its timer uses the
+      raw duration, ignoring your Spell Casting Reinforcement / Extended Enhancement bonus. Other
+      buffs unaffected. *Note*: Inferno Shield is a SEPARATE problem — don't expect this flag to
+      fix it.
+
+## Spells that never run out (Yaulp and Fury)
+
+You said some of the zero-duration spells are genuinely unlimited rather than missing a number, and
+named Yaulp and Fury. Those now show a tile with **an infinity symbol instead of a countdown**, a
+full bar, sorted to the bottom of the list, and they never disappear on their own.
+
+- [ ] **Cast Yaulp** (any rank — all three are marked) **and Fury.** *Expect*: a tile showing an
+      infinity sign where the timer would be, and it stays.
+- [ ] **Let one end** — dispelled, zoned, or however it normally goes. *Expect*: the tile
       disappears when the game says it has faded.
-- [ ] **Check it is NOT coloured red** as though it were about to expire, and does not set off a
-      warning sound. Those two were real traps in the code and are guarded, but worth seeing.
-- [ ] **Check where it sits in the list.** *Expect*: at the bottom, not the top - it is the least
-      urgent thing on screen, not the most.
+- [ ] **Check it is NOT coloured red** as though about to expire, and does not set off a warning
+      sound. Those two were real traps in the code and are guarded, but worth seeing.
+- [ ] **Check where it sits in the list.** *Expect*: at the bottom, not the top — it is the least
+      urgent thing on screen.
 - [ ] **Frenzy and Rage share Fury's exact fade message** and are probably the same. I have NOT
       marked them, because you named Fury and guessing on your behalf is how a wrong number gets
-      into the roster. Confirm and they are a two-line addition to
-      `tools/roster-overrides.json`, which now carries the instructions.
+      into the roster. Confirm and they are a two-line addition to `tools/roster-overrides.json`.
 
-### The "Buff timer" premade *(new - the first one that asks a question)*
+## Instant spells — nukes, heals, gates
 
-"+ Add aura" > Premade aura > **Buff timer**. Pick one spell, say whether you are watching it on
+Your rule: a spell with no real duration should not clutter a duration-based aura, but should be
+available to sound and text auras "just in case someone wants feedback when a cast is successful or
+resisted". That is now how it works.
+
+- [ ] **Watch a normal aura during a fight.** *Expect*: no tiles for your nukes or heals, and no
+      tile stuck showing NaN. That last one was the bug — it could only be cleared by restarting.
+- [ ] **Make a sound aura, pick a heal or a nuke, turn on the land sound.** *Expect*: it makes the
+      noise when the spell goes off, with nothing drawn.
+- [ ] **Make a text aura and point it at the same spell.** *Expect*: the words appear briefly and
+      then clear themselves.
+- [ ] **"Briefly" is now yours to set.** A text aura has a **Show events for** slider, 1 to 60
+      seconds, defaulting to 6. Change it and check the words stay up for as long as you asked.
+- [ ] **Cast the same nuke twice in a row on a sound aura.** *Expect*: it makes the noise BOTH
+      times. An event has no timer to watch go back up, so this needed its own handling — the first
+      version would have beeped once and then gone quiet.
+
+**The open decision underneath this.** 275 spells in the roster have a landing message but no
+duration. I fixed the NaN tile by refusing to track them, measured it against all 1.6 million
+lines, and then **reverted it** — because it removed 67 spells and 18,405 landings. 36 of those are
+nukes and heals that should never have had a timer, but 31 are real buffs: Armor of Protection,
+Barbcoat, Fury, Wolf Form, Yaulp II, Shrink, Feign Death. Dropping those is a real loss, so the
+trade is yours rather than mine.
+
+- [ ] **Decide what those spells should do.** The three options, honestly: **(a)** show with no
+      countdown at all and disappear when their "ended" message arrives — works for 18 of the 31,
+      and loses least; **(b)** get a default length, which means the app inventing a number;
+      **(c)** not be tracked at all, which is what my reverted fix did.
+
+## Stale timers when a buff is replaced (note 26)
+
+This turned out to need no stacking rules at all — the game announces it.
+
+- [ ] **Overbuff a groupmate.** Cast a weaker buff on someone, then a stronger one of the same
+      line. The weaker tile should disappear when the game says "Your \<spell\> spell on \<name\>
+      has been overwritten", not keep counting down.
+- [ ] **Overbuff yourself** — cast a weaker buff on yourself, then a stronger one of the same line.
+      The first tile should go and the second appear, with the longer duration.
+- [ ] **A buff wearing off a groupmate clears its tile** rather than running to zero on the app's
+      own guess.
+- [ ] **A groupmate dying does NOT clear their buffs.** They will probably be rezzed, and forgetting
+      is the app inventing a change the log never reported. A mob dying still clears its debuffs.
+
+**What changed underneath.** Nine of the twelve "this cast failed" patterns matched nothing at all —
+they were written from memory of EverQuest's wording rather than from your logs. The game says
+"Your \<spell\> spell fizzles!", not "Your spell fizzles"; "did not take hold", not "would not take
+hold". Fixed, and every pattern now carries the count it was measured at. Two casts across your
+whole log history stop being credited as landings, both Dexterity, both cases where the cast
+demonstrably failed. Nothing else moved.
+
+**Buffs on yourself are covered too — I was wrong about this twice.** I said the app could not tell
+Nimble from Agility because they share a fade message. It can: it only matters if both are running
+at once, and the stacking rule that causes the overwrite is the same rule that stops that
+happening. Verified with Skin like Wood being replaced by Skin like Steel, which share a fade
+message with nineteen other spells.
+
+## The Ally Buffs bug (note 28) — needs one more occurrence
+
+I still cannot fix this without seeing it happen once more, but I have stopped it needing to happen
+*twice*.
+
+My best guess at the cause: when you activate something, the app opens a short window and treats
+buff landings inside it as yours. If a groupmate casts on somebody during that window, it can get
+credited to you. The trouble was that the detection log said only "burst context" for both the
+correct case and the wrong one, so a report of it looked identical to normal operation.
+
+The log now records **what opened the window and how long ago**:
+
+```
+ALLY LANDED "Spirit of the Puma" on "Avenrae" - burst context
+(burst opened 4.2s ago by "Cannibalize"), unique third-person landing text
+```
+
+The age is the telling part. Half a second after you pressed something is probably genuinely yours;
+eight seconds later is probably somebody else's cast arriving inside your window.
+
+- [ ] **Next time you see a buff on Ally Buffs you did not cast**, note the buff name and roughly
+      the time, then send me that day's file from the `detection-logs` folder. With the burst
+      origin in there I should be able to say what happened without you having to reproduce it.
+
+---
+
+# 2 — Debuffs and enemies
+
+## Debuffs on enemies (mez, charm, snare, slow)
+
+This is off until an aura asks for it. Tick **"Also watch these on enemies"** on a custom aura, and
+the spells that aura is watching start tracking on the things you cast them at.
+
+It has to be opt-in. A mob's name is not one alphabetic word — "a greater kobold" — so the
+recipient check rejected it, which is why mez and charm never tracked. Relaxing that check for
+everything would let 160,000 landings through, over 100,000 of them from two bard songs pulsing on
+everything in range.
+
+- [ ] **Mez a mob and the tile appears with its name on it** — "a greater kobold", not blank and
+      not your own name.
+- [ ] **The tile clears when the mob dies**, without waiting for the timer.
+- [ ] **The tile clears when the mez breaks** rather than counting down to zero while the mob is
+      already hitting you.
+- [ ] **Mesmerize runs 30 seconds, not 24.** The spreadsheet said 24; your own note-17 table said
+      30, and 90 natural expiries in your logs stop dead at 30 with nothing above it, so the roster
+      now says 30. Worth one check against a stopwatch.
+- [ ] **Turning it off puts everything back.** Untick it and the mob tiles should stop appearing
+      entirely.
+- [ ] **Nothing MIS-fires** — a mob name must never be mistaken for a groupmate.
+
+**One change that happens whether or not you turn this on**, so it is worth knowing about rather
+than being surprised by: a debuff tile now disappears when the log says the debuff ended — the mob
+died, or the spell wore off — instead of sitting there until its timer runs out. Across your logs
+that is 277 tiles, roughly one every few hours of play. Nothing stopped being *detected*; things
+stop being *shown* once they are over. If you would rather they stayed put, say so — it is one line.
+
+## Counting mobs with the same name (notes 12 and 18)
+
+- [ ] **AoE mez three "a greater kobold" and the tile should say x3.** One tile, not three rows.
+- [ ] **Kill one — it becomes x2. Kill another — x1.** At x1 the count disappears entirely rather
+      than showing "x1".
+- [ ] **The countdown is the one breaking soonest**, not the last.
+- [ ] **A mez wearing off, a mob dying, and a mez being broken each remove exactly one**, not all.
+- [ ] **Buffing a groupmate three times still shows one**, with no count. A re-buff is a refresh,
+      not a second target.
+
+Worth knowing what this cannot do: the game never distinguishes two mobs with the same name, so
+when one of three kobolds wakes up the app knows only that *one* did. It drops the one closest to
+expiring, which is the best guess available and is right nearly always.
+
+**Also worth knowing before you test it:** `Mesmerize` is single-target, and 214 of your 239 casts
+produced exactly one landing. Every AoE case in your logs is somebody else's `Mesmerization VI` or
+`VII`. So the counting is sound but the tile will not light up until you cast a ranked mez.
+
+## Someone else casting a mez
+
+Add Aura → **Someone else cast a mez**. Or tick **"Warn me when someone else casts these"** on any
+text-only aura. This is your design, built the way you specified it: a warning, no countdown.
+
+- [ ] **When a groupmate casts a mez, the warning appears** and names them — "Lumbarin cast
+      Mesmerization VII - careful".
+- [ ] **It appears as they START casting**, roughly two seconds before the mez actually lands. That
+      is deliberate: a warning after the fact is too late to stop you swinging. The cost is that a
+      cast which gets resisted still warns you — about one time in ten.
+- [ ] **It names whoever cast it rather than saying "a party member".** In your logs, half the mez
+      and charm casts by other people are mobs — ``A Teir`Dal ranger``, "A negotiator" — and the
+      game's line does not say which is which. Naming them is right every time, and a mob casting
+      mez is worth knowing about too. Say the word if you would rather it only ever mentioned
+      actual group members and I will explain what that costs.
+- [ ] **Your own casts never trigger it.**
+- [ ] **There is no timer on it, anywhere.** If you ever see a countdown on one of these, that is a
+      bug — report it.
+- [ ] **It watches the whole mez and charm family out of the box** — Mesmerize, Mesmerization,
+      Dazzle, Charm, Allure, Beguile, Cajoling Whispers. Adding slows or snares is a tick each in
+      the aura's buff list.
+- [ ] **Picking "Mesmerization" catches the ranks people actually cast** — VI and VII both warn,
+      and the warning says which rank it was.
+
+You can reword it. In the aura's **Say:** box, `{caster}` becomes whoever cast it and `{spell}`
+becomes what they cast.
+
+## The RESIST flash
+
+Add Aura → **Resist flash**. One aura, covers every spell you cast — you do not pick which.
+
+- [ ] **Get a mez resisted and RESISTED flashes up**, then goes away on its own.
+- [ ] **It does NOT fire when something resists a spell somebody else cast**, and does NOT fire
+      when a spell is resisted *by you* — those are different lines, and there are 761 of the
+      second kind in your logs against 970 of the real ones, so if this is wrong the flash will be
+      on constantly.
+- [ ] **It lasts about a second and a half.** You asked for 1.4s. Timers are swept once a second,
+      so in practice it clears somewhere between 1.4 and 2.4 seconds after the resist. If that
+      reads as too long or too short, say so — the number is one line.
+
+## The "Custom debuff aura" type (note 34)
+
+Add Aura → Custom → **Custom debuff aura**, beside Custom buff aura. A debuff on a mob arrives as a
+landing on "not you", so it needs the ally source AND the enemy switch — two settings in two
+places, neither obviously about debuffs. That is what this type saves you.
+
+- [ ] **It comes out already set up to watch enemies**, showing each target's name, without you
+      having to change any settings afterwards.
+- [ ] **Add a mez to it and it tracks mobs**, showing their names.
+- [ ] **A Custom buff aura is unchanged** and still comes out watching you.
+
+---
+
+# 3 — Making auras
+
+## The "Buff timer" premade
+
+"+ Add aura" → Premade aura → **Buff timer**. Pick one spell, say whether you are watching it on
 yourself or on someone you cast it on, and the aura is built.
 
 - [ ] **Search for a buff you use** and pick it. *Expect*: a list that narrows as you type, each
@@ -318,116 +431,262 @@ yourself or on someone you cast it on, and the aura is built.
       720 trackable spells are like this. If one you rely on is in that group, tell me the exact
       line the game prints when it lands on someone else and it becomes trackable.
 - [ ] **Search for something nonsense.** *Expect*: a message saying only spells with a landing
-      message can be tracked - not just "no results".
+      message can be tracked — not just "no results".
 
-### Instant spells - nukes, heals, gates *(new - and this fixed the NaN tile)*
+## Cooldown timers
 
-Your rule: a spell with no real duration should not clutter a duration-based aura, but should be
-available to sound and text auras "just in case someone wants feedback when a cast is successful
-or resisted". That is now how it works.
+Add Aura → **Cooldown timer**. Pick a spell, check the number, create.
 
-- [ ] **Watch a normal aura during a fight.** *Expect*: no tiles for your nukes or heals, and no
-      tile stuck showing NaN. That last one was the bug - it could only be cleared by restarting.
-- [ ] **Make a sound aura, pick a heal or a nuke, turn on the land sound.** *Expect*: it makes the
-      noise when the spell goes off, with nothing drawn.
-- [ ] **Make a text aura and point it at the same spell.** *Expect*: the words appear briefly and
-      then clear themselves.
-- [ ] **"Briefly" is now yours to set.** A text aura has a **Show events for** slider, 1 to 60
-      seconds, defaulting to 6 so it works without anyone going looking for it. Change it and
-      check the words stay up for as long as you asked.
-- [ ] **Cast the same nuke twice in a row on a sound aura.** *Expect*: it makes the noise BOTH
-      times. An event has no timer to watch go back up, so this needed its own handling - the
-      first version would have beeped once and then gone quiet.
+- [ ] **It works for the ranked spells you actually cast.** You pick "Promised Renewal" from the
+      list, but you cast "Promised Renewal VII" — that has to start it, and so do V and IX. **This
+      is the single thing most likely to be wrong, so please check it first.**
+- [ ] **Cast the spell and a countdown appears**, ending when you can cast it again.
+- [ ] **The number is recast plus cast time.** Promised Renewal shows 21s: 18s recast plus 3s
+      casting. The recast clock starts when the cast finishes but the timer starts when you begin,
+      so the two are added. Your consecutive casts in the logs cluster at exactly 21s, which is
+      where this came from — but a stopwatch check would be welcome.
+- [ ] **An interrupted cast leaves no timer running.** Start a cast, get hit, have it interrupt —
+      the countdown should vanish rather than sit there saying the spell is unavailable.
+- [ ] **Somebody else's interrupt does not clear yours.**
+- [ ] **You can change the recast time before creating it**, and it keeps what you set. Recast
+      times come from the game data and are usually right but not always — of the two you checked,
+      one was wrong — so if any spell looks off, the number is yours to correct.
 
-### The older no-duration measurement *(kept for the record - the fix above supersedes it)*
+Two things it does NOT do yet, so they are not bugs: it does not shorten the recast for higher mote
+tiers (the sheet says 2% per tier), and it does not handle a spell that has both a duration and a
+cooldown — that is note 10, below.
 
-275 spells in the roster have a landing message but no duration. When one of those landed, the app
-worked out its expiry as "not a number", and the once-a-second cleanup asks "is the expiry time in
-the past" - which is never true for "not a number". The tile showed **NaN:NaN**, never counted
-down, and could not be dismissed except by restarting.
+## Timers that roll into a cooldown (note 10)
 
-Forty-five of those spells appear in your logs; the most common, "Your mind clears.", 12,798 times.
+On a custom timer, under Duration, there is now **"Then cooldown: N s"**. Optional — leave it empty
+and nothing changes.
 
-I fixed this by refusing to track those spells, measured it against all 1.6 million lines, and
-then **reverted it** - because it removed 67 spells and 18,405 landings. 36 of those are nukes and
-heals that should never have had a timer, but 31 are real buffs: Armor of Protection, Barbcoat,
-Fury, Wolf Form, Yaulp II, Shrink, Feign Death. Dropping those is a real loss, so the trade is
-yours to make rather than mine.
+- [ ] **Set one up with both.** When the duration runs out the same tile keeps counting, down to
+      when you can use the thing again, then disappears.
+- [ ] **The tile looks different while cooling down** — dimmed and dashed — and hovering it says
+      "cooling down, ready in Ns". A cooldown and a duration show the same digits and mean opposite
+      things, so the tile has to say which.
+- [ ] **The trigger line arriving again DURING the cooldown does nothing.** That is deliberate: the
+      ability is not available, so the line cannot mean you used it, and restarting would hide the
+      countdown you are waiting on.
+- [ ] **During the duration, the trigger still restarts it**, as it always has.
+- [ ] **Editing a timer keeps its cooldown**, and emptying the box removes it.
 
-- [ ] **Look for a stuck tile** showing NaN, or a timer that never moves. If you have ever seen
-      one and wondered why it would not go away, this is why.
-- [ ] **Decide what those spells should do.** The three options, honestly:
-      **(a)** show with no countdown at all and disappear when their "ended" message arrives -
-      works for 18 of the 31, and is the option that loses least;
-      **(b)** get a default length, which means the app inventing a number;
-      **(c)** not be tracked at all, which is what my reverted fix did.
+The cooldown field sits behind a **Cooldown** section that expands like the other collapsible
+sections. If a timer has one set, the section shows the value beside its title even when shut, and
+opens by itself when you edit that timer — a setting hidden behind a closed section is the one way
+a collapsible menu can actively mislead.
 
-### Coloured edges by spell type *(new - CHANGES HOW YOUR EXISTING AURAS LOOK)*
+**Also new on that form: how the trigger matches.** Two radios under the raw trigger box — *the
+whole line, exactly* (what every timer has always done) or *any line containing it*. The second is
+for lines the game writes a name into: "Orc centurion resisted your Mesmerize!" will never match a
+fixed string, but "resisted your Mesmerize" catches all of them. It existed in the engine and could
+only be reached by a premade until now.
 
-Note 37. Every tile now gets a coloured edge saying what kind of spell it is, and it is **on by
-default on auras you already have** - so the first launch after this will look different. Turn it
-off per aura with "Colour each tile's edge by spell type".
+- [ ] **Build a "containing" timer and check it fires.** Be specific with the text — a short word
+      set to "containing" will fire on nearly every line.
 
-- [ ] **Look at your Self Buffs aura.** *Expect*: blue edges on ordinary buffs, and other colours
-      where the spell is something else. Nothing should have moved or resized - only the colour of
-      the edge changes.
-- [ ] **Check a heal-over-time and a damage-over-time** if you have either up. *Expect*: dark
-      green and dark amber respectively, distinctly darker than their instant versions.
-- [ ] **Find a spell with no type** (242 of the 1,052 have none). *Expect*: its ordinary edge,
-      not a guessed colour.
-- [ ] **A custom timer aura.** *Expect*: no coloured edge at all - there is no spell behind it.
-- [ ] **Turn the setting off on one aura.** *Expect*: that aura only goes back to normal.
-- [ ] **Try it in icon mode as well as list mode.**
-- [ ] **Worth your judgement:** you asked for red for damage and green for heals, which is the one
-      pair that is hardest for colour-blind players. The colours differ in brightness as well as
-      hue to soften that. If any two are hard to tell apart on your monitor, say which and they
-      can be changed - they are eight lines in one stylesheet.
+## Timers that need more than one thing to be true (note 9)
 
-### Text auras and the dispel announcer *(new - needs looking at)*
+Your answer settled the design: "the time window should be whatever each individual trigger has...
+limiting it to checks happen within a set time frame is not something i want." So there is no
+shared window — each condition carries its own, and a zone condition has none at all.
 
-A new **Custom text aura** in "+ Add aura" > Custom aura, and a real **You Have Been Dispelled**
-premade. A text aura draws one line of words and nothing else - no icon, no countdown - and only
+On any custom timer, in the Add/Edit timer box, there is a new collapsed section: **Extra
+conditions**. Add conditions there and the timer only starts when all of them are true at once.
+
+- [ ] **Two lines.** Add two line conditions and make one happen. Nothing should appear — not a
+      dimmed tile, not a partial one, nothing. Make the second happen and the timer should start.
+- [ ] **Order should not matter.** Try it the other way round.
+- [ ] **Let one go stale.** Give a condition a short time (say 5s), trigger it, wait past that,
+      then trigger the other. Nothing should start.
+- [ ] **A zone plus a line** — the case you said this is mainly for. Add "You are in a zone" and one
+      line condition. It should fire only in that zone.
+- [ ] **It should not re-fire on every line afterwards.** A zone condition never lapses, so this is
+      the one I would most expect to go wrong: once it has fired, unrelated chat should not keep
+      restarting it.
+- [ ] **The section summary.** Close Extra conditions and it should still say how many you have
+      set, so a condition is never invisible.
+- [ ] **Remove them all** and the timer should go back to firing on its plain trigger line rather
+      than becoming one that never fires.
+
+If the app does not know what zone you are in yet, a zone condition counts as satisfied rather than
+blocking. That is deliberate — it only learns the zone when you cross a line, so treating "unknown"
+as "wrong zone" would leave the timer dead for a whole session if you started in the right place.
+
+## Damage parser (note 19)
+
+New premade, in **+ Add aura → Premade aura → Damage parser**. It replaces the greyed-out "Damage
+parser" that used to sit in the Not-built-yet list, so you should now see exactly one of them and
+it should be clickable.
+
+One row per person for the fight you are in, biggest first, with a total line on top carrying the
+fight's damage and its rate per second. It works out who is on your side from the log itself —
+there is no group list to keep up to date.
+
+- [ ] **Make one and pull something.** Rows should appear as damage happens and the numbers should
+      climb. The percentages should add up to 100.
+- [ ] **Stop fighting for ten seconds.** The whole thing should clear itself. Then pull again — it
+      should start from zero, not carry the last fight forward.
+- [ ] **Check it counts your groupmates, not the mobs.** A monster hitting you must never get a
+      row. If you ever see a mob's name in the list, tell me what the line in the log looked like —
+      that is the one thing here that could go wrong in a way I cannot see from your logs.
+- [ ] **Check the numbers are believable.** Not exact — I have no way to verify against the game —
+      but if someone's damage looks wildly wrong, say whose and roughly by how much.
+
+Three settings on the aura's own page, under **Damage meter**:
+
+- [ ] **A fight ends after** (3–60s, default 10). Lower it and a slow pull should split into two
+      fights; raise it and a chain of quick pulls should join into one.
+- [ ] **Only show my own row.** Hides everyone else. Your percentage should still be your share of
+      the *whole* fight, not jump to 100%.
+- [ ] **Show the total line at the top.** Off should remove just that row.
+
+Two things to flag rather than have you discover:
+
+- **On your character it will mostly show other people.** That is correct, not broken. Across your
+  1.5 million logged lines your own damage is 2,712 lines against roughly 346,000 from everyone
+  else, so a meter showing only you would be nearly empty.
+- **It learns who is who from your own attacks.** If you play a session where you never damage or
+  debuff anything at all, it may stay empty. Mez, snare and slow count as well as nukes, so this
+  should be rare — but if you get an empty meter during a fight, that is the likely reason and I
+  want to know.
+
+What I verified so you do not have to: replayed against a full day of your log, it reads 14,235
+damage lines and credits 9,306 (the rest are monsters hitting you, correctly left out), with
+nothing left unclassified. On your largest log it found a five-person fight totalling 195.7k at
+369/s.
+
+## Travel guide (note 20)
+
+New premade in **+ Add aura → Premade aura → Travel guide**. Pick a destination and it shows the
+shortest way there from wherever you are, one step per line, redrawing every time you zone.
+
+- [ ] **Make one pointing somewhere far away and walk about.** The list should shorten as you get
+      closer, and the top line should always be the next thing to do.
+- [ ] **Arrive.** It should say "You are in \<zone\>" rather than going blank.
+- [ ] **Check it uses your travel spells.** If you have a portal or a Circle scribed that helps, it
+      should say "Cast \<spell\>" instead of walking you. If it offers a spell you do NOT have,
+      that is a bug — tell me which.
+- [ ] **Change the destination** on the aura's settings page under **Travel guide**. The route
+      should update immediately.
+- [ ] **Boats and portals should be named as such** — "Sail to" and "Portal to" rather than "Go to".
+
+**Setting the destination from inside the game (your design).** Type `/tell qeynos` and the game
+answers "Qeynos is not online at this time" — the aura reads that as the new destination. Both of
+those lines were already in your logs, so I did not have to guess at the wording.
+
+- [ ] **`/tell rivervale`** should point every travel aura at Rivervale without you touching the app.
+- [ ] **`/tell qeynos`** should give you South Qeynos. A /tell name cannot have spaces, so one word
+      has to do — and it prefers the short name the game itself uses.
+- [ ] **`/tell faydark`** should NOT pick one. It should list "The Greater Faydark" and "The Lesser
+      Faydark" and wait, because guessing would send you to the wrong one.
+- [ ] **`/tell nonsense`** should say there is no zone by that name.
+- [ ] **The start of the route always comes from the zone tracker**, never from the command — so
+      after a `/tell`, walking to a different zone should change the route without you retyping.
+- [ ] **Picking from the dropdown afterwards** should clear any "which did you mean" message.
+
+Three things to know:
+
+- **Some zone names are a guess.** 38 of the 104 are zones you have never entered, so I have no
+  record of EQL's exact wording — usually a question of a leading "The". They have to be in the
+  list because real routes pass through them (Faydwer to Antonica goes via the Ocean of Tears). If
+  you see a name that is wrong, tell me the right one.
+- **Instance tiers are entered, not walked into.** Route to "Befallen 3 (Fused)" and the last line
+  says "Enter Befallen 3 (Fused)" once you are standing in Befallen, because there is no zone line
+  into a specific tier.
+- **One pair I could not resolve**: "Permafrost Keep" and "The Permafrost Caverns - Group". Classic
+  EverQuest has one zone there; your app's list has two names. I have treated them as the same
+  place. **If they are actually two different zones in EQL, routing to the second will send you to
+  the wrong door.**
+
+What I checked myself: all 5,852 ordered pairs between the 77 real places route, and all 10,712
+pairs once instance tiers are included.
+
+## Text auras and the dispel announcer
+
+A new **Custom text aura** in "+ Add aura" → Custom aura, and a real **You Have Been Dispelled**
+premade. A text aura draws one line of words and nothing else — no icon, no countdown — and only
 ever shows one thing at a time.
 
 - [ ] **Add a Custom text aura**, point it at a buff you can cast on yourself, and cast it.
-      *Expect*: your words (or the buff's name) appear in large text, and nothing else. No icon,
-      no timer, no bar.
+      *Expect*: your words (or the buff's name) appear in large text, and nothing else.
 - [ ] **Let it run out.** *Expect*: the text disappears.
-- [ ] **Type something into "Say"**, e.g. PUMA UP. *Expect*: it says that instead of the buff
-      name. Clear the box again and the name comes back.
-- [ ] **Drag the "Text size" slider up.** *Expect*: it gets properly large - up to 120px - and
-      the aura's window grows to fit rather than clipping it.
-- [ ] **Check it is readable over a bright zone** (snow, desert, water). The dark plate behind
-      the words is there for exactly this; say so if it is still hard to read anywhere.
-- [ ] **Pick several buffs on one text aura and have two active at once.** *Expect*: still only
-      ONE line of text. Which one it picks follows the aura's "Sort by" setting.
+- [ ] **Type something into "Say"**, e.g. PUMA UP. *Expect*: it says that instead of the buff name.
+      Clear the box again and the name comes back.
+- [ ] **Drag the "Text size" slider up.** *Expect*: it gets properly large — up to 120px — and the
+      aura's window grows to fit rather than clipping it.
+- [ ] **Check it is readable over a bright zone** (snow, desert, water). The dark plate behind the
+      words is there for exactly this; say so if it is still hard to read anywhere.
+- [ ] **Pick several buffs on one text aura and have two active at once.** *Expect*: still only ONE
+      line of text. Which one it picks follows the aura's "Sort by" setting.
 - [ ] **Switch its "Buffs shown" to "Your own text triggers"** and add a trigger. *Expect*: the
-      option is there at all - a text aura is the only type that can change source after it is
-      made - and the trigger announces when the line appears.
-- [ ] **Confirm the Display style radios are NOT shown** on a text aura, and that no fourth
-      "Text" option has appeared on your other auras.
+      option is there at all — a text aura is the only type that can change source after it is made
+      — and the trigger announces when the line appears.
+- [ ] **Confirm the Display style radios are NOT shown** on a text aura, and that no fourth "Text"
+      option has appeared on your other auras.
 
-**The dispel announcer**, from "+ Add aura" > Premade aura:
+**The dispel announcer**, from "+ Add aura" → Premade aura:
 
 - [ ] **Add "You Have Been Dispelled".** *Expect*: it lands on its own settings page, already set
       up, drawing nothing yet.
 - [ ] **Get dispelled.** *Expect*: DISPELLED in large letters for eight seconds, then gone.
 - [ ] **Only one of its three triggers is confirmed from your logs:** "You feel very dispelled."
-      The other two - "You feel dispelled." and "You feel a bit dispelled." - are an inference
-      from the third-person versions, where all three strengths do appear. **If you get a weaker
-      dispel and nothing shows, tell me the exact line** and it is a one-word fix.
-- [ ] **Check it does not fire when someone ELSE is dispelled** ("Avenrae feels very
-      dispelled."). It should not - the triggers are whole-line exact matches.
+      The other two — "You feel dispelled." and "You feel a bit dispelled." — are an inference from
+      the third-person versions. **If you get a weaker dispel and nothing shows, tell me the exact
+      line** and it is a one-word fix.
+- [ ] **Check it does not fire when someone ELSE is dispelled** ("Avenrae feels very dispelled.").
+      It should not — the triggers are whole-line exact matches.
 
-### Merged tiles *(new - needs looking at)*
+## "Buffs shown" is its own card, with gem slots
 
-A per-aura **Merge buffs that share a duration into one tile** checkbox, plus an app-wide
-**Merged tiles** card on the Setup page choosing what counts as "the same". Off by default
-everywhere, so an aura you do not touch behaves exactly as it does today.
+- [ ] **Open any aura's settings.** "Buffs shown" is a card of its own between **Display & size**
+      and **Configuration**.
+- [ ] **What the aura watches is now a row of spell icons**, not a list of ticked names. Hover one
+      to see which spell it is; click it to stop watching it.
+- [ ] **The dashed "+" slot** focuses the search box. It stays visible even when nothing is picked,
+      because otherwise there is no way to add the first one.
+- [ ] **Your existing auras still have their spells.** Nothing about how they are stored changed —
+      the gems are just how the same list is drawn — so this should be true, but it is the thing to
+      check first.
+- [ ] **Try to add a debuff to an aura that has buffs in it.** It should refuse and say why, rather
+      than silently not appearing. Same the other way round.
+- [ ] **The picker row "Watching:"** (you / an ally / your own text triggers) has moved up into this
+      card, out of Display & size.
 
-- [ ] **Leave it off on every aura and use the app normally for a bit.** *Expect*: no difference
-      at all. This is the check that matters most - nothing should have changed for anything you
-      have not deliberately turned on.
+---
+
+# 4 — How auras look
+
+## Coloured edges by spell type (note 37) — CHANGES HOW YOUR EXISTING AURAS LOOK
+
+Every tile now gets a coloured edge saying what kind of spell it is, and it is **on by default on
+auras you already have** — so the first launch after this will look different. Turn it off per aura
+with "Colour each tile's edge by spell type".
+
+- [ ] **Look at your Self Buffs aura.** *Expect*: blue edges on ordinary buffs, and other colours
+      where the spell is something else. Nothing should have moved or resized — only the colour of
+      the edge changes.
+- [ ] **Check a heal-over-time and a damage-over-time** if you have either up. *Expect*: dark green
+      and dark amber respectively, distinctly darker than their instant versions.
+- [ ] **Find a spell with no type** (242 of the 1,052 have none). *Expect*: its ordinary edge, not
+      a guessed colour.
+- [ ] **A custom timer aura.** *Expect*: no coloured edge at all — there is no spell behind it.
+- [ ] **Turn the setting off on one aura.** *Expect*: that aura only goes back to normal.
+- [ ] **Try it in icon mode as well as list mode.**
+- [ ] **Worth your judgement:** you asked for red for damage and green for heals, which is the one
+      pair that is hardest for colour-blind players. The colours differ in brightness as well as
+      hue to soften that. If any two are hard to tell apart on your monitor, say which — they are
+      eight lines in one stylesheet.
+
+## Merged tiles
+
+A per-aura **Merge buffs that share a duration into one tile** checkbox, plus an app-wide **Merged
+tiles** card on the Setup page choosing what counts as "the same". Off by default everywhere.
+
+- [ ] **Leave it off on every aura and use the app normally for a bit.** *Expect*: no difference at
+      all. This is the check that matters most — nothing should have changed for anything you have
+      not deliberately turned on.
 - [ ] **Turn it on for your Ally Buffs aura and cast a group buff set.** *Expect*: one tile per
       person instead of a wall, showing the soonest to run out, that person's name, and a small
       "x6" style badge.
@@ -436,13 +695,13 @@ everywhere, so an aura you do not touch behaves exactly as it does today.
 - [ ] **On the Setup page, switch between "Same length" and "Same length, cast together".**
       *Expect*: the change takes effect immediately on every aura, without a restart.
 - [ ] **With "Same length" chosen**, look for unrelated 24-minute buffs merging together. They
-      will, and that is the rule doing what it says - switch to the other one if you dislike it.
-- [ ] **With "Same length, cast together" chosen**, cast one buff, wait a minute, then cast
-      another of the same length. *Expect*: two separate tiles.
+      will, and that is the rule doing what it says — switch to the other one if you dislike it.
+- [ ] **With "Same length, cast together" chosen**, cast one buff, wait a minute, then cast another
+      of the same length. *Expect*: two separate tiles.
 - [ ] **Check the glow and the sounds still work on a merged aura.** Turn on "Glow when a buff
       lands" and a land sound, then re-cast one member of a merged group. *Expect*: the tile
-      flashes and the sound plays. This is the one most likely to be silently wrong.
-- [ ] **Check the pre-expiry warning fires once, not once per merged buff** - and then check it
+      flashes and the sound plays. **This is the one most likely to be silently wrong.**
+- [ ] **Check the pre-expiry warning fires once, not once per merged buff** — and then check it
       fires AGAIN next time round, after those buffs are recast. The second half is the one that
       was broken: a merged tile warned once and then stayed silent for the whole session.
 - [ ] **Recast the buff a merged tile is counting down, before it drops.** *Expect*: the tile
@@ -452,170 +711,437 @@ everywhere, so an aura you do not touch behaves exactly as it does today.
       no beep from the act of ticking the box.
 - [ ] **In list mode, look at the badge as a merged tile runs low.** *Expect*: it stays readable
       and does not take on the colour of the bar behind it.
-- [ ] Under **"Same length, cast together"**, two buffs cast within a second or so of the
-      three-second window may occasionally split into two tiles and rejoin. That is a known
-      limit, not a new bug - the countdown the overlay receives is whole seconds.
 - [ ] **Try it in icon mode as well as list mode.** *Expect*: the badge in the tile's top-right
       corner, not overlapping the countdown.
 - [ ] **Turn it off again.** *Expect*: every tile comes straight back, unchanged.
+- [ ] Under **"Same length, cast together"**, two buffs cast within a second or so of the
+      three-second window may occasionally split into two tiles and rejoin. That is a known limit,
+      not a new bug — the countdown the overlay receives is whole seconds.
 
-### Aura names in the move box *(new - needs looking at)*
+## Aura names in the move box
 
 - [ ] **Unlock an aura.** *Expect*: its blue box now shows the aura's name in a small pill above
       the "Click and drag to move" text.
-- [ ] **Drag the box by the area around the pill.** *Expect*: it still moves normally. This is
-      the one to watch - the pill has to be a hole in the draggable area, and too big a hole
-      means the aura you are trying to move is the one you cannot.
+- [ ] **Drag the box by the area around the pill.** *Expect*: it still moves normally. This is the
+      one to watch — the pill has to be a hole in the draggable area, and too big a hole means the
+      aura you are trying to move is the one you cannot.
 - [ ] **Click the pill.** *Expect*: the settings window comes to the front and opens that aura's
       page. If the window was minimised it should restore.
 - [ ] **Expect EverQuest to lose focus when it does.** With auto-hide on, your other auras
       disappear at that moment. Unlocked ones stay. That is intended, not a bug.
-- [ ] **Rename an aura while it is unlocked.** *Expect*: the pill updates immediately, without a
-      restart.
+- [ ] **Rename an aura while it is unlocked.** *Expect*: the pill updates immediately.
 - [ ] **Unlock several auras at once.** *Expect*: you can tell which box is which, which is the
       entire point of the note.
 
-### Sound follows the on/off switch, not the screen *(new - a real bug was found here)*
+---
 
-Hiding an aura's window never silenced it - a hidden overlay carries on receiving updates and
-carries on playing its alert sounds. That was invisible while every aura had tiles; it stops
-being invisible the moment an aura is nothing but sound. The rule is now:
+# 5 — When auras show
 
-- **Switched off for this profile** - silent, and not on screen. Off means off.
-- **Hidden by "Hide auras", or by auto-hide while EverQuest is unfocused** - still audible. You
+## Loadouts, and the loadout label
+
+The profile bar has **one** button now, "Loadouts", where the "+" and the cog used to be. It opens
+a modal that adds, renames and deletes loadouts, and holds the loadout-label switch.
+
+- [ ] **The one button opens the modal**, and adding a loadout from inside it still works exactly
+      as the old "+" did.
+- [ ] **Make a second loadout and the label turns itself on**, without you asking. With one loadout
+      it has nothing to tell you.
+- [ ] **Turn it off, then make a third loadout — it must STAY off.** **This is the one I would check
+      hardest.** Gating on "do you have two loadouts" would turn it back on every time you added
+      one, and you would be switching it off forever.
+- [ ] **The tick box shows the truth** when the label switched itself on — open the modal and it
+      should already be ticked.
+- [ ] **The label follows a switch immediately**, and is still there on a loadout created after it.
+- [ ] **Drag it, untick, re-tick** — it comes back where you left it.
+- [ ] **Rename a loadout and the label follows.**
+
+You can reword and resize it in its own settings like any aura — `{profile}` in the **Say:** box
+becomes the loadout name.
+
+### The name box in "New loadout profile" (note 33)
+
+You reported you could not click into it. The window is frameless and its title bar is a drag
+region; drag regions are hit-tested by Windows before the page sees the click, so modal content
+overlapping the top 32px cannot be clicked — the click moves the window instead. A tall modal in a
+short window centres far enough up for that to reach its first input, which fits the symptom.
+Modals now opt out of the drag region.
+
+**This was never reproduced, so the diagnosis may be wrong.** It is the one item where I genuinely
+do not know whether it is fixed.
+
+- [ ] **Loadouts → Add a loadout, click the name box, type.** *Expect*: a cursor appears and typing
+      works.
+- [ ] **Repeat with the window as short as it goes** (480px minimum) and with several auras
+      configured, so the checklist makes the modal tall. This is the case the theory predicts used
+      to fail.
+- [ ] **Repeat maximised.** If it fails **here**, the diagnosis is wrong — say so, because the real
+      cause is then still unfound.
+
+## Profile-gated visibility
+
+- [ ] **Switch loadout profiles and confirm the right auras appear/disappear.** *Expect*: an aura
+      shows only while a profile it belongs to is active; an aura with **no** profiles ticked shows
+      on all of them. There is no longer a global "Show this aura" toggle — profile membership is
+      the on/off control.
+- [ ] **Aura visibility survives a restart** with the same profile active.
+
+## Hide all auras, and the hotkey (notes 4 and 31)
+
+Built as one change because separately they argue over which override wins. There is a **Hide
+auras** button at the right-hand end of the profile bar, always visible.
+
+**The hotkey is Scroll Lock, not Pause.** Pause has never once worked: Electron refuses that key
+outright, and refuses it by *throwing* rather than by saying no — so the code meant to handle
+"another program owns this key" never ran, and the top bar cheerfully advertised it the whole time.
+No test caught it because none of them start the actual app. Nine seconds of launching it did.
+Scroll Lock is the same corner of the keyboard and equally unused in game; if something else owns
+it, the app falls back to Alt+Shift+H and the hint tells you which one you got.
+
+- [ ] **Press Hide auras.** *Expect*: every aura disappears at once, and the button turns red and
+      reads "Auras hidden — show". Press again and they all come back exactly as they were.
+- [ ] **Press Scroll Lock in game.** *Expect*: exactly the same thing, and the button in the app
+      updates to match even though you never touched it.
+- [ ] **The hint next to the "Hide auras" button names the key you actually have.**
+- [ ] **The button and the key agree** — use one, then the other, and the button should look right
+      both times.
+- [ ] **Confirm Scroll Lock does nothing in EverQuest any more** while the app is running. That is
+      the cost of a global hotkey.
+- [ ] **Close the app and press Scroll Lock again.** *Expect*: EverQuest gets the key back.
+- [ ] If Scroll Lock is wrong for you, say so — it is one line, and any key Electron accepts will do.
+- [ ] **Unlock an aura, then press Hide auras.** *Expect*: it hides too. Hiding deliberately beats
+      unlocking — if that turns out to be the wrong way round for you, it is one line.
+- [ ] **Restart the app while auras are hidden.** *Expect*: they come back visible. The hide is
+      deliberately not remembered, so a forgotten one cannot look like a broken app.
+- [ ] **Untick every profile for an aura so it is switched off, then press its Unlock to move.**
+      *Expect*: it appears on screen so you can drag it, even though it is switched off. Lock it
+      again and it goes away. This did nothing at all before.
+- [ ] **Do the same but with "Unlock all auras" instead.** *Expect*: your switched-off auras stay
+      away. Only unlocking one by hand pulls it onto the screen.
+- [ ] **Move a switched-off aura while it is unlocked, then re-lock, then switch its profile back
+      on.** *Expect*: it is where you put it.
+
+## Zone-gated auras (note 38)
+
+In an aura's settings, under the loadout toggles: **"Only in:"**. Leave it empty and the aura shows
+everywhere. Type a zone and press Enter, or pick from the list, to limit it.
+
+- [ ] **Limit an aura to the zone you are in.** It should stay on screen.
+- [ ] **Zone somewhere else.** It should disappear, and its settings should say *"Hidden right now:
+      you are in X, which is not on its list."*
+- [ ] **Zone back.** It returns.
+- [ ] **Click a zone chip to remove it.** With none left, the aura shows everywhere again.
+- [ ] **Instances are separate, as you asked.** An aura limited to `Befallen` will NOT show in
+      `Befallen 1 (Awakened)` — add each one you want. Same for `The Plane of Fear` and `The Plane
+      of Fear - Group`.
+- [ ] **Unlocking an aura still shows it in the wrong zone**, so you can move it wherever you happen
+      to be standing.
+
+**One thing worth knowing before it surprises you.** The app only learns which zone you are in when
+you *change* zone — the game prints nothing otherwise, and there is no way to ask. So if you start
+the app while already sitting somewhere, it does not know where you are until you next zone.
+**Zone-gated auras show anyway during that window**, and the settings panel says so. That is
+deliberate: in your logs the wait for the next zone line, from a random start, averages about 55
+minutes of play and once ran five hours. An aura silently missing for five hours with no
+explanation is far worse than one showing where you did not ask for it.
+
+The zone box offers the 66 zones seen in your logs and accepts anything you type.
+
+## Overlay auto-hide
+
+- [ ] **Auto-hide split into two settings** (now on the Overlay Auras page, under "All auras"). The
+      second one, "Also show auras while EQLS Auras itself is the focused window", is OFF by
+      default. *Expect*: with it off, tabbing to this app no longer drags every aura back on
+      screen; with it on, it does.
+- [ ] **Both auto-hide settings moved** off the Setup page into the "All auras" card on Overlay
+      Auras. Check they still actually work from their new home — the wiring is by element id so it
+      should be unaffected, but worth confirming rather than assuming.
+
+---
+
+# 6 — Sounds and alerts
+
+## Sound follows the on/off switch, not the screen
+
+Hiding an aura's window never silenced it — a hidden overlay carries on receiving updates and
+carries on playing its alert sounds. That was invisible while every aura had tiles; it stops being
+invisible the moment an aura is nothing but sound. The rule is now:
+
+- **Switched off for this profile** — silent, and not on screen. Off means off.
+- **Hidden by "Hide auras", or by auto-hide while EverQuest is unfocused** — still audible. You
   usually want to hear a buff about to drop even when you are looking at something else.
 
 - [ ] **Set up any aura with a sound, untick every profile for it, and make its buff land or
       expire.** *Expect*: silence. Before this change it would still have beeped.
-- [ ] **Put it back on your profile, press Hide auras, and do the same.** *Expect*: you still
-      hear it. This one is meant to keep making noise.
+- [ ] **Put it back on your profile, press Hide auras, and do the same.** *Expect*: you still hear
+      it. This one is meant to keep making noise.
 - [ ] **Same again with EverQuest focused so auto-hide kicks in.** *Expect*: still audible.
 
-### Detrimental spells on enemies *(data landed, engine not yet changed)*
+## Sound-only auras
 
-The roster now carries all 327 detrimental spells with their real text, and
-`" has been mesmerized."` is an ordinary third-person suffix. The engine cannot
-use them yet: the ally path requires a recipient name matching `^[A-Za-z]+$`,
-and mob names contain spaces, so `a worry wraith` is rejected.
+A **Custom sound aura** in the Add aura list. An aura in this mode draws nothing at all and exists
+purely to make a noise.
 
-- [ ] Confirm no debuff timers appear yet, and that nothing MIS-fires - a mob
-      name must not be mistaken for a groupmate.
+The one to watch hardest is the third item. A sound-only aura is deliberately exempt from the
+auto-hide-when-EverQuest-is-unfocused behaviour, because there is nothing of it on screen to hide
+and a hidden window is one Chromium is entitled to throttle. That reasoning is sound but it has not
+been observed, and if it is wrong the symptom is a missed alert, not an error.
 
----
+- [ ] **Add one from "+ Add aura" → Custom aura → Custom sound aura.** *Expect*: it lands on its own
+      settings page, drawing nothing anywhere on screen. It used to be a Display style radio and a
+      premade; both are gone, so check there is now exactly ONE way to make one.
+- [ ] **Pick a buff under "Buffs shown", leave "Play a sound when a buff expires" on, and let that
+      buff run out.** *Expect*: a sound, and nothing drawn at any point.
+- [ ] **Do the same with EverQuest in focus, then with the app in focus and EverQuest behind it,
+      then with EverQuest minimised.** *Expect*: the sound every time. If it goes quiet in any of
+      those, say which — that is the throttling question above, and the most likely thing to be
+      wrong.
+- [ ] **Check the Display style radios are not shown** on a sound aura or a text aura, and that
+      List and Icons are the only two options on your other auras.
+- [ ] **Switch a sound aura's "Buffs shown" to "Your own text triggers"** and add one. *Expect*: the
+      option is there, and the trigger makes the noise.
+- [ ] **The settings page hides what cannot apply**: no Sort by, no Opacity, no Unlock/Reset
+      position, no Timer text or Alerts sections. Sounds, Buffs shown, profiles and the name box
+      all stay.
+- [ ] **Unlock it** (via "Unlock all auras" on the overview, since it has no unlock button of its
+      own). *Expect*: still nothing on screen — no dashed blue box. Every other aura should still
+      show theirs.
+- [ ] **Switch an existing aura that has tiles on screen to Sound only.** *Expect*: its tiles
+      disappear immediately, without waiting for a buff to change, and it keeps making its sounds.
+- [ ] **Switch it back to List.** *Expect*: it returns exactly as it was — same width, same
+      opacity, same sort order. Nothing should have been lost.
+- [ ] **Untick every profile for it.** *Expect*: it goes silent. Profile membership is still the
+      on/off switch, and this is the check that it did not get exempted along with everything else.
+- [ ] **Restart the app.** *Expect*: still sound-only, still silent on screen, still audible.
+- [ ] **Export its share code and import it back.** *Expect*: the copy is sound-only too. A custom
+      sound FILE deliberately does not travel — the copy falls back to the default beep, which is
+      correct, not a bug.
+- [ ] **Pick a custom sound file for it, then press Export.** *Expect*: a line under the code saying
+      the file will NOT travel, worded more strongly than on an ordinary aura because for this one
+      the sound is the whole aura. With only the default beeps, no message at all.
 
-## New spell roster *(biggest change - test this first)*
+## Sounds on every aura type
 
-The roster went from 11,337 generic EverQuest entries to the 1,052 spells this
-server actually has, rebuilt from the curated spreadsheet plus the game's own
-`spells_us.txt` / `spells_us_str.txt`. On first launch a one-time migration
-replaces the roster in your saved data. Automated tests cover the mechanics;
-these cover whether it is *right* in play.
+Sound settings were already available on every kind of aura; nothing needed adding. Worth one pass
+to confirm that is true in practice as well as in the markup.
 
-Measured against the 19 Aug log before shipping: recognised landing lines went
-45 -> 83, and auto-confirmed 19 -> 49. So expect **more** buffs to be picked up
-and **fewer** questions, not the reverse.
+- [ ] Open the **Sounds** section on Self Buffs, on an Ally Buffs aura, on a custom buff aura, and
+      on a custom timer aura. *Expect*: the same controls in all four, and the volume slider showing
+      that aura's own saved value rather than always 100%.
+- [ ] The volume slider stays **0–100**, as asked. If a sound is too quiet at 100, that is the
+      source file, not the slider.
 
-- [ ] **First launch after the update.** *Expect*: the app starts normally,
-      Known Buffs shows about 1,052 entries rather than 11,000+.
-- [ ] **Your auras still work.** Every aura you had configured still tracks the
-      same buffs. *If any aura went blank, stop and report which* - that is the
-      one outcome that matters most.
-- [ ] **Fewer ambiguity prompts** for spells you cast often. Prompts should be
-      noticeably rarer, not more common.
-- [ ] **No prompt asks you to choose between a spell and itself** (e.g. two
-      ranks of Cannibalize). Rank variants are collapsed; if one appears, the
-      collapsing missed a case.
-- [ ] **Promised Renewal reads 15s**, not 18s or 12s, and does not grow with AA
-      duration bonuses.
-- [ ] **Icons still render** on the overlay - the new roster carries icon ids
-      for 1,051 of 1,052 spells.
-- [ ] **A buff that used to be recognised no longer is.** Watch for this
-      specifically. Five spells in the whole roster genuinely cannot be
-      detected (Calm-line spells that print no text at all) - anything beyond
-      those is a regression worth reporting.
-- [ ] **Bard songs** still detect and still sit at the right-hand end of the
-      gem bar.
+## Trade request ping
 
-### If something is badly wrong
+The line pattern is tested against your real logs; whether a sound comes out of your speakers is
+not testable here.
 
-The old roster is at `archive/buffs-legacy-11337.json` in the project folder,
-kept for reference. Do **not** copy it back over `src/shared/data/buffs.json` -
-the app has already migrated and it would re-introduce the ambiguity the rebuild
-removed. Report what broke instead; the roster is rebuildable from the
-spreadsheet in a minute with `node tools/build-roster.js --write`.
-
----
-
-## Detection engine
-
-- [ ] **Quick Buff burst no longer ignores already-active buffs.**
-  Restart the app while several self-buffs are already up in-game (so the
-  memorized gem bar starts empty/red), then trigger a Quick Buff.
-  *Expect*: nothing silently `IGNORED` that should have landed. Cross-check
-  `detection-debug.log` for `IGNORED ... not currently memorized` lines that
-  look wrong.
-
-- [ ] **Heal-proc auto-resolve.**
-  Cast a buff whose landing text is ambiguous but which also procs a heal
-  message - Talisman of Altuna, Symbol of Naltron, Resolution.
-  *Expect*: it resolves silently instead of raising an ambiguous-cast prompt.
-  `detection-debug.log` should show `auto-resolved by a heal-proc line`.
-
-- [ ] **Bard songs no longer wrongly IGNORED as "not memorized".**
-  Sing your own songs and watch `detection-debug.log`.
-  *Note*: only partly addressed - the underlying early-return bug (P0 in
-  CLAUDE.md) is NOT fixed, so this may still misbehave. Report what you see.
+- [ ] **Turn it on in Setup → Trade requests.** *Expect*: a two-note ping the moment you enable it,
+      confirming what was just switched on.
+- [ ] **Test button** plays the same ping.
+- [ ] **Have someone request a trade.** *Expect*: the ping fires once, and nothing appears on screen
+      — this is the first sound in the app with no tile behind it.
+- [ ] **Complete or cancel that trade.** *Expect*: NO further ping. Only the request pings.
+- [ ] **It survives a restart** with the checkbox still ticked.
+- [ ] **With the setting off**, a trade request pings nothing.
+- [ ] **Does it ping when the settings window is minimised?** It lives in that window's renderer.
+      The window stays alive for the app's whole lifetime, so it should — but browsers throttle
+      background timers, and if it turns out to miss pings while minimised, say so.
 
 ---
 
-## Auras & profiles
+# 7 — The app window
 
-- [ ] **Profile-gated visibility.**
-  Switch loadout profiles and confirm the right auras appear/disappear.
-  *Expect*: an aura shows only while a profile it belongs to is active; an
-  aura with **no** profiles ticked shows on all of them. There is no longer a
-  global "Show this aura" toggle - profile membership is the on/off control.
+## Refocus EverQuest after answering an ambiguous cast
 
-- [ ] **Aura visibility survives a restart** with the same profile active.
+The call itself is unit-tested; whether Windows honours it is not testable without a real desktop.
+Windows refuses foreground changes from a process that is not already foreground under some
+conditions, so **this is the one that most plausibly does nothing in practice.**
+
+- [ ] **Answer an ambiguous cast popup with EQ behind it.** *Expect*: EQ comes to the front by
+      itself, no alt-tab needed.
+- [ ] **With several questions queued, answer the first.** *Expect*: focus does NOT jump to the
+      game yet — it should only happen once the last one is answered, or you get thrown out of the
+      popup mid-way.
+- [ ] **Answer a question with EQ minimised.** *Expect*: the game is restored, not merely focused.
+- [ ] **Close EQ, trigger a question from a replayed log, answer it.** *Expect*: nothing happens and
+      no error appears.
+
+## App text size
+
+Scaling is done with Electron's zoom factor rather than by rewriting the stylesheet, because
+`main-window.css` carries 316 hardcoded px values across 39 distinct sizes and converting them by
+hand, with no layout tests, would get some wrong in ways only visible by eye. Zoom scales text,
+spacing and controls together and cannot drift out of step with itself.
+
+The wiring is tested; how it *looks* is not. I attempted a screenshot and could not get a reliable
+one without stealing focus from the running game, so this is yours.
+
+- [ ] **Setup → App text size** moves the whole window together — text, padding, buttons — with
+      nothing clipped or overlapping at 80% or at 160%.
+- [ ] **It survives a restart.** Set 130%, close, reopen. *Expect*: still 130%, and the slider reads
+      130 rather than snapping back.
+- [ ] **Your auras are unaffected** at every setting. They have their own sizes per aura and must
+      not move.
+- [ ] **Reset returns to 100%.**
+- [ ] At 160%, check the **frameless title bar** still looks right and the window can still be
+      dragged and closed.
+- [ ] **Auras must NOT rezoom.** Set 160%, then look at an aura. Chromium keys zoom by origin within
+      a session, and every window here loads a `file://` page in the same session — so "it cannot
+      leak" is an assumption, not something the code enforces. If auras DO change size, say so: the
+      fix is to give them their own session partition.
+- [ ] **Ctrl+R does not reset it.** Reload the window at 130%. *Expect*: still 130%. An earlier
+      version used a one-shot listener that did not re-arm.
+- [ ] At 160%, **open a modal** (Add aura) and check its content is reachable — a scaled-up modal is
+      taller, which is exactly the case the drag-region fix is about.
+
+## Resizable sidebar
+
+- [ ] **Drag the edge of the sidebar.** *Expect*: it resizes smoothly, the cursor becomes a
+      horizontal resize arrow over the handle, and the drag keeps working when the pointer moves
+      fast enough to outrun the handle.
+- [ ] **It survives a restart.** Widen it, close, reopen. *Expect*: still wide.
+- [ ] **Double-click the handle** restores the default width.
+- [ ] **Shrink the window very narrow, then widen it again.** *Expect*: the sidebar gives way while
+      narrow, and your chosen width comes back when there is room. It must NOT be permanently
+      shrunk — that is the specific bug the two-clamp split exists to prevent.
+- [ ] **Profile tooltips still escape the sidebar** rather than being clipped — the reason a real
+      handle was used instead of CSS `resize`.
+- [ ] **At 640px wide** (the minimum window width) the widest pages still read sensibly. The page
+      area gained `min-width: 0`, which changes how narrow windows lay out independently of the
+      sidebar.
+- [ ] **Combined with App text size at 160%**, both still behave — the sidebar width is in CSS
+      pixels, so zoom scales it too.
+
+## Share codes
+
+- [ ] **Export an aura**: the code should start `EQLSAURAS1-`. Import it back and confirm it works.
+- [ ] **An old `EQBT2-` code is refused** rather than importing something broken. A clear "not a
+      valid code" is the expected result for now; a friendlier "this is from an older version"
+      message is not built yet.
+
+### Share codes pasted into chat (note 30)
+
+This was blocked on two questions and both are now answered from your logs. You told me "+= survive
+fine in a chat line" and the logs back you up: across 1.5 million lines, 1,393 chat messages contain
+a +, 135 contain an =, and 921 contain a /. The other half — the per-line character limit — is not
+published anywhere, so I measured it: the longest message anyone has typed in your logs is 403
+characters. Real aura codes come out at 79 to 231 characters, so they fit with room to spare.
+
+When someone pastes a code into any chat channel, a strip appears at the bottom of the main window:
+"\<name\> shared an aura: \<name\>." with **Look at it** and **Ignore**.
+
+- [ ] **Get someone to paste a code**, or paste one yourself in /say. The strip should appear naming
+      who sent it and what the aura is called.
+- [ ] **Look at it** should open the normal import screen with the code already filled in. It should
+      NOT import anything by itself — you still press Import, and every warning that screen already
+      gives you still happens.
+- [ ] **Ignore** should make it go away.
+- [ ] **The same code twice** should only offer once per session.
+- [ ] **A code in a tell, in guild, in group, in a channel** should all work. I checked the wordings
+      against your logs, so if one of them does not register, tell me which channel.
+
+Deliberate: it never imports on its own. A code in chat is text another player typed, and applying
+it automatically would let anyone reconfigure your app by talking in guild chat.
+
+**The one real limit.** A very elaborate aura — 40 spells, six timers and three zone limits — comes
+to 651 characters and will not fit in one chat line. If a code arrives cut off, the strip says it
+looks cut off rather than calling it invalid, so you know it is a length problem and not a bad code.
+
+## QOL batch
+
+- [ ] **Reset remembered choices is red**, matching Delete aura.
+- [ ] **"Unlock all auras" appears ONLY on the Overlay Auras overview** — select any individual aura
+      and the whole "All auras" card (including the two auto-hide checkboxes) should be gone.
+- [ ] **The per-aura "Unlock to move" button is still there** on each aura's own settings. Scoping
+      the master control down is exactly when its sibling might be taken with it.
+- [ ] **The alert volume slider shows the aura's real value** when you select an aura, not always
+      the middle of the track. Set one aura to 40%, another to 100%, switch between them: the handle
+      should move. *This is almost certainly the whole of the "starts in the middle but it's 100%"
+      report* — the slider was never populated, and an HTML range with no value defaults to the
+      midpoint.
+- [ ] **The Add Aura premade list shows eight greyed "Not built yet" entries** below the working
+      ones, and none of them can be clicked.
+- [ ] **Window size and position persist** across restarts. Resize/move the window, close, reopen.
+      *Expect*: it returns where you left it. *Edge case worth checking*: maximize, close, reopen —
+      it should restore to the pre-maximize size, not a screen-sized non-maximized window.
 
 ---
+
+# 8 — Session, memory and stability
+
+## Session restore
+
+- [ ] **Timers survive a restart.** With buffs running, close the app and reopen within 5 minutes.
+      *Expect*: they come back with time already deducted for the gap (a 100min buff closed 3min
+      shows ~97min), and anything that expired while closed is simply absent. Confirmed working
+      against real data (7 timers restored after a 6s restart) — this is about confirming it feels
+      right in play.
+- [ ] **Ally buffs and custom timers restore too**, not just self buffs.
+- [ ] **A long gap does NOT restore.** Close for more than 5 minutes and reopen — the overlay should
+      be empty rather than showing stale buffs. The detection log will say "Did not restore timers:
+      closed for Ns, over the 300s limit".
 
 ## Memorized gem bar (landing page)
 
-- [ ] **Never shows more than 14 gems.** *(new cap)* Play a session with several
-      loadout swaps, including closing the app mid-swap. *Expect*: the count
-      stays at or below 14 and never creeps up over days.
-- [ ] **An already-drifted count heals itself.** If your bar currently shows
-      more than 14, one launch of this build should bring it to 14 with the
-      most recent kept.
-- [ ] **Re-memorising a spell you already have does not evict it.** Memorise a
-      full bar, re-memorise the first spell, then memorise one more. *Expect*:
-      the re-memorised spell is still there and the stalest one went instead.
+- [ ] **Never shows more than 14 gems.** Play a session with several loadout swaps, including
+      closing the app mid-swap. *Expect*: the count stays at or below 14 and never creeps up over
+      days.
+- [ ] **An already-drifted count heals itself.** If your bar currently shows more than 14, one
+      launch of this build should bring it to 14 with the most recent kept.
+- [ ] **Re-memorising a spell you already have does not evict it.** Memorise a full bar, re-memorise
+      the first spell, then memorise one more. *Expect*: the re-memorised spell is still there and
+      the stalest one went instead.
 
-- [x] **Persists across restarts.** Memorize some spells, close the app,
-  reopen. *Expect*: the bar comes back populated, not empty and red.
-- [x] **Click a gem to forget it** - gem disappears, stays gone after restart.
-- [x] **"Forget all"** clears the whole bar.
-- [x] **Bard songs sit at the right-hand end**, underlined; regular spells
-  fill from the left.
-- [x] **Non-buff spells** (a nuke, a heal) show their real icon greyed out
-  with a dotted border, and hovering says "(not a tracked buff)".
-- [x] **Empty state is red/warning** on a genuinely fresh memory.
+## Stability
+
+- [ ] **App no longer closes itself.** It was observed exiting unprompted (exit 0, no crash dump,
+      cause unknown). Shutdown logging is now in place — **if it happens again, check the detection
+      log for `SHUTDOWN:` lines** and report which one appears. That identifies the cause.
 
 ---
+
+# 9 — Built, but nothing to test
+
+Recorded here so it is not lost, and so nobody goes looking for a test that cannot exist yet.
+
+## The song-pulse check (note 24)
+
+You said: "you do not need proof, it happens... the proof is that I told you it is." You were right,
+and I measured it anyway because the app needed a number to work with: across your 1,521,971 log
+lines, the gap between consecutive repeats of an identical line is exactly 6 seconds on **314,324**
+occasions — four times more often than any other gap, and all ten of the most-repeated lines pulse
+at 6s.
+
+The check is built and wired. It is also, right now, **dormant** — it exists to break a tie between
+a song and a non-song sharing one landing text, and after the roster rebuild there are no such ties
+left. 108 messages are shared between two or more spells; not one is that pairing. The old
+11,337-entry roster had them; replacing it removed them.
+
+There is a test that fails the day a song and a spell share a message again, so it will not sit
+there rotting unnoticed. **Nothing for you to test.** Recorded because you said "this 6 second timer
+check will be needed later", and this is me saying it is ready and waiting.
+
+## Global recovery time (note 25)
+
+Still a disabled placeholder. The `castOf` trigger that the cooldown premade introduced is the piece
+it needs, when you want it built.
+
+---
+
+# Confirmed
+
+Kept as regression guards — each of these was broken once.
 
 ## Custom timers
 
 - [x] **Add timer** opens the modal with every field visible.
-- [x] **Edit** opens the same modal pre-populated; title says "Edit timer",
-  button says "Save changes", and "Save as new" appears.
+- [x] **Edit** opens the same modal pre-populated; title says "Edit timer", button says "Save
+  changes", and "Save as new" appears.
 - [x] **Save as new** creates a second timer without altering the original.
-- [x] **Icon gem box** - click opens the picker, picking sets the art, the
-  picker is full height and usable (it was previously clipped to a sliver).
-- [x] Two timers sharing a name *and* trigger text both fire, with their own
-  distinct icons. *(Regression guard - this was a real bug.)*
-
----
+- [x] **Icon gem box** — click opens the picker, picking sets the art, the picker is full height and
+  usable (it was previously clipped to a sliver).
+- [x] Two timers sharing a name *and* trigger text both fire, with their own distinct icons.
+  *(Regression guard — this was a real bug.)*
 
 ## Sounds
 
@@ -624,751 +1150,61 @@ spreadsheet in a minute with `node tools/build-roster.js --write`.
 - [x] **Open sounds folder** opens the folder the picker defaults to.
 - [x] Real in-game alerts (land / expire / warning) actually play.
 
----
+## Ally buff grouping
 
-## QOL batch
+- [x] **Group by player** on an ally aura splits it into a section per person with their name as a
+  heading. Groups are ordered **alphabetically** and stay put as timers tick — they should never
+  reshuffle.
+- [x] **Stack groups vertically / side by side** both lay out correctly, in list mode and icon mode.
+- [x] **The name prefix disappears from tiles while grouping is on** (the heading covers it), and
+  the separate "Hide the player name" toggle drops it when grouping is off.
+- [x] **Nothing breaks over time.** Leave a grouped aura running a few minutes — tiles must stay
+  inside their group, not drift out into a flat pile.
+- [x] The grouping section is **hidden** on self-buff and custom-timer auras.
 
-- [ ] **Reset remembered choices is red**, matching Delete aura. *(new)*
-- [ ] **"Unlock all auras" appears ONLY on the Overlay Auras overview** - select
-      any individual aura and the whole "All auras" card (including the two
-      auto-hide checkboxes) should be gone. *(new)*
-- [ ] **The per-aura "Unlock to move" button is still there** on each aura's own
-      settings. Scoping the master control down is exactly when its sibling
-      might be taken with it.
-- [ ] **The alert volume slider shows the aura's real value** when you select an
-      aura, not always the middle of the track. *(bug fix)* Set one aura to 40%,
-      another to 100%, switch between them: the handle should move.
-      *This is almost certainly the whole of the "starts in the middle but it's
-      100%" report* - the slider was never populated, and an HTML range with no
-      value defaults to the midpoint.
-- [ ] **The Add Aura premade list shows eight greyed "Not built yet" entries**
-      below the working ones, and none of them can be clicked. *(new)*
-- [ ] **Share codes.** Export an aura: the code should start `EQLSAURAS1-`.
-      Import it back and confirm it works. *(new prefix)*
-- [ ] **An old `EQBT2-` code is refused** rather than importing something
-      broken. A clear "not a valid code" is the expected result for now; a
-      friendlier "this is from an older version" message is not built yet.
+## Memorized gem bar
 
-- [ ] **Window size and position persist** across restarts. Resize/move the
-      window, close, reopen. *Expect*: it returns where you left it.
-      *Edge case worth checking*: maximize, close, reopen - it should restore
-      to the pre-maximize size, not a screen-sized non-maximized window.
-- [x] **"Add a new buff" and "View custom buffs"** now sit together in one
-      Custom buffs card; both still open their modals.
-- [x] **"Open sounds folder"** now at the bottom of the Sounds section, still
-      opens the right folder.
-- [x] **Profile toggles moved into aura settings.** Now an always-visible row
-      of chips at the top of an aura's settings, not a modal.
-      *Expect*: ticking/unticking shows/hides the aura immediately.
-      **Behaviour change**: unticking *every* profile now hides the aura
-      entirely (it used to mean "show on all profiles"). With a single profile
-      this is your plain on/off switch. Worth checking no existing aura
-      vanished unexpectedly.
-- [x] **Profile chip in the top bar** is now solid brass when active - should
-      be obvious at a glance which profile is live.
-- [x] **Unlock to move / Reset position** moved into Display & size, above a
-      dotted rule. "Unlock to move" is accent-outlined, and goes solid brass
-      while actually unlocked.
-- [x] **Timer text colour / Label text colour** pickers now work (icon mode
-      and list mode). *Expect*: a buff about to expire still goes red - the
-      low-time warning deliberately overrides any custom colour.
-- [x] **Margin width** slider now works - changes the gap between icons in
-      icon mode.
+- [x] **Persists across restarts.** Memorize some spells, close the app, reopen. *Expect*: the bar
+  comes back populated, not empty and red.
+- [x] **Click a gem to forget it** — gem disappears, stays gone after restart.
+- [x] **"Forget all"** clears the whole bar.
+- [x] **Bard songs sit at the right-hand end**, underlined; regular spells fill from the left.
+- [x] **Non-buff spells** (a nuke, a heal) show their real icon greyed out with a dotted border, and
+  hovering says "(not a tracked buff)".
+- [x] **Empty state is red/warning** on a genuinely fresh memory.
 
 ## Overlay behaviour
 
-- [ ] **Auto-hide split into two settings** (now on the Overlay Auras page,
-      under "All auras"). The second one,
-      "Also show auras while EQLS Auras itself is the focused window", is OFF
-      by default. *Expect*: with it off, tabbing to this app no longer drags
-      every aura back on screen; with it on, it does.
-- [x] **An unlocked aura is never auto-hidden.** Click Unlock to move on one
-      aura while EQ isn't focused - it should stay visible so you can actually
-      drag it. Re-locking hands it back to the normal rules.
-- [x] **"Unlock all auras"** toggle unlocks/re-locks every aura at once, and
-      the per-aura Unlock button label stays in sync with it (and vice versa).
-- [ ] **Both auto-hide settings moved** off the Setup page into the "All
-      auras" card on Overlay Auras. Check they still actually work from their
-      new home - the wiring is by element id so it should be unaffected, but
-      worth confirming rather than assuming.
-
-## Rank collapsing
-
-- [ ] **Ranked spells no longer prompt.** A landing text shared only by ranks
-      of one spell (e.g. "A soft mist surrounds you." - Shauri's Sonorous
-      Clouding plus I/II/III) resolves silently to the LOWEST rank.
-      All ranks stay listed in Known Buffs - only the prompt is gone.
-- [ ] **Genuinely different spells still prompt.** "Your mind clears."
-      (Brilliance vs Cassindra's Chant of Clarity) must still ask.
-
-## Ally buff grouping
-
-- [x] **Group by player** on an ally aura splits it into a section per person
-      with their name as a heading. Groups are ordered **alphabetically** and
-      stay put as timers tick - they should never reshuffle.
-- [x] **Stack groups vertically / side by side** both lay out correctly, in
-      list mode and icon mode.
-- [x] **The name prefix disappears from tiles while grouping is on** (the
-      heading covers it), and the separate "Hide the player name" toggle drops
-      it when grouping is off.
-- [x] **Nothing breaks over time.** Leave a grouped aura running a few minutes
-      - tiles must stay inside their group, not drift out into a flat pile.
-- [x] The grouping section is **hidden** on self-buff and custom-timer auras.
-
-## Duration scaling exclusion
-
-- [ ] **"No AA scaling"** in Known Buffs. Tick it on Promised Renewal.
-      *Expect*: its timer uses the raw duration, ignoring your Spell Casting
-      Reinforcement / Extended Enhancement bonus. Other buffs unaffected.
-      *Note*: Inferno Shield is a SEPARATE problem, not this one - don't
-      expect this flag to fix it.
-
-## Session restore
-
-- [ ] **Timers survive a restart.** With buffs running, close the app and
-      reopen within 5 minutes. *Expect*: they come back with time already
-      deducted for the gap (a 100min buff closed 3min shows ~97min), and
-      anything that expired while closed is simply absent.
-      Confirmed working against real data (7 timers restored after a 6s
-      restart) - this is about confirming it feels right in play.
-- [ ] **Ally buffs and custom timers restore too**, not just self buffs.
-- [ ] **A long gap does NOT restore.** Close for more than 5 minutes and
-      reopen - the overlay should be empty rather than showing stale buffs.
-      `detection-debug.log` will say "Did not restore timers: closed for Ns,
-      over the 300s limit".
-
-## Debuffs on enemies (mez, charm, snare, slow)
-
-This is off until an aura asks for it. Tick **"Also watch these on enemies"**
-on a custom aura, and the spells that aura is watching start tracking on the
-things you cast them at.
-
-- [ ] **Mez a mob and the tile appears with its name on it** - "a greater
-      kobold", not blank and not your own name. Nothing showed here before,
-      for any spell, because a mob's name is not one word and the recipient
-      check only accepted one word.
-- [ ] **The tile clears when the mob dies**, without waiting for the timer.
-- [ ] **The tile clears when the mez breaks** rather than counting down to
-      zero while the mob is already hitting you.
-- [ ] **AoE mez shows one tile per mob.** Two mobs with the *same* name
-      currently collapse into a single tile - that is a known gap, note 18,
-      not something to report as a bug.
-- [ ] **Mesmerize runs 30 seconds, not 24.** The spreadsheet said 24; your own
-      note-17 table said 30, and 90 natural expiries in your logs stop dead at
-      30 with nothing above it, so the roster now says 30. Worth one check
-      against a stopwatch.
-- [ ] **Turning it off puts everything back.** Untick it and the mob tiles
-      should stop appearing entirely.
-
-**One change that happens whether or not you turn this on**, so it is worth
-knowing about rather than being surprised by: a debuff tile now disappears when
-the log says the debuff ended - the mob died, or the spell wore off - instead of
-sitting there until its timer runs out. Across your logs that is 277 tiles,
-roughly one every few hours of play. Nothing stopped being *detected*; things
-stop being *shown* once they are over. If you would rather they stayed put,
-say so - it is one line to put back.
-
-## Timers that roll into a cooldown (note 10)
-
-On a custom timer, under Duration, there is now **"Then cooldown: N s"**.
-Optional — leave it empty and nothing changes.
-
-- [ ] **Set one up with both.** When the duration runs out the same tile keeps
-      counting, down to when you can use the thing again, then disappears.
-- [ ] **The tile looks different while cooling down** — dimmed and dashed — and
-      hovering it says "cooling down, ready in Ns". A cooldown and a duration
-      show the same digits and mean opposite things, so the tile has to say
-      which.
-- [ ] **The trigger line arriving again DURING the cooldown does nothing.**
-      That is deliberate: the ability is not available, so the line cannot mean
-      you used it, and restarting would hide the countdown you are waiting on.
-- [ ] **During the duration, the trigger still restarts it**, as it always has.
-- [ ] **Editing a timer keeps its cooldown**, and emptying the box removes it.
-
-**Also new on that form: how the trigger matches.** Two radios under the raw
-trigger box — *the whole line, exactly* (what every timer has always done) or
-*any line containing it*. The second is for lines the game writes a name into:
-"Orc centurion resisted your Mesmerize!" will never match a fixed string, but
-"resisted your Mesmerize" catches all of them. It existed in the engine and
-could only be reached by a premade until now.
-
-- [ ] **Build a "containing" timer and check it fires.** Be specific with the
-      text — a short word set to "containing" will fire on nearly every line.
-
-The cooldown field sits behind a **Cooldown** section that expands like the
-other collapsible sections, so it is out of the way unless you want it. If a
-timer has one set, the section shows the value beside its title even when shut,
-and opens by itself when you edit that timer — a setting hidden behind a closed
-section is the one way a collapsible menu can actively mislead.
-
-## A "Custom debuff aura" type (note 34)
-
-Add Aura -> Custom -> **Custom debuff aura**, beside Custom buff aura.
-
-- [ ] **It comes out already set up to watch enemies.** A debuff on a mob
-      arrives as a landing on "not you", so it needs the ally source AND the
-      enemy switch - two settings in two places, neither obviously about
-      debuffs. That is what this type saves you.
-- [ ] **Add a mez to it and it tracks mobs**, showing their names.
-- [ ] **A Custom buff aura is unchanged** and still comes out watching you.
-
-## The song-pulse check (note 24) — built, but it cannot fire yet
-
-You said the 6-second pulse is real and I did not need proof. You were right,
-and the logs are emphatic: across 1.5M lines the gap between repeats of an
-identical line is 6 seconds **314,324 times**, four times more than any other
-gap, and all ten of the most-repeated lines pulse at 6s. The number is in the
-code with that measurement beside it.
-
-**But the thing it was meant to fix no longer exists.** The check decides a
-landing message shared between one bard song and one ordinary spell — and after
-the roster rebuild there are none. 108 messages are shared between two or more
-spells; not one is that pairing. The old 11,337-entry roster had them; replacing
-it removed them.
-
-So there is nothing for you to test here. The code is in, with a test that will
-fail the day a song and a spell share a message again, so it gets checked
-properly the first time it can actually run.
-
-## Counting mobs with the same name (notes 12 and 18)
-
-- [ ] **AoE mez three "a greater kobold" and the tile should say x3.** One
-      tile, not three rows.
-- [ ] **Kill one — it becomes x2. Kill another — x1.** At x1 the count
-      disappears entirely rather than showing "x1".
-- [ ] **The countdown is the one breaking soonest**, not the last.
-- [ ] **A mez wearing off, a mob dying, and a mez being broken each remove
-      exactly one**, not all of them.
-- [ ] **Buffing a groupmate three times still shows one**, with no count. A
-      re-buff is a refresh, not a second target.
-
-Worth knowing what this cannot do: the game never distinguishes two mobs with
-the same name, so when one of three kobolds wakes up the app knows only that
-*one* did. It drops the one closest to expiring, which is the best guess
-available and is right nearly always.
-
-## Zone-gated auras (note 38)
-
-In an aura's settings, under the loadout toggles: **"Only in:"**. Leave it empty
-and the aura shows everywhere. Type a zone and press Enter, or pick from the
-list, to limit it.
-
-- [ ] **Limit an aura to the zone you are in.** It should stay on screen.
-- [ ] **Zone somewhere else.** It should disappear, and its settings should say
-      *"Hidden right now: you are in X, which is not on its list."*
-- [ ] **Zone back.** It returns.
-- [ ] **Click a zone chip to remove it.** With none left, the aura shows
-      everywhere again.
-- [ ] **Instances are separate, as you asked.** An aura limited to `Befallen`
-      will NOT show in `Befallen 1 (Awakened)` — add each one you want. Same for
-      `The Plane of Fear` and `The Plane of Fear - Group`.
-- [ ] **Unlocking an aura still shows it in the wrong zone**, so you can move it
-      wherever you happen to be standing.
-
-**One thing worth knowing before it surprises you.** The app only learns which
-zone you are in when you *change* zone — the game prints nothing otherwise, and
-there is no way to ask. So if you start the app while already sitting somewhere,
-it does not know where you are until you next zone. **Zone-gated auras show
-anyway during that window**, and the settings panel says so. That is deliberate:
-in your logs the wait for the next zone line, from a random start, averages
-about 55 minutes of play and once ran five hours. An aura silently missing for
-five hours with no explanation is far worse than one showing where you did not
-ask for it.
-
-The zone box offers the 66 zones seen in your logs and accepts anything you
-type, so a zone you have not visited yet costs one line of typing.
-
-## The hide-auras hotkey (it never worked)
-
-**It was Pause, and Pause has never once worked.** Electron refuses that key
-outright, and refuses it by throwing rather than by saying no - so the code that
-was there to handle "another program owns this key" never ran, and the top bar
-cheerfully said "or press Pause" the whole time. No test caught it because none
-of them start the actual app. Nine seconds of launching it did.
-
-**It is Scroll Lock now** - same corner of the keyboard, equally unused in game.
-If something else on your machine owns Scroll Lock it falls back to Alt+Shift+H
-and the hint in the top bar tells you which one you actually got.
-
-- [ ] **Press Scroll Lock in game.** Every aura should vanish; press again and
-      they come back.
-- [ ] **The hint next to the "Hide auras" button names the key you actually
-      have.**
-- [ ] **The button and the key agree** - use one, then the other, and the button
-      should look right both times.
-- [ ] If Scroll Lock is wrong for you, say so - it is one line, and any key
-      Electron accepts will do.
-
-## Stale timers when a buff is replaced (note 26)
-
-This turned out to need no stacking rules at all - the game announces it.
-
-- [ ] **Overbuff a groupmate.** Cast a weaker buff on someone, then a stronger
-      one of the same line. The weaker tile should disappear when the game says
-      "Your <spell> spell on <name> has been overwritten", not keep counting
-      down.
-- [ ] **A buff wearing off a groupmate clears its tile** rather than running to
-      zero on the app's own guess.
-- [ ] **A groupmate dying does NOT clear their buffs.** They will probably be
-      rezzed, and forgetting is the app inventing a change the log never
-      reported. A mob dying still clears its debuffs.
-
-**What changed underneath, worth knowing.** Nine of the twelve "this cast
-failed" patterns in the app matched nothing at all - they were written from
-memory of EverQuest's wording rather than from your logs. The game says "Your
-<spell> spell fizzles!", not "Your spell fizzles"; "did not take hold", not
-"would not take hold". Fixed, and every pattern now carries the count it was
-measured at.
-
-Two casts across your whole log history stop being credited as landings, both
-Dexterity, both cases where the cast demonstrably failed and the app was
-attributing a later landing to it. Nothing else moved.
-
-**Buffs on yourself are covered too - I was wrong about this twice.** I said the
-app could not tell Nimble from Agility because they share a fade message. It
-can: it only matters if both are running at once, and the stacking rule that
-causes the overwrite is the same rule that stops that happening. Verified with
-Skin like Wood being replaced by Skin like Steel, which share a fade message
-with nineteen other spells.
-
-- [ ] **Overbuff yourself** - cast a weaker buff on yourself, then a stronger one
-      of the same line. The first tile should go and the second appear, with the
-      longer duration.
-
-## "Buffs shown" is its own card, with gem slots
-
-- [ ] **Open any aura's settings.** "Buffs shown" is a card of its own between
-      **Display & size** and **Configuration**.
-- [ ] **What the aura watches is now a row of spell icons**, not a list of
-      ticked names. Hover one to see which spell it is; click it to stop
-      watching it.
-- [ ] **The dashed "+" slot** focuses the search box. It stays visible even
-      when nothing is picked, because otherwise there is no way to add the
-      first one.
-- [ ] **Your existing auras still have their spells.** Nothing about how they
-      are stored changed - the gems are just how the same list is drawn - so
-      this should be true, but it is the thing to check first.
-- [ ] **Try to add a debuff to an aura that has buffs in it.** It should refuse
-      and say why, rather than silently not appearing. Same the other way
-      round.
-- [ ] **The picker row "Watching:"** (you / an ally / your own text triggers)
-      has moved up into this card, out of Display & size.
-
-## Loadouts, and the loadout label
-
-The profile bar has **one** button now, "Loadouts", where the "+" and the cog
-used to be. It opens a modal that adds, renames and deletes loadouts, and holds
-the loadout-label switch.
-
-- [ ] **The one button opens the modal**, and adding a loadout from inside it
-      still works exactly as the old "+" did.
-- [ ] **Make a second loadout and the label turns itself on**, without you
-      asking. With one loadout it has nothing to tell you.
-- [ ] **Turn it off, then make a third loadout — it must STAY off.** This is the
-      one I would check hardest. Gating on "do you have two loadouts" would turn
-      it back on every time you added one, and you would be switching it off
-      forever.
-- [ ] **The tick box shows the truth** when the label switched itself on — open
-      the modal and it should already be ticked.
-- [ ] **The label follows a switch immediately**, and is still there on a
-      loadout created after it.
-- [ ] **Drag it, untick, re-tick** — it comes back where you left it.
-- [ ] **Rename a loadout and the label follows.**
-
-You can reword and resize it in its own settings like any aura — `{profile}` in
-the **Say:** box becomes the loadout name.
-
-## Cooldown timers
-
-Add Aura -> **Cooldown timer**. Pick a spell, check the number, create.
-
-- [ ] **Cast the spell and a countdown appears**, ending when you can cast it
-      again.
-- [ ] **It works for the ranked spells you actually cast.** You pick "Promised
-      Renewal" from the list, but you cast "Promised Renewal VII" - that has to
-      start it, and so do V and IX. This is the single thing most likely to be
-      wrong, so please check it first.
-- [ ] **The number is recast plus cast time.** Promised Renewal shows 21s: 18s
-      recast plus 3s casting. The recast clock starts when the cast finishes
-      but the timer starts when you begin, so the two are added. Your
-      consecutive casts in the logs cluster at exactly 21s, which is where this
-      came from - but a stopwatch check would be welcome.
-- [ ] **An interrupted cast leaves no timer running.** Start a cast, get hit,
-      have it interrupt - the countdown should vanish rather than sit there
-      saying the spell is unavailable.
-- [ ] **Somebody else's interrupt does not clear yours.**
-- [ ] **You can change the recast time before creating it**, and it keeps what
-      you set. Recast times come from the game data and are usually right but
-      not always - of the two you checked, one was wrong - so if any spell
-      looks off, the number is yours to correct.
-
-Two things it does NOT do yet, so they are not bugs: it does not shorten the
-recast for higher mote tiers (the sheet says 2% per tier), and it does not
-handle a spell that has both a duration and a cooldown - that is note 10.
-
-## Someone else casting a mez
-
-Add Aura -> **Someone else cast a mez**. Or tick **"Warn me when someone else
-casts these"** on any text-only aura.
-
-This is your design, built the way you specified it: a warning, no countdown.
-
-- [ ] **When a groupmate casts a mez, the warning appears** and names them -
-      "Lumbarin cast Mesmerization VII - careful".
-- [ ] **It appears as they START casting**, roughly two seconds before the mez
-      actually lands. That is deliberate: a warning after the fact is too late
-      to stop you swinging. The cost is that a cast which gets resisted still
-      warns you - about one time in ten.
-- [ ] **It names whoever cast it rather than saying "a party member".** In your
-      logs, half the mez and charm casts by other people are mobs - ``A
-      Teir`Dal ranger``, "A negotiator" - and the game's line does not say
-      which is which. Naming them is right every time, and a mob casting mez is
-      worth knowing about too. Say the word if you would rather it only ever
-      mentioned actual group members and I will explain what that costs.
-- [ ] **Your own casts never trigger it.**
-- [ ] **There is no timer on it, anywhere.** If you ever see a countdown on one
-      of these, that is a bug - report it.
-- [ ] **It watches the whole mez and charm family out of the box** - Mesmerize,
-      Mesmerization, Dazzle, Charm, Allure, Beguile, Cajoling Whispers. Adding
-      slows or snares is a tick each in the aura's buff list.
-- [ ] **Picking "Mesmerization" catches the ranks people actually cast** - VI
-      and VII both warn, and the warning says which rank it was.
-
-You can reword it. In the aura's **Say:** box, `{caster}` becomes whoever cast
-it and `{spell}` becomes what they cast.
-
-## The RESIST flash
-
-Add Aura -> **Resist flash**. One aura, covers every spell you cast - you do not
-pick which.
-
-- [ ] **Get a mez resisted and RESISTED flashes up**, then goes away on its own.
-- [ ] **It does NOT fire when something resists a spell somebody else cast**,
-      and does NOT fire when a spell is resisted *by you* - those are different
-      lines, and there are 761 of the second kind in your logs against 970 of
-      the real ones, so if this is wrong the flash will be on constantly.
-- [ ] **It lasts about a second and a half.** You asked for 1.4s. Timers are
-      swept once a second, so in practice it clears somewhere between 1.4 and
-      2.4 seconds after the resist. If that reads as too long or too short,
-      say so - the number is one line.
-
-## The name box in New loadout profile (note 33)
-
-You reported you could not click into it. A fix is in — the modal now opts out
-of the window-drag region, which is exactly what would swallow a click on a
-frameless window — but **I was never able to reproduce the fault**, so this is
-the one item where I genuinely do not know whether it is fixed.
-
-- [ ] **Loadouts -> Add a loadout, click the name box, type.** If it still will
-      not take focus, say so and I will look again with that confirmed.
-
-## Stability
-
-- [ ] **App no longer closes itself.** It was observed exiting unprompted
-  (exit 0, no crash dump, cause unknown). Shutdown logging is now in place -
-  **if it happens again, check `detection-debug.log` for `SHUTDOWN:` lines**
-  and report which one appears. That identifies the cause.
-
-## Damage parser (note 19)
-
-New premade, in **+ Add aura -> Premade aura -> Damage parser**. It replaces
-the greyed-out "Damage parser" that used to sit in the Not-built-yet list, so
-you should now see exactly one of them and it should be clickable.
-
-What it does: one row per person for the fight you are in, biggest first, with
-a total line on top carrying the fight's damage and its rate per second. It
-works out who is on your side from the log itself - there is no group list to
-keep up to date, and no setting to tell it who your friends are.
-
-- [ ] **Make one and pull something.** Rows should appear as damage happens and
-      the numbers should climb. The percentages should add up to 100.
-- [ ] **Stop fighting for ten seconds.** The whole thing should clear itself.
-      Then pull again - it should start from zero, not carry the last fight
-      forward.
-- [ ] **Check it counts your groupmates, not the mobs.** A monster hitting you
-      must never get a row. If you ever see a mob's name in the list, tell me
-      what the line in the log looked like - that is the one thing here that
-      could go wrong in a way I cannot see from your logs.
-- [ ] **Check the numbers are believable.** Not exact - I have no way to verify
-      against the game - but if someone's damage looks wildly wrong, say whose
-      and roughly by how much.
-
-Three settings on the aura's own page, under **Damage meter**:
-
-- [ ] **A fight ends after** (3-60s, default 10). Lower it and a slow pull
-      should split into two fights; raise it and a chain of quick pulls should
-      join into one.
-- [ ] **Only show my own row.** Hides everyone else. Your percentage should
-      still be your share of the *whole* fight, not jump to 100%.
-- [ ] **Show the total line at the top.** Off should remove just that row.
-
-Two things I want to flag rather than have you discover:
-
-- **On your character it will mostly show other people.** That is correct, not
-  broken. Across your 1.5 million logged lines your own damage is 2,712 lines
-  against roughly 346,000 from everyone else, so a meter showing only you would
-  be nearly empty. That measurement is why it defaults to showing the group.
-- **It learns who is who from your own attacks.** If you play a session where
-  you never damage or debuff anything at all, it may stay empty. Mez, snare and
-  slow count as well as nukes, so this should be rare - but if you get an empty
-  meter during a fight, that is the likely reason and I want to know.
-
-What I verified myself, so you do not have to: replayed against a full day of
-your log, it reads 14,235 damage lines and credits 9,306 of them (the rest are
-monsters hitting you, correctly left out), with nothing left unclassified. On
-your largest log it found a five-person fight totalling 195.7k at 369/s. The
-line patterns and the friend/enemy rules were each broken on purpose in nine
-different ways and the tests caught all nine.
-
-## Buff durations now scale with spell rank (notes 11 and 17)
-
-You said duration should be "base duration from the roster, multiplied by the
-AA's, exaltations, and rank of the spell". That is in. The rank is the numeral
-outside the name field - the one the log prints when *you* cast something.
-
-- [ ] **Cast a ranked buff and check the countdown.** Spirit of the Puma VII
-      should start around 168 seconds if your duration AAs are maxed, against
-      60 at rank 0 with no AAs. The exact number depends on your AA setting in
-      the app, which is still 0 unless you have set it.
-- [ ] **Celestial Healing IV** should start at about 48 seconds on maxed AAs.
-- [ ] **Promised Renewal** should stay at 15 seconds at every rank. It ignores
-      both rank and AAs - measured across 225 of your castings.
-- [ ] **A groupmate's buff on you keeps its plain roster duration.** Their rank
-      is in the log, but nothing links which of their casts caused which
-      landing, so I left it unscaled rather than guess. If you see a groupmate's
-      buff timing out early, that is why, and it is worth telling me.
-
-**A bug this turned up, which you should know about because it would have hit
-you the moment you set your AA level.** The app was applying the AA duration
-bonus to *everything* - including debuffs, damage-over-time and mez. Your own
-logs say that is wrong: on 9 and 10 August, when your buffs measured x1.53,
-Curse measured 31-36 seconds against a base of 30 across 31 castings. If the
-bonus applied it would have been 45. So 155 roster entries would have started
-over-timing by up to 65% - a mez timer still counting down long after the mob
-woke up. The bonus is now for beneficial buffs only.
-
-- [ ] **Set your AA and exaltation levels, then check a mez.** Mesmerize should
-      NOT get longer when you raise them. Buffs should.
-
-**Corrected 23 August, on your instruction:** the AA bonus now applies to spells
-marked **buff** and nothing else. I had it applying to buff, heal, heal-over-time
-and pet summons, on the reasoning that the bonus is for beneficial spells and
-those are the beneficial categories. That was me inferring and calling it a
-measurement.
-
-One observation still looks like it disagrees, and I want to flag it rather than
-bury it. Celestial Healing IV measures 48 to 78 seconds across 32 castings; the
-mote tier alone predicts 29. I re-measured it myself rather than trusting the
-earlier number, and it holds. But I no longer think it is evidence of anything:
-a spell with a fixed duration measures *tightly* - Spirit of the Puma VII lands
-in a 14-second band - and a 30-second spread whose median matches no prediction
-is a sign that the landing-to-wear-off gap for a heal over time is not its
-duration at all. So I have followed your instruction and recorded the oddity in
-the code.
-
-- [ ] **If a heal-over-time countdown looks wrong in game**, that is the thing to
-      tell me about - it is the one number I could not reconcile.
-
-Two rates I could not verify and want you to eyeball: **debuff and charm/mez
-duration per tier**. The spreadsheet says +10% per tier and marks it assumed;
-every observation of one in your logs was cut short by the mob dying before the
-spell ran out, so I have nothing to check it against. Togor's Insects V should
-show 315 seconds against a base of 210. If it wears off noticeably early or
-late, that number is the suspect.
-
-## Travel guide (note 20)
-
-This was blocked on data that did not exist - a zone map plus a table of which
-travel spell drops you where. You said to send an agent after it, and the data
-was there: an EverQuest Legends-specific zone graph, cross-checked against three
-other sources. 66 of 66 of the zones you have actually visited resolved.
-
-New premade in **+ Add aura -> Premade aura -> Travel guide**. Pick a
-destination and it shows the shortest way there from wherever you are, one step
-per line, redrawing every time you zone.
-
-- [ ] **Make one pointing somewhere far away and walk about.** The list should
-      shorten as you get closer, and the top line should always be the next
-      thing to do.
-- [ ] **Arrive.** It should say "You are in <zone>" rather than going blank.
-- [ ] **Check it uses your travel spells.** If you have a portal or a Circle
-      scribed that helps, it should say "Cast <spell>" instead of walking you.
-      If it offers a spell you do NOT have, that is a bug - tell me which.
-- [ ] **Change the destination** on the aura's settings page under **Travel
-      guide**. The route should update immediately.
-
-**Setting the destination from inside the game (added 23 August, your design).**
-Type `/tell qeynos` and the game answers "Qeynos is not online at this time" -
-the aura reads that as the new destination. Both of those lines were already in
-your logs, so I did not have to guess at the wording.
-
-- [ ] **`/tell rivervale`** should point every travel aura at Rivervale without
-      you touching the app.
-- [ ] **`/tell qeynos`** should give you South Qeynos. A /tell name cannot have
-      spaces, so one word has to do - and it prefers the short name the game
-      itself uses, which is what `qeynos` is.
-- [ ] **`/tell faydark`** should NOT pick one. It should list "The Greater
-      Faydark" and "The Lesser Faydark" and wait, because guessing would send
-      you to the wrong one.
-- [ ] **`/tell nonsense`** should say there is no zone by that name.
-- [ ] **The start of the route always comes from the zone tracker**, never from
-      the command - so after a `/tell`, walking to a different zone should
-      change the route without you retyping anything.
-- [ ] **Picking from the dropdown afterwards** should clear any "which did you
-      mean" message.
-- [ ] **Boats and portals should be named as such** - "Sail to" and "Portal to"
-      rather than "Go to".
-
-Three things to know:
-
-- **Some zone names in the list are a guess.** 38 of the 104 are zones you have
-  never entered, so I have no record of EQL's exact wording for them - usually
-  it is a question of a leading "The". They have to be in the list because real
-  routes pass through them (Faydwer to Antonica goes via the Ocean of Tears). If
-  you see a name that is wrong, tell me the right one and I will correct it.
-- **Instance tiers are entered, not walked into.** Route to "Befallen 3 (Fused)"
-  and the last line says "Enter Befallen 3 (Fused)" once you are standing in
-  Befallen, because there is no zone line into a specific tier.
-- **One pair I could not resolve**: "Permafrost Keep" and "The Permafrost
-  Caverns - Group". Classic EverQuest has one zone there; your app's list has
-  two names. I have treated them as the same place. If they are actually two
-  different zones in EQL, routing to the second will send you to the wrong door.
-
-What I checked myself: all 5,852 ordered pairs between the 77 real places route,
-and all 10,712 pairs once instance tiers are included. The router was broken on
-purpose in nine ways and the tests caught eight; the ninth is explained in a
-comment, because two mechanisms in the code agree and neither is observable
-alone.
-
-## Timers that need more than one thing to be true (note 9)
-
-Your answer settled the design: "the time window should be whatever each
-individual trigger has... limiting it to checks happen within a set time frame
-is not something i want." So there is no shared window - each condition carries
-its own, and a zone condition has none at all.
-
-On any custom timer, in the Add/Edit timer box, there is a new collapsed
-section: **Extra conditions**. Add conditions there and the timer only starts
-when all of them are true at once.
-
-- [ ] **Two lines.** Add two line conditions and make one happen. Nothing should
-      appear - not a dimmed tile, not a partial one, nothing. Make the second
-      happen and the timer should start.
-- [ ] **Order should not matter.** Try it the other way round.
-- [ ] **Let one go stale.** Give a condition a short time (say 5s), trigger it,
-      wait past that, then trigger the other. Nothing should start.
-- [ ] **A zone plus a line** - the case you said this is mainly for. Add "You
-      are in a zone" and one line condition. It should fire only in that zone.
-- [ ] **It should not re-fire on every line afterwards.** A zone condition never
-      lapses, so this is the one I would most expect to go wrong: once it has
-      fired, unrelated chat should not keep restarting it.
-- [ ] **The section summary.** Close Extra conditions and it should still say
-      how many you have set, so a condition is never invisible.
-- [ ] **Remove them all** and the timer should go back to firing on its plain
-      trigger line rather than becoming one that never fires.
-
-If the app does not know what zone you are in yet, a zone condition counts as
-satisfied rather than blocking. That is deliberate - it only learns the zone
-when you cross a line, so treating "unknown" as "wrong zone" would leave the
-timer dead for a whole session if you started in the right place.
-
-## Debuff template (note 34)
-
-You said "buff AND debuff need their own custom templates. add a debuff
-template." Checking this properly: it was already built and I had it marked as
-half-done, which was wrong - the row was stale, not the work.
-
-- [ ] **+ Add aura -> Custom debuff aura.** It should make an aura already set
-      to watch the things you cast spells AT, showing each target's name,
-      without you having to change any settings afterwards.
-
-## Share codes pasted into chat (note 30)
-
-This was blocked on two questions and both are now answered from your logs.
-
-You told me "+= survive fine in a chat line" and the logs back you up: across
-1.5 million lines, 1,393 chat messages contain a +, 135 contain an =, and 921
-contain a /. The other half - the per-line character limit - is not published
-anywhere, so I measured it instead: the longest message anyone has typed in your
-logs is 403 characters. Real aura codes come out at 79 to 231 characters, so
-they fit with room to spare.
-
-When someone pastes a code into any chat channel, a strip appears at the bottom
-of the main window: "<name> shared an aura: <name>." with **Look at it** and
-**Ignore**.
-
-- [ ] **Get someone to paste a code**, or paste one yourself in /say. The strip
-      should appear naming who sent it and what the aura is called.
-- [ ] **Look at it** should open the normal import screen with the code already
-      filled in. It should NOT import anything by itself - you still press
-      Import, and every warning that screen already gives you still happens.
-- [ ] **Ignore** should make it go away.
-- [ ] **The same code twice** should only offer once per session.
-- [ ] **A code in a tell, in guild, in group, in a channel** should all work.
-      I checked the wordings against your logs, so if one of them does not
-      register, tell me which channel.
-
-Deliberate: it never imports on its own. A code in chat is text another player
-typed, and applying it automatically would let anyone reconfigure your app by
-talking in guild chat.
-
-**The one real limit.** A very elaborate aura - I built one with 40 spells, six
-timers and three zone limits - comes to 651 characters and will not fit in one
-chat line. If a code arrives cut off, the strip says it looks cut off rather
-than calling it invalid, so you know it is a length problem and not a bad code.
-If that turns out to bite in practice, tell me and I will split long codes
-across two lines.
-
-## The Ally Buffs bug, and why the next one will be enough (note 28)
-
-I still cannot fix this without seeing it happen once more, but I have stopped
-it needing to happen *twice*.
-
-My best guess at the cause: when you activate something, the app opens a short
-window and treats buff landings inside it as yours. If a groupmate casts on
-somebody during that window, it can get credited to you. The trouble was that
-the detection log said only "burst context" for both the correct case and the
-wrong one, so a report of it looked identical to normal operation.
-
-The log now records **what opened the window and how long ago**, like this:
-
-    ALLY LANDED "Spirit of the Puma" on "Avenrae" - burst context
-    (burst opened 4.2s ago by "Cannibalize"), unique third-person landing text
-
-The age is the telling part. Half a second after you pressed something is
-probably genuinely yours; eight seconds later is probably somebody else's cast
-arriving inside your window.
-
-- [ ] **Next time you see a buff on Ally Buffs you did not cast**, note the buff
-      name and roughly the time, then send me that day's file from the
-      `detection-logs` folder. With the burst origin in there I should be able
-      to say what happened without you having to reproduce it.
-
-## The song-pulse check (note 24)
-
-You said: "you do not need proof, it happens... the proof is that I told you it
-is." You were right, and I measured it anyway because the app needed a number to
-work with: across your 1,521,971 log lines, the gap between consecutive repeats
-of an identical line is exactly 6 seconds on **314,324** occasions - four times
-more often than any other gap.
-
-The check is built and wired. It is also, right now, **dormant** - it exists to
-break a tie between a song and a non-song sharing one landing text, and after
-the roster rebuild there are no such ties left. There is a test that fails if
-one ever appears, so it will not sit there rotting unnoticed.
-
-Nothing for you to test. Recorded here because you said "this 6 second timer
-check will be needed later", and this is me saying it is ready and waiting.
-
----
-
-## Confirmed
-
-- [x] **Bard song opt-in + "Show bard songs" toggle.** Songs hidden by
-  default; toggling shows them. Previously the toggle did nothing at all
-  because only 1 of 11,337 roster entries was tagged as a song.
-- [x] **Ally buff detection.** Buffs cast on other people now appear on the
-  Ally Buffs aura - confirmed with Shield of Flame on both Avenrae and
-  Lasartik. Had **never** fired before: the tier was gated on the recipient
-  being a known group member, and group membership is only learned from
+- [x] **An unlocked aura is never auto-hidden.** Click Unlock to move on one aura while EQ isn't
+  focused — it should stay visible so you can actually drag it. Re-locking hands it back to the
+  normal rules.
+- [x] **"Unlock all auras"** toggle unlocks/re-locks every aura at once, and the per-aura Unlock
+  button label stays in sync with it (and vice versa).
+
+## QOL
+
+- [x] **"Add a new buff" and "View custom buffs"** now sit together in one Custom buffs card; both
+  still open their modals.
+- [x] **"Open sounds folder"** now at the bottom of the Sounds section, still opens the right folder.
+- [x] **Profile toggles moved into aura settings.** Now an always-visible row of chips at the top of
+  an aura's settings, not a modal. *Expect*: ticking/unticking shows/hides the aura immediately.
+  **Behaviour change**: unticking *every* profile now hides the aura entirely (it used to mean "show
+  on all profiles"). With a single profile this is your plain on/off switch.
+- [x] **Profile chip in the top bar** is now solid brass when active — should be obvious at a glance
+  which profile is live.
+- [x] **Unlock to move / Reset position** moved into Display & size, above a dotted rule. "Unlock to
+  move" is accent-outlined, and goes solid brass while actually unlocked.
+- [x] **Timer text colour / Label text colour** pickers now work (icon mode and list mode).
+  *Expect*: a buff about to expire still goes red — the low-time warning deliberately overrides any
+  custom colour.
+- [x] **Margin width** slider now works — changes the gap between icons in icon mode.
+
+## Detection
+
+- [x] **Bard song opt-in + "Show bard songs" toggle.** Songs hidden by default; toggling shows them.
+  Previously the toggle did nothing at all because only 1 of 11,337 roster entries was tagged as a
+  song.
+- [x] **Ally buff detection.** Buffs cast on other people now appear on the Ally Buffs aura —
+  confirmed with Shield of Flame on both Avenrae and Lasartik. Had **never** fired before: the tier
+  was gated on the recipient being a known group member, and group membership is only learned from
   join/leave lines seen live.

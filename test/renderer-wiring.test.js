@@ -96,7 +96,12 @@ test('the UI scale control is wired end to end', () => {
   const preload = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload', 'preload-main.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
 
-  assert.ok(htmlIds.has('ui-scale-slider'), 'no scale slider in the markup');
+  // A dropdown, not a slider. Applying the scale live on `input` rescaled the very control being
+  // dragged, so the handle moved out from under the cursor and the value jumped around - the
+  // setting was effectively unusable. A <select> commits once, after the pointer has left it.
+  assert.ok(htmlIds.has('ui-scale-select'), 'no scale dropdown in the markup');
+  assert.ok(!htmlIds.has('ui-scale-slider'), 'the unusable rescale-under-the-cursor slider is back');
+  assert.match(js, /select\.addEventListener\('change'/, 'the dropdown is not wired to anything');
   assert.match(js, /getUiScale\(\)/, 'the renderer never reads the saved scale, so it will not persist visually');
   assert.match(js, /setUiScale\(/, 'the renderer never applies the scale');
   assert.match(preload, /getUiScale/, 'preload does not expose getUiScale, so the renderer call throws');
