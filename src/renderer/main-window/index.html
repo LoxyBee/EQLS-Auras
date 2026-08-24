@@ -1722,6 +1722,17 @@
     </div>
   </div>
 
+  <!-- Note 30. Somebody pasted an aura code into chat. Deliberately a quiet strip rather than a
+       modal: it is an offer, not a question the app is entitled to interrupt anyone with, and a
+       modal that stole focus mid-fight because a guildmate was chatting would be worse than the
+       feature is good. It never imports anything - "Look at it" hands the code to the ordinary
+       import screen, which keeps every confirmation that already exists there. -->
+  <div id="share-code-offer" class="share-code-offer" style="display:none">
+    <span id="share-code-offer-text"></span>
+    <button type="button" id="share-code-offer-open" class="btn-prominent">Look at it</button>
+    <button type="button" id="share-code-offer-dismiss" class="link-btn">Ignore</button>
+  </div>
+
   <script src="main-window.js"></script>
 </body>
 </html>

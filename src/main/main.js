@@ -35,6 +35,7 @@ const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
 const { findRoute, describeLeg, allZoneNames } = require('../shared/zoneRouting');
+const { matchShareCodeInChat, splitReason } = require('../shared/shareCodeChat');
 const { TRAVEL_SPELLS } = require('../shared/data/zoneGraph');
 const { IconService } = require('./iconService');
 const { ICON_SETS } = require('./iconExtractor');
@@ -284,6 +285,36 @@ logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
 // Note 19. A fourth listener for the same reason as the third: damage is not a buff, and giving
 // buffEngine a second job would mean every future change to either having to think about both.
 logService.watcher.on('line', (line) => damageEngine.handleLine(line));
+
+/**
+ * Note 30. Somebody pasted a share code into chat.
+ *
+ * This OFFERS and never applies. The code is text another player typed, so importing it without
+ * being asked would let anyone reconfigure the app by talking in guild chat. The most that happens
+ * on its own is that the main window is told, and the person decides.
+ *
+ * Codes already seen are remembered for the session, so a code sitting in a busy guild channel
+ * that somebody quotes three times produces one offer rather than three.
+ */
+const offeredShareCodes = new Set();
+logService.watcher.on('line', (line) => {
+  const found = matchShareCodeInChat(line);
+  if (!found) return;
+  if (offeredShareCodes.has(found.code)) return;
+  offeredShareCodes.add(found.code);
+  const peek = widgetManager.peekShareCode(found.code);
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send('shareCode:offered', {
+    sender: found.sender,
+    channel: found.channel,
+    code: found.code,
+    // null when it will not decode. The renderer says so rather than showing an empty name, and
+    // splitReason offers the likeliest cause when the code looks truncated.
+    aura: peek,
+    problem: peek ? null : splitReason(found.code) || 'That code could not be read.',
+  });
+});
 // Note 38. A third listener rather than a hook inside one of the engines - neither of them is
 // about where you are, and a zone is not a buff.
 logService.watcher.on('line', (line) => {

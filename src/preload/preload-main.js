@@ -123,6 +123,11 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createTravelGuideWidget: (name, destination) => ipcRenderer.invoke('widget:createTravelGuide', { name, destination }),
   setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
+  // Note 30. Receive-only. There is no matching "apply this code from chat" channel on purpose -
+  // the offer routes into the ordinary import screen, so nothing here can bypass its confirmations.
+  onShareCodeOffered: (callback) => {
+    ipcRenderer.on('shareCode:offered', (_event, offer) => callback(offer));
+  },
   createSoundOnlyWidget: (name) => ipcRenderer.invoke('widget:createSoundOnly', { name }),
   createTextAuraWidget: (name, preset) => ipcRenderer.invoke('widget:createTextAura', { name, preset }),
   getCastableBuffs: () => ipcRenderer.invoke('buffs:castable'),

@@ -63,7 +63,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 27 | Promote "Buffs shown" to its own section, add gem slots | **DONE** | Own card, gem slots, "+" slot, buffs and debuffs kept apart. Your existing auras were not touched. |
 | 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Needs a detection log from the next time it happens. The log is findable now — see below. |
 | 29 | Put EverQuest back in front after answering a popup | **DONE** | |
-| 30 | Read share codes out of chat | **BLOCKED** | Needs the server's per-line character limit confirmed, and whether + and = survive a chat line. |
+| 30 | Read share codes out of chat | **DONE** | Both blockers answered by measurement — you were right about + and =, and the line limit is at least 403 characters, which ordinary codes fit inside. It offers, never imports. |
 
 ## 31–39
 

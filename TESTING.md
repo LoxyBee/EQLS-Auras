@@ -1243,6 +1243,43 @@ half-done, which was wrong - the row was stale, not the work.
       to watch the things you cast spells AT, showing each target's name,
       without you having to change any settings afterwards.
 
+## Share codes pasted into chat (note 30)
+
+This was blocked on two questions and both are now answered from your logs.
+
+You told me "+= survive fine in a chat line" and the logs back you up: across
+1.5 million lines, 1,393 chat messages contain a +, 135 contain an =, and 921
+contain a /. The other half - the per-line character limit - is not published
+anywhere, so I measured it instead: the longest message anyone has typed in your
+logs is 403 characters. Real aura codes come out at 79 to 231 characters, so
+they fit with room to spare.
+
+When someone pastes a code into any chat channel, a strip appears at the bottom
+of the main window: "<name> shared an aura: <name>." with **Look at it** and
+**Ignore**.
+
+- [ ] **Get someone to paste a code**, or paste one yourself in /say. The strip
+      should appear naming who sent it and what the aura is called.
+- [ ] **Look at it** should open the normal import screen with the code already
+      filled in. It should NOT import anything by itself - you still press
+      Import, and every warning that screen already gives you still happens.
+- [ ] **Ignore** should make it go away.
+- [ ] **The same code twice** should only offer once per session.
+- [ ] **A code in a tell, in guild, in group, in a channel** should all work.
+      I checked the wordings against your logs, so if one of them does not
+      register, tell me which channel.
+
+Deliberate: it never imports on its own. A code in chat is text another player
+typed, and applying it automatically would let anyone reconfigure your app by
+talking in guild chat.
+
+**The one real limit.** A very elaborate aura - I built one with 40 spells, six
+timers and three zone limits - comes to 651 characters and will not fit in one
+chat line. If a code arrives cut off, the strip says it looks cut off rather
+than calling it invalid, so you know it is a length problem and not a bad code.
+If that turns out to bite in practice, tell me and I will split long codes
+across two lines.
+
 ---
 
 ## Confirmed

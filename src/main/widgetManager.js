@@ -275,6 +275,10 @@ function createDebuffWidget(name) {
   return config;
 }
 
+function peekShareCode(code) {
+  return widgetStore.peekCode(code);
+}
+
 function createTravelGuideWidget(name, destination) {
   const config = widgetStore.createTravelGuide(name, {
     destination,
@@ -1146,6 +1150,7 @@ module.exports = {
   setDamageOptions,
   createTravelGuideWidget,
   setTravelDestination,
+  peekShareCode,
   createSoundOnlyWidget,
   createTextAuraWidget,
   createBuffTimerWidget,

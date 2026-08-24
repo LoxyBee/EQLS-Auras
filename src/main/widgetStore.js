@@ -1206,6 +1206,16 @@ class WidgetStore {
     return SHARE_CODE_PREFIX + compressed.toString('base64');
   }
 
+  // Note 30. What a code IS, without doing anything with it. A code arriving from chat is text
+  // another player typed, so the app needs to be able to say "Avenrae sent a Resist flash aura"
+  // before anyone decides anything - and reading is the only part of that which is safe to do
+  // without being asked.
+  peekCode(code) {
+    const payload = this._decodeCode(code);
+    if (!payload) return null;
+    return { name: payload.name, kind: payload.kind || 'custom' };
+  }
+
   _decodeCode(code) {
     if (typeof code !== 'string' || !code.startsWith(SHARE_CODE_PREFIX)) return null;
     try {

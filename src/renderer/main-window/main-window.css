@@ -208,6 +208,30 @@ body {
   user-select: all;
 }
 
+/* Note 30. The share-code offer strip. Bottom of the window and out of the way of the nav, since
+   it arrives unprompted while somebody is doing something else. */
+.share-code-offer {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid #e8b04b;
+  border-radius: 4px;
+  background: var(--bg-card, rgba(20, 20, 24, 0.97));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.share-code-offer span {
+  flex: 1;
+  min-width: 0;
+}
+
 /* For a status that is not an error but does mean something is quietly not working. Loud enough
    to be noticed on a page nobody visits often, without looking like a crash. */
 .warn {

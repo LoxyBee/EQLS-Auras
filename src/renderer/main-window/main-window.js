@@ -2309,6 +2309,51 @@ function initWidgetsPanel() {
 
   widgetsNavBtn.addEventListener('click', deselectWidget);
 
+  // Note 30. A guildmate pasted an aura code into chat.
+  //
+  // The strip only ever OFFERS. "Look at it" opens the ordinary import screen with the code
+  // already typed in, so the Self Buffs overwrite warning and every other check on that path still
+  // happen - importing text another player typed has to stay a decision somebody makes, not
+  // something that happens because they were in guild chat at the time.
+  const shareCodeOfferEl = document.getElementById('share-code-offer');
+  const shareCodeOfferTextEl = document.getElementById('share-code-offer-text');
+  const shareCodeOfferOpenBtn = document.getElementById('share-code-offer-open');
+  const shareCodeOfferDismissBtn = document.getElementById('share-code-offer-dismiss');
+  let offeredShareCode = null;
+
+  function hideShareCodeOffer() {
+    shareCodeOfferEl.style.display = 'none';
+    offeredShareCode = null;
+  }
+  shareCodeOfferDismissBtn.addEventListener('click', hideShareCodeOffer);
+  shareCodeOfferOpenBtn.addEventListener('click', () => {
+    const code = offeredShareCode;
+    hideShareCodeOffer();
+    if (!code) return;
+    openAddWidgetModal();
+    addWidgetChoicesEl.style.display = 'none';
+    addWidgetPanels.forEach((panel) => {
+      panel.style.display = panel.id === 'add-widget-import-panel' ? '' : 'none';
+    });
+    importCodeInput.value = code;
+    importCodeInput.focus();
+  });
+
+  window.eqTracker.onShareCodeOffered((offer) => {
+    // A code that will not decode still gets said out loud, with the likeliest reason. Silence
+    // here would look like the feature is broken to the person who just pasted it.
+    if (!offer.aura) {
+      shareCodeOfferTextEl.textContent = `${offer.sender} sent an aura code, but it could not be read. ${offer.problem}`;
+      shareCodeOfferOpenBtn.style.display = 'none';
+      offeredShareCode = null;
+    } else {
+      shareCodeOfferTextEl.textContent = `${offer.sender} shared an aura: "${offer.aura.name}".`;
+      shareCodeOfferOpenBtn.style.display = '';
+      offeredShareCode = offer.code;
+    }
+    shareCodeOfferEl.style.display = 'flex';
+  });
+
   // Note 6 - an aura's name was clicked in its move box out on the overlay. Registered in here
   // rather than alongside the other IPC listeners because focusWidget lives in this closure.
   window.eqTracker.onOpenWidgetSettings((id) => focusWidget(id));
