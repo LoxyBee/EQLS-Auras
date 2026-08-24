@@ -404,7 +404,7 @@ test('only spells you actually cast at something offer the enemy option', () => 
   // it would build an aura that never lights up - the same failure note 14 called out.
   const handler = mainSrc.match(/ipcMain\.handle\('buffs:trackable'[\s\S]*?\n\);/);
   assert.ok(handler, 'the trackable-spell list has been restructured');
-  assert.match(handler[0], /enemy: !!\(/);
+  assert.match(handler[0], /enemy: hasThirdPersonText && isDetrimental/);
   assert.match(handler[0], /\['debuff', 'charm', 'dot', 'nuke'\]\.includes\(e\.scaleCategory\)/);
 
   // And the distinction is real, not a filter that passes everything.

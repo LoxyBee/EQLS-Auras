@@ -100,9 +100,15 @@ test('only spells the app can actually track are offered', () => {
   assert.ok(trackable.length < roster.length, 'if everything were trackable this filter would be pointless');
 });
 
-test('each spell says whether it can be watched on an ally', () => {
+test('each spell says whether it can be watched on an ally - and a detrimental one never can', () => {
+  // Reported directly, 24 Aug: "allure is marked as a buff to cast on an ally, it is not." Allure
+  // is a charm (roster: kind 'det', scaleCategory 'charm') with real third-person text
+  // ("<Name> has been charmed."), so the OLD rule here - ally purely from third-person text
+  // existing, with no regard for what kind of landing it was - offered "Someone you cast it on"
+  // for it. A charm is cast AT something, never landed on a groupmate as a buff.
   const handler = mainSrc.match(/ipcMain\.handle\('buffs:trackable'[\s\S]*?\n\);/);
-  assert.match(handler[0], /ally: !!\(e\.othersLandingSuffix && String\(e\.othersLandingSuffix\)\.trim\(\)\)/);
+  assert.match(handler[0], /hasThirdPersonText = !!\(e\.othersLandingSuffix && String\(e\.othersLandingSuffix\)\.trim\(\)\)/);
+  assert.match(handler[0], /ally: hasThirdPersonText && !isDetrimental/, 'a debuff/charm/dot/nuke can still be offered as "ally"');
 
   // The gap is real: some trackable spells have no third-person text at all.
   const trackable = roster.filter((e) => e.landingText && String(e.landingText).trim());
@@ -111,6 +117,13 @@ test('each spell says whether it can be watched on an ally', () => {
     allyCapable.length < trackable.length,
     'every trackable spell supports ally tracking, so the warning below can never fire - check the roster'
   );
+
+  // And the specific case that was reported, checked directly against the real roster rather than
+  // trusting the rule in the abstract.
+  const allure = roster.find((e) => e.name === 'Allure');
+  assert.ok(allure, 'Allure is missing from the roster - the case this guards no longer exists to check');
+  assert.equal(allure.scaleCategory, 'charm');
+  assert.ok(allure.othersLandingSuffix, 'Allure has no third-person text - the case this guards cannot occur');
 });
 
 test('the ally option is disabled, with a reason, for a spell that cannot use it', () => {

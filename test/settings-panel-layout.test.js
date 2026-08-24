@@ -103,21 +103,33 @@ test('nothing references the removed summary span', () => {
   assert.doesNotMatch(rendererSrc, /topic-buffs-shown-summary/);
 });
 
-test('what an aura watches all lives in one card', () => {
-  // Shara, 22 August: "just place everything is watching under buffs shown. 1 category is better
-  // than 2." The source picker was in Display & size, which is about how an aura LOOKS. What it
-  // watches is what this card is for.
-  const card = panel.slice(panel.indexOf('id="widget-buff-filter-card"'));
+test('what an aura watches sits next to the Buffs shown card, not nested inside it', () => {
+  // Reversed at the owner's instruction, 2026-08-24, from an earlier session's "just place
+  // everything is watching under buffs shown" - that put widget-buff-source-row INSIDE
+  // #widget-buff-filter-card as a child, and renderBuffFilter() sets filterCard.style.display =
+  // 'none' for a customTimer-source aura. Because the row was a child of that card, hiding the
+  // card hid the row too - collapsing it to a literal 0x0 rect, confirmed by measuring it with a
+  // real Electron window (tools/_debug-buff-source.js, temporary, deleted after use). Reported as
+  // "opens up a menu you cannot escape from... cannot toggle back into your own buffs" - which is
+  // exactly what a 0x0, unclickable "Watching:" row looks like from the user's side.
+  //
+  // It is a SIBLING now, immediately before the card, so its own display rule is the only one
+  // that can ever apply to it - nothing above it in the DOM can hide it as a side effect again.
+  const filterCardAt = panel.indexOf('id="widget-buff-filter-card"');
+  const sourceRowAt = panel.indexOf('id="widget-buff-source-row"');
+  assert.ok(sourceRowAt >= 0 && sourceRowAt < filterCardAt, 'the source picker must appear before the Buffs shown card starts');
+
+  const card = panel.slice(filterCardAt);
   const own = card.slice(0, card.indexOf('<div class="block"'));
-  assert.ok(own.includes('id="widget-buff-source-row"'), 'the source picker is not in the Buffs shown card');
+  assert.ok(!own.includes('id="widget-buff-source-row"'), 'the source picker is a child of the Buffs shown card again - this is the bug');
   assert.ok(own.includes('id="widget-selected-buffs-list"'), 'the gem bar left the card');
   // The full search+list moved OUT into its own modal (owner's instruction, 2026-08-24: it was
   // permanently visible under the gems, undoing the whole point of the compact gem row) - so it is
   // deliberately absent from this card now. buff-picker-modal.test.js-equivalent coverage for that
   // lives in gem-slots.test.js.
   assert.ok(!own.includes('id="widget-buff-filter-list"'), 'the full list is back inside the card');
-  // And it is no longer up in Display & size.
-  const display = panel.slice(panel.indexOf('block-cap">Display'), panel.indexOf('id="widget-buff-filter-card"'));
+  // And it is not back up in Display & size either.
+  const display = panel.slice(panel.indexOf('block-cap">Display'), sourceRowAt);
   assert.ok(!display.includes('id="widget-buff-source-row"'), 'the source picker is still in Display & size');
 });
 
@@ -143,7 +155,6 @@ test('the controls inside it all survived the move', () => {
     'widget-track-others-row',
     'widget-track-others-checkbox',
     'widget-self-buffs-filters',
-    'widget-hide-bard-songs-checkbox',
     'widget-max-duration-slider',
     'widget-max-duration-value',
     'widget-selected-buffs-section',
@@ -153,6 +164,22 @@ test('the controls inside it all survived the move', () => {
   }
   // widget-buff-filter-search and widget-buff-filter-list live in buff-picker-modal-backdrop now,
   // not in this card - see the test above.
+});
+
+test('"Show bard songs" is gone from both Self Buffs and Ally Buffs, at the owner\'s instruction', () => {
+  // Self-vs-ally is not reliably knowable for a bard song at all, which made the toggle actively
+  // misleading specifically on Ally Buffs ("doesn't really make any sense"). Removed from both
+  // rather than just Ally Buffs, since the same shared block renders on Self Buffs too and bard
+  // songs are getting their own dedicated aura type later rather than a filter bolted onto this
+  // one (CLAUDE.md backlog #15). The underlying hideBardSongs field and its filtering are
+  // untouched - songs still stay hidden by default, there is just no switch back on any more.
+  assert.doesNotMatch(panel, /id="widget-hide-bard-songs-checkbox"/);
+  assert.doesNotMatch(panel, />\s*Show bard songs\s*</);
+  const rendererSrc = require('node:fs').readFileSync(
+    require('node:path').join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'),
+    'utf8'
+  );
+  assert.doesNotMatch(rendererSrc, /hideBardSongsCheckbox/, 'a dangling reference to the removed control');
 });
 
 module.exports = () => report('settings-panel-layout');

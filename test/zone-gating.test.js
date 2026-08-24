@@ -207,21 +207,46 @@ test('the panel says when the zone rule is what is hiding an aura', () => {
   assert.match(html, /id="widget-zone-warning"/);
 });
 
-test('the picker offers the observed zones and accepts anything else', () => {
+test('the picker offers the observed zones', () => {
   assert.ok(KNOWN_ZONES.length >= 60, `only ${KNOWN_ZONES.length} seed zones`);
   assert.ok(KNOWN_ZONES.includes('Befallen') && KNOWN_ZONES.includes('Befallen 1 (Awakened)'));
   assert.ok(KNOWN_ZONES.includes('The Plane of Fear') && KNOWN_ZONES.includes('The Plane of Fear - Group'));
-  // A datalist suggests without restricting, which is the point - the seed is 66 zones from two
-  // weeks of play, not every zone in the game.
-  assert.match(html, /<datalist id="known-zones">/);
-  assert.match(html, /id="widget-zone-input"[\s\S]{0,200}list="known-zones"/);
+  assert.match(html, /id="widget-zone-select"/);
   assert.match(mainSrc, /ipcMain\.handle\('zone:known'/);
 });
 
-test('a zone can be added by typing and removed by clicking', () => {
-  assert.match(rendererSrc, /zoneAddBtn\.addEventListener\('click', addZoneToSelected\)/);
-  assert.match(rendererSrc, /if \(e\.key === 'Enter'\)/, 'Enter does nothing, which reads as broken');
-  assert.match(rendererSrc, /setWidgetVisibleInZones\(widget\.id, next\)/, 'no way to remove one');
+test('a real dropdown, not free text over a datalist', () => {
+  // Reversed at the owner's instruction, 2026-08-24: reported as only ever taking one zone and
+  // never live-updating. A <select> offering only real zone names has no typo/case-mismatch path
+  // left for either symptom to hide in - the tradeoff is a zone that has never appeared in the
+  // logs cannot be typed in ahead of time any more, which was a deliberate choice, not an oversight.
+  assert.match(html, /id="widget-zone-select" class="text-input"/);
+  assert.doesNotMatch(html, /id="widget-zone-input"/, 'the old free-text box is back');
+  assert.doesNotMatch(html, /<datalist id="known-zones">/, 'the old datalist is back');
+});
+
+test('picking an option adds it and re-renders both the chips and the dropdown itself', () => {
+  const fn = rendererSrc.match(/zoneSelect\.addEventListener\('change', \(\) => \{([\s\S]*?)\n {2}\}\);/);
+  assert.ok(fn, 'the zone-select change handler has been restructured');
+  assert.match(fn[1], /setWidgetVisibleInZones\(selectedId, \[\.\.\.current, zone\]\)/);
+  assert.match(
+    fn[1],
+    /refreshWidgets\(\)\.then\(\(\) => renderWidgetZones\(findWidget\(selectedId\)\)\)/,
+    'refreshWidgets alone never repainted this panel - a saved zone looked like nothing happened'
+  );
+});
+
+test('an already-picked zone cannot appear in the dropdown to begin with', () => {
+  const fn = rendererSrc.match(/function populateZoneSelect\(widget\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'populateZoneSelect has been renamed or restructured');
+  assert.match(fn[1], /picked\.has\(zone\.toLowerCase\(\)\)/, 'a picked zone could be offered, and picked, a second time');
+});
+
+test('removing a chip re-renders live, not just after leaving and coming back', () => {
+  const fn = rendererSrc.match(/function renderWidgetZones\(widget\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderWidgetZones has been restructured');
+  assert.match(fn[1], /setWidgetVisibleInZones\(widget\.id, next\)/, 'no way to remove one');
+  assert.match(fn[1], /refreshWidgets\(\)\.then\(\(\) => renderWidgetZones\(findWidget\(widget\.id\)\)\)/);
 });
 
 test('it is wired end to end', () => {

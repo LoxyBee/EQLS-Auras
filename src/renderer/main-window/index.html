@@ -243,19 +243,16 @@
                      loadout-label aura sets it for itself, because a label naming the current
                      loadout is meaningless on only some of them - but nothing here sets it. -->
               </div>
+              <!-- A dropdown, not a free-text box with a datalist - picking a real option adds it
+                   immediately, no separate Add button and nothing to mistype. Already-added zones
+                   are left out of the list (see populateZoneSelect), so there is nothing here that
+                   could be picked twice. -->
               <div class="row" id="widget-zones-row">
-                <span class="label">Only in:</span>
-                <input
-                  type="text"
-                  id="widget-zone-input"
-                  class="text-input"
-                  list="known-zones"
-                  placeholder="Any zone - start typing to limit it"
-                  title="Leave empty to show everywhere. Zones are exactly as the game names them - Befallen and Befallen 1 (Awakened) are separate."
-                />
-                <button type="button" id="widget-zone-add-btn">Add</button>
+                <span class="label" title="Leave empty to show everywhere. Zones are exactly as the game names them - Befallen and Befallen 1 (Awakened) are separate. Pick as many as you want - the aura shows in ANY of them.">Only in:</span>
+                <select id="widget-zone-select" class="text-input">
+                  <option value="">+ Add a zone...</option>
+                </select>
               </div>
-              <datalist id="known-zones"></datalist>
               <div id="widget-zone-list" class="profile-toggle-list"></div>
               <p class="hint" id="widget-zone-warning" style="display:none"></p>
             </div>
@@ -459,28 +456,34 @@
               </div>
             </div>
 
+            <!-- Moved OUT of #widget-buff-filter-card (24 Aug) - it used to live inside that
+                 card, and renderBuffFilter() sets filterCard.style.display = 'none' for a
+                 customTimer-source aura, which - because this row was a CHILD of that card - hid
+                 the row too, collapsing it to zero size the instant you picked "Your own text
+                 triggers." Its own display rule (buffSourceRow.style.display = '') was being set
+                 correctly the whole time; it just could not win against an ancestor's display:none.
+                 Reported as "opens up a menu you cannot escape from... cannot toggle back" -
+                 confirmed by literally measuring the row's on-screen rect collapse to 0x0x0x0 the
+                 moment the radio changed, via tools/_debug-buff-source.js (temporary, deleted).
+                 As a sibling now, its own visibility rule is the only one that applies to it. -->
+            <div class="row" id="widget-buff-source-row">
+              <span class="label">Watching:</span>
+              <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
+              <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
+              <!-- The two announcer types only - text and sound-only. Every other aura has its
+                   source fixed when it is created; these two are meant to be able to react to
+                   anything the app can see, so they are where this can be changed afterwards. -->
+              <label id="widget-buff-source-timer-label" style="display:none">
+                <input type="radio" name="widget-buff-source" value="customTimer" /> Your own text triggers
+              </label>
+            </div>
+
             <!-- Configuration block: collapsible topics live together here -->
             <!-- Note 27. A top-level block, not a topic inside Configuration. Shara: "buffs
                  shown ... should be a top level category/card the same as display and size."
                  It is the one thing on this panel you change most and it was three clicks down. -->
             <div class="block" id="widget-buff-filter-card">
               <p class="block-cap">Buffs shown</p>
-              <!-- Shara, 22 August: "if 21's buff watching is similar in scope to buffs shown,
-                   just place everything is watching under buffs shown. 1 category is better than 2."
-                   It was in Display & size, which is about how an aura LOOKS - this is about what it
-                   watches, which is what this whole card is. -->
-              <div class="row" id="widget-buff-source-row">
-                <span class="label">Watching:</span>
-                <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
-                <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
-                <!-- The two announcer types only - text and sound-only. Every other aura has its
-                     source fixed when it is created; these two are meant to be able to react to
-                     anything the app can see, so they are where this can be changed afterwards. -->
-                <label id="widget-buff-source-timer-label" style="display:none">
-                  <input type="radio" name="widget-buff-source" value="customTimer" /> Your own text triggers
-                </label>
-              </div>
-
               <p class="hint" id="widget-buff-filter-hint"></p>
               <div id="widget-track-others-row" style="display:none">
                 <div class="row">
@@ -488,11 +491,14 @@
                   <span class="experimental-badge">Experimental</span>
                 </div>
               </div>
+              <!-- The "Show bard songs" toggle that used to live here is gone, at the owner's
+                   instruction: self-vs-ally is not reliably knowable for a bard song at all, which
+                   made the toggle actively misleading on an Ally Buffs aura specifically ("doesn't
+                   really make any sense"), and bard songs are getting their own dedicated aura
+                   type later (CLAUDE.md backlog #15) rather than being a filter bolted onto this
+                   one. Songs stay hidden - hideBardSongs still exists and still defaults true, it
+                   is just no longer switchable from here. -->
               <div id="widget-self-buffs-filters" style="display:none">
-                <div class="row">
-                  <label title="Off by default - bard songs re-sing constantly and are hard to tell apart from an ally's, so they are kept out unless you ask for them. Songs are identified from your EverQuest install's own spell data (any spell only a bard can cast). This does NOT distinguish your own songs from a group-mate's - that is not reliably knowable from the log, so expect an ally's songs here too."><input type="checkbox" id="widget-hide-bard-songs-checkbox" /> Show bard songs</label>
-                  <span class="experimental-badge">Experimental</span>
-                </div>
                 <div class="row">
                   <span class="label" title="In minutes. Set to 0 to turn this filter off.">Hide buffs longer than:</span>
                   <input type="range" id="widget-max-duration-slider" min="0" max="240" step="5" />

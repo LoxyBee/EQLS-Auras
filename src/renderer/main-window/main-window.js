@@ -468,13 +468,10 @@ function initDetectionSettingsPanel() {
     currentZone = z;
     if (selectedId) renderWidgetZones(findWidget(selectedId));
   });
+  let knownZones = [];
   window.eqTracker.getKnownZones().then((zones) => {
-    const list = document.getElementById('known-zones');
-    for (const z of zones) {
-      const opt = document.createElement('option');
-      opt.value = z;
-      list.appendChild(opt);
-    }
+    knownZones = zones;
+    if (selectedId) populateZoneSelect(findWidget(selectedId));
   });
 
   // The detection log used to be a loose file in the app's data folder, next to Chromium's caches,
@@ -1338,7 +1335,6 @@ function initWidgetsPanel() {
   let editingTimerId = null;
   let newTimerIconId;
   const selfBuffsFiltersEl = document.getElementById('widget-self-buffs-filters');
-  const hideBardSongsCheckbox = document.getElementById('widget-hide-bard-songs-checkbox');
   const maxDurationSlider = document.getElementById('widget-max-duration-slider');
   const maxDurationValueEl = document.getElementById('widget-max-duration-value');
 
@@ -1515,12 +1511,32 @@ function initWidgetsPanel() {
   // The warning underneath is the part that matters. A zone rule is a NEW way for an aura to be
   // missing with no explanation, which is the failure this project keeps having - so when the rule
   // is what is hiding it, the panel says so and names the zone you are actually in.
+  // Rebuilds the "+ Add a zone..." dropdown to offer every known zone EXCEPT the ones already
+  // picked - there is nothing in the list that could be picked twice, so there is no dupe check
+  // left for the change handler to get wrong. Called every time renderWidgetZones is, from the
+  // same widget, so the two can never disagree about what is already picked.
+  function populateZoneSelect(widget) {
+    const selectEl = document.getElementById('widget-zone-select');
+    if (!selectEl) return;
+    const picked = new Set((widget?.visibleInZones || []).map((z) => z.toLowerCase()));
+    selectEl.innerHTML = '<option value="">+ Add a zone...</option>';
+    for (const zone of knownZones) {
+      if (picked.has(zone.toLowerCase())) continue;
+      const opt = document.createElement('option');
+      opt.value = zone;
+      opt.textContent = zone;
+      selectEl.appendChild(opt);
+    }
+    selectEl.value = '';
+  }
+
   function renderWidgetZones(widget) {
     if (!widget) return;
     const zones = widget.visibleInZones || [];
     const listEl = document.getElementById('widget-zone-list');
     const warnEl = document.getElementById('widget-zone-warning');
     listEl.innerHTML = '';
+    populateZoneSelect(widget);
     for (const zone of zones) {
       const chip = document.createElement('button');
       chip.type = 'button';
@@ -2116,11 +2132,6 @@ function initWidgetsPanel() {
       filterListEl.innerHTML = '';
       selectedBuffsSectionEl.style.display = 'none';
       selfBuffsFiltersEl.style.display = '';
-      // Checkbox reads "Show bard songs" but the stored field is
-      // hideBardSongs - inverted here (and in the change handler below)
-      // rather than renaming the persisted field, which would need a data
-      // migration for no real benefit.
-      hideBardSongsCheckbox.checked = !widget.hideBardSongs;
       const maxDurationMin = Math.round((widget.maxDurationFilterSec || 0) / 60);
       maxDurationSlider.value = maxDurationMin;
       maxDurationValueEl.textContent = maxDurationMin === 0 ? 'off' : `${maxDurationMin}m`;
@@ -3293,33 +3304,20 @@ function initWidgetsPanel() {
   alwaysOnCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetAlwaysOn(selectedId, alwaysOnCheckbox.checked);
   });
-  const zoneInput = document.getElementById('widget-zone-input');
-  const zoneAddBtn = document.getElementById('widget-zone-add-btn');
-  function addZoneToSelected() {
-    const zone = zoneInput.value.trim();
+  const zoneSelect = document.getElementById('widget-zone-select');
+  zoneSelect.addEventListener('change', () => {
+    const zone = zoneSelect.value;
     if (!zone || !selectedId) return;
     const current = findWidget(selectedId)?.visibleInZones || [];
-    if (current.includes(zone)) {
-      zoneInput.value = '';
-      return;
-    }
+    // populateZoneSelect already leaves out anything picked, so this option existing at all means
+    // it was not already on the list - nothing left here that needs its own dupe check.
     window.eqTracker.setWidgetVisibleInZones(selectedId, [...current, zone]).then(() => {
-      zoneInput.value = '';
-      // Reported as "the name disappears and nothing else happens" - true, because refreshWidgets
-      // alone only rebuilds the sidebar submenu. It never re-rendered the chip list actually shown
-      // in this panel, so the zone WAS saved (a restart would show it) but nothing on screen said
-      // so. Re-render this list explicitly, from the freshly reloaded widget.
+      // refreshWidgets alone only rebuilds the sidebar - it never re-rendered THIS panel, so a
+      // zone that WAS saved (a restart would show it) looked like it had done nothing at all.
+      // Re-render both the chip list and the dropdown (the new zone must drop out of its options)
+      // from the freshly reloaded widget.
       refreshWidgets().then(() => renderWidgetZones(findWidget(selectedId)));
     });
-  }
-  zoneAddBtn.addEventListener('click', addZoneToSelected);
-  zoneInput.addEventListener('keydown', (e) => {
-    // Enter adds it. Typing a zone name and pressing Enter is what everyone does with a box like
-    // this, and having it do nothing reads as the box being broken.
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addZoneToSelected();
-    }
   });
 
   mergeCheckbox.addEventListener('change', () => {
@@ -3449,10 +3447,6 @@ function initWidgetsPanel() {
     window.eqTracker.setWidgetSoundWarningLoopSec(selectedId, seconds);
   });
 
-  hideBardSongsCheckbox.addEventListener('change', () => {
-    // Inverted - see the render side above.
-    window.eqTracker.setWidgetHideBardSongs(selectedId, !hideBardSongsCheckbox.checked);
-  });
   maxDurationSlider.addEventListener('input', () => {
     const minutes = Number(maxDurationSlider.value);
     maxDurationValueEl.textContent = minutes === 0 ? 'off' : `${minutes}m`;

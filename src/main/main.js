@@ -1024,22 +1024,27 @@ ipcMain.handle('buffs:trackable', () =>
   buffStore
     .getAll()
     .filter((e) => e.landingText && String(e.landingText).trim())
-    .map((e) => ({
-      name: e.name,
-      ally: !!(e.othersLandingSuffix && String(e.othersLandingSuffix).trim()),
-      // Whether "on something you cast it at" can be offered. Needs the same third-person landing
-      // text ally tracking needs - an enemy landing IS an ally landing as far as the log is
-      // concerned, since "not you" is all the line says - plus a category that means the spell is
-      // cast at something rather than on someone. Offering it for a heal would build an aura that
-      // never lights up.
-      enemy: !!(
-        e.othersLandingSuffix &&
-        String(e.othersLandingSuffix).trim() &&
-        ['debuff', 'charm', 'dot', 'nuke'].includes(e.scaleCategory)
-      ),
-      durationSec: typeof e.durationSec === 'number' ? e.durationSec : null,
-      infinite: !!e.infiniteDuration,
-    }))
+    .map((e) => {
+      const hasThirdPersonText = !!(e.othersLandingSuffix && String(e.othersLandingSuffix).trim());
+      // A debuff, charm, dot or nuke landing on "not you" is something cast AT a target, never
+      // something cast ON a groupmate - the log's "not you" line looks identical either way, but
+      // the two are opposite in meaning. Reported directly: "allure is marked as a buff to cast
+      // on an ally, it is not" - Allure is a charm (roster: kind 'det', scaleCategory 'charm') and
+      // does carry third-person text ("<Name> has been charmed."), so before this fix `ally` was
+      // true purely because the text existed, with nothing checking what KIND of landing it was.
+      const isDetrimental = ['debuff', 'charm', 'dot', 'nuke'].includes(e.scaleCategory);
+      return {
+        name: e.name,
+        ally: hasThirdPersonText && !isDetrimental,
+        // Whether "on something you cast it at" can be offered. Needs the same third-person
+        // landing text ally tracking needs, plus a category that means the spell is cast at
+        // something rather than on someone. Offering it for a heal would build an aura that never
+        // lights up; ally and enemy are the two halves of one split, never both true for one spell.
+        enemy: hasThirdPersonText && isDetrimental,
+        durationSec: typeof e.durationSec === 'number' ? e.durationSec : null,
+        infinite: !!e.infiniteDuration,
+      };
+    })
 );
 ipcMain.handle('widget:setTextAuraMessage', (_event, { id, value }) =>
   widgetManager.setTextAuraMessage(id, value)
