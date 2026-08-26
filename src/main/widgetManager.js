@@ -1,6 +1,7 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
-const { WidgetStore } = require('./widgetStore');
+const { isVisibleInZone } = require('../shared/zoneVisibility');
+const { WidgetStore, LOADOUT_LABEL_KIND, normalizeDisplayMode, isTextAura, clampInstantSec } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
@@ -16,6 +17,13 @@ const widgetStore = new WidgetStore({ loadJson, saveJson });
 let getActiveProfileIdFn = () => DEFAULT_PROFILE_ID;
 function setActiveProfileIdFn(fn) {
   getActiveProfileIdFn = fn;
+}
+
+// The active profile's NAME, for note 21's label. Separate from the id function above because the
+// id is an opaque string nobody wants to read, and the two are wanted in different places.
+let getActiveProfileNameFn = () => '';
+function setActiveProfileNameFn(fn) {
+  getActiveProfileNameFn = fn;
 }
 
 const windows = new Map(); // id -> BrowserWindow
@@ -36,6 +44,15 @@ const originXByWidget = new Map(); // id -> number
 // turned off) restores exactly whichever widgets the active profile says
 // should be showing - not everything indiscriminately.
 let foregroundHidden = false;
+// Runtime-only, deliberately never persisted (note 4). A forgotten master-hide surviving a
+// restart would look exactly like "all my auras broke overnight", and the cost of NOT persisting
+// it is one button press.
+let masterHidden = false;
+// Auras the user unlocked ONE AT A TIME, which forces them on screen even when the active
+// loadout profile has them switched off (note 31) - you cannot drag something you cannot see.
+// Deliberately not populated by "Unlock all auras": that would dump every aura you own onto the
+// screen at once, which is the opposite of useful. Runtime-only, cleared by re-locking.
+const forceShown = new Set(); // ids
 
 // THE single source of truth for "should this widget's window be on screen".
 // Loadout profile membership IS the on/off control - there is deliberately
@@ -56,6 +73,9 @@ let foregroundHidden = false;
 // the currently active profile, so an empty list only ever results from the
 // user deliberately unticking everything.
 function isVisibleForActiveProfile(config) {
+  // Note 21. An aura that belongs to every profile, present and future - which a list of ids
+  // cannot express, because it would have to name profiles that do not exist yet.
+  if (config.showOnAllProfiles) return true;
   const ids = config.activeProfileIds || [];
   return ids.includes(getActiveProfileIdFn());
 }
@@ -88,7 +108,25 @@ function estimateIconGridWidth(config) {
 // so a widget that's already empty at launch (no content-change event ever
 // fires to correct it) gets the floor applied too, not just live resizes.
 function minHeightFor(config) {
+  // A text aura's one line is as tall as its own size setting, which goes far higher than either
+  // of the other two - floor it to that, or a 96px announcement opens in a window too short to
+  // show it and looks clipped until something resizes.
+  if (config.displayMode === 'text') return config.textAuraSize || 32;
   return (config.displayMode === 'icons' ? config.iconSize : config.rowSize) || 40;
+}
+
+// A text aura sizes its window from actually-rendered words (see overlay.js's applyConfig comment
+// on why - it draws no icon and no bar, so there's nothing else to size it by). Idle - which is
+// most of the time, since the whole point of the type is a brief flash - that's zero rendered
+// content, and fitToContent's own floor for that case is 40px: a small square, indistinguishable
+// from an icon-mode tile. Reported live as "custom text aura when moving is just icon shaped" -
+// the drag box is exactly the window's real bounds (see overlay.css's .drag-overlay), so an
+// idle text aura's window really was that shape the whole time, just invisible until unlocked.
+// Not sized to the actual configured message (that needs a DOM measurement this process doesn't
+// have), just wide enough that "this is a text aura, not an icon" reads at a glance while idle.
+const TEXT_AURA_MIN_IDLE_WIDTH_PX = 160;
+function minWidthFor(config) {
+  return config.displayMode === 'text' ? TEXT_AURA_MIN_IDLE_WIDTH_PX : 0;
 }
 
 function createWidgetWindow(config) {
@@ -123,8 +161,23 @@ function createWidgetWindow(config) {
   // the game window - EQ still needs to run windowed/borderless-windowed,
   // never true exclusive fullscreen, or nothing can draw over it.
   win.setAlwaysOnTop(true, 'screen-saver');
-  win.setIgnoreMouseEvents(true, { forward: true });
-  runtimeLock.set(config.id, true);
+  // Right-clicking the move box is supposed to open settings (see overlay.js's contextmenu
+  // handler on #drag-overlay), but that box is `-webkit-app-region: drag` so Windows can drag it -
+  // and on a frameless window, Windows treats a drag region's right-click as a title bar's, popping
+  // its OWN native system menu (Restore/Move/Size/.../Close) instead of ever letting the page's
+  // contextmenu event fire. Reported as "opens a context menu that does nothing useful" - that
+  // useless menu is the OS one, not this app's. 'system-context-menu' is Electron's hook for
+  // exactly this case; preventDefault() suppresses the native menu and lets the DOM event through.
+  win.on('system-context-menu', (event) => {
+    event.preventDefault();
+  });
+  // Every widget starts LOCKED on launch regardless of how it was left last time - the same
+  // safety behaviour the single overlay always had - which is what an empty runtimeLock map
+  // means. But a window can now also be created ON DEMAND by unlocking an aura the current
+  // profile has switched off (note 31), and that one must not immediately re-lock itself: the
+  // unlock is already recorded, and overwriting it here made the button appear to do nothing.
+  if (!runtimeLock.has(config.id)) runtimeLock.set(config.id, true);
+  win.setIgnoreMouseEvents(shouldIgnoreMouse(config), { forward: true });
   win.setOpacity(config.opacity ?? 1);
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'overlay', 'index.html'), {
@@ -183,6 +236,30 @@ function addCustomTimer(id, timer) {
   return config;
 }
 
+function setTriggerDurationSec(id, seconds) {
+  const config = widgetStore.setTriggerDurationSec(id, seconds);
+  pushConfigChanged(id);
+  return config;
+}
+
+function setTriggerCombineMode(id, mode) {
+  const config = widgetStore.setTriggerCombineMode(id, mode);
+  pushConfigChanged(id);
+  return config;
+}
+
+function setAndWindowSec(id, seconds) {
+  const config = widgetStore.setAndWindowSec(id, seconds);
+  pushConfigChanged(id);
+  return config;
+}
+
+function setReverseDetection(id, enabled) {
+  const config = widgetStore.setReverseDetection(id, enabled);
+  pushConfigChanged(id);
+  return config;
+}
+
 function updateCustomTimer(id, timerId, timer) {
   const config = widgetStore.updateCustomTimer(id, timerId, timer);
   pushConfigChanged(id);
@@ -209,6 +286,76 @@ function unexcludeBuff(id, name) {
 
 function createAllyBuffsWidget(name) {
   const config = widgetStore.createAllyBuffs(name, { activeProfileIds: [getActiveProfileIdFn()] });
+  createWidgetWindow(config);
+  return config;
+}
+
+function createBardSongsWidget(name) {
+  const config = widgetStore.createBardSongs(name, { activeProfileIds: [getActiveProfileIdFn()] });
+  createWidgetWindow(config);
+  return config;
+}
+
+function createTextAuraWidget(name, preset) {
+  const config = widgetStore.createTextAura(name, { preset, activeProfileIds: [getActiveProfileIdFn()] });
+  createWidgetWindow(config);
+  return config;
+}
+
+function createCooldownTimerWidget(name, spellName, cooldownSec, iconId, buffDurationSec) {
+  const config = widgetStore.createCooldownTimer(name, {
+    spellName,
+    cooldownSec,
+    buffDurationSec,
+    iconId,
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
+function createBuffTimerWidget(name, spellName, source) {
+  const config = widgetStore.createBuffTimer(name, {
+    spellName,
+    source,
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
+function createDebuffWidget(name) {
+  const config = widgetStore.createDebuff(name, { activeProfileIds: [getActiveProfileIdFn()] });
+  createWidgetWindow(config);
+  return config;
+}
+
+function peekShareCode(code) {
+  return widgetStore.peekCode(code);
+}
+
+function createTravelGuideWidget(name, destination) {
+  const config = widgetStore.createTravelGuide(name, {
+    destination,
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
+function setTravelDestination(id, destination) {
+  const config = widgetStore.update(id, {
+    travelDestination: typeof destination === 'string' ? destination : '',
+  });
+  pushConfigChanged(id);
+  return config;
+}
+
+function createDamageMeterWidget(name, mineOnly) {
+  const config = widgetStore.createDamageMeter(name, {
+    mineOnly,
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
   createWidgetWindow(config);
   return config;
 }
@@ -278,14 +425,32 @@ function deleteWidget(id) {
   return widgetStore.remove(id);
 }
 
-function moveWidget(id, direction) {
-  return widgetStore.move(id, direction);
+function reorderWidgets(orderedIds) {
+  return widgetStore.reorderWidgets(orderedIds);
+}
+
+function resetWidgetToDefault(id) {
+  const ok = widgetStore.resetToDefault(id);
+  // The running overlay window (if any) has a stale config in its own renderer memory until told
+  // otherwise - same as every other setter here, just one call resetting many fields at once
+  // instead of one call per field.
+  if (ok) pushConfigChanged(id);
+  return widgetStore.getById(id);
 }
 
 function pushConfigChanged(id) {
   const win = windows.get(id);
   const config = widgetStore.getById(id);
-  if (win && config) win.webContents.send('widget:configChanged', config);
+  if (win && config) win.webContents.send('widget:configChanged', withActiveProfile(config));
+}
+
+// The active profile's name travels WITH the config rather than on a channel of its own.
+//
+// It is computed, never stored - putting it in widgets.json would mean every aura carrying a
+// stale copy of a name that can be renamed or deleted underneath it. The overlay only ever needs
+// it to draw, and the config is already pushed on every change that could matter.
+function withActiveProfile(config) {
+  return { ...config, activeProfileName: getActiveProfileNameFn() };
 }
 
 // Both modes size their window's HEIGHT to exactly what their content
@@ -314,7 +479,7 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
   const win = windows.get(id);
   if (!config || !win) return;
   const minHeight = minHeightFor(config);
-  const width = Math.max(40, Math.round(contentWidth) + WINDOW_CONTENT_PADDING_PX);
+  const width = Math.max(40, minWidthFor(config), Math.round(contentWidth) + WINDOW_CONTENT_PADDING_PX);
   const height = Math.max(minHeight + WINDOW_CONTENT_PADDING_PX, Math.round(contentHeight) + WINDOW_CONTENT_PADDING_PX);
   const [currentWidth, currentHeight] = win.getSize();
   const [currentX, currentY] = win.getPosition();
@@ -351,10 +516,93 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
 // order: it must belong to the active profile at all; an unlocked aura (one
 // being repositioned) then beats auto-hide, since you can't drag what you
 // can't see; otherwise auto-hide decides.
+// TWO DIFFERENT KINDS OF RULE live in this function, and confusing them is how it goes wrong.
+//
+//   ON/OFF - is this aura running at all? Loadout profile membership is the only one, and it is
+//   deliberately the app's single on/off switch (see isVisibleForActiveProfile above).
+//
+//   SCREEN-CLEARING - is a running aura visible right now? The master hide toggle (note 4) and
+//   auto-hide-while-EverQuest-is-unfocused. Both are temporary, neither touches saved data.
+//
+// Unlocking overrides screen-clearing rules, because you cannot drag something you cannot see.
+//
+// The order below IS the behaviour. Each clause has a reason it sits where it does.
+// Note 21. The global switch, off until someone turns it on. Held here rather than on the widget
+// because it is app-wide config, which is what Shara asked for - the label is a permanent option,
+// not something you build and then have to remember you built.
+let loadoutLabelEnabled = false;
+function setLoadoutLabelEnabledState(enabled) {
+  loadoutLabelEnabled = !!enabled;
+}
+
+// Note 38. Where the player is, or null when the app has not been told yet - which is the normal
+// state until the first zone change after launch. See visibleInZones in widgetStore for why null
+// has to mean "show everything" rather than "hide everything".
+let currentZone = null;
+function setCurrentZone(zone) {
+  const next = zone || null;
+  if (next === currentZone) return false;
+  currentZone = next;
+  return true;
+}
+function getCurrentZone() {
+  return currentZone;
+}
+
+// Whether this aura is allowed in the zone the player is in. The rule itself lives in
+// shared/zoneVisibility so a test can call it rather than a copy of it - see that file. Exported
+// so the settings window can say WHY an aura is not on screen, because an aura missing for an
+// unexplained reason is the failure this project keeps having and a zone rule is a new way to
+// have it.
+function isVisibleInCurrentZone(config) {
+  return isVisibleInZone(config.visibleInZones, currentZone);
+}
+
 function shouldBeOnScreen(config) {
-  if (!isVisibleForActiveProfile(config)) return false;
+  // Note 21. Switched off means off, whatever anything else says. It only ever returns FALSE here
+  // and then falls through, so the label still obeys master hide and the focus auto-hide like
+  // every other aura - restating those rules here would be two copies to keep in step.
+  if (config.kind === LOADOUT_LABEL_KIND && !loadoutLabelEnabled) return false;
+
+  // Note 31: unlocking one aura BY HAND puts it on screen even when the current profile has it
+  // switched off, and re-locking hands it straight back to the normal rules. forceShown rather
+  // than isUnlocked, so "Unlock all auras" does not drag every switched-off aura onto the screen
+  // with it.
+  if (!isVisibleForActiveProfile(config) && !forceShown.has(config.id)) return false;
+
+  // Note 38, beside the profile check because it is the same kind of rule - this aura does not
+  // belong here right now - and honouring the same manual override, so unlocking an aura to move
+  // it still works in the wrong zone.
+  if (!isVisibleInCurrentZone(config) && !forceShown.has(config.id)) return false;
+
+  // Note 4: master hide beats unlock, deliberately, and this is the one clause that had to be
+  // decided rather than inherited. It exists to clear the screen while doing other UI work, so
+  // "Hide all auras" appearing to do nothing because something happened to be unlocked is
+  // exactly the failure that would make the button useless.
+  if (masterHidden) return false;
+
   if (isUnlocked(config.id)) return true;
   return !foregroundHidden;
+}
+
+// Whether an aura should be MAKING SOUND, which is a different question from whether it should
+// be drawn.
+//
+// Hiding a window does NOT silence it. A hidden overlay keeps receiving the engine broadcasts
+// and keeps running render(), which is exactly where the alert sounds fire.
+//
+// The rule follows shouldBeOnScreen's two kinds of rule. Profile membership is the ON/OFF
+// switch, so an aura the current loadout has switched off is off, full stop - silent as well as
+// invisible. The SCREEN-CLEARING overrides (master hide, auto-hide while EverQuest is unfocused)
+// deliberately do NOT silence anything: hearing that a buff is about to drop while you are
+// tabbed out is most of the reason to have a sound at all.
+function shouldBeAudible(config) {
+  return isVisibleForActiveProfile(config);
+}
+
+function pushAudible(config) {
+  const win = windows.get(config.id);
+  if (win && !win.isDestroyed()) win.webContents.send('widget:audibleChanged', shouldBeAudible(config));
 }
 
 function applyVisibility(config) {
@@ -368,6 +616,9 @@ function applyVisibility(config) {
   } else if (win) {
     win.hide();
   }
+  // After the show/hide, and on every path that has a window: a profile switch is the one thing
+  // that changes this, and it comes through here for every widget.
+  pushAudible(config);
 }
 
 // Called by main.js whenever the ACTIVE loadout profile changes - profile
@@ -375,7 +626,13 @@ function applyVisibility(config) {
 // so a switch has to re-evaluate every widget, not just the ones the user
 // touched.
 function applyProfileVisibility() {
-  for (const config of widgetStore.getAll()) applyVisibility(config);
+  for (const config of widgetStore.getAll()) {
+    applyVisibility(config);
+    // Pushed as well as shown/hidden, because note 21's label has to change what it SAYS on a
+    // profile switch, not just whether it is on screen. Visibility alone would leave it reading
+    // the old profile's name until something unrelated happened to refresh it.
+    pushConfigChanged(config.id);
+  }
 }
 
 // Called by main.js on every game-focus change, only while the auto-hide
@@ -398,14 +655,33 @@ function setForegroundHidden(hidden) {
 // an aura is itself what makes EQ lose focus, so the aura being adjusted was
 // the one thing guaranteed to vanish. Re-locking hands it straight back to
 // the normal rules.
-function setLocked(id, locked) {
+//
+// The force option is what separates unlocking ONE aura from "Unlock all auras" (note 31).
+// Unlocking one by hand forces it on screen even if the active profile has it switched off;
+// unlocking everything does not, or every aura you own appears at once.
+function shouldIgnoreMouse(config) {
+  return isLocked(config.id);
+}
+
+function setLocked(id, locked, { force = true } = {}) {
   runtimeLock.set(id, locked);
+  if (locked || !force) forceShown.delete(id);
+  else forceShown.add(id);
   const config = widgetStore.update(id, { locked });
+
+  // Visibility FIRST, and unconditionally. An aura switched off for the current profile has no
+  // window at all, so unlocking it has to be able to create one - the previous version only
+  // re-evaluated visibility when a window already existed, which meant unlocking an off-profile
+  // aura did nothing whatsoever and read as a broken button.
+  if (config) applyVisibility(config);
+
+  // Re-read: applyVisibility may have just created this window. A brand-new one does not need
+  // the message anyway - overlay.js asks for the lock state itself as it boots - but it does
+  // need the click-through flag, which is main-process state.
   const win = windows.get(id);
-  if (win) {
-    win.setIgnoreMouseEvents(locked, { forward: true });
+  if (win && config) {
+    win.setIgnoreMouseEvents(shouldIgnoreMouse(config), { forward: true });
     win.webContents.send('widget:lockChanged', locked);
-    if (config) applyVisibility(config);
   }
   return locked;
 }
@@ -415,8 +691,25 @@ function setLocked(id, locked) {
 // everything" with no matching "re-lock everything" would leave every aura
 // click-catching with no obvious way out.
 function setAllUnlocked(unlocked) {
-  for (const config of widgetStore.getAll()) setLocked(config.id, !unlocked);
+  // force: false - see setLocked. Unlocking everything must not haul every aura the current
+  // profile has switched off onto the screen along with the ones you can actually see.
+  for (const config of widgetStore.getAll()) setLocked(config.id, !unlocked, { force: false });
   return unlocked;
+}
+
+// Note 4: a temporary "clear the screen" override for doing other UI work. Deliberately not
+// persisted (see masterHidden), and deliberately beats unlock (see shouldBeOnScreen).
+function setMasterHidden(hidden) {
+  const next = !!hidden;
+  if (next === masterHidden) return masterHidden;
+  masterHidden = next;
+  // One decision function rather than repeating the override rules here.
+  for (const config of widgetStore.getAll()) applyVisibility(config);
+  return masterHidden;
+}
+
+function isMasterHidden() {
+  return masterHidden;
 }
 
 function areAllUnlocked() {
@@ -453,8 +746,11 @@ function isLocked(id) {
 }
 
 function setDisplayMode(id, mode) {
-  const config = widgetStore.update(id, { displayMode: mode === 'icons' ? 'icons' : 'list' });
+  const config = widgetStore.update(id, { displayMode: normalizeDisplayMode(mode) });
   pushConfigChanged(id);
+  applyVisibility(config);
+  const win = windows.get(id);
+  if (win && config) win.setIgnoreMouseEvents(shouldIgnoreMouse(config), { forward: true });
   return config;
 }
 
@@ -502,6 +798,150 @@ function setSortOrder(id, order) {
 
 function setLowTimeThreshold(id, seconds) {
   const config = widgetStore.update(id, { lowTimeThresholdSec: seconds });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setCategoryBorders(id, enabled) {
+  const config = widgetStore.update(id, { categoryBordersEnabled: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setCategoryBorderWidth(id, px) {
+  // Clamped here rather than left to normalizeWidget alone - that only re-derives a value at
+  // store load, so update() (a plain Object.assign onto whatever getById already returned) would
+  // otherwise let a stray IPC call or a corrupted share code write anything at all until the next
+  // restart. 1-6: 1 is the original fixed width, 6 is where a tile's own art starts disappearing
+  // under its own edge rather than being framed by it.
+  const n = Number(px);
+  const clamped = Number.isFinite(n) ? Math.max(1, Math.min(6, Math.round(n))) : 1;
+  const config = widgetStore.update(id, { categoryBorderWidthPx: clamped });
+  pushConfigChanged(id);
+  return config;
+}
+
+// Notes 11/16/17. Turning this on does two things at once, and they have to stay together: the
+// aura starts DRAWING debuffs on enemies, and the engine starts DETECTING them for the spells this
+// aura watches (see getEnemyDebuffNames). Split across two switches, someone would inevitably end
+// up with one on and the other off, and the aura would sit there empty with no way to tell why.
+function setTrackOnEnemies(id, enabled) {
+  const config = widgetStore.update(id, { trackOnEnemies: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setAllyDebuffAlert(id, enabled) {
+  const config = widgetStore.update(id, { allyDebuffAlert: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
+// Note 40. The watching toggle on a Custom debuff aura - swaps which detection
+// tier the engine uses for the spells this aura watches on enemies (see
+// getEnemyDebuffNames/getAllyEnemyDebuffNames below), without touching
+// trackOnEnemies itself.
+function setDebuffCastBy(id, source) {
+  const config = widgetStore.update(id, { debuffCastBy: source === 'ally' ? 'ally' : 'self' });
+  pushConfigChanged(id);
+  return config;
+}
+
+// Creates the label the first time it is switched on, then only ever shows and hides it. Deleting
+// and recreating would throw away wherever she dragged it to, which is the one thing about it she
+// will have taken any trouble over.
+function setLoadoutLabelEnabled(enabled) {
+  setLoadoutLabelEnabledState(enabled);
+  saveLoadoutLabelEnabledFn(!!enabled);
+  const config = enabled ? widgetStore.ensureLoadoutLabel() : widgetStore.getLoadoutLabel();
+  if (!config) return { enabled: !!enabled, config: null };
+  if (enabled && !windows.has(config.id)) createWidgetWindow(config);
+  applyVisibility(config);
+  pushConfigChanged(config.id);
+  return { enabled: !!enabled, config };
+}
+
+// Persisting is the caller's job - widgetManager has no store of its own for app-wide settings.
+let saveLoadoutLabelEnabledFn = () => {};
+function setSaveLoadoutLabelEnabledFn(fn) {
+  saveLoadoutLabelEnabledFn = fn;
+}
+
+function isLoadoutLabelEnabled() {
+  return loadoutLabelEnabled;
+}
+
+// Note 19. One setter for the damage meter's three options rather than three, because they are
+// one subject and a caller that changes two of them should not need two round trips.
+//
+// The timeout is clamped HERE and not only in the slider's min/max: a share code is the one path
+// by which a number this app never wrote can arrive, and a fightTimeoutSec of zero would end every
+// fight the instant it started.
+function setDamageOptions(id, { fightTimeoutSec, mineOnly, showTotalRow } = {}) {
+  const changes = {};
+  if (typeof fightTimeoutSec === 'number' && Number.isFinite(fightTimeoutSec)) {
+    changes.fightTimeoutSec = Math.min(600, Math.max(1, Math.round(fightTimeoutSec)));
+  }
+  if (typeof mineOnly === 'boolean') changes.mineOnly = mineOnly;
+  if (typeof showTotalRow === 'boolean') changes.showTotalRow = showTotalRow;
+  const config = widgetStore.update(id, changes);
+  pushConfigChanged(id);
+  return config;
+}
+
+function setAlwaysOn(id, enabled) {
+  const config = widgetStore.update(id, { alwaysOn: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
+// Note 21. Changes whether the aura is on screen right now, so it has to re-apply visibility as
+// well as push - unlike every other per-aura toggle, which only changes how it draws.
+function setVisibleInZones(id, zones) {
+  const clean = Array.isArray(zones) ? zones.filter((z) => typeof z === 'string' && z.trim()) : [];
+  const config = widgetStore.update(id, { visibleInZones: clean });
+  if (config) applyVisibility(config);
+  pushConfigChanged(id);
+  return config;
+}
+
+// Called when the log says the player has changed zone. Re-evaluates every aura, because a zone
+// change can both hide and show, and only pushes work when the zone actually changed.
+function applyZoneChange(zone) {
+  if (!setCurrentZone(zone)) return currentZone;
+  for (const config of widgetStore.getAll()) applyVisibility(config);
+  return currentZone;
+}
+
+function setShowOnAllProfiles(id, enabled) {
+  const config = widgetStore.update(id, { showOnAllProfiles: !!enabled });
+  if (config) applyVisibility(config);
+  pushConfigChanged(id);
+  return config;
+}
+
+function setMergeSameDuration(id, enabled) {
+  const config = widgetStore.update(id, { mergeSameDuration: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setTextAuraMessage(id, message) {
+  const config = widgetStore.update(id, { textAuraMessage: String(message == null ? '' : message) });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setTextAuraInstantSec(id, seconds) {
+  // Clamped in the store rather than here, so a share code goes through the same gate a slider
+  // does - see clampInstantSec.
+  const config = widgetStore.update(id, { textAuraInstantSec: clampInstantSec(Number(seconds)) });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setTextAuraSize(id, size) {
+  const config = widgetStore.update(id, { textAuraSize: Number(size) || 32 });
   pushConfigChanged(id);
   return config;
 }
@@ -619,6 +1059,12 @@ function setIconJustify(id, value) {
   return config;
 }
 
+function setTextJustify(id, value) {
+  const config = widgetStore.update(id, { textJustify: value });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setMaxDurationFilter(id, seconds) {
   const config = widgetStore.update(id, { maxDurationFilterSec: seconds });
   pushConfigChanged(id);
@@ -698,9 +1144,70 @@ function setBuffFilter(id, mode, names) {
 }
 
 function setBuffSource(id, source) {
-  const config = widgetStore.update(id, { buffSource: source === 'ally' ? 'ally' : 'self' });
+  // 'customTimer' is accepted only for a TEXT AURA. Every other aura has its source fixed when
+  // it is created, deliberately (see defaultCustomWidget's note on the field), and this coercion
+  // is what enforces that.
+  //
+  // A text aura is the exception because its whole purpose is to react to something happening,
+  // and the thing worth reacting to is as often a line of log text as it is a buff. Its button in
+  // the add-aura list says so in as many words, which is the other reason this has to hold: an
+  // option promised in the copy and refused by the code is worse than one never offered.
+  const current = widgetStore.getById(id);
+  const isAnnouncer = isTextAura(current);
+  const allowed = isAnnouncer ? ['self', 'ally', 'customTimer'] : ['self', 'ally'];
+  const config = widgetStore.update(id, { buffSource: allowed.includes(source) ? source : 'self' });
   pushConfigChanged(id);
   return config;
+}
+
+// Every spell any aura has asked to watch on enemies, lowercased.
+//
+// Rebuilt on each call rather than cached, for the same reason customTimerEngine rebuilds its
+// trigger list: it is trivially cheap at realistic aura counts, and a cache here would need
+// invalidating on every create, delete, import, filter edit and profile switch - five chances to
+// get it wrong for no measurable gain.
+//
+// Deliberately NOT filtered by the active profile. An aura switched off for this loadout should
+// not silently change what the ENGINE is willing to detect: that would make detection depend on
+// which profile happened to be selected, which is the kind of thing nobody ever works out.
+function getEnemyDebuffNames() {
+  const names = new Set();
+  for (const config of widgetStore.getAll()) {
+    if (!config.trackOnEnemies) continue;
+    if (config.debuffCastBy === 'ally') continue;
+    for (const name of config.buffNames || []) names.add(String(name).toLowerCase());
+  }
+  return names;
+}
+
+// Note 40. Same shape as getEnemyDebuffNames above, but for auras switched to
+// 'ally' mode - spells watched on an enemy without requiring the player to be
+// the caster. Kept as a separate function/set rather than a flag returned
+// alongside the first, because buffEngine already injects the two modes
+// through two separate setters (setEnemyDebuffNamesFn/
+// setAllyEnemyDebuffNamesFn) that gate genuinely different code paths.
+function getAllyEnemyDebuffNames() {
+  const names = new Set();
+  for (const config of widgetStore.getAll()) {
+    if (!config.trackOnEnemies) continue;
+    if (config.debuffCastBy !== 'ally') continue;
+    for (const name of config.buffNames || []) names.add(String(name).toLowerCase());
+  }
+  return names;
+}
+
+// Every spell any TEXT aura has asked to be warned about when somebody else casts it.
+//
+// Same shape and the same reasoning as getEnemyDebuffNames above, including not filtering by the
+// active profile: what the engine is willing to notice should not depend on which loadout happens
+// to be selected.
+function getAllyDebuffAlertNames() {
+  const names = new Set();
+  for (const config of widgetStore.getAll()) {
+    if (!config.allyDebuffAlert) continue;
+    for (const name of config.buffNames || []) names.add(String(name).toLowerCase());
+  }
+  return names;
 }
 
 function getAllWidgetConfigs() {
@@ -714,17 +1221,37 @@ function getWidgetConfig(id) {
 module.exports = {
   initWidgets,
   setActiveProfileIdFn,
+  setActiveProfileNameFn,
   createCustomWidget,
   createAllyBuffsWidget,
+  createBardSongsWidget,
+  createDebuffWidget,
+  createDamageMeterWidget,
+  setDamageOptions,
+  createTravelGuideWidget,
+  setTravelDestination,
+  peekShareCode,
+  createTextAuraWidget,
+  createBuffTimerWidget,
+  createCooldownTimerWidget,
   exportWidget,
   peekWidgetCode,
   importWidget,
   duplicateWidget,
   applyCodeToSelfBuffs,
   deleteWidget,
-  moveWidget,
+  reorderWidgets,
+  resetWidgetToDefault,
   applyProfileVisibility,
   setForegroundHidden,
+  setMasterHidden,
+  isMasterHidden,
+  shouldBeAudible,
+  // Exported for test/visibility.test.js. Nothing in the app calls it from outside this module -
+  // it is exported because it is the single decision function for what appears on screen, and a
+  // rule this dense is worth being able to drive directly rather than infer from side effects.
+  shouldBeOnScreen,
+  shouldIgnoreMouse,
   setAllUnlocked,
   areAllUnlocked,
   setLocked,
@@ -741,6 +1268,25 @@ module.exports = {
   setSortOrder,
   setLowTimeThreshold,
   setLandingGlowEnabled,
+  setMergeSameDuration,
+  setCategoryBorders,
+  setCategoryBorderWidth,
+  setTrackOnEnemies,
+  setDebuffCastBy,
+  setAllyDebuffAlert,
+  setAlwaysOn,
+  setShowOnAllProfiles,
+  setVisibleInZones,
+  applyZoneChange,
+  getCurrentZone,
+  isVisibleInCurrentZone,
+  setLoadoutLabelEnabled,
+  setLoadoutLabelEnabledState,
+  setSaveLoadoutLabelEnabledFn,
+  isLoadoutLabelEnabled,
+  setTextAuraMessage,
+  setTextAuraSize,
+  setTextAuraInstantSec,
   setHideBardSongs,
   setMaxDurationFilter,
   setShowRowIcon,
@@ -758,6 +1304,7 @@ module.exports = {
   setIconLabelAnchor,
   setWrapText,
   setIconJustify,
+  setTextJustify,
   setSoundOnLand,
   setSoundOnExpire,
   setSoundWarningSec,
@@ -772,11 +1319,18 @@ module.exports = {
   setBuffFilter,
   setBuffSource,
   addCustomTimer,
+  setTriggerDurationSec,
+  setTriggerCombineMode,
+  setAndWindowSec,
+  setReverseDetection,
   updateCustomTimer,
   removeCustomTimer,
   excludeBuff,
   unexcludeBuff,
   fitToContent,
   getAllWidgetConfigs,
+  getEnemyDebuffNames,
+  getAllyEnemyDebuffNames,
+  getAllyDebuffAlertNames,
   getWidgetConfig,
 };

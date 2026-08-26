@@ -7,6 +7,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "test": "node test/run.js",
     "dist": "electron-builder"
   },
   "devDependencies": {
@@ -22,6 +23,12 @@
     "files": [
       "src/**/*",
       "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "sounds",
+        "to": "sounds"
+      }
     ]
   }
 }

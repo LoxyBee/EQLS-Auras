@@ -96,6 +96,22 @@ class SpellbookService {
   getCount() {
     return this.spellNames.size;
   }
+
+  /**
+   * Where it looked and what it looked for, so the settings window can say something actionable
+   * when the file is not there instead of promising it will turn up on its own.
+   *
+   * This is not a hypothetical. On the machine this was written on the file has never existed
+   * across eight logged sessions, which means the spellbook check - the app's strongest tool for
+   * deciding whether an ambiguous buff message is yours - has been contributing nothing, and
+   * hundreds of landings per session were being ignored for want of it.
+   */
+  getExpectation() {
+    return {
+      folder: this.installRoot,
+      fileNamePattern: this.characterBaseName ? `${this.characterBaseName}-<CLASS>-Spellbook.txt` : null,
+    };
+  }
 }
 
 module.exports = { SpellbookService };

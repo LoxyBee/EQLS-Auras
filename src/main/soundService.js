@@ -22,9 +22,47 @@ const CONTENT_TYPES = { '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audi
 // certainly more relevant to them than this default going forward.
 const WINDOWS_MEDIA_DIR = 'C:\\Windows\\Media';
 
+// A real, plain folder that ships INSIDE the app's own install directory - not userData, not
+// asar (asar is one opaque archive file; Explorer can't browse it and nothing can write into it).
+// Requested directly: "a standalone sounds folder INSIDE the install itself that people would add
+// to, with some pre added sounds." Seeded with a handful of synthesized starter sounds (see
+// tools/generate-bundled-sounds.js - hand-rolled tones, no external audio, nothing to license) and
+// shipped via electron-builder's `extraFiles` (package.json), which copies it next to the .exe
+// rather than into app.asar.
+//
+// DELIBERATELY NOT where a picked sound is stored. That's still userData/customSounds (see
+// soundsDir() below) - this project asked, then reversed itself, on moving SAVED data into the
+// install folder specifically because Windows' uninstaller deletes the install directory, which
+// would silently delete months of tuned settings. A bundled/seed sound is different: losing it on
+// uninstall costs nothing (it ships with every install again next time), so there's no tension in
+// using the install folder for this half while userData stays authoritative for everything saved.
+//
+// Path resolution differs packaged vs dev, because "the install folder" means different things in
+// each: packaged, it's wherever electron-builder actually put the .exe (getPath('exe') is the only
+// thing that reliably answers that - NOT getAppPath(), which points inside app.asar once packaged,
+// a read-only archive extraFiles content is never placed in); in dev (`npm start`), getPath('exe')
+// is electron.exe buried in node_modules, which isn't "the install" in any meaningful sense - the
+// project root (getAppPath(), correct only while unpackaged) is the actual dev equivalent, and is
+// exactly where this repo's own sounds/ folder already lives.
+function bundledSoundsDir() {
+  const base = app.isPackaged ? path.dirname(app.getPath('exe')) : app.getAppPath();
+  return path.join(base, 'sounds');
+}
+
 function defaultPickerDir() {
   const last = loadJson('lastSoundPickerDir', null);
-  if (last && fs.existsSync(last)) return last;
+  // Reported live: the sounds link kept opening C:\Windows\Media even after the bundled folder
+  // shipped - because ANY prior pick remembers its own folder (see pickAndImportSound below), and
+  // that remembered folder used to unconditionally win here. Anyone who picked a sound before this
+  // feature existed had Windows Media saved as "last used" forever, permanently shadowing the new,
+  // better default. Windows Media is excluded from the remembered-folder shortcut specifically -
+  // it was never really a deliberate choice, just wherever the dialog happened to default to
+  // before the bundled folder existed - so it's treated the same as "nothing remembered yet"
+  // rather than as a real pick. Any OTHER remembered folder (the user's own Downloads, a custom
+  // sounds folder, wherever) is still trusted as deliberate and still wins outright.
+  if (last && last !== WINDOWS_MEDIA_DIR && fs.existsSync(last)) return last;
+  const bundled = bundledSoundsDir();
+  if (fs.existsSync(bundled)) return bundled;
   if (fs.existsSync(WINDOWS_MEDIA_DIR)) return WINDOWS_MEDIA_DIR;
   return undefined; // let the OS dialog fall back to its own default
 }
@@ -163,4 +201,4 @@ function registerProtocol() {
   });
 }
 
-module.exports = { pickAndImportSound, getSoundInfo, registerProtocol, openPickerFolder };
+module.exports = { pickAndImportSound, getSoundInfo, registerProtocol, openPickerFolder, bundledSoundsDir };

@@ -2,11 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const { stripRankSuffix } = require('./buffParser');
 
-// Bump this whenever src/shared/data/buffs.json gets meaningfully richer
-// (not just a couple of entries) - it gates a one-time upgrade pass that
-// refreshes already-seeded entries with the better data, see constructor.
-const STARTER_VERSION = 6;
-
 // Anything longer than this can safely be assumed to not need live-timer
 // tracking at all (confirmed via live testing: the roster mining's ticks=0
 // "unknown duration" fallback used exactly 432000s/5 days, producing
@@ -18,210 +13,96 @@ const STARTER_VERSION = 6;
 // nobody needs a live timer for).
 const MAX_TRACKABLE_DURATION_SEC = 5 * 3600;
 
-// Persisted database of known buffs and their durations (plus, where known,
-// the exact "landed" and "wore off" message text mined from the game's own
-// spell files - see landingText/endedText). Seeded once from the bundled
-// starter list, then lives entirely in the user's saved config so
-// edits/additions (including ones learned from "unknown buff" entries)
-// stick around and bundled-file updates never clobber them.
+// Database of known buffs and their durations (plus, where known, the exact "landed" and "wore
+// off" message text mined from the game's own spell files - see landingText/endedText).
+//
+// THE INSTALL IS THE SOURCE OF TRUTH FOR SPELL DATA, every launch, not something seeded once and
+// then left to drift. Rebuilt from src/shared/data/buffs.json on every construction - a roster
+// correction in a new build reaches every existing install the moment they update, the same way
+// any other bug fix does. This replaced a version-gated one-time-upgrade design (STARTER_VERSION
+// plus half a dozen boolean "have I already migrated this" flags in buffsMeta.json) that looked
+// safe and was not: Alacrity's duration was fixed in the bundled roster on 24 Aug, and it changed
+// nothing for an already-seeded install, because a normal roster entry ships WITH
+// landingText/endedText/iconId from day one, so it never looked "untouched" to that design's
+// refresh heuristic and sat wrong forever. Shara: "it should be seeded from the install not the
+// person's saved files because it interrupts old installs and doesn't allow live updates."
+//
+// What's still genuinely userData's alone, because the install has no copy of it at all:
+//   - a buff the user typed in themselves (`custom: true`) - "Add a new buff", or promoted from
+//     an Unknown cast. Kept exactly as saved, every launch, forever.
+//   - a manual correction to a REAL roster spell's own numbers, made through the Known Buffs
+//     "Save" button (`edited: true`, set by upsert() below). The install's data for that spell is
+//     never trusted again once a user has explicitly overridden it by hand.
+//   - three small per-spell toggles with no install-side value to defer to: showOnOverlay,
+//     isBardSong (only once isBardSongUserSet - see setBardSong), and noDurationScaling (only once
+//     noDurationScalingUserSet - see setNoDurationScaling). Everything else about a non-custom,
+//     non-edited entry is rebuilt from the install fresh, every time.
 class BuffStore {
   constructor(store) {
     this.store = store;
     const starterPath = path.join(__dirname, '..', 'shared', 'data', 'buffs.json');
-    const starter = JSON.parse(fs.readFileSync(starterPath, 'utf8'));
+    // See MAX_TRACKABLE_DURATION_SEC's comment - excluded here rather than at the roster-build
+    // step so it applies uniformly no matter how an over-long duration got into the file, and
+    // every launch rather than once: under the old one-time-purge design, an entry that only
+    // reached the roster AFTER a user's purge had already run (like Share Form of the Great Wolf)
+    // would slip through forever, because the migration that would have caught it never runs
+    // twice.
+    const starter = JSON.parse(fs.readFileSync(starterPath, 'utf8')).filter(
+      (e) => !(e.durationSec > MAX_TRACKABLE_DURATION_SEC)
+    );
+    const starterByName = new Map(starter.map((e) => [e.name.toLowerCase(), e]));
 
-    this.buffs = store.loadJson('buffs', null);
-    const meta = store.loadJson('buffsMeta', { starterVersion: 0 });
+    const persisted = store.loadJson('buffs', []) || [];
+    this.buffs = [];
 
-    if (!this.buffs) {
-      this.buffs = starter.map((e) => ({ ...e }));
-      meta.starterVersion = STARTER_VERSION;
-      meta.customMigrated = true;
-      store.saveJson('buffsMeta', meta);
-      this._save();
-      return;
-    }
-
-    if (meta.starterVersion < STARTER_VERSION) {
-      let changed = false;
-      for (const starterEntry of starter) {
-        const idx = this.buffs.findIndex((b) => b.name.toLowerCase() === starterEntry.name.toLowerCase());
-        if (idx === -1) {
-          this.buffs.push({ ...starterEntry });
-          changed = true;
-          continue;
-        }
-        const existing = this.buffs[idx];
-        // Only refresh entries that look auto-seeded (no custom text/icon
-        // ever set on them) - anything with landingText/endedText/iconId
-        // already was either from a previous mined roster or something the
-        // user deliberately typed in, so leave it alone either way.
-        const looksAutoSeeded = !existing.landingText && !existing.endedText && !existing.iconId;
-        if (looksAutoSeeded) {
-          this.buffs[idx] = { ...starterEntry, showOnOverlay: existing.showOnOverlay !== false };
-          changed = true;
-        }
+    for (const p of persisted) {
+      if (p.custom === true) {
+        // Not in the install's roster at all - this saved copy is the only one that exists.
+        this.buffs.push(p);
+        continue;
       }
-      meta.starterVersion = STARTER_VERSION;
-      store.saveJson('buffsMeta', meta);
-      if (changed) this._save();
-    }
-
-    // One-time: the "custom" flag (drives the Custom Buffs list) didn't
-    // exist before it was added, so anything typed in or promoted from an
-    // Unknown cast prior to that never got marked - retroactively flag
-    // anything not found in the bundled starter roster, since that's
-    // exactly what "custom" means for entries created going forward too.
-    if (!meta.customMigrated) {
-      const starterNames = new Set(starter.map((s) => s.name.toLowerCase()));
-      let changed = false;
-      for (const b of this.buffs) {
-        if (b.custom === undefined && !starterNames.has(b.name.toLowerCase())) {
-          b.custom = true;
-          changed = true;
-        }
+      const fresh = starterByName.get(p.name.toLowerCase());
+      if (!fresh) {
+        // Was a real roster spell once, but this server's current roster no longer carries it
+        // (e.g. seeded from an earlier, larger roster). Dropped, same as every rebuild - nothing
+        // legitimate hangs off a name the current install doesn't recognise.
+        continue;
       }
-      meta.customMigrated = true;
-      store.saveJson('buffsMeta', meta);
-      if (changed) this._save();
-    }
-
-    // One-time: othersLandingSuffix (ally-buff detection - see buffEngine.js)
-    // is a brand new field on an otherwise-already-complete roster, so the
-    // starterVersion upgrade pass above skips almost every entry (its
-    // looksAutoSeeded check only refreshes entries with NO landingText/
-    // endedText/iconId at all, which by now is nearly none of them). Name-
-    // matched backfill instead: copy the field in from the bundled starter
-    // wherever an existing entry doesn't already have one, touching nothing
-    // else - safe even for entries the user has customized.
-    if (!meta.otherSuffixMigrated) {
-      const starterByName = new Map(starter.map((s) => [s.name.toLowerCase(), s]));
-      let changed = false;
-      for (const b of this.buffs) {
-        if (b.othersLandingSuffix) continue;
-        const match = starterByName.get(b.name.toLowerCase());
-        if (match && match.othersLandingSuffix) {
-          b.othersLandingSuffix = match.othersLandingSuffix;
-          changed = true;
-        }
+      if (p.edited) {
+        // The user opened Known Buffs and hit Save on this spell - respect exactly what they
+        // typed, same as a fully custom entry. `edited` is only ever set by upsert() below, so
+        // this can never accidentally freeze a spell nobody actually touched.
+        this.buffs.push(p);
+        continue;
       }
-      meta.otherSuffixMigrated = true;
-      store.saveJson('buffsMeta', meta);
-      if (changed) this._save();
-    }
-
-    // One-time: full roster re-audit (2026-08-17) - the bundled starter
-    // roster was regenerated from scratch by mining every beneficial,
-    // player-castable spell directly from the game's own data files
-    // (~16,300 entries, up from ~3,300), fixing two real problems: (1) the
-    // Custom Buffs list was showing hundreds of buffs the game itself
-    // recognizes, just never captured as distinct roster entries before -
-    // encountering one live auto-created it and wrongly tagged it "custom"
-    // (custom correctly means "not a real spell", not "not in the old,
-    // incomplete roster"); (2) a handful of entries (e.g. a hand-made test
-    // version of a real spell) had incomplete/wrong data (missing icon,
-    // etc.) that a fresh mine now supersedes with the real thing. Every
-    // entry name-matching the new starter is fully replaced by the fresh
-    // mined data (explicitly requested: no attempt to preserve old
-    // icon/Overlay/bard-song choices on a re-classified entry, since those
-    // were set against wrong/incomplete data in the first place) and
-    // marked custom:false. Anything with no match in the new roster is
-    // left completely untouched - still whatever it was.
-    if (!meta.fullRosterRebuildV1) {
-      const starterByName = new Map(starter.map((s) => [s.name.toLowerCase(), s]));
-      const existingNames = new Set(this.buffs.map((b) => b.name.toLowerCase()));
-      const rebuilt = this.buffs.map((b) => {
-        const match = starterByName.get(b.name.toLowerCase());
-        return match ? { ...match, custom: false } : b;
-      });
-      // Names the new roster knows about that the user's store never had at
-      // all yet - added so "Known Buffs" reflects the full re-mined roster,
-      // not just names that happened to come up in past play.
-      for (const s of starter) {
-        if (!existingNames.has(s.name.toLowerCase())) rebuilt.push({ ...s, custom: false });
+      const rebuilt = { ...fresh, custom: false };
+      if (p.showOnOverlay !== undefined) rebuilt.showOnOverlay = p.showOnOverlay;
+      if (p.isBardSongUserSet) {
+        rebuilt.isBardSong = !!p.isBardSong;
+        rebuilt.isBardSongUserSet = true;
+      } else if (p.isBardSong) {
+        // Automatic evidence (a "You begin singing X" cast line was actually seen for this
+        // spell, or bardSongTagger.js's own pass already tagged it) - real, and worth keeping
+        // even though the install's own copy carries no such field itself.
+        rebuilt.isBardSong = true;
       }
-
-      // Legacy rank-suffixed duplicates: before getByName()'s stripRankSuffix
-      // fallback existed, an "Adamant Stance Rk. II" cast that didn't exact-
-      // match anything got auto-created as its OWN roster entry under that
-      // full suffixed name, separate from the real base "Adamant Stance"
-      // entry - identical landing/ended text and icon, just a duplicate.
-      // Confirmed on this exact data: 2,213 of 2,223 "custom" entries were
-      // this exact pattern - the real driver behind Custom Buffs showing
-      // hundreds of things that were never actually custom. Removed outright
-      // (not kept as custom) since the base entry alone already covers
-      // detection for it via that same fallback.
-      const byLowerName = new Map(rebuilt.map((b) => [b.name.toLowerCase(), b]));
-      const final = rebuilt.filter((b) => {
-        if (b.custom !== true) return true;
-        // "Rk. II"/"Rk. III" specifically (not a bare trailing roman
-        // numeral - see stripRankSuffix's own doc comment on why those two
-        // cases are NOT equally safe) always means a pure power-tier of the
-        // identical spell, so a base-name match alone is trusted without
-        // also requiring matching text - unlike the check below, needed
-        // because a legacy entry's own stored text can predate this
-        // session's re-mine and no longer match verbatim.
-        const rkTierMatch = /^(.*?)\s+Rk\.?\s*[IVX]+$/i.exec(b.name);
-        if (rkTierMatch) {
-          const baseEntry = byLowerName.get(rkTierMatch[1].trim().toLowerCase());
-          if (baseEntry && baseEntry.custom === false) return false;
-        }
-        // Bare trailing roman numeral - can genuinely be a different spell
-        // (see the class doc comment on stripRankSuffix), so only treat it
-        // as a stale duplicate when the base entry's own text agrees.
-        const base = stripRankSuffix(b.name);
-        if (base === b.name) return true;
-        const baseEntry = byLowerName.get(base.toLowerCase());
-        const isLegacyDupe = baseEntry && baseEntry.landingText === b.landingText && baseEntry.endedText === b.endedText;
-        return !isLegacyDupe;
-      });
-
-      this.buffs = final;
-      meta.fullRosterRebuildV1 = true;
-      store.saveJson('buffsMeta', meta);
-      this._save();
+      if (p.noDurationScalingUserSet) {
+        rebuilt.noDurationScalingUserSet = true;
+        if (p.noDurationScaling) rebuilt.noDurationScaling = true;
+        else delete rebuilt.noDurationScaling;
+      }
+      this.buffs.push(rebuilt);
     }
 
-    // One-time, follow-up to the rebuild above: anything STILL custom after
-    // matching against the freshly re-mined roster has no verified game
-    // data behind it at all (confirmed - not even a case-insensitive
-    // substring match anywhere in this install's spells_us.txt) - per
-    // explicit instruction, "custom" isn't a resting place for unverified
-    // entries, so these are removed outright rather than kept around.
-    // Legitimate custom buffs a user adds going forward (via "Add a new
-    // buff", still fully supported) are unaffected - this is a one-time
-    // cleanup of this specific pre-rebuild leftover state, not a standing
-    // rule against the feature itself.
-    if (!meta.unmatchedCustomPurgedV1) {
-      const before = this.buffs.length;
-      this.buffs = this.buffs.filter((b) => b.custom !== true);
-      meta.unmatchedCustomPurgedV1 = true;
-      store.saveJson('buffsMeta', meta);
-      if (this.buffs.length !== before) this._save();
+    // Anything the install's roster has that this store has never seen at all yet - so Known
+    // Buffs reflects the full current roster from the very first launch, not just names that
+    // happened to come up in past play.
+    const seenNames = new Set(this.buffs.map((b) => b.name.toLowerCase()));
+    for (const s of starter) {
+      if (!seenNames.has(s.name.toLowerCase())) this.buffs.push({ ...s, custom: false });
     }
 
-    // One-time (2026-08-17): see MAX_TRACKABLE_DURATION_SEC's comment - live
-    // testing surfaced Cannibalize as a concrete case of the mining
-    // fallback's 432000s placeholder duration making a genuinely instant
-    // ability show up as a days-long "active buff". Applied as a blanket
-    // rule rather than a per-spell fix, matching that same starterVersion
-    // rebuild's bundled roster (already regenerated with these excluded) -
-    // this just brings an already-upgraded user's own persisted store in
-    // line with it. Also removes "Rejuvenation" specifically - confirmed via
-    // the game's own string table (not a mining error) to have "You slow
-    // down."/"You speed back up." as its real landing/ended text, which
-    // caused a real false-positive self-buff detection.
-    if (!meta.longDurationPurgedV1) {
-      const before = this.buffs.length;
-      this.buffs = this.buffs.filter((b) => {
-        if (b.durationSec > MAX_TRACKABLE_DURATION_SEC) return false;
-        if (b.name === 'Rejuvenation' && b.landingText === 'You slow down.') return false;
-        return true;
-      });
-      meta.longDurationPurgedV1 = true;
-      store.saveJson('buffsMeta', meta);
-      if (this.buffs.length !== before) this._save();
-    }
+    this._save();
   }
 
   _save() {
@@ -274,7 +155,23 @@ class BuffStore {
       this._landingIndex = new Map();
       for (const b of this.buffs) {
         if (!b.landingText) continue;
-        if (ownerCounts.get(b.landingText) > 1) continue; // ambiguous - skip
+        if (ownerCounts.get(b.landingText) > 1) continue; // ambiguous within the roster - skip
+        // NOTE: entries also carry `landingTextSharedBy` - how many DISTINCT spell names in the
+        // game's own spells_us_str.txt print this same line. It is deliberately NOT consulted
+        // here, and that decision is worth recording because the opposite was tried first.
+        //
+        // Gating on it looked obviously right: "Your mind begins to clear." is one bard song in
+        // the roster but 5 distinct names in the game, including Elixir of Clarity. But the
+        // client's data files carry every spell from every EverQuest version, and this server
+        // runs a small subset - which is the entire reason the roster was cut from 11,337 to
+        // 1,052. Counting those absent spells as rivals reintroduced exactly the over-counting
+        // the rebuild removed. Measured against real logs: it suppressed 116 entries, 32 of them
+        // lines she actually sees in play, and the co-sharers were overwhelmingly other-expansion
+        // content - Spirit of the Panther, Ancient: Lcea's Lament, Talisman of the Panther Rk. II.
+        //
+        // The field stays on the entries because it is real evidence and costs nothing. If a
+        // false attribution ever does show up, re-enabling this is one line - but it should be
+        // scoped to co-sharers that exist on THIS server, not to the whole client data file.
         this._landingIndex.set(b.landingText, b);
       }
     }
@@ -376,9 +273,11 @@ class BuffStore {
     const noScaling =
       options.noDurationScaling !== undefined ? options.noDurationScaling : previous?.noDurationScaling;
     if (noScaling) entry.noDurationScaling = true;
-    // isBardSong is set by the tagger/backfill rather than this path, but has
-    // to survive an edit here for exactly the same reason.
+    if (previous?.noDurationScalingUserSet) entry.noDurationScalingUserSet = true;
+    // isBardSong is set by the tagger/markBardSong/setBardSong rather than this path, but has to
+    // survive an edit here for exactly the same reason as noDurationScaling above.
     if (previous?.isBardSong) entry.isBardSong = true;
+    if (previous?.isBardSongUserSet) entry.isBardSongUserSet = true;
 
     // Anything that didn't already exist (typed into "Add a new buff", or
     // promoted from an Unknown cast) wasn't mined from the game's own
@@ -386,6 +285,15 @@ class BuffStore {
     // ~3300-entry starter roster, where they'd otherwise be hard to find.
     // An existing entry keeps whatever it already was, custom or not.
     entry.custom = previous ? previous.custom === true : true;
+
+    // A genuine hand-typed correction to a REAL roster spell's own data (Known Buffs' Save
+    // button, or its icon picker) - as opposed to setShowOnOverlay's call through this same
+    // method, which only ever passes {showOnOverlay} and must NOT freeze the entry. Once a spell
+    // has been edited it stays edited (see the constructor): a second save that happens to touch
+    // fewer fields must not un-edit it.
+    const editingRosterData =
+      options.landingText !== undefined || options.endedText !== undefined || options.iconId !== undefined;
+    if (previous?.edited || (previous && !entry.custom && editingRosterData)) entry.edited = true;
 
     if (idx >= 0) this.buffs[idx] = entry;
     else this.buffs.push(entry);
@@ -430,6 +338,11 @@ class BuffStore {
   setNoDurationScaling(name, noDurationScaling) {
     const entry = this.getByName(name);
     if (!entry) return null;
+    // Marked so a future launch's rebuild-from-the-install (see the constructor) keeps this
+    // exact choice instead of quietly falling back to whatever the install's own roster says for
+    // this spell - a manual per-buff toggle here is meaningless if the next launch can silently
+    // undo it.
+    entry.noDurationScalingUserSet = true;
     if (noDurationScaling) entry.noDurationScaling = true;
     else delete entry.noDurationScaling;
     this._save();
@@ -439,6 +352,10 @@ class BuffStore {
   setBardSong(name, isBardSong) {
     const entry = this.getByName(name);
     if (!entry) return null;
+    // Marked for the same reason as setNoDurationScaling above - and specifically so bardSongTagger.js's
+    // additive pass (which reruns every launch) knows to leave THIS spell alone even when
+    // isBardSong is being set to false, not just when it happens to already be true.
+    entry.isBardSongUserSet = true;
     entry.isBardSong = !!isBardSong;
     this._save();
     return entry;

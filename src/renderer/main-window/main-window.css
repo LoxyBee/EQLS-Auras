@@ -194,6 +194,93 @@ body {
   flex-wrap: wrap;
 }
 
+/* Pushed to the far end of the bar - it acts on every aura at once, so it should not sit among
+   the per-profile chips as though it were one of them. */
+/* A command meant to be typed somewhere else. Monospaced so a slash and a lowercase L cannot be
+   confused, boxed so it reads as something to copy rather than as prose. */
+.command-row code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  user-select: all;
+}
+
+/* Note 30. The share-code offer strip. Bottom of the window and out of the way of the nav, since
+   it arrives unprompted while somebody is doing something else. */
+.share-code-offer {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid #e8b04b;
+  border-radius: 4px;
+  background: var(--bg-card, rgba(20, 20, 24, 0.97));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.share-code-offer span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* For a status that is not an error but does mean something is quietly not working. Loud enough
+   to be noticed on a page nobody visits often, without looking like a crash. */
+.warn {
+  color: #e8b04b;
+  font-weight: 600;
+}
+
+.warn-hint {
+  border-left: 3px solid #e8b04b;
+  padding-left: 10px;
+}
+
+.master-hide-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--ink-mut);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+/* The hotkey is invisible otherwise, and a shortcut nobody knows about is a shortcut nobody
+   uses. Sits beside the button rather than in a tooltip for that reason. */
+.master-hide-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+.master-hide-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink-mut);
+}
+
+/* Deliberately loud while it is on. This override is temporary, is not saved, and hides things
+   the user is otherwise expecting to see - a quiet button here is how someone spends ten minutes
+   convinced their auras have stopped working. */
+.master-hide-btn.active {
+  background: #b3423a;
+  border-style: solid;
+  border-color: #b3423a;
+  color: #fff;
+  font-weight: 600;
+}
+
 /* Switch-only - no delete/rename embedded here anymore, that moved to the
    Manage profiles modal (gear button below) after a misclick complaint on
    an earlier version that had a small X inline on every chip. */
@@ -269,7 +356,11 @@ body {
 }
 
 .sidebar {
-  width: 190px;
+  /* Width is driven by --sidebar-width, set inline on :root by initSidebarResize when a saved
+     width exists. The 190px here is the default AND the fallback - main-window.js mirrors the
+     same number, which is a duplication worth naming rather than pretending away: CSS needs it
+     to render before any script runs, and the drag maths needs it to clamp. */
+  width: var(--sidebar-width, 190px);
   flex-shrink: 0;
   background: var(--bg);
   border-right: 1px solid var(--line);
@@ -329,6 +420,14 @@ body {
   display: flex;
   align-items: stretch;
   gap: 2px;
+  /* The whole row is the drag handle - grab anywhere on it, not a separate handle element, since
+     the row is a single button-sized target and a dedicated handle would just be one more thing
+     to aim for on something already this small. */
+  cursor: grab;
+}
+
+.nav-sub-row.dragging {
+  opacity: 0.4;
 }
 
 .nav-sub-btn {
@@ -349,34 +448,12 @@ body {
 
 .nav-sub-name {
   flex: 1;
-  /* Flex items default to min-width:auto (their natural content width),
-     not 0 - without this, a long widget name would push the reorder
-     buttons out of the row instead of ellipsizing in place. */
+  /* Flex items default to min-width:auto (their natural content width), not 0 - without this a
+     long widget name would grow the row past the sidebar instead of ellipsizing in place. */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.nav-sub-move-btn {
-  flex-shrink: 0;
-  width: 18px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--ink-faint);
-  font-size: 9px;
-  cursor: pointer;
-}
-
-.nav-sub-move-btn:hover:not(:disabled) {
-  background: var(--panel);
-  color: var(--ink-mut);
-}
-
-.nav-sub-move-btn:disabled {
-  color: var(--line);
-  cursor: default;
 }
 
 .nav-sub-btn:hover {
@@ -392,10 +469,12 @@ body {
   font-weight: 700;
 }
 
-/* A widget scoped to specific loadout profiles (not every one) gets this
-   dot so it disappearing after a profile switch isn't a mystery - a third
-   hue (neither accent "you configured this" nor danger) since it's neither
-   of those, just a heads-up. */
+/* Every widget gets this dot now - reported live as liked but backwards. Green means "on for the
+   CURRENT profile right now", grey means it isn't, which is the opposite of the earlier version
+   (a single colour, shown only for a widget scoped to fewer than every profile, regardless of
+   whether that scoping happened to include the current one). A widget disabled everywhere on
+   purpose now reads unambiguously as grey rather than looking identical to one merely restricted
+   to two profiles out of three. */
 .profile-dot-wrap {
   margin-left: auto;
   position: relative;
@@ -408,7 +487,14 @@ body {
   width: 5px;
   height: 5px;
   border-radius: 50%;
+}
+
+.profile-dot-on {
   background: var(--ok);
+}
+
+.profile-dot-off {
+  background: var(--ink-faint);
 }
 
 /* Opens to the RIGHT of the dot, not left like the original mockup - this
@@ -900,6 +986,14 @@ h4 {
   margin: 0 0 8px;
 }
 
+/* An emptied hint must take no space at all, not an 8px gap where a paragraph used to be.
+   Several of these are emptied deliberately - their text moved into a title= tooltip on the
+   control it describes - and several others are filled in by script and are genuinely empty
+   until then. Both want the same thing: nothing until there is something to say. */
+.hint:empty {
+  display: none;
+}
+
 .hint a {
   color: var(--accent);
 }
@@ -939,6 +1033,20 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Flex children default to min-height:auto, which means "never shrink below my content" - so
+     without this a tall panel pushed past the modal's max-height instead of scrolling inside it,
+     and the buttons at the bottom of a long premade list were simply unreachable on a small
+     window. This is what makes .scroll-list below able to do anything at all. */
+  min-height: 0;
+}
+
+/* Was used in the markup (#travel-destination-list) but never actually defined, so that list has
+   never scrolled - it just grew until it overflowed the modal. Defined here once and applied to
+   every long list inside a modal. */
+.scroll-list {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
 }
 
 .add-widget-back {
@@ -963,6 +1071,33 @@ h4 {
   gap: 6px;
 }
 
+/* Group headings inside the premade list. Not a button - it is a label, so it must not look
+   clickable or take focus when tabbing through the choices. */
+.premade-group-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 2px 4px;
+  border-bottom: 1px solid var(--accent-line);
+  margin-bottom: 2px;
+}
+
+.premade-group-heading:first-child {
+  padding-top: 2px;
+}
+
+.premade-group-heading strong {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.premade-group-heading span {
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
 .premade-widget-choice {
   display: flex;
   flex-direction: column;
@@ -972,6 +1107,13 @@ h4 {
   padding: 10px 12px;
   width: 100%;
   background: var(--panel-2);
+}
+
+/* An option that exists but cannot apply to what you have just picked. Dimmed rather than
+   removed, so it reads as "not possible for this spell" instead of the choice having moved. */
+label.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .premade-widget-choice:hover {
@@ -1041,33 +1183,59 @@ h4 {
   position: relative;
 }
 
-/* Only filled gems are clickable (clicking forgets them) - the hover state
-   reads as "removable" rather than "selectable": the icon dims and a danger
-   ring appears, so it's obvious the click destroys something rather than
-   opening it. */
+/* Only filled gems are clickable - clicking opens the picker with this spell in view, so removal
+   (unchecking it there) is no longer a single accidental click away. The hover reads as
+   "selectable" rather than "removable": no danger colour, no cross - that language was for the
+   old delete-on-click behaviour and would now be telling you the opposite of what the click does. */
 .gem-slot:not(.gem-empty) {
   cursor: pointer;
 }
 
 .gem-slot:not(.gem-empty):hover {
-  border-color: var(--danger);
+  border-color: var(--accent, var(--ink-mut));
 }
 
 .gem-slot:not(.gem-empty):hover img {
-  opacity: 0.35;
+  opacity: 0.6;
 }
 
 .gem-slot:not(.gem-empty):hover::after {
-  content: '\00d7';
+  content: '\270e';
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--danger);
-  font-size: 20px;
+  color: var(--ink);
+  font-size: 18px;
   line-height: 1;
   font-family: var(--sans);
+}
+
+/* Note 27's "+" slot. Shares the accent-border hover above but keeps its own dashed style and
+   plus sign rather than the pencil - it opens the same picker, but there is nothing yet to edit. */
+.gem-slot.gem-add {
+  border-style: dashed;
+  color: var(--ink-mut);
+  font-family: var(--sans);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.gem-slot.gem-add:hover {
+  border-color: var(--accent, var(--ink-mut));
+  border-style: solid;
+  color: var(--ink);
+}
+
+.gem-slot.gem-add:hover img,
+.gem-slot.gem-add:hover::after {
+  content: none;
+  opacity: 1;
+}
+
+.danger-hint {
+  color: var(--danger);
 }
 
 .gem-slot img {
@@ -1643,6 +1811,14 @@ code {
 .modal-backdrop {
   position: fixed;
   inset: 0;
+  /* The window is frameless and .title-bar carries -webkit-app-region:drag. A drag region is
+     hit-tested by the OS before the page sees the click, and stacking order does not override it,
+     so any modal content that overlaps the top 32px becomes un-clickable - the click moves the
+     window instead. A tall modal in a short window (the minimum is 480px high) centres itself far
+     enough up for that to reach its first input.
+     Opting the whole backdrop out costs nothing and makes it structurally impossible: nothing
+     inside a modal should ever drag the window. */
+  -webkit-app-region: no-drag;
   /* A warm-tinted black, not neutral - matches the ground it's dimming
      down to instead of reading as a different, colder overlay dropped on
      top of it. */
@@ -1722,4 +1898,73 @@ code {
 
 .modal-list button {
   flex-shrink: 0;
+}
+
+/* Sidebar drag handle. Four pixels wide but reaching further with a negative margin, so it is
+   comfortable to grab without taking any layout space of its own - the sidebar's own border
+   remains the visible edge. */
+#sidebar-resizer {
+  flex: 0 0 4px;
+  margin-left: -4px;
+  cursor: col-resize;
+  background: transparent;
+  /* The window is frameless and .title-bar is a drag region. This sits below it, but a resizer
+     that ever overlapped one would move the window instead of resizing - opt out and stop
+     worrying about it. */
+  -webkit-app-region: no-drag;
+  z-index: 2;
+}
+
+#sidebar-resizer:hover,
+#sidebar-resizer.dragging {
+  background: var(--accent);
+}
+
+/* While dragging, stop the pointer selecting text across the whole window and stop every child
+   swallowing the pointer events the drag needs. */
+body.sidebar-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+body.sidebar-resizing .page-container,
+body.sidebar-resizing .sidebar {
+  pointer-events: none;
+}
+
+/* Right-click menu on a sidebar aura row. Positioned at the cursor by JS (top/left set inline),
+   everything else here is just appearance - matching .modal-card's palette so it reads as part of
+   the same app rather than a browser-default menu. */
+.context-menu {
+  position: fixed;
+  z-index: 50;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--accent-line);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  min-width: 140px;
+}
+
+.context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.context-menu button:hover {
+  background: var(--panel);
+}
+
+.context-menu button.danger {
+  color: var(--danger);
 }

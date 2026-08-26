@@ -32,7 +32,10 @@ function tagBardSongs(installRoot, buffStore) {
 
   let tagged = 0;
   for (const entry of buffStore.buffs) {
-    if (entry.isBardSong) continue;
+    // isBardSongUserSet means Known Buffs' manual toggle has already spoken for this spell,
+    // including the false direction - "already true" alone can't express that, since a manual
+    // correction TO false looks identical to a spell nobody has ever tagged.
+    if (entry.isBardSong || entry.isBardSongUserSet) continue;
     if (songNames.has(entry.name.toLowerCase())) {
       entry.isBardSong = true;
       tagged++;

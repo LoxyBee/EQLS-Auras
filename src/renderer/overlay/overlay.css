@@ -64,6 +64,37 @@ body {
 
 body.unlocked .drag-overlay {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Deliberately a small pill rather than a full-width bar. The box around it is what you grab to
+   move the aura, and -webkit-app-region: no-drag carves a hole in that - too generous here and
+   the aura you are trying to move becomes the one you cannot. */
+/* No longer a button, and deliberately not marked no-drag - it rides along with the rest of the
+   box for both dragging and the right-click that opens settings, rather than being a separate
+   small hole neither works on. */
+.drag-name {
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(20, 30, 70, 0.55);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+}
+
+/* Hidden when there is no name to show yet, so an empty pill never sits there looking broken. */
+.drag-name:empty {
+  display: none;
+}
+
+.drag-hint {
+  -webkit-app-region: drag;
 }
 
 .buff-list {
@@ -71,6 +102,22 @@ body.unlocked .drag-overlay {
   flex-direction: column;
   gap: 5px;
   padding: 4px;
+}
+
+/* A 0-second custom timer trigger - see updateRef's own comment in overlay.js. It still needs to
+   exist as a tile for the sound pipeline to see it "displayed", it just has nothing on screen
+   worth showing for it. Opacity rather than display:none so it still occupies the layout the
+   same way any other tile would, rather than the tile beside it visibly shifting into its spot
+   the instant it disappears.
+
+   !important is deliberate, not decoration: updateRef already keeps .low off this tile so
+   .low's `animation: pulse` (which itself animates opacity, overriding this rule outright
+   regardless of specificity - a CSS animation always beats a non-!important static value on the
+   same property) never gets the chance to fight it. This is the second line of defence, so any
+   FUTURE animated class landing on the same element can never make this tile visible again by
+   accident the same way .low once did. */
+.zero-duration-ping {
+  opacity: 0 !important;
 }
 
 .buff-row {
@@ -212,6 +259,115 @@ body.unlocked .drag-overlay {
      on the image/placeholder directly instead of the shared tile box. */
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(15, 17, 22, 0.72);
+}
+
+/* A TEXT AURA: one line of words over the game, and nothing else.
+
+   The backdrop and the outline are not decoration. This sits on top of a game whose background is
+   whatever the player happens to be looking at - white text on a snowfield is invisible, and an
+   announcement you cannot read is worse than none, because you stop trusting it. The dark plate
+   and the dark text-shadow together keep it legible on any of it.
+
+   width:max-content so the plate hugs the words: a fixed width would either clip a long message
+   or leave a wide dark bar sitting over the game when the message is short. */
+/* Note 10. The cooldown half of a two-phase timer.
+   A cooldown counts down to when you CAN use something; a duration counts down to when you can no
+   longer rely on it. Identical digits, opposite meanings - so the cooldown reads as "not ready
+   yet": dimmed, and outlined rather than filled. Deliberately NOT a colour, because colour on a
+   tile already means spell category (note 37) and time running out (.low). */
+.cooldown-phase {
+  opacity: 0.55;
+  outline: 1px dashed currentColor;
+  outline-offset: -2px;
+}
+
+.text-tile {
+  width: max-content;
+  max-width: 100%;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: rgba(12, 14, 20, 0.72);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 0 2px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+
+/* The reserved low-time colour deliberately cannot be themed away anywhere else in this app, and
+   a text aura is no exception - if the thing it is announcing is about to run out, it says so in
+   the same red every other aura uses. */
+.text-tile.low {
+  color: #ff8080 !important;
+}
+
+/* Note 37 - a coloured edge by what kind of spell a tile is showing.
+   "red for damage/DoTs, green for heals/HoTs", extended to the other five categories the roster
+   carries.
+
+   border-color plus an inset shadow rather than a thicker border: a wider border would reflow
+   every row and grid in the app, and this doubles the visual weight without moving a pixel. That
+   is also why the WIDTH slider (Size & Display, icon mode) scales the box-shadow's spread rather
+   than border-width - --cat-border-width can go up to 6px with zero layout impact, where a real
+   border that wide would shove every tile's content inward as it grew.
+
+   ACCESSIBILITY NOTE, worth being honest about. Red against green is the one pair a large share
+   of colour-blind players cannot separate, and it is exactly the pair that was asked for. The
+   hues are kept but the LIGHTNESS is deliberately spread as well - damage is a light red, its
+   over-time form a dark amber, healing a light green, its over-time form a dark green - so the
+   four still differ as greys. It is a mitigation, not a fix; the real fix is letting the palette
+   be chosen, which belongs with the rest of the colour settings. */
+.cat {
+  border-color: var(--cat-color) !important;
+  box-shadow: inset 0 0 0 var(--cat-border-width, 1px) var(--cat-color);
+}
+
+.cat-nuke   { --cat-color: #ff8f8f; }  /* direct damage - light red */
+.cat-dot    { --cat-color: #a85408; }  /* damage over time - dark amber */
+.cat-heal   { --cat-color: #7ce88f; }  /* healing - light green */
+.cat-hot    { --cat-color: #12813d; }  /* healing over time - dark green */
+.cat-buff   { --cat-color: #6aa9ff; }  /* light blue */
+.cat-debuff { --cat-color: #7b52c9; }  /* dark purple */
+.cat-pet    { --cat-color: #f2c14e; }  /* light amber */
+.cat-charm  { --cat-color: #b8388a; }  /* dark magenta */
+
+/* Note 8 - how many buffs are behind a merged tile. One rule for both display modes, and
+   deliberately reused by note 12's merged tiles rather than copied. Sized off the tile's own text
+   rather than a fixed pixel value, so it keeps its proportions as the text-size slider moves. */
+.count-badge {
+  /* The list row's countdown bar is an absolutely-positioned fill at z-index 0, and .name and
+     .time opt into position:relative + z-index:1 specifically so they paint over it. A
+     non-positioned flex item paints BELOW a positioned z-index:0 sibling, so without these two
+     lines the badge sat under the bar and was tinted blue - then red as the buff ran low, which
+     reads as the badge itself being a warning. The icon-mode rule below overrides position with
+     absolute, which is why this is the base rule and that one comes after. */
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.8em;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* In icon mode there is no room in the flow, so it sits in the top-right corner over the art.
+   pointer-events:none because the whole overlay is click-through anyway and a badge that could
+   ever catch a click would be a hole in that. */
+.buff-tile .count-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  z-index: 2;
+  background: rgba(20, 24, 34, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  line-height: 1.4;
+  pointer-events: none;
 }
 
 .buff-tile img {

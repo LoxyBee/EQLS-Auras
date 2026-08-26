@@ -3,6 +3,17 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('eqTracker', {
   getVersionInfo: () => ipcRenderer.invoke('app:getVersionInfo'),
 
+  getUiScale: () => ipcRenderer.invoke('ui:getScale'),
+  setUiScale: (pct) => ipcRenderer.invoke('ui:setScale', pct),
+  getSidebarWidth: () => ipcRenderer.invoke('ui:getSidebarWidth'),
+  setSidebarWidth: (px) => ipcRenderer.invoke('ui:setSidebarWidth', px),
+  getMergeRule: () => ipcRenderer.invoke('ui:getMergeRule'),
+  setMergeRule: (rule) => ipcRenderer.invoke('ui:setMergeRule', rule),
+  getTradePing: () => ipcRenderer.invoke('ui:getTradePing'),
+  setTradePing: (enabled) => ipcRenderer.invoke('ui:setTradePing', enabled),
+  getTellPing: () => ipcRenderer.invoke('ui:getTellPing'),
+  setTellPing: (enabled) => ipcRenderer.invoke('ui:setTellPing', enabled),
+
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:maximizeToggle'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
@@ -26,12 +37,16 @@ contextBridge.exposeInMainWorld('eqTracker', {
   onDebugLine: (callback) => {
     ipcRenderer.on('debug:line', (_event, line) => callback(line));
   },
+  onMemorizedLine: (callback) => {
+    ipcRenderer.on('memorized:line', (_event, line) => callback(line));
+  },
   setSplitEnabled: (enabled) => ipcRenderer.invoke('log:setSplitEnabled', enabled),
   setSplitOnGap: (splitOnGap) => ipcRenderer.invoke('log:setSplitOnGap', splitOnGap),
   chooseSplitFolder: () => ipcRenderer.invoke('log:chooseSplitFolder'),
   resetSplitFolder: () => ipcRenderer.invoke('log:resetSplitFolder'),
   openLogFolder: () => ipcRenderer.invoke('log:openFolder'),
   archiveLogNow: () => ipcRenderer.invoke('log:archiveNow'),
+  openArchiveFolder: () => ipcRenderer.invoke('log:openArchiveFolder'),
 
   getActiveBuffs: () => ipcRenderer.invoke('buffs:getActive'),
   getUnknownBuffs: () => ipcRenderer.invoke('buffs:getUnknown'),
@@ -84,11 +99,21 @@ contextBridge.exposeInMainWorld('eqTracker', {
 
   getTrackOthersEnabled: () => ipcRenderer.invoke('settings:getTrackOthers'),
   setTrackOthersEnabled: (enabled) => ipcRenderer.invoke('settings:setTrackOthers', enabled),
+  getUseEvidenceModel: () => ipcRenderer.invoke('settings:getUseEvidenceModel'),
+  setUseEvidenceModel: (enabled) => ipcRenderer.invoke('settings:setUseEvidenceModel', enabled),
+  getUseCastTimeFilter: () => ipcRenderer.invoke('settings:getUseCastTimeFilter'),
+  setUseCastTimeFilter: (enabled) => ipcRenderer.invoke('settings:setUseCastTimeFilter', enabled),
+  getUseStackingModel: () => ipcRenderer.invoke('settings:getUseStackingModel'),
+  setUseStackingModel: (enabled) => ipcRenderer.invoke('settings:setUseStackingModel', enabled),
   getAutoHideOverlayEnabled: () => ipcRenderer.invoke('settings:getAutoHideOverlay'),
   getShowAurasWhenAppFocused: () => ipcRenderer.invoke('settings:getShowAurasWhenAppFocused'),
   setShowAurasWhenAppFocused: (enabled) => ipcRenderer.invoke('settings:setShowAurasWhenAppFocused', enabled),
   getOverlayMasterState: () => ipcRenderer.invoke('overlay:getMasterState'),
   setOverlayAllUnlocked: (unlocked) => ipcRenderer.invoke('overlay:setAllUnlocked', unlocked),
+  setOverlayMasterHidden: (hidden) => ipcRenderer.invoke('overlay:setMasterHidden', hidden),
+  onOverlayMasterStateChanged: (callback) => {
+    ipcRenderer.on('overlay:masterStateChanged', () => callback());
+  },
   setAutoHideOverlayEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoHideOverlay', enabled),
 
   getSpellbookState: () => ipcRenderer.invoke('spellbook:getState'),
@@ -105,13 +130,65 @@ contextBridge.exposeInMainWorld('eqTracker', {
   listWidgets: () => ipcRenderer.invoke('widget:list'),
   createWidget: (name, buffSource) => ipcRenderer.invoke('widget:create', { name, buffSource }),
   createAllyBuffsWidget: (name) => ipcRenderer.invoke('widget:createAlly', { name }),
+  createBardSongsWidget: (name) => ipcRenderer.invoke('widget:createBardSongs', { name }),
+  createDebuffWidget: (name) => ipcRenderer.invoke('widget:createDebuff', { name }),
+  createDamageMeterWidget: (name, mineOnly) => ipcRenderer.invoke('widget:createDamageMeter', { name, mineOnly }),
+  createTravelGuideWidget: (name, destination) => ipcRenderer.invoke('widget:createTravelGuide', { name, destination }),
+  setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
+  getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
+  // Note 30. Receive-only. There is no matching "apply this code from chat" channel on purpose -
+  // the offer routes into the ordinary import screen, so nothing here can bypass its confirmations.
+  onShareCodeOffered: (callback) => {
+    ipcRenderer.on('shareCode:offered', (_event, offer) => callback(offer));
+  },
+  // Also receive-only: this LISTS codes seen in chat this session so a dismissed one can be found
+  // again from "+ Add aura". Picking one fills the ordinary import box; it does not import.
+  getRecentShareCodes: () => ipcRenderer.invoke('shareCode:recent'),
+  createTextAuraWidget: (name, preset) => ipcRenderer.invoke('widget:createTextAura', { name, preset }),
+  getCastableBuffs: () => ipcRenderer.invoke('buffs:castable'),
+  createCooldownTimerWidget: (name, spellName, cooldownSec, iconId, buffDurationSec) =>
+    ipcRenderer.invoke('widget:createCooldownTimer', { name, spellName, cooldownSec, iconId, buffDurationSec }),
+  createBuffTimerWidget: (name, spellName, source) =>
+    ipcRenderer.invoke('widget:createBuffTimer', { name, spellName, source }),
+  getTrackableBuffs: () => ipcRenderer.invoke('buffs:trackable'),
+  setWidgetTextAuraMessage: (id, value) => ipcRenderer.invoke('widget:setTextAuraMessage', { id, value }),
+  setWidgetTextAuraSize: (id, value) => ipcRenderer.invoke('widget:setTextAuraSize', { id, value }),
+  setWidgetTextAuraInstantSec: (id, value) =>
+    ipcRenderer.invoke('widget:setTextAuraInstantSec', { id, value }),
+  setWidgetMergeSameDuration: (id, value) =>
+    ipcRenderer.invoke('widget:setMergeSameDuration', { id, value }),
+  setWidgetCategoryBorders: (id, value) => ipcRenderer.invoke('widget:setCategoryBorders', { id, value }),
+  setWidgetCategoryBorderWidth: (id, px) => ipcRenderer.invoke('widget:setCategoryBorderWidth', { id, px }),
+  setWidgetTrackOnEnemies: (id, value) => ipcRenderer.invoke('widget:setTrackOnEnemies', { id, value }),
+  setWidgetDebuffCastBy: (id, value) => ipcRenderer.invoke('widget:setDebuffCastBy', { id, value }),
+  setWidgetAllyDebuffAlert: (id, value) => ipcRenderer.invoke('widget:setAllyDebuffAlert', { id, value }),
+  setWidgetDamageOptions: (id, options) => ipcRenderer.invoke('widget:setDamageOptions', { id, options }),
+  setWidgetAlwaysOn: (id, value) => ipcRenderer.invoke('widget:setAlwaysOn', { id, value }),
+  getHideHotkey: () => ipcRenderer.invoke('settings:getHideHotkey'),
+  getLoadoutLabel: () => ipcRenderer.invoke('settings:getLoadoutLabel'),
+  onLoadoutLabelChanged: (cb) => ipcRenderer.on('settings:loadoutLabelChanged', (_e, v) => cb(v)),
+  setLoadoutLabel: (enabled) => ipcRenderer.invoke('settings:setLoadoutLabel', enabled),
+  openDebugLogFolder: () => ipcRenderer.invoke('debug:openLogFolder'),
+  getDebugLogFolder: () => ipcRenderer.invoke('debug:logFolder'),
+  getDebugLogEnabled: () => ipcRenderer.invoke('debug:getEnabled'),
+  setDebugLogEnabled: (enabled) => ipcRenderer.invoke('debug:setEnabled', enabled),
+  getCurrentZone: () => ipcRenderer.invoke('zone:current'),
+  getKnownZones: () => ipcRenderer.invoke('zone:known'),
+  setWidgetVisibleInZones: (id, zones) => ipcRenderer.invoke('widget:setVisibleInZones', { id, zones }),
+  onZoneChanged: (cb) => ipcRenderer.on('zone:changed', (_e, zone) => cb(zone)),
+  setWidgetShowOnAllProfiles: (id, value) =>
+    ipcRenderer.invoke('widget:setShowOnAllProfiles', { id, value }),
+  onOpenWidgetSettings: (callback) => {
+    ipcRenderer.on('widget:openSettings', (_event, id) => callback(id));
+  },
   exportWidget: (id) => ipcRenderer.invoke('widget:export', id),
   peekWidgetCode: (code) => ipcRenderer.invoke('widget:peekCode', code),
   importWidget: (code) => ipcRenderer.invoke('widget:import', code),
   duplicateWidget: (id) => ipcRenderer.invoke('widget:duplicate', id),
   applyCodeToSelfBuffs: (code) => ipcRenderer.invoke('widget:applyCodeToSelfBuffs', code),
   deleteWidget: (id) => ipcRenderer.invoke('widget:delete', id),
-  moveWidget: (id, direction) => ipcRenderer.invoke('widget:move', { id, direction }),
+  reorderWidgets: (orderedIds) => ipcRenderer.invoke('widget:reorder', { orderedIds }),
+  resetWidgetToDefault: (id) => ipcRenderer.invoke('widget:resetToDefault', { id }),
   setWidgetName: (id, name) => ipcRenderer.invoke('widget:setName', { id, value: name }),
   toggleWidgetLock: (id) => ipcRenderer.invoke('widget:toggleLock', id),
   resetWidgetPosition: (id) => ipcRenderer.invoke('widget:resetPosition', id),
@@ -140,6 +217,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetIconMargin: (id, value) => ipcRenderer.invoke('widget:setIconMargin', { id, value }),
   setWidgetWrapText: (id, enabled) => ipcRenderer.invoke('widget:setWrapText', { id, enabled }),
   setWidgetIconJustify: (id, value) => ipcRenderer.invoke('widget:setIconJustify', { id, value }),
+  setWidgetTextJustify: (id, value) => ipcRenderer.invoke('widget:setTextJustify', { id, value }),
   setWidgetMaxDurationFilter: (id, seconds) => ipcRenderer.invoke('widget:setMaxDurationFilter', { id, value: seconds }),
   setWidgetSoundOnLand: (id, enabled) => ipcRenderer.invoke('widget:setSoundOnLand', { id, enabled }),
   setWidgetSoundOnExpire: (id, enabled) => ipcRenderer.invoke('widget:setSoundOnExpire', { id, enabled }),
@@ -157,6 +235,10 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetBuffFilter: (id, mode, names) => ipcRenderer.invoke('widget:setBuffFilter', { id, mode, names }),
   setWidgetBuffSource: (id, source) => ipcRenderer.invoke('widget:setBuffSource', { id, source }),
   addWidgetCustomTimer: (id, timer) => ipcRenderer.invoke('widget:addCustomTimer', { id, ...timer }),
+  setWidgetTriggerDurationSec: (id, seconds) => ipcRenderer.invoke('widget:setTriggerDurationSec', { id, seconds }),
+  setWidgetTriggerCombineMode: (id, mode) => ipcRenderer.invoke('widget:setTriggerCombineMode', { id, mode }),
+  setWidgetAndWindowSec: (id, seconds) => ipcRenderer.invoke('widget:setAndWindowSec', { id, seconds }),
+  setWidgetReverseDetection: (id, enabled) => ipcRenderer.invoke('widget:setReverseDetection', { id, enabled }),
   updateWidgetCustomTimer: (id, timerId, timer) =>
     ipcRenderer.invoke('widget:updateCustomTimer', { id, timerId, ...timer }),
   removeWidgetCustomTimer: (id, timerId) => ipcRenderer.invoke('widget:removeCustomTimer', { id, timerId }),
