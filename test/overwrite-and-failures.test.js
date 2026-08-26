@@ -214,4 +214,4 @@ test('the patterns that were tried and rejected are written down', () => {
 });
 
 module.exports = () => report('overwrite-and-failures');
-if (require.main === module) process.exit(report('overwrite-and-failures') ? 1 : 0);
+if (require.main === module) report('overwrite-and-failures').then((n) => process.exit(n ? 1 : 0));

@@ -152,4 +152,4 @@ test('restoring a snapshot mid-hide keeps the tile hidden until its real expiry,
 });
 
 module.exports = () => report('reverse-trigger');
-if (require.main === module) process.exit(report('reverse-trigger') ? 1 : 0);
+if (require.main === module) report('reverse-trigger').then((n) => process.exit(n ? 1 : 0));

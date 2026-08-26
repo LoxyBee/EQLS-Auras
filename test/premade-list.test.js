@@ -216,4 +216,4 @@ test('the buff-timer panel\'s own Back button returns to the premade list, not a
 });
 
 module.exports = () => report('premade-list');
-if (require.main === module) process.exit(report('premade-list') ? 1 : 0);
+if (require.main === module) report('premade-list').then((n) => process.exit(n ? 1 : 0));

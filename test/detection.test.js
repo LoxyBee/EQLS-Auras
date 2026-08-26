@@ -654,4 +654,4 @@ test('a landing with no burst behind it says so rather than inventing one', () =
   assert.match(engine._burstOrigin(), /burst origin unknown/);
 });
 module.exports = () => report('detection');
-if (require.main === module) process.exit(report('detection') ? 1 : 0);
+if (require.main === module) report('detection').then((n) => process.exit(n ? 1 : 0));

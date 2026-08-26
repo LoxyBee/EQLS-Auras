@@ -388,4 +388,4 @@ test('the command sets only the destination, never the starting point', () => {
 });
 
 module.exports = () => report('zone-routing');
-if (require.main === module) process.exit(report('zone-routing') ? 1 : 0);
+if (require.main === module) report('zone-routing').then((n) => process.exit(n ? 1 : 0));

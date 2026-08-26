@@ -30,6 +30,8 @@ async function init() {
   initMergeRule();
   initTradePing();
   initSoundsFolderLink();
+  initBugReport();
+  initActionBarsPage();
 }
 
 // Custom title bar (UX_VISUAL_DESIGN.md / the frameless-window follow-up) -
@@ -513,19 +515,65 @@ function initDetectionSettingsPanel() {
   });
 
   const loadoutLabelCheckbox = document.getElementById('loadout-label-checkbox');
+  const loadoutLabelPositionRow = document.getElementById('loadout-label-position-row');
+  const loadoutLabelUnlockBtn = document.getElementById('loadout-label-unlock-btn');
+  const loadoutLabelResetPositionBtn = document.getElementById('loadout-label-reset-position-btn');
+
+  // The label is deliberately never in the sidebar aura list or Add Aura (Shara: "it should be a
+  // permanent option that is not tied to creating an aura") - but it's still a real widget with a
+  // real draggable position underneath, and with nowhere else showing it, "drag it wherever you
+  // want it" had no button to start from. Reported live: "this label cannot be moved." These two
+  // buttons reuse the exact same widget lock/reset IPC every other aura's own Unlock to move /
+  // Reset position pair already calls, just targeting this one widget's id directly rather than
+  // whatever selectedId happens to be.
+  function findLoadoutLabelId() {
+    return window.eqTracker.listWidgets().then((list) => {
+      const w = list.find((x) => x.kind === 'loadout-label-builtin');
+      return w ? w.id : null;
+    });
+  }
+  function syncLoadoutLabelPositionRow(enabled) {
+    loadoutLabelPositionRow.style.display = enabled ? '' : 'none';
+    if (!enabled) return;
+    findLoadoutLabelId().then((id) => {
+      if (!id) return;
+      window.eqTracker.isWidgetLocked(id).then((locked) => {
+        loadoutLabelUnlockBtn.textContent = locked ? 'Unlock to move' : 'Lock label';
+        loadoutLabelUnlockBtn.classList.toggle('unlocked', !locked);
+      });
+    });
+  }
+  loadoutLabelUnlockBtn.addEventListener('click', async () => {
+    const id = await findLoadoutLabelId();
+    if (!id) return;
+    const locked = await window.eqTracker.toggleWidgetLock(id);
+    refreshMasterButtons();
+    loadoutLabelUnlockBtn.textContent = locked ? 'Unlock to move' : 'Lock label';
+    loadoutLabelUnlockBtn.classList.toggle('unlocked', !locked);
+  });
+  loadoutLabelResetPositionBtn.addEventListener('click', async () => {
+    const id = await findLoadoutLabelId();
+    if (id) window.eqTracker.resetWidgetPosition(id);
+  });
+
   window.eqTracker.getLoadoutLabel().then((enabled) => {
     loadoutLabelCheckbox.checked = !!enabled;
+    syncLoadoutLabelPositionRow(!!enabled);
   });
   // It can now switch itself on, so the box has to hear about it - otherwise she opens the modal
   // and finds an unticked box next to a label that is plainly on screen.
   window.eqTracker.onLoadoutLabelChanged((enabled) => {
     loadoutLabelCheckbox.checked = !!enabled;
+    syncLoadoutLabelPositionRow(!!enabled);
     refreshWidgets();
   });
   loadoutLabelCheckbox.addEventListener('change', () => {
     // refreshWidgets, because turning it on creates the label the first time and it should appear
     // in the aura list straight away rather than after the next unrelated refresh.
-    window.eqTracker.setLoadoutLabel(loadoutLabelCheckbox.checked).then(refreshWidgets);
+    window.eqTracker.setLoadoutLabel(loadoutLabelCheckbox.checked).then(() => {
+      syncLoadoutLabelPositionRow(loadoutLabelCheckbox.checked);
+      refreshWidgets();
+    });
   });
 
   window.eqTracker.getShowAurasWhenAppFocused().then((enabled) => {
@@ -1041,16 +1089,19 @@ const TRIGGER_TYPES = [
   },
 ];
 
-function renderTriggerTypeChoices() {
-  const container = document.getElementById('widget-new-timer-trigger-types');
+// Generalized so the action-bar-cooldown modal can render the same trigger-type list (minus zone/
+// combat, which don't apply to a single gem - see initActionBarsPage) rather than duplicating this
+// markup-building logic for a second, differently-scoped picker.
+function renderTriggerTypeChoices(containerId = 'widget-new-timer-trigger-types', radioName = 'widget-new-timer-trigger-mode', types = TRIGGER_TYPES) {
+  const container = document.getElementById(containerId);
   container.innerHTML = '';
-  for (const type of TRIGGER_TYPES) {
+  for (const type of types) {
     const label = document.createElement('label');
     label.className = 'trigger-type-choice' + (type.planned ? ' planned' : '');
 
     const radio = document.createElement('input');
     radio.type = 'radio';
-    radio.name = 'widget-new-timer-trigger-mode';
+    radio.name = radioName;
     radio.value = type.value;
     if (type.planned) radio.disabled = true;
 
@@ -1113,10 +1164,14 @@ function initWidgetsPanel() {
   const lowThresholdSlider = document.getElementById('widget-low-threshold-slider');
   const lowThresholdValueEl = document.getElementById('widget-low-threshold-value');
   const landingGlowCheckbox = document.getElementById('widget-landing-glow-checkbox');
+  const landingGlowLabelEl = document.getElementById('widget-landing-glow-label');
   const soundLandCheckbox = document.getElementById('widget-sound-land-checkbox');
+  const soundLandLabelEl = document.getElementById('widget-sound-land-label');
   const soundExpireCheckbox = document.getElementById('widget-sound-expire-checkbox');
+  const soundExpireLabelEl = document.getElementById('widget-sound-expire-label');
   const soundWarningSlider = document.getElementById('widget-sound-warning-slider');
   const soundWarningCheckbox = document.getElementById('widget-sound-warning-checkbox');
+  const soundWarningLabelEl = document.getElementById('widget-sound-warning-label');
   const soundWarningGroupEl = document.getElementById('widget-sound-warning-group');
   const soundLandRowEl = document.getElementById('widget-sound-land-row');
   const soundExpireRowEl = document.getElementById('widget-sound-expire-row');
@@ -1548,8 +1603,44 @@ function initWidgetsPanel() {
   // currentZone/knownZones above - HOTKEY_LABELS lives in this function, not the one this used to
   // sit in.
   const masterHideHintEl = document.getElementById('master-hide-hint');
-  window.eqTracker.getHideHotkey().then((key) => {
-    masterHideHintEl.textContent = key ? `or press ${HOTKEY_LABELS[key] || key}` : '';
+  function refreshHideHotkeyHint() {
+    window.eqTracker.getHideHotkey().then((key) => {
+      masterHideHintEl.textContent = key ? `or press ${HOTKEY_LABELS[key] || key}` : '';
+    });
+  }
+  refreshHideHotkeyHint();
+
+  // Reported directly: the hotkey was described as "Pause" everywhere in the app, but Electron
+  // refuses to register that accelerator at all (see main.js's registerHideHotkey), so it was
+  // always actually bound to Scroll Lock - and on some keyboards, a driver/layout quirk swaps
+  // which physical key sends which of those two anyway. There's no way to detect "the real Pause
+  // key" through that, so the key itself is a choice now rather than a guess. Lives in this
+  // function (not initDetectionSettingsPanel, where the Setup page's other checkboxes sit) for the
+  // same reason HOTKEY_LABELS does - it reads that constant, and reading it from a scope away is
+  // exactly the ReferenceError this file already has a documented incident for.
+  const hideHotkeySelect = document.getElementById('hide-hotkey-select');
+  const hideHotkeyHintEl = document.getElementById('hide-hotkey-hint');
+  function refreshHideHotkeyHelp(choice) {
+    if (choice === 'none') {
+      hideHotkeyHintEl.textContent = 'The top-bar button still works either way.';
+      return;
+    }
+    window.eqTracker.getHideHotkey().then((bound) => {
+      hideHotkeyHintEl.textContent =
+        bound === choice
+          ? ''
+          : 'Could not register that key (another app may already own it) - falling back to Alt+Shift+H.';
+    });
+  }
+  window.eqTracker.getHideHotkeyChoice().then((choice) => {
+    hideHotkeySelect.value = choice || 'ScrollLock';
+    refreshHideHotkeyHelp(hideHotkeySelect.value);
+  });
+  hideHotkeySelect.addEventListener('change', () => {
+    window.eqTracker.setHideHotkeyChoice(hideHotkeySelect.value).then(() => {
+      refreshHideHotkeyHelp(hideHotkeySelect.value);
+      refreshHideHotkeyHint();
+    });
   });
 
   // The zones an aura is limited to, as removable chips.
@@ -1623,14 +1714,28 @@ function initWidgetsPanel() {
     widgetProfilesTogglesEl.innerHTML = '';
     window.eqTracker.getProfiles().then((profiles) => {
       const activeIds = new Set(widget.activeProfileIds || []);
+      // showOnAllProfiles means every checkbox is effectively ON (see widgetManager's
+      // isVisibleForActiveProfile) even though activeIds itself is empty - rendering unchecked
+      // here made a genuinely-visible-everywhere aura look off, so the first click just rewrote
+      // "all profiles" into "only this one" instead of actually turning it off, and it took a
+      // second click to get the effect the user expected from the first.
+      const allOn = !!widget.showOnAllProfiles;
       profiles.forEach((profile) => {
+        const checked = allOn || activeIds.has(profile.id);
         const label = document.createElement('label');
-        label.className = 'profile-toggle' + (activeIds.has(profile.id) ? ' on' : '');
+        label.className = 'profile-toggle' + (checked ? ' on' : '');
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
-        checkbox.checked = activeIds.has(profile.id);
+        checkbox.checked = checked;
         checkbox.addEventListener('change', () => {
-          const current = new Set(findWidget(widget.id)?.activeProfileIds || []);
+          const fresh = findWidget(widget.id);
+          // Seed from "every profile" (not the stored, possibly-empty activeProfileIds) when
+          // showOnAllProfiles is what's actually making everything read as checked - otherwise
+          // unchecking one profile out of several starts from an empty set and wrongly clears
+          // every other profile's membership along with it.
+          const current = fresh?.showOnAllProfiles
+            ? new Set(profiles.map((p) => p.id))
+            : new Set(fresh?.activeProfileIds || []);
           if (checkbox.checked) current.add(profile.id);
           else current.delete(profile.id);
           label.classList.toggle('on', checkbox.checked);
@@ -2055,6 +2160,36 @@ function initWidgetsPanel() {
     const shape = widgetShape(widget);
     const fields = new Set(SHAPE_FIELDS[shape] || []);
     const has = (key) => fields.has(key);
+
+    // Reported directly: "on text auras, this text is ambiguous, it should be 'play a sound when
+    // text appears' because it's not always a buff trigger" - a text aura's "landing"/"expiry" can
+    // be a custom timer event, a resist flash, anything, not necessarily a buff. Every other shape
+    // keeps the original buff-worded default from the markup untouched.
+    const alertWording = has('text-fields')
+      ? {
+          glow: [' Glow when text appears', 'Flashes the tile briefly the moment this text appears.'],
+          land: [' Play a sound when text appears', 'Plays a sound the moment this text appears.'],
+          expire: [' Play a sound when text disappears', 'Plays a sound the moment this text disappears.'],
+          warn: [' Warn me before text disappears', 'Plays a sound a set time before this text disappears.'],
+        }
+      : {
+          glow: [' Glow when a buff lands', 'Flashes the tile briefly when the buff is first applied.'],
+          land: [' Play a sound when a buff lands', 'Plays a sound the moment the buff is applied.'],
+          expire: [' Play a sound when a buff expires', 'Plays a sound the moment the buff runs out.'],
+          warn: [
+            ' Warn me before a buff expires',
+            'Plays a sound a set time before the buff runs out, while there is still time to recast.',
+          ],
+        };
+    [
+      [landingGlowLabelEl, alertWording.glow],
+      [soundLandLabelEl, alertWording.land],
+      [soundExpireLabelEl, alertWording.expire],
+      [soundWarningLabelEl, alertWording.warn],
+    ].forEach(([label, [text, title]]) => {
+      label.lastChild.textContent = text;
+      label.title = title;
+    });
 
     textMessageRowEl.style.display = has('text-fields') ? '' : 'none';
     textAuraSizeRowEl.style.display = has('text-fields') ? '' : 'none';
@@ -3020,6 +3155,19 @@ function initWidgetsPanel() {
       mode: 'cooldown',
     },
     {
+      id: 'skill-ready-reminder',
+      name: 'Skill ready reminder (example)',
+      group: 'timers',
+      description:
+        'A worked example, not a separate feature: the same picker as Cooldown timer, but instead ' +
+        'of counting the cooldown down, this shows a reminder tile the moment the skill IS ready ' +
+        'and hides it the instant you cast it - "go use this" rather than "wait this long". Shows ' +
+        'what Reverse detection (on any aura\'s Custom triggers card) can do.',
+      panel: 'buff-timer',
+      mode: 'cooldown',
+      reverseExample: true,
+    },
+    {
       id: 'enemy-debuff',
       name: 'Debuff on an enemy',
       group: 'timers',
@@ -3158,6 +3306,15 @@ function initWidgetsPanel() {
   // which question it asks underneath, and what it builds. Note 15 said the cooldown premade
   // should reuse note 14's panel rather than growing a second one over the same spells.
   let buffTimerMode = 'buff';
+  // "Example library" ask (25 Aug): a worked example demonstrating reverse detection - built the
+  // same way as an ordinary Cooldown timer (same picker, same list, same fields; deliberately NOT
+  // a fourth buffTimerMode, so none of the existing `=== 'cooldown'` checks above needed touching)
+  // except the finished widget gets reverseDetection flipped on right after creation. The result
+  // shows a reminder tile UNTIL the picked skill is cast, then goes quiet the moment it is - "this
+  // is ready, go use it" - rather than counting the cooldown down, which is what a plain Cooldown
+  // timer already does and why this needed to be a genuinely different worked example, not the
+  // same feature under a second name.
+  let buffTimerReverseExample = false;
 
   // Only shown in buff mode, only for a spell with known recast data, and only for "Yourself" -
   // what this actually builds when checked is a customTimer castOf trigger (see the create-button
@@ -3296,8 +3453,9 @@ function initWidgetsPanel() {
 
   // preferredSource is what the premade that opened this panel came for - the radios still show
   // all three, so the choice is visible rather than hidden, it just starts on the likely one.
-  function resetBuffTimerPanel(preferredSource, mode) {
+  function resetBuffTimerPanel(preferredSource, mode, reverseExample) {
     buffTimerMode = mode === 'cooldown' ? 'cooldown' : 'buff';
+    buffTimerReverseExample = !!reverseExample;
     buffTimerPreferredSource = preferredSource === 'enemy' || preferredSource === 'ally' ? preferredSource : 'self';
     buffTimerChoice = null;
     buffTimerCooldownMatch = null;
@@ -3321,8 +3479,17 @@ function initWidgetsPanel() {
       window.eqTracker
         .createCooldownTimerWidget(buffTimerChoice.name, buffTimerChoice.name, cooldownSec, buffTimerChoice.iconId)
         .then((config) => {
-          closeAddWidgetModal();
-          focusWidget(config.id);
+          const finish = () => {
+            closeAddWidgetModal();
+            focusWidget(config.id);
+          };
+          // The reverse-example variant of this same premade (see buffTimerReverseExample's own
+          // comment) - everything about creation is identical up to here, then one extra flip.
+          if (buffTimerReverseExample) {
+            window.eqTracker.setWidgetReverseDetection(config.id, true).then(finish);
+          } else {
+            finish();
+          }
         });
       return;
     }
@@ -3435,7 +3602,7 @@ function initWidgetsPanel() {
             panel.style.display = panel.id === `add-widget-${premade.panel}-panel` ? '' : 'none';
           });
           if (premade.panel === 'buff-timer') {
-            resetBuffTimerPanel(premade.defaultSource, premade.mode);
+            resetBuffTimerPanel(premade.defaultSource, premade.mode, premade.reverseExample);
             buffTimerSelect.focus();
           }
           return;
@@ -4839,6 +5006,16 @@ const TRADE_REQUEST_PATTERN = /^([A-Za-z]+) is interested in making a trade\.$/;
 // matches guild/group/say/shout, all of which should stay silent here.
 const TELL_PATTERN = /^([A-Za-z]+) tells you, '.*'$/;
 
+// Reported live: an unrated tell ping machine-guns the sound during a burst of messages. Pulled
+// out as its own pure function (rather than left inline in initTradePing's closure) purely so a
+// plain Node test can pin the actual decision - see test/trade-ping.test.js. cooldownMs of 0 means
+// off, matching every other "0 = off" cooldown/threshold convention already used across this app
+// (soundWarningSec, etc.) - always true regardless of how recent the last ping was.
+function tellShouldPing(now, lastPingAt, cooldownMs) {
+  if (cooldownMs <= 0) return true;
+  return now - lastPingAt >= cooldownMs;
+}
+
 // The app-wide half of note 8. A radio group rather than a per-aura setting because the owner
 // could not choose between the two readings and asked for both - which makes it something you
 // try, and a setting you try belongs somewhere you change it once, not on every aura.
@@ -4869,13 +5046,1173 @@ function initSoundsFolderLink() {
   btn.addEventListener('click', () => window.eqTracker.openSoundsFolder());
 }
 
+// About page's "Copy bug report" button - the simplest useful version of the backlog ask: the app
+// version and the last chunk of today's detection log, together in one clipboard paste. The
+// detection log is what actually makes a report diagnosable (see gotcha #28's whole history: a
+// report and a correct landing looked identical without it) - version alone tells someone which
+// build to look at, not what happened. getRecentLogTail returns '' with no error when Diagnostics
+// has never been turned on (no log file exists yet) - the report still goes out with just the
+// version rather than blocking on it, and the status text says so rather than staying silent.
+function initBugReport() {
+  const btn = document.getElementById('copy-bug-report-btn');
+  const statusEl = document.getElementById('copy-bug-report-status');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const [versionInfo, logTail] = await Promise.all([
+      window.eqTracker.getVersionInfo(),
+      window.eqTracker.getRecentLogTail(4000),
+    ]);
+    const lines = [
+      `EQLS Auras ${versionInfo.appVersion} (Electron ${versionInfo.electronVersion}, Node ${versionInfo.nodeVersion})`,
+      '',
+      'What happened:',
+      '(describe it here)',
+      '',
+    ];
+    if (logTail) {
+      lines.push('Recent detection log:', '```', logTail.trim(), '```');
+    } else {
+      lines.push('(no detection log available - turn on Diagnostics under the Log page before reporting, if this happens again)');
+    }
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      statusEl.textContent = 'Copied - paste it wherever you report bugs.';
+    } catch {
+      statusEl.textContent = 'Could not copy to clipboard.';
+    }
+  });
+}
+
+// The Action Bar overlay (CLAUDE.md's "Action bar cover replacements" backlog entry) - the
+// calibration bar's own sliders/lock/reset/opacity, and the 12 gems (icon, name, disable, and an
+// optional cooldown). See actionBarManager.js.
+function initActionBarsPage() {
+  const navBtn = document.getElementById('action-bars-nav-btn');
+  if (!navBtn) return;
+  const submenuEl = document.getElementById('action-bars-submenu');
+  const addRow = submenuEl.querySelector('.nav-add-widget-row');
+  const openAddBtn = document.getElementById('open-add-action-bar-modal-btn');
+  const addModalBackdrop = document.getElementById('create-action-bar-modal-backdrop');
+  const closeAddModalBtn = document.getElementById('close-create-action-bar-modal');
+  const newBarNameInput = document.getElementById('new-action-bar-name-input');
+  const createBarSubmitBtn = document.getElementById('create-action-bar-submit-btn');
+  const pageTitleEl = document.getElementById('page-action-bars-title');
+  const introCardEl = document.getElementById('action-bars-intro-card');
+  const settingsPanelEl = document.getElementById('action-bars-settings-panel');
+  const barNameInput = document.getElementById('action-bar-name-input');
+  const deleteBarBtn = document.getElementById('delete-action-bar-btn');
+  const copySettingsBtn = document.getElementById('action-bar-copy-settings-btn');
+  const copySourceMenuEl = document.getElementById('action-bar-copy-source-menu');
+  const removeOverridesBtn = document.getElementById('action-bar-remove-overrides-btn');
+  const barProfilesTogglesEl = document.getElementById('action-bar-profiles-toggles');
+  // Same right-click menu shape as an aura's own sidebar row - see openSidebarContextMenu
+  // elsewhere in this file for the pattern being mirrored.
+  const actionBarContextMenuEl = document.getElementById('action-bar-context-menu');
+  const actionBarContextRenameBtn = document.getElementById('action-bar-context-rename');
+  const actionBarContextDuplicateBtn = document.getElementById('action-bar-context-duplicate');
+  const actionBarContextDeleteBtn = document.getElementById('action-bar-context-delete');
+  const renameModalBackdrop = document.getElementById('rename-action-bar-modal-backdrop');
+  const renameInput = document.getElementById('rename-action-bar-input');
+  const renameSaveBtn = document.getElementById('rename-action-bar-save-btn');
+  const renameCancelBtn = document.getElementById('rename-action-bar-cancel-btn');
+  const closeRenameModalBtn = document.getElementById('close-rename-action-bar-modal');
+
+  let actionBars = [];
+  let selectedActionBarId = null;
+  let actionBarContextMenuId = null;
+  let renameActionBarId = null;
+
+  // Same mechanic as the aura sidebar's profile dot (initWidgetsPanel, around line 1795) - kept
+  // as this panel's own copy rather than sharing the widgets-panel variables, since the two
+  // panels are separate top-level functions with no shared closure.
+  let actionBarLatestProfiles = [];
+  let actionBarCurrentActiveProfileId = null;
+  function refreshActionBarProfilesCache() {
+    return window.eqTracker.getProfiles().then((list) => {
+      actionBarLatestProfiles = list;
+    });
+  }
+  function refreshActionBarActiveProfileCache() {
+    return window.eqTracker.getActiveProfileId().then((id) => {
+      actionBarCurrentActiveProfileId = id;
+    });
+  }
+
+  // Shared clamping logic for every floating popup on this page (the context menu and the copy-
+  // settings source menu) - same math openSidebarContextMenu already uses for the widget one, so
+  // a menu opened near the bottom/edge of this frameless window still draws fully on screen.
+  function positionFloatingMenu(menuEl, x, y) {
+    menuEl.style.display = 'block';
+    const rect = menuEl.getBoundingClientRect();
+    const maxX = window.innerWidth - rect.width - 4;
+    const maxY = window.innerHeight - rect.height - 4;
+    menuEl.style.left = `${Math.max(4, Math.min(x, maxX))}px`;
+    menuEl.style.top = `${Math.max(4, Math.min(y, maxY))}px`;
+  }
+
+  function openActionBarContextMenu(id, x, y) {
+    actionBarContextMenuId = id;
+    positionFloatingMenu(actionBarContextMenuEl, x, y);
+  }
+  function closeActionBarContextMenu() {
+    actionBarContextMenuEl.style.display = 'none';
+    actionBarContextMenuId = null;
+  }
+
+  // Button-triggered popup, not a permanent dropdown in the card - requested directly: "copy
+  // settings should be a button that opens a drop down to copy settings, not have the drop down
+  // in the card." Built fresh each time it opens rather than kept in sync continuously, same
+  // "only needed while actually open" reasoning as the context menu above.
+  function openCopySourceMenu(x, y) {
+    copySourceMenuEl.innerHTML = '';
+    const others = actionBars.filter((b) => b.id !== selectedActionBarId);
+    if (others.length === 0) {
+      const li = document.createElement('li');
+      const span = document.createElement('span');
+      span.className = 'hint';
+      span.style.display = 'block';
+      span.style.padding = '6px 10px';
+      span.textContent = 'No other action bars exist.';
+      li.appendChild(span);
+      copySourceMenuEl.appendChild(li);
+    } else {
+      others.forEach((bar) => {
+        const li = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = bar.name;
+        btn.addEventListener('click', () => {
+          closeCopySourceMenu();
+          if (!selectedActionBarId) return;
+          window.eqTracker.copyActionBarSettings(selectedActionBarId, bar.id).then(() => {
+            selectActionBar(selectedActionBarId); // reload the form so every copied field shows its new value
+          });
+        });
+        li.appendChild(btn);
+        copySourceMenuEl.appendChild(li);
+      });
+    }
+    positionFloatingMenu(copySourceMenuEl, x, y);
+  }
+  function closeCopySourceMenu() {
+    copySourceMenuEl.style.display = 'none';
+  }
+
+  window.addEventListener('click', (e) => {
+    if (actionBarContextMenuEl.style.display !== 'none' && !actionBarContextMenuEl.contains(e.target)) {
+      closeActionBarContextMenu();
+    }
+    if (copySourceMenuEl.style.display !== 'none' && !copySourceMenuEl.contains(e.target) && !copySettingsBtn.contains(e.target)) {
+      closeCopySourceMenu();
+    }
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    closeActionBarContextMenu();
+    closeCopySourceMenu();
+  });
+  window.addEventListener('contextmenu', (e) => {
+    if (actionBarContextMenuEl.style.display !== 'none' && !e.defaultPrevented) closeActionBarContextMenu();
+  });
+
+  function openRenameActionBarModal(id) {
+    const bar = findActionBar(id);
+    if (!bar) return;
+    renameActionBarId = id;
+    renameInput.value = bar.name;
+    renameModalBackdrop.style.display = 'flex';
+    renameInput.focus();
+    renameInput.select();
+  }
+  function closeRenameActionBarModal() {
+    renameModalBackdrop.style.display = 'none';
+    renameActionBarId = null;
+  }
+  function saveRenameActionBar() {
+    if (!renameActionBarId) return;
+    const id = renameActionBarId;
+    window.eqTracker.setActionBarName(id, renameInput.value.trim() || 'Action Bar').then(() => {
+      closeRenameActionBarModal();
+      refreshActionBarsList().then(() => {
+        if (selectedActionBarId === id) selectActionBar(id); // refresh the title/name field too
+      });
+    });
+  }
+  renameSaveBtn.addEventListener('click', saveRenameActionBar);
+  renameCancelBtn.addEventListener('click', closeRenameActionBarModal);
+  closeRenameModalBtn.addEventListener('click', closeRenameActionBarModal);
+  renameModalBackdrop.addEventListener('click', (e) => {
+    if (e.target === renameModalBackdrop) closeRenameActionBarModal();
+  });
+  renameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveRenameActionBar();
+    else if (e.key === 'Escape') closeRenameActionBarModal();
+  });
+
+  function handleDuplicateActionBar(id) {
+    window.eqTracker.duplicateActionBar(id).then((bar) => {
+      if (!bar) return;
+      refreshActionBarsList().then(() => {
+        activateNavButton(navBtn);
+        selectActionBar(bar.id);
+      });
+    });
+  }
+
+  function handleDeleteActionBar(id) {
+    const bar = findActionBar(id);
+    const confirmed = window.confirm(
+      `Delete action bar "${bar ? bar.name : ''}"? This closes its overlay window and can't be undone.`
+    );
+    if (!confirmed) return;
+    window.eqTracker.deleteActionBar(id).then(() => {
+      refreshActionBarsList().then((list) => {
+        if (selectedActionBarId !== id) return; // a different bar than the one open was deleted
+        if (list.length > 0) selectActionBar(list[0].id);
+        else selectActionBar(null);
+      });
+    });
+  }
+
+  actionBarContextRenameBtn.addEventListener('click', () => {
+    const id = actionBarContextMenuId;
+    closeActionBarContextMenu();
+    if (id) openRenameActionBarModal(id);
+  });
+  actionBarContextDuplicateBtn.addEventListener('click', () => {
+    const id = actionBarContextMenuId;
+    closeActionBarContextMenu();
+    if (id) handleDuplicateActionBar(id);
+  });
+  actionBarContextDeleteBtn.addEventListener('click', () => {
+    const id = actionBarContextMenuId;
+    closeActionBarContextMenu();
+    if (id) handleDeleteActionBar(id);
+  });
+
+  // Same shape as renderWidgetProfilesChecklist - a checkbox per profile, ticking/unticking
+  // updates activeProfileIds immediately (that IS the bar's visibility control, same as a widget).
+  function renderActionBarProfilesChecklist(bar) {
+    barProfilesTogglesEl.innerHTML = '';
+    window.eqTracker.getProfiles().then((profiles) => {
+      const activeIds = new Set(bar.activeProfileIds || []);
+      // Same fix as renderWidgetProfilesChecklist: showOnAllProfiles reads as every checkbox
+      // being ON even though activeIds is empty - rendering unchecked here made an actually-on
+      // bar look off, needing a second click to really turn it off for that profile.
+      const allOn = !!bar.showOnAllProfiles;
+      profiles.forEach((profile) => {
+        const checked = allOn || activeIds.has(profile.id);
+        const label = document.createElement('label');
+        label.className = 'profile-toggle' + (checked ? ' on' : '');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = checked;
+        checkbox.addEventListener('change', () => {
+          const fresh = findActionBar(bar.id);
+          const current = fresh?.showOnAllProfiles
+            ? new Set(profiles.map((p) => p.id))
+            : new Set(fresh?.activeProfileIds || []);
+          if (checkbox.checked) current.add(profile.id);
+          else current.delete(profile.id);
+          label.classList.toggle('on', checkbox.checked);
+          window.eqTracker.setActionBarActiveProfileIds(bar.id, [...current]).then((updated) => {
+            if (updated) {
+              const idx = actionBars.findIndex((b) => b.id === bar.id);
+              if (idx !== -1) actionBars[idx] = updated;
+            }
+          });
+        });
+        label.append(checkbox, document.createTextNode(profile.name));
+        barProfilesTogglesEl.appendChild(label);
+      });
+      if (profiles.length === 0) {
+        barProfilesTogglesEl.innerHTML = '<span class="hint">No profiles exist.</span>';
+      }
+    });
+  }
+
+  function findActionBar(id) {
+    return actionBars.find((b) => b.id === id) || null;
+  }
+
+  function renderActionBarSubmenu() {
+    submenuEl.querySelectorAll('.nav-sub-row').forEach((row) => row.remove());
+    actionBars.forEach((bar) => {
+      const row = document.createElement('div');
+      row.className = 'nav-sub-row';
+      const btn = document.createElement('button');
+      btn.className = 'nav-btn nav-sub-btn' + (bar.id === selectedActionBarId ? ' active' : '');
+      btn.dataset.page = 'page-action-bars';
+      btn.addEventListener('click', () => {
+        activateNavButton(btn);
+        selectActionBar(bar.id);
+      });
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'nav-sub-name';
+      nameSpan.textContent = bar.name;
+      btn.appendChild(nameSpan);
+
+      // Same dot as the aura sidebar (initWidgetsPanel) - green means active on the CURRENT
+      // profile right now, grey means it isn't, regardless of how many profiles it's scoped to.
+      const activeProfileIds = bar.activeProfileIds || [];
+      const isActiveNow = !!bar.showOnAllProfiles || activeProfileIds.includes(actionBarCurrentActiveProfileId);
+      const dotWrap = document.createElement('span');
+      dotWrap.className = 'profile-dot-wrap';
+      const dot = document.createElement('span');
+      dot.className = 'profile-dot' + (isActiveNow ? ' profile-dot-on' : ' profile-dot-off');
+      const tooltip = document.createElement('span');
+      tooltip.className = 'tooltip-bubble';
+      if (bar.showOnAllProfiles) {
+        tooltip.textContent = 'Active now (every profile)';
+      } else {
+        const names = actionBarLatestProfiles.filter((p) => activeProfileIds.includes(p.id)).map((p) => p.name);
+        const scopeText = names.length > 0 ? `scoped to: ${names.join(', ')}` : 'not scoped to any profile';
+        tooltip.textContent = isActiveNow ? `Active now (${scopeText})` : `Not active on the current profile (${scopeText})`;
+      }
+      dotWrap.append(dot, tooltip);
+      btn.appendChild(dotWrap);
+
+      row.appendChild(btn);
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        openActionBarContextMenu(bar.id, e.clientX, e.clientY);
+      });
+      submenuEl.insertBefore(row, addRow);
+    });
+  }
+
+  function selectActionBar(id) {
+    selectedActionBarId = id;
+    const bar = findActionBar(id);
+    renderActionBarSubmenu();
+    if (!bar) {
+      pageTitleEl.textContent = 'Action Bars';
+      introCardEl.style.display = '';
+      settingsPanelEl.style.display = 'none';
+      return;
+    }
+    pageTitleEl.textContent = bar.name;
+    introCardEl.style.display = 'none';
+    settingsPanelEl.style.display = '';
+    barNameInput.value = bar.name;
+    Promise.all([window.eqTracker.getActionBarConfig(id), window.eqTracker.getIconSet()]).then(([config, iconSet]) => {
+      if (selectedActionBarId !== id) return; // switched again before this resolved
+      loadBarIntoForm(config, iconSet);
+      renderActionBarProfilesChecklist(config);
+    });
+    window.eqTracker.isActionBarLocked(id).then((locked) => {
+      if (selectedActionBarId !== id) return;
+      unlockBtn.textContent = locked ? 'Unlock to move' : 'Lock bar';
+      unlockBtn.classList.toggle('unlocked', !locked);
+    });
+  }
+
+  function refreshActionBarsList() {
+    return window.eqTracker.listActionBars().then((list) => {
+      actionBars = list;
+      renderActionBarSubmenu();
+      return list;
+    });
+  }
+
+  openAddBtn.addEventListener('click', () => {
+    newBarNameInput.value = '';
+    addModalBackdrop.style.display = 'flex';
+    newBarNameInput.focus();
+  });
+  function closeAddModal() {
+    addModalBackdrop.style.display = 'none';
+  }
+  closeAddModalBtn.addEventListener('click', closeAddModal);
+  addModalBackdrop.addEventListener('click', (e) => {
+    if (e.target === addModalBackdrop) closeAddModal();
+  });
+  function submitCreateActionBar() {
+    const name = newBarNameInput.value.trim();
+    window.eqTracker.createActionBar(name).then((bar) => {
+      closeAddModal();
+      return refreshActionBarsList().then(() => {
+        activateNavButton(navBtn);
+        selectActionBar(bar.id);
+      });
+    });
+  }
+  createBarSubmitBtn.addEventListener('click', submitCreateActionBar);
+  newBarNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitCreateActionBar();
+  });
+
+  barNameInput.addEventListener('change', () => {
+    if (!selectedActionBarId) return;
+    const name = barNameInput.value.trim() || 'Action Bar';
+    window.eqTracker.setActionBarName(selectedActionBarId, name).then(() => refreshActionBarsList());
+  });
+  copySettingsBtn.addEventListener('click', () => {
+    if (!selectedActionBarId) return;
+    const rect = copySettingsBtn.getBoundingClientRect();
+    openCopySourceMenu(rect.left, rect.bottom + 4);
+  });
+  removeOverridesBtn.addEventListener('click', () => {
+    if (!selectedActionBarId) return;
+    window.eqTracker.clearAllActionBarTextOverrides(selectedActionBarId).then(() => {
+      for (let i = 0; i < 12; i++) {
+        if (currentSlots[i]) currentSlots[i].nameSizeOverride = null;
+        refreshGemBox(i);
+      }
+    });
+  });
+  deleteBarBtn.addEventListener('click', () => {
+    if (selectedActionBarId) handleDeleteActionBar(selectedActionBarId);
+  });
+
+  const showAppFocusedCheckbox = document.getElementById('action-bar-show-app-focused-checkbox');
+  const opacitySlider = document.getElementById('action-bar-opacity-slider');
+  const opacityValue = document.getElementById('action-bar-opacity-value');
+  const slotCountSlider = document.getElementById('action-bar-slot-count-slider');
+  const slotCountValue = document.getElementById('action-bar-slot-count-value');
+  const iconsSlider = document.getElementById('action-bar-icons-slider');
+  const iconsValue = document.getElementById('action-bar-icons-value');
+  const sizeSlider = document.getElementById('action-bar-size-slider');
+  const sizeValue = document.getElementById('action-bar-size-value');
+  const marginSlider = document.getElementById('action-bar-margin-slider');
+  const marginValue = document.getElementById('action-bar-margin-value');
+  const unlockBtn = document.getElementById('action-bar-unlock-btn');
+  const resetBtn = document.getElementById('action-bar-reset-btn');
+  const nudgeUpBtn = document.getElementById('action-bar-nudge-up');
+  const nudgeDownBtn = document.getElementById('action-bar-nudge-down');
+  const nudgeLeftBtn = document.getElementById('action-bar-nudge-left');
+  const nudgeRightBtn = document.getElementById('action-bar-nudge-right');
+  const slotsGridEl = document.getElementById('action-bar-slots-grid');
+  const iconModalBackdrop = document.getElementById('action-bar-icon-modal-backdrop');
+  const iconModalTitle = document.getElementById('action-bar-icon-modal-title');
+  const iconModalPicker = document.getElementById('action-bar-icon-modal-picker');
+  const iconModalClearBtn = document.getElementById('action-bar-icon-clear-btn');
+  const closeIconModalBtn = document.getElementById('close-action-bar-icon-modal');
+  const slotNameInput = document.getElementById('action-bar-slot-name-input');
+  const slotDisableCheckbox = document.getElementById('action-bar-slot-disable-checkbox');
+  const slotCooldownStatus = document.getElementById('action-bar-slot-cooldown-status');
+  const slotCooldownBtn = document.getElementById('action-bar-slot-cooldown-btn');
+  const slotBgColorCheckbox = document.getElementById('action-bar-slot-bg-color-checkbox');
+  const slotBgColorPicker = document.getElementById('action-bar-slot-bg-color-picker');
+  const slotTextSizeOverrideCheckbox = document.getElementById('action-bar-slot-text-size-override-checkbox');
+  const slotTextSizeOverrideSlider = document.getElementById('action-bar-slot-text-size-override-slider');
+  const slotTextSizeOverrideValue = document.getElementById('action-bar-slot-text-size-override-value');
+  const slotInsetSlider = document.getElementById('action-bar-slot-inset-slider');
+  const slotInsetValue = document.getElementById('action-bar-slot-inset-value');
+  const slotStanceCheckbox = document.getElementById('action-bar-slot-stance-checkbox');
+  const slotInvocationCheckbox = document.getElementById('action-bar-slot-invocation-checkbox');
+  const slotToggleNameRow = document.getElementById('action-bar-slot-toggle-name-row');
+  const slotToggleNameSelect = document.getElementById('action-bar-slot-toggle-name-select');
+  const slotToggleDurationRow = document.getElementById('action-bar-slot-toggle-duration-row');
+  const slotToggleDurationSlider = document.getElementById('action-bar-slot-toggle-duration-slider');
+  const slotToggleDurationValue = document.getElementById('action-bar-slot-toggle-duration-value');
+  const slotStanceFixedHintEl = document.getElementById('action-bar-slot-stance-fixed-hint');
+  let knownAbilityGroups = { stances: [], invocations: [] };
+  window.eqTracker.getKnownAbilityGroups().then((groups) => {
+    knownAbilityGroups = groups;
+  });
+  const slotMultiIconCheckbox = document.getElementById('action-bar-slot-multi-icon-checkbox');
+  const iconTargetRow = document.getElementById('action-bar-icon-target-row');
+  const iconTargetRadios = document.querySelectorAll('input[name="action-bar-icon-target"]');
+  const borderWidthSlider = document.getElementById('action-bar-border-width-slider');
+  const borderWidthValue = document.getElementById('action-bar-border-width-value');
+  const borderOffsetSlider = document.getElementById('action-bar-border-offset-slider');
+  const borderOffsetValue = document.getElementById('action-bar-border-offset-value');
+  const borderColorPicker = document.getElementById('action-bar-border-color-picker');
+  // Bar-wide, not per-gem - requested directly: "you put each cooldown type inside the modal, it
+  // should be a global setting per bar."
+  const globalCooldownStyleRadios = document.querySelectorAll('input[name="action-bar-cooldown-style"]');
+  const cooldownShowNumberCheckbox = document.getElementById('action-bar-cooldown-show-number-checkbox');
+  const nameWrapCheckbox = document.getElementById('action-bar-name-wrap-checkbox');
+  const nameSizeSlider = document.getElementById('action-bar-name-size-slider');
+  const nameSizeValue = document.getElementById('action-bar-name-size-value');
+  const nameColorPicker = document.getElementById('action-bar-name-color-picker');
+  const nameAnchorButtons = document.querySelectorAll('#action-bar-name-anchor-grid .anchor-cell');
+  const cooldownReplaceCheckbox = document.getElementById('action-bar-cooldown-replace-checkbox');
+  const cooldownTextWrapCheckbox = document.getElementById('action-bar-cooldown-text-wrap-checkbox');
+  const cooldownTextSizeSlider = document.getElementById('action-bar-cooldown-text-size-slider');
+  const cooldownTextSizeValue = document.getElementById('action-bar-cooldown-text-size-value');
+  const cooldownTextColorPicker = document.getElementById('action-bar-cooldown-text-color-picker');
+  const cooldownTextAnchorButtons = document.querySelectorAll('#action-bar-cooldown-text-anchor-grid .anchor-cell');
+
+  const cooldownModalBackdrop = document.getElementById('action-bar-cooldown-modal-backdrop');
+  const cooldownModalTitle = document.getElementById('action-bar-cooldown-modal-title');
+  const closeCooldownModalBtn = document.getElementById('close-action-bar-cooldown-modal');
+  const cooldownDurationInput = document.getElementById('action-bar-cooldown-duration-input');
+  const cooldownStyleRadios = document.querySelectorAll('input[name="action-bar-cooldown-style"]');
+  const cooldownChatFields = document.getElementById('action-bar-cooldown-chat-fields');
+  const cooldownRawFields = document.getElementById('action-bar-cooldown-raw-fields');
+  const cooldownSkillFields = document.getElementById('action-bar-cooldown-skill-fields');
+  const cooldownChannelSelect = document.getElementById('action-bar-cooldown-channel-select');
+  const cooldownWhoRadios = document.querySelectorAll('input[name="action-bar-cooldown-who"]');
+  const cooldownWhoNameInput = document.getElementById('action-bar-cooldown-who-name');
+  const cooldownChatMessageInput = document.getElementById('action-bar-cooldown-chat-message');
+  const cooldownTriggerInput = document.getElementById('action-bar-cooldown-trigger');
+  const cooldownMatchRadios = document.querySelectorAll('input[name="action-bar-cooldown-match"]');
+  const cooldownSkillSelect = document.getElementById('action-bar-cooldown-skill-select');
+  const cooldownSaveBtn = document.getElementById('action-bar-cooldown-save-btn');
+  const cooldownRemoveBtn = document.getElementById('action-bar-cooldown-remove-btn');
+
+  renderTriggerTypeChoices(
+    'action-bar-cooldown-trigger-types',
+    'action-bar-cooldown-trigger-mode',
+    // Zone/combat excluded on purpose - the user asked for "standard aura trigger behaviour, same
+    // UI, but without the zone change or combat state selections" (a gem is one ability, not tied
+    // to zone/combat context the way a whole aura can be).
+    TRIGGER_TYPES.filter((t) => t.value !== 'zone' && t.value !== 'combat')
+  );
+  // Queried AFTER renderTriggerTypeChoices, not before - that call rebuilds this container's
+  // innerHTML from scratch, so a NodeList captured earlier would keep pointing at the original,
+  // now-detached radios. Reported live: picking "Skill cast"/"Exact log line" did nothing, because
+  // the change listeners below were bound to elements nothing on screen could ever click any more.
+  const cooldownModeRadios = document.querySelectorAll('input[name="action-bar-cooldown-trigger-mode"]');
+
+  let currentIconSet = '';
+  let currentSlots = []; // [{ iconId, name, disabled, cooldown }] x 12
+  let editingSlotIndex = null; // which slot the Edit gem modal is open for
+  const gemBoxes = []; // [{ box, img, placeholder }], index-aligned with the 12 slots
+
+  function cooldownSummary(cooldown) {
+    if (!cooldown) return 'No cooldown';
+    return `Cooldown: ${cooldown.durationSec}s`;
+  }
+
+  // Wraps the grid at the same width as the real overlay, so it reads as a preview of the actual
+  // bar layout rather than an arbitrary fixed grid.
+  function setSlotGridColumns(perRow) {
+    slotsGridEl.style.setProperty('--slot-cols', perRow);
+  }
+
+  // Updates one gem's box on the settings-page grid - icon, disabled dimming, and a hover tooltip
+  // naming it. The overlay itself (not this settings grid) is what actually renders the name text
+  // and cooldown visuals - this box is just the picker/summary.
+  function refreshGemBox(index) {
+    const g = gemBoxes[index];
+    const s = currentSlots[index];
+    if (!g || !s) return;
+    if (s.iconId == null || !currentIconSet) {
+      g.img.style.display = 'none';
+      g.placeholder.style.display = '';
+    } else {
+      g.img.src = `eqicon://icon/${encodeURIComponent(currentIconSet)}/${s.iconId}`;
+      g.img.style.display = '';
+      g.placeholder.style.display = 'none';
+    }
+    // Same diagonal split the overlay itself draws (see actionbar.js's render) - only actually
+    // splits once both halves are picked, matching the overlay's own rule.
+    const splitting = s.multiIcon && s.iconId != null && s.secondIconId != null && currentIconSet;
+    g.img.style.clipPath = splitting ? 'polygon(0 0, 100% 0, 0 100%)' : 'none';
+    if (splitting) {
+      g.secondImg.src = `eqicon://icon/${encodeURIComponent(currentIconSet)}/${s.secondIconId}`;
+      g.secondImg.style.display = '';
+    } else {
+      g.secondImg.style.display = 'none';
+    }
+    g.box.classList.toggle('disabled', !!s.disabled);
+    g.box.title = s.name ? `${s.name} (Slot ${index + 1})` : `Slot ${index + 1}`;
+  }
+
+  function closeIconModal() {
+    iconModalBackdrop.style.display = 'none';
+    iconModalPicker.innerHTML = '';
+    editingSlotIndex = null;
+  }
+
+  // Opens the ONE consolidated "Edit gem" modal - icon, overlay name, disable, and the cooldown
+  // status/button all live together here, rather than being spread across separate popups or
+  // inline page controls. Requested directly: "selections should be a modal."
+  // Rebuilds the picker grid for whichever icon (primary or, if multi icon is on, secondary) is
+  // currently selected in the "Editing:" radios - picking a thumbnail writes to that one and
+  // closes the modal, same single-click-to-set behaviour as before multi icon existed.
+  function renderIconPickerForTarget(index) {
+    const target = [...iconTargetRadios].find((r) => r.checked)?.value || 'primary';
+    const s = currentSlots[index];
+    const currentIconId = target === 'secondary' ? s.secondIconId : s.iconId;
+    iconModalPicker.innerHTML = '';
+    iconModalPicker.appendChild(
+      buildIconPicker(currentIconId, (iconId) => {
+        if (target === 'secondary') {
+          currentSlots[index].secondIconId = iconId;
+          window.eqTracker.setActionBarSlotSecondIcon(selectedActionBarId, index, iconId);
+        } else {
+          currentSlots[index].iconId = iconId;
+          window.eqTracker.setActionBarSlotIcon(selectedActionBarId, index, iconId);
+        }
+        refreshGemBox(index);
+        // While multi icon is on, the modal stays open after a pick instead of closing - closing
+        // after just the primary half meant reopening the modal to finish the job. Deliberately
+        // NOT auto-switching the "Editing:" target either (tried that, reported as a jarring
+        // flash and taking the choice away) - it just re-renders the SAME target's grid with the
+        // new pick highlighted, so re-picking it again (changing your mind) still works, and
+        // moving to the other half is a manual click on the radio, same as picking it the first
+        // time. A plain single-icon gem still closes on the first pick, unchanged from before.
+        if (s.multiIcon) {
+          renderIconPickerForTarget(index);
+          return;
+        }
+        closeIconModal();
+      })
+    );
+  }
+
+  // Opens the ONE consolidated "Edit gem" modal - icon, overlay name, disable, and the cooldown
+  // status/button all live together here, rather than being spread across separate popups or
+  // inline page controls. Requested directly: "selections should be a modal."
+  // Shows/hides the "Which one" dropdown and duration row for whichever group (if any) is
+  // currently checked, and (re)populates the dropdown from the right known-name list. Called both
+  // when the modal opens (from the slot's own saved state) and on every checkbox change.
+  function syncSlotToggleUI(group, currentName) {
+    slotToggleNameRow.style.display = group ? '' : 'none';
+    slotToggleDurationRow.style.display = group === 'invocation' ? '' : 'none';
+    slotStanceFixedHintEl.style.display = group === 'stance' ? '' : 'none';
+    if (!group) return;
+    const names = group === 'stance' ? knownAbilityGroups.stances : knownAbilityGroups.invocations;
+    slotToggleNameSelect.innerHTML = '';
+    names.forEach((name) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      slotToggleNameSelect.appendChild(opt);
+    });
+    if (currentName && names.includes(currentName)) slotToggleNameSelect.value = currentName;
+  }
+
+  function openGemModal(index) {
+    editingSlotIndex = index;
+    const s = currentSlots[index];
+    iconModalTitle.textContent = `Edit gem - Slot ${index + 1}`;
+    slotNameInput.value = s.name || '';
+    slotDisableCheckbox.checked = !!s.disabled;
+    slotCooldownStatus.textContent = cooldownSummary(s.cooldown);
+    slotBgColorCheckbox.checked = !!s.bgColor;
+    slotBgColorPicker.value = s.bgColor || '#808080';
+    const hasOverride = typeof s.nameSizeOverride === 'number';
+    slotTextSizeOverrideCheckbox.checked = hasOverride;
+    slotTextSizeOverrideSlider.value = hasOverride ? s.nameSizeOverride : 11;
+    slotTextSizeOverrideValue.textContent = `${slotTextSizeOverrideSlider.value}px`;
+    slotTextSizeOverrideSlider.style.display = hasOverride ? '' : 'none';
+    slotTextSizeOverrideValue.style.display = hasOverride ? '' : 'none';
+    slotInsetSlider.value = s.insetPx || 0;
+    slotInsetValue.textContent = `${s.insetPx || 0}px`;
+    slotStanceCheckbox.checked = s.toggleGroup === 'stance';
+    slotInvocationCheckbox.checked = s.toggleGroup === 'invocation';
+    slotToggleDurationSlider.value = s.toggleDurationSec || 6;
+    slotToggleDurationValue.textContent = `${s.toggleDurationSec || 6}s`;
+    syncSlotToggleUI(s.toggleGroup, s.toggleName);
+    slotMultiIconCheckbox.checked = !!s.multiIcon;
+    iconTargetRow.style.display = s.multiIcon ? '' : 'none';
+    iconTargetRadios.forEach((r) => (r.checked = r.value === 'primary'));
+    renderIconPickerForTarget(index);
+    iconModalBackdrop.style.display = 'flex';
+  }
+
+  // --- Cooldown modal --------------------------------------------------
+
+  function updateCooldownModeVisibility() {
+    const mode = [...cooldownModeRadios].find((r) => r.checked)?.value || 'chat';
+    cooldownChatFields.style.display = mode === 'chat' ? '' : 'none';
+    cooldownRawFields.style.display = mode === 'raw' ? '' : 'none';
+    cooldownSkillFields.style.display = mode === 'skill' ? '' : 'none';
+  }
+
+  function updateCooldownWhoVisibility() {
+    const whoValue = [...cooldownWhoRadios].find((r) => r.checked)?.value || 'self';
+    cooldownWhoNameInput.style.display = whoValue === 'name' ? '' : 'none';
+  }
+
+  // Same "no self-sent tell" reasoning as the widget custom-timer modal's updateTimerChannelVisibility.
+  function updateCooldownChannelVisibility() {
+    const isTell = cooldownChannelSelect.value === 'tell';
+    const selfRadio = [...cooldownWhoRadios].find((r) => r.value === 'self');
+    const nameRadio = [...cooldownWhoRadios].find((r) => r.value === 'name');
+    selfRadio.disabled = isTell;
+    if (isTell && selfRadio.checked) nameRadio.checked = true;
+    updateCooldownWhoVisibility();
+  }
+
+  function populateCooldownSkillSelect(buffs) {
+    const sorted = [...buffs].sort((a, b) => a.name.localeCompare(b.name));
+    cooldownSkillSelect.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '- choose a spell -';
+    cooldownSkillSelect.appendChild(placeholder);
+    for (const buff of sorted) {
+      const opt = document.createElement('option');
+      opt.value = buff.name;
+      opt.textContent = buff.name;
+      cooldownSkillSelect.appendChild(opt);
+    }
+  }
+
+  function populateCooldownForm(cooldown) {
+    cooldownDurationInput.value = cooldown?.durationSec ? String(cooldown.durationSec) : '';
+    cooldownChannelSelect.value = 'say';
+    cooldownWhoRadios.forEach((r) => (r.checked = r.value === 'self'));
+    cooldownWhoNameInput.value = '';
+    cooldownChatMessageInput.value = '';
+    cooldownTriggerInput.value = '';
+    cooldownMatchRadios.forEach((r) => (r.checked = r.value === 'exact'));
+    cooldownSkillSelect.value = '';
+
+    if (cooldown?.triggerChat) {
+      cooldownModeRadios.forEach((r) => (r.checked = r.value === 'chat'));
+      cooldownChannelSelect.value = cooldown.triggerChat.channel;
+      cooldownWhoRadios.forEach((r) => (r.checked = r.value === (cooldown.triggerChat.isSelf ? 'self' : 'name')));
+      cooldownWhoNameInput.value = cooldown.triggerChat.name || '';
+      cooldownChatMessageInput.value = cooldown.triggerChat.message || '';
+    } else if (cooldown?.triggerMatch === 'castOf') {
+      cooldownModeRadios.forEach((r) => (r.checked = r.value === 'skill'));
+      cooldownSkillSelect.value = cooldown.triggerText || '';
+    } else if (cooldown) {
+      cooldownModeRadios.forEach((r) => (r.checked = r.value === 'raw'));
+      cooldownTriggerInput.value = cooldown.triggerText || '';
+      cooldownMatchRadios.forEach((r) => (r.checked = r.value === (cooldown.triggerMatch === 'contains' ? 'contains' : 'exact')));
+    } else {
+      cooldownModeRadios.forEach((r) => (r.checked = r.value === 'chat'));
+    }
+    updateCooldownChannelVisibility();
+    updateCooldownModeVisibility();
+  }
+
+  // Mirrors readTimerFormData's shape (see the widget custom-timer modal), minus the fields a
+  // single gem doesn't need: no separate timer name (the gem's own name field covers that), no
+  // ended text (a cooldown ends itself when it reaches zero), no second cooldown-after-duration
+  // phase (that's for a widget's buff-then-recast timer, not a plain gem cooldown).
+  function readCooldownFormData() {
+    const durationSec = Number(cooldownDurationInput.value);
+    if (!(durationSec > 0)) return null;
+    const mode = [...cooldownModeRadios].find((r) => r.checked)?.value || 'chat';
+
+    let triggerText;
+    let triggerChat;
+    let triggerMatch;
+    if (mode === 'chat') {
+      const channel = cooldownChannelSelect.value;
+      const isSelf = [...cooldownWhoRadios].find((r) => r.checked)?.value === 'self';
+      const who = cooldownWhoNameInput.value.trim();
+      const message = cooldownChatMessageInput.value.trim();
+      if (!message || (!isSelf && !who)) return null;
+      triggerText = buildChatTriggerLine(channel, isSelf, who, message);
+      triggerChat = { channel, isSelf, name: isSelf ? undefined : who, message };
+    } else if (mode === 'skill') {
+      triggerText = cooldownSkillSelect.value;
+      if (!triggerText) return null;
+      triggerMatch = 'castOf';
+    } else {
+      triggerText = cooldownTriggerInput.value.trim();
+      if (!triggerText) return null;
+      triggerMatch = [...cooldownMatchRadios].find((r) => r.checked)?.value === 'contains' ? 'contains' : undefined;
+    }
+
+    return { triggerMatch, triggerText, triggerChat, durationSec };
+  }
+
+  // Opened FROM the Edit gem modal's own "Cooldown..." button - operates on whichever slot that
+  // modal is currently editing (editingSlotIndex), so the two modals stack rather than needing
+  // their own separate "which slot" tracking.
+  function openCooldownModal() {
+    if (editingSlotIndex == null) return;
+    const index = editingSlotIndex;
+    cooldownModalTitle.textContent = `Set cooldown - ${currentSlots[index].name || `Slot ${index + 1}`}`;
+    window.eqTracker.getCastableBuffs().then((buffs) => {
+      populateCooldownSkillSelect(buffs);
+      populateCooldownForm(currentSlots[index].cooldown);
+    });
+    cooldownModalBackdrop.style.display = 'flex';
+  }
+
+  function closeCooldownModal() {
+    cooldownModalBackdrop.style.display = 'none';
+  }
+
+  // --- 12 gem boxes --------------------------------------------------------
+  // A plain grid, same "Icons per row" wrap as the real overlay - each box just opens the one
+  // Edit gem modal above. No per-box controls live on the page itself.
+
+  for (let i = 0; i < 12; i++) {
+    const box = document.createElement('button');
+    box.type = 'button';
+    box.className = 'icon-picker-box';
+    box.title = `Slot ${i + 1}`;
+    const img = document.createElement('img');
+    img.alt = '';
+    img.style.display = 'none';
+    const secondImg = document.createElement('img');
+    secondImg.className = 'icon-picker-box-second-img';
+    secondImg.alt = '';
+    secondImg.style.display = 'none';
+    const placeholder = document.createElement('span');
+    placeholder.className = 'icon-picker-placeholder';
+    placeholder.textContent = String(i + 1);
+    box.append(img, secondImg, placeholder);
+    box.addEventListener('click', () => openGemModal(i));
+    slotsGridEl.appendChild(box);
+    gemBoxes.push({ box, img, secondImg, placeholder });
+  }
+
+  closeIconModalBtn.addEventListener('click', closeIconModal);
+  iconModalBackdrop.addEventListener('click', (e) => {
+    if (e.target === iconModalBackdrop) closeIconModal();
+  });
+  iconModalClearBtn.addEventListener('click', () => {
+    if (editingSlotIndex == null) return;
+    const target = [...iconTargetRadios].find((r) => r.checked)?.value || 'primary';
+    if (target === 'secondary') {
+      currentSlots[editingSlotIndex].secondIconId = null;
+      window.eqTracker.setActionBarSlotSecondIcon(selectedActionBarId, editingSlotIndex, null);
+    } else {
+      currentSlots[editingSlotIndex].iconId = null;
+      window.eqTracker.setActionBarSlotIcon(selectedActionBarId, editingSlotIndex, null);
+    }
+    refreshGemBox(editingSlotIndex);
+    renderIconPickerForTarget(editingSlotIndex);
+  });
+  slotMultiIconCheckbox.addEventListener('change', () => {
+    if (editingSlotIndex == null) return;
+    const enabled = slotMultiIconCheckbox.checked;
+    currentSlots[editingSlotIndex].multiIcon = enabled;
+    window.eqTracker.setActionBarSlotMultiIcon(selectedActionBarId, editingSlotIndex, enabled);
+    iconTargetRow.style.display = enabled ? '' : 'none';
+    iconTargetRadios.forEach((r) => (r.checked = r.value === 'primary'));
+    refreshGemBox(editingSlotIndex);
+    renderIconPickerForTarget(editingSlotIndex);
+  });
+  iconTargetRadios.forEach((r) => {
+    r.addEventListener('change', () => {
+      if (editingSlotIndex == null) return;
+      renderIconPickerForTarget(editingSlotIndex);
+    });
+  });
+  slotNameInput.addEventListener('change', () => {
+    if (editingSlotIndex == null) return;
+    currentSlots[editingSlotIndex].name = slotNameInput.value.trim();
+    window.eqTracker.setActionBarSlotName(selectedActionBarId, editingSlotIndex, currentSlots[editingSlotIndex].name);
+    refreshGemBox(editingSlotIndex);
+  });
+  slotDisableCheckbox.addEventListener('change', () => {
+    if (editingSlotIndex == null) return;
+    currentSlots[editingSlotIndex].disabled = slotDisableCheckbox.checked;
+    window.eqTracker.setActionBarSlotDisabled(selectedActionBarId, editingSlotIndex, slotDisableCheckbox.checked);
+    refreshGemBox(editingSlotIndex);
+  });
+  slotCooldownBtn.addEventListener('click', openCooldownModal);
+  function applySlotBgColor() {
+    if (editingSlotIndex == null) return;
+    const color = slotBgColorCheckbox.checked ? slotBgColorPicker.value : null;
+    currentSlots[editingSlotIndex].bgColor = color;
+    window.eqTracker.setActionBarSlotBgColor(selectedActionBarId, editingSlotIndex, color);
+    refreshGemBox(editingSlotIndex);
+  }
+  slotBgColorCheckbox.addEventListener('change', applySlotBgColor);
+  slotBgColorPicker.addEventListener('input', () => {
+    if (slotBgColorCheckbox.checked) applySlotBgColor();
+  });
+  slotTextSizeOverrideCheckbox.addEventListener('change', () => {
+    if (editingSlotIndex == null) return;
+    const on = slotTextSizeOverrideCheckbox.checked;
+    slotTextSizeOverrideSlider.style.display = on ? '' : 'none';
+    slotTextSizeOverrideValue.style.display = on ? '' : 'none';
+    const size = on ? Number(slotTextSizeOverrideSlider.value) : null;
+    currentSlots[editingSlotIndex].nameSizeOverride = size;
+    window.eqTracker.setActionBarSlotNameSizeOverride(selectedActionBarId, editingSlotIndex, size);
+  });
+  slotTextSizeOverrideSlider.addEventListener('input', () => {
+    if (editingSlotIndex == null) return;
+    const size = Number(slotTextSizeOverrideSlider.value);
+    slotTextSizeOverrideValue.textContent = `${size}px`;
+    currentSlots[editingSlotIndex].nameSizeOverride = size;
+    window.eqTracker.setActionBarSlotNameSizeOverride(selectedActionBarId, editingSlotIndex, size);
+  });
+  slotInsetSlider.addEventListener('input', () => {
+    if (editingSlotIndex == null) return;
+    const px = Number(slotInsetSlider.value);
+    slotInsetValue.textContent = `${px}px`;
+    currentSlots[editingSlotIndex].insetPx = px;
+    window.eqTracker.setActionBarSlotInsetPx(selectedActionBarId, editingSlotIndex, px);
+  });
+  function applySlotToggleGroup(group) {
+    if (editingSlotIndex == null) return;
+    currentSlots[editingSlotIndex].toggleGroup = group;
+    currentSlots[editingSlotIndex].toggleName = null;
+    syncSlotToggleUI(group, null);
+    window.eqTracker.setActionBarSlotToggleGroup(selectedActionBarId, editingSlotIndex, group).then(() => {
+      // Turning a group on populates the dropdown, and the BROWSER auto-selects its first
+      // option visually - but that's display only, no 'change' event fires for it, so nothing was
+      // actually saved yet. Reported live: the dropdown showed "Arcane Mastery Invocation" right
+      // after checking the box, but toggleName stayed null in the real data the whole time, and
+      // the active border never fires because nothing was ever matched. Persist whatever the
+      // select is now actually showing, same as if the user had picked it themselves.
+      if (group && slotToggleNameSelect.value) {
+        currentSlots[editingSlotIndex].toggleName = slotToggleNameSelect.value;
+        window.eqTracker.setActionBarSlotToggleName(selectedActionBarId, editingSlotIndex, slotToggleNameSelect.value);
+      }
+    });
+  }
+  slotStanceCheckbox.addEventListener('change', () => {
+    if (slotStanceCheckbox.checked) slotInvocationCheckbox.checked = false;
+    applySlotToggleGroup(slotStanceCheckbox.checked ? 'stance' : null);
+  });
+  slotInvocationCheckbox.addEventListener('change', () => {
+    if (slotInvocationCheckbox.checked) slotStanceCheckbox.checked = false;
+    applySlotToggleGroup(slotInvocationCheckbox.checked ? 'invocation' : null);
+  });
+  slotToggleNameSelect.addEventListener('change', () => {
+    if (editingSlotIndex == null) return;
+    currentSlots[editingSlotIndex].toggleName = slotToggleNameSelect.value || null;
+    window.eqTracker.setActionBarSlotToggleName(selectedActionBarId, editingSlotIndex, slotToggleNameSelect.value);
+  });
+  slotToggleDurationSlider.addEventListener('input', () => {
+    if (editingSlotIndex == null) return;
+    const sec = Number(slotToggleDurationSlider.value);
+    slotToggleDurationValue.textContent = `${sec}s`;
+    currentSlots[editingSlotIndex].toggleDurationSec = sec;
+    window.eqTracker.setActionBarSlotToggleDurationSec(selectedActionBarId, editingSlotIndex, sec);
+  });
+
+  closeCooldownModalBtn.addEventListener('click', closeCooldownModal);
+  cooldownModalBackdrop.addEventListener('click', (e) => {
+    if (e.target === cooldownModalBackdrop) closeCooldownModal();
+  });
+  cooldownModeRadios.forEach((r) => r.addEventListener('change', updateCooldownModeVisibility));
+  cooldownChannelSelect.addEventListener('change', updateCooldownChannelVisibility);
+  cooldownWhoRadios.forEach((r) => r.addEventListener('change', updateCooldownWhoVisibility));
+  cooldownSaveBtn.addEventListener('click', () => {
+    if (editingSlotIndex == null) return;
+    const data = readCooldownFormData();
+    if (!data) return;
+    currentSlots[editingSlotIndex].cooldown = data;
+    window.eqTracker.setActionBarSlotCooldown(selectedActionBarId, editingSlotIndex, data);
+    slotCooldownStatus.textContent = cooldownSummary(data);
+    closeCooldownModal();
+  });
+  cooldownRemoveBtn.addEventListener('click', () => {
+    if (editingSlotIndex == null) return;
+    currentSlots[editingSlotIndex].cooldown = null;
+    window.eqTracker.setActionBarSlotCooldown(selectedActionBarId, editingSlotIndex, null);
+    slotCooldownStatus.textContent = cooldownSummary(null);
+    closeCooldownModal();
+  });
+
+  function applySlotCountVisibility(count) {
+    gemBoxes.forEach((g, i) => {
+      g.box.style.display = i < count ? '' : 'none';
+    });
+  }
+
+  // Populates every field on the page from one bar's config - called whenever the selection
+  // changes (selectActionBar, above), not just once at page load, now that there's more than one
+  // bar to switch between.
+  function loadBarIntoForm(config, iconSet) {
+    const opacityPct = Math.round((config.opacity ?? 1) * 100);
+    opacitySlider.value = opacityPct;
+    opacityValue.textContent = `${opacityPct}%`;
+    const slotCount = config.slotCount || 12;
+    slotCountSlider.value = slotCount;
+    slotCountValue.textContent = slotCount;
+    iconsSlider.value = config.iconsPerRow;
+    iconsValue.textContent = config.iconsPerRow;
+    sizeSlider.value = config.iconSize;
+    sizeValue.textContent = `${config.iconSize}px`;
+    marginSlider.value = config.marginPx;
+    marginValue.textContent = `${config.marginPx}px`;
+    globalCooldownStyleRadios.forEach((r) => (r.checked = r.value === (config.cooldownStyle || 'wipe')));
+    cooldownShowNumberCheckbox.checked = !!config.cooldownShowNumber;
+    nameWrapCheckbox.checked = config.nameLabelWrap !== false;
+    nameSizeSlider.value = config.nameLabelSize || 11;
+    nameSizeValue.textContent = `${config.nameLabelSize || 11}px`;
+    nameColorPicker.value = config.nameLabelColor || '#f0f1f5';
+    nameAnchorButtons.forEach((b) => b.classList.toggle('active', b.dataset.anchor === (config.nameLabelAnchor || 'bottom-center')));
+    cooldownReplaceCheckbox.checked = config.cooldownReplacesLabel !== false;
+    cooldownTextWrapCheckbox.checked = !!config.cooldownTextWrap;
+    cooldownTextSizeSlider.value = config.cooldownTextSize || 13;
+    cooldownTextSizeValue.textContent = `${config.cooldownTextSize || 13}px`;
+    cooldownTextColorPicker.value = config.cooldownTextColor || '#ffffff';
+    cooldownTextAnchorButtons.forEach((b) => b.classList.toggle('active', b.dataset.anchor === (config.cooldownTextAnchor || 'middle-center')));
+    borderWidthSlider.value = config.borderWidthPx || 2;
+    borderWidthValue.textContent = `${config.borderWidthPx || 2}px`;
+    borderOffsetSlider.value = config.borderOffsetPx ?? 1;
+    borderOffsetValue.textContent = `${config.borderOffsetPx ?? 1}px`;
+    borderColorPicker.value = config.borderColor || '#d2d6e1';
+    showAppFocusedCheckbox.checked = !!config.showWhenAppFocused;
+    currentIconSet = iconSet || '';
+    currentSlots = config.slots
+      ? config.slots.map((s) => ({ ...s }))
+      : Array.from({ length: 12 }, () => ({
+          iconId: null,
+          name: '',
+          disabled: false,
+          cooldown: null,
+          bgColor: null,
+          nameSizeOverride: null,
+          insetPx: 0,
+          toggleGroup: null,
+          toggleName: null,
+          toggleDurationSec: 6,
+        }));
+    setSlotGridColumns(config.iconsPerRow);
+    for (let i = 0; i < 12; i++) refreshGemBox(i);
+    applySlotCountVisibility(slotCount);
+  }
+
+  // Per-bar, NOT the global showAurasWhenAppFocused setting (Setup page's own checkbox) - it used
+  // to be wired to that shared global flag, which meant toggling it for one bar made every bar
+  // (and every aura) reappear at once. Reported directly: "toggling show action bar shows them all
+  // not just the one you are on." Populated per-selection in loadBarIntoForm from
+  // config.showWhenAppFocused; this listener writes back to whichever bar is currently selected.
+  showAppFocusedCheckbox.addEventListener('change', () => {
+    if (!selectedActionBarId) return;
+    window.eqTracker.setActionBarShowWhenAppFocused(selectedActionBarId, showAppFocusedCheckbox.checked);
+  });
+  opacitySlider.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    opacityValue.textContent = `${opacitySlider.value}%`;
+    window.eqTracker.setActionBarOpacity(selectedActionBarId, Number(opacitySlider.value) / 100);
+  });
+  slotCountSlider.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    const n = Number(slotCountSlider.value);
+    slotCountValue.textContent = n;
+    applySlotCountVisibility(n);
+    window.eqTracker.setActionBarSlotCount(selectedActionBarId, n);
+  });
+  globalCooldownStyleRadios.forEach((r) => {
+    r.addEventListener('change', () => {
+      if (r.checked && selectedActionBarId) window.eqTracker.setActionBarCooldownStyle(selectedActionBarId, r.value);
+    });
+  });
+  cooldownShowNumberCheckbox.addEventListener('change', () => {
+    if (!selectedActionBarId) return;
+    window.eqTracker.setActionBarCooldownShowNumber(selectedActionBarId, cooldownShowNumberCheckbox.checked);
+  });
+  nameWrapCheckbox.addEventListener('change', () => {
+    if (!selectedActionBarId) return;
+    window.eqTracker.setActionBarNameLabelWrap(selectedActionBarId, nameWrapCheckbox.checked);
+  });
+  nameSizeSlider.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    const size = Number(nameSizeSlider.value);
+    nameSizeValue.textContent = `${size}px`;
+    window.eqTracker.setActionBarNameLabelSize(selectedActionBarId, size);
+  });
+  nameColorPicker.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    window.eqTracker.setActionBarNameLabelColor(selectedActionBarId, nameColorPicker.value);
+  });
+  nameAnchorButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!selectedActionBarId) return;
+      nameAnchorButtons.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      window.eqTracker.setActionBarNameLabelAnchor(selectedActionBarId, btn.dataset.anchor);
+    });
+  });
+  cooldownReplaceCheckbox.addEventListener('change', () => {
+    if (!selectedActionBarId) return;
+    window.eqTracker.setActionBarCooldownReplacesLabel(selectedActionBarId, cooldownReplaceCheckbox.checked);
+  });
+  cooldownTextWrapCheckbox.addEventListener('change', () => {
+    if (!selectedActionBarId) return;
+    window.eqTracker.setActionBarCooldownTextWrap(selectedActionBarId, cooldownTextWrapCheckbox.checked);
+  });
+  cooldownTextSizeSlider.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    const size = Number(cooldownTextSizeSlider.value);
+    cooldownTextSizeValue.textContent = `${size}px`;
+    window.eqTracker.setActionBarCooldownTextSize(selectedActionBarId, size);
+  });
+  cooldownTextColorPicker.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    window.eqTracker.setActionBarCooldownTextColor(selectedActionBarId, cooldownTextColorPicker.value);
+  });
+  cooldownTextAnchorButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!selectedActionBarId) return;
+      cooldownTextAnchorButtons.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      window.eqTracker.setActionBarCooldownTextAnchor(selectedActionBarId, btn.dataset.anchor);
+    });
+  });
+  borderWidthSlider.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    const px = Number(borderWidthSlider.value);
+    borderWidthValue.textContent = `${px}px`;
+    window.eqTracker.setActionBarBorderWidth(selectedActionBarId, px);
+  });
+  borderOffsetSlider.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    const px = Number(borderOffsetSlider.value);
+    borderOffsetValue.textContent = `${px}px`;
+    window.eqTracker.setActionBarBorderOffset(selectedActionBarId, px);
+  });
+  borderColorPicker.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    window.eqTracker.setActionBarBorderColor(selectedActionBarId, borderColorPicker.value);
+  });
+  iconsSlider.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    iconsValue.textContent = iconsSlider.value;
+    setSlotGridColumns(Number(iconsSlider.value));
+    window.eqTracker.setActionBarIconsPerRow(selectedActionBarId, Number(iconsSlider.value));
+  });
+  sizeSlider.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    sizeValue.textContent = `${sizeSlider.value}px`;
+    window.eqTracker.setActionBarIconSize(selectedActionBarId, Number(sizeSlider.value));
+  });
+  marginSlider.addEventListener('input', () => {
+    if (!selectedActionBarId) return;
+    marginValue.textContent = `${marginSlider.value}px`;
+    window.eqTracker.setActionBarMarginPx(selectedActionBarId, Number(marginSlider.value));
+  });
+  unlockBtn.addEventListener('click', async () => {
+    if (!selectedActionBarId) return;
+    const locked = await window.eqTracker.toggleActionBarLock(selectedActionBarId);
+    unlockBtn.textContent = locked ? 'Unlock to move' : 'Lock bar';
+    unlockBtn.classList.toggle('unlocked', !locked);
+  });
+  resetBtn.addEventListener('click', () => {
+    if (!selectedActionBarId) return;
+    window.eqTracker.resetActionBarPosition(selectedActionBarId);
+  });
+  nudgeUpBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, 0, -1));
+  nudgeDownBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, 0, 1));
+  nudgeLeftBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, -1, 0));
+  nudgeRightBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, 1, 0));
+
+  // Same reasoning as initWidgetsPanel's identical listeners: a profile rename/create needs the
+  // tooltip's name list refreshed, and switching the active profile needs the dot's colour
+  // re-evaluated even though no action bar's own data changed.
+  window.eqTracker.onProfilesChanged(() => {
+    refreshActionBarProfilesCache().then(() => refreshActionBarsList());
+  });
+  window.eqTracker.onActiveProfileChanged((id) => {
+    actionBarCurrentActiveProfileId = id;
+    renderActionBarSubmenu();
+  });
+  refreshActionBarProfilesCache();
+  refreshActionBarActiveProfileCache().then(renderActionBarSubmenu);
+
+  refreshActionBarsList().then((list) => {
+    if (list.length > 0) selectActionBar(list[0].id);
+  });
+}
+
 function initTradePing() {
   const checkbox = document.getElementById('trade-ping-checkbox');
   const tellCheckbox = document.getElementById('tell-ping-checkbox');
+  const tellCooldownRow = document.getElementById('tell-ping-cooldown-row');
+  const tellCooldownSlider = document.getElementById('tell-ping-cooldown-slider');
+  const tellCooldownValue = document.getElementById('tell-ping-cooldown-value');
   if (!checkbox) return;
 
   let enabled = false;
   let tellEnabled = false;
+  // Reported live: a burst of tells machine-gunned the ping sound with nothing to slow it down.
+  // Tracked in milliseconds to match Date.now() directly, default 3s - see the setting's own
+  // comment in main.js for why. 0 means off (every tell pings, same as before this existed).
+  let tellCooldownMs = 3000;
+  let lastTellPingAt = 0;
   let audioCtx = null;
 
   // Two quick notes, the same shape as the overlay's alert beep. Built here rather than shared
@@ -4917,12 +6254,35 @@ function initTradePing() {
     if (enabled) ping();
   });
 
+  function syncTellCooldownRow() {
+    if (tellCooldownRow) tellCooldownRow.style.display = tellEnabled ? '' : 'none';
+  }
+
   if (tellCheckbox) {
-    window.eqTracker.getTellPing().then((on) => { tellEnabled = on; tellCheckbox.checked = on; });
+    window.eqTracker.getTellPing().then((on) => {
+      tellEnabled = on;
+      tellCheckbox.checked = on;
+      syncTellCooldownRow();
+    });
     tellCheckbox.addEventListener('change', () => {
       tellEnabled = tellCheckbox.checked;
       window.eqTracker.setTellPing(tellEnabled);
+      syncTellCooldownRow();
       if (tellEnabled) ping();
+    });
+  }
+
+  if (tellCooldownSlider) {
+    window.eqTracker.getTellPingCooldownSec().then((seconds) => {
+      tellCooldownMs = seconds * 1000;
+      tellCooldownSlider.value = seconds;
+      tellCooldownValue.textContent = seconds === 0 ? 'off' : `${seconds}s`;
+    });
+    tellCooldownSlider.addEventListener('input', () => {
+      const seconds = Number(tellCooldownSlider.value);
+      tellCooldownMs = seconds * 1000;
+      tellCooldownValue.textContent = seconds === 0 ? 'off' : `${seconds}s`;
+      window.eqTracker.setTellPingCooldownSec(seconds);
     });
   }
 
@@ -4931,7 +6291,14 @@ function initTradePing() {
     // Timestamps are stripped the same way the detection engine does it, so a line is matched on
     // its text alone.
     const stripped = String(line).replace(/^\[[^\]]+\]\s*/, '').trim();
-    if (enabled && TRADE_REQUEST_PATTERN.test(stripped)) ping();
-    else if (tellEnabled && TELL_PATTERN.test(stripped)) ping();
+    if (enabled && TRADE_REQUEST_PATTERN.test(stripped)) {
+      ping();
+    } else if (tellEnabled && TELL_PATTERN.test(stripped)) {
+      const now = Date.now();
+      if (tellShouldPing(now, lastTellPingAt, tellCooldownMs)) {
+        lastTellPingAt = now;
+        ping();
+      }
+    }
   });
 }

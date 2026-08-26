@@ -1,8 +1,19 @@
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { EventEmitter } = require('events');
 
-const POLL_INTERVAL_MS = 2000;
+// Was 2000 - reported directly as "slow to show/hide overlays" when swapping windows. Measured
+// directly (not guessed) why: the OLD design spawned a brand new powershell.exe for every single
+// poll, and even a do-nothing script cost ~150-220ms just for the interpreter to start (Add-Type's
+// own C# compilation added another ~70-100ms on top of that). That fixed per-poll cost was the
+// real bottleneck, not the interval - a persistent PowerShell process (see PsProbe below) that
+// stays running and is fed one query per poll measured at ~18-20ms per round trip once warm, a
+// 10-15x drop, which is what makes a much shorter interval reasonable now.
+const POLL_INTERVAL_MS = 300;
+// A query that never comes back within this long is treated as a dead/hung process and the whole
+// thing is respawned - better than a poll silently never resolving again.
+const QUERY_TIMEOUT_MS = 1500;
+const RESPONSE_DELIMITER = '###EQBT-FG-END###';
 
 // The actual game client's process name - NOT the same as its window
 // title. Both the Daybreak launcher (LaunchPad.exe) and the game itself
@@ -29,14 +40,13 @@ const TARGET_PROCESS_NAME = 'eqgame';
 // name check covers all of them without needing to enumerate windows.
 const OWN_PROCESS_NAME = path.basename(process.execPath, path.extname(process.execPath)).toLowerCase();
 
-// GetForegroundWindow + GetWindowThreadProcessId via inline P/Invoke -
-// avoids an npm native-binding module, since this environment isn't set up
-// to build native modules (see CLAUDE.md's Packaging gotchas). Re-declaring
-// the Add-Type class every poll is wasteful but harmless (PowerShell just
-// throws "type already exists" on a re-add within the SAME process - moot
-// here since each poll is a fresh powershell.exe invocation, not a
-// persistent session).
-const PS_SCRIPT = `
+// GetForegroundWindow + GetWindowThreadProcessId via inline P/Invoke - avoids an npm native-
+// binding module, since this environment isn't set up to build native modules (see CLAUDE.md's
+// Packaging gotchas). The Add-Type class is declared ONCE, when the persistent process starts
+// (see PsProbe below) - unlike the old design, which paid powershell.exe's own ~150-220ms startup
+// cost PLUS Add-Type's ~70-100ms compile cost on every single poll. Each query after setup is just
+// two P/Invoke calls and a Get-Process lookup - measured at ~18-20ms once the process is warm.
+const PS_SETUP_SCRIPT = `
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -45,11 +55,139 @@ public class EQBTForegroundProbe {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 }
 "@
+`;
+
+const PS_QUERY_SCRIPT = `
 $hwnd = [EQBTForegroundProbe]::GetForegroundWindow()
 $procId = 0
 [EQBTForegroundProbe]::GetWindowThreadProcessId($hwnd, [ref]$procId) | Out-Null
 try { (Get-Process -Id $procId -ErrorAction Stop).ProcessName } catch { '' }
+Write-Output '${RESPONSE_DELIMITER}'
 `;
+
+// One long-lived powershell.exe, fed a query over stdin per poll and read back over stdout - see
+// this file's own header comment on why a persistent process replaced spawning a fresh one every
+// poll. Deliberately its own small class: the queueing/respawn logic has nothing to do with what
+// ForegroundWatcher itself is polling FOR, and keeping them separate means a future second use of
+// "run PowerShell queries fast" doesn't have to duplicate this.
+class PsProbe {
+  // spawnFn is injectable the same way focusGameWindow's execFileFn is - lets tests hand in a
+  // fake child-process-shaped object (stdin.write, stdout as an EventEmitter, on('exit'/'error'))
+  // instead of actually launching PowerShell.
+  constructor(spawnFn = spawn) {
+    this.spawnFn = spawnFn;
+    this.proc = null;
+    this.buffer = '';
+    this.queue = []; // FIFO of {resolve, timer} - PowerShell processes stdin strictly in order,
+    // so a query's response is always the next delimiter-terminated chunk, no query id needed.
+  }
+
+  _ensureStarted() {
+    if (this.proc) return;
+    const proc = this.spawnFn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    this.proc = proc;
+    this.buffer = '';
+    proc.stdout.on('data', (chunk) => this._onData(chunk));
+    // Both 'exit' and 'error' mean the process is gone - fail every still-pending query rather
+    // than leaving its promise hanging forever, and drop the reference so the next query respawns.
+    const onGone = () => {
+      if (this.proc !== proc) return;
+      this.proc = null;
+      this._failAll();
+    };
+    proc.on('exit', onGone);
+    proc.on('error', onGone);
+    try {
+      proc.stdin.write(PS_SETUP_SCRIPT);
+    } catch {
+      onGone();
+    }
+  }
+
+  _onData(chunk) {
+    this.buffer += chunk.toString();
+    let idx;
+    while ((idx = this.buffer.indexOf(RESPONSE_DELIMITER)) !== -1) {
+      const text = this.buffer.slice(0, idx);
+      this.buffer = this.buffer.slice(idx + RESPONSE_DELIMITER.length);
+      const next = this.queue.shift();
+      if (!next) continue; // stray output (e.g. the setup script itself produces none, but be safe)
+      clearTimeout(next.timer);
+      // The query script's own last real line is the process name (or empty) - anything before
+      // that in this chunk is noise (PowerShell's own banner text, if any).
+      const lines = text.split(/\r?\n/).map((l) => l.trim());
+      next.resolve(lines.filter(Boolean).pop() || '');
+    }
+  }
+
+  _failAll() {
+    for (const { resolve, timer } of this.queue) {
+      clearTimeout(timer);
+      resolve(null);
+    }
+    this.queue = [];
+  }
+
+  // Resolves to the foreground process's name (lowercased happens in the caller), or null on any
+  // failure - timeout, dead process, write error. Best-effort, same as the old design: a single
+  // failed poll just keeps the caller's last known state.
+  query() {
+    return new Promise((resolve) => {
+      this._ensureStarted();
+      if (!this.proc) {
+        resolve(null);
+        return;
+      }
+      const entry = {
+        resolve,
+        timer: setTimeout(() => {
+          // A query that never comes back means the process is hung, not just slow - kill it so
+          // the NEXT query starts fresh rather than piling up behind a dead pipe forever.
+          const idx = this.queue.indexOf(entry);
+          if (idx !== -1) this.queue.splice(idx, 1);
+          resolve(null);
+          if (this.proc) {
+            try {
+              this.proc.kill();
+            } catch {
+              // already gone
+            }
+          }
+        }, QUERY_TIMEOUT_MS),
+      };
+      this.queue.push(entry);
+      try {
+        this.proc.stdin.write(PS_QUERY_SCRIPT);
+      } catch {
+        clearTimeout(entry.timer);
+        const idx = this.queue.indexOf(entry);
+        if (idx !== -1) this.queue.splice(idx, 1);
+        resolve(null);
+      }
+    });
+  }
+
+  stop() {
+    this._failAll();
+    if (this.proc) {
+      try {
+        this.proc.stdin.end();
+      } catch {
+        // ignore
+      }
+      try {
+        this.proc.kill();
+      } catch {
+        // ignore
+      }
+      this.proc = null;
+    }
+    this.buffer = '';
+  }
+}
 
 // Polls which of EQ / this app owns the foreground window, emitting
 // 'focusChanged' with { eqFocused, ownAppFocused } only when that actually
@@ -60,9 +198,12 @@ try { (Get-Process -Id $procId -ErrorAction Stop).ProcessName } catch { '' }
 // of both-false would have silently skipped emitting if neither app happened
 // to be focused, leaving a caller's own state stale until the NEXT change.
 class ForegroundWatcher extends EventEmitter {
-  constructor() {
+  // spawnFn threads through to PsProbe, same DI reasoning as everywhere else in this file.
+  constructor(spawnFn = spawn) {
     super();
     this.timer = null;
+    this.running = false;
+    this.probe = new PsProbe(spawnFn);
     // Which app is focused, tracked separately rather than collapsed into one
     // "relevant app" boolean. The two now drive different settings: EQ being
     // focused is what auto-hide keys off, while this app being focused is an
@@ -72,31 +213,42 @@ class ForegroundWatcher extends EventEmitter {
   }
 
   start() {
-    if (this.timer) return;
-    this._poll();
-    this.timer = setInterval(() => this._poll(), POLL_INTERVAL_MS);
+    if (this.running) return;
+    this.running = true;
+    this._pollLoop();
   }
 
   stop() {
+    this.running = false;
     if (this.timer) {
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = null;
     }
     this.lastState = null;
+    this.probe.stop();
   }
 
-  _poll() {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', PS_SCRIPT], { windowsHide: true }, (err, stdout) => {
-      if (err) return; // best-effort - a single failed poll just keeps the last known state
-      const processName = stdout.trim().toLowerCase();
-      const eqFocused = processName === TARGET_PROCESS_NAME;
-      const ownAppFocused = processName === OWN_PROCESS_NAME;
-      const prev = this.lastState;
-      if (!prev || prev.eqFocused !== eqFocused || prev.ownAppFocused !== ownAppFocused) {
-        this.lastState = { eqFocused, ownAppFocused };
-        this.emit('focusChanged', this.lastState);
-      }
-    });
+  // A self-rescheduling loop (setTimeout after each query resolves), not setInterval - the
+  // process spawn/respawn path is now async, and setInterval firing again mid-respawn would pile
+  // queries up behind a process that isn't ready yet.
+  async _pollLoop() {
+    if (!this.running) return;
+    await this._poll();
+    if (!this.running) return;
+    this.timer = setTimeout(() => this._pollLoop(), POLL_INTERVAL_MS);
+  }
+
+  async _poll() {
+    const result = await this.probe.query();
+    if (result == null) return; // best-effort - a single failed poll just keeps the last known state
+    const processName = result.toLowerCase();
+    const eqFocused = processName === TARGET_PROCESS_NAME;
+    const ownAppFocused = processName === OWN_PROCESS_NAME;
+    const prev = this.lastState;
+    if (!prev || prev.eqFocused !== eqFocused || prev.ownAppFocused !== ownAppFocused) {
+      this.lastState = { eqFocused, ownAppFocused };
+      this.emit('focusChanged', this.lastState);
+    }
   }
 }
 
@@ -148,4 +300,4 @@ if ($p) {
   });
 }
 
-module.exports = { ForegroundWatcher, focusGameWindow };
+module.exports = { ForegroundWatcher, PsProbe, focusGameWindow, RESPONSE_DELIMITER };

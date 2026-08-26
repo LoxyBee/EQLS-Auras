@@ -96,4 +96,4 @@ test('the ambiguity it solves does not exist on this roster', () => {
 });
 
 module.exports = () => report('song-pulse');
-if (require.main === module) process.exit(report('song-pulse') ? 1 : 0);
+if (require.main === module) report('song-pulse').then((n) => process.exit(n ? 1 : 0));

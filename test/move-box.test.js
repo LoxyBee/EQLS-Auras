@@ -152,4 +152,4 @@ test('the listener is registered where focusWidget can be seen', () => {
 });
 
 module.exports = () => report('move-box');
-if (require.main === module) process.exit(report('move-box') ? 1 : 0);
+if (require.main === module) report('move-box').then((n) => process.exit(n ? 1 : 0));

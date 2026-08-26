@@ -192,4 +192,4 @@ test('Group by player / Hide the player name sit below icon size and margin widt
 });
 
 module.exports = () => report('settings-panel-layout');
-if (require.main === module) process.exit(report('settings-panel-layout') ? 1 : 0);
+if (require.main === module) report('settings-panel-layout').then((n) => process.exit(n ? 1 : 0));

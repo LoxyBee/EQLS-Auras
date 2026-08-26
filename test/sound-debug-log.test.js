@@ -74,4 +74,4 @@ test('the debug line carries millisecond precision - the whole point, since the 
 });
 
 module.exports = () => report('sound-debug-log');
-if (require.main === module) process.exit(report('sound-debug-log') ? 1 : 0);
+if (require.main === module) report('sound-debug-log').then((n) => process.exit(n ? 1 : 0));

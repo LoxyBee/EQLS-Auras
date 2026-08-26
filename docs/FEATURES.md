@@ -33,11 +33,12 @@ Cheap, low risk, no dependencies. Worth doing as one batch.
 
 Self-contained, a day or less each.
 
-- [~] **Alert sound on an incoming tell.** Built 24 Aug, under Setup > Trade
-      requests, next to the trade ping - off by default, matches `<Name>
-      tells you, '...'`. **Not done**: the cooldown so a burst of tells does
-      not machine-gun the sound. Cooldown length probably wants to be a
-      setting, defaulting to a few seconds.
+- [x] **Alert sound on an incoming tell, cooldown included.** Built 24 Aug;
+      the cooldown landed 25 Aug - a "Minimum gap" slider (0-30s, default 3)
+      next to the tell-ping checkbox, only shown once tells are turned on.
+      `tellShouldPing()`, a pure function pulled out specifically so the
+      decision itself is tested (`test/trade-ping.test.js`), not just the
+      wiring around it.
 - [ ] **Death wipes buffs on whoever died.** EQ drops every buff on death, so
       the app should too rather than counting down timers for buffs that are
       already gone. Applies to the player AND to a groupmate whose ally buffs
@@ -47,28 +48,30 @@ Self-contained, a day or less each.
       ability being unavailable rather than a buff being active. Related to,
       but not the same as, the reverse/negative detection below - worth
       deciding whether one mechanism covers both before building either.
-- [ ] **In-app bug report route.** Simplest useful version: a button that
-      opens a prefilled report with the app version and the last chunk of
-      `detection-debug.log` attached, since that log is what actually makes a
-      detection report diagnosable. Plus a Discord invite link somewhere
-      obvious (About page).
+- [x] **In-app bug report route.** A "Copy bug report" button on the About
+      page - version info plus the last 4000 characters of today's detection
+      log, formatted and copied to the clipboard in one click, ready to paste
+      wherever bugs get reported. No Discord link added - nobody had the real
+      invite URL to put there, and this app never invents one.
 
 - [x] **Sounds: progressive disclosure.** Only show a sound picker once its
       "Play a sound" toggle is on. Make "Warn before expiry" a toggle first
       (it's a bare slider today) that expands into its own options.
-- [ ] **Merge Alerts into Sounds** so the warning sound sits next to the
-      warning threshold instead of in a separate topic.
-- [ ] **Planned features tab.** A real page listing what's coming, replacing
-      today's scattered disabled "Planned" placeholders. Worth more than it
-      looks for shipping - turns "this seems broken" into "not built yet".
-- [ ] **Example library** in the premade aura list, e.g. a skill-cooldown
-      tracker built from a custom timer. Mostly content once the custom-timer
-      work below lands. *Checked 25 Aug - not actually built: `PREMADE_WIDGETS`
-      in `main-window.js` has no such showcase entry, and CLAUDE.md's own P5
-      list still carries this as open. Likely confused with the Cooldown
-      timer premade itself (which IS done, separate item above) or the
-      custom-timer modal rework (also done) - neither is a worked EXAMPLE
-      entry in the premade list.*
+- [x] **Merge Alerts into Sounds**, 25 Aug - one topic now ("Alerts & Sounds"),
+      same element ids as before the merge so nothing in the wiring had to
+      change. The warning sound picker already sat right under its own
+      warning-threshold slider before this; the merge was purely the two
+      *topics* becoming one, not a rearrangement within either.
+- [ ] **Planned features tab.** ~~A real page listing what's coming~~ -
+      **vetoed by the owner, 25 Aug: "veto the planned page, i don't care
+      about it."** Not building this. Kept as a row here only so a future
+      pass doesn't re-propose it having lost the context.
+- [x] **Example library**, 25 Aug - "Skill ready reminder", in the premade
+      list's Timers group. Reuses the entire Cooldown timer picker/creation
+      path unchanged, then flips Reverse detection on for the finished
+      widget - a worked example of what that toggle does with real spell
+      data, deliberately NOT a second Cooldown timer under a different name.
+      See `test/example-library.test.js`.
 - [ ] **Sounds per trigger** rather than per aura. *Your own open question* -
       weigh against the settings-UI complexity it adds.
 
@@ -119,10 +122,14 @@ entry with a `fieldsId`, add that panel's markup, handle the mode in
 
 ## Separate subsystem - biggest item, unrelated to buff tracking
 
-- [ ] **Action bar cover replacements.** Images/borders overlaid on the game's
+- [~] **Action bar cover replacements.** Images/borders overlaid on the game's
       hotbar buttons, with a configurable layout and size percentage - from
       full custom icons down to plain coloured/transparent border frames.
-      Border-image support doesn't exist yet.
+      Border-image support doesn't exist yet. **25 Aug: a stub "Action Bars"
+      nav tab and page now exist** (`page-action-bars` in `index.html`, a
+      "Coming soon" card, nothing wired to anything) - explicitly requested
+      as "a temp tab... we'll work on that next anyway", so this is the next
+      thing in line, not a done feature.
   - [ ] Pixel-stepper nudge controls for fine positioning.
   - [ ] Icon border support - useful for buff icons too, not just these.
 

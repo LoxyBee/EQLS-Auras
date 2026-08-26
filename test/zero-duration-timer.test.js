@@ -187,4 +187,4 @@ test('the debounce is per KIND, not global - a land and an expire in the same se
 });
 
 module.exports = () => report('zero-duration-timer');
-if (require.main === module) process.exit(report('zero-duration-timer') ? 1 : 0);
+if (require.main === module) report('zero-duration-timer').then((n) => process.exit(n ? 1 : 0));

@@ -279,20 +279,32 @@ test('the hide-auras hotkey is one Electron will actually accept', () => {
   // Verified by registering it in a real Electron process: 'Pause' throws, ScrollLock,
   // PrintScreen, F13 and modifier chords all register. No unit test can catch this class of
   // failure, which is why tools/smoke-launch.js exists.
+  //
+  // The key itself became a user choice (Setup page dropdown) rather than a fixed fallback list,
+  // after a report that some keyboards report Pause and Scroll Lock's virtual key codes swapped -
+  // a driver/layout-level thing this app has no way to see through. registerHideHotkey(choice,
+  // handler) is what both startup and the settings IPC handler now call.
   const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
 
-  assert.match(main, /const HIDE_HOTKEYS = \[/, 'the hotkey list is gone');
-  const list = main.match(/const HIDE_HOTKEYS = \[([^\]]*)\]/)[1];
-  assert.doesNotMatch(list, /'Pause'/, "'Pause' is not a valid Electron accelerator - it throws");
-  assert.ok(list.split(',').filter((x) => x.trim()).length >= 2, 'no fallback if the first key is taken');
+  const fn = main.match(/function registerHideHotkey\(choice, handler\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn, 'the hotkey registration function has been renamed or restructured');
+  assert.doesNotMatch(fn[1], /'Pause'/, "'Pause' is not a valid Electron accelerator - it throws");
+  assert.match(fn[1], /'Alt\+Shift\+H'/, 'no fallback if the chosen key is taken');
+  assert.match(fn[1], /choice === 'none'/, 'the dropdown offers a way to disable the hotkey entirely');
 
   // Registration must be inside a try, or one bad accelerator takes down startup - which is
   // exactly what happened.
-  const loop = main.match(/for \(const accelerator of HIDE_HOTKEYS\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(loop, 'the registration loop has been restructured');
-  assert.match(loop[1], /try \{/, 'an accelerator Electron refuses would crash startup again');
-  assert.match(loop[1], /catch \(err\)/);
-  assert.match(loop[1], /globalShortcut\.register\(accelerator, toggleMasterHidden\)/);
+  assert.match(fn[1], /try \{/, 'an accelerator Electron refuses would crash startup again');
+  assert.match(fn[1], /catch \(err\)/);
+  assert.match(fn[1], /globalShortcut\.register\(accelerator, handler\)/);
+
+  const indexHtml = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'index.html'), 'utf8'
+  );
+  assert.doesNotMatch(
+    indexHtml, /<option value="Pause">/,
+    "offering 'Pause' as a choice would be a guaranteed dead end on this Electron build"
+  );
 
   assert.match(
     main, /globalShortcut\.unregisterAll\(\)/,
@@ -304,7 +316,7 @@ test('the hide-auras hotkey is one Electron will actually accept', () => {
 
 test('the hotkey does the same thing the button does', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
-  const handler = main.match(/const toggleMasterHidden = \(\) => \{([\s\S]*?)\n {2}\};/);
+  const handler = main.match(/function toggleMasterHidden\(\) \{([\s\S]*?)\n\}/);
   assert.ok(handler, 'toggleMasterHidden has been renamed or restructured');
   assert.match(handler[1], /widgetManager\.setMasterHidden\(!widgetManager\.isMasterHidden\(\)\)/);
   assert.match(
@@ -364,4 +376,4 @@ process.on('exit', () => {
 });
 
 module.exports = () => report('visibility');
-if (require.main === module) process.exit(report('visibility') ? 1 : 0);
+if (require.main === module) report('visibility').then((n) => process.exit(n ? 1 : 0));

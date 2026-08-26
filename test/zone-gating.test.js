@@ -288,4 +288,4 @@ test('knownZones/currentZone/HOTKEY_LABELS live in the SAME function as their re
 });
 
 module.exports = () => report('zone-gating');
-if (require.main === module) process.exit(report('zone-gating') ? 1 : 0);
+if (require.main === module) report('zone-gating').then((n) => process.exit(n ? 1 : 0));

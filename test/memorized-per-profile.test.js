@@ -93,4 +93,4 @@ test('removing the active profile clears currentlyMemorized rather than leaving 
 });
 
 module.exports = () => report('memorized-per-profile');
-if (require.main === module) process.exit(report('memorized-per-profile') ? 1 : 0);
+if (require.main === module) report('memorized-per-profile').then((n) => process.exit(n ? 1 : 0));

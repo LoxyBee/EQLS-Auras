@@ -290,4 +290,4 @@ test('it is offered in the Add Aura list', () => {
 });
 
 module.exports = () => report('resist-flash');
-if (require.main === module) process.exit(report('resist-flash') ? 1 : 0);
+if (require.main === module) report('resist-flash').then((n) => process.exit(n ? 1 : 0));

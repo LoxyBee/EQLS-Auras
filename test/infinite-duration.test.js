@@ -198,4 +198,4 @@ test('its bar is full, not empty', () => {
 });
 
 module.exports = () => report('infinite-duration');
-if (require.main === module) process.exit(report('infinite-duration') ? 1 : 0);
+if (require.main === module) report('infinite-duration').then((n) => process.exit(n ? 1 : 0));

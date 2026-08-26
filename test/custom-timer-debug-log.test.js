@@ -111,4 +111,4 @@ test('restoring from a session snapshot logs a LOADED line per timer', () => {
 });
 
 module.exports = () => report('custom-timer-debug-log');
-if (require.main === module) process.exit(report('custom-timer-debug-log') ? 1 : 0);
+if (require.main === module) report('custom-timer-debug-log').then((n) => process.exit(n ? 1 : 0));

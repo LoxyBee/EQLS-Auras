@@ -394,4 +394,4 @@ test('the capability behind it still exists - reachable from Custom text aura by
 });
 
 module.exports = () => report('ally-cast-alert');
-if (require.main === module) process.exit(report('ally-cast-alert') ? 1 : 0);
+if (require.main === module) report('ally-cast-alert').then((n) => process.exit(n ? 1 : 0));

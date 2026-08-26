@@ -94,4 +94,4 @@ test('the premade is offered under Event alerts, next to Resist flash and Dispel
 });
 
 module.exports = () => report('charm-broke');
-if (require.main === module) process.exit(report('charm-broke') ? 1 : 0);
+if (require.main === module) report('charm-broke').then((n) => process.exit(n ? 1 : 0));

@@ -157,4 +157,4 @@ test('the width slider is capped at 1-6 in the HTML too, and scales a box-shadow
 });
 
 module.exports = () => report('sidebar-status-and-border-width');
-if (require.main === module) process.exit(report('sidebar-status-and-border-width') ? 1 : 0);
+if (require.main === module) report('sidebar-status-and-border-width').then((n) => process.exit(n ? 1 : 0));

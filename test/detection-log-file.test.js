@@ -147,4 +147,4 @@ test('customTimerEngine feeds the same function buffEngine does, not a second un
 });
 
 module.exports = () => report('detection-log-file');
-if (require.main === module) process.exit(report('detection-log-file') ? 1 : 0);
+if (require.main === module) report('detection-log-file').then((n) => process.exit(n ? 1 : 0));

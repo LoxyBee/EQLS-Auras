@@ -276,4 +276,4 @@ test('once edited, a later save that touches fewer fields does not un-edit the e
 });
 
 module.exports = () => report('roster-migration');
-if (require.main === module) process.exit(report('roster-migration') ? 1 : 0);
+if (require.main === module) report('roster-migration').then((n) => process.exit(n ? 1 : 0));

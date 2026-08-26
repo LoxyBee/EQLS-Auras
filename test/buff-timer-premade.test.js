@@ -209,7 +209,7 @@ test('the premade opens the panel instead of building immediately', () => {
   // And the panel is reset each time, or the last spell picked would still be showing - carrying
   // the premade's own starting choice, since two premades now share this one panel and differ
   // only in which of the three "On:" options they open on.
-  assert.match(rendererSrc, /resetBuffTimerPanel\(premade\.defaultSource, premade\.mode\)/);
+  assert.match(rendererSrc, /resetBuffTimerPanel\(premade\.defaultSource, premade\.mode, premade\.reverseExample\)/);
 });
 
 test('the trackable list is fetched fresh when the modal opens', () => {
@@ -221,4 +221,4 @@ test('the trackable list is fetched fresh when the modal opens', () => {
 });
 
 module.exports = () => report('buff-timer-premade');
-if (require.main === module) process.exit(report('buff-timer-premade') ? 1 : 0);
+if (require.main === module) report('buff-timer-premade').then((n) => process.exit(n ? 1 : 0));

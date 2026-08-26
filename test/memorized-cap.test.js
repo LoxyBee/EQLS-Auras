@@ -103,4 +103,4 @@ test('casing is preserved for display', () => {
 });
 
 module.exports = () => report('memorized-cap');
-if (require.main === module) process.exit(report('memorized-cap') ? 1 : 0);
+if (require.main === module) report('memorized-cap').then((n) => process.exit(n ? 1 : 0));

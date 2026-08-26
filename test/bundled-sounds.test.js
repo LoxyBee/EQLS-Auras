@@ -201,4 +201,4 @@ test('a remembered folder that is NOT Windows Media still wins outright over the
 });
 
 module.exports = () => report('bundled-sounds');
-if (require.main === module) process.exit(report('bundled-sounds') ? 1 : 0);
+if (require.main === module) report('bundled-sounds').then((n) => process.exit(n ? 1 : 0));

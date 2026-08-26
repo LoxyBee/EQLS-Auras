@@ -449,4 +449,4 @@ test('a combined instance still shows an icon, looked up via its own defId rathe
 });
 
 module.exports = () => report('trigger-combine-mode');
-if (require.main === module) process.exit(report('trigger-combine-mode') ? 1 : 0);
+if (require.main === module) report('trigger-combine-mode').then((n) => process.exit(n ? 1 : 0));

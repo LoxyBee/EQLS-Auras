@@ -332,4 +332,4 @@ test('a cooldown that is set is never hidden by the section being shut', () => {
 });
 
 module.exports = () => report('cooldown-phase');
-if (require.main === module) process.exit(report('cooldown-phase') ? 1 : 0);
+if (require.main === module) report('cooldown-phase').then((n) => process.exit(n ? 1 : 0));

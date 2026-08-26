@@ -211,4 +211,4 @@ test('the main process offers rather than imports', () => {
 });
 
 module.exports = () => report('share-code-chat');
-if (require.main === module) process.exit(report('share-code-chat') ? 1 : 0);
+if (require.main === module) report('share-code-chat').then((n) => process.exit(n ? 1 : 0));

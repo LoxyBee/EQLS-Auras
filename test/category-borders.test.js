@@ -218,4 +218,4 @@ test('the settings window can reach it, and hides it where it cannot apply', () 
 });
 
 module.exports = () => report('category-borders');
-if (require.main === module) process.exit(report('category-borders') ? 1 : 0);
+if (require.main === module) report('category-borders').then((n) => process.exit(n ? 1 : 0));

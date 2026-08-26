@@ -378,8 +378,8 @@ test('the box hears about it switching itself on', () => {
   assert.match(mainSrc, /settings:loadoutLabelChanged/);
   assert.match(preloadSrc, /onLoadoutLabelChanged:/);
   assert.match(rendererSrc, /onLoadoutLabelChanged\(\(enabled\) => \{/);
-  assert.match(rendererSrc, /loadoutLabelCheckbox\.checked = !!enabled;[\s\S]{0,40}refreshWidgets\(\)/);
+  assert.match(rendererSrc, /loadoutLabelCheckbox\.checked = !!enabled;[\s\S]{0,200}refreshWidgets\(\)/);
 });
 
 module.exports = () => report('profile-label');
-if (require.main === module) process.exit(report('profile-label') ? 1 : 0);
+if (require.main === module) report('profile-label').then((n) => process.exit(n ? 1 : 0));

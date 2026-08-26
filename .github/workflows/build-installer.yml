@@ -1,0 +1,33 @@
+name: Build installer
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run dist
+
+      - name: Publish latest installer as a release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: latest-dev
+          name: Latest dev build
+          body: Automatically built from the latest push to master (commit ${{ github.sha }}). Not a stable release.
+          prerelease: true
+          files: dist/*.exe

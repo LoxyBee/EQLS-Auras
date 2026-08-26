@@ -2,6 +2,15 @@
   box-sizing: border-box;
 }
 
+/* Same app-wide ask as main-window.css: scrolls, never draws a visible scrollbar. */
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
 html,
 body {
   margin: 0;
