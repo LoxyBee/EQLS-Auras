@@ -23,6 +23,12 @@
     "files": [
       "src/**/*",
       "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "sounds",
+        "to": "sounds"
+      }
     ]
   }
 }

@@ -8,7 +8,6 @@
  *   - loadout profile membership is the ON/OFF switch;
  *   - "Hide all auras" and auto-hide-while-EverQuest-is-unfocused CLEAR THE SCREEN;
  *   - unlocking one aura by hand overrides both, because you cannot drag what you cannot see.
- * Plus the sound-only exemption: an aura that draws nothing has nothing to clear off the screen.
  *
  * HOW THIS RUNS. widgetManager.js requires Electron at module load, which a plain Node process
  * does not have - so Electron is replaced in the require cache with a small fake before the
@@ -253,51 +252,9 @@ test('master hide actually hides and re-shows the windows, not just the answer',
   assert.ok(aura.id);
 });
 
-// --- the sound-only exemption ------------------------------------------------------------------
-
-test('a sound-only aura is exempt from both screen-clearing rules', () => {
-  const aura = makeAura('Silent watcher');
-  aura.displayMode = 'sound-only';
-
-  wm.setForegroundHidden(true);
-  assert.equal(wm.shouldBeOnScreen(aura), true, 'auto-hide has nothing of this aura to clear');
-  wm.setForegroundHidden(false);
-
-  wm.setMasterHidden(true);
-  assert.equal(wm.shouldBeOnScreen(aura), true, 'nor does master hide');
-  wm.setMasterHidden(false);
-});
-
-test('a sound-only aura is NOT exempt from its profile', () => {
-  // The exemption sits below the profile check for a reason: an aura that kept beeping after
-  // being switched off would be untraceable, because there is nothing on screen to point at.
-  const aura = makeAura('Silent watcher two');
-  aura.displayMode = 'sound-only';
-  aura.activeProfileIds = [PROFILE_B];
-  assert.equal(wm.shouldBeOnScreen(aura), false);
-  assert.equal(wm.shouldBeAudible(aura), false);
-});
-
-test('a sound-only aura stays click-through even when unlocked', () => {
-  // Unlocked, it would otherwise be an INVISIBLE rectangle sitting over the game and swallowing
-  // clicks, with nothing on screen to explain where they had gone.
-  const plain = makeAura('Clickable');
-  const silent = makeAura('Not clickable');
-  silent.displayMode = 'sound-only';
-
-  assert.equal(wm.shouldIgnoreMouse(plain), true, 'a locked aura is click-through');
-  wm.setLocked(plain.id, false);
-  assert.equal(wm.shouldIgnoreMouse(plain), false, 'an unlocked ordinary aura catches clicks');
-  wm.setLocked(plain.id, true);
-
-  wm.setLocked(silent.id, false);
-  assert.equal(wm.shouldIgnoreMouse(silent), true, 'a sound-only aura must never catch clicks');
-  wm.setLocked(silent.id, true);
-});
-
 // --- the order itself --------------------------------------------------------------------------
 
-test('the four clauses of shouldBeOnScreen are in the order the notes require', () => {
+test('the clauses of shouldBeOnScreen are in the order the notes require', () => {
   // The behavioural tests above cover each rule; this one covers the shape, so that a future
   // rule added in the wrong place is caught even if no existing test happens to exercise it.
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'widgetManager.js'), 'utf8');
@@ -309,8 +266,7 @@ test('the four clauses of shouldBeOnScreen are in the order the notes require', 
     assert.ok(i >= 0, `missing clause: ${needle}`);
     return i;
   };
-  assert.ok(at('isVisibleForActiveProfile') < at('isSoundOnly(config)'));
-  assert.ok(at('isSoundOnly(config)') < at('masterHidden'));
+  assert.ok(at('isVisibleForActiveProfile') < at('masterHidden'));
   assert.ok(at('masterHidden') < at('foregroundHidden'));
 });
 
@@ -377,6 +333,26 @@ test('the hint names the key that actually registered', () => {
   assert.match(renderer, /getHideHotkey\(\)/);
   assert.match(renderer, /masterHideHintEl\.textContent = key \?/);
   assert.match(main, /ipcMain\.handle\('settings:getHideHotkey'/);
+});
+
+// -------------------------------------------------------------------------------------------
+// Right-clicking the move box - reported live as "opens a context menu that does nothing
+// useful". The box is `-webkit-app-region: drag`, and on a frameless Windows window that makes
+// Windows treat a right-click on it like a right-click on a title bar: it pops its OWN native
+// system menu (Restore/Move/Size/.../Close) and the page's own contextmenu handler (which is
+// supposed to open settings - see overlay.js) never gets a chance to fire at all.
+// 'system-context-menu' is Electron's hook for exactly this; every widget window must call
+// preventDefault() on it so the native menu never shows and the real handler runs instead.
+// -------------------------------------------------------------------------------------------
+
+test('every widget window suppresses the native system-context-menu, not just some', () => {
+  const { windows } = createdDuring(() => makeAura('Right click test'));
+  assert.equal(windows.length, 1);
+  const [win] = windows;
+  assert.equal(typeof win.handlers['system-context-menu'], 'function', 'no handler registered at all');
+  let prevented = false;
+  win.handlers['system-context-menu']({ preventDefault: () => { prevented = true; } });
+  assert.ok(prevented, 'the handler ran but did not call preventDefault, so the native menu still wins');
 });
 
 process.on('exit', () => {

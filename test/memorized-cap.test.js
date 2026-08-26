@@ -15,6 +15,7 @@ const path = require('node:path');
 const { test, report } = require('./harness');
 const { BuffEngine } = require('../src/main/buffEngine');
 const { BuffStore } = require('../src/main/buffStore');
+const { DEFAULT_PROFILE_ID } = require('../src/main/profileStore');
 
 const GEMS = 14;
 
@@ -75,7 +76,10 @@ test('a saved file that already drifted over the cap heals on load', () => {
   const store = fakeStore({ currentlyMemorized: oversized });
   const eng = newEngine(store);
   assert.equal(eng.currentlyMemorized.size, GEMS, 'an already-drifted store was not trimmed on load');
-  assert.equal(store.data.currentlyMemorized.length, GEMS, 'the trim was not persisted, so it would drift back next launch');
+  assert.equal(
+    store.data.currentlyMemorizedByProfile[DEFAULT_PROFILE_ID].length, GEMS,
+    'the trim was not persisted, so it would drift back next launch'
+  );
   const kept = [...eng.currentlyMemorized.values()];
   assert.equal(kept[kept.length - 1], 'Spell 25', 'the most recent entry was lost');
 });

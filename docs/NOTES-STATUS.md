@@ -1,13 +1,13 @@
 # Where every note stands
 
-All 39 of your notes, in order, with what is built and what is not. Written 21 Aug 2026, brought
-up to date 23 Aug.
+All 40 of your notes, in order, with what is built and what is not. Written 21 Aug 2026, brought
+up to date 24 Aug, the prose sections below the table corrected 25 Aug, and note 26 moved to DONE
+later the same day once `src/main/spellStacking.js` landed - see that row and "What's actually
+still open" below for what changed.
 
 ## The short version
 
-**37 done. 0 partial. 1 blocked. 1 skipped.**
-
-The two that are not done are not waiting on me:
+**39 done. 0 partial. 1 blocked. 1 skipped.**
 
 - **#28** needs the bug to happen once more. The detection log now records what opened the burst
   and how long ago, which is the fact that was missing, so one occurrence should be enough.
@@ -54,13 +54,13 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | # | What you asked for | | Where it stands |
 | --- | --- | --- | --- |
 | 11 | Track AoE mez per mob, duration by rank, case-insensitive | **DONE** | Per-mob tracking was already built. Rank scaling now lands too: duration is base x mote tier x AA, with the tier read off your own cast. Two of the spreadsheet's rates were measured from your logs and confirmed. |
-| 12 | One mez tile: soonest timer, count, mob name | **DONE** | x2 for two kobolds, down to x1 as they die, no count shown at 1. Soonest timer. |
+| 12 | One mez tile: soonest timer, count, mob name | **SCRAPPED (24 Aug), then redefined (24 Aug)** | The x2/x3 counting was reported live as wrong: the log can't tell a second same-named mob apart from a recast refreshing the one you already have, so chain-mezzing a single target (the normal way to hold CC) inflated the count on what was really only one mob. First fix: one tile per key, a new landing refreshes its duration exactly like a groupmate buff always did - but an AoE mez landing on several *different* mobs still drew one tile each, which you also didn't want. Your final answer: "ONE tile total for the whole aura, always... like a text aura." `trackOnEnemies` auras now get the text-aura one-tile rule in icon/list mode too, in `overlay.js`. The engine still tracks every distinct target underneath for death/wear-off detection - only what's drawn is collapsed. |
 | 13 | Drag the sidebar wider | **DONE** | |
 | 14 | Buff-timer premade: pick a spell, pick self or ally | **DONE** | Now also offers "something you cast it at". |
 | 15 | Cooldown premade: pick a skill, get its recast countdown | **DONE** | Add Aura -> Cooldown timer. Recast pre-filled and editable. Works with the ranked spells you cast. |
 | 16 | Debuff-on-an-enemy premade, resist alert, ally toggle | **DONE** | All three. The ally part is built as you specified it on 21 Aug — a warning, not a timer. See below. |
 | 17 | Mesmerize worked example: rank, per-mob timer, RESIST flash | **DONE** | Per-mob timer and RESIST flash were built. The rank now sets your own duration as well. Charm and mez carry the spreadsheet's +10%/tier unmeasured — every observation in your logs was cut short by the mob dying. |
-| 18 | Count same-named mobs from the land and resist lines | **DONE** | Counted from the land lines, decremented as each ends. Resist lines not used — they were not needed. |
+| 18 | Count same-named mobs from the land and resist lines | **SCRAPPED (24 Aug)** | Superseded by note 12's scrap - see that row. The counting mechanism this note asked for is what turned out to double-count a refreshed single target. |
 | 19 | Damage parser premade, placeholder in the meantime | **DONE** | Built. The placeholder is gone because the real one replaces it. |
 | 20 | Travel guide premade that knows your travel spells | **DONE** | Unblocked by research and built. Zone graph plus 61 travel spells, sourced EQL-specific and cross-checked against three others. |
 
@@ -73,7 +73,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 23 | Text-only display style, own size, own dwell time | **DONE** | Built as a *type* chosen when you create the aura, not a fourth radio — you agreed to that change. The dwell time is a setting, default 6s. |
 | 24 | Detection priority rework, plus a song-pulse check | **DONE** | All three built, including the 6s pulse check — you were right and I measured 314,324 gaps at exactly 6s to confirm it. The pulse check is wired and currently has nothing to decide, because no landing text on the rebuilt roster is split song/non-song; a test fires if that changes. |
 | 25 | A disabled "Global recovery time" placeholder | **DONE** | Still a placeholder. The `castOf` trigger note 15 introduced is the piece it needs, when you want it built. |
-| 26 | Drop a stale timer when a buff gets overwritten | **DONE** | Overwrites, refused casts, and buffs on yourself. I was wrong that self buffs could not be told apart. |
+| 26 | Drop a stale timer when a buff gets overwritten | **DONE** | Overwrites, refused casts, and buffs on others were already done. The self-buff half - the genuinely open question below for weeks - is now also done, 25 Aug: `src/main/spellStacking.js` reimplements the core of EQEmu's public stacking-conflict rule against the game's own spell data, verified against 7 confirmed pairs from your logs. Ships as an opt-in "Use self-buff overwrite detection" Experimental toggle under Diagnostics, off by default pending a real in-game session - see `docs/HANDOFF.md`. |
 | 27 | Promote "Buffs shown" to its own section, add gem slots | **DONE** | Own card, gem slots, "+" slot, buffs and debuffs kept apart. Your existing auras were not touched. |
 | 28 | Bug: Ally Buffs showed a buff you never cast | **BLOCKED** | Still needs it to happen once more — but the next time will be diagnosable. The log now records which of your actions opened the burst and how long ago, which is the missing fact that made a report of this indistinguishable from a correct landing. |
 | 29 | Put EverQuest back in front after answering a popup | **DONE** | |
@@ -92,6 +92,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 37 | Colour tile borders by spell type, with a toggle | **DONE** | On by default. |
 | 38 | Apply an aura only in a certain zone | **DONE** | "Only in:" on each aura. Zones kept separate as you asked. Says so when the rule is hiding an aura. |
 | 39 | Write down the multi-trigger idea, don't build it | **DONE** | Recorded, correctly unbuilt. Same feature as note 9. |
+| 40 | Custom debuff needs a watching toggle: your casts vs. an ally's casts | **DONE** | Built same day, smaller than first scoped. You cut the P0b dependency yourself: "the name doesn't matter for now, just have it tracked that a debuff happened from someone, it doesn't need a name." So this never gained caster identity — it's a new `debuffCastBy` field (`self`/`ally`) on a Custom debuff aura. `self` is the untouched original tier (needs `recentSelfCast` or your own burst window). `ally` is a new tier with no such gate at all: the moment the debuff's own third-person landing text appears on an enemy-shaped name, it lands, regardless of who cast it. Same duration data, same wear-off detection — only the gate differs. (The per-instance counting mentioned here at the time was scrapped 24 Aug - see note 12's row.) A "Watching:" radio pair on the aura's settings panel, shown only for Custom debuff auras. 8 new tests, mutation-checked (killed the tier, confirmed 4 tests catch it, restored). P0b (naming the caster) is still open and unrelated now — nothing here blocks it or is blocked by it. |
 
 ---
 
@@ -140,33 +141,39 @@ decisions rather than yours, and both are worth overruling if you disagree:
 
 ---
 
-## Three things I need from you
+## One thing I still need from you
 
-**Note 21 — should the label switch itself on?** Now that it is a setting rather than an aura, the
-auto-enable you asked for is much less annoying than auto-creating would have been: it would tick
-the box once, the first time you make a second loadout. Say the word. Also: show "Default" while
-you are on the default loadout, or stay blank? Blank means the label vanishing is itself the
-signal, which reads like a bug.
+Note 21's auto-enable question (below this section originally) is answered and built - it ticks
+itself on the first time you make a second loadout, and stays off again if you turn it back off.
+See the note 21 row in the table above; nothing left to decide there.
 
-**Note 26 — and a correction I owe you.** I told you there are no buff "types". That was wrong of
-me: your spreadsheet's category column carries **HP Buff (Line 1)** (17 spells) and **HP Buff
-(Line 2)** (3), it is in the app's roster too, and 28 of the 33 blocked pairs in your logs share a
-category. My own research agent found this and I failed to pass it on. What I should have said is
-narrower: the *engine* works in numbered effect slots rather than named types, so the app cannot
-compute conflicts from first principles — but your line grouping is real, it is in your data, and
-it predicts most of them.
+**Note 26 — resolved 25 Aug, not by guessing.** I told you there are no buff "types". That was
+wrong of me: your spreadsheet's category column carries **HP Buff (Line 1)** (17 spells) and **HP
+Buff (Line 2)** (3), it is in the app's roster too, and 28 of the 33 blocked pairs in your logs
+share a category. What I should have said is narrower: the *engine* works in numbered effect slots
+rather than named types, so the app cannot compute conflicts from first principles from that column
+alone — but the game's own `spells_us.txt` carries exactly the effect-slot data EQEmu's public
+`Mob::CheckStackConflict` rule needs, and that's what `src/main/spellStacking.js` now reads.
 
-None of which matters, because the game just says so: **"Your Shield of Thistles spell on Avenrae
-has been overwritten."** 109 of those in your logs, always the same shape, naming both spell and
-target. So it is done for buffs on other people.
+For buffs on other people, the game just says so: **"Your Shield of Thistles spell on Avenrae has
+been overwritten."** 109 of those in your logs, always the same shape, naming both spell and
+target — done for a long time.
 
-**What is left of it, and it is a real question.** There is no such line for a buff on *yourself* —
-none at all, not even a "worn off". The only signal is each spell's own fade message, which the app
-already reads. The problem is that some spells share one: Nimble and Agility both say "Your agility
-fades", and Symbol of Pinzarn and Symbol of Naltron both say "The mystic symbol fades". When one of
-those overwrites the other, the app sees one fade message and cannot tell which of the two ended. I
-have left it alone rather than guess. If self-buff overwrites matter to you, say so and I will work
-out how far a best guess can be trusted.
+**The self-buff half — the real open question for weeks — is done now too.** There is no such line
+for a buff on *yourself*, not even a "worn off," and some spells share their fade text (Nimble and
+Agility both say "Your agility fades"; Symbol of Pinzarn and Symbol of Naltron both say "The mystic
+symbol fades"), so a fade line alone can't say which of two active buffs it belongs to.
+`spellStacking.js` sidesteps needing to guess: it computes, from the game's own spell data, whether
+a newly-landed self-buff would silently overwrite one already active, checked against 7 confirmed
+real pairs from your logs (five "did not take hold... (Blocked by X)" lines, plus the two
+shared-fade-text pairs above). When it says overwritten, the stale timer is removed immediately
+instead of waiting on an ambiguous fade line. Deliberately narrower than the full EQEmu rule — no
+illusions, no Complete Heal, no DoT-vs-DoT — so it only ever removes a timer both directions of the
+check agree is stale, never invents a conflict.
+
+Ships as **"Use self-buff overwrite detection"** under Log page → Diagnostics, **off by default**
+next to two related detection toggles from the same session (see the P0 section below) — turned on
+deliberately, not silently, since none of the three has been run against a real play session yet.
 
 ## The detection log exists now, and you can find it
 
@@ -184,39 +191,63 @@ moved into the folder rather than thrown away.
 **Note 3, recorded:** cooldowns and negative/reverse detection are separate mechanics. That
 comparison was mine and it was wrong; nothing is built on it.
 
-## Still open, and what each needs
+## Note 9 — done, redesigned as "combine mode" rather than the original ask
 
-**Note 9's "all of these lines"** — fully answered, not yet built. Your answer changed the design
-and it is worth writing down, because my assumption was wrong. I had been thinking of it as "two
-events within some window". You said: *"the time window should be whatever each individual trigger
-has... primarily be used for 'if in this zone (no duration check), and this thing happens'."*
+This whole section used to say "all of these lines" was fully designed but not built, with three
+open questions blocking it. That's stale - it shipped 23-25 Aug as `triggerCombineMode`
+(`independent`/`and`/`or`) on the aura itself rather than a per-timer "extra conditions" list, and
+the three questions below got answered as part of building it, not before:
 
-That is a different mechanism. Each part of the condition is **satisfied for its own duration**
-after it fires, and a part with no duration — a zone check — stays satisfied until it stops being
-true. The timer runs while all parts are satisfied at once, and shows nothing at all until then.
-A state intersection, not a pair of events with a stopwatch. That is why the zone example is the
-main use: a zone is a state, not something that happens.
+- Over what window must both lines arrive? **No shared window at all** - your own correction to my
+  original framing. Each part of the condition is satisfied for its own duration after it fires,
+  and a part with no duration (a zone check) stays satisfied until it stops being true. The timer
+  runs while every part is satisfied at once - a state intersection, not two events and a
+  stopwatch.
+- Does anything show while waiting for the second line? Nothing, by design - same "no guessing"
+  posture as detection elsewhere in the app.
+- If only half arrives, does it expire? It just never activates; nothing times out or needs
+  clearing.
 
-## Note 9 — half of it already works, and you may not need the other half
+"Any of these lines" (`or`) shipped alongside it - same cycle-through-modes control on the aura.
+See `src/main/customTimerEngine.js`'s `_resolveActivations` and the combine-mode button in the
+widget settings panel. `test/all-of-triggers.test.js` (the old per-timer design) was replaced by
+`test/trigger-combine-mode.test.js`, which is the current, accurate coverage.
 
-**"Any of these lines"** is achievable today and always was: make two timers on the same aura with
-the same name and different trigger text, and both fire. The dispel announcer in the app is exactly
-that — one name, three trigger lines. What was missing was a way to make the *kind* of match you
-wanted, and that is now on the form.
+## The P0 detection-engine rework — 25 Aug, outside the numbered notes
 
-**"All of these lines"** is genuinely not built, and your own note said it could not be estimated
-because three things are undecided. They still are:
+This isn't one of your 40 notes, but it was `CLAUDE.md`'s own top-priority backlog item, so it
+belongs here too: the architectural fix for "every check that doesn't pass should continue, not
+end the check" - your own diagnosis of why bard songs, Quick Buff, and disambiguation candidates
+kept coming up wrong from three different angles.
 
-- Over what window must both lines arrive? A minute? Any time until you restart?
-- Does anything show on screen while it is waiting for the second line?
-- If only half ever arrives, does it expire, and after how long?
+Built as **"Use evidence-based detection"**, a third Experimental toggle alongside note 26's
+stacking toggle, off by default under Log page → Diagnostics. Before this, the unique-landing-text
+tier's "not currently memorized" / "an ally's burst just fired" checks could silently `IGNORE` a
+real landing outright - a soft signal treated as a hard veto, with no later tier ever getting a
+chance to resolve it correctly. With the toggle on, those two signals still count as evidence
+against the match, but the outcome becomes a queued disambiguation prompt instead of a silent drop.
+A genuine "never scribed this at all" stays a hard veto either way - that one is real negative
+evidence, not just an absence of positive evidence.
 
-## What I would do next, in order
+A fourth, related toggle - **"Use cast-time-aware confirmation"** - answers the P0c idea `CLAUDE.md`
+had explicitly parked ("not now"): it scales the fallback confirm/cancel window by the spell's own
+cast time instead of one flat window for every spell, using the mote-spreadsheet's per-tier
+cast-time rates plus a confirmed Spell Casting Deftness AA multiplier.
 
-1. **Note 27, the "Buffs shown" section.** Largest unbuilt piece. Needs the two answers above.
-2. **Note 26, overwrite detection.** The only open item that makes the app show something wrong.
-   Costs you one cast to unblock.
-3. **Notes 9 and 10 together.** Widen the trigger model once. Note 10 is cheaper now that the
-   cooldown half exists. Notes 38 and 39 both sit behind it.
-4. **Note 12, the mez tile.** Now that mez tracking works, the counted tile is worth revisiting.
-5. **Note 2** — needs log samples that do not exist yet. (Notes 19 and 20 were on this line and are off it: 19 needed no samples in the end, and 20's data was found online.)
+**None of these three toggles (evidence model, cast-time filter, stacking model) has been run
+against a real log session yet.** Each has its own test file against the real roster, and the
+legacy behaviour (all off) still matches the old baseline, but "does this actually fix the three
+live-reported symptoms without introducing new ones" is a question only a real play session can
+answer. See `docs/HANDOFF.md` for what to do first.
+
+## What's actually still open
+
+1. **Turning the three new detection toggles on and testing them live.** See the P0 section just
+   above and `docs/HANDOFF.md`. This is now the real "what's left" item that note 26's old entry
+   used to be.
+2. **Note 2** — needs log samples that do not exist yet, and you said you're bringing this one
+   yourself. Not blocking anything else.
+3. **Two file deletions from this session worth a second look before committing**:
+   `needs-duration-review.txt` and `new spell roster to be added.xlsx` (the roster's documented
+   authoritative source) are both gone from the working tree. See `docs/HANDOFF.md`'s housekeeping
+   section.

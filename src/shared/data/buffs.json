@@ -141,7 +141,7 @@
   "name": "Alacrity",
   "spellId": 170,
   "kind": "buff",
-  "durationSec": 660,
+  "durationSec": 492,
   "landingText": "You feel much faster.",
   "endedText": "Your speed returns to normal.",
   "iconId": 16,

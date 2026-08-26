@@ -43,7 +43,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a cha
 a zone. If it is red, nothing below is worth doing yet — read the failure text, it says what broke
 and why.
 
-**36 suites, 570 cases.** The ones worth knowing by name, because each guards something that broke
+**52 suites, 802 cases** (as of 25 Aug — was 36/570). The ones worth knowing by name, because each guards something that broke
 for real once:
 
 | Suite | Guards |
@@ -63,9 +63,11 @@ for real once:
 | `zone-routing.test.js` | all 10,712 routes, including the tie-break that looks like dead code and is not |
 | `xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
 
-The other 22 cover cooldowns, enemy debuffs, gem slots, the resist flash, share codes, sound-only
-auras, text auras, the song pulse, zone gating, premades, the profile label and the settings panel
-layout.
+The other suites cover cooldowns, enemy debuffs, gem slots, the resist flash, share codes, sound-only
+auras, text auras, the song pulse, zone gating, premades, the profile label, the settings-panel
+layout and shapes, bard songs, charm broke, buff+cooldown, reverse/combine-mode triggers, zone
+triggers, text justification, zero-duration timers, custom-timer and sound debug logs, per-profile
+memorized state, and the evidence-based-detection toggle.
 
 If the roster capability snapshot fails after a deliberate roster change, read the printed delta,
 and if every moved number is intended:
@@ -152,13 +154,100 @@ is rebuildable from the spreadsheet in a minute with `node tools/build-roster.js
 after a fortnight. **Log page → Diagnostics → "Open the detection log folder"**, with the full path
 printed beside the button so you can reach it when the app is not running.
 
+## A debuff can never land as a self-buff (reported twice, 24 Aug)
+
+Reported live twice in one day, and the second report is what mattered: *"boil blood is a debuff,
+it should never be in buff tracking. second time so there is a wider problem."* Right, and here's
+why it was a wider problem rather than one bad spell.
+
+The first report (Languid Pace, a Slow debuff) was patched inside ONE tier - the ambiguous-landing-
+text tier's spellbook-narrowing - by filtering out debuff/dot/charm/nuke candidates before it
+narrows. That's still in place and still doing real work (`selfPlausible` in `handleLine()`). But
+Boil Blood's landing text ("Your blood boils.") is **unique** in the roster, so it never went near
+that tier at all - it landed through the highest-confidence one instead (an exact, unshared landing
+text), which had no category check of its own. One tier got patched; a different one had the exact
+same hole.
+
+Fixed at the single place every self-landing tier already funnels through - `_land()` itself - so
+this can't happen a third time from a fourth tier. A first-person landing line ("Your blood boils.")
+can only ever mean something was cast AT the player, never BY them - nothing you cast lands with
+your own name on it - so any spell the roster marks `debuff`/`dot`/`charm`/`nuke` is refused outright,
+not routed anywhere.
+
+- [ ] **Get hit by any mob debuff/DoT/nuke/charm that has its own unique landing text.** *Expect*:
+      it does NOT appear in Self Buffs, and the detection log shows `IGNORED "<name>" - detrimental
+      (<category>), not something you can self-buff` instead of a `LANDED` line.
+      **Attempted self-verification 25 Aug, inconclusive** - injected `Your blood boils.` (Boil
+      Blood, the exact spell this fix was reported against) and the result WAS correctly refused,
+      but via a different guard: `IGNORED "Boil Blood" - unique text, never scribed by you at all,
+      track others OFF` - the earlier spellbook-check tier rejected it before the `_land()`-level
+      `ENEMY_SPELL_CATEGORIES` refusal this section is actually about ever got a turn. Same correct
+      outcome, wrong tier exercised - this needs an actual mob debuff caught live (or a synthetic
+      cast-begin line for something scribed/memorized first, to reach the later tier) to really
+      confirm the fix this section describes.
+- [ ] **Languid Pace (or any other debuff sharing ambiguous text) still doesn't land either** - the
+      original point fix and this blanket one should agree, not just the new one.
+- [ ] **Nothing about your REAL buffs changed.** Cast anything ordinary and confirm it still lands
+      exactly as before - this only touches the debuff/dot/charm/nuke categories.
+- [ ] **If you ever WANT to know when a mob's debuffed you** - there is currently no aura for that
+      at all (only auras for debuffs *you* cast, via "Also watch these on enemies"). Say so if you
+      want one; it's a real, separate feature, not a side effect of this fix.
+
+## An ally's own buff wrongly landing as YOURS (Insight/Dovairous, 24 Aug)
+
+Reported live: Insight (an Enchanter-only buff) sitting in Self Buffs on a BRD/CLF character, with
+"Track buffs cast on me by others" OFF - *"it should not be put on me if it did not see my name
+cast it... this is a BASIC check from day 1."* Root-caused from the real, live raw log rather than
+guessed - two separate real gaps, both closed:
+
+1. **The spellbook check only ever covered "not currently in a gem".** A spell your class could
+   never scribe at all - not "unloaded right now", never once possible - skipped that check
+   entirely and fell straight through to a confident `LANDED`. Fixed: absence from the spellbook
+   file altogether is now checked directly, not just gated behind "is this even memorizable by me".
+2. **The real trigger, found after checking the raw log line by line:** `"Dovairous activates
+   Quick Buff."` - an ally triggering the exact same instant multi-buff grant this app already
+   documents for the player's OWN use (gotchas #12/#18), just from someone else. It drops a whole
+   stack of buffs on the entire group at once with no per-spell cast line for any of them, so the
+   existing "recently cast by X" check had nothing to see. Confirmed at scale against a real
+   session log: **460 landings** were being silently absorbed as the player's own during these
+   ally-triggered bursts. Fixed two ways together: (a) any third-person landing suffix seen on
+   ANOTHER person (not just during a burst) is now recorded as evidence, the same way a cast-begin
+   line already is; (b) `"<Name> activates X."` is now recognised directly and opens a short window
+   of extra caution for the player's own unique-text landings.
+
+- [x] **Get buffed by a group-wide instant grant someone ELSE triggers** (Quick Buff or similar).
+      *Expect*: none of what it drops shows up in Self Buffs unless you also turn on "Track buffs
+      cast on me by others" - check the detection log for `ALLY ACTIVATE "..." by "..."` followed
+      by `IGNORED "..." - ... an ally's instant grant just fired`. **Self-verified 25 Aug** by
+      injecting `Dovairous activates Quick Buff.` + `You are infused with power.` into the live
+      log and reading the result straight from the detection log: `ALLY ACTIVATE "Quick Buff" by
+      "Dovairous"` followed by `IGNORED "Infusion of Spirit" - unique text, an ally's instant grant
+      just fired, track others OFF` - exact match, no need for you to check the overlay.
+- [ ] **Your OWN Quick Buff (or equivalent) is completely unaffected** - still grants everything it
+      always did, same as before this fix.
+- [ ] **An ally's buff landing on THEM (not you) while you're doing something else** still doesn't
+      interfere with your own real casts - only landings that would otherwise have been blindly
+      self-attributed with zero evidence are affected.
+
 ## Rank collapsing
 
 - [ ] **Ranked spells no longer prompt.** A landing text shared only by ranks of one spell (e.g.
       "A soft mist surrounds you." — Shauri's Sonorous Clouding plus I/II/III) resolves silently to
       the LOWEST rank. All ranks stay listed in Known Buffs — only the prompt is gone.
+      **Attempted 25 Aug, inconclusive** - injecting the cast-begin line ahead of the landing text
+      resolved it cleanly (`LANDED "Shauri's Sonorous Clouding" - named cast, confirmed by its
+      landing text`), but that's the STRONGER named-cast tier, not the ambiguous-text-only path
+      this item is actually asking about. Needs the landing line sent with no preceding cast-begin
+      to really test the rank-collapse behaviour.
 - [ ] **Genuinely different spells still prompt.** "Your mind clears." (Brilliance vs Cassindra's
       Chant of Clarity) must still ask.
+      **Attempted 25 Aug, inconclusive** - injected the bare landing line with no cast-begin, and it
+      resolved silently anyway (`LANDED "Cassindra's Chant of Clarity" - ambiguous text "Your mind
+      clears." narrowed to 1 by spellbook`) - your account's own spellbook only has one of the two
+      candidates scribed, so the spellbook-narrowing tier settled it before it could reach the
+      "genuinely ambiguous, must prompt" case this item means. Confirming this needs BOTH spells
+      scribed at once (or the spellbook check bypassed), so it isn't something I can manufacture
+      from the log alone.
 
 ## Buff durations scale with spell rank (notes 11 and 17)
 
@@ -343,23 +432,53 @@ died, or the spell wore off — instead of sitting there until its timer runs ou
 that is 277 tiles, roughly one every few hours of play. Nothing stopped being *detected*; things
 stop being *shown* once they are over. If you would rather they stayed put, say so — it is one line.
 
-## Counting mobs with the same name (notes 12 and 18)
+## The "Watching: cast by an ally" toggle (note 40)
 
-- [ ] **AoE mez three "a greater kobold" and the tile should say x3.** One tile, not three rows.
-- [ ] **Kill one — it becomes x2. Kill another — x1.** At x1 the count disappears entirely rather
-      than showing "x1".
-- [ ] **The countdown is the one breaking soonest**, not the last.
-- [ ] **A mez wearing off, a mob dying, and a mez being broken each remove exactly one**, not all.
-- [ ] **Buffing a groupmate three times still shows one**, with no count. A re-buff is a refresh,
-      not a second target.
+A Custom debuff aura now has a **Watching:** choice — "Cast by you" (the original behaviour above,
+unchanged) or "Cast by an ally". Ally mode tracks the same spells on the same enemies with the same
+countdown, but doesn't wait for evidence you cast it yourself — it lands the moment the debuff's own
+third-person text appears on something enemy-shaped. It never records who actually cast it, only
+that it landed, same as you asked for.
 
-Worth knowing what this cannot do: the game never distinguishes two mobs with the same name, so
-when one of three kobolds wakes up the app knows only that *one* did. It drops the one closest to
-expiring, which is the best guess available and is right nearly always.
+- [ ] **Have a groupmate mez/snare/slow something you're fighting, with the aura set to "Cast by an
+      ally"** — the tile should appear with the mob's name, the same as if you'd cast it yourself.
+- [ ] **With the aura still set to "Cast by an ally", cast the same spell yourself** — it should
+      still land (ally mode doesn't exclude your own casts, it just doesn't require them).
+- [ ] **Switch the same aura back to "Cast by you"** — a groupmate casting it should now do
+      nothing; only your own cast should track.
+- [ ] **The tile still clears correctly** — mob dies, spell wears off, mez breaks — the same as
+      self-mode above, since it's the same wear-off detection either way.
+- [ ] **Two auras on the same spell, one each way** (if you want to check this) — one set to "Cast
+      by you", one to "Cast by an ally" — both should track independently.
 
-**Also worth knowing before you test it:** `Mesmerize` is single-target, and 214 of your 239 casts
-produced exactly one landing. Every AoE case in your logs is somebody else's `Mesmerization VI` or
-`VII`. So the counting is sound but the tile will not light up until you cast a ranked mez.
+## One tile, period, for an enemy-debuff aura (notes 12 and 18, scrapped 24 Aug, then simplified again 24 Aug)
+
+First pass, same day: used to count same-named mobs sharing one key as x2/x3. Reported live:
+chain-mezzing a single target before it wakes (the normal way to hold CC) hit that same key
+exactly the way a second, genuinely different mob would, so the count climbed on what was really
+only ever one mezzed mob — the log gives two same-named mobs no separate identity, so there was
+never a way to tell the two cases apart from the log alone. Scrapped the counting: one tile per
+key (mob + spell), duration refreshed on a new cast, same as a buff on a groupmate already worked.
+
+**Second pass, later the same day: even that was still too many tiles.** An AoE mez landing on
+three *different* mobs at once (three distinct keys, since the names differed) drew three separate
+tiles - correct by the first pass's own logic, but not what you wanted. Your answer: *"ONE tile
+total for the whole aura, always... like a text aura."* So a `trackOnEnemies` aura (Custom debuff
+aura, or a single-spell "debuff on an enemy" premade) now gets the exact same one-tile rule a text
+aura already had, applied in `overlay.js`'s `visibleBuffs()` regardless of display mode - icon or
+list, not just text. The engine underneath still tracks every distinct target (death/wear-off/
+mez-broken detection needs that to keep working) - this only narrows what's actually DRAWN.
+
+- [ ] **AoE mez several different mobs at once.** *Expect*: exactly ONE tile on screen, however
+      many mobs actually got mezzed. Which one it shows follows the aura's own "Sort by" setting,
+      same as a text aura.
+- [ ] **Mez one mob, then mez a second, different mob before the first wakes.** *Expect*: still one
+      tile - it should now show the SECOND mob, not both.
+- [ ] **The tile still clears correctly** whichever mob it's currently showing wakes/dies/wears
+      off, and a new one takes its place if another mob is still mezzed underneath.
+- [ ] **An ordinary Ally Buffs aura (not tracking enemies) is unaffected** - Clarity on three
+      different groupmates should still show three tiles, one per person. This rule only applies
+      to `trackOnEnemies`.
 
 ## Someone else casting a mez
 
@@ -392,7 +511,33 @@ becomes what they cast.
 
 Add Aura → **Resist flash**. One aura, covers every spell you cast — you do not pick which.
 
-- [ ] **Get a mez resisted and RESISTED flashes up**, then goes away on its own.
+**Reported live 24 Aug: did nothing at all. Two separate bugs, both fixed, both confirmed by
+feeding the exact reported log line straight into the detection engine (it fired correctly on its
+own the whole time).**
+
+1. `buffSource:'customTimer'` auras were being run through the ordinary buff-name picker filter in
+   the overlay, and that filter is permanently empty for this source (the picker UI is deliberately
+   hidden for it, since there is no shared list to pick from - see CLAUDE.md). So every custom-timer
+   aura, not just this one, was silently filtering itself down to nothing on the overlay. Fixed in
+   `overlay.js`'s `visibleBuffs()`.
+2. **Reported again after (1) was fixed, still not appearing** - because `customTimers:active` is
+   one broadcast carrying every active timer from EVERY customTimer-sourced widget, and nothing
+   scoped a widget's overlay window down to just its OWN definitions. Once you have more than one
+   custom-timer aura (Resist flash plus a hand-built one, say), each one's text tile could end up
+   showing the OTHER widget's active trigger instead of its own, since a text aura draws only one
+   tile and just picks whichever definition sorts first out of the combined pool. Fixed in
+   `overlay.js`'s `currentSourceBuffs()` - each widget now only ever sees its own timer ids.
+
+Both affect every checklist item below AND the plain "Custom timer aura" item further down this
+file - re-check both, not just this one, and specifically re-check with a SECOND custom-timer aura
+also present, since (2) only ever showed up that way.
+
+- [ ] **Get a mez resisted and it flashes "resisted your &lt;spell&gt;"** — the actual spell name,
+      not a bare "RESISTED" — then goes away on its own. Reported live 24 Aug: "resist text should
+      say 'resisted your [skill name]'." The name comes from whatever the "contains" trigger's own
+      match left over on the real line (customTimerEngine's `capturedText`, surfaced through the
+      `{spell}` token every text aura already supports) - if your own Resist flash still says the
+      old bare word, open its settings and click "Reset to default" to pick up the new message.
 - [ ] **It does NOT fire when something resists a spell somebody else cast**, and does NOT fire
       when a spell is resisted *by you* — those are different lines, and there are 761 of the
       second kind in your logs against 970 of the real ones, so if this is wrong the flash will be
@@ -400,6 +545,14 @@ Add Aura → **Resist flash**. One aura, covers every spell you cast — you do 
 - [ ] **It lasts about a second and a half.** You asked for 1.4s. Timers are swept once a second,
       so in practice it clears somewhere between 1.4 and 2.4 seconds after the resist. If that
       reads as too long or too short, say so — the number is one line.
+- [ ] **A plain user-built "Custom timer aura" (list or icon mode, not a premade) also shows on
+      the overlay now.** This was broken the same way and never had its own checklist item - add
+      one, trigger it, and confirm the tile actually appears in the game overlay, not just in the
+      app's own editor.
+- [ ] **Try `{spell}` in the "Say" box on any hand-built "contains"-mode custom timer** (not just
+      Resist flash) - e.g. a timer watching `"has been slain by"` could say `"{spell} down!"`.
+      *Expect*: it fills in with whatever text the trigger actually matched on the real line, not
+      the timer's own name.
 
 ## The "Custom debuff aura" type (note 34)
 
@@ -486,33 +639,31 @@ only be reached by a premade until now.
 - [ ] **Build a "containing" timer and check it fires.** Be specific with the text — a short word
       set to "containing" will fire on nearly every line.
 
-## Timers that need more than one thing to be true (note 9)
+## Timers that need more than one thing to be true (note 9) — SUPERSEDED 25 Aug, do not test
 
-Your answer settled the design: "the time window should be whatever each individual trigger has...
-limiting it to checks happen within a set time frame is not something i want." So there is no
-shared window — each condition carries its own, and a zone condition has none at all.
+**This whole section describes the "Extra conditions" feature, which no longer exists.** You said
+live, 25 Aug: "the extra conditions tab for a trigger should be completely removed because it's not
+in an obvious place... triggers should be done by just adding multiple triggers, then have a button
+to the left of edit, that toggles between AND and OR." It was removed outright, not reworked - see
+**"Trigger combine modes (25 Aug)"** near the end of this file for what replaced it (Independent /
+AND / OR on the ordinary trigger list every widget already has). Every checkbox below described a
+UI that is gone; testing them would just confirm they no longer exist.
 
-On any custom timer, in the Add/Edit timer box, there is a new collapsed section: **Extra
-conditions**. Add conditions there and the timer only starts when all of them are true at once.
+## Add timer form layout (reported live 24 Aug) — the "Extra conditions" half is now moot
 
-- [ ] **Two lines.** Add two line conditions and make one happen. Nothing should appear — not a
-      dimmed tile, not a partial one, nothing. Make the second happen and the timer should start.
-- [ ] **Order should not matter.** Try it the other way round.
-- [ ] **Let one go stale.** Give a condition a short time (say 5s), trigger it, wait past that,
-      then trigger the other. Nothing should start.
-- [ ] **A zone plus a line** — the case you said this is mainly for. Add "You are in a zone" and one
-      line condition. It should fire only in that zone.
-- [ ] **It should not re-fire on every line afterwards.** A zone condition never lapses, so this is
-      the one I would most expect to go wrong: once it has fired, unrelated chat should not keep
-      restarting it.
-- [ ] **The section summary.** Close Extra conditions and it should still say how many you have
-      set, so a condition is never invisible.
-- [ ] **Remove them all** and the timer should go back to firing on its plain trigger line rather
-      than becoming one that never fires.
+Two complaints about the Add/Edit timer box, both about ORDER, not new functionality. The first is
+still real; the second refers to a section (Extra conditions) removed 25 Aug, see the note above.
 
-If the app does not know what zone you are in yet, a zone condition counts as satisfied rather than
-blocking. That is deliberate — it only learns the zone when you cross a line, so treating "unknown"
-as "wrong zone" would leave the timer dead for a whole session if you started in the right place.
+- [ ] **The icon picker gallery opens right next to the icon box, name and duration fields**, not
+      down below Cooldown. It was always the very next thing in the markup after those fields -
+      what pushed it visually far below them was Cooldown (and, at the time, Extra conditions -
+      since removed) being nested inside that same block, above it.
+- [x] ~~Extra conditions and Cooldown now sit at the bottom of the form~~ — Extra conditions is
+      gone entirely (see above); Cooldown alone still sits at the bottom, below "What starts it?"
+      and the trigger-specific fields, which is the part of this claim that's still true.
+- [ ] **Nothing about what Cooldown DOES changed** — this is only where it sits. A timer
+      with a cooldown already set should show it exactly as before, just lower on
+      the page.
 
 ## Damage parser (note 19)
 
@@ -625,8 +776,26 @@ ever shows one thing at a time.
       — and the trigger announces when the line appears.
 - [ ] **Confirm the Display style radios are NOT shown** on a text aura, and that no fourth "Text"
       option has appeared on your other auras.
+- [ ] **The picker card says "Triggers", not "Buffs shown", on a text aura.** Reported live 24 Aug:
+      "buffs shown" describes an icon/list aura's whole reason to exist (a grid of things it
+      displays) - a text aura shows none of that, it fires one line of words when a picked spell
+      lands. Originally relabelled "Buff to trigger"; reworded again 25 Aug to plain "Triggers",
+      reported live as clearer. Switch back to Self Buffs or another icon/list aura and confirm
+      THAT one still says "Buffs shown" - the heading is shared DOM across every widget's panel.
+- [ ] **A text aura pointed at ally buffs no longer offers "Group by player" or "Hide the player
+      name on each buff".** Reported live in the same pass - grouping needs per-person TILES, and a
+      text aura never draws more than one line total, so neither option could ever do anything for
+      one. (An icon/list aura on the ally source should still offer both, same as always.)
+
+**Bigger, not done this pass:** you also said the whole text-aura settings panel needs a real
+rebuild - it's still built on top of the icon-aura panel with most of its fields hidden rather than
+a panel designed for what a text aura actually has, and the two fixes above are targeted patches to
+the worst of it, not that rebuild. Flagging so it isn't mistaken for finished.
 
 **The dispel announcer**, from "+ Add aura" → Premade aura:
+
+**Same root cause as the Resist flash bug above (24 Aug) - this one had never been reported, but
+had the identical latent bug and should be re-checked for real now that it's fixed.**
 
 - [ ] **Add "You Have Been Dispelled".** *Expect*: it lands on its own settings page, already set
       up, drawing nothing yet.
@@ -732,6 +901,26 @@ tiles** card on the Setup page choosing what counts as "the same". Off by defaul
 - [ ] **Rename an aura while it is unlocked.** *Expect*: the pill updates immediately.
 - [ ] **Unlock several auras at once.** *Expect*: you can tell which box is which, which is the
       entire point of the note.
+- [ ] **Unlock a custom text aura while it's idle (nothing currently flashing).** *Expect*: a
+      reasonably wide box, not a small square. Reported live as "custom text aura when moving is
+      just icon shaped" - the box IS the window's real bounds, and an idle text aura renders no
+      tile at all (nothing to flash), so its measured content width used to collapse toward the
+      bare 40px floor every other idle window also has. Fixed with a wider floor specific to text
+      auras (160px) so idling doesn't make it read as an icon tile.
+
+## Renaming an aura from the sidebar
+
+Right-click any aura in the sidebar → **Rename**.
+
+- [ ] **It actually opens something.** Reported live as doing nothing at all - root cause:
+      `window.prompt()`, which Electron's renderer never implements, so the dialog never appeared
+      and there was nothing to notice going wrong. Fixed to instead open the aura's own settings
+      page and focus/select its existing Name field (the one under "Display & size" - it already
+      saved correctly, it was only ever reachable by scrolling to it by hand before).
+- [ ] **The Name field is focused and its text pre-selected** - you should be able to just start
+      typing the new name immediately, no clicking into the box first.
+- [ ] **Typing a name and clicking away (or pressing Enter/Tab) saves it**, same as editing the
+      Name field normally always has.
 
 ---
 
@@ -824,6 +1013,14 @@ it, the app falls back to Alt+Shift+H and the hint tells you which one you got.
 
 In an aura's settings, under the loadout toggles: **"Only in:"**. Leave it empty and the aura shows
 everywhere. Type a zone and press Enter, or pick from the list, to limit it.
+
+**The zone-tracking half is self-verified 25 Aug** by injecting `You have entered North
+Freeport.` into the live log and reading it straight back from the detection log: `ZONE now "North
+Freeport"`. That confirms the app correctly learns where you are from a synthetic zone line, same
+as a real one. **The aura-visibility half below still needs a real zone-gated aura to exist** -
+you don't currently have one, and I didn't create one myself: doing that means writing to
+`widgets.json` while the app has it open, which risks racing the app's own save and corrupting
+your real config, so this half is left for you (or a future session with the app closed).
 
 - [ ] **Limit an aura to the zone you are in.** It should stay on screen.
 - [ ] **Zone somewhere else.** It should disappear, and its settings should say *"Hidden right now:
@@ -1142,6 +1339,35 @@ Kept as regression guards — each of these was broken once.
   usable (it was previously clipped to a sliver).
 - [x] Two timers sharing a name *and* trigger text both fire, with their own distinct icons.
   *(Regression guard — this was a real bug.)*
+- [ ] **Zone change trigger (25 Aug).** In "+ Add trigger", pick "Zone change" (was disabled
+  "Planned" until now). *Expect*: a zone dropdown (only zones you've actually visited while the
+  app was watching show up — same list as "Only in") plus Entering/Leaving radios. Zone in-game
+  to a zone on the list: an "Entering" trigger set to that zone should start its timer the instant
+  you arrive; a "Leaving" trigger set to that same zone should start when you zone back OUT of it.
+  *Note*: a "Leaving" trigger cannot fire the very first time you leave a zone you were already
+  standing in when the app launched — only from a zone the app itself saw you arrive in during
+  this session. This is deliberately different from "Only in" (that gates whether the whole aura
+  is visible while you're in a zone, persistently) — this is a one-shot timed event on the moment
+  of entry/exit. Engine behaviour is unit-tested end to end in `test/zone-trigger.test.js`; what's
+  left is confirming it reads right live.
+- [ ] **Reverse detection (25 Aug).** Tick "Reverse detection" in the Custom triggers card, next
+  to "+ Add trigger" (was a disabled per-trigger "Planned" checkbox in the timer modal until now —
+  moved to be whole-aura instead, per Shara's correction that it needed to work across triggers
+  without setting a flag on each one separately). *Expect*, with a single Independent-mode trigger:
+  the tile shows immediately, with no countdown (∞-style), from the moment the checkbox is ticked —
+  with nothing logged yet. Trigger the text in-game (or via a synthetic log line): the tile should
+  disappear entirely (not just change colour) for the Duration set above, then reappear on its own
+  showing ∞ again.
+  - [ ] **Two Independent triggers on the same aura** — each should get its own default-visible
+    tile, and each hides independently when its own trigger fires (the other stays visible).
+  - [ ] **AND mode, the motivating case** ("this skill is ready, cast it to make it go away"): the
+    combo tile should stay visible until BOTH triggers have fired (within the AND window), then hide
+    as one tile — one trigger firing alone must not hide it.
+  - [ ] **OR mode**: the combo tile should hide the moment EITHER trigger fires.
+  - [ ] **Works in all three display modes** — icon/tile, list, and text — not just icon mode.
+
+  Engine behaviour (including the AND/OR combo cases) is unit-tested end to end in
+  `test/reverse-trigger.test.js`; what's left is confirming it reads right live.
 
 ## Sounds
 
@@ -1161,6 +1387,69 @@ Kept as regression guards — each of these was broken once.
 - [x] **Nothing breaks over time.** Leave a grouped aura running a few minutes — tiles must stay
   inside their group, not drift out into a flat pile.
 - [x] The grouping section is **hidden** on self-buff and custom-timer auras.
+
+## Bard Songs (backlog #15, 25 Aug)
+
+New premade aura — "+ Add aura" → Premade widget → **Bard Songs**. Every bard song currently on
+the player, no matter who cast it, grouped by caster (using the same grouping UI Ally Buffs already
+has) with an **Unknown** group for anything that can't be attributed. Engine behaviour is
+unit-tested end to end in `test/bard-songs.test.js`.
+
+**Attribution itself confirmed live, 25 Aug, game down — synthetic lines injected directly into the
+real combat log, verified against the real debug log, "Track buffs cast on me by others" OFF the
+whole time:**
+```
+[16:58:32] BARD SONG "Anthem de Arms" - attributed to You        (self-cast: "You begin singing...")
+[16:59:15] BARD SONG "Anthem de Arms" - attributed to Unknown    (landing with no cast-begin evidence)
+[17:03:38] BARD SONG "Anthem de Arms" - attributed to Avenrae    (ally cast-begin: "Avenrae begins singing...")
+```
+That third line is also the confirmation for the veto-waiver design change (see CLAUDE.md #15):
+the ally-cast landing would ordinarily be `IGNORED` with the toggle off - the log shows it landing
+anyway ("landed anyway (bard song)") specifically because `known.isBardSong` was true, not because
+the global toggle was on. **What's still open is the on-screen half** - none of the above confirms
+the actual widget renders these correctly, since it was checked at the engine/debug-log level only:
+
+- [ ] **Settings panel shows exactly**: display style (list/icon), sort, merge, borders, timer
+  text, opacity, position, alerts/sounds, and the ally-grouping controls (Group by player,
+  Stack vertically/side by side, Hide the player name). *Expect*: **no** "Buffs shown" card/buff
+  picker, and **no** "Track buffs cast on me by others" toggle (that one's global and lives on Self
+  Buffs already) — if either shows up, the shape wiring is wrong.
+- [ ] **Sing a song yourself in game.** *Expect*: it appears in the aura on screen, grouped under
+  **"You"**.
+- [ ] **An ally in your group sings a song, for real.** *Expect*: it appears on screen grouped
+  under their real name, with "Track buffs cast on me by others" left OFF.
+
+## Buff + cooldown toggle, and the nuke filter (25 Aug)
+
+- [ ] **Add Aura → Premade → Buff timer, pick a spell with both a duration and a recast** (e.g.
+  Alacrity). *Expect*: an "Also track when it's ready to cast again" checkbox appears under the
+  "On:" radios, only while "Yourself" is selected - switching to "Someone you cast it on" should
+  hide it. Check it and create the aura: the tile should count down the buff's own duration first,
+  then roll straight into the recast countdown without resetting or disappearing in between -
+  confirm both phases actually look different (see the existing cooldown-phase styling).
+- [ ] **Pick a spell with no known recast time** (most buffs). *Expect*: the checkbox never
+  appears at all - just the ordinary Buff timer flow, unchanged.
+- [ ] **Anarchy (or any nuke) no longer appears in the Buff timer / Debuff on an enemy pickers.**
+  *Expect*: only spells with a real duration are offered now; a real mez/charm/snare/slow debuff
+  should still be there.
+
+## Charm Broke premade (25 Aug)
+
+- [ ] **Add Aura → Premade → Event alerts → Charm Broke.** Charm something, let it break (or wait
+  for it to wear off). *Expect*: a flash reading "{target name} has broken free!" appears and
+  clears itself after a few seconds - confirmed against the real log's own wording
+  (`"Your Beguile spell has worn off of a greater kobold."`) via synthetic injection, but not yet
+  seen firing from an actual in-game charm break.
+- [ ] **An ally's buff wearing off (not a charm)** should NOT fire this aura - only the roster's
+  own charm-category spells should.
+- [ ] **A song already running when the app starts, or whose cast line was missed**, should land
+  under **"Unknown"** rather than being guessed as yours — this is the honest-uncertainty case the
+  whole feature exists for.
+- [ ] **Two different casters both maintaining the same song on you** (yourself and a groupmate,
+  or two groupmates) should show as two separate tiles/rows, one per caster, not one overwriting
+  the other.
+- [ ] **List mode and icon mode** both work, matching how Self Buffs/Ally Buffs already look in
+  each mode.
 
 ## Memorized gem bar
 
@@ -1198,6 +1487,17 @@ Kept as regression guards — each of these was broken once.
   *Expect*: a buff about to expire still goes red — the low-time warning deliberately overrides any
   custom colour.
 - [x] **Margin width** slider now works — changes the gap between icons in icon mode.
+- [ ] **Progressive disclosure, three gaps found by audit and fixed (25 Aug):**
+  - [ ] **Auto-hide.** With "Hide auras when EverQuest isn't the focused window" OFF, "Also show
+    them while this app is the focused window" should be hidden entirely (it did nothing while
+    off, and stayed visible/clickable anyway). Ticking the auto-hide checkbox reveals it
+    immediately, unticking hides it again — no reselect/reopen needed.
+  - [ ] **Log splitting.** With "Enable log splitting" OFF, the gap-detection checkbox, output
+    folder row, and the Change/Reset buttons should all be hidden. Ticking the enable checkbox
+    reveals them immediately.
+  - [ ] **"Always on screen" vs "Show events for".** On a text or ally-alert aura, ticking "Always
+    on screen, with nothing to wait for" should hide the "Show events for: Xs" slider immediately
+    (it directly contradicted the always-on label before this fix). Unticking brings it back.
 
 ## Detection
 
@@ -1208,3 +1508,288 @@ Kept as regression guards — each of these was broken once.
   confirmed with Shield of Flame on both Avenrae and Lasartik. Had **never** fired before: the tier
   was gated on the recipient being a known group member, and group membership is only learned from
   join/leave lines seen live.
+
+## Trigger combine modes (25 Aug)
+
+Replaces the old per-trigger "Extra conditions" all-of list, reported live as "not in an obvious
+place." The list of triggers on a custom-text aura (the same "+ Add trigger" list that already
+existed) now has a button next to each row, to the left of Edit, that cycles the whole aura through
+three modes: **Independent** (unchanged default), **AND**, **OR**. Engine behaviour is unit-tested
+end to end in `test/trigger-combine-mode.test.js`; what's left is confirming it reads right live.
+
+- [x] **The combine-mode button** shows the same label on every row of one aura's trigger list, and
+  clicking any row's button moves them all together (Independent → AND → OR → Independent).
+  **Confirmed live 25 Aug** - you set your "Custom timer aura" (triggers "hi"/"hii") to OR
+  yourself via this button; both triggers work as OR under it (see below).
+- [x] **Independent** (the Dispelled premade, unchanged): all three severities still fire
+  independently exactly as before. **Self-verified 25 Aug** by injecting `You feel very
+  dispelled.` while your Dispelled aura was actually set to OR (not Independent) at the time -
+  debug log showed `FIRED "Dispelled" - trigger: "You feel very dispelled."` then `ENDED
+  "Dispelled" - duration ran out` 4s later, exactly as expected either mode.
+- [x] **OR**, tried on a custom aura with two different, genuinely unrelated triggers (not the
+  built-in mutually-exclusive dispel text): only ONE tile ever shows, whichever trigger fired most
+  recently, even if both are separately true. **Confirmed live 25 Aug** on your real "Custom timer
+  aura" (triggers "hi" and "hii", combine mode OR) - "hi" fired correctly; the root cause of "hi"
+  firing but not a third word ("hello") was that the second trigger's text was actually "hii", not
+  "hello" - confirmed by reading widgets.json directly, not a combine-mode bug.
+- [ ] **AND**, same two-trigger aura: nothing appears until BOTH triggers have happened; then one
+  combined tile shows, using the first trigger's icon/name. Not yet tried on a real aura - only
+  unit-tested (`test/trigger-combine-mode.test.js`) so far.
+- [ ] **"Extra conditions" is gone** — editing an existing trigger that used to have one no longer
+  shows that section at all; the trigger still fires on its plain text as before.
+- [ ] **Cooldown wording** — opening a trigger with a cooldown set now reads as a forced gap before
+  it can fire again, not just "the tile keeps counting." No behaviour change expected here, only
+  the words.
+- [ ] **The "Triggers" heading** — a text aura's buff/trigger picker card says "Triggers", not "Buff
+  to trigger".
+
+## Settings-panel rework (25 Aug) — "additive" cards per aura type
+
+Grew out of the Ally Buffs conversation: "can you wire everything in to make sure it does NOT
+break anything?" This rebuilt how the per-aura SETTINGS panel (the page you land on after picking
+an aura in the sidebar) decides what to show, for every aura type at once - not the Add Aura
+creation modal, the page you configure an aura on afterward.
+
+**Before:** one shared panel built for a buff aura, with two functions
+(`updateDisplayModeVisibility` + half of `renderBuffFilter`) each independently hiding fields that
+didn't apply, using their own `isTextAura`/`isSoundOnly`/`announcer` booleans - with a real ordering
+bug between the two (ally-grouping visibility had to be set in the SECOND function specifically
+because the first one would get overwritten by it). This is the exact shape of bug CLAUDE.md
+already flagged twice: the old "Extra conditions" section buried where nobody would look, and
+Damage parser/Travel guide still showing a buff-picker and a "Watching:" row that mean nothing for
+either.
+
+**After:** every aura resolves to one of twelve SHAPES (`widgetShape()`), and a single table
+(`SHAPE_FIELDS`) lists exactly which optional rows/cards each shape gets, computed once per render.
+Two accidental leaks are fixed as part of this, not carried forward: Damage parser and Travel guide
+no longer show the buff-picker "Buffs shown" card or the "Watching:" row - nobody had decided to
+show either on purpose, there was simply no branch that said otherwise. This also closes half of
+CLAUDE.md's still-open "Standalone-tool auras need their own settings-panel layout" note.
+
+**Structurally verified already** (source-level tests, not live play): a new `test/settings-panel-
+shapes.test.js` checks every one of the 12 shapes against every one of 22 fields in both
+directions (present where it should be, absent everywhere else) - 264 checks in one test, plus the
+actual wiring (selectWidget computing the shape once and handing the same Set to renderBuffFilter,
+both radio-change listeners recomputing it correctly). Every other affected test file
+(ally-cast-alert, category-borders, enemy-debuffs, merged-tiles, profile-label, sound-only,
+text-aura, text-justify) was rewritten to match, and the whole suite (42 files) passes. A temporary
+console-message listener confirmed the app launches with zero NEW renderer errors from this change
+(it did surface one genuinely pre-existing, unrelated bug - see below - present before this rework
+and before this whole session, now removed from the code once confirmed).
+
+What's left is confirming it actually LOOKS right in the running app, which no amount of source-
+level testing can stand in for:
+
+- [ ] **Open Self Buffs and an Ally Buffs aura's settings.** Should look completely unchanged from
+      before - gem-slot picker, max-duration slider, Display & size, everything.
+- [ ] **Open an ordinary Custom buff aura (icon or list mode).** Unchanged - picker, Watching: row,
+      sort/merge/borders/opacity/position/Alerts all present.
+- [ ] **Open a Custom debuff aura.** "Watching:" row gone, "Cast by you/an ally" row present
+      instead, picker restricted to debuffs, everything else as an ordinary buff aura.
+- [ ] **Open a plain Custom text aura.** Say/size/justify fields, "Show events for", the ally-alert
+      toggle, Always-on toggle, opacity/position/Alerts all visible; no Display style radios, no
+      Sort by, no Merge, no coloured borders, no Timer text topic.
+- [ ] **Open "Someone else cast a mez" (or any allyDebuffAlert text aura).** Same as plain text,
+      but the "Watching:" row must be completely absent (not just showing the wrong thing).
+- [ ] **Open a text aura switched to "Your own text triggers"** (Resist flash, the Dispelled
+      premade, or a hand-built one). Custom triggers card shown instead of the buff picker; no
+      "Show events for" slider (nothing to filter - each trigger has its own duration now);
+      Watching: row still present so you can switch back off triggers.
+- [ ] **Open a Custom sound aura.** Only the buff picker and the Sounds section - no Display style,
+      no icon/list settings, no sort/merge/borders/opacity/position/Alerts/Timer text.
+- [ ] **Open a sound aura switched to "Your own text triggers."** Custom triggers card instead of
+      the picker; still no opacity/position/Alerts (sound-only hides those regardless of source).
+- [ ] **Open a plain Custom timer aura (icon or list, not text/sound).** No "Watching:" row (source
+      fixed at creation); Custom triggers card; sort/merge/borders/opacity/position/Alerts all
+      present like an ordinary buff aura.
+- [ ] **Open a Damage parser aura.** **Behaviour change, look at this one specifically**: no
+      "Buffs shown" card and no "Watching:" row any more - previously both showed but did nothing.
+      Its own Damage meter settings, plus sort/merge/borders/opacity/position/Alerts, remain.
+- [ ] **Open a Travel guide aura.** Same change as Damage parser - no picker, no Watching: row; its
+      own read-only destination display remains.
+- [ ] **Switch an aura's Watching: row between self/ally while its settings are open** (an ordinary
+      custom buff aura). Ally-grouping options should appear/disappear immediately, correctly, with
+      no stale state left over from the previous source - this is the exact bug the old two-
+      function ordering bug could produce.
+- [ ] **Switch Display style between List and Icons while an aura's settings are open.** Icon-only
+      and list-only sub-sections should swap immediately and correctly, same as before this rework.
+
+### A separate, pre-existing bug this surfaced - FIXED, confirmed by reading the code 25 Aug
+
+While confirming the above launched clean, a one-off console listener caught three **uncaught
+ReferenceErrors on every single app launch**, entirely unrelated to the settings-panel work and
+confirmed (via `git diff` against the commit before this whole session started) to predate it:
+`HOTKEY_LABELS is not defined` and `selectedId is not defined` (twice), all inside
+`initDetectionSettingsPanel()`'s hotkey-hint and zone-change callbacks. Both names are real, but
+declared inside a *different* function (`initWidgetsPanel()`) - a cross-function scope reference
+that has probably never worked. Practical effect: the hint text next to the "Hide auras" button
+that's supposed to say which key you actually got ("or press Scroll Lock") likely never populates
+from this path, and two of the zone-change listeners throw instead of refreshing anything.
+
+**No longer true.** Both the `currentZone`/`knownZones` block and the `HOTKEY_LABELS` hint-text
+block now live inside `initWidgetsPanel()` itself, alongside the `selectedId` they depend on - the
+in-code comments at both sites say so directly ("Moved here, into the function that actually uses
+it"). Still worth a `[ ]` confirm below since nobody has watched the console on a clean launch
+since it moved, but this is very likely already resolved rather than still open.
+
+- [ ] **Open the main window and check the console for `ReferenceError`.** Should be silent now.
+      If `HOTKEY_LABELS is not defined` or `selectedId is not defined` still appears, the fix above
+      didn't fully take - flag it, don't assume.
+
+## P0 detection rework, cast-time filter, and self-buff overwrite detection (25 Aug) — none tested live
+
+Three related, independently-switchable Experimental toggles under **Log page → Diagnostics**, all
+**off by default**. See `docs/HANDOFF.md` and `docs/NOTES-STATUS.md`'s "P0 detection-engine
+rework" section for the full reasoning behind each. None of the three has been run against a real
+play session — that's the biggest thing left in this whole document.
+
+- [ ] **"Use evidence-based detection" OFF (default/legacy).** Confirm nothing changed from before
+      this session — same landings, same `IGNORED`s, same prompts as always. This is the safety net:
+      if anything below looks wrong, turning this back off should restore exactly today's behaviour.
+- [ ] **"Use evidence-based detection" ON, one real session.** Watch for landings that used to be
+      silently `IGNORED` (bard songs "not currently memorized," or right after an ally's burst)
+      turning into disambiguation prompts instead. Specifically worth watching: does this produce
+      *more* prompts than feels reasonable, or does it correctly stay quiet for the ordinary case?
+- [ ] **"Use cast-time-aware confirmation" ON.** Cast something with a long cast time and confirm
+      the fallback confirm/cancel window feels proportionate rather than firing early/late. Watch
+      the detection log for the scaled window it computed.
+- [ ] **"Use self-buff overwrite detection" ON.** Cast a self-buff that should overwrite another
+      already active by the game's own stacking rule (e.g. two stat buffs sharing an effect slot)
+      and confirm the stale tile disappears immediately instead of running out its old timer. Also
+      confirm an UNRELATED pair of self-buffs both stay up as normal — a false conflict here would
+      be worse than a missed one.
+- [ ] **All three ON together, one full session.** They're independent switches but interact by
+      sharing the same landings; a full session with all three on is the realistic way you'd
+      actually run this once trusted.
+- [ ] **`node tools/replay-log.js` against a real log, toggles off.** Confirms the legacy baseline
+      (129 distinct buffs / 211,546 landings / 840 ally landings / 27 prompts / 91 unknown texts)
+      is unchanged — this could not be run in the session that wrote this checklist, since the log
+      files live at a path this machine didn't have.
+
+## Smaller items from the same session, not yet confirmed live
+
+- [ ] **Bard-song caster attribution.** Sing something yourself, and separately have a groupmate
+      sing something that lands on you - confirm the Bard Songs aura groups them correctly (You vs.
+      the ally's name vs. Unknown when neither signal fired), and that ending one caster's song
+      doesn't touch another caster's copy of the same song.
+- [ ] **Charm Broke premade.** Charm something, let the charm break naturally, confirm the alert
+      names the freed target and doesn't fire for an ordinary buff/debuff wearing off elsewhere.
+- [ ] **currentlyMemorized scoped per profile.** Swap loadout profiles (the chip bar), then check
+      the "Currently memorized" gem display resets to unknown for the new profile rather than
+      carrying over the old loadout's gems.
+- [ ] **Custom-timer and sound debug logs.** Turn on Diagnostics, fire a custom trigger and an
+      alert sound, confirm both show up in the detection log with useful FIRED/ENDED/played lines.
+- [ ] **Sidebar status dot.** Look at a widget restricted to a profile OTHER than the one active
+      now - dot should read grey. Switch to a profile it IS active on - dot should turn green,
+      live, without needing to reselect the widget.
+- [ ] **Coloured-border width control.** Turn on note 37's category-border toggle on an icon-mode
+      aura and confirm a width slider/control appears; confirm it stays hidden for list-mode auras
+      and for the toggle switched off.
+- [ ] **Text-aura justification.** Set a text aura to left/right/middle and watch it cycle through
+      short and long messages (e.g. "DISPELLED" vs. a full resist line) - confirm the anchored edge
+      stays fixed while the other edge moves, matching the picked side.
+- [ ] **Zero-duration custom timer.** Build a trigger with 0s duration and just a land sound.
+      Confirm it beeps exactly once (not twice) and shows no visible tile flash.
+- [ ] **Custom triggers duration consolidation.** Open an existing Custom timer aura from before
+      this session - confirm it still has a sensible duration (migrated from whichever per-trigger
+      value it used to have) and that the one aura-level slider is what now controls every trigger
+      on it.
+
+## Premade defaults now match her own live setup (25 Aug) - needs a fresh-install check
+
+Reported live: "look into my section of auras that i have created... override the premade settings
+with the ones i have... screen position included." Self Buffs, Ally Buffs, Bard Songs, Resist
+flash, Dispelled and Charm Broke's code-level defaults (`defaultSelfBuffsWidget`/
+`defaultAllyBuffsWidget`/`defaultBardSongsWidget`/`TEXT_AURA_PRESETS` in `widgetStore.js`) were
+rewritten field-by-field to match her own currently-saved widgets - position included, per her
+explicit ask. Two things deliberately NOT copied: `alwaysOn` on her live Resist flash widget (it
+was `true`, which `overlay.js`'s `visibleBuffs()` reads as "show one permanent static tile and
+ignore every real trigger" - copying it would have broken the very flash it's attached to, so this
+stayed `false`; worth asking her to check whether that `true` was a live bug on her end), and any
+`landSoundId`/`expireSoundId`/`warningSoundId` (those name files in HER `customSounds` folder
+specifically and would point at nothing on a fresh install).
+
+Verified only against a plain Node script instantiating `WidgetStore` directly with a mock store
+(both the fresh-install path and the legacy pre-widget-system upgrade path were checked to make
+sure the migration code in `_loadOrMigrate()` doesn't silently override the new defaults back to
+the old hardcoded ones - it originally did, and was fixed as part of this same change). The whole
+suite passes (three tests that hardcoded the OLD factory values - resist-flash durationSec/message,
+the dispel message, and the two-premades trigger-duration test - were updated to expect the new
+ones). **Not yet confirmed by actually deleting `widgets.json` and launching a truly fresh app**,
+which is the only way to see the new defaults land for real rather than by reading code:
+
+- [ ] **Rename or move `widgets.json` aside (do not delete anyone's real data), launch the app
+      fresh, and confirm Self Buffs seeds in at the new position/size/icon layout** rather than the
+      original small list-mode box.
+- [ ] **From that same fresh state, add a new Ally Buffs, Bard Songs, Resist flash, Dispelled and
+      Charm Broke aura from "+ Add Aura"** and confirm each lands at the position/size copied above
+      instead of stacking at the old default spot.
+- [ ] **Confirm Resist flash still actually flashes** (cast something that gets resisted) rather
+      than showing one permanent static tile - this is the specific thing the `alwaysOn` exclusion
+      above is protecting against.
+- [ ] **Restore the real `widgets.json`** afterward so her actual live auras come back untouched.
+
+## Bundled sounds folder inside the install (25 Aug) - never confirmed against a real packaged build
+
+Requested directly: "a standalone sounds folder INSIDE the install itself that people would add
+to, with some pre added sounds." Built as `soundService.js`'s `bundledSoundsDir()` - a real `sounds/`
+folder shipped next to the .exe via `package.json`'s new `extraFiles` entry, seeded with five
+synthesized starter sounds (`tools/generate-bundled-sounds.js`), and wired in as the "Choose
+sound..." picker's default folder ahead of `C:\Windows\Media`. A separate, bigger version of this
+request - moving ALL saved data (buffs, widgets, settings, logs) into the install folder too - was
+proposed and then explicitly walked back once the owner realized Windows' uninstaller deletes the
+whole install directory; `userData` stays where it's always been for anything actually saved. See
+CLAUDE.md's `soundService.js` entry for the full reasoning.
+
+Verified so far: three tests in `test/bundled-sounds.test.js` covering the dev-vs-packaged path
+resolution and the picker-defaults-to-it behaviour, against a stubbed Electron (no real app ever
+launched for this - see the test file's own header for why the packaged-path case matters most: a
+wrong answer there is silent, since `defaultPickerDir()` just falls through to the next candidate
+rather than throwing). `npm run dist` was NOT run as part of this - the `extraFiles` config is
+standard electron-builder and copies verbatim from a working example, but nothing has actually
+built the installer and confirmed the `sounds/` folder lands next to the real .exe with real
+starter sounds in it:
+
+- [ ] **Run `npm run dist`, install the result, and check the install folder for a `sounds/`
+      subfolder** sitting next to `EQLS Auras.exe`, containing the five starter `.wav` files
+      (Chime, Soft Ping, Alert, Bell, Klaxon).
+- [ ] **From the installed app, open any aura's Sounds section and click "Choose sound..." for the
+      first time** (or after clearing `lastSoundPickerDir.json` from userData) - the dialog should
+      open directly in that `sounds/` folder, showing the five starters.
+- [ ] **Drop a new file into that install-folder `sounds/` folder via Explorer**, then open
+      "Choose sound..." again - the new file should be right there alongside the starters, with no
+      app restart needed.
+- [ ] **Pick one of the starter sounds and confirm it actually plays** as a land/expire/warning
+      alert - it still gets copied into `userData/customSounds` under a fresh id exactly like any
+      other picked sound (this was a deliberate choice, not an oversight - see CLAUDE.md), so this
+      also confirms that copy step still works when the source is the bundled folder instead of an
+      arbitrary user file.
+- [ ] **Uninstall, then reinstall, and confirm the starter sounds are back** (this is the actual
+      point of shipping them in the install folder rather than userData - they should always come
+      back with the app, unlike anything the user picked or tuned).
+- [ ] **Setup page → "Open sounds folder"** (new "Sounds" card, requested directly as "an easy jump
+      point"). Should open the exact same folder as the per-aura button above - both call the same
+      `sounds:openFolder` IPC handler. Smoke-launched clean with no console errors; not yet clicked
+      in the real app.
+
+## AA-activated abilities now get the mote-tier duration bonus (25 Aug) - real bug, needs a live recheck
+
+Reported live: "Amplification II" (activated from the AA window, not cast/sung) landed at 50s
+against its own tooltip's `"0:30 (1:00)"`. Root cause and fix are in CLAUDE.md gotcha #30 - the
+short version is that `matchActivate` lines never fed their rank numeral into `_rankForEntry()`,
+so any AA-activated ranked ability got the AA/Exaltation bonus but silently NONE of the mote-tier
+one. Verified against the real roster and the real `handleLine()` pipeline (50 → 59, matching the
+formula exactly - `test/duration-scaling.test.js`), mutation-tested (reverting the one new line
+turns the fix's own test back into a failure, `50 !== 59`), and `npm run test`/`smoke-launch` both
+clean. **Not yet re-confirmed against the real game**, and there's one specific open question:
+
+- [ ] **Re-cast "Amplification II" (or any other AA-activated ranked ability) and watch its
+      countdown against the in-game tooltip.** Should now read 59s where it used to read 50s.
+- [ ] **Check whether the tooltip's own "(1:00)" is exact or itself rounded.** The fix's predicted
+      59s is 0.6s short of a clean 60 by the formula's own math (30 × 1.2 × 1.65 = 59.4) - if the
+      real wear-off timing is closer to 59 than 60, the tooltip is just rounding for display and
+      nothing else needs chasing; if it's genuinely, precisely 60, there's a smaller residual
+      question left (rounding order, or the mote rate itself) worth its own measurement.
+- [ ] **Check a second AA-activated ranked ability if one exists**, to confirm this isn't specific
+      to Amplification - anything reached via "You activate X." with a Roman-numeral rank in its
+      own name.

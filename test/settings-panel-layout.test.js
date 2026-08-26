@@ -35,13 +35,13 @@ const panel = html.slice(html.indexOf('id="widget-settings-panel"'), html.indexO
 // Top-level blocks in document order, by their caption. A block with no caption is unnamed and
 // listed as such rather than skipped, so a missing caption cannot hide.
 function blockCaptions(region) {
-  return [...region.matchAll(/<div class="block"[^>]*>\s*(?:<p class="block-cap[^"]*">([^<]*)<\/p>)?/g)]
+  return [...region.matchAll(/<div class="block"[^>]*>\s*(?:<p class="block-cap[^"]*"[^>]*>([^<]*)<\/p>)?/g)]
     .map((m) => (m[1] || '(no caption)').replace(/&amp;/g, '&').trim());
 }
 
 test('Buffs shown is a top-level block, not a topic', () => {
   assert.match(panel, /<div class="block" id="widget-buff-filter-card">/, 'it is not a block');
-  assert.match(panel, /<div class="block" id="widget-buff-filter-card">\s*<p class="block-cap">Buffs shown<\/p>/);
+  assert.match(panel, /<div class="block" id="widget-buff-filter-card">\s*<p class="block-cap" id="widget-buff-filter-title">Buffs shown<\/p>/);
   assert.doesNotMatch(panel, /<div class="topic[^"]*" id="widget-buff-filter-card"/, 'it is still a topic');
 });
 

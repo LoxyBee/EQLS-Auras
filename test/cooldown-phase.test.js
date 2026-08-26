@@ -131,6 +131,24 @@ test('the phase reaches the overlay', () => {
   assert.equal(engine.getActive()[0].phase, 'cooldown');
 });
 
+test('rolling from duration into cooldown is not read as a renewal - the real cause of a land sound firing twice', () => {
+  // Reported live: a 0s-duration/20s-cooldown trigger's land sound played a second time about a
+  // second after the first, for one single trigger firing once. Root cause: remainingSec jumps UP
+  // when 'duration' rolls into 'cooldown' (from ~0 to the cooldown length, see the test above this
+  // one) - and overlay.js's own renewal-detection reads ANY upward jump in remainingSec as "cast
+  // again" (that's genuinely correct for an auto-renewing bard song, whose duration resets). This
+  // is not specific to a 0-second duration - any cooldown-timer with soundOnLand on would
+  // double-fire the same way, just with the two beeps further apart (a normal duration is longer
+  // than 200ms, so the earlier debounce fix couldn't have caught this either).
+  const fn = overlaySrc.match(/for \(const b of buffs\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'the soundLandedRaw loop has been restructured');
+  assert.match(
+    fn[1],
+    /if \(b\.phase !== 'cooldown' && \(prevRemaining === undefined \|\| b\.remainingSec > prevRemaining\)\) \{/,
+    "the renewal check no longer excludes a 'cooldown'-phase buff - a duration-to-cooldown rollover will be misread as a recast again"
+  );
+});
+
 test('the tile looks different while cooling down, and says so in words', () => {
   // The note: "if the tile doesn't visibly say which phase it is in, the number on screen is
   // actively misleading".
@@ -241,7 +259,9 @@ test('the contains mode is reachable from the form at all', () => {
   // the timer form never sent a mode, so every hand-built timer was exact whether or not that was
   // what the person wanted. A capability nobody can reach is not a capability.
   assert.match(html, /name="widget-new-timer-match" value="contains"/, 'no way to choose it');
-  assert.match(rendererSrc, /triggerMatch:[\s\S]{0,20}mode === 'raw'/, 'the form never sends a mode');
+  // Widened 25 Aug: the zone-trigger addition (mode === 'zone') sits in this same ternary chain
+  // ahead of the 'raw' branch, pushing the real distance past the old 80-char window.
+  assert.match(rendererSrc, /triggerMatch:[\s\S]{0,300}mode === 'raw'/, 'the form never sends a mode');
   assert.match(rendererSrc, /newTimerMatchRadios\.forEach\(\(r\) => \(r\.checked = r\.value === 'exact'\)\)/,
     'the form does not reset to exact between timers');
   const add = mainSrc.match(/'widget:addCustomTimer',([\s\S]*?)\n\);/);
@@ -265,6 +285,38 @@ test('the cooldown fields are out of the way until wanted', () => {
   // It must be a real topic, or initTopicToggles throws on the button inside it.
   const block = html.slice(html.indexOf('id="topic-timer-cooldown"'));
   assert.match(block.slice(0, 400), /class="topic-head" data-toggle/);
+});
+
+test('Cooldown sits at the bottom of the Add timer form, not right under Name/Duration', () => {
+  // Reported live 24 Aug: this topic (then alongside the now-removed "Extra conditions" topic -
+  // see the trigger-combine-mode test file for what replaced it) used to live inside
+  // .timer-identity-fields, right after the Duration row - clutter ahead of the trigger fields
+  // that matter for every timer, and the reason the icon picker (see the next test) ended up
+  // appearing well below the fields it belongs to.
+  const modalStart = html.indexOf('id="custom-timer-modal-backdrop"');
+  const identityEnd = html.indexOf('</div>', html.indexOf('class="timer-identity-fields"'));
+  const triggerHeading = html.indexOf('What starts it?');
+  const cooldownTopic = html.indexOf('id="topic-timer-cooldown"');
+  const modalActions = html.indexOf('class="modal-actions"');
+
+  assert.ok(modalStart > -1 && identityEnd > modalStart, 'the identity row is missing or restructured');
+  assert.ok(triggerHeading > identityEnd, '"What starts it?" must come right after the identity row');
+  assert.ok(cooldownTopic > triggerHeading, 'Cooldown is still sitting above the trigger fields');
+  assert.ok(modalActions > cooldownTopic, 'Cooldown must be the last thing before Add/Cancel');
+});
+
+test('the icon picker gallery sits right next to the name/duration fields, not below Cooldown', () => {
+  // Reported live 24 Aug: "the icon picker needs to be next to the name and duration fields, it is
+  // below it." It was always the very next element in the DOM after .timer-identity closed - what
+  // pushed it visually far below was Cooldown (and, at the time, Extra conditions - since removed)
+  // being nested INSIDE that same block above it. Pinning the actual DOM adjacency here, not just
+  // their absence from timer-identity.
+  const identityClose = html.indexOf('</div>', html.indexOf('class="timer-identity-fields"'));
+  const between = html.slice(identityClose, html.indexOf('id="widget-new-timer-icon-picker"'));
+  // Only the identity row's own closing tags and a comment may sit between them - not a whole
+  // Cooldown section's worth of markup (which runs well over a thousand characters on its own).
+  assert.ok(between.length < 1000, `too much markup between the fields and the icon picker: ${between.length} chars`);
+  assert.doesNotMatch(between, /topic-timer-conditions|topic-timer-cooldown/);
 });
 
 test('a cooldown that is set is never hidden by the section being shut', () => {

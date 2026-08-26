@@ -4,8 +4,8 @@
  *
  * The grouping logic is pure: it takes a list of buffs and returns a list of buffs. So it is
  * lifted out of overlay.js and RUN, rather than read as text - the same trick trade-ping.test.js
- * uses on its pattern and sound-only.test.js uses on the export warning. overlay.js as a whole
- * needs a DOM; these particular functions need nothing but their arguments.
+ * uses on its pattern. overlay.js as a whole needs a DOM; these particular functions need
+ * nothing but their arguments.
  *
  * The parts that cannot be run are the ones where merging touches the rest of render(), and they
  * are the parts most likely to break quietly:
@@ -486,9 +486,15 @@ test('both settings are reachable in the app', () => {
   assert.match(rendererSrc, /mergeCheckbox\.checked = !!widget\.mergeSameDuration/, 'never populated');
   assert.match(rendererSrc, /function initMergeRule\(\)/);
   assert.match(rendererSrc, /\n  initMergeRule\(\);/, 'initMergeRule is never called');
-  // Neither a sound-only aura nor a text aura has anything to merge: one draws no tiles at all,
-  // the other draws exactly one whatever happens.
-  assert.match(rendererSrc, /mergeRowEl\.style\.display = isSoundOnly \|\| isTextAura \? 'none' : ''/);
+  // A text aura has nothing to merge - it draws exactly one tile whatever happens. Rewritten
+  // 25 Aug for the additive settings-panel model - visibility now comes from SHAPE_FIELDS's
+  // 'merge' field.
+  assert.match(rendererSrc, /mergeRowEl\.style\.display = has\('merge'\) \? '' : 'none';/);
+  const fn = rendererSrc.match(/const SHAPE_FIELDS = \{([\s\S]*?)\n {2}\};/);
+  assert.ok(fn, 'SHAPE_FIELDS has been renamed or restructured');
+  for (const shape of ['sound', 'sound-customTimer', 'text', 'text-customTimer', 'ally-alert']) {
+    assert.doesNotMatch(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'merge'`), `${shape} has nothing to merge`);
+  }
 });
 
 module.exports = () => report('merged-tiles');

@@ -28,7 +28,7 @@ const { ipcMain, protocol, BrowserWindow, Menu, globalShortcut, shell } = requir
 const { createMainWindow, getMainWindow } = require('./mainWindow');
 const { LogService } = require('./logService');
 // Note 38. The zone matcher lives with the other log-line patterns; the seed list is data.
-const { matchZoneChange } = require('./buffParser');
+const { matchZoneChange, matchForgetSpell, matchMemorizeFinished } = require('./buffParser');
 const KNOWN_ZONES = require('../shared/data/zones');
 const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
@@ -48,6 +48,7 @@ const { tagBardSongs } = require('./bardSongTagger');
 const { backfillBardSongs: _unusedBackfillBardSongs } = require('./rosterBackfill');
 const { saveSnapshot, loadSnapshot } = require('./sessionSnapshot');
 const gameSpellData = require('./gameSpellData');
+const spellStacking = require('./spellStacking');
 const { loadJson, saveJson } = require('./store');
 const widgetManager = require('./widgetManager');
 const ambiguousPopup = require('./ambiguousPopup');
@@ -120,6 +121,8 @@ buffEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setSpellbookCheckFn((name) => spellbookService.has(name));
 // See buffEngine.setEnemyDebuffNamesFn - which spells any aura has asked to watch on enemies.
 buffEngine.setEnemyDebuffNamesFn(() => widgetManager.getEnemyDebuffNames());
+// Note 40 - the same, but for auras switched to "ally" mode (see buffEngine.setAllyEnemyDebuffNamesFn).
+buffEngine.setAllyEnemyDebuffNamesFn(() => widgetManager.getAllyEnemyDebuffNames());
 // Note 19. Anything you have mezzed, snared or slowed is a thing you are fighting, which seeds the
 // damage meter's enemy set for a character who debuffs rather than attacks. Pull-based like the
 // line above it, so a mob mezzed a second ago counts without anything having to push an update.
@@ -141,11 +144,22 @@ buffEngine.setBardSongsVisibleFn(() =>
   widgetManager.getAllWidgetConfigs().some((w) => w.hideBardSongs === false)
 );
 customTimerEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
-// Note 9. A zone part in an all-of condition asks where you are. Pull-based, so it reads the same
-// zone the rest of the app is using rather than keeping a copy that could fall behind.
-customTimerEngine.setCurrentZoneFn(() => widgetManager.getCurrentZone());
 buffEngine.setTrackOthersEnabled(loadJson('trackOthersEnabled', false));
 buffEngine.setBlockedNames(loadJson('blockedBuffs', []));
+// P0 rework, off by default - see buffEngine.js's constructor comment on useEvidenceModel for
+// exactly what this changes. A toggle rather than a straight replacement specifically so it can be
+// switched off again with one click if it misbehaves live, without a rebuild.
+buffEngine.setUseEvidenceModel(loadJson('useEvidenceModel', false));
+// P0c, off by default and independently switchable from useEvidenceModel above - see buffEngine.js's
+// constructor comment on useCastTimeFilter for exactly what this changes.
+buffEngine.setUseCastTimeFilter(loadJson('useCastTimeFilter', false));
+// Note 26, off by default - see buffEngine.js's constructor comment on stackVerdictFn/
+// useStackingModel. currentInstallRoot is read live on every call (not captured here) since it
+// starts null and is only set once applyInstallRoot runs - see that function, further down.
+buffEngine.setStackVerdictFn((activeSpellId, incomingSpellId) =>
+  currentInstallRoot ? spellStacking.stackVerdict(currentInstallRoot, activeSpellId, incomingSpellId) : null
+);
+buffEngine.setUseStackingModel(loadJson('useStackingModel', false));
 
 // Auto-hide overlay widgets while EQ isn't the focused window (backlog #6)
 // - on by default per explicit user request. The watcher itself only ever
@@ -239,7 +253,15 @@ try {
 // the rollover happens the first time a line is written after midnight rather than on a timer.
 let debugLogStamp = null;
 let debugLogPath = null;
+// Off by default, manually enabled by the user under Diagnostics - reported live 25 Aug: "should
+// there be a debug log of every aura that is fired/loaded/ended... i will enable it manually for
+// myself." This used to write unconditionally on every launch, with no way to turn it off - fine
+// while it only covered self/ally buff detection, but customTimerEngine now feeds the same
+// function too (see its own setDebugLogFn below), and a running-forever log of every trigger
+// firing on every aura is a cost worth making opt-in rather than assumed.
+let debugLogEnabled = loadJson('debugLogEnabled', false);
 function debugLog(message) {
+  if (!debugLogEnabled) return;
   const now = new Date();
   const line = `[${now.toLocaleTimeString()}] ${message}`;
   try {
@@ -255,6 +277,7 @@ function debugLog(message) {
   broadcast('debug:line', line);
 }
 buffEngine.setDebugLogFn(debugLog);
+customTimerEngine.setDebugLogFn(debugLog);
 
 // AA "Spell Casting Reinforcement" (4 ranks) and Exaltation "Extended
 // Enhancement" (3 ranks) both extend buff durations by a flat percentage,
@@ -263,8 +286,15 @@ buffEngine.setDebugLogFn(debugLog);
 const AA_REINFORCEMENT_PERCENTS = [0, 5, 15, 30, 50];
 const EXALTATION_PERCENTS = [0, 5, 10, 15];
 
+// Spell Casting Deftness (AA, 3 ranks) reduces cast time on beneficial spells that have a duration
+// and an initial cast time of at least 3 seconds - confirmed live 25 Aug straight from the AA
+// window's own three rank tooltips (corrected from an earlier misread that called it "Subtlety").
+// Same rank-dropdown shape as AA_REINFORCEMENT_PERCENTS/EXALTATION_PERCENTS above, not a free-typed
+// percent, now that all three ranks have actually been seen rather than just one.
+const DEFTNESS_PERCENTS = [0, 10, 25, 50];
+
 function loadCharacterSettings() {
-  return loadJson('characterSettings', { aaLevel: 0, exaltationLevel: 0 });
+  return loadJson('characterSettings', { aaLevel: 0, exaltationLevel: 0, deftnessLevel: 0 });
 }
 
 function durationMultiplierFor(settings) {
@@ -274,6 +304,15 @@ function durationMultiplierFor(settings) {
 }
 
 buffEngine.setDurationMultiplierFn(() => durationMultiplierFor(loadCharacterSettings()));
+
+// buffEngine.js's _scaledCastSec applies the eligibility gate (duration + >=3s base cast) itself,
+// straight from the AA's own wording - this function only needs to return the raw multiplier.
+function castTimeMultiplierFor(settings) {
+  const deftnessPct = DEFTNESS_PERCENTS[settings.deftnessLevel] || 0;
+  return 1 - deftnessPct / 100;
+}
+
+buffEngine.setCastTimeMultiplierFn(() => castTimeMultiplierFor(loadCharacterSettings()));
 
 function broadcast(channel, payload) {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -286,6 +325,16 @@ logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
 // Note 19. A fourth listener for the same reason as the third: damage is not a buff, and giving
 // buffEngine a second job would mean every future change to either having to think about both.
 logService.watcher.on('line', (line) => damageEngine.handleLine(line));
+// A separate Diagnostics feed showing ONLY memorize/forget lines - raised 25 Aug straight out of
+// investigating why currentlyMemorized went stale after a loadout swap: the swap itself turned out
+// to print NOTHING at all (confirmed by searching a real log across the whole swap window - zero
+// forget/memorize/loadout/class/spellbook lines of any kind), which the general live log feed and
+// the detection log both make tedious to verify since they're dominated by unrelated buff/combat
+// noise. This makes "did anything actually fire when I swapped" a one-glance answer instead of a
+// log search, for this and any future swap-adjacent question.
+logService.watcher.on('line', (line) => {
+  if (matchForgetSpell(line) || matchMemorizeFinished(line)) broadcast('memorized:line', line);
+});
 
 /**
  * Note 30. Somebody pasted a share code into chat.
@@ -367,8 +416,8 @@ function saveSessionSnapshotSoon() {
   if (snapshotTimer) return;
   snapshotTimer = setTimeout(() => {
     snapshotTimer = null;
-    const { selfBuffs, allyBuffs } = buffEngine.getSnapshotState();
-    saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, customTimers: customTimerEngine.getSnapshotState() });
+    const { selfBuffs, allyBuffs, bardSongs } = buffEngine.getSnapshotState();
+    saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, bardSongs, customTimers: customTimerEngine.getSnapshotState() });
   }, 2000);
 }
 
@@ -378,6 +427,10 @@ buffEngine.on('buffsChanged', (buffs) => {
 });
 buffEngine.on('allyBuffsChanged', (buffs) => {
   broadcast('buffs:activeAllies', buffs);
+  saveSessionSnapshotSoon();
+});
+buffEngine.on('bardSongsChanged', (songs) => {
+  broadcast('buffs:activeBardSongs', songs);
   saveSessionSnapshotSoon();
 });
 // Where the EQ install actually lives, once known - kept module-level so
@@ -709,6 +762,7 @@ ipcMain.handle('log:openArchiveFolder', () => logService.openArchiveFolder());
 
 ipcMain.handle('buffs:getActive', () => buffEngine.getActiveBuffs());
 ipcMain.handle('buffs:getActiveAllies', () => buffEngine.getActiveAllyBuffs());
+ipcMain.handle('buffs:getActiveBardSongs', () => buffEngine.getActiveBardSongs());
 
 ipcMain.handle('damage:getActive', () => damageEngine.getActive());
 ipcMain.handle('travel:getRoutes', () => travelRoutes());
@@ -900,6 +954,27 @@ ipcMain.handle('settings:setTrackOthers', (_event, enabled) => {
   return enabled;
 });
 
+ipcMain.handle('settings:getUseEvidenceModel', () => loadJson('useEvidenceModel', false));
+ipcMain.handle('settings:setUseEvidenceModel', (_event, enabled) => {
+  saveJson('useEvidenceModel', enabled);
+  buffEngine.setUseEvidenceModel(enabled);
+  return enabled;
+});
+
+ipcMain.handle('settings:getUseCastTimeFilter', () => loadJson('useCastTimeFilter', false));
+ipcMain.handle('settings:setUseCastTimeFilter', (_event, enabled) => {
+  saveJson('useCastTimeFilter', enabled);
+  buffEngine.setUseCastTimeFilter(enabled);
+  return enabled;
+});
+
+ipcMain.handle('settings:getUseStackingModel', () => loadJson('useStackingModel', false));
+ipcMain.handle('settings:setUseStackingModel', (_event, enabled) => {
+  saveJson('useStackingModel', enabled);
+  buffEngine.setUseStackingModel(enabled);
+  return enabled;
+});
+
 ipcMain.handle('settings:getAutoHideOverlay', () => autoHideOverlayEnabled);
 ipcMain.handle('settings:setAutoHideOverlay', (_event, enabled) => {
   autoHideOverlayEnabled = enabled;
@@ -950,13 +1025,31 @@ ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig
 // which aura to open. Worth knowing: this pulls EverQuest out of focus, so with auto-hide on it
 // is also the moment your other auras vanish. The unlocked ones stay put, which is the only
 // reason that is tolerable.
+//
+// Reported live 24 Aug: "right clicking on a blue move box freezes the app entirely... unless i
+// alt tab". Root cause - win.focus() asks Windows to hand this window OS foreground focus, and
+// this call fires from inside the SAME right-click gesture the overlay's own always-on-top,
+// `-webkit-app-region: drag` window is still processing. Windows' foreground-lock protection can
+// make a focus() request like that block synchronously waiting for the lock to release - and
+// since Electron's main process is single-threaded, a block there freezes EVERY ipcMain handler
+// in the app, not just this one, until something (alt-tabbing away and back) clears the lock.
+// That also explains "it also doesn't nav me": the webContents.send() below used to run AFTER
+// focus()/show(), so a frozen focus() call meant the navigation message never even got sent.
+//
+// Fixed two ways together: the navigation message goes out FIRST, so the settings page opens
+// correctly regardless of whether the OS ever grants focus - and show()/focus() are deferred to
+// setImmediate, off the input event that triggered them, so even if Windows makes the focus
+// request wait, it is not this process's own single thread doing the waiting.
 ipcMain.on('widget:openSettings', (_event, id) => {
   const win = getMainWindow();
   if (!win || win.isDestroyed()) return;
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
   win.webContents.send('widget:openSettings', id);
+  setImmediate(() => {
+    if (win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
 });
 // An overlay asks for this as it boots, the same way it asks for its lock state - a window
 // created on demand would otherwise start out assuming it may make noise.
@@ -966,6 +1059,7 @@ ipcMain.handle('widget:isAudible', (_event, id) => {
 });
 ipcMain.handle('widget:create', (_event, { name, buffSource }) => widgetManager.createCustomWidget(name, { buffSource }));
 ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAllyBuffsWidget(name));
+ipcMain.handle('widget:createBardSongs', (_event, { name }) => widgetManager.createBardSongsWidget(name));
 ipcMain.handle('widget:createDebuff', (_event, { name }) => widgetManager.createDebuffWidget(name));
 ipcMain.handle('widget:createDamageMeter', (_event, { name, mineOnly }) =>
   widgetManager.createDamageMeterWidget(name, mineOnly)
@@ -981,15 +1075,14 @@ ipcMain.handle('widget:setTravelDestination', (_event, { id, destination }) => {
   pushTravelRoutes();
   return config;
 });
-ipcMain.handle('widget:createSoundOnly', (_event, { name }) => widgetManager.createSoundOnlyWidget(name));
 ipcMain.handle('widget:createTextAura', (_event, { name, preset }) =>
   widgetManager.createTextAuraWidget(name, preset)
 );
 ipcMain.handle('widget:createBuffTimer', (_event, { name, spellName, source }) =>
   widgetManager.createBuffTimerWidget(name, spellName, source)
 );
-ipcMain.handle('widget:createCooldownTimer', (_event, { name, spellName, cooldownSec, iconId }) =>
-  widgetManager.createCooldownTimerWidget(name, spellName, cooldownSec, iconId)
+ipcMain.handle('widget:createCooldownTimer', (_event, { name, spellName, cooldownSec, iconId, buffDurationSec }) =>
+  widgetManager.createCooldownTimerWidget(name, spellName, cooldownSec, iconId, buffDurationSec)
 );
 // Spells worth a cooldown countdown - note 15.
 //
@@ -1020,10 +1113,22 @@ ipcMain.handle('buffs:castable', () =>
 // Only the spells that can actually be tracked, and which of the two ways each one supports.
 // The picker needs this to avoid offering "on an ally" for a spell whose roster entry has no
 // third-person landing text - that would build an aura which silently never lights up.
+//
+// Also requires a real duration (a fixed number of seconds, or infiniteDuration - "lasts until
+// dispelled" is still a duration, just an unbounded one). Reported live 25 Aug: Anarchy, an
+// Enchanter nuke with no duration at all, showing up in the Buff timer picker labelled "no
+// duration" - "nukes are not buffs, remove them from the buff selection list. remove anything that
+// does not have a duration for clarity." A no-duration entry only ever had landing text because
+// the detection engine needs it for instant-event tracking (a sound/text flash, never a countdown)
+// - genuinely useful for auras like Resist flash, but not what "pick one spell and get a duration
+// timer for it" means here. Debuffs keep their entries here unaffected: a mez/charm/snare/slow
+// genuinely has a duration in the roster (that's how "wears off" gets timed at all), so this only
+// ever drops instants (nukes, heals, and the like), never a real trackable debuff.
 ipcMain.handle('buffs:trackable', () =>
   buffStore
     .getAll()
     .filter((e) => e.landingText && String(e.landingText).trim())
+    .filter((e) => (typeof e.durationSec === 'number' && e.durationSec > 0) || e.infiniteDuration)
     .map((e) => {
       const hasThirdPersonText = !!(e.othersLandingSuffix && String(e.othersLandingSuffix).trim());
       // A debuff, charm, dot or nuke landing on "not you" is something cast AT a target, never
@@ -1059,8 +1164,14 @@ ipcMain.handle('widget:setMergeSameDuration', (_event, { id, value }) =>
 ipcMain.handle('widget:setCategoryBorders', (_event, { id, value }) =>
   widgetManager.setCategoryBorders(id, value)
 );
+ipcMain.handle('widget:setCategoryBorderWidth', (_event, { id, px }) =>
+  widgetManager.setCategoryBorderWidth(id, px)
+);
 ipcMain.handle('widget:setTrackOnEnemies', (_event, { id, value }) =>
   widgetManager.setTrackOnEnemies(id, value)
+);
+ipcMain.handle('widget:setDebuffCastBy', (_event, { id, value }) =>
+  widgetManager.setDebuffCastBy(id, value)
 );
 ipcMain.handle('widget:setAllyDebuffAlert', (_event, { id, value }) =>
   widgetManager.setAllyDebuffAlert(id, value)
@@ -1078,6 +1189,16 @@ ipcMain.handle('settings:getHideHotkey', () => hideHotkey);
 // question is nearly always "what happened on that day", which means picking one.
 ipcMain.handle('debug:openLogFolder', () => shell.openPath(DEBUG_LOG_DIR));
 ipcMain.handle('debug:logFolder', () => DEBUG_LOG_DIR);
+ipcMain.handle('debug:getEnabled', () => debugLogEnabled);
+ipcMain.handle('debug:setEnabled', (_event, enabled) => {
+  debugLogEnabled = !!enabled;
+  saveJson('debugLogEnabled', debugLogEnabled);
+  return debugLogEnabled;
+});
+// The one place a renderer (an overlay window - see preload-overlay.js's debugLog bridge) can
+// write into the same debug log every detection line already goes through. .on, not .handle - the
+// overlay has nothing to wait for a reply about, same as widget:reportContentSize/openSettings.
+ipcMain.on('debug:logLine', (_event, message) => debugLog(message));
 ipcMain.handle('zone:current', () => widgetManager.getCurrentZone());
 ipcMain.handle('zone:known', () => KNOWN_ZONES);
 ipcMain.handle('widget:setVisibleInZones', (_event, { id, zones }) =>
@@ -1126,6 +1247,7 @@ ipcMain.handle('widget:setIconMargin', (_event, { id, value }) => widgetManager.
 ipcMain.handle('widget:setIconLabelAnchor', (_event, { id, value }) => widgetManager.setIconLabelAnchor(id, value));
 ipcMain.handle('widget:setWrapText', (_event, { id, enabled }) => widgetManager.setWrapText(id, enabled));
 ipcMain.handle('widget:setIconJustify', (_event, { id, value }) => widgetManager.setIconJustify(id, value));
+ipcMain.handle('widget:setTextJustify', (_event, { id, value }) => widgetManager.setTextJustify(id, value));
 ipcMain.handle('widget:setMaxDurationFilter', (_event, { id, value }) => widgetManager.setMaxDurationFilter(id, value));
 ipcMain.handle('widget:setSoundOnLand', (_event, { id, enabled }) => widgetManager.setSoundOnLand(id, enabled));
 ipcMain.handle('widget:setSoundOnExpire', (_event, { id, enabled }) => widgetManager.setSoundOnExpire(id, enabled));
@@ -1149,20 +1271,24 @@ ipcMain.handle('widget:setBuffSource', (_event, { id, source }) => widgetManager
 // added to the form, the store and the engine and still did nothing until this line changed.
 ipcMain.handle(
   'widget:addCustomTimer',
-  // Note 9's allOf is listed here as well as everywhere else it passes through. This handler
-  // destructures a fixed set of names, so a field missing from the list is silently dropped rather
-  // than erroring - which is exactly how castOf timers came to be impossible to create through the
-  // UI while looking like they worked.
-  (_event, { id, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, allOf }) =>
+  // This handler destructures a fixed set of names, so a field missing from the list is silently
+  // dropped rather than erroring - which is exactly how castOf timers came to be impossible to
+  // create through the UI while looking like they worked. Keep this list in sync with
+  // readTimerFormData in main-window.js.
+  (_event, { id, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) =>
     widgetManager.addCustomTimer(id, {
-      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, allOf,
+      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec,
     })
 );
+ipcMain.handle('widget:setTriggerDurationSec', (_event, { id, seconds }) => widgetManager.setTriggerDurationSec(id, seconds));
+ipcMain.handle('widget:setTriggerCombineMode', (_event, { id, mode }) => widgetManager.setTriggerCombineMode(id, mode));
+ipcMain.handle('widget:setAndWindowSec', (_event, { id, seconds }) => widgetManager.setAndWindowSec(id, seconds));
+ipcMain.handle('widget:setReverseDetection', (_event, { id, enabled }) => widgetManager.setReverseDetection(id, enabled));
 ipcMain.handle(
   'widget:updateCustomTimer',
-  (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec, allOf }) =>
+  (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) =>
     widgetManager.updateCustomTimer(id, timerId, {
-      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec, allOf,
+      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec,
     })
 );
 ipcMain.handle('widget:removeCustomTimer', (_event, { id, timerId }) => widgetManager.removeCustomTimer(id, timerId));
@@ -1252,13 +1378,29 @@ ipcMain.handle('icons:getCount', () => iconService.getIconCount());
 // the main window's own close handler) and nothing recorded which. These log
 // to the same persisted debug file as detection decisions, so a recurrence is
 // diagnosable after the fact instead of needing to catch it live.
+//
+// One recurrence now diagnosed, 25 Aug: before-quit fired, then the main window's own close
+// event (twice), then will-quit - render-process-gone never fired, ruling out a renderer crash.
+// So this WAS the main-window-close path (mainWindow.js's `close` handler, which deliberately
+// quits the whole app - see its own comment on why). The open question this time is what fired
+// the window's close event in the first place: confirmed NOT the user pressing Alt+F4 (the owner
+// was actively playing, unfocused from this app entirely - Alt+F4 needs focus to reach a window
+// at all) and NOT anything in this app's own code (checked every path that can close a window or
+// call quit(): the global hotkey only toggles widget visibility, setForegroundHidden only
+// touches overlay widgets, deleteWidget only closes an individual widget's own window, the
+// single-instance guard only runs at startup). Nothing here can close the main window while
+// unfocused - Windows' own Application/Hang event log had nothing for this app either. Points
+// outward, to something OS-level neither the app nor this log can see (sleep, a forced restart,
+// memory pressure favoring the focused game process, etc.) rather than to a bug in this codebase.
+// If it recurs, what to check next: whatever else was happening on the system at that exact
+// second, not another pass over these same four ruled-out in-app paths.
 app.on('before-quit', () => {
   debugLog('SHUTDOWN: before-quit fired');
   // Flush immediately - the debounced save above may still be pending, and
   // this is exactly the moment the snapshot matters most.
   if (snapshotTimer) clearTimeout(snapshotTimer);
-  const { selfBuffs, allyBuffs } = buffEngine.getSnapshotState();
-  saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, customTimers: customTimerEngine.getSnapshotState() });
+  const { selfBuffs, allyBuffs, bardSongs } = buffEngine.getSnapshotState();
+  saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, bardSongs, customTimers: customTimerEngine.getSnapshotState() });
 });
 app.on('will-quit', () => {
   debugLog('SHUTDOWN: will-quit fired');

@@ -146,5 +146,25 @@ test('resetting asks first, the same way deleting does', () => {
   assert.match(fn[1], /if \(!confirmed\) return;/);
 });
 
+test('it sits on the same line as Duplicate/Export/Delete, reported live 25 Aug', () => {
+  // reset-widget-row is a flex child of the SAME .row as the other three now, not a second .row
+  // below them - it still has its own id for the show/hide rule above, but the DOM position moved.
+  const cardStart = html.indexOf('id="widget-manage-card"');
+  const cardBody = html.slice(cardStart, cardStart + 1200);
+  const rowStart = cardBody.indexOf('<div class="row">');
+  const rowEnd = cardBody.indexOf('</div>', cardBody.indexOf('id="reset-widget-row"'));
+  assert.ok(rowStart > -1 && rowEnd > rowStart, 'the Manage aura row structure has been restructured');
+  const rowBody = cardBody.slice(rowStart, rowEnd);
+  assert.match(rowBody, /id="duplicate-widget-btn"/);
+  assert.match(rowBody, /id="export-widget-btn"/);
+  assert.match(rowBody, /id="delete-widget-btn"/);
+  assert.match(rowBody, /id="reset-widget-row"/, 'Reset to default is not inside the same row as the other three');
+  assert.doesNotMatch(
+    cardBody.slice(0, rowStart),
+    /class="row"/,
+    'a second .row wrapper still exists ahead of the shared one - Reset never actually moved in'
+  );
+});
+
 module.exports = () => report('reset-to-default');
 if (require.main === module) process.exit(report('reset-to-default') ? 1 : 0);

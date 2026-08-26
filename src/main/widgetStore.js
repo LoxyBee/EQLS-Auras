@@ -13,16 +13,24 @@ const DEFAULT_ANCHOR = 'bottom-center'; // matches the original hardcoded tile-t
 const DEFAULT_ICONS_PER_ROW = 4;
 const DEFAULT_ROW_SIZE = 28; // matches the original hardcoded list-row height at default text size
 const DEFAULT_LIST_WIDTH = 220;
+// Note 9/17's custom-triggers rework, 24 Aug. Used to be one durationSec per trigger, editable in
+// the Add/Edit Timer modal - which meant a widget with several triggers (the Dispelled premade's
+// three severities, say) COULD have them silently drift out of sync with each other, and every
+// aura also carried a second, separate "Show events for" slider that looked like it might also
+// control duration but never did anything for a customTimer aura at all. Reported live: "there
+// should never be two sources for this to ease confusion... the timer should be entirely top
+// level... anything that needs a timer should have a slider that affects every trigger." One
+// number per WIDGET now; every trigger on it always shares it.
+const DEFAULT_TRIGGER_DURATION_SEC = 5;
 
-// How an aura presents itself. 'sound-only' is an aura that draws NOTHING - no tiles, no
-// window content, not even the dashed drag box while unlocked - and exists purely to make a
-// noise when something it is watching lands, expires, or is about to expire.
-//
-// It is a DISPLAY MODE rather than a new kind of aura on purpose. Every filter, buff source,
-// custom timer and sound setting that already exists keeps working untouched; any existing
-// aura can be switched to it and back without losing a single setting; and nothing in the
-// share-code path, the profile system or the widget list needs to learn a new concept. A new
-// kind would have meant teaching all of that about a fourth case for no user-visible gain.
+// How long an AND-combine trigger stays "seen" before it has to be re-satisfied - see
+// andWindowSec's own comment on defaultCustomWidget. 30s matches the old hardcoded
+// AND_SEEN_HOLD_MS this setting replaces; the slider's own range (0-30) is the ceiling on how
+// wide the owner asked this to ever go, not just the default.
+const DEFAULT_AND_WINDOW_SEC = 30;
+const MAX_AND_WINDOW_SEC = 30;
+
+// How an aura presents itself.
 //
 // Unknown values normalize to 'list', which is exactly what the overlay already did with them
 // (it tests displayMode === 'icons' and treats everything else as a list), so this is a guard
@@ -38,14 +46,18 @@ const DEFAULT_LIST_WIDTH = 220;
 // a fourth radio on every aura is a fourth thing to read and rule out on every aura, and the goal
 // is accessibility. It is chosen once, at creation, next to "Custom buff aura" and "Custom timer
 // aura" - which is where someone deciding what KIND of thing to make is already looking.
-const DISPLAY_MODES = ['list', 'icons', 'sound-only', 'text'];
+//
+// 'sound-only' EXISTED here (25 Aug) and was removed the same day: setTriggerDurationSec now
+// accepts 0, so a Custom timer aura with a 0-second trigger and a raw log-line trigger already
+// covers the same ground - a tile that flashes for under a second and beeps. The owner's call,
+// verbatim: "that functionality of an entire sound aura will not be needed in future and can be
+// removed." No migration for anyone who had one saved - normalizeDisplayMode's fallback to
+// 'list' below now applies to it like any other unrecognised value, by design (see the AskUser
+// exchange this removal came out of).
+const DISPLAY_MODES = ['list', 'icons', 'text'];
 
 function normalizeDisplayMode(mode) {
   return DISPLAY_MODES.includes(mode) ? mode : 'list';
-}
-
-function isSoundOnly(widget) {
-  return !!widget && widget.displayMode === 'sound-only';
 }
 
 // 1 to 60. The ceiling is not arbitrary: buffEngine keeps an instant for 60 seconds and no
@@ -61,6 +73,16 @@ function isTextAura(widget) {
   return !!widget && widget.displayMode === 'text';
 }
 
+// Field values below (icon mode, size/position, sort/threshold, sounds-toggle state) match the
+// owner's own live Self Buffs widget as of 25 Aug, at her request: "override the premade settings
+// with the ones i have... screen position included." A fresh install (or a "Reset to default" on
+// a widget that still traces back to this one) now lands on her actual working setup instead of
+// the original placeholder layout. landSoundId/expireSoundId/warningSoundId are deliberately left
+// alone (null) even though her own widget has a landSoundId set - that id names a file in HER
+// customSounds folder specifically (see soundService.js), which would not exist on anyone else's
+// install; shipping it as a default would silently point at a missing file. activeProfileIds is
+// left alone for the same reason - her saved widget lists her own profile UUIDs, meaningless to a
+// fresh install that has not created those profiles.
 function defaultSelfBuffsWidget(overrides = {}) {
   return {
     id: 'self-buffs',
@@ -68,18 +90,18 @@ function defaultSelfBuffsWidget(overrides = {}) {
     name: 'Self Buffs',
     deletable: false,
     enabled: true,
-    displayMode: 'list',
-    timerFormat: 'minutes-seconds',
-    textSize: DEFAULT_TEXT_SIZE,
-    iconSize: DEFAULT_ICON_SIZE,
+    displayMode: 'icons',
+    timerFormat: 'rounded-minutes',
+    textSize: 24,
+    iconSize: 66,
     contentAnchor: DEFAULT_ANCHOR,
-    iconsPerRow: DEFAULT_ICONS_PER_ROW,
-    rowSize: DEFAULT_ROW_SIZE,
-    listWidth: DEFAULT_LIST_WIDTH,
+    iconsPerRow: 14,
+    rowSize: 40,
+    listWidth: 310,
     opacity: 1,
-    width: 220,
-    height: 500,
-    position: null,
+    width: 1018,
+    height: 74,
+    position: { x: 440, y: 4 },
     buffFilterMode: 'all',
     buffNames: [],
     // Only meaningful when buffFilterMode is 'all' (an "everything" mode
@@ -88,16 +110,17 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // blocked-buffs feature (buffStore.js) which stops tracking a buff
     // everywhere. Set from this widget's own "Active on this widget" card
     // in main-window.js, never shared with any other widget.
-    excludedBuffNames: [],
+    excludedBuffNames: ['Illusion: Dark Elf'],
     locked: true,
-    sortOrder: 'default',
-    lowTimeThresholdSec: 30,
-    landingGlowEnabled: true,
+    sortOrder: 'time-remaining',
+    lowTimeThresholdSec: 25,
+    landingGlowEnabled: false,
     // Note 8 - see defaultCustomWidget's comment on this field.
     mergeSameDuration: false,
     // Note 37 - a coloured edge by what kind of spell it is. On by default, at the owner's
     // request, so it works without anyone going looking for it.
     categoryBordersEnabled: true,
+    categoryBorderWidthPx: 1,
     // Notes 11/16/17. Watch the picked spells on the things you cast them AT rather than on your
     // group - mez, charm, snare, slow. Off by default and opt-in per aura on purpose: mob names
     // are not one word, so accepting them at all requires relaxing a check that exists to stop a
@@ -105,6 +128,15 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // landings across the owner's logs, 100,000 of them from two bard songs pulsing on everything
     // in range. Opting in per aura bounds it by what someone actually asked to see.
     trackOnEnemies: false,
+    // Note 40. Only meaningful when trackOnEnemies is true. 'self' (default,
+    // backward compatible) keeps the original behaviour - a watched debuff
+    // only lands here while there's evidence the player herself cast it.
+    // 'ally' drops that requirement: the same debuff on the same enemy, but
+    // tracked the moment its third-person landing text appears, regardless
+    // of who cast it. Shara's words: "just have it tracked that a debuff
+    // happened from someone, it doesn't need a name" - so 'ally' mode never
+    // records a caster, only that the debuff landed.
+    debuffCastBy: 'self',
     // Note 16, answered by Shara on 21 August. A TEXT aura can warn that somebody else has cast
     // one of the spells it watches - "be careful", rather than a countdown on a debuff that is
     // not yours. She ruled out the timer herself: an ally's debuff has no ending line in the log,
@@ -163,7 +195,7 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // set before the feature works at all is a feature most people never see working.
     textAuraInstantSec: 6,
     hideBardSongs: true,
-    maxDurationFilterSec: 0, // 0 = no cutoff
+    maxDurationFilterSec: 600,
     soundOnLand: false,
     soundOnExpire: false,
     soundWarningSec: 0, // 0 = off
@@ -179,10 +211,10 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // (custom files and the default beeps alike), not a separate slider
     // per alert type. Converted to a 0-1 fraction where it's actually
     // applied (overlay.js).
-    alertVolume: 100,
+    alertVolume: 10,
     // List mode only - an icon next to the progress bar, and which side
     // everything anchors to (icon + bar's "full" edge), see overlay.js.
-    showRowIcon: false,
+    showRowIcon: true,
     mirrorRowDirection: false,
     // Icon mode only - an optional second text overlay showing the
     // buff/timer's name, with its own independent size/position controls
@@ -190,14 +222,14 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // the formatted countdown - already has textSize/contentAnchor. Off
     // by default (top-center, distinct from the timer text's default
     // bottom-center, so enabling it doesn't start out overlapping).
-    showIconLabel: false,
+    showIconLabel: true,
     iconLabelSize: 11,
     iconLabelAnchor: 'top-center',
     // Text colours for the two icon-mode text overlays and the list-mode
     // timer. A buff about to expire still overrides these with the reserved
     // danger colour (see overlay.js) - that warning must not be themeable
     // away.
-    timerTextColor: '#f0f1f5',
+    timerTextColor: '#ffffff',
     labelTextColor: '#f0f1f5',
     // Ally auras only - group tiles by whose buff it is, with the ally's name
     // as a heading above each group, instead of one flat undifferentiated
@@ -209,7 +241,7 @@ function defaultSelfBuffsWidget(overrides = {}) {
     groupAllyDirection: 'vertical',
     hideAllyNameOnTile: false,
     // Icon mode only - pixels of space between icons in the grid.
-    iconMarginPx: 5,
+    iconMarginPx: 2,
     // Icon mode only - whether timer/label text wraps and clips to stay
     // fully inside its own tile, or overflows past it (see overlay.js's
     // applyTilePositionedTextStyle). On by default for the two "show
@@ -224,7 +256,21 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // reserved width when there are fewer of them than "Icons per row" -
     // 'left' (fill from the start, the original/default behavior), 'center',
     // or 'right'. Maps directly to CSS justify-content in overlay.js.
-    iconJustify: 'left',
+    iconJustify: 'center',
+    // Text mode only. Reported live 24 Aug: "text only triggers however need a text
+    // justification setting, left right and middle". A text tile is CSS white-space:nowrap and
+    // shrink-wraps its window to exactly the words it's showing (see overlay.css's own comment on
+    // why), so there's no fixed box for text-align to justify text WITHIN - every message already
+    // fills its tile exactly. What actually varies is the tile's WIDTH itself, message to message
+    // ("DISPELLED" vs "resisted your Denon's Dissension"), and the real question is which edge of
+    // the window stays put while that happens. 'left' (default, the original/only behavior) keeps
+    // the LEFT edge anchored and grows rightward - same direction icon/list mode already default
+    // to. 'right' keeps the right edge anchored and grows left; 'center' grows both ways evenly.
+    // Applied in overlay.js's reportSizeIfChanged, the same currentOriginX mechanism icon mode's
+    // label-overflow margin already uses to keep a grid's on-screen position stable while its
+    // window resizes - this is that same idea, just driven by the text's own measured width
+    // instead of a fixed label margin.
+    textJustify: 'left',
     // Which loadout profiles (see profileStore.js) this widget belongs to
     // - pure membership bookkeeping (used when creating a new profile, to
     // ask which existing widgets should migrate into it), NOT a visibility
@@ -277,8 +323,41 @@ function defaultCustomWidget(name) {
     // Only meaningful when buffSource is 'customTimer' - this widget's own
     // private set of text-trigger timer definitions (see
     // customTimerEngine.js), never shared with any other widget.
-    // { id, name, durationSec, triggerText, endedText }[]
+    // { id, name, durationSec, triggerText, endedText }[]. durationSec on each entry always
+    // matches triggerDurationSec below - see setTriggerDurationSec's comment for why it's still
+    // stored per-entry instead of being computed, even though it can never diverge.
     customTimers: [],
+    // The one duration every trigger on this widget shares - see the constant's own comment.
+    // Meaningless outside buffSource:'customTimer', same as customTimers itself.
+    triggerDurationSec: DEFAULT_TRIGGER_DURATION_SEC,
+    // How this widget's customTimers combine, when it has more than one. Reported live 25 Aug,
+    // replacing the old per-timer "Extra conditions" all-of list - that lived inside ONE trigger's
+    // edit modal, out of sight, and could only ever express "all of these lines together mean this
+    // ONE trigger fired." The owner's ask was simpler and more visible: define several ordinary
+    // triggers (already supported - see the "+ Add trigger" list) and choose how the SET of them
+    // behaves.
+    //   'independent' (default) - today's original behaviour, unchanged. Every trigger is its own
+    //     instance; if two are true at once, two tiles show.
+    //   'or' - still fires on any single trigger, but the whole widget shares ONE instance, so it
+    //     can never show more than one tile even when several of its triggers are true at once.
+    //   'and' - nothing fires until every trigger on the widget has been seen; one combined tile
+    //     for the whole set, not one per trigger.
+    // Meaningless with 0 or 1 triggers - see customTimerEngine.js for where this is read.
+    triggerCombineMode: 'independent',
+    // How long a trigger stays "seen" for AND-combine purposes once it matches a line - reported
+    // live 25 Aug: "the window fo rboth triggers is 30 seconds?" confirmed yes, and it was a fixed
+    // constant with no way to change it (customTimerEngine.js's old AND_SEEN_HOLD_MS). One number
+    // per widget, not per trigger - the user's own ask was a single window "for both triggers", not
+    // an independent clock on each one. Meaningless outside triggerCombineMode:'and'.
+    andWindowSec: DEFAULT_AND_WINDOW_SEC,
+    // Reverse detection ("negative triggers" in CLAUDE.md's backlog): shows this aura's tile ON
+    // by default, then hides it for triggerDurationSec once whatever triggerCombineMode already
+    // decides fires (one trigger, an AND set, or an OR set) - the opposite of the normal
+    // off-until-triggered behaviour. Whole-aura, not per-trigger - the user's own ask, so that
+    // combining it with AND ("stay on until both of these happen") is one checkbox next to the
+    // combine-mode control, not a flag set on each individual trigger. See customTimerEngine.js
+    // for the actual show/hide mechanics.
+    reverseDetection: false,
     locked: true,
     sortOrder: 'default',
     lowTimeThresholdSec: 30,
@@ -292,6 +371,7 @@ function defaultCustomWidget(name) {
     // Note 37 - a coloured edge by what kind of spell it is. On by default, at the owner's
     // request, so it works without anyone going looking for it.
     categoryBordersEnabled: true,
+    categoryBorderWidthPx: 1,
     // Notes 11/16/17. Watch the picked spells on the things you cast them AT rather than on your
     // group - mez, charm, snare, slow. Off by default and opt-in per aura on purpose: mob names
     // are not one word, so accepting them at all requires relaxing a check that exists to stop a
@@ -299,6 +379,15 @@ function defaultCustomWidget(name) {
     // landings across the owner's logs, 100,000 of them from two bard songs pulsing on everything
     // in range. Opting in per aura bounds it by what someone actually asked to see.
     trackOnEnemies: false,
+    // Note 40. Only meaningful when trackOnEnemies is true. 'self' (default,
+    // backward compatible) keeps the original behaviour - a watched debuff
+    // only lands here while there's evidence the player herself cast it.
+    // 'ally' drops that requirement: the same debuff on the same enemy, but
+    // tracked the moment its third-person landing text appears, regardless
+    // of who cast it. Shara's words: "just have it tracked that a debuff
+    // happened from someone, it doesn't need a name" - so 'ally' mode never
+    // records a caster, only that the debuff landed.
+    debuffCastBy: 'self',
     // Note 16, answered by Shara on 21 August. A TEXT aura can warn that somebody else has cast
     // one of the spells it watches - "be careful", rather than a countdown on a debuff that is
     // not yours. She ruled out the timer herself: an ally's debuff has no ending line in the log,
@@ -391,6 +480,7 @@ function defaultCustomWidget(name) {
     // (defaultAllyBuffsWidget overrides it back to true below).
     wrapText: false,
     iconJustify: 'left',
+    textJustify: 'left', // meaningless here - neither builtin kind can be a text aura
     activeProfileIds: [DEFAULT_PROFILE_ID], // see defaultSelfBuffsWidget's comment
   };
 }
@@ -403,17 +493,63 @@ function defaultCustomWidget(name) {
 // on-demand from the "Premade widget" option in the add-widget flow (see
 // main-window.js), and it's deletable/re-addable like any other widget,
 // so no migration/seeding logic is needed for it.
+// Size/position/icon-mode fields below match the owner's own live Ally Buffs widget as of 25 Aug -
+// same "override the premade with what I have, screen position included" request as
+// defaultSelfBuffsWidget above. landSoundId is left out for the same reason it's left out there:
+// her widget's landSoundId names a file in HER customSounds folder, which would not exist on a
+// fresh install.
 function defaultAllyBuffsWidget(name) {
   return {
     ...defaultCustomWidget(name),
     kind: 'ally-buffs-builtin',
+    displayMode: 'icons',
     buffFilterMode: 'all',
     buffSource: 'ally',
-    height: 500,
+    width: 670,
+    height: 68,
+    position: { x: 154, y: 309 },
+    textSize: 21,
+    iconSize: 60,
     hideBardSongs: true,
-    maxDurationFilterSec: 0,
+    maxDurationFilterSec: 900,
     wrapText: true, // see defaultSelfBuffsWidget's comment
-    iconsPerRow: DEFAULT_ICONS_PER_ROW, // see defaultCustomWidget's comment on why it's 1 there but not here
+    iconsPerRow: 10, // see defaultCustomWidget's comment on why it's 1 there but not here
+    showIconLabel: true,
+    timerTextColor: '#ffffff',
+    iconMarginPx: 2,
+    groupAllyBuffs: true,
+    groupAllyDirection: 'horizontal',
+    categoryBorderWidthPx: 2,
+  };
+}
+
+// The "Bard Songs" premade (backlog #15) - every bard song currently active ON THE PLAYER,
+// regardless of who cast it, grouped by caster when buffEngine.js can tell (see
+// _attributeBardSongCaster there), falling into an "Unknown" group otherwise. Deliberately NOT
+// buffFilterMode:'all' + hideBardSongs/maxDurationFilterSec like Self/Ally Buffs above - those
+// exist to let a picker-based aura EXCLUDE bard songs or long buffs, and neither concept applies
+// here: this aura's whole content already is bard songs, unconditionally, with no picker at all
+// (see overlay.js's visibleBuffs() bardSongs bypass). Same non-singleton, user-adds-it-on-demand
+// shape as Ally Buffs, for the same reason - see that function's own comment.
+// Size/position/icons-per-row match the owner's own live Bard Songs widget as of 25 Aug - same
+// request as defaultSelfBuffsWidget/defaultAllyBuffsWidget above.
+function defaultBardSongsWidget(name) {
+  return {
+    ...defaultCustomWidget(name),
+    kind: BARD_SONGS_KIND,
+    buffSource: 'bardSongs',
+    displayMode: 'icons',
+    width: 270,
+    height: 54,
+    position: { x: 52, y: 418 },
+    // On by default - the whole point of this aura is caster grouping, unlike Ally Buffs where
+    // it's an opt-in extra. See main-window.js's SHAPE_FIELDS('bard-songs') for why the picker/
+    // hide-bard-songs/track-others controls that would normally sit alongside this are absent
+    // entirely rather than just left off.
+    groupAllyBuffs: true,
+    wrapText: true,
+    iconsPerRow: 5,
+    categoryBorderWidthPx: 2,
   };
 }
 
@@ -439,12 +575,18 @@ const SHAREABLE_FIELDS = [
   'excludedBuffNames',
   'buffSource',
   'customTimers',
+  'triggerDurationSec',
+  'triggerCombineMode',
+  'andWindowSec',
+  'reverseDetection',
   'sortOrder',
   'lowTimeThresholdSec',
   'landingGlowEnabled',
   'mergeSameDuration',
   'categoryBordersEnabled',
+  'categoryBorderWidthPx',
   'trackOnEnemies',
+  'debuffCastBy',
   'allyDebuffAlert',
   'alwaysOn',
   'fightTimeoutSec',
@@ -476,6 +618,7 @@ const SHAREABLE_FIELDS = [
   'iconLabelAnchor',
   'wrapText',
   'iconJustify',
+  'textJustify',
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -525,10 +668,27 @@ function normalizeWidget(widget) {
     // Coerced for the same reason customTimers and excludedBuffNames are, and it was the one
     // list field missing the guard. Share codes are pasted out of chat by design, and overlay.js
     // feeds this straight into a Set - a non-array throws there and takes the whole render with
-    // it. On an ordinary aura that shows up as tiles that stop updating; on a sound-only aura it
-    // is completely silent, with nothing on screen to notice missing.
+    // it, showing up as tiles that simply stop updating.
     buffNames: Array.isArray(widget.buffNames) ? widget.buffNames : [],
     customTimers: Array.isArray(widget.customTimers) ? widget.customTimers : [],
+    // A widget saved before this field existed still has its real duration sitting on its first
+    // trigger (they were all in sync anyway on every real aura seen so far - see the field's own
+    // comment) - read it from there rather than resetting everyone to the bare default. A widget
+    // with no triggers yet, or no buffSource:'customTimer' at all, has nothing to read and gets
+    // the default, same as a brand new one would.
+    triggerDurationSec:
+      typeof widget.triggerDurationSec === 'number'
+        ? widget.triggerDurationSec
+        : Array.isArray(widget.customTimers) && typeof widget.customTimers[0]?.durationSec === 'number'
+          ? widget.customTimers[0].durationSec
+          : DEFAULT_TRIGGER_DURATION_SEC,
+    triggerCombineMode: ['independent', 'and', 'or'].includes(widget.triggerCombineMode)
+      ? widget.triggerCombineMode
+      : 'independent',
+    andWindowSec:
+      typeof widget.andWindowSec === 'number' && Number.isFinite(widget.andWindowSec)
+        ? Math.max(0, Math.min(MAX_AND_WINDOW_SEC, Math.round(widget.andWindowSec)))
+        : DEFAULT_AND_WINDOW_SEC,
     excludedBuffNames: Array.isArray(widget.excludedBuffNames) ? widget.excludedBuffNames : [],
     sortOrder: widget.sortOrder || 'default',
     lowTimeThresholdSec: typeof widget.lowTimeThresholdSec === 'number' ? widget.lowTimeThresholdSec : 30,
@@ -538,6 +698,14 @@ function normalizeWidget(widget) {
     // being the only one without them. That does change how existing auras LOOK on first launch
     // after upgrading, which is called out in TESTING.md rather than left as a surprise.
     categoryBordersEnabled: widget.categoryBordersEnabled !== false,
+    // Note 37 follow-up - the edge itself was always a fixed 1px, reported live as "make it
+    // wider" once the colour existed to see. 1 to 6: 1 matches every aura that predates this
+    // field exactly (byte-identical look on upgrade), 6 is a deliberate ceiling - past that a
+    // tile's own art starts disappearing under its own border rather than being framed by it.
+    categoryBorderWidthPx:
+      typeof widget.categoryBorderWidthPx === 'number'
+        ? Math.max(1, Math.min(6, Math.round(widget.categoryBorderWidthPx)))
+        : 1,
     trackOnEnemies: !!widget.trackOnEnemies,
     allyDebuffAlert: !!widget.allyDebuffAlert,
     alwaysOn: !!widget.alwaysOn,
@@ -582,6 +750,7 @@ function normalizeWidget(widget) {
         ? widget.wrapText
         : widget.kind === 'self-buffs-builtin' || widget.kind === 'ally-buffs-builtin',
     iconJustify: ['left', 'center', 'right'].includes(widget.iconJustify) ? widget.iconJustify : 'left',
+    textJustify: ['left', 'center', 'right'].includes(widget.textJustify) ? widget.textJustify : 'left',
     // Existing widgets saved before profiles existed default to just the
     // default profile - see defaultSelfBuffsWidget's comment on this field.
     activeProfileIds: Array.isArray(widget.activeProfileIds) ? widget.activeProfileIds : [DEFAULT_PROFILE_ID],
@@ -603,48 +772,36 @@ function normalizeWidget(widget) {
 // One reserved kind, so there can only ever be one of these and nothing else can be mistaken for
 // it. Exported because widgetManager decides visibility by kind and the renderer hides it from the
 // delete button - three files have to agree on the string, so none of them should spell it.
-/**
- * Note 9. Cleans an all-of list on the way in.
- *
- * Every field is checked rather than trusted, because a share code is a path by which values this
- * app never wrote can arrive - and an unrecognised part is worse than a missing one: the timer
- * would sit there never firing, with nothing on screen to say why.
- *
- * A part that survives is either a zone check naming a zone, or a line check with text to match.
- * Anything else is dropped, and a list left with nothing in it becomes undefined, which means the
- * timer falls back to its plain trigger rather than becoming unfireable.
- */
-function normalizeAllOf(allOf) {
-  if (!Array.isArray(allOf)) return undefined;
-  const clean = [];
-  for (const raw of allOf) {
-    if (!raw || typeof raw !== 'object') continue;
-    if (raw.kind === 'zone') {
-      const zone = typeof raw.zone === 'string' ? raw.zone.trim() : '';
-      if (zone) clean.push({ kind: 'zone', zone });
-      continue;
-    }
-    const triggerText = typeof raw.triggerText === 'string' ? raw.triggerText.trim() : '';
-    if (!triggerText) continue;
-    const part = { kind: 'line', triggerText };
-    if (TRIGGER_MATCH_MODES.includes(raw.triggerMatch)) part.triggerMatch = raw.triggerMatch;
-    // Left off entirely when unset, so customTimerEngine's default applies rather than a zero
-    // being written here and read there as "satisfied for no time at all".
-    if (Number(raw.holdSec) > 0) part.holdSec = Math.round(Number(raw.holdSec));
-    clean.push(part);
-  }
-  return clean.length ? clean : undefined;
-}
-
 const LOADOUT_LABEL_KIND = 'loadout-label-builtin';
+
+// Same reasoning as LOADOUT_LABEL_KIND just above, exported for the same reason - main-window.js's
+// widgetShape() needs to recognise it too, and 'ally-buffs-builtin'/'self-buffs-builtin' being bare
+// repeated string literals in several files instead of a shared constant is this project's own
+// stated lesson in that comment, not a pattern to repeat a third time.
+const BARD_SONGS_KIND = 'bard-songs-builtin';
 
 // The trigger modes customTimerEngine understands. Anything else is exact whole-line matching.
 // Kept beside the store rather than in the engine because this is the list the store validates
 // against, and a mode missing from HERE is a mode that silently stops working.
-const TRIGGER_MATCH_MODES = ['contains', 'castOf'];
+const TRIGGER_MATCH_MODES = ['contains', 'castOf', 'zoneEnter', 'zoneLeave'];
+
+// Every scaleCategory:'charm' spell in the current roster (src/shared/data/buffs.json), for the
+// "Charm broke" text-aura preset below. A snapshot, not derived live from the roster at build time
+// - same convention allyCast's own hardcoded spell list already uses in this file, and for the
+// same reason: this is a small, rarely-changing set, and reading the roster JSON from inside
+// widgetStore.js would be a new coupling for a one-time list. If a new charm spell is ever added
+// to the roster, add its name here too.
+const CHARM_SPELL_NAMES = [
+  'Allure', 'Allure of the Wild', 'Befriend Animal', 'Beguile', 'Beguile Animals',
+  'Beguile Plants', 'Beguile Undead', 'Cajole Undead', 'Cajoling Whispers', 'Charm',
+  'Charm Animals', 'Dominate Undead', "Solon's Bewitching Bravura", "Solon's Song of the Sirens",
+];
 
 const TEXT_AURA_PRESETS = {
-  // Note 17's red RESIST flash, at the 1.4 seconds she asked for.
+  // Note 17's red RESIST flash. Originally 1.4 seconds, her own number, raised to 5s at a later
+  // request so the flash stayed readable rather than clearing on the sweep right after it
+  // appeared - and settled at 4s (with width/height/position below) by 25 Aug, matching her own
+  // live widget; see the "override the premade with what I have" note on defaultSelfBuffsWidget.
   //
   // One trigger covers every spell rather than one per spell, because "resisted your " only ever
   // appears in the line the game writes when something YOU cast is resisted. Counted across
@@ -656,19 +813,28 @@ const TEXT_AURA_PRESETS = {
   // Worth knowing it was checked: one line in those logs is a player typing the word "resisted"
   // in chat. It says "resisted my slows", not "resisted your", so it does not fire this.
   //
-  // The 1.4 is her number, and it is honest to about a second: timers are swept once a second, so
-  // the flash actually clears on the first tick after 1.4s - somewhere between 1.4 and 2.4 seconds
-  // depending on where in the tick it landed. Left as 1.4 rather than rounded to 2, because the
-  // sweep is what to change if that ever matters, not the number written here.
+  // Timers are swept once a second, so any duration here clears on the first tick after it - 4s
+  // means somewhere between 4 and 5 seconds in practice, not exactly 4.
+  //
+  // "Your {spell} was resisted by {mob}" - the wording settled on 25 Aug, once {mob} existed (see
+  // overlay.js's textFor() comment) to name the resisting target as well as the resisted spell.
+  // {spell} resolves to whatever the trigger's own "contains" match left over on the real line
+  // (customTimerEngine's capturedText) - for "An imp protector resisted your Denon's Dissension!"
+  // that's "Denon's Dissension". {mob} resolves the same way to the text BEFORE the match
+  // ("An imp protector").
   resisted: () => ({
     buffSource: 'customTimer',
-    textAuraMessage: 'RESISTED',
+    textAuraMessage: 'Your {spell} was resisted by {mob}',
     textAuraSize: 48,
+    triggerDurationSec: 4,
+    width: 514,
+    height: 81,
+    position: { x: 919, y: 241 },
     customTimers: [
       {
         id: crypto.randomUUID(),
         name: 'Resisted',
-        durationSec: 1.4,
+        durationSec: 4,
         triggerText: 'resisted your ',
         triggerMatch: 'contains',
         endedText: '',
@@ -695,15 +861,55 @@ const TEXT_AURA_PRESETS = {
     textAuraInstantSec: 8,
   }),
 
+  // Message, duration and placement below match the owner's own live widget as of 25 Aug (was the
+  // bare word "DISPELLED" at 8s, before she changed both) - see the "override the premade with
+  // what I have" note on defaultSelfBuffsWidget.
   dispelled: () => ({
     buffSource: 'customTimer',
-    textAuraMessage: 'DISPELLED',
+    textAuraMessage: 'You have been dispelled',
     textAuraSize: 48,
+    triggerDurationSec: 4,
+    width: 160,
+    height: 56,
+    position: { x: 875, y: 188 },
     customTimers: [
-      { id: crypto.randomUUID(), name: 'Dispelled', durationSec: 8, triggerText: 'You feel very dispelled.', endedText: '' },
-      { id: crypto.randomUUID(), name: 'Dispelled', durationSec: 8, triggerText: 'You feel dispelled.', endedText: '' },
-      { id: crypto.randomUUID(), name: 'Dispelled', durationSec: 8, triggerText: 'You feel a bit dispelled.', endedText: '' },
+      { id: crypto.randomUUID(), name: 'Dispelled', durationSec: 4, triggerText: 'You feel very dispelled.', endedText: '' },
+      { id: crypto.randomUUID(), name: 'Dispelled', durationSec: 4, triggerText: 'You feel dispelled.', endedText: '' },
+      { id: crypto.randomUUID(), name: 'Dispelled', durationSec: 4, triggerText: 'You feel a bit dispelled.', endedText: '' },
     ],
+  }),
+
+  // "When your charmed target breaks" (25 Aug) - found directly in the owner's own log, per her
+  // own instruction: "you can find the syntax in the logs." The generic game-wide wears-off
+  // message - "Your <SpellName> spell has worn off of <Target>." - confirmed present for entirely
+  // unrelated buffs too (Alacrity, Agility, Agilmente's Aria of Eagles all wearing off allies use
+  // the identical template), so it isn't charm-specific text; what makes this a charm-break alert
+  // is watching for it under every one of the roster's own charm-category spell names specifically
+  // (CHARM_SPELL_NAMES below), same "completeness over perfect naming" reasoning as everywhere
+  // else charm/mez spells get enumerated in this file (see allyCast's own list above).
+  //
+  // "contains" mode on "<name> spell has worn off of" (not the full line - the target name after
+  // it varies) captures the remainder as {spell} via customTimerEngine's own capturedText
+  // mechanism - the same token the Resist flash preset already uses for the same shape of capture,
+  // just landing on the freed target's name here instead of a resisted spell's.
+  // Placement below matches the owner's own live widget as of 25 Aug - see the "override the
+  // premade with what I have" note on defaultSelfBuffsWidget.
+  charmBroke: () => ({
+    buffSource: 'customTimer',
+    textAuraMessage: '{spell} has broken free!',
+    textAuraSize: 40,
+    triggerDurationSec: 6,
+    width: 160,
+    height: 48,
+    position: { x: 898, y: 191 },
+    customTimers: CHARM_SPELL_NAMES.map((name) => ({
+      id: crypto.randomUUID(),
+      name: 'Charm broke',
+      durationSec: 6,
+      triggerText: `${name} spell has worn off of`,
+      triggerMatch: 'contains',
+      endedText: '',
+    })),
   }),
 };
 
@@ -733,6 +939,7 @@ function defaultsForKind(kind, name) {
   if (kind === LOADOUT_LABEL_KIND) return defaultLoadoutLabelWidget();
   if (kind === 'self-buffs-builtin') return defaultSelfBuffsWidget();
   if (kind === 'ally-buffs-builtin') return defaultAllyBuffsWidget(name);
+  if (kind === BARD_SONGS_KIND) return defaultBardSongsWidget(name);
   return defaultCustomWidget(name);
 }
 
@@ -770,11 +977,18 @@ class WidgetStore {
     const oldSettings = this.store.loadJson('overlaySettings', {});
     const oldPosition = this.store.loadJson('overlayPosition', null);
 
-    const selfBuffs = defaultSelfBuffsWidget({
-      enabled: oldSettings.enabled !== false,
-      displayMode: oldSettings.displayMode === 'icons' ? 'icons' : 'list',
-      position: oldPosition,
-    });
+    // Only override the built-in defaults (see defaultSelfBuffsWidget's own comment on those,
+    // 25 Aug) when a REAL pre-widget-system install actually left these files behind - a
+    // genuinely fresh install has neither, and should get the new defaults rather than have this
+    // migration path silently reintroduce the old list/null layout it used to always pass here.
+    const overrides = {};
+    if (Object.keys(oldSettings).length > 0) {
+      overrides.enabled = oldSettings.enabled !== false;
+      overrides.displayMode = oldSettings.displayMode === 'icons' ? 'icons' : 'list';
+    }
+    if (oldPosition) overrides.position = oldPosition;
+
+    const selfBuffs = defaultSelfBuffsWidget(overrides);
 
     const data = { version: 2, widgets: [selfBuffs] };
     this.store.saveJson('widgets', data);
@@ -821,19 +1035,15 @@ class WidgetStore {
     return widget;
   }
 
-  // The "Sound only" premade - an ordinary custom widget that happens to start in
-  // displayMode 'sound-only'. Deliberately NOT its own kind: see DISPLAY_MODES above.
-  //
-  // It starts SILENT, and that is the right default even though a premade that does nothing
-  // out of the box looks unhelpful. buffFilterMode 'explicit' with an empty buffNames means it
-  // watches nothing until the user picks something, matching how every other custom widget
-  // fails closed. The alternative - filter mode 'all' with an expire sound on - would beep
-  // every single time any buff anywhere ran out, which is a machine gun, not an alert. The
-  // add-aura flow drops the user straight onto this widget's own settings page (focusWidget in
-  // main-window.js), so "pick what it listens for" is the very next thing on screen.
-  //
-  // soundOnExpire is on so that the moment they pick a buff, it does the thing the aura is for
-  // without a second trip into the Sounds section.
+  createBardSongs(name, { activeProfileIds } = {}) {
+    const widget = defaultBardSongsWidget(name);
+    widget.premadeOrigin = { kind: 'bardSongs' };
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
   // A TEXT AURA. Presets rather than free-form config, so the premade announcers and the blank
   // one both come through here and the IPC surface stays a name and a known string.
   //
@@ -898,15 +1108,26 @@ class WidgetStore {
   //
   // Editable afterwards, and that matters. Recast times are mined and are right most of the time
   // but not always - of two checked in game, one was wrong. This is a good default, not a fact.
-  createCooldownTimer(name, { spellName, cooldownSec, iconId, activeProfileIds } = {}) {
+  //
+  // buffDurationSec, optional: the "Buff + cooldown" case (25 Aug) - a single tile that counts
+  // down the BUFF's own active time first, then rolls straight into the recast cooldown without
+  // resetting, using customTimerEngine's existing two-phase 'duration'->'cooldown' mechanism
+  // (Note 10) - built here rather than as a new trigger type, since a spell that has both a real
+  // buff duration and a real recast time is exactly this method's existing castOf shape with one
+  // more field filled in. Omitted (undefined), this method is unchanged: a plain single-phase
+  // recast countdown, same as the Cooldown timer premade has always built.
+  createCooldownTimer(name, { spellName, cooldownSec, buffDurationSec, iconId, activeProfileIds } = {}) {
     const widget = defaultCustomWidget(name || spellName || 'Cooldown');
     widget.buffSource = 'customTimer';
     widget.iconsPerRow = 1;
+    const hasBuffDuration = typeof buffDurationSec === 'number' && buffDurationSec > 0;
     widget.customTimers = [
       {
         id: crypto.randomUUID(),
         name: spellName,
-        durationSec: cooldownSec,
+        // The buff's own length when tracking both phases; otherwise the recast countdown itself,
+        // exactly as before.
+        durationSec: hasBuffDuration ? buffDurationSec : cooldownSec,
         // The SPELL, not a line of text - see customTimerEngine's castOf mode. It is what makes
         // "You begin casting Cannibalize V." start the Cannibalize cooldown without also letting
         // "Fire" start on "Fire Bolt".
@@ -914,10 +1135,15 @@ class WidgetStore {
         triggerMatch: 'castOf',
         endedText: '',
         iconId: iconId ?? undefined,
+        // Note 10's phase-roll field. Undefined (not 0) when there's no second phase to roll
+        // into - same reasoning as addCustomTimer's own cooldownSec field a few methods down:
+        // a timer with no cooldown should stay byte-identical to one built before this option
+        // existed.
+        cooldownSec: hasBuffDuration ? cooldownSec : undefined,
       },
     ];
     widget.buffNames = [spellName];
-    widget.premadeOrigin = { kind: 'cooldownTimer', spellName, cooldownSec, iconId };
+    widget.premadeOrigin = { kind: 'cooldownTimer', spellName, cooldownSec, buffDurationSec, iconId };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -1009,12 +1235,60 @@ class WidgetStore {
     return widget;
   }
 
-  createSoundOnly(name, { activeProfileIds } = {}) {
-    const widget = defaultCustomWidget(name);
-    widget.displayMode = 'sound-only';
-    widget.soundOnExpire = true;
-    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
-    this.data.widgets.push(widget);
+  // The single duration every trigger on this widget shares - see the constant's own comment for
+  // why this replaced a per-trigger field. Still WRITTEN onto every existing customTimers entry's
+  // own durationSec (rather than only living on the widget and having customTimerEngine read it
+  // from there) so the engine itself needs no changes at all - it already reads a timer's own
+  // durationSec, and every trigger's copy simply never gets to disagree with the widget's any
+  // more. A change here takes effect on every timer immediately, running or not - "a slider that
+  // affects every trigger" was the explicit ask, not just future ones.
+  setTriggerDurationSec(id, seconds) {
+    const widget = this.getById(id);
+    if (!widget) return null;
+    // Garbage (NaN, a string) falls back to the default; a real number - including 0, which is
+    // deliberately legitimate (a trigger that only has to make a noise, not stay on screen for
+    // any length of time) - is clamped instead of treated as "unset". `|| DEFAULT` alone would
+    // have mistaken a deliberate 0 for garbage too. Negative still floors at 0.
+    const n = Number(seconds);
+    const clamped = Number.isFinite(n) ? Math.max(0, Math.min(3600, Math.round(n))) : DEFAULT_TRIGGER_DURATION_SEC;
+    widget.triggerDurationSec = clamped;
+    for (const timer of widget.customTimers || []) timer.durationSec = clamped;
+    this._save();
+    return widget;
+  }
+
+  // See the field's own comment on defaultCustomWidget for what each of the three modes means.
+  // Whitelisted rather than passed through, same reasoning as triggerMatch below - a share code or
+  // a stray IPC call with garbage here should fall back to the always-safe default rather than
+  // leave the widget in a mode the engine does not recognise.
+  setTriggerCombineMode(id, mode) {
+    const widget = this.getById(id);
+    if (!widget) return null;
+    widget.triggerCombineMode = ['independent', 'and', 'or'].includes(mode) ? mode : 'independent';
+    this._save();
+    return widget;
+  }
+
+  // Reported live 25 Aug, after confirming the window really was a fixed, invisible 30s constant:
+  // "place the trigger window timing below the add trigger button. allow it to be changable, 0-30
+  // seconds... this should be doable for anything that supports AND Triggers." One number per
+  // widget (not per trigger - the ask was a single window "for both triggers"), clamped the same
+  // way every other duration-ish slider here is - a garbage/out-of-range value falls back to the
+  // safe default rather than leaving AND combos silently using something nobody chose.
+  setAndWindowSec(id, seconds) {
+    const widget = this.getById(id);
+    if (!widget) return null;
+    const n = Number(seconds);
+    widget.andWindowSec = Number.isFinite(n) ? Math.max(0, Math.min(MAX_AND_WINDOW_SEC, Math.round(n))) : DEFAULT_AND_WINDOW_SEC;
+    this._save();
+    return widget;
+  }
+
+  // See defaultCustomWidget's own comment on the field - whole-aura, not per-trigger.
+  setReverseDetection(id, enabled) {
+    const widget = this.getById(id);
+    if (!widget) return null;
+    widget.reverseDetection = !!enabled;
     this._save();
     return widget;
   }
@@ -1026,7 +1300,7 @@ class WidgetStore {
   // pick step) so the existing explicit-buffNames-filter rendering path in
   // overlay.js already isolates this widget's own timers out of the
   // engine's combined active list, with zero special-casing needed there.
-  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, allOf }) {
+  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) {
     const widget = this.getById(id);
     if (!widget) return null;
     const timer = {
@@ -1061,9 +1335,6 @@ class WidgetStore {
       // again. Undefined rather than 0 when unset, so a timer that has never used this stays
       // byte-identical to one written before the feature existed.
       cooldownSec: Number(cooldownSec) > 0 ? Number(cooldownSec) : undefined,
-      // Note 9. Extra conditions that must ALL be true before this fires. Undefined rather than an
-      // empty array when unset, so a timer that has never used it stays byte-identical.
-      allOf: normalizeAllOf(allOf),
     };
     widget.customTimers = [...(widget.customTimers || []), timer];
     widget.buffNames = widget.customTimers.map((t) => t.name);
@@ -1071,7 +1342,11 @@ class WidgetStore {
     return widget;
   }
 
-  updateCustomTimer(id, timerId, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, cooldownSec, allOf }) {
+  updateCustomTimer(
+    id,
+    timerId,
+    { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }
+  ) {
     const widget = this.getById(id);
     if (!widget) return null;
     const timer = (widget.customTimers || []).find((t) => t.id === timerId);
@@ -1083,17 +1358,23 @@ class WidgetStore {
     timer.triggerChat = triggerChat || undefined; // see addCustomTimer's comment
     timer.endedChat = endedChat || undefined;
     timer.iconId = iconId ?? undefined; // see addCustomTimer's comment on why not ||
+    // Reported live 24 Aug: this field was missing from this method's parameter list entirely, so
+    // editing an existing timer silently left whatever triggerMatch it had from creation in place
+    // no matter what the edit form actually showed - confirmed on a real saved timer, stuck at
+    // 'contains' from its original raw-text creation after being edited into chat mode, which
+    // synthesizes a whole line ("You say, '...'") that 'contains' matching against was never meant
+    // to apply to. Same whitelist as addCustomTimer, for the same reason (a typo becomes plain
+    // exact matching, not a mode the engine does not recognise) - always written, not left alone
+    // like cooldownSec below, because every Save from the form computes a definite value for
+    // the CURRENT mode (undefined in chat mode, 'contains' or undefined in raw mode) and should
+    // fully replace whatever the timer had before, not merge with it.
+    timer.triggerMatch = TRIGGER_MATCH_MODES.includes(triggerMatch) ? triggerMatch : undefined;
     // Only touched when the caller actually said something about it. An empty box sends 0 and
     // clears it, which is right; a caller that has never heard of the field leaves it alone, which
     // is also right. Rewriting unconditionally meant any code path not yet updated for a new field
     // would silently wipe it - the same shape of bug as the castOf drop above.
     if (cooldownSec !== undefined) {
       timer.cooldownSec = Number(cooldownSec) > 0 ? Number(cooldownSec) : undefined;
-    }
-    // Same rule, and for the same reason - see the comment above. A caller that says nothing about
-    // the conditions must not silently delete them.
-    if (allOf !== undefined) {
-      timer.allOf = normalizeAllOf(allOf);
     }
     widget.buffNames = widget.customTimers.map((t) => t.name);
     this._save();
@@ -1188,6 +1469,8 @@ class WidgetStore {
     let fresh = null;
     if (origin.kind === 'allyBuffs') {
       fresh = defaultAllyBuffsWidget(widget.name);
+    } else if (origin.kind === 'bardSongs') {
+      fresh = defaultBardSongsWidget(widget.name);
     } else if (origin.kind === 'textAura' && TEXT_AURA_PRESETS[origin.preset]) {
       fresh = defaultCustomWidget(widget.name);
       fresh.displayMode = 'text';
@@ -1320,10 +1603,9 @@ class WidgetStore {
     const builtinKinds = ['self-buffs-builtin', 'ally-buffs-builtin'];
     const kind = builtinKinds.includes(payload.kind) ? payload.kind : 'custom';
     // displayMode is here so the Self Buffs confirm dialog can say what is actually about to
-    // happen. A sound-only code applied to Self Buffs is a legitimate thing to want and a
-    // catastrophic thing to do by accident: Self Buffs cannot be deleted, so an unexpected one
-    // leaves the user staring at an empty screen with no obvious way back. A code carries only
-    // its diff from the defaults, so an absent displayMode genuinely means 'list'.
+    // happen - a code from before 'sound-only' was removed could still carry it, which
+    // normalizeDisplayMode below silently turns back into 'list'. A code carries only its diff
+    // from the defaults, so an absent displayMode genuinely means 'list'.
     return { name: payload.name, kind, displayMode: normalizeDisplayMode(payload.displayMode) };
   }
 
@@ -1392,10 +1674,10 @@ class WidgetStore {
 module.exports = {
   WidgetStore,
   LOADOUT_LABEL_KIND,
+  BARD_SONGS_KIND,
   DISPLAY_MODES,
   TEXT_AURA_PRESETS,
   normalizeDisplayMode,
-  isSoundOnly,
   isTextAura,
   clampInstantSec,
   MAX_INSTANT_DISPLAY_SEC,

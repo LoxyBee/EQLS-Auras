@@ -356,10 +356,20 @@ test('the "Watching:" row is hidden on a debuff aura too, not shown reading "all
   // allyDebuffAlert (see ally-cast-alert.test.js) and for the same underlying reason -
   // buffSource:'ally' on a debuff aura is a plumbing requirement, not a real choice, so showing it
   // as a choice was actively wrong.
+  // Rewritten 25 Aug for the additive settings-panel model: widgetShape() gives a
+  // trackOnEnemies:true aura its own shape ('custom-debuff'), so it's SHAPE_FIELDS' job to leave
+  // 'buff-source' out of that shape's list, rather than a live boolean hiding a row built for it.
   const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
-  const fn = renderer.match(/const announcer = widget\.displayMode === 'text'[\s\S]*?buffSourceRow\.style\.display =([\s\S]*?);/);
-  assert.ok(fn, 'the buffSourceRow visibility rule has been restructured');
-  assert.match(fn[1], /!widget\.trackOnEnemies/, 'a debuff aura still shows "Watching: Buffs you\'ve cast on allies"');
+  const shapeFn = renderer.match(/function widgetShape\(widget\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(shapeFn, 'widgetShape has been restructured');
+  assert.match(shapeFn[1], /if \(widget\.trackOnEnemies\) return 'custom-debuff';/, 'trackOnEnemies no longer gets its own shape');
+  const tableFn = renderer.match(/const SHAPE_FIELDS = \{([\s\S]*?)\n {2}\};/);
+  assert.ok(tableFn, 'SHAPE_FIELDS has been renamed or restructured');
+  assert.doesNotMatch(
+    tableFn[1],
+    /'custom-debuff': \[[^\]]*'buff-source'/,
+    'a debuff aura still shows "Watching: Buffs you\'ve cast on allies"'
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -450,80 +460,178 @@ test('the third option exists in the markup', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Counting identically-named mobs - notes 12 and 18
+// One tile per enemy debuff key - notes 12 and 18 scrapped 24 August
 // ---------------------------------------------------------------------------
+//
+// Notes 12/18 originally counted identically-named mobs sharing one key as separate instances
+// ("a greater kobold" x2, x3...), since the log gives them no other identity. Reported live 24
+// Aug: chain-mezzing a single target before it wakes (the normal way to hold CC on a mob) hits
+// that same key exactly the way a second, genuinely different mob would, so the count climbed on
+// what was really only ever one mezzed target. Shara: "scrap multi tile combining for aoe debuffs
+// for now. count just the duration, refreshed on a new cast. single tile." So a second landing
+// under the same key is a refresh, exactly like a buff on a groupmate always was - no count, no
+// instances array, one tile, its duration reset to whatever the new landing carries.
 
-test('three mobs with the same name count as three', () => {
-  // Shara, 23 August: "2 kobolds should list as x2, when one dies, it should be reduced to x1."
-  // The log gives them no separate identity, so the entry holds one expiry per instance.
+test('a second landing on the same key refreshes the one tile rather than adding a second', () => {
   const e = engine(['Mesmerize']);
   feed(e, 'You begin casting Mesmerize.');
-  for (let i = 0; i < 3; i += 1) feed(e, 'a greater kobold has been mesmerized.');
-  assert.equal(e.getActiveAllyBuffs()[0].count, 3);
+  feed(e, 'a greater kobold has been mesmerized.');
+  feed(e, 'You begin casting Mesmerize.');
+  feed(e, 'a greater kobold has been mesmerized.');
+  assert.equal(e.getActiveAllyBuffs().length, 1, 'a recast under the same key must not create a second tile');
+  assert.equal(names(e).length, 1);
 });
 
-test('each way one can end removes exactly one', () => {
-  // Not all of them. The first version filtered instances by value, and because an AoE mez lands
-  // on every mob in the same millisecond they all shared a timestamp - so one death wiped the lot.
+test('the refreshed tile carries the new landing\'s duration, not the old one', () => {
+  const e = engine(['Mesmerize']);
+  feed(e, 'You begin casting Mesmerize.', 'a greater kobold has been mesmerized.');
+  const first = e.getActiveAllyBuffs()[0];
+  const oldExpiry = [...e.allyBuffs.values()][0].expiresAt;
+  // Force the existing entry to look like it's about to expire, then recast - the refreshed
+  // entry's expiry must move, proving the new landing actually overwrote it rather than being a
+  // no-op against an existing key.
+  [...e.allyBuffs.values()][0].expiresAt = Date.now() + 1000;
+  feed(e, 'You begin casting Mesmerize.', 'a greater kobold has been mesmerized.');
+  const after = [...e.allyBuffs.values()][0].expiresAt;
+  assert.ok(after > Date.now() + 1000, 'a recast landing did not refresh the duration');
+  assert.equal(first.name, 'Mesmerize');
+  void oldExpiry;
+});
+
+test('any of the three ending lines clears the tile outright - there is only ever one', () => {
   for (const ending of [
     'A greater kobold has been slain by Avenrae!',
     'Your Mesmerize spell has worn off of a greater kobold.',
     'A greater kobold has been awakened by Shara.',
   ]) {
     const e = engine(['Mesmerize']);
-    feed(e, 'You begin casting Mesmerize.');
-    for (let i = 0; i < 3; i += 1) feed(e, 'a greater kobold has been mesmerized.');
+    feed(e, 'You begin casting Mesmerize.', 'a greater kobold has been mesmerized.');
     feed(e, ending);
-    assert.equal(e.getActiveAllyBuffs()[0].count, 2, `wrong count after: ${ending}`);
+    assert.deepEqual(names(e), [], `tile survived: ${ending}`);
   }
 });
 
-test('the last one ending clears the tile', () => {
-  const e = engine(['Mesmerize']);
-  feed(e, 'You begin casting Mesmerize.');
-  feed(e, 'a greater kobold has been mesmerized.');
-  feed(e, 'a greater kobold has been mesmerized.');
-  feed(e, 'A greater kobold has been slain by Avenrae!');
-  feed(e, 'A greater kobold has been slain by Avenrae!');
-  assert.deepEqual(names(e), []);
-});
-
-test('a buff on a groupmate does not accumulate a count', () => {
-  // Re-buffing one person is a refresh, not a second target. Only things cast AT something can
-  // have several recipients sharing a name.
+test('a buff on a groupmate still refreshes rather than stacking', () => {
+  // Unchanged behavior - a groupmate always had one recipient by definition, and this is now the
+  // same rule an enemy debuff follows too.
   const e = engine(null);
   for (let i = 0; i < 3; i += 1) {
     feed(e, 'You begin casting Spirit of Wolf.', 'Marrowbane is surrounded by a brief lupine aura.');
   }
-  const buff = e.getActiveAllyBuffs().find((b) => b.name === 'Spirit of Wolf');
-  assert.ok(buff);
-  assert.equal(buff.count, 1, 'refreshing a groupmate buff counted it twice');
+  const matches = e.getActiveAllyBuffs().filter((b) => b.name === 'Spirit of Wolf');
+  assert.equal(matches.length, 1, 're-casting a groupmate buff created a second tile');
 });
 
-test('the countdown shown is the soonest of them', () => {
-  // For a mez the number that matters is when the NEXT one wakes up, not the last.
+test('no count field survives on an enemy debuff, and no x2 badge can be drawn for one', () => {
+  // The instances/count mechanism is gone at the source, not just hidden - a stale "count" field
+  // left on the engine's output would be a trap for the next thing that reads it.
   const e = engine(['Mesmerize']);
   feed(e, 'You begin casting Mesmerize.', 'a greater kobold has been mesmerized.');
-  const entry = [...e.allyBuffs.values()][0];
-  entry.instances = [Date.now() + 90000, Date.now() + 5000];
-  entry.expiresAt = Math.min(...entry.instances);
-  assert.equal(e.getActiveAllyBuffs()[0].remainingSec, 5);
+  assert.equal('count' in e.getActiveAllyBuffs()[0], false);
 
-  // The check above sets the instances by hand, so it cannot see the LANDING path picking the
-  // wrong one - two mezzes landing in this test land in the same millisecond and every choice
-  // looks identical. Pinned at the source instead.
   const src = fs.readFileSync(path.join(ROOT, 'src', 'main', 'buffEngine.js'), 'utf8');
-  assert.match(src, /expiresAt: Math\.min\(\.\.\.instances\)/, 'a landing takes the last expiry, not the soonest');
-  assert.match(src, /entry\.expiresAt = Math\.min\(\.\.\.entry\.instances\)/, 'removing one takes the wrong new soonest');
-});
+  assert.doesNotMatch(src, /\.instances\b/, 'the scrapped instances field is still read or written in buffEngine.js');
 
-test('a count of one is never shown', () => {
-  // Her instruction, and it is enforced in one place rather than at each call site.
   const overlay = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'overlay', 'overlay.js'), 'utf8');
   const fn = overlay.match(/function countFor\(buff\) \{([\s\S]*?)\n\}/);
   assert.ok(fn, 'countFor has been renamed or restructured');
-  assert.match(fn[1], /buff\.count > 1/, 'a count of 1 would be drawn');
-  assert.match(fn[1], /return null;/);
+  assert.doesNotMatch(fn[1], /buff\.count/, 'the scrapped per-mob count is still read by the overlay');
+});
+
+// ---------------------------------------------------------------------------
+// Note 40 - the "Watching: cast by an ally" mode. Same debuff, same enemy,
+// same countdown as everything above, but tracked the moment its
+// third-person landing text appears, with no requirement at all that the
+// player be the one who cast it. Shara's words: "just have it tracked that a
+// debuff happened from someone, it doesn't need a name" - so unlike the
+// ally-buff tiers this never records who cast it.
+// ---------------------------------------------------------------------------
+
+// allyWatching: spells opted into "ally" mode - tracked with no self-cast evidence at all.
+function engineAlly(allyWatching, selfWatching) {
+  const store = memory();
+  const e = new BuffEngine(new BuffStore(store), store);
+  e.stop();
+  if (allyWatching) {
+    const set = new Set(allyWatching.map((s) => s.toLowerCase()));
+    e.setAllyEnemyDebuffNamesFn(() => set);
+  }
+  if (selfWatching) {
+    const set = new Set(selfWatching.map((s) => s.toLowerCase()));
+    e.setEnemyDebuffNamesFn(() => set);
+  }
+  return e;
+}
+
+test('ally mode lands a debuff with no self-cast evidence at all', () => {
+  // The whole point of the mode: no "You begin casting" line precedes this, nothing else has
+  // named the spell, and it still lands.
+  const e = engineAlly(['Mesmerize']);
+  feed(e, 'a greater kobold has been mesmerized.');
+  assert.deepEqual(names(e), ['a greater kobold::Mesmerize']);
+});
+
+test('ally mode still needs the mob-name relaxation, same as self mode', () => {
+  // A multi-word mob name only ever passes _isValidRecipient once _isWatchedOnEnemies says yes for
+  // that spell - proving the ally-mode set feeds that same check, not a separate unbounded one.
+  const e = engineAlly(['Mesmerize']);
+  feed(e, 'a greater kobold has been mesmerized.');
+  assert.deepEqual(names(e), ['a greater kobold::Mesmerize'], 'a real mob name should have landed');
+});
+
+test('ally mode does not admit a spell nobody opted into', () => {
+  const e = engineAlly(['Mesmerize']);
+  feed(e, 'a greater kobold has been charmed.');
+  assert.deepEqual(names(e), []);
+});
+
+test('self mode and ally mode are independent - opting a spell into one does not opt it into the other', () => {
+  // Mesmerize in ally mode only: a self-mode-only spell watcher would never see it, and it must
+  // still land here with no self-cast evidence.
+  const allyOnly = engineAlly(['Mesmerize'], null);
+  feed(allyOnly, 'a greater kobold has been mesmerized.');
+  assert.deepEqual(names(allyOnly), ['a greater kobold::Mesmerize'], 'ally-mode spell did not land in ally mode');
+
+  // Charm in self mode only: with no self-cast evidence at all, it must NOT land just because a
+  // different spell is watched in ally mode.
+  const selfOnly = engineAlly(['Mesmerize'], ['Charm']);
+  feed(selfOnly, 'orc legionnaire has been charmed.');
+  assert.deepEqual(names(selfOnly), [], 'self-mode spell landed without any self-cast evidence');
+});
+
+test('ally mode caster identity is never captured - only that it landed', () => {
+  const e = engineAlly(['Mesmerize']);
+  feed(e, 'a greater kobold has been mesmerized.');
+  const entry = [...e.allyBuffs.values()][0];
+  assert.equal(entry.allyName, 'a greater kobold', 'names only the recipient, same as every other ally-buff entry');
+  assert.ok(!('casterName' in entry) && !('castBy' in entry), 'no caster field was ever added to the entry');
+});
+
+test('the watching-toggle setting exists, defaults to self, and is shareable', () => {
+  const data = {};
+  const store = new WidgetStore({
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  });
+  const w = store.createDebuff('Mez');
+  assert.equal(w.debuffCastBy, 'self', 'must default to the original self-cast behaviour');
+  assert.match(storeSrc, /'debuffCastBy',/, 'not in SHAREABLE_FIELDS, so a share code would drop it');
+});
+
+test('getAllyEnemyDebuffNames and getEnemyDebuffNames are mutually exclusive by the toggle', () => {
+  const selfFn = managerSrc.match(/function getEnemyDebuffNames\(\) \{([\s\S]*?)\n\}/);
+  const allyFn = managerSrc.match(/function getAllyEnemyDebuffNames\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(selfFn, 'getEnemyDebuffNames has been renamed or restructured');
+  assert.ok(allyFn, 'getAllyEnemyDebuffNames is missing');
+  assert.match(selfFn[1], /debuffCastBy === 'ally'\) continue;/, "self-mode list must skip auras switched to ally mode");
+  assert.match(allyFn[1], /debuffCastBy !== 'ally'\) continue;/, "ally-mode list must skip everything but ally mode");
+});
+
+test('the engine is given the ally-mode list at startup too', () => {
+  assert.match(
+    mainSrc,
+    /buffEngine\.setAllyEnemyDebuffNamesFn\(\(\) => widgetManager\.getAllyEnemyDebuffNames\(\)\)/
+  );
 });
 
 module.exports = () => report('enemy-debuffs');

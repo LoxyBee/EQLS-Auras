@@ -14,6 +14,12 @@
     "spreadsheet gives no duration BECAUSE they genuinely have none, as opposed to instants like",
     "nukes and heals, which have no duration because they do not last at all."
   ],
+  "Alacrity": {
+    "why": "Shara, 24 August 2026, measured live in-game: the roster (from the spreadsheet) gives 660s (11m), but the real base duration is 492s (8m12s) - confirmed by her stopwatching a cast with no AA/Exaltation bonus applied. The wrong base was compounding with the real AA+Exaltation multiplier (65% on her current settings) to show an 18-minute timer, which is correct math over a wrong number, not a scaling bug - see buffEngine.js's _scaledDuration and gotcha 25 in CLAUDE.md for the multiplier itself.",
+    "set": {
+      "durationSec": 492
+    }
+  },
   "Yaulp": {
     "why": "Shara, 20 August 2026: named as an example of a spell the spreadsheet gives no duration for because it genuinely lasts until dispelled or zoned, not because it is instant.",
     "set": {

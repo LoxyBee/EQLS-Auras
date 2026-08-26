@@ -106,5 +106,45 @@ test('a write failure still cannot break detection', () => {
   assert.match(fn, /broadcast\('debug:line', line\)/, 'the live feed stopped being fed');
 });
 
+// ---------------------------------------------------------------------------
+// The manual enable toggle - Shara, 25 August
+// ---------------------------------------------------------------------------
+//
+// "should there be a debug log of every aura that is fired/loaded/ended?... add it to the log,
+// behind a toggle, i will enable it manually for myself, under diagnostics." This log used to run
+// unconditionally on every launch with no way to turn it off; now it defaults OFF and needs a
+// deliberate opt-in, and customTimerEngine (custom triggers) feeds the exact same function
+// buffEngine already did, closing the actual gap that made the last two live-reported bugs
+// (OR-mode filtering, {mob} resolution) both hard to root-cause from the outside.
+
+test('the log is off by default and gated behind a persisted setting', () => {
+  const fn = mainSrc.match(/function debugLog\(message\) \{([\s\S]*?)\n\}/);
+  assert.ok(fn, 'debugLog has been restructured');
+  assert.match(fn[1], /if \(!debugLogEnabled\) return;/, 'the toggle no longer actually gates anything');
+  assert.match(mainSrc, /let debugLogEnabled = loadJson\('debugLogEnabled', false\)/, 'the default flipped to on, or stopped persisting');
+});
+
+test('the toggle is wired end to end: IPC, preload, and the Diagnostics checkbox', () => {
+  assert.match(mainSrc, /ipcMain\.handle\('debug:getEnabled', \(\) => debugLogEnabled\)/);
+  assert.match(mainSrc, /ipcMain\.handle\('debug:setEnabled'/);
+  assert.match(mainSrc, /saveJson\('debugLogEnabled', debugLogEnabled\)/, 'a toggle that does not persist reverts on every restart');
+  assert.match(preloadSrc, /getDebugLogEnabled:/);
+  assert.match(preloadSrc, /setDebugLogEnabled:/);
+  assert.match(html, /id="debug-log-enabled-checkbox"/);
+  assert.match(html, /Enable detection log/);
+  assert.match(rendererSrc, /debugLogEnabledCheckbox\.addEventListener\('change'/);
+  assert.match(rendererSrc, /window\.eqTracker\.setDebugLogEnabled\(debugLogEnabledCheckbox\.checked\)/);
+});
+
+test('it lives under the existing Diagnostics section, not a new one', () => {
+  const diagnosticsBlock = html.slice(html.indexOf('>Diagnostics<'), html.indexOf('>Diagnostics<') + 3000);
+  assert.match(diagnosticsBlock, /id="debug-log-enabled-checkbox"/, 'the checkbox is not actually inside Diagnostics');
+});
+
+test('customTimerEngine feeds the same function buffEngine does, not a second unwired log', () => {
+  assert.match(mainSrc, /buffEngine\.setDebugLogFn\(debugLog\)/);
+  assert.match(mainSrc, /customTimerEngine\.setDebugLogFn\(debugLog\)/);
+});
+
 module.exports = () => report('detection-log-file');
 if (require.main === module) process.exit(report('detection-log-file') ? 1 : 0);

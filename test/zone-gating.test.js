@@ -168,11 +168,9 @@ test('the zone clause sits beside the profile check and honours unlock', () => {
   const fn = managerSrc.match(/function shouldBeOnScreen\(config\) \{([\s\S]*?)\n\}/);
   assert.ok(fn, 'shouldBeOnScreen has been restructured');
   assert.match(fn[1], /if \(!isVisibleInCurrentZone\(config\) && !forceShown\.has\(config\.id\)\) return false;/);
-  // Same kind of rule as the profile one, so it belongs next to it - and above sound-only, which
-  // returns true and would otherwise let a gated sound aura keep beeping in the wrong zone.
+  // Same kind of rule as the profile one, so it belongs next to it.
   const at = (s) => fn[1].indexOf(s);
   assert.ok(at('isVisibleForActiveProfile') < at('isVisibleInCurrentZone'), 'zone check is above the profile check');
-  assert.ok(at('isVisibleInCurrentZone') < at('isSoundOnly'), 'a gated sound aura would still make noise');
 });
 
 test('changing zone re-evaluates every aura', () => {
@@ -259,6 +257,34 @@ test('it is wired end to end', () => {
   assert.match(managerSrc, /^ {2}setVisibleInZones,$/m);
   assert.match(managerSrc, /^ {2}applyZoneChange,$/m);
   assert.match(storeSrc, /'visibleInZones',/, 'not shareable, so a share code drops the zone list');
+});
+
+test('knownZones/currentZone/HOTKEY_LABELS live in the SAME function as their readers, not a scope away', () => {
+  // Reported live 25 Aug as "Rename just navigates you to the aura, and doesn't actually let you
+  // rename" - root-caused via temporary console logging to a completely different symptom:
+  // populateZoneSelect/renderWidgetZones (inside initWidgetsPanel) were reading `knownZones` and
+  // `currentZone`, which were actually declared as function-locals of a DIFFERENT top-level init
+  // function (initDetectionSettingsPanel) - a plain ReferenceError every time selectWidget reached
+  // renderWidgetZones, which rejected focusWidget's promise chain and silently skipped everything
+  // chained after it, including Rename's own nameInput.focus()/select(). Same shape of bug for
+  // HOTKEY_LABELS, the other direction (declared in initWidgetsPanel, read from
+  // initDetectionSettingsPanel). All three are pinned here as living together in one function.
+  const widgetsPanelFn = rendererSrc.match(/function initWidgetsPanel\(\) \{([\s\S]*?)\n\}\n\nfunction /);
+  assert.ok(widgetsPanelFn, 'initWidgetsPanel has been restructured - this suite cannot find its body');
+  const body = widgetsPanelFn[1];
+  assert.match(body, /let currentZone = null;/, 'currentZone no longer declared inside initWidgetsPanel');
+  assert.match(body, /let knownZones = \[\];/, 'knownZones no longer declared inside initWidgetsPanel');
+  assert.match(body, /const HOTKEY_LABELS = \{/, 'HOTKEY_LABELS no longer declared inside initWidgetsPanel');
+  assert.match(body, /function populateZoneSelect\(widget\) \{/, 'populateZoneSelect moved out of the function that owns knownZones');
+  assert.match(body, /function renderWidgetZones\(widget\) \{/);
+
+  // And the negative: initDetectionSettingsPanel must not have quietly kept its own copies behind,
+  // which would just reintroduce two disagreeing sources of the same state.
+  const detectionPanelFn = rendererSrc.match(/function initDetectionSettingsPanel\(\) \{([\s\S]*?)\n\}\n\nfunction /);
+  assert.ok(detectionPanelFn, 'initDetectionSettingsPanel has been restructured');
+  assert.doesNotMatch(detectionPanelFn[1], /let currentZone/, 'currentZone still declared in both functions');
+  assert.doesNotMatch(detectionPanelFn[1], /let knownZones/, 'knownZones still declared in both functions');
+  assert.doesNotMatch(detectionPanelFn[1], /getHideHotkey/, 'the hotkey-hint code was left behind, split from HOTKEY_LABELS again');
 });
 
 module.exports = () => report('zone-gating');

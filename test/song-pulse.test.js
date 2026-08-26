@@ -62,7 +62,7 @@ test('the real function agrees, both halves of it', () => {
 });
 
 test('a repeat one pulse later resolves it, and any other gap does not', () => {
-  const fn = engineSrc.match(/_queueAmbiguousCast\(text, candidates, isSelf\) \{([\s\S]*?)\n {2}\}/);
+  const fn = engineSrc.match(/_queueAmbiguousCast\(text, candidates, isSelf, attributedTo = null\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, '_queueAmbiguousCast has been restructured');
   assert.match(fn[1], /Math\.abs\(sinceSec - SONG_PULSE_SEC\) <= SONG_PULSE_TOLERANCE_SEC/);
   assert.match(fn[1], /this\.ambiguousCasts\.delete\(text\)/, 'the prompt is left behind after resolving');

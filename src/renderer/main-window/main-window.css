@@ -469,10 +469,12 @@ body {
   font-weight: 700;
 }
 
-/* A widget scoped to specific loadout profiles (not every one) gets this
-   dot so it disappearing after a profile switch isn't a mystery - a third
-   hue (neither accent "you configured this" nor danger) since it's neither
-   of those, just a heads-up. */
+/* Every widget gets this dot now - reported live as liked but backwards. Green means "on for the
+   CURRENT profile right now", grey means it isn't, which is the opposite of the earlier version
+   (a single colour, shown only for a widget scoped to fewer than every profile, regardless of
+   whether that scoping happened to include the current one). A widget disabled everywhere on
+   purpose now reads unambiguously as grey rather than looking identical to one merely restricted
+   to two profiles out of three. */
 .profile-dot-wrap {
   margin-left: auto;
   position: relative;
@@ -485,7 +487,14 @@ body {
   width: 5px;
   height: 5px;
   border-radius: 50%;
+}
+
+.profile-dot-on {
   background: var(--ok);
+}
+
+.profile-dot-off {
+  background: var(--ink-faint);
 }
 
 /* Opens to the RIGHT of the dot, not left like the original mockup - this

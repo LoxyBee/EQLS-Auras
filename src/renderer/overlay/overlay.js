@@ -53,6 +53,7 @@ let currentConfig = {
   iconLabelAnchor: 'top-center',
   wrapText: false,
   iconJustify: 'left',
+  textJustify: 'left',
   groupAllyBuffs: false,
   groupAllyDirection: 'vertical',
   hideAllyNameOnTile: false,
@@ -123,6 +124,18 @@ function playCustomSound(kind, soundId) {
   audio.play().catch(() => {});
 }
 
+// Reported live: a custom timer's land sound sometimes played twice for what was a single
+// trigger, timing-dependent on exactly where the engine's 1-second tick happened to land relative
+// to the log line. Rather than chase every possible source of a near-simultaneous double
+// broadcast (this widget's own engine tick, another engine's independent unconditional tick, a
+// config-change re-render - render() is called from a dozen separate listeners, see the block of
+// onXChanged wiring near the bottom of this file), a floor on how close together two plays of the
+// SAME kind can land is a direct, general guard against all of them at once. Per kind, not global
+// - a land and an expire genuinely can (and should) both sound within the same second for an
+// ordinary short timer, and this must never merge those into one.
+const lastAlertPlayedAt = new Map(); // kind -> ms timestamp
+const MIN_ALERT_INTERVAL_MS = 200;
+
 // One alert per render tick even if several buffs changed at once (e.g. a
 // multi-buff burst cast landing together) - a chime per buff would be a
 // wall of overlapping beeps instead of a useful cue.
@@ -132,6 +145,17 @@ function playAlertSound(kind) {
   // broadcasting and render() keeps running behind a hidden window - so the check has to be
   // here, at the last point before a noise is actually made.
   if (!audible) return;
+  const now = Date.now();
+  const lastPlayed = lastAlertPlayedAt.get(kind);
+  if (lastPlayed !== undefined && now - lastPlayed < MIN_ALERT_INTERVAL_MS) return;
+  lastAlertPlayedAt.set(kind, now);
+  // Debug-only (see preload-overlay.js's debugLog bridge - gated the same as every other
+  // detection line by the Diagnostics toggle, off by default). The shared debugLog() prefix is
+  // only second-precision (toLocaleTimeString has no ms), which is too coarse to measure an
+  // in-game-action-to-sound delay against - the ms suffix here is what actually makes that
+  // measurable. Only logged for a sound that actually plays, not one this function bailed out of
+  // above (muted, or eaten by the debounce).
+  window.eqOverlay.debugLog(`SOUND ${kind} - "${currentConfig.name || widgetId}" .${String(now % 1000).padStart(3, '0')}`);
   const soundId = currentConfig[`${kind}SoundId`];
   if (soundId) {
     playCustomSound(kind, soundId);
@@ -197,6 +221,14 @@ function checkSoundWarnings(visible) {
     // `null > thresholdSec` is false, so the check below would otherwise treat it as in the
     // warning window and beep about it once a loop interval, forever.
     if (buff.infinite) {
+      warnedAt.delete(key);
+      continue;
+    }
+    // A 0-second custom timer trigger has nothing to be "about to run out" - remainingSec is
+    // already 0 the instant it lands, so without this it warned in the same breath as landing,
+    // every single time. See the zeroDurationKeys note in render() for the matching expire-sound
+    // fix this belongs beside.
+    if (currentConfig.buffSource === 'customTimer' && buff.durationSec === 0) {
       warnedAt.delete(key);
       continue;
     }
@@ -322,15 +354,18 @@ function buildCountBadge(count, why) {
   return badge;
 }
 
-// Note 12. How many of this tile there really are: merged buffs on one target, or - for something
-// cast at enemies - how many identically-named mobs are carrying it right now.
+// Note 12. How many of this tile there really are: merged buffs on one target.
+//
+// An enemy debuff used to count identically-named mobs sharing one key ("a greater kobold" x2,
+// x3...), scrapped 24 Aug because the log can't tell a second same-named mob apart from a recast
+// refreshing the one target you already have - it's one tile now, duration refreshed on a new
+// cast, same as a buff on a groupmate always was.
 //
 // Shara, 23 August: "a count of x1 should not be displayed, only display count when multiple
-// exist." Both sources are 1 in the ordinary case, so returning null there is what enforces it,
-// once, rather than at each call site.
+// exist." Returning null in the ordinary case is what enforces it, once, rather than at each call
+// site.
 function countFor(buff) {
   if (buff.mergedCount > 1) return { n: buff.mergedCount, why: buff.mergedCount + ' buffs merged into this one' };
-  if (buff.count > 1) return { n: buff.count, why: buff.count + ' of them have this on right now' };
   return null;
 }
 
@@ -358,6 +393,21 @@ function buildTextTile(buff) {
 // Mesmerize on a creature"; the tokens are what let her write that for real, with the actual name
 // in it, instead of a fixed line that is only right for one spell.
 //
+// {mob} reads from that exact same buff.allyName field - reported live 24 Aug: "r {mob} also
+// should be a viable input, so that you can call a mobs name into the text popup." For an enemy
+// debuff (trackOnEnemies), allyName is never actually a caster - it's the mob the debuff landed
+// on (see buffEngine.js's _landOnAlly, used identically for a groupmate or a target), so writing
+// "{caster}" into a message like "Mesmerize resisted by {caster}" was always asking for the right
+// value under a name that reads backwards for that case. Both tokens are kept, both read the same
+// field - which one to write is just whichever reads naturally for what the aura is watching.
+//
+// buff.allyName falls back to buff.capturedPrefix for a customTimer buff - reported live 25 Aug:
+// "{mob} did not print mob name" on "Your {spell} was resisted by {mob}", a plain trigger aura
+// with no ally-landing infrastructure behind it at all, so allyName is always empty there.
+// capturedPrefix is customTimerEngine's own answer to the same question a "contains" trigger's
+// capturedText already answers for {spell} - the text BEFORE the match instead of after it, e.g.
+// "An imp protector" out of "An imp protector resisted your Denon's Dissension!".
+//
 // Substituted for every text aura, not just the warning ones - a token in a message that resolved
 // on some auras and printed literally on others would be a worse rule than either.
 function textFor(buff) {
@@ -365,10 +415,16 @@ function textFor(buff) {
   if (!message) return displayName(buff);
   if (!message.includes('{')) return message;
   return message
-    .replace(/\{caster\}/g, buff.allyName || '')
+    .replace(/\{caster\}/g, buff.allyName || buff.capturedPrefix || '')
+    .replace(/\{mob\}/g, buff.allyName || buff.capturedPrefix || '')
     // Never the synthetic always-on name - that string is an internal key, not something to put
-    // in front of anyone.
-    .replace(/\{spell\}/g, buff.name === ALWAYS_ON_KEY ? '' : buff.name || '')
+    // in front of anyone. capturedText wins when present - a customTimer buff's own .name is the
+    // TIMER's name (e.g. "Resisted"), never the actual spell; capturedText is whatever a
+    // "contains" trigger's own text left over on the real line (see customTimerEngine.js), which
+    // for "resisted your " is the actual spell that got resisted. Reported live: "resist text
+    // should say 'resisted your [skill name]'" - the Resist flash premade's default message is
+    // now literally that, with {spell} resolving to it.
+    .replace(/\{spell\}/g, buff.name === ALWAYS_ON_KEY ? '' : buff.capturedText || buff.name || '')
     // Note 21. Pushed with the config rather than stored, so it is right the instant you switch.
     .replace(/\{profile\}/g, currentConfig.activeProfileName || '')
     .replace(/\s{2,}/g, ' ')
@@ -635,11 +691,24 @@ function applyTilePositionedTextStyle(el, low, anchor, textSize, wrap, color) {
 }
 
 function updateRef(ref, buff, isIcon) {
+  // A 0-second custom timer trigger has nothing to show for any length of time - the tile exists
+  // purely so the sound pipeline above has a buff to see land, not because there is a countdown
+  // worth putting on screen. Opacity rather than not building the tile at all, since sound only
+  // fires for buffs this widget is actually "displaying" (see render()'s own comment on that
+  // rule) - an invisible tile still counts as displayed, a skipped one would go silent too.
+  const isZeroDurationPing = currentConfig.buffSource === 'customTimer' && buff.durationSec === 0;
+  ref.root.classList.toggle('zero-duration-ping', isZeroDurationPing);
+
   const threshold = currentConfig.lowTimeThresholdSec ?? 30;
   // !buff.infinite matters more than it looks: remainingSec is null for one of those, and
   // `null <= 30` is TRUE in JavaScript - so without this a buff that never runs out would sit
-  // there permanently coloured as though it were seconds from expiring.
-  const low = !buff.infinite && threshold > 0 && buff.remainingSec <= threshold;
+  // there permanently coloured as though it were seconds from expiring. !isZeroDurationPing for
+  // the same reason - remainingSec is always 0 for one of these too, which is always <= threshold,
+  // and .low's own CSS rule runs a `pulse` animation that ANIMATES opacity - overriding
+  // .zero-duration-ping's static opacity:0 outright regardless of selector specificity (a CSS
+  // animation always wins over a non-!important static value on the same property). Reported
+  // live: the "invisible" tile still visibly pulsed for exactly this reason.
+  const low = !isZeroDurationPing && !buff.infinite && threshold > 0 && buff.remainingSec <= threshold;
   ref.root.classList.toggle('low', low);
 
   // Note 10: "if the tile doesn't visibly say which phase it is in, the number on screen is
@@ -868,8 +937,24 @@ function visibleBuffs(buffs) {
     return rows;
   }
 
+  // Backlog #15. Same argument as travel/damage above: this feed already IS every bard song on
+  // the player, unconditionally - there is no picker (buffFilterMode is meaningless here, on
+  // purpose - see widgetStore.js's defaultBardSongsWidget), so the name-list/hideBardSongs/
+  // allyCast/onEnemy filters below would either do nothing or, in hideBardSongs' case, strip
+  // every single tile this aura has (every entry here has isBardSong true by construction).
+  if (currentConfig.buffSource === 'bardSongs') {
+    return buffs.filter((b) => b.showOnOverlay !== false);
+  }
+
   let filtered;
-  if (currentConfig.buffFilterMode === 'all') {
+  // CUSTOM TIMER - there is no spell name to pick from a list here; what this aura watches is
+  // entirely defined by its own customTimers trigger text, already set up in Custom timers. Falling
+  // through to the buffNames filter below (built for picking spells) left every triggers-sourced
+  // text aura - the Resist flash and Dispelled premades included - showing nothing at all, because
+  // their definitions' names ("Resisted", "Dispelled") were never in an empty buffNames list.
+  if (currentConfig.buffSource === 'customTimer') {
+    filtered = buffs;
+  } else if (currentConfig.buffFilterMode === 'all') {
     filtered = buffs.filter((b) => b.showOnOverlay !== false);
     // Self Buffs-only filters - buffFilterMode:'all' is exclusive to that
     // built-in widget, custom widgets always use 'explicit' with their own
@@ -913,14 +998,14 @@ function visibleBuffs(buffs) {
   // INSTANTS - nukes, heals, gates - only belong on an aura that is not drawing a countdown.
   //
   // Shara's rule: they "should not be added to selection lists that have a duration based tile"
-  // but "can be added to sound and text only custom auras... just in case someone wants feedback
-  // when a cast is successful or resisted". So a list or icon aura filters them out here, and a
-  // sound-only or text aura keeps them.
+  // but "can be added to... text only custom auras... just in case someone wants feedback when a
+  // cast is successful or resisted". So a list or icon aura filters them out here, and a text
+  // aura keeps them.
   //
   // Done at the aura level rather than by not landing them at all, because the engine has one
-  // active list feeding every aura - refusing to land would take them away from the two kinds of
-  // aura that are supposed to have them.
-  const drawsCountdowns = currentConfig.displayMode !== 'sound-only' && currentConfig.displayMode !== 'text';
+  // active list feeding every aura - refusing to land would take them away from the kind of aura
+  // that is supposed to have them.
+  const drawsCountdowns = currentConfig.displayMode !== 'text';
   if (drawsCountdowns) {
     filtered = filtered.filter((b) => !b.instant);
   } else {
@@ -946,7 +1031,15 @@ function visibleBuffs(buffs) {
   // three severities, and only one of them can ever match at a time - a limit on what may be
   // WATCHED would have made that impossible while limiting nothing anyone can see. After sorting,
   // so which one wins follows the aura's own sort order rather than arrival luck.
-  if (currentConfig.displayMode === 'text') return sorted.slice(0, 1);
+  //
+  // An aura tracking debuffs ON ENEMIES gets the same one-tile rule, in icon/list mode too - not
+  // just text. Reported live 24 Aug against an AoE mez: three different mobs mezzed by the same
+  // cast produced three tiles, and the owner's answer was explicit - "ONE tile total for the whole
+  // aura, always... like a text aura." The engine still tracks every distinct target underneath
+  // (death/wear-off/mez-broken detection needs that - see buffEngine's allyBuffs), this only
+  // narrows what's DRAWN, the same way the text-aura rule above narrows drawing without touching
+  // what's watched.
+  if (currentConfig.displayMode === 'text' || currentConfig.trackOnEnemies) return sorted.slice(0, 1);
   return sorted;
 }
 
@@ -996,6 +1089,22 @@ function reportSizeIfChanged() {
   // where an inline height here would have no effect at all.
   if (currentConfig.displayMode === 'icons') {
     dragOverlayEl.style.height = `${window.innerHeight}px`;
+  }
+  // Text mode's own use of the same currentOriginX mechanism icon mode's label margin already
+  // relies on above - see that field's own comment. A text tile is CSS white-space:nowrap and
+  // content-wrap is 'max-content' (see applyConfig's text branch), so the window's WIDTH changes
+  // with every different message ("DISPELLED" vs "resisted your Denon's Dissension") while
+  // fitToContent always keeps the window's stored ANCHOR position fixed and grows/shrinks the
+  // opposite edge - which today is unconditionally the left edge (currentOriginX 0 growing
+  // right), with no way to keep the right edge or the center fixed instead. Reported live 24 Aug:
+  // "text only triggers however need a text justification setting, left right and middle".
+  // 'left' keeps the anchor as the left edge (0 offset, the original/only behavior). 'right'
+  // needs the window's x to shift left by the FULL width as it grows, so the offset equals the
+  // measured width itself. 'center' splits the difference. Recomputed on every measurement
+  // (message length changes every time), unlike icon mode's fixed label margin.
+  if (currentConfig.displayMode === 'text') {
+    const TEXT_JUSTIFY_ORIGIN = { left: 0, center: width / 2, right: width };
+    currentOriginX = TEXT_JUSTIFY_ORIGIN[currentConfig.textJustify] ?? 0;
   }
   if (width === lastReportedWidth && height === lastReportedHeight && currentOriginX === lastReportedOriginX) return;
   lastReportedOriginX = currentOriginX;
@@ -1063,6 +1172,16 @@ const lastRemainingSec = new Map();
 // the moment each one last happened.
 const lastInstantLandedAt = new Map();
 
+// A 0-second custom timer trigger (see widgetStore.js's setTriggerDurationSec - a trigger built
+// purely to make a noise, with nothing meaningful to count down) lands and disappears in the same
+// tick, so treating that disappearance as a genuine "expired" event fires the expire sound right
+// alongside the land sound - reported live as the sound going off "multiple times in a row" for
+// what the user expected to be a single ping. Keyed the same way as the maps above and carried
+// across renders, because by the render where a key actually vanishes from `buffs` there is no
+// buff object left to read durationSec off any more - this remembers which keys were zero-duration
+// while they still existed, so that render's expire check can still tell the difference.
+let zeroDurationKeys = new Set();
+
 // Not the first ever render for this widget window - guards sound alerts
 // (but not the landing glow, which already handled this) so opening the
 // widget or reloading it doesn't fire a "landed" sound for every buff
@@ -1103,7 +1222,17 @@ function render(buffs) {
       continue;
     }
     const prevRemaining = lastRemainingSec.get(key);
-    if (prevRemaining === undefined || b.remainingSec > prevRemaining) soundLandedRaw.add(key);
+    // A custom timer with a cooldown (Note 10) rolls straight from 'duration' into 'cooldown'
+    // when its duration ends, rather than disappearing - and remainingSec jumps UP when it does
+    // (from ~0 to the cooldown length), which is exactly the signal this renewal test otherwise
+    // reads as "cast again". Reported live: a 0s-duration/20s-cooldown trigger's land sound firing
+    // a second time about a second after the first, for what was one single trigger firing once -
+    // the phase rolling over, misread as a renewal. Only a 'duration'-phase buff (or a phase-less
+    // one - self/ally buffs have no concept of cooldown phase at all) can genuinely be "cast
+    // again"; a 'cooldown'-phase buff counting up into its cooldown never can.
+    if (b.phase !== 'cooldown' && (prevRemaining === undefined || b.remainingSec > prevRemaining)) {
+      soundLandedRaw.add(key);
+    }
     lastRemainingSec.set(key, b.remainingSec);
   }
   for (const key of lastInstantLandedAt.keys()) {
@@ -1132,38 +1261,23 @@ function render(buffs) {
   shownNames.clear();
   visibleSet.forEach((name) => shownNames.add(name));
 
+  // A 0-second custom timer never really "expires" - it landed and that was the whole event, so
+  // the tell-tale is checked against zeroDurationKeys as it stood BEFORE this render (the buff
+  // itself is already gone from `buffs` by the time its key shows up in justExpired). Refreshed
+  // from the current buffs afterward, for whichever key vanishes on the NEXT render instead.
+  const justExpiredForSound = new Set([...justExpired].filter((name) => !zeroDurationKeys.has(name)));
+  zeroDurationKeys = new Set(
+    buffs
+      .filter((b) => currentConfig.buffSource === 'customTimer' && b.durationSec === 0)
+      .map((b) => keyFor(b))
+  );
+
   if (hasRenderedBefore) {
     if (currentConfig.soundOnLand && soundNewlyLanded.size > 0) playAlertSound('land');
-    if (currentConfig.soundOnExpire && justExpired.size > 0) playAlertSound('expire');
+    if (currentConfig.soundOnExpire && justExpiredForSound.size > 0) playAlertSound('expire');
   }
   checkSoundWarnings(visible);
   hasRenderedBefore = true;
-
-  // A sound-only aura stops here, and WHERE this line sits is the whole design.
-  //
-  // Everything above it is the alert pipeline: which buffs count as visible for this aura,
-  // first-landing vs renewal detection, the land and expire sounds, the warning threshold and
-  // its repeat loop. All of it still runs, unchanged, because sound is the entire point of the
-  // mode. Everything below it is DOM building and window sizing, and a sound-only aura has
-  // neither. That split is why this mode needed no second copy of the alert logic.
-  //
-  // The tiles are cleared rather than left alone: an aura switched to sound-only part-way
-  // through a session still has its old tiles in listEl, and nothing further down would ever
-  // remove them. dataset.mode is stamped so switching back to list or icons trips
-  // structureChanged below and rebuilds from scratch.
-  //
-  // reportContentSize is deliberately never reached. The window keeps whatever size it last
-  // had instead of being resized to fit content that is never drawn - it is transparent,
-  // click-through and empty, so its size has no observable effect, and leaving it alone means
-  // switching back out of sound-only restores the size the user had chosen.
-  if (currentConfig.displayMode === 'sound-only') {
-    if (listEl.children.length) {
-      listEl.innerHTML = '';
-      tileRefs.clear();
-    }
-    listEl.dataset.mode = 'sound-only';
-    return;
-  }
 
   // Compared against the DOM's actual current child count, not just
   // tileRefs.size - the two can be independently reset (applyConfig clears
@@ -1303,6 +1417,7 @@ function render(buffs) {
 // round-trip.
 let lastSelfBuffs = [];
 let lastAllyBuffs = [];
+let lastBardSongs = [];
 let lastCustomTimers = [];
 let lastDamageRows = [];
 // Note 20. Keyed by aura id - one broadcast carries every travel aura's route and each window
@@ -1311,7 +1426,33 @@ let lastTravelRoutes = {};
 
 function currentSourceBuffs() {
   if (currentConfig.buffSource === 'ally') return lastAllyBuffs;
-  if (currentConfig.buffSource === 'customTimer') return lastCustomTimers;
+  // Backlog #15. Every bard song currently active on the player, already grouped-by-caster-ready
+  // (see buffEngine.getActiveBardSongs - it emits `allyName` holding the CASTER here, reusing that
+  // exact field so the existing ally-grouping renderer below needs no changes at all).
+  if (currentConfig.buffSource === 'bardSongs') return lastBardSongs;
+  // customTimers:active is one broadcast carrying every active definition from EVERY widget - same
+  // shape as lastTravelRoutes above it, and it needs the same per-widget scoping travel already
+  // gets. Without this, a widget showed every OTHER customTimer widget's active triggers too, not
+  // just its own - two customTimer auras (e.g. the Resist flash premade plus a hand-built one)
+  // silently fought over which one showed, since a text aura draws only one tile and picks whichever
+  // definition sorts first out of the combined pool. Reported live as "resist flash still not
+  // appearing" once the widget existed alongside another custom timer aura.
+  if (currentConfig.buffSource === 'customTimer') {
+    const ownIds = new Set((currentConfig.customTimers || []).map((t) => t.id));
+    ownIds.add(`and:${currentConfig.id}`);
+    ownIds.add(`or:${currentConfig.id}`);
+    // Reported live 25 Aug: an OR-combined aura (two triggers, "hi" and "hello") never showed
+    // anything at all. An 'and'/'or' triggerCombineMode fires one instance keyed by the WIDGET's
+    // own id (`and:<widgetId>`/`or:<widgetId>` - see customTimerEngine.js's _resolveActivations),
+    // not by any single trigger's own id, because no one definition owns a combined activation.
+    // ownIds above only ever held real per-trigger ids, so that synthetic key matched nothing here
+    // and got filtered straight out before visibleBuffs ever saw it - completely invisible, not a
+    // display bug, on every combine mode except 'independent' (which never produces a synthetic key
+    // in the first place, so this went unnoticed until someone actually tried AND/OR on a real
+    // aura). Prefixed with THIS widget's own id, so it can never accidentally admit another
+    // customTimer widget's combo tile the way the ownIds set as a whole exists to prevent.
+    return lastCustomTimers.filter((t) => ownIds.has(t.id));
+  }
   // Note 19. Rows arrive already sorted biggest-first from damageEngine, which is why a damage
   // meter is created with sortOrder 'default' - see createDamageMeter. Any other sort order would
   // reorder them by a time remaining they deliberately do not have.
@@ -1333,10 +1474,6 @@ const LABEL_OVERFLOW_MARGIN_PX = 60;
 
 function applyConfig(config) {
   currentConfig = config;
-  // Applied here rather than in render() so an aura switched to sound-only clears off the
-  // screen immediately, instead of staying visible until the next buff tick happens to arrive -
-  // which, on a quiet aura, could be a very long time.
-  document.body.classList.toggle('sound-only', config.displayMode === 'sound-only');
   document.body.classList.toggle('text-aura', config.displayMode === 'text');
   // Note 6 - the aura's own name in its move box, so a screen full of unlocked blue rectangles
   // says which is which. Set from applyConfig rather than once at boot because a rename arrives
@@ -1347,6 +1484,11 @@ function applyConfig(config) {
   document.documentElement.style.setProperty('--timer-text-color', config.timerTextColor || '#f0f1f5');
   document.documentElement.style.setProperty('--icon-gap', `${config.iconMarginPx ?? 5}px`);
   document.documentElement.style.setProperty('--row-size', `${config.rowSize || 28}px`);
+  // Note 37 follow-up - the coloured edge's own width, previously a fixed 1px baked into .cat's
+  // CSS. Read here rather than left as a bare CSS literal so Size & Display's slider actually
+  // does something; the toggle that decides whether the edge shows at ALL is still the separate
+  // categoryBordersEnabled check in applyCategoryBorder.
+  document.documentElement.style.setProperty('--cat-border-width', `${config.categoryBorderWidthPx || 1}px`);
 
   if (config.displayMode === 'text') {
     // A text aura is sized by its words, not by a setting. Every explicit width the other two
@@ -1495,10 +1637,12 @@ function applyConfig(config) {
   Promise.all([
     window.eqOverlay.getActiveBuffs(),
     window.eqOverlay.getActiveAllyBuffs(),
+    window.eqOverlay.getActiveBardSongs(),
     window.eqOverlay.getActiveCustomTimers(),
-  ]).then(([selfBuffs, allyBuffs, customTimers]) => {
+  ]).then(([selfBuffs, allyBuffs, bardSongs, customTimers]) => {
     lastSelfBuffs = selfBuffs;
     lastAllyBuffs = allyBuffs;
+    lastBardSongs = bardSongs;
     lastCustomTimers = customTimers;
     render(currentSourceBuffs());
   });
@@ -1518,6 +1662,14 @@ window.eqOverlay.getActiveAllyBuffs().then((buffs) => {
 });
 window.eqOverlay.onActiveAllyBuffsChanged((buffs) => {
   lastAllyBuffs = buffs;
+  render(currentSourceBuffs());
+});
+window.eqOverlay.getActiveBardSongs().then((songs) => {
+  lastBardSongs = songs;
+  render(currentSourceBuffs());
+});
+window.eqOverlay.onActiveBardSongsChanged((songs) => {
+  lastBardSongs = songs;
   render(currentSourceBuffs());
 });
 window.eqOverlay.getActiveCustomTimers().then((timers) => {

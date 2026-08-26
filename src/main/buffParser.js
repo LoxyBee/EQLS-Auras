@@ -32,6 +32,15 @@ const ACTIVATE_PATTERN = /^You activate (.+)\.$/;
 // see matchOtherCastBegin() below and buffEngine.js's use of it.
 const OTHER_CAST_BEGIN_PATTERN = /^(.+?) begins (?:casting|singing) (.+)\.$/;
 
+// Third-person version of ACTIVATE_PATTERN - "<Name> activates X.", never
+// "You activate...". Reported live and confirmed straight from the log:
+// "Dovairous activates Quick Buff." - an ally triggering the exact same
+// instant multi-grant ability the player's own ACTIVATE_PATTERN exists for
+// (gotchas #12/#18), with none of the buffs it drops carrying any per-spell
+// cast line at all. Verb form alone excludes the player's own line, same as
+// OTHER_CAST_BEGIN_PATTERN above.
+const OTHER_ACTIVATE_PATTERN = /^(.+?) activates (.+)\.$/;
+
 // Gem-swapping lines - confirmed exact wording from this server's own log:
 // "You forget X." when a spell leaves a gem slot, "You have finished
 // memorizing X." when one is scribed into one ("Beginning to memorize X..."
@@ -196,6 +205,13 @@ function matchActivate(line) {
   const stripped = stripTimestamp(line);
   const match = ACTIVATE_PATTERN.exec(stripped);
   return match ? match[1].trim() : null;
+}
+
+function matchOtherActivate(line) {
+  const stripped = stripTimestamp(line);
+  const match = OTHER_ACTIVATE_PATTERN.exec(stripped);
+  if (!match) return null;
+  return { casterName: match[1].trim(), abilityName: match[2].trim() };
 }
 
 function matchOtherCastBegin(line) {
@@ -406,6 +422,7 @@ module.exports = {
   matchCastBegin,
   matchSingingBegin,
   matchActivate,
+  matchOtherActivate,
   matchOtherCastBegin,
   matchMemorizeFinished,
   matchForgetSpell,

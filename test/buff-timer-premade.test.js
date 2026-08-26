@@ -100,6 +100,38 @@ test('only spells the app can actually track are offered', () => {
   assert.ok(trackable.length < roster.length, 'if everything were trackable this filter would be pointless');
 });
 
+test('a spell with no duration is not offered, even if it has landing text', () => {
+  // Reported live 25 Aug: Anarchy (an Enchanter nuke, no duration at all) showing up in the Buff
+  // timer picker labelled "no duration" - "nukes are not buffs, remove them from the buff
+  // selection list. remove anything that does not have a duration for clarity." A no-duration
+  // entry only ever had landing text because the detection engine needs it for INSTANT-event
+  // tracking (a sound/text flash, never a countdown) - real, but not what "pick a spell and get a
+  // duration timer for it" means.
+  const handler = mainSrc.match(/ipcMain\.handle\('buffs:trackable'[\s\S]*?\n\);/);
+  assert.ok(handler, 'the trackable-spell list has been restructured');
+  assert.match(
+    handler[0],
+    /\.filter\(\(e\) => \(typeof e\.durationSec === 'number' && e\.durationSec > 0\) \|\| e\.infiniteDuration\)/,
+    'the duration filter is missing or was reworded'
+  );
+
+  const trackable = roster
+    .filter((e) => e.landingText && String(e.landingText).trim())
+    .filter((e) => (typeof e.durationSec === 'number' && e.durationSec > 0) || e.infiniteDuration);
+
+  const anarchy = roster.find((e) => e.name === 'Anarchy');
+  assert.ok(anarchy, 'Anarchy is missing from the roster - the case this guards no longer exists to check');
+  assert.equal(anarchy.scaleCategory, 'nuke');
+  assert.ok(!anarchy.durationSec && !anarchy.infiniteDuration, 'Anarchy now has a duration - the case this guards cannot occur');
+  assert.ok(!trackable.some((e) => e.name === 'Anarchy'), 'Anarchy is still offered as a "buff" to track');
+
+  // The filter must not be a blunt "exclude all nukes/debuffs" rule - a real debuff with a real
+  // duration (how "wears off" gets timed at all) has to stay offered.
+  const realDebuff = roster.find((e) => e.scaleCategory === 'debuff' && e.durationSec > 0 && e.landingText);
+  assert.ok(realDebuff, 'no duration-bearing debuff found in the roster to check against');
+  assert.ok(trackable.some((e) => e.name === realDebuff.name), `"${realDebuff.name}" has a real duration and should still be offered`);
+});
+
 test('each spell says whether it can be watched on an ally - and a detrimental one never can', () => {
   // Reported directly, 24 Aug: "allure is marked as a buff to cast on an ally, it is not." Allure
   // is a charm (roster: kind 'det', scaleCategory 'charm') with real third-person text

@@ -53,17 +53,25 @@ const fires = (engine, line) => {
 // What it is
 // ---------------------------------------------------------------------------
 
-test('the preset builds a text aura that says RESISTED', () => {
+test('the preset builds a text aura that names the actual spell that was resisted', () => {
+  // Reported live 24 Aug: "resist text should say 'resisted your [skill name]'" - a bare RESISTED
+  // named nothing. {spell} now resolves to whatever the "contains" trigger's own match left over
+  // on the real line (customTimerEngine's capturedText) - see the dedicated test further down that
+  // proves this end to end against a real log line. Wording settled 25 Aug to also name the mob
+  // via {mob} (see overlay.js's textFor()), matching the owner's own live widget.
   const { widget } = setup('resisted');
   assert.equal(widget.displayMode, 'text');
-  assert.equal(widget.textAuraMessage, 'RESISTED');
+  assert.equal(widget.textAuraMessage, 'Your {spell} was resisted by {mob}');
   assert.equal(widget.buffSource, 'customTimer');
   assert.equal(widget.customTimers.length, 1, 'one trigger covers every spell - see the preset comment');
 });
 
 test('the flash is the length she asked for', () => {
+  // Originally 1.4s (her first number), raised to 5s at a later request, then settled at 4s by 25
+  // Aug to match her own live widget - see the "override the premade with what I have" note on
+  // defaultSelfBuffsWidget in widgetStore.js.
   const { widget } = setup('resisted');
-  assert.equal(widget.customTimers[0].durationSec, 1.4, 'note 17 asks for about 1.4 seconds');
+  assert.equal(widget.customTimers[0].durationSec, 4);
 });
 
 test('it uses contains matching, because the mob name is in the middle of the line', () => {
@@ -97,6 +105,45 @@ test('a spell name with a rank numeral still fires it', () => {
   for (const spell of ['Plague III', 'Envenomed Bolt IV', "Togor's Insects V", "Denon's Desperate Dirge IX"]) {
     assert.ok(fires(engine, `A greater kobold resisted your ${spell}!`), `did not fire on rank: ${spell}`);
   }
+});
+
+test('it names the actual spell, end to end against a real log line', () => {
+  // Reported live 24 Aug: "resist text should say 'resisted your [skill name]'". Verbatim line
+  // from the owner's actual current session log.
+  const { engine } = setup('resisted');
+  engine.activeTimers.clear();
+  engine.handleLine(`${TS}A wanderer resisted your Denon's Dissension!`);
+  const active = engine.getActive();
+  assert.equal(active.length, 1);
+  assert.equal(active[0].capturedText, "Denon's Dissension", 'the mob\'s name and the trailing "!" must not leak into it');
+});
+
+test('capturedText is absent for a spell whose contains-match ate the whole line', () => {
+  // Nothing left over is not the same as forgetting to capture - both must read as "nothing to
+  // show", not an empty string sitting where a spell name should be.
+  const { store, engine } = setup();
+  store.addCustomTimer(store.getAll()[0].id, { name: 'X', durationSec: 5, triggerText: 'resisted your', triggerMatch: 'contains' });
+  engine.handleLine(`${TS}resisted your`);
+  assert.equal(engine.getActive()[0].capturedText, null);
+});
+
+test('capturedPrefix names the mob, end to end against a real log line', () => {
+  // Reported live 25 Aug: "Your {spell} was resisted by {mob} did not print mob name" -
+  // capturedText already answered "what got resisted" (the text AFTER the match); this is the
+  // same idea for "what resisted it" (the text BEFORE the match).
+  const { engine } = setup('resisted');
+  engine.handleLine(`${TS}An imp protector resisted your Denon's Dissension!`);
+  const active = engine.getActive();
+  assert.equal(active.length, 1);
+  assert.equal(active[0].capturedPrefix, 'An imp protector');
+  assert.equal(active[0].capturedText, "Denon's Dissension", 'the prefix capture must not have eaten the suffix one');
+});
+
+test('capturedPrefix is absent when the match sits at the very start of the line', () => {
+  const { store, engine } = setup();
+  store.addCustomTimer(store.getAll()[0].id, { name: 'X', durationSec: 5, triggerText: 'resisted your', triggerMatch: 'contains' });
+  engine.handleLine(`${TS}resisted your Mesmerize!`);
+  assert.equal(engine.getActive()[0].capturedPrefix, null, 'nothing before the match must not become an empty string');
 });
 
 // ---------------------------------------------------------------------------
@@ -162,26 +209,72 @@ test('contains is stored only when asked for', () => {
   assert.equal(w3.customTimers.at(-1).triggerMatch, undefined);
 });
 
-test('editing a timer does not lose its matching mode', () => {
-  // updateCustomTimer takes a fixed field list and does not know about triggerMatch. It mutates
-  // the existing object rather than rebuilding it, so the field survives - but that is a property
-  // worth pinning, because rebuilding would be the natural way to rewrite that function.
+test('editing a timer and re-sending the same mode keeps it', () => {
+  // Reported live 24 Aug on a real saved Resist flash timer: updateCustomTimer's parameter list
+  // was MISSING triggerMatch entirely - not defaulted, not ignored, simply never destructured -
+  // so no edit through the form could ever change it, and it just sat at whatever the timer was
+  // CREATED with. That looked harmless for an edit that didn't touch matching mode (this test's
+  // old shape), but broke badly the moment someone edited the SAME timer into chat mode: the
+  // triggerText/triggerChat fields changed to a synthesized "You say, '...'" line while the old
+  // 'contains' triggerMatch silently stuck around from creation, matching a mode it was never
+  // meant to apply to. The real form (readTimerFormData) always computes and sends a definite
+  // triggerMatch on every save - undefined in chat mode, 'contains' or undefined in raw mode - so
+  // the fix is the same whitelist-and-always-write addCustomTimer already uses, not a
+  // preserve-if-omitted rule like cooldownSec has (that one is a genuinely optional side-channel
+  // the form doesn't always touch; triggerMatch is not).
   const { store, widget } = setup();
   const added = store.addCustomTimer(widget.id, {
     name: 'R', durationSec: 1.4, triggerText: 'resisted your ', triggerMatch: 'contains',
   });
   const timerId = added.customTimers.at(-1).id;
   const after = store.updateCustomTimer(widget.id, timerId, {
-    name: 'R', durationSec: 2, triggerText: 'resisted your ',
+    name: 'R', durationSec: 2, triggerText: 'resisted your ', triggerMatch: 'contains',
   });
   assert.equal(after.customTimers.at(-1).triggerMatch, 'contains', 'editing a timer silently made it exact');
+});
+
+test('editing a timer into chat mode actually clears the old raw-mode triggerMatch', () => {
+  // The exact real-world sequence that produced the live bug: a 'contains' timer built from the
+  // Resist flash preset, then re-saved through the chat-message builder without the fix above.
+  const { store, widget } = setup();
+  const added = store.addCustomTimer(widget.id, {
+    name: 'R', durationSec: 1.4, triggerText: 'resisted your ', triggerMatch: 'contains',
+  });
+  const timerId = added.customTimers.at(-1).id;
+  const after = store.updateCustomTimer(widget.id, timerId, {
+    name: 'R',
+    durationSec: 1.4,
+    triggerText: "You say, 'resisted your'",
+    triggerChat: { channel: 'say', isSelf: true, message: 'resisted your' },
+    // triggerMatch omitted - chat mode never sets it, exactly like readTimerFormData's real output.
+  });
+  const saved = after.customTimers.at(-1);
+  assert.equal(saved.triggerMatch, undefined, "a stale 'contains' from before the edit survived into chat mode");
+  assert.equal(saved.triggerChat.message, 'resisted your');
+});
+
+test('the wiring is intact end to end: main.js\'s IPC handler and widgetStore both carry triggerMatch on update', () => {
+  // Reported live 24 Aug - the field was silently dropped in THREE places (the IPC handler's own
+  // destructure, the object it forwards, and widgetStore.updateCustomTimer's parameter list).
+  // Pinning all three so this exact shape of bug - a field addCustomTimer accepts that
+  // updateCustomTimer quietly doesn't - can't reappear for triggerMatch or the next field like it.
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const handler = mainSrc.match(/'widget:updateCustomTimer',([\s\S]*?)\n\);/);
+  assert.ok(handler, 'the update handler has been restructured');
+  assert.match(handler[1], /triggerMatch/, 'triggerMatch is missing from the IPC handler again');
+  const storeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'widgetStore.js'), 'utf8');
+  const method = storeSrc.match(/updateCustomTimer\(\s*id,\s*timerId,\s*\{([\s\S]*?)\}\s*\)\s*\{/);
+  assert.ok(method, 'updateCustomTimer has been restructured');
+  assert.match(method[1], /triggerMatch/, 'triggerMatch is missing from widgetStore.updateCustomTimer again');
 });
 
 test('the flash clears itself', () => {
   const { engine } = setup('resisted');
   engine.handleLine(`${TS}Orc centurion resisted your Mesmerize!`);
   assert.equal(engine.getActive().length, 1);
-  // Reach past the expiry rather than waiting 1.4 real seconds.
+  // Reach past the expiry rather than waiting the real duration out.
   for (const t of engine.activeTimers.values()) t.expiresAt = Date.now() - 1;
   engine._tick();
   assert.equal(engine.getActive().length, 0, 'the flash never goes away');

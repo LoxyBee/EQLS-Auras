@@ -43,7 +43,7 @@ Self-contained, a day or less each.
       already gone. Applies to the player AND to a groupmate whose ally buffs
       are being tracked. *Needs the exact death lines from a real log first* -
       both the player own-death wording and the third-person one.
-- [ ] **Cooldown mode for custom trackers.** A timer that represents an
+- [x] **Cooldown mode for custom trackers.** A timer that represents an
       ability being unavailable rather than a buff being active. Related to,
       but not the same as, the reverse/negative detection below - worth
       deciding whether one mechanism covers both before building either.
@@ -53,7 +53,7 @@ Self-contained, a day or less each.
       detection report diagnosable. Plus a Discord invite link somewhere
       obvious (About page).
 
-- [ ] **Sounds: progressive disclosure.** Only show a sound picker once its
+- [x] **Sounds: progressive disclosure.** Only show a sound picker once its
       "Play a sound" toggle is on. Make "Warn before expiry" a toggle first
       (it's a bare slider today) that expands into its own options.
 - [ ] **Merge Alerts into Sounds** so the warning sound sits next to the
@@ -63,7 +63,12 @@ Self-contained, a day or less each.
       looks for shipping - turns "this seems broken" into "not built yet".
 - [ ] **Example library** in the premade aura list, e.g. a skill-cooldown
       tracker built from a custom timer. Mostly content once the custom-timer
-      work below lands.
+      work below lands. *Checked 25 Aug - not actually built: `PREMADE_WIDGETS`
+      in `main-window.js` has no such showcase entry, and CLAUDE.md's own P5
+      list still carries this as open. Likely confused with the Cooldown
+      timer premade itself (which IS done, separate item above) or the
+      custom-timer modal rework (also done) - neither is a worked EXAMPLE
+      entry in the premade list.*
 - [ ] **Sounds per trigger** rather than per aura. *Your own open question* -
       weigh against the settings-UI complexity it adds.
 
@@ -77,15 +82,15 @@ entry with a `fieldsId`, add that panel's markup, handle the mode in
 `readTimerFormData`. Zone change and Combat state already show as disabled
 "Planned" entries.
 
-- [ ] **Zone detection** - starts when you enter or leave a zone.
+- [x] **Zone detection** - starts when you enter or leave a zone.
       *Needs a real log sample* to know what the line looks like.
 - [ ] **Combat detection** - starts when you enter or leave combat.
       *Needs a real log sample.*
-- [ ] **Reverse / negative detection** - show a tile while the trigger has
+- [x] **Reverse / negative detection** - show a tile while the trigger has
       NOT happened, hide it for the duration once it does. Inverted from every
       existing timer, so it needs its own branch in `customTimerEngine.js`,
       not a flag. *Checkbox already ships disabled + Planned.*
-- [ ] **Static text labels** - show fixed text with no countdown while a
+- [x] **Static text labels** - show fixed text with no countdown while a
       trigger is active. A genuinely new display mode.
 
 ---
@@ -103,10 +108,10 @@ entry with a `fieldsId`, add that panel's markup, handle the mode in
       draggable on the overlay via the existing blue move-mode box.
       *Your open question*: should it replace icon size outright rather than
       sitting alongside it?
-- [ ] **"You Have Been Dispelled" aura.** An event-notification category - no
+- [x] **"You Have Been Dispelled" aura.** An event-notification category - no
       timer, no active/inactive state. Different from everything the widget
       model handles today, so it means designing that category first.
-- [ ] **Dedicated Bard Song aura.** Now has real justification: self-vs-ally
+- [x] **Dedicated Bard Song aura.** Now has real justification: self-vs-ally
       is undecidable for songs, so isolating them beats polluting Self Buffs.
       Design it as deliberately not caring about self-vs-ally.
 
@@ -128,7 +133,22 @@ entry with a `fieldsId`, add that panel's markup, handle the mode in
 Requests that arrived directly rather than through the numbered list. Kept apart from the
 backlog so the note numbers stay traceable to what you originally wrote.
 
-### The pure sound aura — *asked 20 August 2026, built*
+### The pure sound aura — *asked 20 August 2026, built, then REMOVED 25 August 2026*
+
+> **Superseded, checked 25 Aug 2026.** Everything below describes a `'sound-only'` display MODE
+> that genuinely existed for a few days but no longer does - confirmed against the current code:
+> no `isSoundOnly`, `createSoundOnly`, `DISPLAY_MODES` sound-only value, `body.sound-only` CSS
+> rule, or `PREMADE_WIDGETS` sound-only entry remain anywhere, and `test/sound-only.test.js` (the
+> test file named below) is deleted. `widgetStore.js`'s own comment on `DISPLAY_MODES` records why:
+> *"'sound-only' EXISTED here (25 Aug) and was removed the same day: setTriggerDurationSec now
+> accepts 0, so a Custom timer aura with a 0-second trigger and a raw log-line trigger already
+> covers the same ground - a tile that flashes for under a second and beeps."* Your own words on
+> the removal, quoted there too: *"that functionality of an entire sound aura will not be needed
+> in future and can be removed."* A "Custom sound aura" button still exists in Add Aura, but it
+> now just creates an ordinary `displayMode:'list'` custom-timer aura with a 0-second trigger and
+> a land sound switched on - not a distinct mode. The write-up below is kept for the reasoning
+> (why a fourth radio was rejected in favour of a picker-list entry, the accessibility argument),
+> not as a description of what ships today.
 
 > "a new aura type should also be added as a pure sound aura, with a premade option to create
 > one. sound options should also be available for all aura types if not already."
@@ -195,6 +215,18 @@ This also paid down note 23's first risk - see the note there.
 ---
 
 ## Sorted backlog — your raw notes, organised
+
+> **Almost everything below is done - checked against `docs/NOTES-STATUS.md` 25 Aug 2026.** Of
+> the 39 numbered notes this section triages, 37 are now done, 1 is skipped (#2, your call), and
+> only #28 is still genuinely blocked. The **"Every note at a glance" table above this section has
+> been corrected** to match `NOTES-STATUS.md`, which is the live, authoritative status doc and
+> gets updated every session. The build-order reasoning, cluster groupings and per-note "detail"
+> write-ups below were NOT individually re-verified line by line - most reference file locations
+> and line numbers (`main-window.js:1814`, `buffEngine.js:872`, etc.) that have long since moved,
+> and describe blockers ("needs a real log sample", "needs a decision from you") that were
+> resolved sessions ago. Same situation CLAUDE.md's own backlog section already flags for its
+> older prose: **kept for the reasoning behind why things were built the way they were, not as a
+> live status source - where this disagrees with `NOTES-STATUS.md`, that file is right.**
 
 Everything that was in the loose list at the bottom of this file is here, nothing dropped.
 Each note kept its number so you can trace it back, and the original wording is preserved
@@ -715,44 +747,44 @@ line.
 | # | What it is | Type | Effort | Status |
 |---|---|---|---|---|
 | 1 | Correct Promised Renewal in the roster: its real duration is 15 seconds... | data | trivial | **done** |
-| 2 | New premade aura: a 'first aggro' checker showing who hit the boss firs... | core-feature | needs-design | blocked |
+| 2 | New premade aura: a 'first aggro' checker showing who hit the boss firs... | core-feature | needs-design | **skipped (your call, 23 Aug)** |
 | 3 | Bug: the remembered-memorized-spells list grows past 14; cap it at the ... | bug | small | **done** |
 | 4 | QoL: a 'hide all auras' master toggle on the main menu, as a temporary ... | qol | small | **done** |
 | 5 | Style the 'Reset remembered choices' button red/danger, matching the ot... | qol | trivial | **done** |
 | 6 | While auras are unlocked, show each aura's name in its blue move box, a... | qol | small | **done** |
 | 7 | Add text/UI size scaling options for the app window itself | feature | small | **done** |
 | 8 | Per-aura toggle: merge buffs that share the same duration into one icon... | feature | medium | **done** |
-| 9 | Let a custom aura's timer fire on a combination of triggers (any-of / a... | feature | needs-design |  |
-| 10 | Let one custom trigger run a duration and then roll straight into a coo... | feature | medium |  |
-| 11 | Track AoE mez per mob: start each timer from the land line (never the c... | core-feature | large | blocked |
-| 12 | Show mez as a single consolidated tile - the mob breaking soonest, a co... | feature | medium |  |
+| 9 | Let a custom aura's timer fire on a combination of triggers (any-of / a... | feature | needs-design | **done** |
+| 10 | Let one custom trigger run a duration and then roll straight into a coo... | feature | medium | **done** |
+| 11 | Track AoE mez per mob: start each timer from the land line (never the c... | core-feature | large | **done** |
+| 12 | Show mez as a single consolidated tile - the mob breaking soonest, a co... | feature | medium | **done (redefined, 24 Aug - see the table's own note)** |
 | 13 | Make the main window's left sidebar resizable by dragging its edge | qol | small | **done** |
 | 14 | Premade "buff timer" aura: pick a spell from a dropdown and whether it'... | core-feature | medium | **done** |
-| 15 | Premade "spell cooldown" aura: pick a skill from a dropdown and get a r... | core-feature | medium | blocked |
-| 16 | Premade "debuff on an enemy" aura (mez, malo, slow, etc.) that shows ev... | core-feature | needs-design | blocked |
-| 17 | Build the Mesmerization aura as the first worked example of the enemy-d... | feature | large | blocked |
-| 18 | For AoE debuffs, use the fact that mobs sharing a name produce one succ... | feature | small |  |
-| 19 | Damage parser premade aura, plus a placeholder entry for it in the Add ... | feature | needs-design |  |
-| 20 | Travel guide premade aura that knows which travel spells you have scrib... | feature | needs-design | blocked |
-| 21 | An in-game aura showing which loadout profile is currently active, appe... | qol | small | blocked |
+| 15 | Premade "spell cooldown" aura: pick a skill from a dropdown and get a r... | core-feature | medium | **done** |
+| 16 | Premade "debuff on an enemy" aura (mez, malo, slow, etc.) that shows ev... | core-feature | needs-design | **done** |
+| 17 | Build the Mesmerization aura as the first worked example of the enemy-d... | feature | large | **done** |
+| 18 | For AoE debuffs, use the fact that mobs sharing a name produce one succ... | feature | small | **scrapped (24 Aug) - superseded by note 12's redefinition** |
+| 19 | Damage parser premade aura, plus a placeholder entry for it in the Add ... | feature | needs-design | **done** |
+| 20 | Travel guide premade aura that knows which travel spells you have scrib... | feature | needs-design | **done** |
+| 21 | An in-game aura showing which loadout profile is currently active, appe... | qol | small | **done** |
 | 22 | Show the "All auras" master controls (Unlock all auras) only on the Ove... | qol | trivial | **done** |
 | 23 | Add a third display style, "Text only", alongside List and Icons - with... | core-feature | large | **done** |
-| 24 | Rework spell detection into the stated priority order - and add a new p... | core-feature | large | **partly done** |
+| 24 | Rework spell detection into the stated priority order - and add a new p... | core-feature | large | **done** (the further P0 evidence-model rework this note's own priority-order fix pointed toward is separate, later work - see CLAUDE.md's P0 section) |
 | 25 | Add a disabled "Global recovery time" entry to the premade aura list as... | qol | trivial | **done** |
-| 26 | Detect when a newly landed buff overwrites one that is already running,... | feature | needs-design | blocked |
-| 27 | Promote "Buffs shown" out of Configuration into its own section, sittin... | core-feature | large |  |
+| 26 | Detect when a newly landed buff overwrites one that is already running,... | feature | needs-design | **done (25 Aug, `spellStacking.js` - opt-in "Use self-buff overwrite detection" toggle)** |
+| 27 | Promote "Buffs shown" out of Configuration into its own section, sittin... | core-feature | large | **done** |
 | 28 | Bug: the Ally Buffs aura showed Berserker Spirit on 19 Aug at 12:15 for... | bug | small | blocked |
 | 29 | After you answer the ambiguous-cast popup, put keyboard focus straight ... | qol | small | **done** |
-| 30 | Watch the log for aura share codes people post in chat, and offer them ... | feature | large | blocked |
+| 30 | Watch the log for aura share codes people post in chat, and offer them ... | feature | large | **done** |
 | 31 | Unlocking an aura to move it should put it on screen even when that aur... | qol | small | **done** |
 | 32 | Fix the alert volume slider so it loads the aura's saved volume, and re... | bug | small | **done (range half declined)** |
-| 33 | The name box in the "New loadout profile" dialog can't be clicked | bug | trivial | **fix unconfirmed** |
-| 34 | Add "Buff" and "Debuff" premade aura templates that ask you to pick one... | feature | needs-design | blocked |
+| 33 | The name box in the "New loadout profile" dialog can't be clicked | bug | trivial | **done** (fix is in; per this project's own convention, anything awaiting a live check in TESTING.md counts as done, not partial) |
+| 34 | Add "Buff" and "Debuff" premade aura templates that ask you to pick one... | feature | needs-design | **done** |
 | 35 | Archive the current spell roster and rebuild it from the new EQL spell ... | data | needs-design | **done** |
 | 36 | Play an alert sound when someone asks to trade with you | feature | small | **done** |
 | 37 | Give each aura tile a coloured border by spell type (red for damage/DoT... | feature | small | **done** |
-| 38 | Let an aura apply only while you are in a specific zone - either as an ... | feature | needs-design |  |
-| 39 | New aura category for multi-trigger auras with AND/OR conditions - reco... | feature | needs-design |  |
+| 38 | Let an aura apply only while you are in a specific zone - either as an ... | feature | needs-design | **done** |
+| 39 | New aura category for multi-trigger auras with AND/OR conditions - reco... | feature | needs-design | **done (recorded, correctly unbuilt - same feature as note 9)** |
 
 ### The detail
 

@@ -287,9 +287,21 @@ test('the toggle is reachable end to end', () => {
 
 test('the toggle appears only on a text aura', () => {
   // Her wording: "a toggle under text only custom creation". A tile aura has nothing to draw for
-  // a warning with no duration.
-  assert.match(rendererSrc, /allyAlertRowEl\.style\.display = isTextAura \? '' : 'none';/);
-  assert.match(rendererSrc, /allyAlertHintEl\.style\.display = isTextAura \? '' : 'none';/);
+  // a warning with no duration. Rewritten 25 Aug for the additive settings-panel model - visibility
+  // now comes from SHAPE_FIELDS rather than a live isTextAura boolean, so this checks the table
+  // directly: every shape that includes 'ally-alert-toggle' is a text-mode shape, and no other
+  // shape includes it at all.
+  const fn = rendererSrc.match(/const SHAPE_FIELDS = \{([\s\S]*?)\n {2}\};/);
+  assert.ok(fn, 'SHAPE_FIELDS has been renamed or restructured');
+  assert.match(fn[1], /'ally-alert-toggle'/, 'the field has been renamed');
+  for (const shape of ['text', 'text-customTimer', 'ally-alert']) {
+    assert.match(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'ally-alert-toggle'`), `${shape} lost the toggle`);
+  }
+  for (const shape of ['self-buffs', 'ally-buffs', 'custom-buff', 'custom-debuff', 'sound', 'sound-customTimer', 'custom-timer', 'damage', 'travel']) {
+    assert.doesNotMatch(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'ally-alert-toggle'`), `${shape} must not offer a toggle it can never use`);
+  }
+  assert.match(rendererSrc, /allyAlertRowEl\.style\.display = has\('ally-alert-toggle'\) \? '' : 'none';/);
+  assert.match(rendererSrc, /allyAlertHintEl\.style\.display = has\('ally-alert-toggle'\) \? '' : 'none';/);
 });
 
 test('only auras that asked are sent to the engine', () => {
@@ -323,10 +335,21 @@ test('the reasoning for firing on the cast line is written down', () => {
 // changing the source; it is not presenting a choice that was never really there.
 
 test('the "Watching:" row is hidden on an alert aura, not shown reading the wrong thing', () => {
+  // Rewritten 25 Aug for the additive settings-panel model: widgetShape() gives an
+  // allyDebuffAlert:true text aura its own shape ('ally-alert'), distinct from a plain text aura,
+  // specifically so it can be left out of SHAPE_FIELDS' 'buff-source' list - the row is never
+  // built for this shape at all, rather than built and then hidden by a live boolean check.
   const rendererSrc = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = rendererSrc.match(/const announcer = widget\.displayMode === 'text'[\s\S]*?buffSourceRow\.style\.display =([\s\S]*?);/);
-  assert.ok(fn, 'the buffSourceRow visibility rule has been restructured');
-  assert.match(fn[1], /!widget\.allyDebuffAlert/, 'an alert aura still shows "Watching: Buffs you\'ve cast on allies"');
+  const shapeFn = rendererSrc.match(/function widgetShape\(widget\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(shapeFn, 'widgetShape has been restructured');
+  assert.match(shapeFn[1], /if \(widget\.allyDebuffAlert\) return 'ally-alert';/, 'allyDebuffAlert no longer gets its own shape');
+  const tableFn = rendererSrc.match(/const SHAPE_FIELDS = \{([\s\S]*?)\n {2}\};/);
+  assert.ok(tableFn, 'SHAPE_FIELDS has been renamed or restructured');
+  assert.doesNotMatch(
+    tableFn[1],
+    /'ally-alert': \[[^\]]*'buff-source'/,
+    'an alert aura still shows "Watching: Buffs you\'ve cast on allies"'
+  );
 });
 
 test('its own buff/spell picker offers debuffs, not buffs, even though buffSource is ally', () => {

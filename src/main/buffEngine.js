@@ -3,6 +3,7 @@ const {
   matchCastBegin,
   matchSingingBegin,
   matchActivate,
+  matchOtherActivate,
   matchOtherCastBegin,
   matchMemorizeFinished,
   matchForgetSpell,
@@ -56,17 +57,56 @@ const MOTE_DURATION_RATES = {
   dot: 0.05, // sheet only
 };
 
-// Which categories the AA and Exaltation duration bonus applies to. BUFF ONLY - Shara, 23 August:
-// "the AA should only apply to things marked as a BUFF. not just any beneficial."
+// P0c, 25 Aug. Per-tier CAST TIME scaling, from the mote spreadsheet's "Benefits by category"
+// table - Shara supplied it directly (a screenshot of the sheet), unlike MOTE_DURATION_RATES
+// above where only buff and hot were ever independently measured against her own logs. Every
+// category here is sheet-only, same unmeasured status as the duration rates marked "sheet only".
+// Nuke/lifetap is the one outlier at -2%/tier; every other category (dot, heal, hot, debuff,
+// charm, pet, buff) is -4%/tier. `heal`, `nuke` and `pet` get no entry in MOTE_DURATION_RATES
+// (nothing to scale - they're instant or have no self-duration) but DO get one here, because cast
+// time is a real number for all of them regardless of whether the effect itself has a duration.
+const CAST_TIME_RATES = {
+  nuke: -0.02,
+  dot: -0.04,
+  heal: -0.04,
+  hot: -0.04,
+  debuff: -0.04,
+  charm: -0.04,
+  pet: -0.04,
+  buff: -0.04,
+};
+
+// Slack allowed around the scaled cast time before the app gives up waiting/blind-confirms, to
+// absorb the log's one-second timestamp resolution plus ordinary lag - Shara's own instruction:
+// "assume some rounding error, so it needs a window either side," corrected 25 Aug to half a
+// second each side rather than the wider first guess. There is currently only one place this
+// actually applies it (the pendingCast timeout below), which only ever fires on the LATE side -
+// nothing in this file currently rejects a landing for arriving suspiciously early, so the
+// "either side" tolerance is realized as one wider wait rather than two separate bounds.
+const CAST_TIME_TOLERANCE_MS = 500;
+
+// Whether the AA and Exaltation duration bonus applies to a spell. Shara, 23 August: "the AA
+// should only apply to things marked as a BUFF. not just any beneficial." Shara, 24 August,
+// correcting a second mistake: "ALL buffs are supposed to be subject to these increases. i have
+// stressed this since the beginning." So the actual rule is simpler than the code ever made it -
+// every spell the spreadsheet's own `kind` column marks 'buff' gets the bonus, full stop.
 //
-// I had this as buff, heal, hot and pet, on the reasoning that the bonus is for beneficial spells
-// and those are the beneficial categories. That was inference dressed up as a measurement, and it
-// was wrong. See _scaledDuration for the one observation that appeared to support the wider set
-// and why it does not.
+// The mistake both times was reaching for this file's OWN finer-grained scaleCategory split
+// instead of the sheet's kind column. First pass: had it as buff/heal/hot/pet by scaleCategory,
+// on the reasoning that the bonus is for beneficial spells and those are the beneficial
+// categories - inference dressed up as measurement, and Curse (a dot, kind 'det') proved it
+// wrong by NOT scaling the way that wider set predicted. Second pass narrowed to
+// scaleCategory:'buff' alone, which silently dropped every 'hot' too, even though all 16 of the
+// roster's scaleCategory:'hot' entries - Celestial Healing, Celestial Remedy and the rest - are
+// kind:'buff' on the sheet. scaleCategory exists for the UNRELATED reason of note 27's mote-tier
+// rate (+5%/tier for a hot, +10%/tier for a plain buff, both measured separately); it was never
+// meant to also gate AA eligibility, which the sheet's kind column already settles by itself.
 //
-// Still a whitelist rather than a blacklist: a category nobody thought about gets no bonus, which
-// is a timer that runs short rather than one that outlives the thing it is timing.
-const AA_SCALED_CATEGORIES = new Set(['buff']);
+// Checked directly against kind rather than scaleCategory below, so nothing needs a whitelist of
+// scaleCategory strings to stay in sync with the sheet's own classification.
+function isAAEligible(entry) {
+  return entry && entry.kind === 'buff';
+}
 
 // What a mob name is allowed to look like. Real examples from the owner's logs: "a greater kobold",
 // "a Teir`Dal ranger", "an elite gnoll shaman", "Baron Telyx V`Zher", "the froglok shin lord".
@@ -177,6 +217,22 @@ class BuffEngine extends EventEmitter {
     this.store = store;
     this.pendingCast = null; // { name, timer, landingText }
     this.burstUntil = 0; // Date.now() timestamp - see matchActivate handling below
+    // Same idea as burstUntil, but opened by an ALLY's own activation line ("Dovairous activates
+    // Quick Buff.") rather than the player's. Reported live and confirmed straight from the log:
+    // an ally's Quick-Buff-equivalent instant grant hit the whole group, including the player, with
+    // no per-spell cast line for any of it - the exact shape gotchas #12/#18 document for the
+    // player's OWN activation, just triggered by someone else. burstUntil is deliberately permissive
+    // (an ability the PLAYER used is presumed to have genuinely granted what it landed); this one is
+    // the opposite - it exists to make the unique-landing-text tier MORE cautious during the window,
+    // not less, since every buff it grants belongs to whoever activated it, not the player.
+    this.allyBurstUntil = 0;
+    // P0b, first piece: WHO opened the ally burst, mirroring burstOpenedBy below but for the
+    // ally-triggered case. Shara's answer on scope, 25 Aug: "track who likely did it, but it
+    // shouldn't hit self buffs unless toggled on" - so this is recorded unconditionally (it's
+    // cheap, and useful in the debug log either way), but only actually reaches a queued prompt
+    // when trackOthersEnabled is on. See the useEvidenceModel handling in the unique-landing-text
+    // tier for where it's read.
+    this.allyBurstOpenedBy = null; // { casterName, ability, at } | null
     // Note 28. WHAT opened the current burst, and when. Nothing reads this to make a decision -
     // it exists only so the detection log can say where a burst-context landing came from.
     //
@@ -272,25 +328,57 @@ class BuffEngine extends EventEmitter {
     // untrue. That's why the landing-page gem bar lets the user click a gem
     // to forget it (see removeMemorized), and why it's labelled a memory of
     // what was last seen rather than live truth.
+    //
+    // PER-PROFILE, same reasoning and same shape as selfAmbiguousResolutionsByProfile above. A
+    // loadout swap on this server prints NOTHING - confirmed by searching a real log across a
+    // whole swap window and finding zero forget/memorize/loadout/class/spellbook lines at all -
+    // so the old single flat map kept vouching for the PREVIOUS loadout's gems as if they were
+    // still loaded, and confirmed live to land a wrong spell off exactly that stale evidence.
+    // Scoping per profile doesn't detect the swap either (nothing does - see CLAUDE.md gotcha #9
+    // on why a burst-detector for this was explicitly rejected), but it does mean the user's own
+    // manual profile switch - which they already do for every loadout swap, to keep
+    // selfAmbiguousResolutions correct - now also resets this evidence to empty ("we don't know")
+    // instead of carrying over a different loadout's gems as false confidence.
+    // profileId -> Map<lowercased name, original-case name>. Migrates the old flat single-map
+    // format (pre-per-profile) into DEFAULT_PROFILE_ID's bucket exactly once, same migration
+    // shape as selfAmbiguousResolutionsByProfile above.
+    const memorizedByProfile = store.loadJson('currentlyMemorizedByProfile', null);
+    if (memorizedByProfile) {
+      this.currentlyMemorizedByProfile = new Map(
+        Object.entries(memorizedByProfile).map(([profileId, entries]) => [profileId, new Map(entries)])
+      );
+    } else {
+      // Tolerates the older flat array-of-names format as well as the [lower, original] pairs
+      // format that came right before per-profile scoping.
+      const legacy = (store.loadJson('currentlyMemorized', []) || []).map((entry) =>
+        Array.isArray(entry) ? [entry[0], entry[1]] : [String(entry).toLowerCase(), String(entry)]
+      );
+      this.currentlyMemorizedByProfile = new Map([[DEFAULT_PROFILE_ID, new Map(legacy)]]);
+      this.store.saveJson(
+        'currentlyMemorizedByProfile',
+        Object.fromEntries([...this.currentlyMemorizedByProfile].map(([profileId, map]) => [profileId, [...map.entries()]]))
+      );
+    }
     // Map rather than Set: keyed by lowercased name (every lookup in the
     // detection tiers is case-insensitive) but carrying the original casing
     // as the value, so a memorized spell that ISN'T in the buff roster - a
     // nuke, a heal - can still be displayed properly instead of rendering as
     // "rain of spikes". Roster spells get their casing from the roster; these
     // have no other source for it.
-    this.currentlyMemorized = new Map(
-      (store.loadJson('currentlyMemorized', []) || []).map((entry) =>
-        // Tolerates the older flat array-of-names format as well as the
-        // current [lower, original] pairs.
-        Array.isArray(entry) ? [entry[0], entry[1]] : [String(entry).toLowerCase(), String(entry)]
-      )
-    );
+    //
+    // Convenience reference to the active profile's bucket, same pattern as
+    // selfAmbiguousResolutions above - kept as a real Map so every existing
+    // .get/.set/.delete/.clear call site didn't need to change.
+    this.currentlyMemorized = this._getOrCreateMemorizedMap(this.activeProfileId);
     // Trim on load as well as on insert. A store saved before the cap existed can already hold
     // more than fourteen, and capping only new arrivals would leave that file permanently over
     // the limit - it would never come down on its own, because entries are only removed by a
     // "You forget X." line for a gem the app may never see again. Healing it here means one
     // launch fixes it, with no reset button to find.
-    if (this._trimMemorized() > 0) this._saveCurrentlyMemorized();
+    for (const map of this.currentlyMemorizedByProfile.values()) {
+      this._trimMemorized(map);
+    }
+    this._saveCurrentlyMemorized();
     // Confirmed group members, lowercased name -> real-case name (from
     // "<Name> has joined the group." lines).
     //
@@ -324,9 +412,53 @@ class BuffEngine extends EventEmitter {
     // expire via the tick() timer sweep, same fallback self-buffs already
     // use when endedText isn't known.
     this.allyBuffs = new Map();
+    // `${casterKeyLower}::${songNameLower}` -> { name, castBy, durationSec, expiresAt, endedText }
+    // - bard songs currently active ON THE PLAYER, regardless of who cast them, for the dedicated
+    // Bard Songs aura. Keyed the same shape as allyBuffs (by caster, not just by name) so two
+    // different casters maintaining the same song on the player are two entries, not one
+    // overwriting the other - unlike activeBuffs below, which is name-only and can't distinguish
+    // that. castBy is 'You', a real ally name, or null (attribution unknown - see
+    // _attributeBardSongCaster). Populated additively from _land() alongside activeBuffs, not
+    // instead of it - this never changes what lands as a self buff, it only ever adds a second,
+    // caster-aware observation of the same landing for isBardSong entries specifically.
+    this.bardSongs = new Map();
     this.blockedNames = new Map(); // lowercased name -> original-case name, see blockBuff()
     this.spellbookCheckFn = null; // (name) => boolean
     this.trackOthersEnabled = false;
+    // P0 rework, off by default and independently switchable - see setUseEvidenceModel. Changes
+    // exactly one thing: in the unique-landing-text tier, "not currently memorized"/"an ally's
+    // burst just fired" stop being able to silently IGNORE a match on their own. They still count
+    // against it, but the outcome becomes a queued prompt instead of a silent drop - a genuine
+    // spellbook absence (neverScribed) is untouched either way, since that one is real negative
+    // evidence, not just an absence of positive evidence. See CLAUDE.md's P0 section for the full
+    // reasoning; kept behind a toggle specifically so a live regression can be reverted with one
+    // click rather than a rebuild.
+    this.useEvidenceModel = false;
+    // P0c, off by default - its own switch, independent of useEvidenceModel above, so either can
+    // be reverted without touching the other. See CAST_TIME_RATES/_scaledCastSec for what this
+    // changes: the pendingCast timeout below (both the "confirmed by timeout fallback" branch and
+    // the "expected text never showed up" cancel branch) uses the spell's own scaled cast time
+    // instead of one flat 12s window for every spell, when the roster has a castSec for it.
+    this.useCastTimeFilter = false;
+    // Spell Casting Deftness (AA, 3 ranks: 10/25/50%) - confirmed live via the AA window, 25 Aug,
+    // after an initial misread that called it "Subtlety" at a nonexistent rank 4/6. It "reduces the
+    // cast time of beneficial spells that have a duration and an initial cast time of at least 3
+    // seconds". This is a SECOND multiplier on top of CAST_TIME_RATES' per-mote-tier rate, the same
+    // two-multiplier shape duration already has (mote tier x AA/Exaltation) - the character's own
+    // rank 1 (10%) is what closed the gap between the mote-only prediction (2.16s for Spirit of the
+    // Puma VII, before this existed) and the real in-game value (1.94s) seen on that character. See
+    // setCastTimeMultiplierFn.
+    this.castTimeMultiplierFn = () => 1;
+    // Note 26, off by default - see setStackVerdictFn and _land()'s use of it. EQ prints an
+    // explicit "has been overwritten" line for a buff overwritten on someone ELSE, but nothing at
+    // all for one overwritten on the player's own self - so when a newly-landed self-buff would, by
+    // the game's own stacking rule, silently replace one already active (see src/main/
+    // spellStacking.js), this removes the stale one immediately instead of leaving it to time out
+    // on its own or be misattributed later by a shared fade-text line. Injected as a function, same
+    // DI reasoning as spellbookCheckFn - this engine has to keep running in a plain Node test and in
+    // tools/replay-log.js, neither of which has the game's install files to read.
+    this.stackVerdictFn = null; // (activeSpellId, incomingSpellId) => { overwrites, why } | null
+    this.useStackingModel = false;
     this.durationMultiplierFn = () => 1;
     this.iconUrlFn = (iconId) => `eqicon://icon/Alternate%201/${iconId}`;
     this.debugLogFn = null; // (message) => void - see setDebugLogFn
@@ -339,6 +471,22 @@ class BuffEngine extends EventEmitter {
   // about AAs/exaltation itself.
   setDurationMultiplierFn(fn) {
     this.durationMultiplierFn = fn;
+  }
+
+  // fn() => the Spell Casting Deftness multiplier (e.g. 0.9 for the confirmed rank 1, 10%
+  // reduction). See the constructor comment on castTimeMultiplierFn for what confirmed this.
+  setCastTimeMultiplierFn(fn) {
+    this.castTimeMultiplierFn = fn;
+  }
+
+  // fn(activeSpellId, incomingSpellId) => { overwrites, why } | null - see the constructor comment
+  // on stackVerdictFn and _land()'s use of it.
+  setStackVerdictFn(fn) {
+    this.stackVerdictFn = fn;
+  }
+
+  setUseStackingModel(enabled) {
+    this.useStackingModel = enabled;
   }
 
   // Lets iconService control which icon art set URLs point at, without
@@ -370,6 +518,20 @@ class BuffEngine extends EventEmitter {
     this.enemyDebuffNamesFn = fn;
   }
 
+  // Note 40. Same shape as enemyDebuffNamesFn above, but for a Custom debuff
+  // aura's "ally" mode: spells the aura wants tracked on an enemy WITHOUT
+  // requiring the player to be the one who cast them. Deliberately a
+  // separate set rather than a flag on the existing one, because the two
+  // modes gate different code paths below - self mode still needs
+  // recentSelfCast/the burst window, ally mode skips that gate entirely.
+  // Shara's own words: "the name doesn't matter for now, just have it
+  // tracked that a debuff happened from someone" - so unlike allyBuffs'
+  // named-cast path this never records who cast it, only that the debuff
+  // landed.
+  setAllyEnemyDebuffNamesFn(fn) {
+    this.allyEnemyDebuffNamesFn = fn;
+  }
+
   // fn() => Set of lowercased spell names some TEXT aura has asked to be warned about when
   // somebody else casts them. Shara's design, and it is a better one than either option I put to
   // her: not a timer on somebody else's debuff, which could only ever be guessed, but a warning
@@ -397,10 +559,21 @@ class BuffEngine extends EventEmitter {
     return names.has(base.toLowerCase()) ? spellName : null;
   }
 
+  // True if EITHER mode's aura has asked for this spell on enemies - the mob-name
+  // relaxation this gates exists to widen what counts as a valid recipient, and
+  // that widening is needed the same way regardless of who is expected to have
+  // cast it.
   _isWatchedOnEnemies(name) {
-    if (!this.enemyDebuffNamesFn) return false;
-    const names = this.enemyDebuffNamesFn();
-    return !!names && names.has(name.toLowerCase());
+    const lower = name.toLowerCase();
+    if (this.enemyDebuffNamesFn) {
+      const names = this.enemyDebuffNamesFn();
+      if (names && names.has(lower)) return true;
+    }
+    if (this.allyEnemyDebuffNamesFn) {
+      const names = this.allyEnemyDebuffNamesFn();
+      if (names && names.has(lower)) return true;
+    }
+    return false;
   }
 
   // Whether a landing of this spell is on an enemy rather than on a groupmate.
@@ -423,13 +596,18 @@ class BuffEngine extends EventEmitter {
 
   // Called by main.js (from profileStore.js's active id, on startup and on
   // every user-driven profile switch) - repoints selfAmbiguousResolutions
-  // at the new profile's own bucket. Nothing is cleared or guessed: a
-  // profile the app hasn't seen before just starts with an empty bucket,
-  // exactly like a brand new install would.
+  // and currentlyMemorized at the new profile's own bucket. Nothing is
+  // cleared or guessed: a profile the app hasn't seen before just starts
+  // with an empty bucket, exactly like a brand new install would. For
+  // currentlyMemorized specifically, that empty start is the actual fix -
+  // see the field's comment on why carrying a DIFFERENT profile's gems
+  // across a loadout swap was confirmed live to land the wrong buff.
   setActiveProfileId(profileId) {
     if (profileId === this.activeProfileId) return;
     this.activeProfileId = profileId;
     this.selfAmbiguousResolutions = this._getOrCreateSelfResolutionsMap(profileId);
+    this.currentlyMemorized = this._getOrCreateMemorizedMap(profileId);
+    this.emit('memorizedChanged', this.getCurrentlyMemorized());
   }
 
   // Called by main.js when a profile is deleted (profileStore.js refuses to
@@ -442,17 +620,20 @@ class BuffEngine extends EventEmitter {
   // same reasoning as every other cross-module boundary in this file.
   removeProfile(profileId) {
     this.selfAmbiguousResolutionsByProfile.delete(profileId);
+    this.currentlyMemorizedByProfile.delete(profileId);
     if (profileId === this.activeProfileId) {
-      // this.selfAmbiguousResolutions was a direct reference to the Map
-      // object just detached above - deleting it from the outer map doesn't
-      // clear that inner Map, so without this it would keep silently
-      // serving stale answers until the caller calls setActiveProfileId()
-      // with the real replacement. Doesn't rely on that call happening
-      // immediately (main.js does, right after, but this stays correct on
-      // its own either way).
+      // this.selfAmbiguousResolutions/currentlyMemorized were direct
+      // references to the Map objects just detached above - deleting them
+      // from the outer maps doesn't clear these inner Maps, so without this
+      // they would keep silently serving stale answers until the caller
+      // calls setActiveProfileId() with the real replacement. Doesn't rely
+      // on that call happening immediately (main.js does, right after, but
+      // this stays correct on its own either way).
       this.selfAmbiguousResolutions = new Map();
+      this.currentlyMemorized = new Map();
     }
     this._saveSelfAmbiguousResolutions();
+    this._saveCurrentlyMemorized();
   }
 
   // (message: string) => void - lets an external module decide where the
@@ -474,6 +655,19 @@ class BuffEngine extends EventEmitter {
       this.ambiguousCasts.clear();
       this.emit('ambiguousCastsChanged', this.getAmbiguousCasts());
     }
+  }
+
+  // See the constructor comment above this.useEvidenceModel for exactly what this changes.
+  // Nothing here needs to clear/reset anything - it only affects which branch a future line takes.
+  setUseEvidenceModel(enabled) {
+    this.useEvidenceModel = enabled;
+  }
+
+  // See the constructor comment above this.useCastTimeFilter. A pendingCast timer already running
+  // when this is flipped keeps its original duration - only the NEXT cast begin picks up the new
+  // setting, same as every other toggle in this file.
+  setUseCastTimeFilter(enabled) {
+    this.useCastTimeFilter = enabled;
   }
 
   stop() {
@@ -540,6 +734,25 @@ class BuffEngine extends EventEmitter {
       // downstream landings of the same burst, and overwriting this with each of them would erase
       // the one fact worth logging.
       this.burstOpenedBy = { text: activated, at: Date.now() };
+      // Reported live: "Amplification II" (an AA-activated bard buff, "You activate Amplification
+      // II.") landed at 50s instead of the true 60s shown in its own tooltip (base 30, AA+
+      // Exaltation 65% -> 49.5 -> 50; the missing piece is the mote-rank bonus for rank II, which
+      // would take it to the confirmed 60). Root cause: _rankForEntry() only ever reads
+      // pendingCast/recentSelfCast, and this branch never set either - matchCastBegin's own
+      // handler two hundred lines below sets recentSelfCast for a "casting"/"singing" begin line,
+      // but an "activate" line fell through this untouched. So the rank in "Amplification II" was
+      // being read correctly off the log line and then thrown away, exactly as if the numeral had
+      // never been there. Confirmed as a real bug and not a display artefact: "duration based buff
+      // songs scale with motes" - the owner's own words, so the tier bonus is real and was simply
+      // never reaching activated abilities. Fixed the same way matchCastBegin's own landing does -
+      // recentSelfCast specifically, not pendingCast, since pendingCast's confirm/cancel machinery
+      // assumes one specific expected landing text, which is exactly wrong for something like Quick
+      // Buff (also an "activate" line) that deliberately drops many buffs with no per-buff cast
+      // line at all. recentSelfCast is pure lookup evidence for _rankForEntry, keyed by name after
+      // rank-suffix stripping - Quick Buff's own granted buffs never share ITS name, so this cannot
+      // misattribute a rank onto an unrelated burst-landed buff; it only ever fires for a landing
+      // that is, by name, the very thing that was just activated.
+      this.recentSelfCast = { name: activated, expiresAt: Date.now() + FALLBACK_CONFIRM_WINDOW_MS };
       this._checkForEndedBuffs(line);
       return;
     }
@@ -559,6 +772,21 @@ class BuffEngine extends EventEmitter {
     if (otherCast) {
       this.recentOtherCasts.set(otherCast.spellName.toLowerCase(), otherCast.casterName);
       this._alertAllyCast(otherCast);
+      this._checkForEndedBuffs(line);
+      return;
+    }
+
+    // Confirmed straight from the log after the fix below: "Dovairous activates Quick Buff." -
+    // an ally triggering the same instant multi-grant ability matchActivate exists for, just from
+    // someone else. Opens allyBurstUntil (see the constructor comment) so the unique-landing-text
+    // tier gets MORE cautious for the next few seconds, not less - every buff a burst like this
+    // drops belongs to whoever activated it, and there is no per-spell name to check evidence
+    // against the way a named cast has.
+    const otherActivate = matchOtherActivate(line);
+    if (otherActivate) {
+      this.allyBurstUntil = Date.now() + BURST_WINDOW_MS;
+      this.allyBurstOpenedBy = { casterName: otherActivate.casterName, ability: otherActivate.abilityName, at: Date.now() };
+      this._debugLog(`ALLY ACTIVATE "${otherActivate.abilityName}" by "${otherActivate.casterName}" - self-buff landings are suspect for the next few seconds`);
       this._checkForEndedBuffs(line);
       return;
     }
@@ -695,6 +923,68 @@ class BuffEngine extends EventEmitter {
       }
     }
 
+    // Reported live 24 Aug, and root-caused from the raw log rather than guessed: Insight (an
+    // Enchanter buff) landed and stayed on a BRD/CLF player's Self Buffs, from an ally's own
+    // instant multi-grant burst (see the ALLY ACTIVATE handling above and gotchas #12/#18) that
+    // produced no per-spell cast line at all. What DID appear in the log for it was several other
+    // people's third-person landing suffix for the exact same spell - "Kibobab's mind sharpens.",
+    // "Avenrae's mind sharpens." - in the same second as "Your mind sharpens." on the player. The
+    // two tiers just above already know how to read this shape of line; this reads it too, for
+    // its own sake, when NEITHER of them already claimed it.
+    //
+    // That ordering is not incidental - it is the fix for a second bug this one could have caused.
+    // Reported directly: "buffs are aoe, so buffs landing on others does not mean it is their
+    // quick buff." Correct - if the PLAYER casts a group buff, its third-person suffix lands on
+    // every groupmate too, and that is not evidence someone ELSE cast it. The two tiers above
+    // already handle exactly that case (recentSelfCast for a named cast, burstUntil for the
+    // player's own instant grant) and RETURN once they do - so by the time control reaches here,
+    // any third-person landing that the player's own recent action already explains is gone,
+    // consumed by whichever of those two tiers recognized it. What's left here is only the
+    // remainder: a third-person landing with no self-cast/self-burst explanation on file at all -
+    // which is exactly the ally-triggered-burst case this fix exists for.
+    //
+    // Recorded as evidence rather than attributed to anyone - nobody here knows WHO cast it, and
+    // P0b's answer to that (recording who, not just suppressing) is real future work, not this
+    // fix - but seeing the same spell's suffix land on someone else this recently, unexplained by
+    // anything the player just did, is exactly the strength of evidence _hasRecentOtherCast
+    // already trusted from a cast-begin line. A single unambiguous suffix match only, same bar the
+    // two tiers above hold themselves to.
+    const unexplainedThirdPerson = /^([A-Za-z]+)( .+)$/.exec(stripped);
+    if (unexplainedThirdPerson) {
+      const otherSuffixMatches = this.buffStore.findAllByOthersLandingSuffix(unexplainedThirdPerson[2]);
+      if (otherSuffixMatches.length === 1) {
+        this.recentOtherCasts.set(otherSuffixMatches[0].name.toLowerCase(), unexplainedThirdPerson[1]);
+      }
+    }
+
+    // Note 40: a Custom debuff aura's "ally" mode - the same debuff-on-enemy
+    // landing text as the self-mode tier above, but for spells an aura has
+    // explicitly asked to watch WITHOUT expecting the player to be the
+    // caster. No recentSelfCast/burst gate at all, on purpose: the whole
+    // point of this mode is that the player is not the one casting it, so
+    // gating on evidence of her own cast would defeat it. Caster identity is
+    // not captured - Shara asked only that the debuff be tracked, not who
+    // cast it - so this can't be folded into the ally-buff tiers above,
+    // which exist specifically to attribute a landing to a groupmate.
+    if (this.allyEnemyDebuffNamesFn) {
+      const allyEnemyNames = this.allyEnemyDebuffNamesFn();
+      if (allyEnemyNames && allyEnemyNames.size) {
+        for (const lowerName of allyEnemyNames) {
+          const known = this.buffStore.getByName(lowerName);
+          if (!known || !known.othersLandingSuffix) continue;
+          if (!stripped.endsWith(known.othersLandingSuffix)) continue;
+          const targetName = stripped.slice(0, -known.othersLandingSuffix.length);
+          if (!this._isValidRecipient(targetName, known)) continue;
+          this._debugLog(
+            `ENEMY DEBUFF LANDED "${known.name}" on "${targetName}" - watched as ally-cast, third-person landing text`
+          );
+          this._landOnAlly(known, targetName);
+          this._checkForEndedBuffs(line);
+          return;
+        }
+      }
+    }
+
     // Highest confidence: a named cast is already pending, so its expected
     // text (even if ambiguous in general) safely confirms THIS cast.
     if (this.pendingCast) {
@@ -730,13 +1020,23 @@ class BuffEngine extends EventEmitter {
     // with, not several to disambiguate between.
     const uniqueMatch = this.buffStore.findByLandingText(stripped);
     if (uniqueMatch) {
+      // Bard songs get every soft/hard "might be someone else's" veto in this tier waived,
+      // regardless of the global "Track buffs cast on me by others" toggle. Shara, 25 Aug, after
+      // watching a real bard song get vetoed live: "bard songs should have this enabled by default
+      // as you cannot separate them." That's not a settings request - it's the same conclusion
+      // CLAUDE.md's P1 section already reached (self-vs-ally is genuinely undecidable for songs
+      // from the log alone), now applied to the vetoes that were built for spells where it IS
+      // decidable. Landing unconditionally is what makes the Bard Songs aura's own attribution
+      // (_attributeBardSongCaster, You/an ally/Unknown) the actual answer to "whose is this",
+      // instead of the log silently dropping half the evidence before that code ever runs.
+      const trackOthersForThis = this.trackOthersEnabled || !!uniqueMatch.isBardSong;
       if (this._hasRecentOtherCast(uniqueMatch.name)) {
-        if (this.trackOthersEnabled) {
+        if (trackOthersForThis) {
           // The caster goes in double quotes deliberately: tools/replay-log.js normalises every
           // debug line by blanking quoted spans before tallying, so a quoted name keeps the
           // before/after histogram comparable instead of making every row read as "changed".
           this._debugLog(
-            `LANDED "${uniqueMatch.name}" - unique text, but recently cast by "${this._recentOtherCaster(uniqueMatch.name)}"; landed anyway (track others ON)`
+            `LANDED "${uniqueMatch.name}" - unique text, but recently cast by "${this._recentOtherCaster(uniqueMatch.name)}"; landed anyway (${this.trackOthersEnabled ? 'track others ON' : 'bard song'})`
           );
           this._land(uniqueMatch);
         } else {
@@ -777,18 +1077,120 @@ class BuffEngine extends EventEmitter {
       // moment, or a cancelled Quick Buff, could let a buff through that
       // wasn't actually the player's. Scoped tightly to burst context only
       // (`inBurst`), never applied outside it.
-      const knownNotMemorized =
-        !alreadyActive &&
-        !inBurst &&
+      // Reported live 24 Aug: Insight (Enchanter-only, level 35) landed and stayed on a BRD/CLF
+      // player's own Self Buffs list, with "Track buffs cast on me by others" OFF - "it should not
+      // be put on me if it did not see my name cast it... this is a BASIC check from day 1."
+      // Real gap: isMemorizableSpell gates the WHOLE currentlyMemorized check above, so a spell
+      // this character's class could never scribe in the first place - not "unloaded right now",
+      // never once in the book - skipped that check entirely and fell straight through to the
+      // unconditional LANDED at the bottom of this block. The spellbook file only ever contains
+      // spells this exact character's class can scribe, so absence from it altogether is stronger,
+      // more reliable evidence than "not currently in a gem" (that one can go stale on a loadout
+      // swap the log never reports - see the currentlyMemorized field comment. The file cannot).
+      //
+      // Known, accepted tradeoff: an item clicky can grant a buff whose real spell entry belongs to
+      // a class the player isn't (a Cleric-flavoured trinket on a Bard, say), and that would now
+      // read the same as "an ally cast this" - refused rather than tracked. There is currently no
+      // way to tell "spell your class truly cannot scribe" apart from "clicky effect copying
+      // another class's spell" from the log alone. If a clicky starts getting silently dropped,
+      // that is the tradeoff showing up and needs its own signal, not a reason to revert this.
+      const neverScribed = !!this.spellbookCheckFn && !isMemorizableSpell;
+      // Confirmed straight from the log: "Dovairous activates Quick Buff." granted the whole group
+      // a stack of buffs, Insight among them, with no per-spell cast line for any of it - see
+      // allyBurstUntil's constructor comment. Unlike the player's OWN burst (inBurst, exempted via
+      // !inBurst below), an ally's burst is the opposite kind of evidence: MORE reason for caution,
+      // not less, since nothing here knows which of the buffs it dropped are even meant for the
+      // player versus everyone else in the group.
+      const alliesBursting = Date.now() < this.allyBurstUntil;
+      const staleGem =
         isMemorizableSpell &&
         this.currentlyMemorized.size > 0 &&
         !this.currentlyMemorized.has(uniqueMatch.name.toLowerCase());
-      if (knownNotMemorized) {
-        if (this.trackOthersEnabled) {
-          this._debugLog(`LANDED "${uniqueMatch.name}" - unique text, but not currently memorized by you; landed anyway (track others ON)`);
+      const gate = !alreadyActive && !inBurst;
+
+      // HARD veto: the spellbook file cannot go stale (see the comment above neverScribed), so a
+      // class that truly can never scribe this spell is real negative evidence regardless of the
+      // evidence-model toggle - the toggle only ever softens the two signals below, never this one.
+      if (gate && neverScribed) {
+        if (trackOthersForThis) {
+          this._debugLog(`LANDED "${uniqueMatch.name}" - unique text, but never scribed by you at all; landed anyway (${this.trackOthersEnabled ? 'track others ON' : 'bard song'})`);
+          this._land(uniqueMatch);
+        } else {
+          this._debugLog(`IGNORED "${uniqueMatch.name}" - unique text, never scribed by you at all, track others OFF`);
+        }
+        this._checkForEndedBuffs(line);
+        return;
+      }
+
+      // SOFT negatives: an ally's burst having fired, or a gem not seen loaded this session,
+      // neither one actually proves this landing isn't the player's own - both can be stale or
+      // coincidental (see the currentlyMemorized field comment on why gems specifically can go
+      // stale after a loadout swap the log never reports). Legacy behaviour (useEvidenceModel off)
+      // still treats them as a hard veto, unchanged from before.
+      //
+      // With the model on, the two causes are NOT the same kind of uncertainty and P0b splits them:
+      //   - staleGem is a question about the PLAYER's own cast (just weakly evidenced), so it always
+      //     queues for you to confirm regardless of trackOthersEnabled - never a silent IGNORE, and
+      //     never gated on the others-tracking setting, since it was never about someone else.
+      //   - alliesBursting is genuinely a "was this actually an ally's, not mine" question - Shara's
+      //     answer, 25 Aug: "track who likely did it, but it shouldn't hit self buffs unless toggled
+      //     on". So the caster is recorded either way (allyBurstOpenedBy, cheap and useful in the
+      //     debug log regardless), but it only ever reaches a queued prompt when trackOthersEnabled
+      //     is on - with it off, this stays a silent IGNORE exactly like before, never a demoted
+      //     prompt and never a silent self-land the way legacy's blind LAND used to do.
+      if (gate && staleGem) {
+        if (this.useEvidenceModel) {
+          const remembered = this.selfAmbiguousResolutions.get(stripped);
+          const rememberedBuff = remembered ? this.buffStore.getByName(remembered) : null;
+          if (rememberedBuff) {
+            this._debugLog(`LANDED "${rememberedBuff.name}" - remembered choice for "${stripped}" (your cast, soft evidence otherwise: not currently memorized by you)`);
+            this._land(rememberedBuff);
+          } else {
+            // _queueAmbiguousCast itself decides and logs the outcome - a single candidate lands
+            // directly (see its own comment on why a one-option prompt is never real ambiguity).
+            this._queueAmbiguousCast(stripped, [uniqueMatch], true);
+          }
+        } else if (trackOthersForThis) {
+          this._debugLog(`LANDED "${uniqueMatch.name}" - unique text, but not currently memorized by you; landed anyway (${this.trackOthersEnabled ? 'track others ON' : 'bard song'})`);
           this._land(uniqueMatch);
         } else {
           this._debugLog(`IGNORED "${uniqueMatch.name}" - unique text, not currently memorized by you, track others OFF`);
+        }
+        this._checkForEndedBuffs(line);
+        return;
+      }
+
+      if (gate && alliesBursting) {
+        if (this.useEvidenceModel && trackOthersForThis) {
+          const remembered = this.otherAmbiguousResolutions.get(stripped);
+          const rememberedBuff = remembered ? this.buffStore.getByName(remembered) : null;
+          if (rememberedBuff) {
+            this._debugLog(`LANDED "${rememberedBuff.name}" - remembered choice for "${stripped}" (others' buff, soft evidence otherwise: an ally's instant grant just fired)`);
+            this._land(rememberedBuff);
+          } else {
+            // _queueAmbiguousCast itself decides and logs the outcome - a single candidate lands
+            // directly, with the attribution folded into that same log line.
+            const attributedTo = this.allyBurstOpenedBy ? this.allyBurstOpenedBy.casterName : null;
+            this._queueAmbiguousCast(stripped, [uniqueMatch], false, attributedTo);
+          }
+          this._checkForEndedBuffs(line);
+          return;
+        }
+        if (this.useEvidenceModel) {
+          // trackOthersEnabled is off - this is fundamentally an ally-attribution question, and
+          // "shouldn't hit self buffs unless toggled on" means it stays a silent IGNORE here, same
+          // as legacy, rather than becoming a prompt nobody asked to see.
+          this._debugLog(`IGNORED "${uniqueMatch.name}" - unique text, an ally's instant grant just fired, track others OFF`);
+          this._checkForEndedBuffs(line);
+          return;
+        }
+        // Only legacy (useEvidenceModel off) reaches here - both evidence-model branches above
+        // already returned. This is the exact pre-P0b behaviour, unchanged.
+        if (trackOthersForThis) {
+          this._debugLog(`LANDED "${uniqueMatch.name}" - unique text, but an ally's instant grant just fired; landed anyway (${this.trackOthersEnabled ? 'track others ON' : 'bard song'})`);
+          this._land(uniqueMatch);
+        } else {
+          this._debugLog(`IGNORED "${uniqueMatch.name}" - unique text, an ally's instant grant just fired, track others OFF`);
         }
         this._checkForEndedBuffs(line);
         return;
@@ -808,7 +1210,18 @@ class BuffEngine extends EventEmitter {
     const candidates = this._collapseRankVariants(this.buffStore.findAllByLandingText(stripped));
     if (candidates.length > 0) {
       const inBurst = Date.now() < this.burstUntil;
-      const selfCandidates = this.spellbookCheckFn ? candidates.filter((c) => this.spellbookCheckFn(c.name)) : [];
+      // A debuff/dot/charm/nuke-category candidate is never self-targeted - these are always
+      // cast AT something, never landed on the caster. Reported live: "You slow down." is shared
+      // by three Slow debuffs (Languid Pace, Shiftless Deeds, Tepid Deeds); the player had
+      // Languid Pace scribed (an ENC casts it at enemies), and the spellbook-narrow tier below
+      // took "it's in my spellbook" as evidence the landing was cast ON the player - confidently
+      // attributing a mob's slow to the player's own cast. Knowing a spell says nothing about
+      // whether a line where its effect lands ON you is that spell's outgoing cast rather than
+      // something else's incoming one, so every tier below that reasons "this must be my own
+      // cast" is scoped to candidates that can legitimately land on their own caster in the
+      // first place - which an enemy-only category never can.
+      const selfPlausible = candidates.filter((c) => !ENEMY_SPELL_CATEGORIES.has(c.scaleCategory));
+      const selfCandidates = this.spellbookCheckFn ? selfPlausible.filter((c) => this.spellbookCheckFn(c.name)) : [];
 
       // A recent third-person cast-begin line naming one of these
       // candidates is concrete evidence someone else is the actual source
@@ -835,7 +1248,7 @@ class BuffEngine extends EventEmitter {
       // it is only still in the list because the engine holds onto it for the text auras. Letting
       // one act as evidence would mean a nuke cast a minute ago silently deciding what a later
       // ambiguous line was.
-      const activeCandidate = candidates.find((c) => {
+      const activeCandidate = selfPlausible.find((c) => {
         const entry = this.activeBuffs.get(c.name.toLowerCase());
         return entry && !entry.instant;
       });
@@ -881,7 +1294,7 @@ class BuffEngine extends EventEmitter {
       // Gems second: still worth having, because it narrows in plenty of cases the spellbook
       // cannot, and after a loadout swap it is wrong rather than useless - it just cannot be
       // trusted OVER the spellbook when the two disagree.
-      const memorizedCandidates = candidates.filter((c) => this.currentlyMemorized.has(c.name.toLowerCase()));
+      const memorizedCandidates = selfPlausible.filter((c) => this.currentlyMemorized.has(c.name.toLowerCase()));
       if (!otherCastMatch && memorizedCandidates.length === 1) {
         if (inBurst) this.burstUntil = Date.now() + BURST_WINDOW_MS;
         this._debugLog(
@@ -921,13 +1334,17 @@ class BuffEngine extends EventEmitter {
         return;
       }
 
-      if (!otherCastMatch && inBurst) {
+      if (!otherCastMatch && inBurst && selfPlausible.length > 0) {
         // Landing during a burst the player themselves triggered ("You
         // activate X.") is presumed to be their own regardless of
         // spellbook - but which specific one it is remains genuinely
         // ambiguous with no per-buff cast line to go on, so this queues
         // for the user too (see hard rule above) rather than guessing
         // candidates[0]. A remembered resolution still applies directly.
+        // Scoped to selfPlausible, not the raw candidate list - a burst is
+        // evidence the PLAYER just triggered something, which still cannot
+        // make an enemy-only category (a debuff/dot/charm/nuke) a plausible
+        // answer for a line where the effect landed on them.
         this.burstUntil = Date.now() + BURST_WINDOW_MS;
         const remembered = this.selfAmbiguousResolutions.get(stripped);
         const rememberedBuff = remembered ? this.buffStore.getByName(remembered) : null;
@@ -936,9 +1353,9 @@ class BuffEngine extends EventEmitter {
           this._land(rememberedBuff);
         } else {
           this._debugLog(
-            `QUEUED "${stripped}" for you - burst context, not in spellbook, ${candidates.length} candidates: ${candidates.map((c) => c.name).join(', ')}`
+            `QUEUED "${stripped}" for you - burst context, not in spellbook, ${selfPlausible.length} candidates: ${selfPlausible.map((c) => c.name).join(', ')}`
           );
-          this._queueAmbiguousCast(stripped, candidates, true);
+          this._queueAmbiguousCast(stripped, selfPlausible, true);
         }
         this._checkForEndedBuffs(line);
         return;
@@ -1000,6 +1417,13 @@ class BuffEngine extends EventEmitter {
       // text at all, there's no way to tell the difference, so timeout
       // confirming is still the best available fallback.
       const knowsExpectedText = !!known?.landingText;
+      // P0c. Off by default (see this.useCastTimeFilter) - when on, and the roster has a castSec
+      // for this spell, wait only as long as its own scaled cast time (+ rounding tolerance)
+      // instead of one flat 12s for every spell regardless of how fast it actually casts. Falls
+      // back to the old flat window whenever there's no castSec to scale, so a spell with no data
+      // is never worse off than it is today.
+      const scaledCastSec = this.useCastTimeFilter && known ? this._scaledCastSec(known, rankValue(castName)) : null;
+      const confirmWindowMs = scaledCastSec != null ? Math.round(scaledCastSec * 1000) + CAST_TIME_TOLERANCE_MS : FALLBACK_CONFIRM_WINDOW_MS;
       const timer = setTimeout(() => {
         if (knowsExpectedText) {
           this._debugLog(`CANCELLED pending cast "${castName}" - expected landing text never showed up (timed out)`);
@@ -1012,9 +1436,10 @@ class BuffEngine extends EventEmitter {
           );
           this._confirmPendingCast();
         }
-      }, FALLBACK_CONFIRM_WINDOW_MS);
+      }, confirmWindowMs);
       this._debugLog(
-        `CAST BEGIN "${castName}" - ${known ? `known, expecting "${known.landingText || '(no known landing text)'}"` : 'not in roster'}`
+        `CAST BEGIN "${castName}" - ${known ? `known, expecting "${known.landingText || '(no known landing text)'}"` : 'not in roster'}` +
+          (scaledCastSec != null ? ` (waiting ${(confirmWindowMs / 1000).toFixed(1)}s, cast-time filter ON)` : '')
       );
       this.pendingCast = { name: castName, timer, landingText: known?.landingText || null };
       // Independent of pendingCast's lifecycle - see the class doc comment
@@ -1032,6 +1457,7 @@ class BuffEngine extends EventEmitter {
     // Runs first, and does not return early, because it reads different line shapes from the self
     // loop below - letting one starve the other would be a silent, ordering-dependent bug.
     this._checkForEndedAllyBuffs(line);
+    this._checkForEndedBardSongs(line);
     for (const [key, buff] of this.activeBuffs) {
       if (buff.endedText && line.includes(buff.endedText)) {
         this.activeBuffs.delete(key);
@@ -1039,6 +1465,22 @@ class BuffEngine extends EventEmitter {
         return; // a line only ever reports one buff fading
       }
     }
+  }
+
+  // Same shape as the self-buff loop just above, over the separate bardSongs map - a bard song's
+  // endedText is whatever the roster already carries for it, same string either map would match.
+  // Kept as its own small loop (not folded into the self loop) since bardSongs is keyed by
+  // caster+name, not name alone, so more than one entry can legitimately share the same endedText
+  // and both need checking, not just the first.
+  _checkForEndedBardSongs(line) {
+    let changed = false;
+    for (const [key, song] of this.bardSongs) {
+      if (song.endedText && line.includes(song.endedText)) {
+        this.bardSongs.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) this.emit('bardSongsChanged', this.getActiveBardSongs());
   }
 
   // Warns that somebody else has cast a debuff you asked to be told about.
@@ -1085,24 +1527,12 @@ class BuffEngine extends EventEmitter {
     this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
   }
 
-  // One of several identically-named mobs has lost this debuff. Drops the SOONEST instance, which
-  // is the one the countdown was showing and the likeliest to be the one that ended, and only
-  // removes the entry entirely when the last one goes.
+  // The one entry under this key has lost its debuff - dropped entirely, single tile.
   //
   // Returns true if anything changed, so callers can decide whether to emit.
   _dropOneInstance(key) {
-    const entry = this.allyBuffs.get(key);
-    if (!entry) return false;
-    if (!Array.isArray(entry.instances) || entry.instances.length <= 1) {
-      this.allyBuffs.delete(key);
-      return true;
-    }
-    // Exactly one, by index. The first version filtered by value and removed every instance
-    // sharing the soonest expiry - which is the normal case, not an edge one: an AoE mez lands on
-    // three mobs in the same millisecond, so all three carried the same timestamp and one death
-    // wiped the lot.
-    entry.instances.splice(entry.instances.indexOf(Math.min(...entry.instances)), 1);
-    entry.expiresAt = Math.min(...entry.instances);
+    if (!this.allyBuffs.has(key)) return false;
+    this.allyBuffs.delete(key);
     return true;
   }
 
@@ -1355,7 +1785,7 @@ class BuffEngine extends EventEmitter {
   _scaledDuration(entry) {
     if (entry.noDurationScaling) return Math.round(entry.durationSec);
     const rankMult = 1 + (MOTE_DURATION_RATES[entry.scaleCategory] || 0) * this._rankForEntry(entry);
-    const aaMult = AA_SCALED_CATEGORIES.has(entry.scaleCategory) ? this.durationMultiplierFn() : 1;
+    const aaMult = isAAEligible(entry) ? this.durationMultiplierFn() : 1;
     return Math.round(entry.durationSec * rankMult * aaMult);
   }
 
@@ -1381,10 +1811,71 @@ class BuffEngine extends EventEmitter {
     return 0;
   }
 
+  // P0c. The spell's own cast time, scaled the same linear-per-tier way as _scaledDuration, for
+  // use as the pendingCast wait window instead of one flat 12s for every spell regardless of how
+  // long it actually takes to cast. rank is passed in rather than read via _rankForEntry, because
+  // this runs at CAST BEGIN - before pendingCast/recentSelfCast are set - not at landing time.
+  //
+  // TWO multipliers, same shape as _scaledDuration's mote-tier x AA: CAST_TIME_RATES is the
+  // per-mote-tier rate, castTimeMultiplierFn is Spell Casting Deftness on top of it - confirmed
+  // live 25 Aug, it closed the exact gap between the mote-only prediction and the real in-game
+  // value for Spirit of the Puma VII (2.16s predicted, 1.94s actual - castTimeMultiplierFn(0.9)
+  // accounts for the rest). Gated on the AA's own stated eligibility, read straight off its
+  // tooltip: "beneficial spells that have a duration and an initial cast time of at least 3
+  // seconds" - so it's skipped for anything instant (no durationSec) or already faster than 3s
+  // base, exactly like the AA itself would skip them.
+  //
+  // Returns null when there's nothing to scale (no castSec on the roster entry), so the caller can
+  // fall back to the old flat window rather than inventing a number. Floored at 25% of base cast
+  // time (never lower) so an extreme tier plus this sheet-only, unmeasured mote rate can't collapse
+  // the wait to something implausibly small - the whole point is a safer window, not a hair-trigger one.
+  _scaledCastSec(entry, rank) {
+    if (typeof entry.castSec !== 'number') return null;
+    const rankMult = 1 + (CAST_TIME_RATES[entry.scaleCategory] || 0) * rank;
+    const eligibleForCastSpeedAA = typeof entry.durationSec === 'number' && entry.durationSec > 0 && entry.castSec >= 3;
+    const aaMult = eligibleForCastSpeedAA ? this.castTimeMultiplierFn() : 1;
+    return entry.castSec * Math.max(rankMult, 0.25) * aaMult;
+  }
+
   _land(known) {
     if (this.blockedNames.has(known.name.toLowerCase())) {
       this._debugLog(`BLOCKED "${known.name}" - landing suppressed, you chose "No longer track" for this buff`);
       return;
+    }
+    // A detrimental spell's FIRST-PERSON landing text ("Your blood boils.") can only ever mean it
+    // was cast at the player, not by them - nothing you cast lands with your own name on it. Every
+    // detection tier that can reach _land() matches on that first-person text, with no category
+    // check anywhere upstream, so a mob's dot/debuff/charm/nuke on the player was landing straight
+    // into the Self Buffs list as if it were her own buff. Reported live: Boil Blood (an NPC
+    // necromancer's fire DoT) showing as a tracked buff, "second time" - meaning this was never a
+    // one-spell bug, it's every entry in this category. ENEMY_SPELL_CATEGORIES already exists for
+    // exactly this classification (ally-buff landing uses it to mark onEnemy) - reused here rather
+    // than inventing a second list that could drift out of sync with it. There is currently no
+    // aura type that tracks a debuff landing ON the player (only ones the player casts AT
+    // something), so this is a full refusal, not a redirect - the roster gap that would need
+    // filling for "warn me when I'm dotted" is a separate feature, not this fix.
+    if (ENEMY_SPELL_CATEGORIES.has(known.scaleCategory)) {
+      this._debugLog(`IGNORED "${known.name}" - detrimental (${known.scaleCategory}), not something you can self-buff`);
+      return;
+    }
+    // Note 26. Scoped to scaleCategory 'buff' on both sides, same gate isAAEligible uses - the
+    // stacking module only models the core same-slot rule (see its own header comment on what it
+    // deliberately skips: DoTs, Complete Heal, bard-song separation, group-spell arbitration), and
+    // narrowing to plain buffs keeps this well inside what's actually been validated rather than
+    // reaching into cases nothing has confirmed. A verdict here only ever REMOVES a stale entry
+    // still sitting in activeBuffs under a DIFFERENT name - the buff about to land below always
+    // proceeds regardless, so a wrong or missing verdict never blocks the landing itself.
+    if (this.useStackingModel && this.stackVerdictFn && known.spellId && known.scaleCategory === 'buff') {
+      for (const [activeKey, activeEntry] of this.activeBuffs) {
+        if (activeKey === known.name.toLowerCase()) continue; // a recast of the same spell, not a conflict
+        const activeKnown = this.buffStore.getByName(activeEntry.name);
+        if (!activeKnown || !activeKnown.spellId || activeKnown.scaleCategory !== 'buff') continue;
+        const verdict = this.stackVerdictFn(activeKnown.spellId, known.spellId);
+        if (verdict) {
+          this._debugLog(`ENDED "${activeKnown.name}" - overwritten by "${known.name}" (${verdict.why})`);
+          this.activeBuffs.delete(activeKey);
+        }
+      }
     }
     const key = known.name.toLowerCase();
     // A spell that genuinely never runs out - Yaulp, Fury - marked in tools/roster-overrides.json,
@@ -1400,6 +1891,7 @@ class BuffEngine extends EventEmitter {
         infinite: true,
         endedText: known.endedText || null,
       });
+      if (known.isBardSong) this._trackBardSongOnPlayer(known, key);
       this.emit('buffsChanged', this.getActiveBuffs());
       return;
     }
@@ -1428,6 +1920,7 @@ class BuffEngine extends EventEmitter {
         instant: true,
         endedText: known.endedText || null,
       });
+      if (known.isBardSong) this._trackBardSongOnPlayer(known, key);
       this.emit('buffsChanged', this.getActiveBuffs());
       return;
     }
@@ -1437,7 +1930,48 @@ class BuffEngine extends EventEmitter {
       expiresAt: Date.now() + effectiveDurationSec * 1000,
       endedText: known.endedText || null,
     });
+    if (known.isBardSong) this._trackBardSongOnPlayer(known, key);
     this.emit('buffsChanged', this.getActiveBuffs());
+  }
+
+  // Bard Songs aura support. Read-only, additive observation of a landing that already happened
+  // above - never gates or changes what lands as a self buff, only adds a second, caster-aware
+  // record for isBardSong entries specifically. Reads the entry _land() just stored (by `key`)
+  // rather than recomputing duration/expiry itself, so the two can never drift apart.
+  _trackBardSongOnPlayer(known, key) {
+    const landed = this.activeBuffs.get(key);
+    if (!landed) return; // defensive only - _land() always sets this before calling here
+    const castBy = this._attributeBardSongCaster(known.name);
+    const bardKey = `${(castBy || 'unknown').toLowerCase()}::${known.name.toLowerCase()}`;
+    this._debugLog(`BARD SONG "${known.name}" - attributed to ${castBy || 'Unknown'}`);
+    this.bardSongs.set(bardKey, {
+      name: known.name,
+      castBy,
+      durationSec: landed.durationSec,
+      expiresAt: landed.expiresAt,
+      infinite: !!landed.infinite,
+      endedText: landed.endedText || null,
+    });
+    this.emit('bardSongsChanged', this.getActiveBardSongs());
+  }
+
+  // Who cast a bard song landing right now, as best the log ever lets us know - "You", a real ally
+  // name, or null (genuinely unattributable, not a guess). Computed generically from state that
+  // already exists for other reasons, rather than threading a caster argument through every one of
+  // _land()'s many call sites (see this project's own history with a whitelist/parameter list
+  // missing one call site and silently losing a feature - not repeating that here).
+  _attributeBardSongCaster(name) {
+    const lower = name.toLowerCase();
+    // The player's own confirmed cast, still within its window - direct, first-person evidence:
+    // this exact "You begin casting/singing X" line was seen recently. Same check already used to
+    // gate ally-buff landing (see the third-person suffix tier above).
+    if (this.recentSelfCast && this.recentSelfCast.name.toLowerCase() === lower && Date.now() < this.recentSelfCast.expiresAt) {
+      return 'You';
+    }
+    // A groupmate's own third-person "X begins casting/singing Y" line, seen recently for this
+    // exact spell. _recentOtherCaster already existed purely for debug-log text ("never for making
+    // one" per its own comment) - this is the first place its answer is actually acted on.
+    return this._recentOtherCaster(name);
   }
 
   // Ally-buff equivalent of _land() - same blocked-name guard (blocking a
@@ -1480,28 +2014,17 @@ class BuffEngine extends EventEmitter {
       this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
       return;
     }
-    // Notes 12 and 18. Two mobs called "a greater kobold" are two mobs, and the key cannot tell
-    // them apart - the log never gives them separate identities. So instead of one entry that the
-    // second landing overwrites, the entry holds ONE EXPIRY PER INSTANCE.
-    //
-    // Shara, 23 August: "2 kobolds should list as x2, when one dies, it should be reduced to x1."
-    // The count is how many are running; the countdown shown is the SOONEST of them, because for a
-    // mez the number that matters is when the next one wakes up.
-    //
-    // Only for things cast at enemies. A buff on a groupmate has one recipient by definition, and
-    // a second landing there is a refresh rather than a second target.
-    const expiresAt = Date.now() + effectiveDurationSec * 1000;
-    const existing = this.allyBuffs.get(key);
-    const instances =
-      onEnemy && existing && Array.isArray(existing.instances) ? [...existing.instances, expiresAt] : [expiresAt];
+    // Notes 12 and 18 used to count identically-named mobs as separate instances under one key
+    // ("a greater kobold" x2, x3...) since the log gives them no other identity. Scrapped 24 Aug:
+    // the log can't tell a second same-named mob apart from a recast refreshing the one you already
+    // have - chain-mezzing a target before it wakes hit this key exactly the same way a second mob
+    // would, so the count climbed on a single target. One tile, one expiry - a new landing under
+    // this key is a refresh, exactly like a buff on a groupmate already was.
     this.allyBuffs.set(key, {
       name: known.name,
       allyName,
       durationSec: effectiveDurationSec,
-      // Kept in step with instances at all times - it is the soonest one, and everything
-      // downstream still reads expiresAt without knowing instances exist.
-      expiresAt: Math.min(...instances),
-      instances,
+      expiresAt: Date.now() + effectiveDurationSec * 1000,
       onEnemy,
     });
     this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
@@ -1624,11 +2147,34 @@ class BuffEngine extends EventEmitter {
     return songs[0];
   }
 
-  _queueAmbiguousCast(text, candidates, isSelf) {
+  // attributedTo (P0b): who likely caused this, when known - e.g. the ally whose burst opened the
+  // window. Purely informational, surfaced in the debug log and stored on the queued entry for a
+  // future UI to show; nothing here treats it as a resolution. Optional and only ever set by the
+  // ally-burst soft-negative case in the unique-landing-text tier today.
+  _queueAmbiguousCast(text, candidates, isSelf, attributedTo = null) {
     if (this._shouldSuppressAsHiddenBardSongs(candidates)) {
       this._debugLog(
         `SKIPPED ambiguous "${text}" - every candidate is a bard song and no aura is showing bard songs`
       );
+      return;
+    }
+    // A single candidate is never a real choice. Reported live 25 Aug: "a popup asking what song
+    // it is when there is ONLY one option is inexcusable no matter the context" - and correct on
+    // the merits, not just as UX polish. Every call site that reaches here already knows the
+    // identity with certainty (unique landing text, or a spellbook/gem narrowing that already
+    // collapsed the field to one) - what's actually uncertain is confidence that it's the
+    // player's OWN cast, which is a different question than "which spell is this." A one-button
+    // "which one was it?" prompt answers a question that was never open, so this lands the single
+    // candidate directly instead of queuing it - the same way a remembered resolution would,
+    // just without needing one on file first. This is a general invariant, not scoped to bard
+    // songs or to any one caller: nothing that reaches this function should ever end up asking a
+    // question with only one possible answer.
+    if (candidates.length === 1) {
+      this._debugLog(
+        `LANDED "${candidates[0].name}" - only one candidate; a single-option prompt is not a real choice` +
+          (attributedTo ? `, likely "${attributedTo}"` : '')
+      );
+      this._land(candidates[0]);
       return;
     }
     const existing = this.ambiguousCasts.get(text);
@@ -1652,6 +2198,7 @@ class BuffEngine extends EventEmitter {
       existing.lastSeenAt = Date.now();
       existing.isSelf = isSelf;
       existing.profileId = this.activeProfileId;
+      if (attributedTo) existing.attributedTo = attributedTo;
     } else {
       this.ambiguousCasts.set(text, {
         text,
@@ -1659,6 +2206,7 @@ class BuffEngine extends EventEmitter {
         lastSeenAt: Date.now(),
         isSelf,
         profileId: this.activeProfileId,
+        ...(attributedTo ? { attributedTo } : {}),
       });
     }
     this.emit('ambiguousCastsChanged', this.getAmbiguousCasts());
@@ -1761,7 +2309,10 @@ class BuffEngine extends EventEmitter {
       // An infinite buff has no expiry to compare against and must survive every sweep - it ends
       // when its ended text arrives, when the player dismisses it, or not at all.
       if (buff.infinite) continue;
-      if (buff.expiresAt <= now) this.activeBuffs.delete(key);
+      if (buff.expiresAt <= now) {
+        this.activeBuffs.delete(key);
+        this._debugLog(`EXPIRED "${buff.name}" - duration ran out`);
+      }
     }
     this.emit('buffsChanged', this.getActiveBuffs());
 
@@ -1770,22 +2321,10 @@ class BuffEngine extends EventEmitter {
       // too, and it has no expiry to compare against. Missing this half was caught by a test that
       // deliberately checked both maps rather than assuming one implied the other.
       if (buff.infinite) continue;
-
-      // Notes 12/18. expiresAt is the SOONEST of possibly several instances, so expiring it must
-      // drop that one instance and leave the rest running. Deleting the whole entry here would
-      // take five mezzed kobolds off the screen the moment the first one woke up.
-      if (Array.isArray(buff.instances) && buff.instances.length > 1) {
-        const alive = buff.instances.filter((t) => t > now);
-        if (alive.length === buff.instances.length) continue;
-        if (!alive.length) {
-          this.allyBuffs.delete(key);
-          continue;
-        }
-        buff.instances = alive;
-        buff.expiresAt = Math.min(...alive);
-        continue;
+      if (buff.expiresAt <= now) {
+        this.allyBuffs.delete(key);
+        this._debugLog(`EXPIRED "${buff.name}" on "${buff.allyName}" - duration ran out`);
       }
-      if (buff.expiresAt <= now) this.allyBuffs.delete(key);
     }
     // Unconditional every tick, same as buffsChanged above - the overlay's
     // countdown text needs a fresh broadcast every second to visibly tick
@@ -1794,6 +2333,17 @@ class BuffEngine extends EventEmitter {
     // frozen on screen except when some unrelated widget-config change
     // forced a full re-fetch.
     this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+
+    for (const [key, song] of this.bardSongs) {
+      // Same reasoning as the two sweeps above - a bard song can be marked infiniteDuration too
+      // (rare, but the roster allows it for any buff), and has no expiry to compare against then.
+      if (song.infinite) continue;
+      if (song.expiresAt <= now) {
+        this.bardSongs.delete(key);
+        this._debugLog(`EXPIRED "${song.name}" (bard song, cast by ${song.castBy || 'unknown'}) - duration ran out`);
+      }
+    }
+    this.emit('bardSongsChanged', this.getActiveBardSongs());
   }
 
   // Read-only, for surfacing in the UI (see main-window.js) so a
@@ -1848,6 +2398,7 @@ class BuffEngine extends EventEmitter {
     return {
       selfBuffs: [...this.activeBuffs.values()],
       allyBuffs: [...this.allyBuffs.values()],
+      bardSongs: [...this.bardSongs.values()],
     };
   }
 
@@ -1855,18 +2406,26 @@ class BuffEngine extends EventEmitter {
   // its expiry has already been filtered out by sessionSnapshot.loadSnapshot,
   // and a blocked buff is dropped here in case the user blocked it between
   // sessions.
-  restoreSnapshot({ selfBuffs = [], allyBuffs = [] }) {
+  restoreSnapshot({ selfBuffs = [], allyBuffs = [], bardSongs = [] }) {
     for (const buff of selfBuffs) {
       if (this.blockedNames.has(buff.name.toLowerCase())) continue;
       this.activeBuffs.set(buff.name.toLowerCase(), buff);
+      this._debugLog(`LOADED "${buff.name}" - restored from before restart`);
     }
     for (const buff of allyBuffs) {
       if (this.blockedNames.has(buff.name.toLowerCase())) continue;
       this.allyBuffs.set(`${buff.allyName.toLowerCase()}::${buff.name.toLowerCase()}`, buff);
+      this._debugLog(`LOADED "${buff.name}" on "${buff.allyName}" - restored from before restart`);
+    }
+    for (const song of bardSongs) {
+      if (this.blockedNames.has(song.name.toLowerCase())) continue;
+      this.bardSongs.set(`${(song.castBy || 'unknown').toLowerCase()}::${song.name.toLowerCase()}`, song);
+      this._debugLog(`LOADED "${song.name}" (bard song, cast by ${song.castBy || 'unknown'}) - restored from before restart`);
     }
     if (selfBuffs.length) this.emit('buffsChanged', this.getActiveBuffs());
     if (allyBuffs.length) this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
-    return selfBuffs.length + allyBuffs.length;
+    if (bardSongs.length) this.emit('bardSongsChanged', this.getActiveBardSongs());
+    return selfBuffs.length + allyBuffs.length + bardSongs.length;
   }
 
   // Records a spell as memorized, keeping the picture to the fourteen real gem slots.
@@ -1879,7 +2438,16 @@ class BuffEngine extends EventEmitter {
     const key = name.toLowerCase();
     this.currentlyMemorized.delete(key);
     this.currentlyMemorized.set(key, name);
-    this._trimMemorized();
+    this._trimMemorized(this.currentlyMemorized);
+  }
+
+  _getOrCreateMemorizedMap(profileId) {
+    let map = this.currentlyMemorizedByProfile.get(profileId);
+    if (!map) {
+      map = new Map();
+      this.currentlyMemorizedByProfile.set(profileId, map);
+    }
+    return map;
   }
 
   // Drops the stalest entries until the picture fits the gem bar. Map iterates in insertion
@@ -1888,11 +2456,14 @@ class BuffEngine extends EventEmitter {
   // Whatever is dropped is always a guess - the overflow only exists because a "You forget X."
   // line was missed - but the stalest entry is the likeliest to be the wrong one, and a picture
   // that fits the bar is closer to the truth than one that cannot possibly be right.
-  _trimMemorized() {
+  //
+  // Takes the map explicitly (rather than always reading this.currentlyMemorized) so the
+  // constructor's load-time trim can heal every profile's bucket, not just the active one.
+  _trimMemorized(map) {
     let dropped = 0;
-    while (this.currentlyMemorized.size > MAX_MEMORIZED_GEMS) {
-      const oldest = this.currentlyMemorized.keys().next().value;
-      this.currentlyMemorized.delete(oldest);
+    while (map.size > MAX_MEMORIZED_GEMS) {
+      const oldest = map.keys().next().value;
+      map.delete(oldest);
       dropped++;
     }
     if (dropped) {
@@ -1902,7 +2473,10 @@ class BuffEngine extends EventEmitter {
   }
 
   _saveCurrentlyMemorized() {
-    this.store.saveJson('currentlyMemorized', [...this.currentlyMemorized]);
+    this.store.saveJson(
+      'currentlyMemorizedByProfile',
+      Object.fromEntries([...this.currentlyMemorizedByProfile].map(([profileId, map]) => [profileId, [...map.entries()]]))
+    );
   }
 
   // Manual correction for the persisted gem memory (see the field's comment).
@@ -1991,9 +2565,6 @@ class BuffEngine extends EventEmitter {
           // Somebody else started casting this. An aura shows it only if it asked to be warned;
           // see the allyCast filter in the overlay.
           allyCast: !!b.allyCast,
-          // How many identically-named mobs currently have this on them. 1 for everything else,
-          // and the overlay shows nothing at 1 - "x1" is noise on every tile in the game.
-          count: Array.isArray(b.instances) ? b.instances.length : 1,
           durationSec: b.durationSec,
           // null, not a number, for a buff that never runs out. Everything downstream checks for
           // it rather than trying to render a countdown that has no end.
@@ -2034,6 +2605,41 @@ class BuffEngine extends EventEmitter {
 
   getUnknownBuffs() {
     return [...this.unknownBuffs.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+  }
+
+  // For the Bard Songs aura. Same shape/sort as getActiveAllyBuffs() just above - specifically
+  // `allyName` reuses that exact field name (holding the caster here, not a recipient) rather than
+  // introducing a differently-named field, because that is what lets the overlay's existing
+  // group-by-player rendering work on this feed completely unmodified. No onEnemy/allyCast -
+  // neither concept applies to a buff that is always on the player.
+  getActiveBardSongs() {
+    const now = Date.now();
+    return [...this.bardSongs.values()]
+      .map((b) => {
+        const known = this.buffStore.getByName(b.name);
+        return {
+          name: b.name,
+          // "Unknown" rather than null/empty - see the constructor's own comment on bardSongs.
+          // Emitted here, not left for the overlay to fall back on, so the existing ally-grouping
+          // renderer needs zero changes to draw an actual, visible bucket for this.
+          allyName: b.castBy || 'Unknown',
+          durationSec: b.durationSec,
+          remainingSec: b.infinite ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
+          infinite: !!b.infinite,
+          showOnOverlay: known ? known.showOnOverlay !== false : true,
+          iconUrl: known?.iconId != null ? this.iconUrlFn(known.iconId) : null,
+          isBardSong: true,
+          spellCategory: known?.scaleCategory || null,
+        };
+      })
+      .sort((a, b) => {
+        const aNone = a.infinite;
+        const bNone = b.infinite;
+        if (aNone && bNone) return 0;
+        if (aNone) return 1;
+        if (bNone) return -1;
+        return a.remainingSec - b.remainingSec;
+      });
   }
 }
 

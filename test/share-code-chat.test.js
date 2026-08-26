@@ -172,10 +172,7 @@ test('a heavy aura genuinely does not fit, which is why the explanation exists',
       name: `Timer ${i}`,
       durationSec: 30,
       triggerText: `a fairly long trigger line number ${i}`,
-      allOf: [
-        { kind: 'zone', zone: 'Rivervale' },
-        { kind: 'line', triggerText: `second condition ${i}`, holdSec: 20 },
-      ],
+      endedText: `a fairly long ended line for timer number ${i} as well`,
     });
   }
   assert.ok(ws.exportCode(big.id).length > 403, 'if this now fits, the limitation has gone away');

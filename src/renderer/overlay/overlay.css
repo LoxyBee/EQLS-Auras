@@ -97,25 +97,27 @@ body.unlocked .drag-overlay {
   -webkit-app-region: drag;
 }
 
-/* A sound-only aura draws nothing, and that has to include the unlock chrome. Hiding
-   #content-wrap alone is enough for the drag overlay too - display:none removes the whole
-   subtree from rendering, and a position:fixed descendant is no exception - but the rule is
-   written against the id rather than the class so it cannot lose a specificity tie with
-   body.unlocked .drag-overlay above.
-
-   This is what makes an unlocked sound-only aura correct rather than merely tidy. The drag box
-   exists so an aura with no active buffs is still a grabbable target; a sound-only aura has no
-   position worth grabbing, and showing a dashed blue box for it would put on screen the one
-   thing the mode promises never to draw. */
-body.sound-only #content-wrap {
-  display: none;
-}
-
 .buff-list {
   display: flex;
   flex-direction: column;
   gap: 5px;
   padding: 4px;
+}
+
+/* A 0-second custom timer trigger - see updateRef's own comment in overlay.js. It still needs to
+   exist as a tile for the sound pipeline to see it "displayed", it just has nothing on screen
+   worth showing for it. Opacity rather than display:none so it still occupies the layout the
+   same way any other tile would, rather than the tile beside it visibly shifting into its spot
+   the instant it disappears.
+
+   !important is deliberate, not decoration: updateRef already keeps .low off this tile so
+   .low's `animation: pulse` (which itself animates opacity, overriding this rule outright
+   regardless of specificity - a CSS animation always beats a non-!important static value on the
+   same property) never gets the chance to fight it. This is the second line of defence, so any
+   FUTURE animated class landing on the same element can never make this tile visible again by
+   accident the same way .low once did. */
+.zero-duration-ping {
+  opacity: 0 !important;
 }
 
 .buff-row {
@@ -305,7 +307,10 @@ body.sound-only #content-wrap {
    carries.
 
    border-color plus an inset shadow rather than a thicker border: a wider border would reflow
-   every row and grid in the app, and this doubles the visual weight without moving a pixel.
+   every row and grid in the app, and this doubles the visual weight without moving a pixel. That
+   is also why the WIDTH slider (Size & Display, icon mode) scales the box-shadow's spread rather
+   than border-width - --cat-border-width can go up to 6px with zero layout impact, where a real
+   border that wide would shove every tile's content inward as it grew.
 
    ACCESSIBILITY NOTE, worth being honest about. Red against green is the one pair a large share
    of colour-blind players cannot separate, and it is exactly the pair that was asked for. The
@@ -315,7 +320,7 @@ body.sound-only #content-wrap {
    be chosen, which belongs with the rest of the colour settings. */
 .cat {
   border-color: var(--cat-color) !important;
-  box-shadow: inset 0 0 0 1px var(--cat-color);
+  box-shadow: inset 0 0 0 var(--cat-border-width, 1px) var(--cat-color);
 }
 
 .cat-nuke   { --cat-color: #ff8f8f; }  /* direct damage - light red */

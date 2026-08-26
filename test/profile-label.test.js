@@ -299,7 +299,7 @@ test('the switch decides whether it is on screen, and nothing else does', () => 
   // Only ever returns false and falls through, so master hide and the focus auto-hide still apply
   // to it - restating those here would be a second copy to keep in step.
   assert.doesNotMatch(
-    fn[1].slice(0, fn[1].indexOf('isSoundOnly')),
+    fn[1].slice(0, fn[1].indexOf('if (masterHidden)')),
     /masterHidden/,
     'the label clause re-implements master hide instead of falling through to it'
   );
@@ -333,7 +333,17 @@ test('always-on is wired end to end, and show-on-all survives without a tick box
 });
 
 test('always-on is offered only where it means something', () => {
-  assert.match(rendererSrc, /alwaysOnRowEl\.style\.display = isTextAura \? '' : 'none';/);
+  // Rewritten 25 Aug for the additive settings-panel model - visibility now comes from
+  // SHAPE_FIELDS's 'always-on' field, present on every text-mode shape and nothing else.
+  assert.match(rendererSrc, /alwaysOnRowEl\.style\.display = has\('always-on'\) \? '' : 'none';/);
+  const fn = rendererSrc.match(/const SHAPE_FIELDS = \{([\s\S]*?)\n {2}\};/);
+  assert.ok(fn, 'SHAPE_FIELDS has been renamed or restructured');
+  for (const shape of ['text', 'text-customTimer', 'ally-alert']) {
+    assert.match(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'always-on'`), `${shape} lost the toggle`);
+  }
+  for (const shape of ['self-buffs', 'ally-buffs', 'custom-buff', 'custom-debuff', 'sound', 'sound-customTimer', 'custom-timer', 'damage', 'travel']) {
+    assert.doesNotMatch(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'always-on'`), `${shape} has an event to wait for, always-on means nothing there`);
+  }
 });
 
 test('it switches itself on the first time a second loadout exists', () => {

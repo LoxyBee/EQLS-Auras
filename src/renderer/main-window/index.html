@@ -199,25 +199,19 @@
 
           <h4 class="settings-subsection-title">When to show them</h4>
           <div class="row">
-            <label>
+            <label title="Checks roughly every 2 seconds. Auras reappear as soon as EverQuest is focused again, or when you turn this off.">
               <input type="checkbox" id="auto-hide-overlay-checkbox" />
               Hide auras when EverQuest isn't the focused window
             </label>
           </div>
-          <p class="hint">
-            Checks roughly every 2 seconds. Auras reappear as soon as EverQuest is focused again, or
-            when you turn this off.
-          </p>
-          <div class="row">
-            <label>
+          <!-- Meaningless while auto-hide above is off - nothing is ever hidden in the first
+               place, so this exception to a rule that isn't active would do nothing. -->
+          <div class="row" id="show-auras-app-focused-row">
+            <label title="Off by default - useful while you're arranging auras, distracting otherwise. Note you don't need this just to move one: unlocking an aura always shows it regardless.">
               <input type="checkbox" id="show-auras-app-focused-checkbox" />
               Also show them while this app is the focused window
             </label>
           </div>
-          <p class="hint">
-            Off by default - useful while you're arranging auras, distracting otherwise. Note you
-            don't need this just to move one: unlocking an aura always shows it regardless.
-          </p>
         </div>
 
         <div id="widget-settings-panel" style="display:none">
@@ -273,10 +267,10 @@
               <div class="row" id="widget-display-mode-row">
                 <span class="label">Display style:</span>
                 <label><input type="radio" name="widget-display-mode" value="list" /> List</label>
-                <label><input type="radio" name="widget-display-mode" value="icons" /> Icons</label>
+                <label><input type="radio" name="widget-display-mode" value="icons" /> Tiles</label>
               </div>
               <div class="row" id="widget-text-message-row">
-                <span class="label" title="A text aura draws one line of words and nothing else - no icon, no countdown - and only ever shows one thing at a time, however many you pick. Leave this blank to use the name of the buff or trigger itself.">Say:</span>
+                <span class="label" title="A text aura draws one line of words and nothing else - no icon, no countdown - and only ever shows one thing at a time, however many you pick. Leave this blank to use the name of the buff or trigger itself. {spell} fills in the actual spell/trigger name, {caster} or {mob} the name it landed on or came from (same value either way - use whichever reads naturally), {profile} the active loadout name.">Say:</span>
                 <input type="text" id="widget-text-message-input" class="text-input" placeholder="DISPELLED" />
               </div>
               <div class="row" id="widget-always-on-row">
@@ -298,6 +292,18 @@
                 <input type="range" id="widget-text-size-slider" min="12" max="120" step="2" />
                 <span id="widget-text-size-value" class="slider-value">32px</span>
               </div>
+              <!-- Reported live 24 Aug: "text only triggers however need a text justification
+                   setting, left right and middle". A text tile shrink-wraps to exactly the words
+                   it's showing, so this isn't CSS text-align (there's no fixed box to justify
+                   text within) - it's which edge of the aura's window stays anchored as that
+                   width changes between different messages. See overlay.js's
+                   reportSizeIfChanged. -->
+              <div class="row" id="widget-text-justify-row">
+                <span class="label" title="Which edge of the aura stays put as its message changes length - left keeps the left edge fixed and grows right, right keeps the right edge fixed and grows left, center grows evenly both ways.">Justification:</span>
+                <label><input type="radio" name="widget-text-justify" value="left" /> Left</label>
+                <label><input type="radio" name="widget-text-justify" value="center" /> Center</label>
+                <label><input type="radio" name="widget-text-justify" value="right" /> Right</label>
+              </div>
               <div class="row" id="widget-text-instant-row">
                 <span class="label" title="Only applies to spells with no duration at all - a nuke, a heal, a gate. They happen rather than run, so there is nothing to count down; this is how long the words stay up afterwards.">Show events for:</span>
                 <input type="range" id="widget-text-instant-slider" min="1" max="60" step="1" />
@@ -305,9 +311,6 @@
               </div>
               <p class="hint" id="widget-text-instant-hint"></p>
               <p class="hint" id="widget-text-hint"></p>
-              <p class="hint" id="widget-sound-only-hint" style="display:none">
-                Draws nothing on screen - only the sounds set up below.
-              </p>
               <!-- Note 19. Only ever shown on a damage meter - see the buffSource check in
                    main-window.js. Its own group rather than three loose rows, because none of
                    them mean anything on any other aura. -->
@@ -402,12 +405,12 @@
 
               <div id="widget-display-icon-only-settings">
                 <div class="row">
-                  <span class="label">Icons per row:</span>
+                  <span class="label">Tiles per row:</span>
                   <input type="range" id="widget-icons-per-row-slider" min="1" max="20" step="1" />
                   <span id="widget-icons-per-row-value" class="slider-value">4</span>
                 </div>
                 <div class="row">
-                  <span class="label" title="Where fewer buffs than &quot;Icons per row&quot; sit within the reserved space, rather than always flush left.">Justification:</span>
+                  <span class="label" title="Where fewer buffs than &quot;Tiles per row&quot; sit within the reserved space, rather than always flush left.">Justification:</span>
                   <label><input type="radio" name="widget-icon-justify" value="left" /> Left</label>
                   <label><input type="radio" name="widget-icon-justify" value="center" /> Center</label>
                   <label><input type="radio" name="widget-icon-justify" value="right" /> Right</label>
@@ -421,7 +424,7 @@
                   <span id="widget-list-width-value" class="slider-value">220px</span>
                 </div>
                 <div class="row">
-                  <span class="label" title="Independent of text size, same as icon size is.">Row size:</span>
+                  <span class="label" title="Independent of text size, same as tile size is.">Row size:</span>
                   <input type="range" id="widget-row-size-slider" min="18" max="60" step="1" />
                   <span id="widget-row-size-value" class="slider-value">28px</span>
                 </div>
@@ -429,7 +432,7 @@
 
               <div id="widget-icon-only-settings">
                 <div class="row">
-                  <span class="label">Icon size:</span>
+                  <span class="label">Tile size:</span>
                   <input type="range" id="widget-icon-size-slider" min="24" max="96" step="2" />
                   <span id="widget-icon-size-value" class="slider-value">46px</span>
                 </div>
@@ -437,6 +440,14 @@
                   <span class="label">Margin width:</span>
                   <input type="range" id="widget-margin-width-slider" min="0" max="20" step="1" />
                   <span id="widget-margin-width-value" class="slider-value">5px</span>
+                </div>
+                <!-- Only meaningful once "Colour each tile's edge by spell type" is actually on -
+                     hidden otherwise rather than offering a width for an edge that isn't drawn.
+                     See widget-borders-row above; toggled in JS alongside icon-mode visibility. -->
+                <div class="row" id="widget-border-width-row" style="display:none">
+                  <span class="label">Edge width:</span>
+                  <input type="range" id="widget-border-width-slider" min="1" max="6" step="1" />
+                  <span id="widget-border-width-value" class="slider-value">1px</span>
                 </div>
               </div>
 
@@ -472,12 +483,20 @@
               <span class="label">Watching:</span>
               <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
               <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
-              <!-- The two announcer types only - text and sound-only. Every other aura has its
-                   source fixed when it is created; these two are meant to be able to react to
-                   anything the app can see, so they are where this can be changed afterwards. -->
+              <!-- A text aura only. Every other aura has its source fixed when it is created;
+                   a text aura is meant to be able to react to anything the app can see, so it
+                   is where this can be changed afterwards. -->
               <label id="widget-buff-source-timer-label" style="display:none">
                 <input type="radio" name="widget-buff-source" value="customTimer" /> Your own text triggers
               </label>
+            </div>
+
+            <!-- Same slot as widget-buff-source-row above, and mutually exclusive with it (one
+                 aura kind is never both) - only a Custom debuff aura shows this one. -->
+            <div class="row" id="widget-debuff-cast-by-row">
+              <span class="label" title="Both watch the same spells on the same enemies with the same countdown. &quot;You&quot; only tracks one while there is evidence you cast it yourself. &quot;An ally&quot; tracks it the moment it lands, without needing to know who cast it - use this when a groupmate is the one debuffing.">Watching:</span>
+              <label><input type="radio" name="widget-debuff-cast-by" value="self" /> Cast by you</label>
+              <label><input type="radio" name="widget-debuff-cast-by" value="ally" /> Cast by an ally</label>
             </div>
 
             <!-- Configuration block: collapsible topics live together here -->
@@ -485,7 +504,7 @@
                  shown ... should be a top level category/card the same as display and size."
                  It is the one thing on this panel you change most and it was three clicks down. -->
             <div class="block" id="widget-buff-filter-card">
-              <p class="block-cap">Buffs shown</p>
+              <p class="block-cap" id="widget-buff-filter-title">Buffs shown</p>
               <p class="hint" id="widget-buff-filter-hint"></p>
               <div id="widget-track-others-row" style="display:none">
                 <div class="row">
@@ -523,15 +542,60 @@
               <div class="topic" id="widget-custom-timers-card" data-topic style="display:none">
                 <button type="button" class="topic-head" data-toggle>
                   <span class="chev"></span>
-                  <span class="topic-title">Custom timers</span>
+                  <span class="topic-title">Custom triggers</span>
                   <span class="topic-summary" id="topic-custom-timers-summary"></span>
                 </button>
                 <div class="topic-body"><div class="topic-body-inner">
-                  <p class="hint">Timers defined here belong only to this aura.</p>
+                  <p class="hint">Triggers defined here belong only to this aura.</p>
+                  <!-- One duration for every trigger on this aura - reported live 24 Aug: each
+                       trigger used to carry its own, which could silently drift out of sync with
+                       its siblings, and there was a second "Show events for" slider elsewhere on
+                       the page that looked like it might also control this but never did anything
+                       for a custom-timer aura at all. -->
+                  <div class="row">
+                    <span class="label">Duration:</span>
+                    <input type="range" id="widget-trigger-duration-slider" min="0" max="60" step="1" />
+                    <span id="widget-trigger-duration-value" class="slider-value">5s</span>
+                  </div>
+                  <!-- Whole-aura setting, not per-trigger - applies to whatever this aura's
+                       triggerCombineMode already decides fires (a single trigger, an AND set, or an
+                       OR set), so building "on until two things together happen" is one checkbox,
+                       not a flag set twice on two separate triggers. -->
+                  <div class="row">
+                    <label title="Shows this aura's tile all the time, then hides it for the Duration above once it fires - the opposite of how it works otherwise. With AND, the tile stays on until every trigger in the set has happened, then goes off - e.g. a &quot;ready to cast&quot; tile that disappears once you've actually cast it.">
+                      <input type="checkbox" id="widget-reverse-detection-checkbox" />
+                      Reverse detection
+                    </label>
+                  </div>
+                  <!-- The button before Edit on each row (built in renderCustomTimersList,
+                       main-window.js) cycles this whole widget's triggerCombineMode - it's one
+                       setting for the set, not a per-row one, so every row always shows the same
+                       label and clicking any of them moves all of them together. -->
+                  <p class="hint">
+                    Independent (default): every trigger fires its own tile - two true at once
+                    means two tiles. AND: nothing fires until every trigger here has happened; one
+                    combined tile for the whole set. OR: any one trigger fires it, but the whole
+                    set only ever shows one shared tile, even when more than one is true at once.
+                  </p>
                   <ul id="widget-custom-timers-list" class="buff-list known-buff-list"></ul>
                   <div class="row">
-                    <button type="button" id="widget-add-timer-btn">+ Add timer</button>
+                    <button type="button" id="widget-add-timer-btn">+ Add trigger</button>
                   </div>
+                  <!-- Reported live 25 Aug: "the window fo rboth triggers is 30 seconds?" -
+                       confirmed yes, and it was a fixed constant with no way to change it. Only
+                       shown in AND mode - it means nothing for Independent or OR, which have no
+                       "still counts as true" window at all. -->
+                  <div class="row" id="widget-and-window-row" style="display:none">
+                    <span class="label">AND window:</span>
+                    <input type="range" id="widget-and-window-slider" min="0" max="30" step="1" />
+                    <span id="widget-and-window-value" class="slider-value">30s</span>
+                  </div>
+                  <p class="hint" id="widget-and-window-hint" style="display:none">
+                    How long a trigger keeps counting as "seen" after it happens, waiting for the
+                    others in an AND set to catch up. Two triggers fired further apart than this
+                    will not combine - the earlier one's mark will have expired by the time the
+                    second one arrives.
+                  </p>
                 </div></div>
               </div>
 
@@ -586,11 +650,11 @@
                 </button>
                 <div class="topic-body"><div class="topic-body-inner">
                   <div class="row">
-                    <label title="An extra bit of text showing the buff or timer's name on each icon. Can be wider than the icon itself, so a long name is not cut off."><input type="checkbox" id="widget-show-icon-label-checkbox" /> Show label</label>
+                    <label title="An extra bit of text showing the buff or timer's name on each tile. Can be wider than the tile itself, so a long name is not cut off."><input type="checkbox" id="widget-show-icon-label-checkbox" /> Show label</label>
                   </div>
                   <div id="widget-icon-label-options" style="display:none">
                     <div class="row">
-                      <label title="On: the label wraps and stays inside the icon's bounds - best when many icons are packed together. Off: it can spill past the icon rather than being cut off - better with one or a few icons. Only affects the label; timer text never needs to wrap."><input type="checkbox" id="widget-wrap-text-checkbox" /> Wrap text to fit inside the icon</label>
+                      <label title="On: the label wraps and stays inside the tile's bounds - best when many tiles are packed together. Off: it can spill past the tile rather than being cut off - better with one or a few tiles. Only affects the label; timer text never needs to wrap."><input type="checkbox" id="widget-wrap-text-checkbox" /> Wrap text to fit inside the tile</label>
                     </div>
                     <div class="row">
                       <span class="label">Label size:</span>
@@ -727,21 +791,23 @@
             <!-- Manage widget block -->
             <div class="block" id="widget-manage-card" style="display:none">
               <p class="block-cap">Manage aura</p>
+              <!-- All four on one row, reported live 25 Aug - Reset to default used to sit on its
+                   own line below the other three for no reason other than being added later.
+                   reset-widget-row keeps its own id (still what the show/hide logic below targets)
+                   but is now a flex child of THIS row instead of a second row of its own. -->
               <div class="row">
                 <button id="duplicate-widget-btn">Duplicate</button>
                 <button id="export-widget-btn">Export as code...</button>
                 <button id="delete-widget-btn" class="btn-danger">Delete aura</button>
+                <div id="reset-widget-row" style="display:none">
+                  <button id="reset-widget-btn" class="btn-danger">Reset to default</button>
+                </div>
               </div>
               <div class="row" id="export-widget-code-row" style="display:none">
                 <textarea id="export-widget-code-output" class="text-input" rows="3" readonly></textarea>
                 <button id="copy-widget-code-btn">Copy</button>
               </div>
               <p class="hint" id="export-sound-warning" style="display:none"></p>
-              <!-- Only shown on an aura built from a premade (see premadeOrigin) - a hand-built
-                   Custom aura has no recorded recipe to reset back to. -->
-              <div class="row" id="reset-widget-row" style="display:none">
-                <button id="reset-widget-btn" class="btn-danger">Reset to default</button>
-              </div>
             </div>
 
           </div>
@@ -783,6 +849,26 @@
           <div class="row">
             <span class="label">Total bonus:</span>
             <span id="character-bonus-total">+0%</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Cast-time bonus (Spell Casting Deftness)</h3>
+          <p class="hint">
+            This AA (3 ranks) reduces cast time on beneficial spells that have a duration and a
+            base cast time of at least 3 seconds - it does nothing for instant spells or fast
+            (under 3s) casts, per its own tooltip. Set it to match your character. Only used by the
+            experimental "cast-time-aware confirmation" toggle under Diagnostics, and only affects
+            how long the app waits before confirming or giving up on a cast, not anything else.
+          </p>
+          <div class="row">
+            <span class="label">Spell Casting Deftness (AA):</span>
+            <select id="deftness-select">
+              <option value="0">Not trained (0%)</option>
+              <option value="1">Rank 1 (10%)</option>
+              <option value="2">Rank 2 (25%)</option>
+              <option value="3">Rank 3 (50%)</option>
+            </select>
           </div>
         </div>
 
@@ -893,6 +979,18 @@
           </div>
         </div>
 
+        <div class="card" id="sounds-folder-card">
+          <h3>Sounds</h3>
+          <p class="hint">
+            Every aura's "Choose sound..." picker starts here by default, seeded with a handful of
+            sounds that ship with the app - drop your own mp3/wav/ogg/m4a files in and they'll be
+            ready to pick from too, right alongside the starters.
+          </p>
+          <div class="row">
+            <button type="button" id="open-sounds-folder-btn">📁 Open sounds folder</button>
+          </div>
+        </div>
+
         <div class="card" id="ui-scale-card">
           <h3>App text size</h3>
           <!-- A dropdown, deliberately not a slider. Changing this rescales the whole window,
@@ -916,7 +1014,7 @@
           </div>
           <p class="hint">
             Scales this settings window only - text, spacing and controls together. Your auras are
-            unaffected: each one has its own icon, text and label sizes in its own settings.
+            unaffected: each one has its own tile, text and label sizes in its own settings.
             At larger sizes you may want to make this window bigger to match.
           </p>
         </div>
@@ -942,21 +1040,22 @@
           <div class="row">
             <label><input type="checkbox" id="split-enabled-checkbox" /> Enable log splitting</label>
           </div>
-          <div class="row">
-            <label><input type="checkbox" id="split-gap-checkbox" /> Start a new file after a logging gap (10+ min of no activity)</label>
-          </div>
-          <p class="hint">
-            There's no log line for <code>/log off</code> / <code>/log on</code> - the game just stops writing
-            entirely while it's off. This detects that indirectly, by watching for a long gap between lines, so
-            it can occasionally split at the wrong moment during a genuinely quiet stretch of play.
-          </p>
-          <div class="row">
-            <span class="label">Output folder:</span>
-            <span id="split-output-folder">-</span>
-          </div>
-          <div class="row">
-            <button id="split-choose-folder-btn">Change...</button>
-            <button id="split-reset-folder-btn">Reset to default</button>
+          <!-- Meaningless while splitting itself is off - there's nothing being written for a gap
+               to split, or a folder to write it into. -->
+          <div id="split-sub-options">
+            <div class="row">
+              <label title="There's no log line for /log off / /log on - the game just stops writing entirely while it's off. This detects that indirectly, by watching for a long gap between lines, so it can occasionally split at the wrong moment during a genuinely quiet stretch of play.">
+                <input type="checkbox" id="split-gap-checkbox" /> Start a new file after a logging gap (10+ min of no activity)
+              </label>
+            </div>
+            <div class="row">
+              <span class="label">Output folder:</span>
+              <span id="split-output-folder">-</span>
+            </div>
+            <div class="row">
+              <button id="split-choose-folder-btn">Change...</button>
+              <button id="split-reset-folder-btn">Reset to default</button>
+            </div>
           </div>
         </div>
 
@@ -1003,16 +1102,97 @@
 
               <h4>Detection log</h4>
               <p class="hint">
-                Live feed of every buff-detection decision (landed, queued for you, ignored, blocked)
-                and why - useful for understanding a confusing moment without digging through the raw
-                log yourself. The same lines are saved to a file, one per day, so you can go back to
-                a moment that has already scrolled past.
+                Live feed of every buff/aura decision - self and ally buffs landing, expiring or
+                being ignored, and every custom trigger firing, ending or being restored after a
+                restart - and why. Useful for understanding a confusing moment without digging
+                through the raw log yourself. The same lines are saved to a file, one per day, so
+                you can go back to a moment that has already scrolled past.
               </p>
+              <!-- Off by default - reported live 25 Aug, asked for specifically as a manual,
+                   enable-it-yourself tool rather than something always running in the background.
+                   Gates the single debugLog() function in main.js that both engines write through,
+                   so this one checkbox covers everything below it, not just the file. -->
+              <div class="row">
+                <label>
+                  <input type="checkbox" id="debug-log-enabled-checkbox" />
+                  Enable detection log
+                </label>
+              </div>
               <div class="row">
                 <button type="button" id="open-debug-log-folder-btn">Open the detection log folder</button>
                 <span class="hint" id="debug-log-folder-path"></span>
               </div>
               <div id="debug-line-feed" class="line-feed"></div>
+
+              <h4>Memorized/forgotten spells</h4>
+              <p class="hint">
+                Live feed of ONLY "You forget X." and "You have finished memorizing X." lines -
+                the two lines that build the "currently memorized" picture detection relies on.
+                Nothing else shows here, so it's a fast way to check whether something you expect
+                to change gems (a loadout swap, in particular) actually printed anything at all -
+                confirmed 25 Aug that a full loadout swap can print nothing, which is exactly why
+                this exists: that gap would otherwise be invisible in the middle of everything else
+                the regular log feed and detection log show.
+              </p>
+              <div id="memorized-line-feed" class="line-feed"></div>
+
+              <h4>Evidence-based detection</h4>
+              <p class="hint">
+                Changes one thing: when a buff's landing text is unique but it looks like it's not
+                currently memorized by you (or an ally's instant-grant burst just fired), the app no
+                longer silently drops it. Instead it asks you, the same way any other ambiguous cast
+                does - because "not seen loaded this session" can go stale (a loadout swap, or the
+                app restarting mid-session) and isn't real proof the buff wasn't yours. Off by
+                default. If this misbehaves, turn it back off - nothing else changes when you do.
+              </p>
+              <div class="row">
+                <label>
+                  <input type="checkbox" id="use-evidence-model-checkbox" />
+                  Use evidence-based detection
+                </label>
+                <span class="experimental-badge">Experimental</span>
+              </div>
+
+              <h4>Cast-time-aware confirmation</h4>
+              <p class="hint">
+                Changes one thing: after a named cast begins, the app waits for its own scaled cast
+                time (from the roster, adjusted for the spell's rank) instead of a flat 12 seconds
+                for every spell regardless of how fast it actually casts - plus half a second of
+                slack for log-timestamp rounding. Falls back to the flat 12 seconds for anything
+                the roster has no cast time for, so nothing is ever worse off than today. The
+                per-rank scaling rates come from the mote spreadsheet and are not independently
+                measured against your own logs the way some duration rates are. Off by default. If
+                this misbehaves, turn it back off - nothing else changes when you do.
+              </p>
+              <div class="row">
+                <label>
+                  <input type="checkbox" id="use-cast-time-filter-checkbox" />
+                  Use cast-time-aware confirmation
+                </label>
+                <span class="experimental-badge">Experimental</span>
+              </div>
+
+              <h4>Self-buff overwrite detection</h4>
+              <p class="hint">
+                Changes one thing: EQ prints an explicit line when a buff on someone ELSE gets
+                overwritten, but nothing at all when it happens to one of your own buffs - so two
+                spells that share the same fade text (e.g. Nimble and Agility both say "Your
+                agility fades.") can leave a stale timer on screen for whichever one didn't actually
+                end. When this is on, the moment a new buff lands that the game's own stacking rules
+                say would replace one you already have active, the stale one is removed immediately
+                instead of waiting on an ambiguous fade line. Computed from the same spell data the
+                game itself uses - not a guess - but only for the core same-slot rule; some rarer
+                interactions (bard songs, damage-over-time, group-vs-single-target versions) aren't
+                covered yet and simply won't be caught either way. Off by default. If this
+                misbehaves, turn it back off - nothing else changes when you do.
+              </p>
+              <div class="row">
+                <label>
+                  <input type="checkbox" id="use-stacking-model-checkbox" />
+                  Use self-buff overwrite detection
+                </label>
+                <span class="experimental-badge">Experimental</span>
+              </div>
             </div></div>
           </div>
         </div>
@@ -1278,6 +1458,15 @@
         </div>
         <p class="hint" id="buff-timer-ally-warning" style="display:none"></p>
         <p class="hint" id="buff-timer-enemy-warning" style="display:none"></p>
+        <!-- Only shown when the picked spell also has a known recast time AND "Yourself" is
+             selected - a customTimer castOf trigger (what this actually builds when checked) has
+             no concept of "on an ally", so it would silently do nothing for the other two sources. -->
+        <div class="row" id="buff-timer-also-cooldown-row" style="display:none">
+          <label title="Builds one tile that counts down how long the buff lasts, then rolls straight into counting down the recast time without resetting - so you can see both how long it's active and when you can cast it again.">
+            <input type="checkbox" id="buff-timer-also-cooldown-checkbox" />
+            Also track when it's ready to cast again
+          </label>
+        </div>
         <div class="row" id="buff-timer-cooldown-row" style="display:none">
           <span class="label">Ready again after:</span>
           <input type="number" id="buff-timer-cooldown-input" class="text-input" min="1" max="1800" step="0.5" />
@@ -1309,13 +1498,6 @@
           <strong>Custom timer aura</strong>
           <span>Define your own countdown timers, triggered by exact lines of log text.</span>
         </button>
-        <button type="button" class="add-widget-choice" id="modal-add-sound-widget-btn">
-          <strong>Custom sound aura</strong>
-          <span>
-            Makes a noise and draws nothing at all - no tile, not even when unlocked. Point it at a
-            buff or at your own line of log text.
-          </span>
-        </button>
         <button type="button" class="add-widget-choice" id="modal-add-text-widget-btn">
           <strong>Custom text aura</strong>
           <span>
@@ -1337,7 +1519,7 @@
   <div id="buff-picker-modal-backdrop" class="modal-backdrop" style="display:none">
     <div class="modal-card">
       <div class="modal-header">
-        <h3>Buffs shown</h3>
+        <h3 id="buff-picker-modal-title">Buffs shown</h3>
         <button id="close-buff-picker-modal" class="modal-close">✕</button>
       </div>
       <input
@@ -1354,14 +1536,20 @@
   <div id="custom-timer-modal-backdrop" class="modal-backdrop" style="display:none">
     <div class="modal-card modal-card-wide">
       <div class="modal-header">
-        <h3 id="custom-timer-modal-title">Add timer</h3>
+        <h3 id="custom-timer-modal-title">Add trigger</h3>
         <button id="close-custom-timer-modal" class="modal-close">✕</button>
       </div>
 
-      <!-- Icon sits as a clickable gem box to the left of the name/duration
-           fields, matching how the timer will actually appear on the overlay -
+      <!-- Icon sits as a clickable gem box to the left of the name field,
+           matching how the timer will actually appear on the overlay -
            rather than a separate "Icon" section with its own button further
-           down the form. -->
+           down the form. Duration is NOT set here - it's a single top-level
+           slider on the aura itself, shared by every trigger on it (see
+           widget-trigger-duration-slider). Reported live 24 Aug: a per-timer
+           duration field here meant an aura's triggers could silently drift
+           out of sync with each other, and duplicated a second "Show events
+           for" slider elsewhere that never actually did anything for a
+           custom-timer aura. -->
       <div class="timer-identity">
         <button
           type="button"
@@ -1375,87 +1563,15 @@
         <div class="timer-identity-fields">
           <div class="row">
             <span class="label">Name:</span>
-            <input type="text" id="widget-new-timer-name" placeholder="Timer name" class="text-input" />
-          </div>
-          <div class="row">
-            <span class="label">Duration:</span>
-            <input type="number" id="widget-new-timer-minutes" min="0" step="1" placeholder="min" class="duration-input" />
-            <span class="duration-unit">m</span>
-            <input type="number" id="widget-new-timer-seconds" min="0" max="59" step="1" placeholder="sec" class="duration-input" />
-            <span class="duration-unit">s</span>
-          </div>
-          <!-- Shara, 23 August: "not a full sub panel, but just an auto expanding options menu
-               toggle button like other menu's so that the options are invisible when not used."
-               The same .topic pattern as every collapsible section on the settings page, so it
-               behaves the way the rest of the app already does. -->
-          <!-- Note 9's all-of. Collapsed by default and summarised when shut, the same as the
-               Cooldown section beside it - a condition someone has set must never be invisible
-               just because the section is closed, since a timer that has stopped firing with no
-               visible reason is exactly the failure this whole section can cause. -->
-          <div class="topic" id="topic-timer-conditions" data-topic>
-            <button type="button" class="topic-head" data-toggle>
-              <span class="chev"></span>
-              <span class="topic-title">Extra conditions</span>
-              <span class="topic-summary" id="timer-conditions-summary"></span>
-            </button>
-            <div class="topic-body"><div class="topic-body-inner">
-              <p class="hint">
-                Optional. Add conditions here and the timer only starts when <em>all</em> of them
-                are true at once, instead of on the trigger line alone. Nothing appears on screen
-                while only some of them are - a half-finished condition is invisible.
-              </p>
-              <ul id="timer-conditions-list" class="plain-list"></ul>
-              <div class="row">
-                <select id="timer-condition-kind" class="text-input">
-                  <option value="line">A line appears</option>
-                  <option value="zone">You are in a zone</option>
-                </select>
-              </div>
-              <div class="row" id="timer-condition-line-row">
-                <input type="text" id="timer-condition-text" class="text-input" placeholder="Text to match" />
-                <select id="timer-condition-match" class="text-input">
-                  <option value="exact">exactly</option>
-                  <option value="contains">contains</option>
-                </select>
-                <input type="number" id="timer-condition-hold" min="1" max="3600" step="1" placeholder="30" class="duration-input" />
-                <span class="duration-unit">s</span>
-              </div>
-              <div class="row" id="timer-condition-zone-row" style="display:none">
-                <select id="timer-condition-zone" class="text-input"></select>
-              </div>
-              <div class="row">
-                <button type="button" id="timer-condition-add" class="btn-prominent">Add condition</button>
-              </div>
-              <p class="hint">
-                The seconds box is how long that line keeps counting as true after it appears - its
-                own clock, not a shared one. A zone condition has no clock: you are somewhere until
-                you leave.
-              </p>
-            </div></div>
-          </div>
-
-          <div class="topic" id="topic-timer-cooldown" data-topic>
-            <button type="button" class="topic-head" data-toggle>
-              <span class="chev"></span>
-              <span class="topic-title">Cooldown</span>
-              <span class="topic-summary" id="timer-cooldown-summary"></span>
-            </button>
-            <div class="topic-body"><div class="topic-body-inner">
-              <div class="row">
-                <span class="label">Then cooldown:</span>
-                <input type="number" id="widget-new-timer-cooldown" min="0" step="1" placeholder="none" class="duration-input" />
-                <span class="duration-unit">s</span>
-              </div>
-              <p class="hint">
-                Optional. When the duration above runs out, the same tile keeps counting - down to
-                when you can use the thing again. The tile dims and goes dashed while it is cooling
-                down, so the number never means two things at once. Leave it empty and the tile
-                just ends.
-              </p>
-            </div></div>
+            <input type="text" id="widget-new-timer-name" placeholder="Trigger name" class="text-input" />
           </div>
         </div>
       </div>
+      <!-- Directly under the icon/name row it belongs to, not after Extra
+           conditions/Cooldown - those two moved to the bottom of the form (see below) specifically
+           so this picker would end up next to the fields it's for instead of appearing well below
+           them. Reported live as "the icon picker needs to be next to the name and duration
+           fields, it is below it". -->
       <div id="widget-new-timer-icon-picker" style="display:none"></div>
 
       <h4 class="settings-subsection-title">What starts it?</h4>
@@ -1533,21 +1649,86 @@
         </div>
       </div>
 
-      <h4 class="settings-subsection-title">Behaviour</h4>
-      <div class="row">
-        <label class="disabled-option">
-          <input type="checkbox" id="widget-new-timer-inverse" disabled />
-          Reverse detection
-        </label>
-        <span class="planned-badge">Planned</span>
+      <div id="widget-new-timer-skill-fields" style="display:none">
+        <div class="row">
+          <select id="widget-new-timer-skill-select">
+            <option value="">- choose a spell -</option>
+          </select>
+        </div>
+        <p class="hint">
+          Starts the instant you begin casting this spell - matched against the actual cast, not
+          against log text, so a ranked recast ("Rk. II", a trailing numeral) still starts it. An
+          interrupted cast cancels the timer instead of starting it.
+        </p>
       </div>
-      <p class="hint">
-        Would show this timer while the trigger has <em>not</em> happened, and hide it for the duration
-        once it does - the opposite of how timers work today. Not built yet.
-      </p>
+
+      <div id="widget-new-timer-zone-fields" style="display:none">
+        <div class="row">
+          <select id="widget-new-timer-zone-select">
+            <option value="">- choose a zone -</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>
+            <input type="radio" name="widget-new-timer-zone-direction" value="enter" checked />
+            Entering the zone
+          </label>
+          <label>
+            <input type="radio" name="widget-new-timer-zone-direction" value="leave" />
+            Leaving the zone
+          </label>
+        </div>
+        <p class="hint">
+          Only zones you've actually visited while a version of the app has been watching the log
+          appear in this list - there's no way to ask the game for the full list up front. "Leaving"
+          only fires from a zone the app saw you actually arrive in during this session; it won't
+          fire the first time on a zone you were already standing in when the app started.
+        </p>
+      </div>
+
+      <!-- Reverse detection lives on the AURA (see the Custom triggers card's own "Reverse
+           detection" checkbox, next to "+ Add trigger"), not on one individual trigger here - it's
+           whole-set behaviour (works with the AND/OR combine mode above), not a per-trigger flag
+           that would need setting twice on two triggers meant to work together. -->
+
+      <!-- Moved to the bottom of the form (24 Aug) - reported live as visual clutter sitting right
+           under Name/Duration, ahead of the trigger fields that actually matter for every timer.
+           This is an optional refinement on top of a trigger that's already been picked, so it
+           reads better after it than before it. -->
+      <!-- Shara, 23 August: "not a full sub panel, but just an auto expanding options menu
+           toggle button like other menu's so that the options are invisible when not used."
+           The same .topic pattern as every collapsible section on the settings page, so it
+           behaves the way the rest of the app already does. -->
+      <!-- The old "Extra conditions" section that used to sit here (an all-of list nested inside
+           ONE trigger's own edit modal) was removed 25 Aug - reported live as "not in an obvious
+           place." What it did is now done visibly instead: define several ordinary triggers (the
+           list this modal is opened from already supports that) and set how they combine with
+           the Independent/AND/OR toggle next to each one in that list. -->
+      <div class="topic" id="topic-timer-cooldown" data-topic>
+        <button type="button" class="topic-head" data-toggle>
+          <span class="chev"></span>
+          <span class="topic-title">Cooldown</span>
+          <span class="topic-summary" id="timer-cooldown-summary"></span>
+        </button>
+        <div class="topic-body"><div class="topic-body-inner">
+          <div class="row">
+            <span class="label">Then cooldown:</span>
+            <input type="number" id="widget-new-timer-cooldown" min="0" step="1" placeholder="none" class="duration-input" />
+            <span class="duration-unit">s</span>
+          </div>
+          <p class="hint">
+            Optional. A forced gap between activations, not just a display style: once this
+            trigger fires, it cannot fire again until this many seconds after the duration above
+            ends - the same tile keeps counting the whole time, dimmed and dashed to show it is
+            cooling down rather than still active, so the number on screen never means two
+            different things. Leave it empty and the trigger can fire again the moment its tile
+            ends.
+          </p>
+        </div></div>
+      </div>
 
       <div class="modal-actions">
-        <button id="widget-new-timer-add-btn">Add timer</button>
+        <button id="widget-new-timer-add-btn">Add trigger</button>
         <button id="widget-new-timer-save-as-new-btn" style="display:none">Save as new</button>
         <button id="widget-new-timer-cancel-btn">Cancel</button>
       </div>
@@ -1637,10 +1818,53 @@
   <!-- Right-click on a sidebar aura name. Positioned at the cursor on open, shown/hidden by JS
        rather than a native Electron Menu - the sidebar already runs entirely in the renderer, and
        two items do not need a round trip through the main process to draw. -->
+  <!-- Reported live 25 Aug: "any button that goes into the manage aura card, should be added to
+       the right click menu... this is just a shortcut to these buttons." Export and Reset added
+       to match Manage aura's own four (Duplicate/Export/Delete/Reset) - Reset is conditional on
+       premadeOrigin the same way its Manage-aura button already is, see openSidebarContextMenu. -->
   <ul id="sidebar-context-menu" class="context-menu" style="display:none">
     <li><button type="button" id="sidebar-context-rename">Rename</button></li>
+    <li><button type="button" id="sidebar-context-duplicate">Duplicate</button></li>
+    <li><button type="button" id="sidebar-context-export">Export as code...</button></li>
+    <li><button type="button" id="sidebar-context-reset" class="danger">Reset to default</button></li>
     <li><button type="button" id="sidebar-context-delete" class="danger">Delete</button></li>
   </ul>
+
+  <!-- Rename, from the sidebar's right-click menu - reported live 25 Aug: "just amke them both
+       popups that do not nav inside their aura, it's probably easier" - a plain popup rather than
+       navigating into the aura's own settings page and focusing its Name field there. -->
+  <div id="rename-widget-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Rename aura</h3>
+        <button id="close-rename-widget-modal" class="modal-close">✕</button>
+      </div>
+      <div class="row">
+        <input type="text" id="rename-widget-input" class="text-input" />
+      </div>
+      <div class="modal-actions">
+        <button id="rename-widget-save-btn">Save</button>
+        <button id="rename-widget-cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export, from the same menu - same reasoning as Rename above, and reuses exportWidget/
+       soundWarningFor exactly as the Manage aura card's own Export button does (see
+       handleExport() in main-window.js), just drawn into this popup instead of that card. -->
+  <div id="export-widget-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Export as code</h3>
+        <button id="close-export-widget-modal" class="modal-close">✕</button>
+      </div>
+      <div class="row">
+        <textarea id="export-widget-modal-output" class="text-input" rows="3" readonly></textarea>
+        <button id="export-widget-modal-copy-btn">Copy</button>
+      </div>
+      <p class="hint" id="export-widget-modal-sound-warning" style="display:none"></p>
+    </div>
+  </div>
 
   <script src="main-window.js"></script>
 </body>

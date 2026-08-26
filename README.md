@@ -32,13 +32,13 @@ both are rebuilt by the commands above.
 
 **Run `npm install` first.** The test suite does not launch Electron, but one suite imports
 `widgetManager`, which imports Electron itself — so on a fresh copy it fails with
-`Cannot find module 'electron'` until the dependencies are there. The other 35 suites run without
+`Cannot find module 'electron'` until the dependencies are there. The other 51 suites run without
 it.
 
 Three things, in increasing order of how much they prove:
 
 ```
-node test/run.js            36 suites, 570 cases. Seconds, and launches nothing.
+node test/run.js            52 suites, 802 cases. Seconds, and launches nothing.
 node tools/smoke-launch.js  Starts the real app, holds, reports. Clicks nothing.
 node tools/replay-log.js    Runs 1.5 million real log lines through the real engine.
 ```
@@ -56,14 +56,14 @@ should be identical, because a change that loses detection is a failure even if 
 
 | File | What it is |
 | --- | --- |
-| **`HANDOFF.md`** | Start here. What state things are in and what needs a person. |
-| **`NOTES-STATUS.md`** | Every one of Shara's 39 notes, with what is built and what is not. |
-| **`TESTING.md`** | Everything built but not yet confirmed in game. This is the to-do list for testing. |
-| **`CLAUDE.md`** | Conventions, architecture, and 28 detection gotchas. Read the gotchas before touching detection. |
-| **`FEATURES.md`** | The original note-dump, with the full reasoning behind each note. |
-| **`OPUS-SESSION-STATE.md`** | A long continuity record of how the work was done and why. Section 9 is the current state. |
+| **`docs/HANDOFF.md`** | Start here. What state things are in and what needs a person. |
+| **`docs/NOTES-STATUS.md`** | Every one of Shara's 40 notes, with what is built and what is not. |
+| **`docs/TESTING.md`** | Everything built but not yet confirmed in game. This is the to-do list for testing. |
+| **`CLAUDE.md`** | Conventions, architecture, and 29 detection gotchas. Read the gotchas before touching detection. |
+| **`docs/FEATURES.md`** | The original note-dump, with the full reasoning behind each note. |
+| **`docs/OPUS-SESSION-STATE.md`** | A long continuity record of how the work was done and why. Section 9 is the current state. |
 
-The three `UX_*` and `VISUAL_*` files are earlier design work, kept for reference.
+The three `docs/UX_*` and `docs/VISUAL_*` files are earlier design work, kept for reference.
 
 ---
 

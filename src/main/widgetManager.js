@@ -1,7 +1,7 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
 const { isVisibleInZone } = require('../shared/zoneVisibility');
-const { WidgetStore, LOADOUT_LABEL_KIND, normalizeDisplayMode, isSoundOnly, isTextAura, clampInstantSec } = require('./widgetStore');
+const { WidgetStore, LOADOUT_LABEL_KIND, normalizeDisplayMode, isTextAura, clampInstantSec } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
@@ -115,6 +115,20 @@ function minHeightFor(config) {
   return (config.displayMode === 'icons' ? config.iconSize : config.rowSize) || 40;
 }
 
+// A text aura sizes its window from actually-rendered words (see overlay.js's applyConfig comment
+// on why - it draws no icon and no bar, so there's nothing else to size it by). Idle - which is
+// most of the time, since the whole point of the type is a brief flash - that's zero rendered
+// content, and fitToContent's own floor for that case is 40px: a small square, indistinguishable
+// from an icon-mode tile. Reported live as "custom text aura when moving is just icon shaped" -
+// the drag box is exactly the window's real bounds (see overlay.css's .drag-overlay), so an
+// idle text aura's window really was that shape the whole time, just invisible until unlocked.
+// Not sized to the actual configured message (that needs a DOM measurement this process doesn't
+// have), just wide enough that "this is a text aura, not an icon" reads at a glance while idle.
+const TEXT_AURA_MIN_IDLE_WIDTH_PX = 160;
+function minWidthFor(config) {
+  return config.displayMode === 'text' ? TEXT_AURA_MIN_IDLE_WIDTH_PX : 0;
+}
+
 function createWidgetWindow(config) {
   if (windows.has(config.id)) return windows.get(config.id);
 
@@ -147,6 +161,16 @@ function createWidgetWindow(config) {
   // the game window - EQ still needs to run windowed/borderless-windowed,
   // never true exclusive fullscreen, or nothing can draw over it.
   win.setAlwaysOnTop(true, 'screen-saver');
+  // Right-clicking the move box is supposed to open settings (see overlay.js's contextmenu
+  // handler on #drag-overlay), but that box is `-webkit-app-region: drag` so Windows can drag it -
+  // and on a frameless window, Windows treats a drag region's right-click as a title bar's, popping
+  // its OWN native system menu (Restore/Move/Size/.../Close) instead of ever letting the page's
+  // contextmenu event fire. Reported as "opens a context menu that does nothing useful" - that
+  // useless menu is the OS one, not this app's. 'system-context-menu' is Electron's hook for
+  // exactly this case; preventDefault() suppresses the native menu and lets the DOM event through.
+  win.on('system-context-menu', (event) => {
+    event.preventDefault();
+  });
   // Every widget starts LOCKED on launch regardless of how it was left last time - the same
   // safety behaviour the single overlay always had - which is what an empty runtimeLock map
   // means. But a window can now also be created ON DEMAND by unlocking an aura the current
@@ -212,6 +236,30 @@ function addCustomTimer(id, timer) {
   return config;
 }
 
+function setTriggerDurationSec(id, seconds) {
+  const config = widgetStore.setTriggerDurationSec(id, seconds);
+  pushConfigChanged(id);
+  return config;
+}
+
+function setTriggerCombineMode(id, mode) {
+  const config = widgetStore.setTriggerCombineMode(id, mode);
+  pushConfigChanged(id);
+  return config;
+}
+
+function setAndWindowSec(id, seconds) {
+  const config = widgetStore.setAndWindowSec(id, seconds);
+  pushConfigChanged(id);
+  return config;
+}
+
+function setReverseDetection(id, enabled) {
+  const config = widgetStore.setReverseDetection(id, enabled);
+  pushConfigChanged(id);
+  return config;
+}
+
 function updateCustomTimer(id, timerId, timer) {
   const config = widgetStore.updateCustomTimer(id, timerId, timer);
   pushConfigChanged(id);
@@ -242,16 +290,23 @@ function createAllyBuffsWidget(name) {
   return config;
 }
 
+function createBardSongsWidget(name) {
+  const config = widgetStore.createBardSongs(name, { activeProfileIds: [getActiveProfileIdFn()] });
+  createWidgetWindow(config);
+  return config;
+}
+
 function createTextAuraWidget(name, preset) {
   const config = widgetStore.createTextAura(name, { preset, activeProfileIds: [getActiveProfileIdFn()] });
   createWidgetWindow(config);
   return config;
 }
 
-function createCooldownTimerWidget(name, spellName, cooldownSec, iconId) {
+function createCooldownTimerWidget(name, spellName, cooldownSec, iconId, buffDurationSec) {
   const config = widgetStore.createCooldownTimer(name, {
     spellName,
     cooldownSec,
+    buffDurationSec,
     iconId,
     activeProfileIds: [getActiveProfileIdFn()],
   });
@@ -301,16 +356,6 @@ function createDamageMeterWidget(name, mineOnly) {
     mineOnly,
     activeProfileIds: [getActiveProfileIdFn()],
   });
-  createWidgetWindow(config);
-  return config;
-}
-
-function createSoundOnlyWidget(name) {
-  const config = widgetStore.createSoundOnly(name, { activeProfileIds: [getActiveProfileIdFn()] });
-  // Still gets a real overlay window, exactly like every other aura. That window is where the
-  // sound actually comes from - overlay.js already owns the whole alert pipeline (which buffs
-  // count as visible, renewal detection, the warning-threshold loop, the volume). Routing
-  // sound-only auras somewhere else would have meant a second copy of all of it.
   createWidgetWindow(config);
   return config;
 }
@@ -434,7 +479,7 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
   const win = windows.get(id);
   if (!config || !win) return;
   const minHeight = minHeightFor(config);
-  const width = Math.max(40, Math.round(contentWidth) + WINDOW_CONTENT_PADDING_PX);
+  const width = Math.max(40, minWidthFor(config), Math.round(contentWidth) + WINDOW_CONTENT_PADDING_PX);
   const height = Math.max(minHeight + WINDOW_CONTENT_PADDING_PX, Math.round(contentHeight) + WINDOW_CONTENT_PADDING_PX);
   const [currentWidth, currentHeight] = win.getSize();
   const [currentX, currentY] = win.getPosition();
@@ -480,8 +525,6 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
 //   auto-hide-while-EverQuest-is-unfocused. Both are temporary, neither touches saved data.
 //
 // Unlocking overrides screen-clearing rules, because you cannot drag something you cannot see.
-// A sound-only aura is subject to the on/off rule and exempt from every screen-clearing one,
-// because it has nothing on the screen to clear.
 //
 // The order below IS the behaviour. Each clause has a reason it sits where it does.
 // Note 21. The global switch, off until someone turns it on. Held here rather than on the widget
@@ -532,13 +575,6 @@ function shouldBeOnScreen(config) {
   // it still works in the wrong zone.
   if (!isVisibleInCurrentZone(config) && !forceShown.has(config.id)) return false;
 
-  // A sound-only aura draws nothing, so being on screen costs it nothing and hiding it buys
-  // nothing. Hiding it would be actively harmful: a hidden window is one Chromium is entitled to
-  // throttle, and reacting promptly is the only thing this aura does. It stays up, invisible,
-  // and keeps listening. Below the profile check, never above it - an aura that kept beeping
-  // after being switched off would be untraceable, with nothing on screen to point at.
-  if (isSoundOnly(config)) return true;
-
   // Note 4: master hide beats unlock, deliberately, and this is the one clause that had to be
   // decided rather than inherited. It exists to clear the screen while doing other UI work, so
   // "Hide all auras" appearing to do nothing because something happened to be unlocked is
@@ -550,12 +586,10 @@ function shouldBeOnScreen(config) {
 }
 
 // Whether an aura should be MAKING SOUND, which is a different question from whether it should
-// be drawn - and the distinction only became visible once an aura could be nothing but sound.
+// be drawn.
 //
 // Hiding a window does NOT silence it. A hidden overlay keeps receiving the engine broadcasts
-// and keeps running render(), which is exactly where the alert sounds fire. For an ordinary aura
-// that was invisible in both senses of the word, so nobody noticed; for a sound-only aura it is
-// the whole aura.
+// and keeps running render(), which is exactly where the alert sounds fire.
 //
 // The rule follows shouldBeOnScreen's two kinds of rule. Profile membership is the ON/OFF
 // switch, so an aura the current loadout has switched off is off, full stop - silent as well as
@@ -625,12 +659,8 @@ function setForegroundHidden(hidden) {
 // The force option is what separates unlocking ONE aura from "Unlock all auras" (note 31).
 // Unlocking one by hand forces it on screen even if the active profile has it switched off;
 // unlocking everything does not, or every aura you own appears at once.
-// A sound-only aura stays click-through whatever its lock says. Unlocked, it would otherwise be
-// an INVISIBLE rectangle sitting over the game and swallowing clicks - with nothing on screen to
-// explain where they were going. There is nothing to drag either, which is why the settings
-// window hides its Unlock button too.
 function shouldIgnoreMouse(config) {
-  return isSoundOnly(config) || isLocked(config.id);
+  return isLocked(config.id);
 }
 
 function setLocked(id, locked, { force = true } = {}) {
@@ -718,13 +748,7 @@ function isLocked(id) {
 function setDisplayMode(id, mode) {
   const config = widgetStore.update(id, { displayMode: normalizeDisplayMode(mode) });
   pushConfigChanged(id);
-  // Switching INTO or OUT OF sound-only changes whether this widget should be on screen at all
-  // (see shouldBeOnScreen) - a sound-only aura is exempt from auto-hide, an ordinary one is not.
-  // Without this, turning an aura sound-only while EQ was unfocused left it hidden and therefore
-  // deaf until the next focus change happened to correct it.
   applyVisibility(config);
-  // Switching to sound-only has to take the click-through flag with it, or an aura that was
-  // unlocked when the switch happened is left as an invisible click-eating rectangle.
   const win = windows.get(id);
   if (win && config) win.setIgnoreMouseEvents(shouldIgnoreMouse(config), { forward: true });
   return config;
@@ -784,6 +808,19 @@ function setCategoryBorders(id, enabled) {
   return config;
 }
 
+function setCategoryBorderWidth(id, px) {
+  // Clamped here rather than left to normalizeWidget alone - that only re-derives a value at
+  // store load, so update() (a plain Object.assign onto whatever getById already returned) would
+  // otherwise let a stray IPC call or a corrupted share code write anything at all until the next
+  // restart. 1-6: 1 is the original fixed width, 6 is where a tile's own art starts disappearing
+  // under its own edge rather than being framed by it.
+  const n = Number(px);
+  const clamped = Number.isFinite(n) ? Math.max(1, Math.min(6, Math.round(n))) : 1;
+  const config = widgetStore.update(id, { categoryBorderWidthPx: clamped });
+  pushConfigChanged(id);
+  return config;
+}
+
 // Notes 11/16/17. Turning this on does two things at once, and they have to stay together: the
 // aura starts DRAWING debuffs on enemies, and the engine starts DETECTING them for the spells this
 // aura watches (see getEnemyDebuffNames). Split across two switches, someone would inevitably end
@@ -796,6 +833,16 @@ function setTrackOnEnemies(id, enabled) {
 
 function setAllyDebuffAlert(id, enabled) {
   const config = widgetStore.update(id, { allyDebuffAlert: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
+// Note 40. The watching toggle on a Custom debuff aura - swaps which detection
+// tier the engine uses for the spells this aura watches on enemies (see
+// getEnemyDebuffNames/getAllyEnemyDebuffNames below), without touching
+// trackOnEnemies itself.
+function setDebuffCastBy(id, source) {
+  const config = widgetStore.update(id, { debuffCastBy: source === 'ally' ? 'ally' : 'self' });
   pushConfigChanged(id);
   return config;
 }
@@ -1012,6 +1059,12 @@ function setIconJustify(id, value) {
   return config;
 }
 
+function setTextJustify(id, value) {
+  const config = widgetStore.update(id, { textJustify: value });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setMaxDurationFilter(id, seconds) {
   const config = widgetStore.update(id, { maxDurationFilterSec: seconds });
   pushConfigChanged(id);
@@ -1091,16 +1144,16 @@ function setBuffFilter(id, mode, names) {
 }
 
 function setBuffSource(id, source) {
-  // 'customTimer' is accepted only for the two ANNOUNCER types - text and sound-only. Every
-  // other aura has its source fixed when it is created, deliberately (see defaultCustomWidget's
-  // note on the field), and this coercion is what enforces that.
+  // 'customTimer' is accepted only for a TEXT AURA. Every other aura has its source fixed when
+  // it is created, deliberately (see defaultCustomWidget's note on the field), and this coercion
+  // is what enforces that.
   //
-  // Those two are the exception because their whole purpose is to react to something happening,
-  // and the thing worth reacting to is as often a line of log text as it is a buff. Both of their
-  // buttons in the add-aura list say so in as many words, which is the other reason this has to
-  // hold: an option promised in the copy and refused by the code is worse than one never offered.
+  // A text aura is the exception because its whole purpose is to react to something happening,
+  // and the thing worth reacting to is as often a line of log text as it is a buff. Its button in
+  // the add-aura list says so in as many words, which is the other reason this has to hold: an
+  // option promised in the copy and refused by the code is worse than one never offered.
   const current = widgetStore.getById(id);
-  const isAnnouncer = isTextAura(current) || isSoundOnly(current);
+  const isAnnouncer = isTextAura(current);
   const allowed = isAnnouncer ? ['self', 'ally', 'customTimer'] : ['self', 'ally'];
   const config = widgetStore.update(id, { buffSource: allowed.includes(source) ? source : 'self' });
   pushConfigChanged(id);
@@ -1121,6 +1174,23 @@ function getEnemyDebuffNames() {
   const names = new Set();
   for (const config of widgetStore.getAll()) {
     if (!config.trackOnEnemies) continue;
+    if (config.debuffCastBy === 'ally') continue;
+    for (const name of config.buffNames || []) names.add(String(name).toLowerCase());
+  }
+  return names;
+}
+
+// Note 40. Same shape as getEnemyDebuffNames above, but for auras switched to
+// 'ally' mode - spells watched on an enemy without requiring the player to be
+// the caster. Kept as a separate function/set rather than a flag returned
+// alongside the first, because buffEngine already injects the two modes
+// through two separate setters (setEnemyDebuffNamesFn/
+// setAllyEnemyDebuffNamesFn) that gate genuinely different code paths.
+function getAllyEnemyDebuffNames() {
+  const names = new Set();
+  for (const config of widgetStore.getAll()) {
+    if (!config.trackOnEnemies) continue;
+    if (config.debuffCastBy !== 'ally') continue;
     for (const name of config.buffNames || []) names.add(String(name).toLowerCase());
   }
   return names;
@@ -1154,13 +1224,13 @@ module.exports = {
   setActiveProfileNameFn,
   createCustomWidget,
   createAllyBuffsWidget,
+  createBardSongsWidget,
   createDebuffWidget,
   createDamageMeterWidget,
   setDamageOptions,
   createTravelGuideWidget,
   setTravelDestination,
   peekShareCode,
-  createSoundOnlyWidget,
   createTextAuraWidget,
   createBuffTimerWidget,
   createCooldownTimerWidget,
@@ -1200,7 +1270,9 @@ module.exports = {
   setLandingGlowEnabled,
   setMergeSameDuration,
   setCategoryBorders,
+  setCategoryBorderWidth,
   setTrackOnEnemies,
+  setDebuffCastBy,
   setAllyDebuffAlert,
   setAlwaysOn,
   setShowOnAllProfiles,
@@ -1232,6 +1304,7 @@ module.exports = {
   setIconLabelAnchor,
   setWrapText,
   setIconJustify,
+  setTextJustify,
   setSoundOnLand,
   setSoundOnExpire,
   setSoundWarningSec,
@@ -1246,6 +1319,10 @@ module.exports = {
   setBuffFilter,
   setBuffSource,
   addCustomTimer,
+  setTriggerDurationSec,
+  setTriggerCombineMode,
+  setAndWindowSec,
+  setReverseDetection,
   updateCustomTimer,
   removeCustomTimer,
   excludeBuff,
@@ -1253,6 +1330,7 @@ module.exports = {
   fitToContent,
   getAllWidgetConfigs,
   getEnemyDebuffNames,
+  getAllyEnemyDebuffNames,
   getAllyDebuffAlertNames,
   getWidgetConfig,
 };

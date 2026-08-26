@@ -1,5 +1,10 @@
 # Session state — Opus 5 working on EQLS Auras
 
+> **Fully superseded as of 25 August 2026.** For current state, read `docs/HANDOFF.md` and
+> `docs/NOTES-STATUS.md` instead — this file's own section 9 was already the final word on the
+> session it records (through 23 Aug), and two full sessions' worth of work have landed since.
+> Kept as a historical record of that machine/session's setup, not as a live document.
+
 Written 2026-08-19 as a continuity record before a context compaction. **Read this first** after
 any context loss, before touching anything.
 

@@ -115,6 +115,28 @@ test('the settings window is raised, not just messaged', () => {
   assert.match(handler[0], /isDestroyed\(\)/, 'sending to a destroyed window throws');
 });
 
+test('navigation is sent before the OS focus-steal, and focus is deferred off the click', () => {
+  // Reported live 24 Aug: "right clicking on a blue move box freezes the app entirely... unless
+  // i alt tab" and "it also doesn't nav me". Root cause - win.focus() asks Windows for OS
+  // foreground focus from inside the SAME right-click gesture the overlay's own always-on-top,
+  // drag-region window is still processing; Windows' foreground-lock protection can make that
+  // block synchronously, and since Electron's main process is single-threaded, a block there
+  // freezes every ipcMain handler in the app - not just this one - which is also why the
+  // navigation message never arrived (it used to run AFTER the now-frozen focus() call).
+  const handler = mainSrc.match(/ipcMain\.on\('widget:openSettings'[\s\S]*?\n\}\);/);
+  assert.ok(handler, 'the open-settings handler has been restructured');
+  const sendAt = handler[0].indexOf('webContents.send');
+  const focusAt = handler[0].indexOf('.focus()');
+  assert.ok(sendAt >= 0 && focusAt >= 0, 'both the navigation send and the focus call must be present');
+  assert.ok(sendAt < focusAt, 'navigation must be sent before the risky focus call, not after it');
+  assert.match(handler[0], /setImmediate\(/, 'show()/focus() must be deferred off the triggering click');
+  // The deferred callback needs its own liveness checks - the window can close in the gap between
+  // scheduling and running.
+  const deferredAt = handler[0].indexOf('setImmediate(');
+  const deferred = handler[0].slice(deferredAt);
+  assert.match(deferred, /isDestroyed\(\)/, 'the deferred callback can run after the window is gone');
+});
+
 test('the listener is registered where focusWidget can be seen', () => {
   // focusWidget lives inside initWidgetsPanel's closure, so a listener registered next to the
   // other IPC wiring at the top of the file would be a ReferenceError at click time - which

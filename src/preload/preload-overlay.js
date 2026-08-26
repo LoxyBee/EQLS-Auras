@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onActiveAllyBuffsChanged: (callback) => {
     ipcRenderer.on('buffs:activeAllies', (_event, buffs) => callback(buffs));
   },
+  getActiveBardSongs: () => ipcRenderer.invoke('buffs:getActiveBardSongs'),
+  onActiveBardSongsChanged: (callback) => {
+    ipcRenderer.on('buffs:activeBardSongs', (_event, songs) => callback(songs));
+  },
   getActiveCustomTimers: () => ipcRenderer.invoke('customTimers:getActive'),
   onActiveCustomTimersChanged: (callback) => {
     ipcRenderer.on('customTimers:active', (_event, timers) => callback(timers));
@@ -44,5 +48,11 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   // otherwise receive-only, which is why this needed a new channel rather than an existing one.
   openSettings: (widgetId) => {
     ipcRenderer.send('widget:openSettings', widgetId);
+  },
+  // Routes into the SAME debugLog() every main-process detection line already goes through - see
+  // main.js's own debugLogEnabled gate. An overlay window can't write the file itself (renderer,
+  // no fs access), so this is fire-and-forget, same shape as reportContentSize/openSettings above.
+  debugLog: (message) => {
+    ipcRenderer.send('debug:logLine', message);
   },
 });

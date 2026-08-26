@@ -33,11 +33,32 @@ function makeEngine(aaMultiplier = 1) {
   return engine;
 }
 
-// The roster entry as _scaledDuration receives it. Only the four fields it reads.
+// scaleCategory -> the kind a real roster entry in that scaleCategory almost always carries, so
+// call sites below don't each need their own fifth argument. Checked directly against the real
+// roster on 24 Aug: every 'buff' and every 'hot' entry (Celestial Healing, Celestial Remedy, all
+// 16 of them) is kind 'buff' - AA eligibility reads kind, not scaleCategory, see buffEngine.js's
+// isAAEligible. 'dot'/'debuff'/'charm'/'nuke' are all kind 'det' (cast AT something). scaleCategory
+// 'heal' is overwhelmingly NOT kind 'buff' (24 of 25 are instants with no kind at all - a
+// buff-kind heal is the rare exception and isn't what the tests below mean by "heal"). 'pet' is
+// overwhelmingly a real pet summon, kind 'pet', not a buff. A test that means the rare exception
+// passes its own kind via extra.
+const DEFAULT_KIND_FOR_SCALE_CATEGORY = {
+  buff: 'buff',
+  hot: 'buff',
+  dot: 'det',
+  debuff: 'det',
+  charm: 'det',
+  nuke: 'det',
+  pet: 'pet',
+  none: 'buff',
+};
+
+// The roster entry as _scaledDuration receives it. Only the fields it reads.
 const spell = (name, durationSec, scaleCategory, extra = {}) => ({
   name,
   durationSec,
   scaleCategory,
+  kind: DEFAULT_KIND_FOR_SCALE_CATEGORY[scaleCategory],
   ...extra,
 });
 
@@ -72,39 +93,118 @@ test('compounding is refuted, not merely unused', () => {
 
 // Base 24, tier 4. The sheet marked heal-over-time's duration rate "+5% ?" - a guess - and it
 // stays the sheet's number here, unmeasured, because the observation that appeared to confirm it
-// turned out not to be usable. See the note below.
-test('heal over time takes its tier but not the AA bonus', () => {
+// turned out not to be usable (see the doc block below). It DOES take the AA bonus, though - a
+// hot is still a buff on the roster's own kind column, see isAAEligible in buffEngine.js.
+test('heal over time takes both its tier and the AA bonus - it is still a buff', () => {
   const e = afterCasting(makeEngine(1.65), 'Celestial Healing IV');
-  assert.equal(e._scaledDuration(spell('Celestial Healing', 24, 'hot')), 29); // 24 x 1.20, no AA
+  assert.equal(e._scaledDuration(spell('Celestial Healing', 24, 'hot')), 48); // 24 x 1.20 x 1.65
 });
 
 /**
- * The measurement that argued for the wider AA rule, and the reason it argued wrongly. SOLVED.
+ * The measurement that first argued for AA reaching hots, and the reason the argument as I made
+ * it then was wrong even though the conclusion turns out right. NOW RESOLVED THE OTHER WAY.
  *
  * Celestial Healing IV measures 48 to 78 seconds across 32 castings, median 51, where the mote
- * tier alone predicts 29. I took that gap as evidence the AA bonus reached heals over time, and
- * this suite originally asserted 48 because of it.
+ * tier ALONE predicts 29. I took that whole gap as evidence the AA bonus reached hots, with
+ * nothing else in the picture.
  *
  * Shara, 23 August: "the celestial healing timer duration being different is due to refreshed
- * casting." That is the answer, and it is much simpler than the one I reached for. She re-casts
- * the heal on someone before the previous one lapses, so the landing-to-wear-off gap spans several
- * casts rather than one duration - which is exactly why it spreads over 30 seconds where a
- * fixed-duration buff sits inside 14. The wide spread was the clue, and I read it as noise around
- * a single number instead of as several durations end to end.
+ * casting." That explains the SPREAD - she re-casts the heal before the old one lapses, so the
+ * landing-to-wear-off gap spans several casts rather than one, which is why it runs across 30
+ * seconds where a fixed-duration buff sits inside 14. It does not by itself say whether AA
+ * reaches hots at all, and the suite spent a day treating "recasting explains the spread" as
+ * "therefore no AA" - two different claims that got merged into one.
  *
- * Kept rather than deleted because it is the trail: the number that looked like evidence, and what
- * it turned out to be. See the recast tests at the end of this file for the behaviour it implies.
+ * Shara, 24 August, on the actual rule: "ALL buffs are supposed to be subject to these increases.
+ * i have stressed this since the beginning" - and a hot IS a buff on the roster's own kind column
+ * (checked directly: all 16 of the roster's scaleCategory:'hot' entries are kind:'buff'). With AA
+ * correctly included, the single-cast prediction is 48 - not 29, and not merely "less than 48"
+ * either: it lands exactly on the measured floor. Recasting still explains why real observations
+ * run UP TO 78, not why they start AT 48; both facts hold at once now instead of one explaining
+ * away the other.
  */
-test('the heal-over-time measurement is explained by recasting, not by the AA bonus', () => {
+test('the corrected prediction lands exactly on the measured floor, not merely under it', () => {
   const e = afterCasting(makeEngine(1.65), 'Celestial Healing IV');
   const predicted = e._scaledDuration(spell('Celestial Healing', 24, 'hot'));
   const MEASURED_MIN = 48;
-  assert.ok(predicted < MEASURED_MIN, 'if these ever agree, the open question above has been answered');
+  const MEASURED_MAX = 78;
+  assert.equal(predicted, MEASURED_MIN, 'a single un-recast landing should match the shortest real observation');
+  assert.ok(predicted <= MEASURED_MAX, 'and never exceed the longest one, which recasting alone explains');
 });
 
 test('an unranked cast of the same spell gets no tier bonus', () => {
   const e = afterCasting(makeEngine(1.65), 'Spirit of the Puma');
   assert.equal(e._scaledDuration(spell('Spirit of the Puma', 60, 'buff')), 99); // 60 x 1 x 1.65
+});
+
+// ---------------------------------------------------------------------------
+// AA-activated abilities ("You activate X.") must get the mote tier too
+// ---------------------------------------------------------------------------
+
+// Reported live: "Amplification II" (an AA-window bard buff, activated rather than cast/sung -
+// its own log line is "You activate Amplification II.") landed at 50s where its own in-game
+// tooltip read "0:30 (1:00)" - 30 base, 60 with the character's current bonuses. The owner's own
+// words when asked whether mote scaling should even apply here at all: "duration based buff songs
+// scale with motes."
+//
+// 50s turned out to be exactly base x AA alone (30 x 1.65 = 49.5 -> 50) with NO mote-tier bonus -
+// the rank "II" was being read correctly off the log line (matchActivate returns it intact) and
+// then simply never reaching _rankForEntry, because the "activated" branch in handleLine() never
+// set recentSelfCast/pendingCast the way matchCastBegin's own branch does two hundred lines later.
+// Driven through the REAL handleLine() pipeline and the REAL roster here, not a hand-built spell()
+// object and a hand-set recentSelfCast - the whole point is proving the LOG LINE reaches the
+// scaling math, which the isolated _scaledDuration tests above cannot show on their own.
+test('an AA-activated ranked ability gets the mote-tier bonus too, not just AA/Exaltation', () => {
+  const data = {};
+  const store = {
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  };
+  const buffStore = new BuffStore(store);
+  const entry = buffStore.getByName('Amplification');
+  assert.ok(entry, 'roster is missing Amplification - pick a different real, ranked, kind:buff entry to pin this against');
+
+  const engine = new BuffEngine(buffStore, store);
+  engine.stop();
+  engine.setDurationMultiplierFn(() => 1.65); // AA Reinforcement rank 4 (50%) + Exaltation rank 3 (15%)
+
+  engine.handleLine('[Thu Aug 20 12:00:00 2026] You activate Amplification II.');
+  engine.handleLine('[Thu Aug 20 12:00:00 2026] ' + entry.landingText);
+
+  const active = engine.getActiveBuffs().find((b) => b.name === 'Amplification');
+  assert.ok(active, 'Amplification never landed');
+  // 30 x (1 + 0.1 x 2) x 1.65 = 59.4 -> 59. Confirms the fix (was 50, missing the tier entirely);
+  // the remaining 1s against the tooltip's rounded "1:00" is far more likely the game client's own
+  // display rounding than a further error in this formula - see the fix's own comment in
+  // buffEngine.js for what's actually confirmed versus what's still an open, smaller question.
+  assert.equal(active.durationSec, 59);
+});
+
+test('Quick Buff activating cannot lend its own name\'s rank to an unrelated granted buff', () => {
+  // The exact hazard the fix has to avoid: Quick Buff is ALSO an "activate" line, and deliberately
+  // grants many buffs with no per-buff cast line at all (see gotcha #12 in CLAUDE.md). If setting
+  // recentSelfCast on every activate line ever let a landed buff borrow ITS activator's rank, an
+  // unrelated buff dropped by a burst could pick up a bogus mote-tier bonus. It can't: _rankForEntry
+  // only matches when the landed entry's OWN name (rank-suffix stripped) equals the activated
+  // name's - "Amplification" from "Quick Buff" never matches, so this stays exactly as unranked as
+  // it was before the fix.
+  const data = {};
+  const store = {
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  };
+  const buffStore = new BuffStore(store);
+  const entry = buffStore.getByName('Amplification');
+  const engine = new BuffEngine(buffStore, store);
+  engine.stop();
+  engine.setDurationMultiplierFn(() => 1.65);
+
+  engine.handleLine('[Thu Aug 20 12:00:00 2026] You activate Quick Buff.');
+  engine.handleLine('[Thu Aug 20 12:00:00 2026] ' + entry.landingText);
+
+  const active = engine.getActiveBuffs().find((b) => b.name === 'Amplification');
+  assert.ok(active, 'Amplification never landed');
+  assert.equal(active.durationSec, 50, 'Quick Buff\'s own name must never lend a rank to a burst-landed buff'); // 30 x 1 x 1.65
 });
 
 // The rank comes from the cast that is landing. A stale cast of something else must not lend it.
@@ -146,12 +246,18 @@ test('nor a debuff, nor a charm', () => {
 });
 
 // Shara, 23 August: "the AA should only apply to things marked as a BUFF. not just any
-// beneficial." Heals, heals over time and pet summons are beneficial and do NOT get it - which is
-// the correction, and the reason this test names them one by one rather than testing 'buff' alone.
-test('the AA bonus reaches the buff category and nothing else', () => {
+// beneficial." Shara, 24 August, correcting a second mistake in how that got read: "ALL buffs
+// are supposed to be subject to these increases. i have stressed this since the beginning" -
+// meaning every spell the roster's own kind column marks 'buff', not this file's narrower
+// scaleCategory:'buff' bucket. A hot IS kind 'buff' on the roster (Celestial Healing among
+// them), so it gets the bonus same as a plain buff. Superior Healing (an instant heal, no kind
+// at all on the roster) and Warder (a real pet summon, kind 'pet') are not buffs by any reading
+// and still do not - named one by one rather than testing 'buff' alone so a future change to
+// either the buff or the non-buff side breaks a specific, legible assertion.
+test('the AA bonus reaches every kind:\'buff\' spell, not just scaleCategory:\'buff\'', () => {
   const e = makeEngine(1.5);
   assert.equal(e._scaledDuration(spell('Valor', 3240, 'buff')), 4860); // 3240 x 1.5
-  assert.equal(e._scaledDuration(spell('Celestial Healing', 24, 'hot')), 24);
+  assert.equal(e._scaledDuration(spell('Celestial Healing', 24, 'hot')), 36); // 24 x 1.5, unranked
   assert.equal(e._scaledDuration(spell('Superior Healing', 100, 'heal')), 100);
   assert.equal(e._scaledDuration(spell('Warder', 100, 'pet')), 100);
 });
@@ -212,8 +318,9 @@ test('nuke, heal and pet-summon durations do not scale with tier', () => {
 // rounding there first and then applying 1.5 gives 11 rather than the correct 11.
 test('rounding happens once, over both multipliers together', () => {
   const e = afterCasting(makeEngine(1.5), 'Whisper VII');
-  // A BUFF, because that is now the only category both multipliers touch - which is the whole
-  // point of the test. 7 x (1 + 0.1 x 7) x 1.5 = 17.85 -> 18. Rounding after each step instead
+  // A plain BUFF (10%/tier), picked for round numbers rather than because it's special - a hot
+  // (5%/tier) touches both multipliers too now. 7 x (1 + 0.1 x 7) x 1.5 = 17.85 -> 18. Rounding
+  // after each step instead
   // gives round(round(11.9) x 1.5) = round(12 x 1.5) = 18 as well, so the numbers are chosen to
   // separate them: see the assertion below.
   assert.equal(e._scaledDuration(spell('Whisper', 7, 'buff')), 18);

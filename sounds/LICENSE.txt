@@ -1,0 +1,20 @@
+Bundled starter sounds - provenance and license
+================================================
+
+Two sources are mixed in this folder, both fine to ship in the installer with
+no attribution required and no per-file license to track:
+
+1. Chime.wav, Soft Ping.wav, Alert.wav, Bell.wav, Klaxon.wav
+   Hand-synthesized by tools/generate-bundled-sounds.js (sine tones, no
+   external audio). Not copyrightable third-party content.
+
+2. Confirmation Chime.ogg, Confirmation Chime 2.ogg, Error Tone.ogg,
+   Error Tone 2.ogg, Bong.ogg, Glass Ping.ogg, Pluck.ogg, Notify Tone.ogg,
+   Select Click.ogg, Soft Tick.ogg
+   From Kenney's "Interface Sounds" pack (https://kenney.nl/assets/interface-sounds),
+   renamed from their original filenames (confirmation_001.ogg -> "Confirmation
+   Chime.ogg", etc.) for readability in the in-app sound picker; audio content
+   unmodified. License: CC0 1.0 Universal (public domain) -
+   http://creativecommons.org/publicdomain/zero/1.0/
+   Attribution is not required, but Kenney asks for a credit where convenient:
+   "Sound effects by Kenney (kenney.nl)".

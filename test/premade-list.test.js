@@ -126,5 +126,94 @@ test('every roadmap entry says it is not built', () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Timers / Event alerts / Standalone tools - "what kind of thing is this"
+// ---------------------------------------------------------------------------
+
+// Every entry's own `group:` field, read the same bracket-scoped way entriesIn() does, so this
+// stays correct if entries are reordered or the array grows.
+function groupsIn(arrayName) {
+  return entriesIn(arrayName).map((entry) => {
+    const name = (entry.match(/name: '([^']+)'/) || [])[1] || '(unnamed)';
+    const group = (entry.match(/group: '([^']+)'/) || [])[1];
+    return { name, group };
+  });
+}
+
+test('every entry in both lists has a group, and it is one of the three real ones', () => {
+  const known = new Set(['timers', 'event-alerts', 'standalone']);
+  for (const arrayName of ['PREMADE_WIDGETS', 'PLANNED_PREMADE_WIDGETS']) {
+    for (const { name, group } of groupsIn(arrayName)) {
+      assert.ok(group, `"${name}" in ${arrayName} has no group - it would be silently dropped from the list`);
+      assert.ok(known.has(group), `"${name}" in ${arrayName} has an unrecognised group "${group}"`);
+    }
+  }
+});
+
+test('Ally Buffs and Bard Songs are grouped with the standalone tools, not the timers/alerts', () => {
+  // Reported live 25 Aug: "it is not a shortcut, it's a custom, and needs to be recatagorised" -
+  // buffFilterMode:'all' (watch every ally buff, not an explicit picked list) is set once at
+  // construction by defaultAllyBuffsWidget(), and nothing in the settings panel ever calls
+  // setWidgetBuffFilter with anything but 'explicit' for an ordinary custom aura - there is no
+  // sequence of clicks in the custom flow that reaches it. Bard Songs is the same shape.
+  const groups = groupsIn('PREMADE_WIDGETS');
+  for (const name of ['Ally Buffs', 'Bard Songs']) {
+    const entry = groups.find((g) => g.name === name);
+    assert.ok(entry, `"${name}" is missing from PREMADE_WIDGETS`);
+    assert.equal(entry.group, 'standalone', `"${name}" is not classed as a standalone tool`);
+  }
+});
+
+test('Buff timer, Cooldown timer, and Debuff on an enemy are all grouped as timers', () => {
+  const groups = groupsIn('PREMADE_WIDGETS');
+  for (const name of ['Buff timer', 'Cooldown timer', 'Debuff on an enemy']) {
+    const entry = groups.find((g) => g.name === name);
+    assert.ok(entry, `"${name}" is missing from PREMADE_WIDGETS`);
+    assert.equal(entry.group, 'timers', `"${name}" is not classed as a timer`);
+  }
+});
+
+test('Resist flash and Dispelled are both grouped as event alerts', () => {
+  const groups = groupsIn('PREMADE_WIDGETS');
+  for (const name of ['Resist flash', 'You Have Been Dispelled']) {
+    const entry = groups.find((g) => g.name === name);
+    assert.ok(entry, `"${name}" is missing from PREMADE_WIDGETS`);
+    assert.equal(entry.group, 'event-alerts', `"${name}" is not classed as an event alert`);
+  }
+});
+
+test('standalone tools render last - PREMADE_GROUPS lists it after timers and event-alerts', () => {
+  const fn = rendererSrc.match(/const PREMADE_GROUPS = \[([\s\S]*?)\n {2}\];/);
+  assert.ok(fn, 'PREMADE_GROUPS has been restructured');
+  const ids = [...fn[1].matchAll(/id: '([^']+)'/g)].map((m) => m[1]);
+  assert.deepEqual(ids, ['timers', 'event-alerts', 'standalone'], 'group render order has changed - standalone must stay last');
+});
+
+test('planned entries render inline in their own group, not a separate "Not built yet" section', () => {
+  // The old renderPlannedPremades() rendered a whole separate heading; that function - and the
+  // "Not built yet" heading string that only it produced - must be gone, or a planned entry could
+  // still end up sitting apart from the built ones it belongs beside.
+  assert.doesNotMatch(rendererSrc, /function renderPlannedPremades/, 'renderPlannedPremades still exists as a separate render path');
+  assert.doesNotMatch(rendererSrc, /'Not built yet'/, 'the old standalone "Not built yet" section heading is still being built somewhere');
+});
+
+// ---------------------------------------------------------------------------
+// Add Aura modal's "back" navigation
+// ---------------------------------------------------------------------------
+
+test('the buff-timer panel\'s own Back button returns to the premade list, not all the way to Choices', () => {
+  // Reported live 25 Aug: "when on this menu and hitting back, it sends you two screens back
+  // instead of 1." Every .add-widget-back button used to call the same showAddWidgetChoices() no
+  // matter which panel it lived in - correct for a panel reached directly from Choices (import,
+  // chat, the premade list, custom), but the buff-timer panel (Buff timer/Cooldown timer/Debuff on
+  // an enemy) is reached FROM the premade list, one screen further in, so its own Back button has
+  // to land one screen back too, not skip past it to Choices.
+  assert.match(rendererSrc, /function showAddWidgetPremadePanel\(\) \{/, 'the one-step-back-to-premade-list function is missing');
+  const fn = rendererSrc.match(/const buffTimerBackBtn = document\.querySelector\('#add-widget-buff-timer-panel \.add-widget-back'\);[\s\S]*?\n {2}\}\);/);
+  assert.ok(fn, 'the buff-timer panel\'s back button is no longer singled out from the rest');
+  assert.match(fn[0], /showAddWidgetPremadePanel\(\)/, 'the buff-timer panel\'s back button does not call the premade-list function');
+  assert.match(fn[0], /showAddWidgetChoices\(\)/, 'every other panel\'s back button should still go to Choices');
+});
+
 module.exports = () => report('premade-list');
 if (require.main === module) process.exit(report('premade-list') ? 1 : 0);

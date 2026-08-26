@@ -166,11 +166,12 @@ test('turning it off really turns it off', () => {
 // Wiring
 // ---------------------------------------------------------------------------
 
-test('the engine sends the category on BOTH buff sources', () => {
-  // Self buffs and ally buffs are built by two separate functions that have drifted before.
+test('the engine sends the category on every buff source', () => {
+  // Self buffs, ally buffs, and bard songs are built by three separate functions that have
+  // drifted before.
   assert.equal(
-    (engineSrc.match(/spellCategory: known\?\.scaleCategory \|\| null/g) || []).length, 2,
-    'one of getActiveBuffs / getActiveAllyBuffs is not sending the category'
+    (engineSrc.match(/spellCategory: known\?\.scaleCategory \|\| null/g) || []).length, 3,
+    'one of getActiveBuffs / getActiveAllyBuffs / getActiveBardSongs is not sending the category'
   );
 });
 
@@ -202,8 +203,18 @@ test('the settings window can reach it, and hides it where it cannot apply', () 
   assert.match(rendererSrc, /categoryBordersCheckbox\.checked = widget\.categoryBordersEnabled !== false/,
     'the checkbox is never populated from the aura');
   assert.match(rendererSrc, /setWidgetCategoryBorders\(selectedId, categoryBordersCheckbox\.checked\)/);
-  // A sound aura draws no tile; a text aura draws a plate of words rather than a spell tile.
-  assert.match(rendererSrc, /bordersRowEl\.style\.display = isSoundOnly \|\| isTextAura \? 'none' : ''/);
+  // A text aura draws a plate of words rather than a spell tile.
+  // Rewritten 25 Aug for the additive settings-panel model: visibility now comes from
+  // SHAPE_FIELDS's 'borders' field rather than a live isTextAura check.
+  assert.match(rendererSrc, /bordersRowEl\.style\.display = has\('borders'\) \? '' : 'none';/);
+  const fn = rendererSrc.match(/const SHAPE_FIELDS = \{([\s\S]*?)\n {2}\};/);
+  assert.ok(fn, 'SHAPE_FIELDS has been renamed or restructured');
+  for (const shape of ['text', 'text-customTimer', 'ally-alert']) {
+    assert.doesNotMatch(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'borders'`), `${shape} draws no spell tile and must not offer this`);
+  }
+  for (const shape of ['self-buffs', 'ally-buffs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel']) {
+    assert.match(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'borders'`), `${shape} lost the control`);
+  }
 });
 
 module.exports = () => report('category-borders');
