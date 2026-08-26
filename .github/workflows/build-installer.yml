@@ -4,9 +4,6 @@ on:
   push:
     branches: [master]
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: windows-latest
@@ -21,13 +18,8 @@ jobs:
 
       - run: npm run dist
 
-      - name: Publish latest installer as a release
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload installer as a build artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: latest-dev
-          name: Latest dev build
-          body: Automatically built from the latest push to master (commit ${{ github.sha }}). Not a stable release.
-          prerelease: true
-          files: dist/*.exe
+          name: eqls-auras-installer
+          path: dist/*.exe
