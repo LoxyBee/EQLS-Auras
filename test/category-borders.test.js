@@ -209,10 +209,12 @@ test('the settings window can reach it, and hides it where it cannot apply', () 
   assert.match(rendererSrc, /bordersRowEl\.style\.display = has\('borders'\) \? '' : 'none';/);
   const fn = rendererSrc.match(/const SHAPE_FIELDS = \{([\s\S]*?)\n {2}\};/);
   assert.ok(fn, 'SHAPE_FIELDS has been renamed or restructured');
-  for (const shape of ['text', 'text-customTimer', 'ally-alert']) {
+  // Travel guide joined this list once it got its own settings shape: a route leg carries no
+  // spellCategory at all (it isn't a spell), so the control would be offered and do nothing.
+  for (const shape of ['text', 'text-customTimer', 'ally-alert', 'travel']) {
     assert.doesNotMatch(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'borders'`), `${shape} draws no spell tile and must not offer this`);
   }
-  for (const shape of ['self-buffs', 'ally-buffs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel']) {
+  for (const shape of ['self-buffs', 'ally-buffs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage']) {
     assert.match(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'borders'`), `${shape} lost the control`);
   }
 });

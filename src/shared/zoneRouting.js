@@ -38,6 +38,17 @@ function allZoneNames() {
   return Object.keys(ZONES).sort((a, b) => a.localeCompare(b));
 }
 
+// Every zone EXCEPT the 27 instance-tier variants (" (Awakened)", " (Fused)", etc). For picking a
+// destination or a current zone by hand - nobody stands in "Befallen 3 (Fused)" and needs to say
+// so, they stand in Befallen and enter the tier from there (see the instance-tier routing note
+// further down this file). `allZoneNames()` itself stays untouched and still returns every zone,
+// tiers included - `findRoute` can route TO a specific tier, and `test/zone-routing.test.js`'s own
+// "every zone" test pins that full count, so the filtering lives here as a second function rather
+// than changing what the first one means.
+function pickableZoneNames() {
+  return allZoneNames().filter((n) => !ZONES[n].isInstanceVariantOf);
+}
+
 /**
  * The ordinary place an instance tier belongs to, or null if this is already one.
  *
@@ -243,5 +254,6 @@ module.exports = {
   describeLeg,
   resolveZoneName,
   allZoneNames,
+  pickableZoneNames,
   usableTravelSpells,
 };

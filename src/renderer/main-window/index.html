@@ -327,23 +327,29 @@
                    in this card has been removed at the owner's instruction: this aura is driven by
                    /tell while you are playing, and a picker here meant setting your route by
                    alt-tabbing out of the game you are trying to travel in. The current destination
-                   is shown read-only so the aura can still be identified at a glance. -->
+                   is shown read-only so the aura can still be identified at a glance. Reworked
+                   26 Aug: /tell no longer reads the target as a possible zone name at all - a real
+                   zone name (Freeport) is also a real player's name, so an ordinary social /tell to
+                   an offline guildmate could look exactly like a travel command. Now there is one
+                   fixed word, deliberately longer than any real EverQuest character name can be. -->
               <div id="widget-travel-settings" style="display:none">
                 <h4 class="settings-subsection-title">Travel guide</h4>
                 <div class="row">
                   <span class="label">Going to:</span>
                   <strong id="widget-travel-destination-current">Nowhere yet</strong>
                 </div>
+                <div class="row">
+                  <span class="label">Command word:</span>
+                  <input type="text" id="widget-travel-command-input" maxlength="24" style="width:140px" />
+                </div>
                 <p class="hint">
-                  Set it from inside the game: type <code>/tell &lt;zone&gt;</code> and the game's
-                  "is not online at this time" reply becomes the destination -
-                  <code>/tell rivervale</code>, <code>/tell qeynos</code>. One word only, since a
-                  /tell name cannot have spaces. If the word could mean several zones the aura
-                  lists them and waits rather than guessing.
+                  Typed as <code>/tell &lt;word&gt;</code> in game to pop up a searchable zone list -
+                  click one to pick it. It will try to send a tell to the keyword you type, and the
+                  failure to do so will be what this module picks up from the log.
                 </p>
                 <p class="hint">
-                  It changes every travel aura at once, since you are only ever going one place.
-                  Where you are coming from is always the zone you are actually in.
+                  Travel Guide will tell you how to get there from your current zone, but if it
+                  does not know it, you will be prompted first to enter your current location.
                 </p>
               </div>
 

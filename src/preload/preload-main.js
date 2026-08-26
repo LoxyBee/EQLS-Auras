@@ -138,6 +138,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createTravelGuideWidget: (name, destination) => ipcRenderer.invoke('widget:createTravelGuide', { name, destination }),
   setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
+  getTravelPickerCommand: () => ipcRenderer.invoke('travel:getPickerCommand'),
+  setTravelPickerCommand: (word) => ipcRenderer.invoke('travel:setPickerCommand', word),
   // Note 30. Receive-only. There is no matching "apply this code from chat" channel on purpose -
   // the offer routes into the ordinary import screen, so nothing here can bypass its confirmations.
   onShareCodeOffered: (callback) => {

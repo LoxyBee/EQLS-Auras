@@ -34,7 +34,7 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
-const { findRoute, describeLeg, allZoneNames, resolveDestinationName } = require('../shared/zoneRouting');
+const { findRoute, describeLeg, allZoneNames, pickableZoneNames } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
 const { matchShareCodeInChat, splitReason } = require('../shared/shareCodeChat');
 const { TRAVEL_SPELLS } = require('../shared/data/zoneGraph');
@@ -54,6 +54,7 @@ const widgetManager = require('./widgetManager');
 const actionBarManager = require('./actionBarManager');
 const { AbilityGroupTracker, KNOWN_STANCES, KNOWN_INVOCATIONS } = require('./abilityGroups');
 const ambiguousPopup = require('./ambiguousPopup');
+const zonePromptPopup = require('./zonePromptPopup');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
 const soundService = require('./soundService');
@@ -477,15 +478,23 @@ logService.watcher.on('line', (line) => {
     problem: peek ? null : splitReason(found.code) || 'That code could not be read.',
   });
 });
+// Shared by the real log-driven zone change below and the zone-prompt popup's "where are you
+// now" answer - both are "the app now knows/believes the current zone", and both need the exact
+// same fan-out (widget visibility, the main window's own currentZone, a travel-route redraw).
+function applyZoneChangeAndNotify(zone) {
+  const changed = widgetManager.applyZoneChange(zone);
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) win.webContents.send('zone:changed', changed);
+  return changed;
+}
+
 // Note 38. A third listener rather than a hook inside one of the engines - neither of them is
 // about where you are, and a zone is not a buff.
 logService.watcher.on('line', (line) => {
   const zone = matchZoneChange(line);
   if (!zone) return;
-  const changed = widgetManager.applyZoneChange(zone);
+  const changed = applyZoneChangeAndNotify(zone);
   debugLog(`ZONE now "${changed}"`);
-  const win = getMainWindow();
-  if (win && !win.isDestroyed()) win.webContents.send('zone:changed', changed);
   // Note 20. Where you are is half of every route, so a zone line is the main thing that makes a
   // travel aura redraw.
   pushTravelRoutes();
@@ -596,34 +605,94 @@ customTimerEngine.on('activeChanged', (timers) => {
 damageEngine.on('activeChanged', (rows) => broadcast('damage:active', rows));
 
 /**
- * Note 20's destination command. "/tell qeynos" in game, and the server's "Qeynos is not online at
- * this time." is what arrives here.
- *
- * It sets the destination on EVERY travel aura rather than one of them. There is one player going
- * one place; two travel auras pointing at different destinations would be a state nobody asked for
- * and could not correct without opening both settings pages.
- *
- * Held here rather than saved on the widget when the word is ambiguous - "faydark" matches two
- * zones - because a request the app could not carry out should not overwrite a destination that
- * was working. The aura says which zones it could have meant and keeps showing the old route.
+ * Note 20's destination command, redesigned 26 Aug. The original version (Shara's own design, 23
+ * August) read the exact word typed as a possible zone name - "/tell qeynos" - which needed
+ * knowing the game's own short name for the place and, worse, meant an ORDINARY /tell to an
+ * offline GUILDMATE could look like a travel command. Confirmed directly: "Freeport" is also a
+ * real zone name AND a real person could be named it - there is no way to tell those apart from
+ * the log line alone. So the app no longer reads /tell's target as a zone name at all. The only
+ * thing it reacts to is one word, user-configurable (added 26 Aug so anyone can trade the default
+ * short word for a longer, collision-proof one, or the reverse, without needing a code change) -
+ * defaults to "eqtm", short at the owner's own explicit call after weighing it against a longer
+ * word past EverQuest's 15-letter name cap (immune to collision but slower to type). Persisted the
+ * same way debugLogEnabled is - loaded once into a plain variable, updated in place by its own IPC
+ * handler. Everything but this one word is left alone, full stop, so a normal social /tell that
+ * happens to fail never touches this aura.
  */
-let unresolvedTravelCommand = null; // { typed, candidates } | null
+let travelPickerCommand = loadJson('travelPickerCommand', 'eqtm');
+
+/**
+ * The current zone/destination picker popup - see zonePromptPopup.js and src/renderer/zone-prompt.
+ * A standalone always-on-top window the player answers by clicking a zone from a searchable list,
+ * same shape as ambiguousPopup, just for zones instead of ambiguous casts.
+ */
+let pendingZonePrompt = null; // { mode: 'destination' | 'currentZone' } | null
+
+function hasTravelWidget() {
+  return widgetManager.getAllWidgetConfigs().some((w) => w.buffSource === 'travel');
+}
+
+function openZonePrompt(mode) {
+  if (!hasTravelWidget()) return;
+  pendingZonePrompt = { mode };
+  broadcast('travel:zonePrompt', pendingZonePrompt);
+  zonePromptPopup.updateVisibility(pendingZonePrompt);
+}
+
+function closeZonePrompt() {
+  pendingZonePrompt = null;
+  broadcast('travel:zonePrompt', null);
+  zonePromptPopup.updateVisibility(null);
+}
+
+// Chained after a destination is set: the other half of a route is where you're coming from, and
+// nothing ever replays zone history at startup (same limitation as currentlyMemorized), so this is
+// the one moment - right after the player has shown they're actively using the travel aura - worth
+// asking rather than leaving the aura stuck on "Waiting for a zone line" until they happen to walk
+// through one.
+function maybePromptCurrentZone() {
+  if (hasTravelWidget() && !widgetManager.getCurrentZone()) openZonePrompt('currentZone');
+}
+
+// The reverse chain: answering "where are you now" always moves straight into picking a
+// destination next - UNCONDITIONALLY, not just when none is set yet. Reported live: typing the
+// command with an old destination already active, answering the current-zone question, and having
+// it just close - leaving the STALE destination silently active - is exactly the "quietly wrong"
+// failure this project avoids everywhere else. Typing the command at all is a clear signal the
+// player wants to interact with travel right now, so the natural next step is always offered
+// rather than assumed unnecessary.
+function promptDestinationNext() {
+  openZonePrompt('destination');
+}
 
 logService.watcher.on('line', (line) => {
   const typed = matchOfflineTell(line);
   if (!typed) return;
-  const resolved = resolveDestinationName(typed);
-  if (resolved && resolved.zone) {
-    unresolvedTravelCommand = null;
-    for (const w of widgetManager.getAllWidgetConfigs()) {
-      if (w.buffSource === 'travel') widgetManager.setTravelDestination(w.id, resolved.zone);
-    }
-    debugLog(`TRAVEL destination set to "${resolved.zone}" by /tell ${typed}`);
-  } else {
-    unresolvedTravelCommand = { typed, candidates: resolved ? resolved.ambiguous : [] };
-    debugLog(`TRAVEL /tell ${typed} did not resolve to one zone`);
+  // Anything but the exact fixed word is an ORDINARY /tell - to a real person, who is really
+  // offline - and this aura has nothing to do with it. No fallback zone-name matching any more;
+  // see the comment above for why that used to fire on a coincidence.
+  if (typed.toLowerCase() !== travelPickerCommand) return;
+  // The same command closes the popup if it's already open - a second one is read as "never
+  // mind", not "ask again", so there is one command to remember either way.
+  if (pendingZonePrompt) {
+    debugLog(`TRAVEL picker closed by /tell ${typed}`);
+    closeZonePrompt();
+    return;
   }
-  pushTravelRoutes();
+  // Reported live: after a restart (currentZone always resets - nothing replays log history) an
+  // aura sitting in one place the whole session (a dungeon, camped) never gets a fresh zone line,
+  // so it was stuck on "Waiting for a zone line" with no way back in - the command only ever
+  // opened the DESTINATION popup, which does nothing for a zone that's already set. Now the
+  // command asks whichever question is actually blocking the aura: if the zone is unknown, that's
+  // it regardless of whether a destination exists yet; only once the zone is known does it fall
+  // back to asking for a destination.
+  if (hasTravelWidget() && !widgetManager.getCurrentZone()) {
+    debugLog(`TRAVEL current-zone picker opened by /tell ${typed}`);
+    openZonePrompt('currentZone');
+    return;
+  }
+  debugLog(`TRAVEL destination picker opened by /tell ${typed}`);
+  openZonePrompt('destination');
 });
 
 /**
@@ -669,29 +738,48 @@ function travelRowsFor(widget, zone, scribed) {
     spellCategory: null,
   });
 
-  // Each of these says WHY there is nothing to show. An aura that simply goes blank is the "empty
-  // aura and no way to tell why" this project keeps trying to avoid.
-  //
-  // The unresolved command comes first because it is the most recent thing the player did, and an
-  // aura still showing yesterday's route while silently ignoring what they just typed is the
-  // worst of the available behaviours.
-  if (unresolvedTravelCommand) {
-    const { typed, candidates } = unresolvedTravelCommand;
-    if (!candidates.length) return [row(`No zone called "${typed}"`, 'try /tell <zone>')];
+  // Reported live, in the strongest possible terms: idle means GONE - no text, no tile, nothing on
+  // screen, not even an explanatory placeholder. This overrides every other rule in this function,
+  // including a currently-open picker - setting up a destination is not the same as having one,
+  // and the popup window (not this aura) is what represents that in-progress state. The only way
+  // back onto the screen is an actual destination, set through the popup.
+  if (!widget.travelDestination) return [];
+
+  // Where you are, at the top of every state below now that there IS something being tracked.
+  // Empty when zone is unknown rather than printing "unknown" - the row underneath already says
+  // that in its own words ("Waiting for a zone line").
+  const zoneHeader = zone ? [row(`Current zone: ${zone}`, '')] : [];
+
+  // A live popup question comes next - it's the most urgent of these, since the app is actively
+  // waiting on an answer rather than just waiting on the player to do something. Only reachable
+  // here for the currentZone case in practice (a destination-mode prompt with a destination
+  // already set means the player is CHANGING it, which still counts as tracking).
+  // No valueText on either row, on purpose - reported live that "/tell eqtm opened it" crowded
+  // out the name column and truncated "Pick your destination" mid-word. Nothing useful was lost:
+  // the popup itself is what the player is looking at right now.
+  if (pendingZonePrompt) {
     return [
-      row(`"${typed}" could be any of these`, 'be more specific'),
-      ...candidates.map((c) => row(c, '')),
+      ...zoneHeader,
+      pendingZonePrompt.mode === 'destination'
+        ? row('Pick your destination in the popup', '')
+        : row('Pick your current zone in the popup', ''),
     ];
   }
-  if (!widget.travelDestination) return [row('Pick a destination, or /tell it', '')];
   if (!zone) return [row('Waiting for a zone line', 'walk through one')];
 
   const result = findRoute(zone, widget.travelDestination, { scribedSpells: scribed });
-  if (result.reason === 'already-there') return [row(`You are in ${widget.travelDestination}`, '')];
-  if (!result.ok) {
-    return [row(`No route to ${widget.travelDestination}`, result.reason === 'unknown-zone' ? 'unknown zone' : '')];
+  if (result.reason === 'already-there') {
+    // Auto-close: the destination has been reached, so it's cleared right away rather than
+    // sitting on "You are in X" forever - the aura falls straight back to its idle "Pick a
+    // destination" state the very next time this runs (the 1s tick, or the next zone line).
+    const destination = widget.travelDestination;
+    widgetManager.setTravelDestination(widget.id, '');
+    return [...zoneHeader, row(`You are in ${destination}`, '')];
   }
-  return result.legs.map((leg, i) => row(describeLeg(leg), `${i + 1}/${result.legs.length}`));
+  if (!result.ok) {
+    return [...zoneHeader, row(`No route to ${widget.travelDestination}`, result.reason === 'unknown-zone' ? 'unknown zone' : '')];
+  }
+  return [...zoneHeader, ...result.legs.map((leg, i) => row(describeLeg(leg), `${i + 1}/${result.legs.length}`))];
 }
 
 // One place that both recomputes and sends, so no caller can do one without the other.
@@ -818,6 +906,59 @@ ipcMain.handle('buffs:getActiveBardSongs', () => buffEngine.getActiveBardSongs()
 ipcMain.handle('damage:getActive', () => damageEngine.getActive());
 ipcMain.handle('travel:getRoutes', () => travelRoutes());
 ipcMain.handle('travel:getZones', () => allZoneNames());
+// Used only by the zone-prompt popup's pick list - no instance-tier variants (" (Awakened)",
+// " (Fused)"), at the owner's request. `travel:getZones` above is untouched for anything that
+// still wants every zone including tiers.
+ipcMain.handle('travel:getPickableZones', () => pickableZoneNames());
+ipcMain.handle('travel:getPickerCommand', () => travelPickerCommand);
+ipcMain.handle('travel:setPickerCommand', (_event, word) => {
+  // Letters only, matching what a /tell name can even contain (matchOfflineTell's own pattern) -
+  // an empty result (nothing typed, or nothing but stripped characters) falls back to the
+  // default rather than leaving the command permanently unreachable.
+  const cleaned = (typeof word === 'string' ? word : '').trim().toLowerCase().replace(/[^a-z]/g, '');
+  travelPickerCommand = cleaned || 'eqtm';
+  saveJson('travelPickerCommand', travelPickerCommand);
+  return travelPickerCommand;
+});
+ipcMain.handle('travel:getZonePrompt', () => pendingZonePrompt);
+ipcMain.handle('travel:resolveZonePrompt', (_event, { mode, zone }) => {
+  if (!zone) return;
+  if (mode === 'destination') {
+    for (const w of widgetManager.getAllWidgetConfigs()) {
+      if (w.buffSource === 'travel') widgetManager.setTravelDestination(w.id, zone);
+    }
+    debugLog(`TRAVEL destination set to "${zone}" via picker`);
+    closeZonePrompt();
+    maybePromptCurrentZone();
+  } else if (mode === 'currentZone') {
+    applyZoneChangeAndNotify(zone);
+    debugLog(`ZONE set to "${zone}" via picker (self-reported, no log line seen yet)`);
+    closeZonePrompt();
+    promptDestinationNext();
+  }
+  pushTravelRoutes();
+});
+ipcMain.handle('travel:dismissZonePrompt', () => closeZonePrompt());
+// Reported live: closing the destination popup without picking a new zone left the OLD
+// destination active, and there was no way to actually stop tracking one at all - "Stop tracking"
+// in the popup is that missing action, distinct from the dismiss button (cancel vs. clear).
+ipcMain.handle('travel:stopTracking', () => {
+  for (const w of widgetManager.getAllWidgetConfigs()) {
+    if (w.buffSource === 'travel') widgetManager.setTravelDestination(w.id, '');
+  }
+  debugLog('TRAVEL destination cleared via "Stop tracking"');
+  closeZonePrompt();
+  pushTravelRoutes();
+});
+// Reported live: an accidentally-wrong current zone had no way back in short of walking to a real
+// zone line, because the /tell command only ever opens the currentZone picker when the zone is
+// UNKNOWN - once it's set (even wrongly), the command falls back to the destination picker
+// instead. This is the escape hatch: force the currentZone picker open regardless of
+// whether the app already believes it knows one.
+ipcMain.handle('travel:correctCurrentZone', () => {
+  debugLog('TRAVEL current-zone picker force-opened to correct it');
+  openZonePrompt('currentZone');
+});
 ipcMain.handle('customTimers:getActive', () => customTimerEngine.getActive());
 ipcMain.handle('customTimers:removeActive', (_event, id) => customTimerEngine.removeActive(id));
 ipcMain.handle('buffs:getUnknown', () => buffEngine.getUnknownBuffs());
@@ -1140,9 +1281,6 @@ ipcMain.handle('widget:createTravelGuide', (_event, { name, destination }) =>
   widgetManager.createTravelGuideWidget(name, destination)
 );
 ipcMain.handle('widget:setTravelDestination', (_event, { id, destination }) => {
-  // Choosing one by hand answers whatever the last /tell could not, so the "which did you mean"
-  // message has to go - otherwise it sits on top of a destination that is now perfectly valid.
-  unresolvedTravelCommand = null;
   const config = widgetManager.setTravelDestination(id, destination);
   pushTravelRoutes();
   return config;
