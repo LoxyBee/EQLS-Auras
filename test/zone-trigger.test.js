@@ -101,4 +101,4 @@ test('works alongside an ordinary trigger on the same line without interference'
 });
 
 module.exports = () => report('zone-trigger');
-if (require.main === module) process.exit(report('zone-trigger') ? 1 : 0);
+if (require.main === module) report('zone-trigger').then((n) => process.exit(n ? 1 : 0));

@@ -498,4 +498,4 @@ test('both settings are reachable in the app', () => {
 });
 
 module.exports = () => report('merged-tiles');
-if (require.main === module) process.exit(report('merged-tiles') ? 1 : 0);
+if (require.main === module) report('merged-tiles').then((n) => process.exit(n ? 1 : 0));

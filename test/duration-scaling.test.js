@@ -387,4 +387,4 @@ test('a renewal goes through the same landing path, so it rescales too', () => {
 });
 
 module.exports = () => report('duration-scaling');
-if (require.main === module) process.exit(report('duration-scaling') ? 1 : 0);
+if (require.main === module) report('duration-scaling').then((n) => process.exit(n ? 1 : 0));

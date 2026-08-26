@@ -1,0 +1,112 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: var(--margin, 3px);
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 4px;
+}
+
+.slot {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--icon-size, 40px);
+  height: var(--icon-size, 40px);
+  background: rgba(8, 10, 14, 0.55);
+  /* The visible border is drawn via outline (width/offset/colour all set inline by
+     actionbar.js's render) rather than a plain border, specifically so it can sit INSET from the
+     tile's true edge - outline-offset accepts negative values, border has no such concept. */
+  outline: 2px solid #d2d6e1;
+  outline-offset: -1px;
+  border-radius: 2px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.slot-icon {
+  position: absolute;
+  /* Default full-bleed - a per-slot inset (see actionBarStore.js's insetPx) is set inline by
+     render(), per gem, since it's a per-gem escape hatch, not a bar-wide look. Auto width/height
+     (no explicit 100% here) is what makes a single inset value shrink the box correctly on all
+     four sides instead of just offsetting it. */
+  inset: 0;
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* Stacked directly over the primary icon (same position:absolute; inset:0) - clip-path (set
+   inline by render, per slot) is what actually splits the two into a diagonal, not layout. */
+.slot-icon-second {
+  z-index: 1;
+}
+
+.slot-cooldown-overlay {
+  position: absolute;
+  /* Default full-bleed - render() sets this inline per slot too, matching that gem's own insetPx
+     so the wipe/pie darkens exactly the visible icon, not a mismatched full-tile box. */
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Position, size, color and wrap are all set inline by actionbar.js's applyPositionedTextStyle
+   (each independently, per slot-cooldown-number vs slot-name-label) - these two rules are just the
+   parts that never change: stacking order and staying click-through. */
+.slot-cooldown-number {
+  pointer-events: none;
+  z-index: 2;
+}
+
+.slot-name-label {
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* Stance/invocation "active" overlay - a second outline stacked on top of the ordinary
+   configurable border (which uses outline-offset, drawn on .slot itself), not a replacement for
+   it. A plain div's own outline, so it isn't subject to the <img> replaced-element sizing quirk
+   the icon-inset fix had to work around - see actionbar.js's render for insetPx's own comment. */
+.slot-active-border {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  outline: 3px solid #3ddc5c;
+  outline-offset: -3px;
+  border-radius: 2px;
+}
+
+.drag-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.4;
+  font-size: 11px;
+  font-family: system-ui, sans-serif;
+  color: #dfe3ee;
+  background: rgba(60, 90, 200, 0.45);
+  border: 2px dashed rgba(255, 255, 255, 0.65);
+  border-radius: 6px;
+  -webkit-app-region: drag;
+}
+
+body.unlocked .drag-overlay {
+  display: flex;
+}

@@ -208,4 +208,4 @@ test('a stale folder named after the current product does not win', () => {
 });
 
 module.exports = () => report('pin');
-if (require.main === module) process.exit(report('pin') ? 1 : 0);
+if (require.main === module) report('pin').then((n) => process.exit(n ? 1 : 0));

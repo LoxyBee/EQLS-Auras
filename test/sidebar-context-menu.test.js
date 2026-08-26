@@ -179,4 +179,4 @@ test('focusWidget targets the actual nav button, not the row wrapping it', () =>
 });
 
 module.exports = () => report('sidebar-context-menu');
-if (require.main === module) process.exit(report('sidebar-context-menu') ? 1 : 0);
+if (require.main === module) report('sidebar-context-menu').then((n) => process.exit(n ? 1 : 0));

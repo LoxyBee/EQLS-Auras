@@ -291,4 +291,5 @@ test('the enemy seed is read live, not copied once', () => {
   assert.equal(e.totalDamage, 57, 'the held line was credited once the mez was known');
 });
 
-report();
+module.exports = () => report('damage-parser');
+if (require.main === module) report('damage-parser').then((n) => process.exit(n ? 1 : 0));

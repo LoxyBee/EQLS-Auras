@@ -196,4 +196,4 @@ test('the per-row duration display is gone from the trigger list - the slider ab
 });
 
 module.exports = () => report('custom-triggers-duration');
-if (require.main === module) process.exit(report('custom-triggers-duration') ? 1 : 0);
+if (require.main === module) report('custom-triggers-duration').then((n) => process.exit(n ? 1 : 0));

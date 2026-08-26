@@ -1793,3 +1793,45 @@ clean. **Not yet re-confirmed against the real game**, and there's one specific 
 - [ ] **Check a second AA-activated ranked ability if one exists**, to confirm this isn't specific
       to Amplification - anything reached via "You activate X." with a Roman-numeral rank in its
       own name.
+
+## Small QOL batch (25 Aug) - none clicked in the real app yet
+
+Requested as a batch after reviewing FEATURES.md; all pass their own tests and the app smoke-
+launches clean, but none has actually been clicked through in a live session.
+
+- [ ] **Tell-ping cooldown.** Setup page → Trade requests → turn on "Play a sound when you get a
+      tell" → a "Minimum gap" slider should appear. Have someone (or yourself on an alt) send
+      several tells in quick succession - only the first should ping until the gap elapses, then
+      the next one after the gap pings again. Set it to 0 and confirm every tell pings again,
+      however close together.
+- [ ] **Alerts & Sounds merge.** Open any aura's settings and confirm there's one "Alerts & Sounds"
+      topic, not two separate ones - every field that used to be split across both (expiring-soon
+      flash, landing glow, land/expire/warning sounds, volume, open-sounds-folder) should all be
+      inside it, nothing missing or duplicated.
+- [ ] **Copy bug report.** About page → "Copy bug report" → paste the clipboard somewhere. Should
+      show the app version and (if Diagnostics has ever been turned on under the Log page) the
+      tail of today's detection log. With Diagnostics never turned on, confirm it still copies
+      cleanly with the version info and an honest note that there's no log, rather than an error.
+- [ ] **"Skill ready reminder" example premade.** Add Aura → Timers group → should appear right
+      after Cooldown timer. Pick a skill with a real recast time, create it, then actually cast
+      that skill in game - the tile should be showing BEFORE the cast (skill is ready) and
+      disappear the moment you cast it, which is the opposite of every other timer in this app.
+      Confirm the underlying aura's Custom triggers card shows "Reverse detection" ticked, same as
+      if you'd built it by hand.
+- [ ] **"Action Bars" placeholder tab.** New nav button in the sidebar, between Log and About -
+      confirm it opens a page with just a "Coming soon" card, no errors, nothing else on it yet.
+
+## Bard-song self-attribution fix (25 Aug) - needs a real ranked recast to confirm
+
+Reported live: singing "Selo's Accelerating Chorus VI" got attributed to "Imperius" - a MOB seen
+singing an identically-named ability ~20 minutes earlier, not a real groupmate. Root-caused to the
+raw log and fixed in `buffEngine.js`'s `_attributeBardSongCaster()` - see CLAUDE.md gotcha #31.
+Verified against the real engine with a fictional ranked song (mutation-tested: reverting the fix
+reproduces `'Imperius' !== 'You'` exactly), but not yet re-confirmed against the real game:
+
+- [ ] **Sing "Selo's Accelerating Chorus" (or any other ranked bard song) yourself again** and
+      confirm the Bard Songs aura attributes it to "You", not a stale name from earlier in the
+      session - especially if a mob with an identically-shaped ability name has cast anything
+      recently.
+- [ ] **Sing an UNRANKED bard song too**, to confirm that case (which already worked before this
+      fix) is still unaffected.

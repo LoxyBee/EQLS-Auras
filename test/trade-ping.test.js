@@ -102,5 +102,40 @@ test('it fires against the owner real logs, and only on request lines', () => {
   assert.ok(matched > 0, 'no trade requests matched in a log known to contain them');
 });
 
+// ---------------------------------------------------------------------------
+// The tell-ping cooldown
+// ---------------------------------------------------------------------------
+
+// Reported live: a burst of tells machine-gunned the ping sound. tellShouldPing is the pure
+// decision function pulled out of initTradePing's closure specifically so it can be tested here
+// rather than only structurally.
+const fnMatch = js.match(/function tellShouldPing\(now, lastPingAt, cooldownMs\) \{[\s\S]*?\n\}/);
+let tellShouldPing = null;
+test('tellShouldPing is defined and extractable', () => {
+  assert.ok(fnMatch, 'tellShouldPing not found in the renderer');
+  // eslint-disable-next-line no-eval
+  tellShouldPing = eval(`(${fnMatch[0]})`);
+  assert.equal(typeof tellShouldPing, 'function');
+});
+
+test('the very first tell of the session always pings', () => {
+  // lastTellPingAt starts at 0 in the renderer, and Date.now() is always a real, large epoch
+  // timestamp far past 0 - so "never pinged yet" reliably clears any real cooldown.
+  assert.equal(tellShouldPing(Date.now(), 0, 3000), true);
+});
+
+test('a second tell inside the cooldown window is silenced', () => {
+  assert.equal(tellShouldPing(2000, 1000, 3000), false, 'only 1s after the last ping, cooldown is 3s');
+});
+
+test('a second tell after the cooldown window has passed pings again', () => {
+  assert.equal(tellShouldPing(4001, 1000, 3000), true, 'just over 3s later - should ping');
+  assert.equal(tellShouldPing(4000, 1000, 3000), true, 'exactly on the boundary counts as elapsed');
+});
+
+test('cooldown 0 means off - every tell pings regardless of how recent the last one was', () => {
+  assert.equal(tellShouldPing(1001, 1000, 0), true, '1ms after the previous ping, but cooldown is off');
+});
+
 module.exports = () => report('trade-ping');
-if (require.main === module) process.exit(report('trade-ping') ? 1 : 0);
+if (require.main === module) report('trade-ping').then((n) => process.exit(n ? 1 : 0));

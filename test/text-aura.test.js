@@ -814,4 +814,4 @@ test('content-wrap shrink-wraps to the text instead of filling the window', () =
 });
 
 module.exports = () => report('text-aura');
-if (require.main === module) process.exit(report('text-aura') ? 1 : 0);
+if (require.main === module) report('text-aura').then((n) => process.exit(n ? 1 : 0));

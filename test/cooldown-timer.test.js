@@ -295,4 +295,4 @@ test('the panel asks no source question for a cooldown', () => {
 });
 
 module.exports = () => report('cooldown-timer');
-if (require.main === module) process.exit(report('cooldown-timer') ? 1 : 0);
+if (require.main === module) report('cooldown-timer').then((n) => process.exit(n ? 1 : 0));

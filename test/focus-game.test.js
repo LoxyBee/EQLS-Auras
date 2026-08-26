@@ -68,4 +68,4 @@ test('a failing or missing PowerShell resolves false instead of throwing', async
 });
 
 module.exports = () => report('focus-game');
-if (require.main === module) process.exit(report('focus-game') ? 1 : 0);
+if (require.main === module) report('focus-game').then((n) => process.exit(n ? 1 : 0));

@@ -281,4 +281,4 @@ test('the AA multiplier is skipped for a spell with under 3s base cast time', ()
 });
 
 module.exports = () => report('evidence-based-detection');
-if (require.main === module) process.exit(report('evidence-based-detection') ? 1 : 0);
+if (require.main === module) report('evidence-based-detection').then((n) => process.exit(n ? 1 : 0));

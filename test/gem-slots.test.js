@@ -224,4 +224,4 @@ test('the notice clears itself once something valid happens', () => {
 });
 
 module.exports = () => report('gem-slots');
-if (require.main === module) process.exit(report('gem-slots') ? 1 : 0);
+if (require.main === module) report('gem-slots').then((n) => process.exit(n ? 1 : 0));

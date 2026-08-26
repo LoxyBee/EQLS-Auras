@@ -173,4 +173,4 @@ test('toggle on: recasting the SAME buff is unaffected - no self-removal', () =>
 });
 
 module.exports = () => report('spell-stacking');
-if (require.main === module) process.exit(report('spell-stacking') ? 1 : 0);
+if (require.main === module) report('spell-stacking').then((n) => process.exit(n ? 1 : 0));

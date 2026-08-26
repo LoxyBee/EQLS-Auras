@@ -51,6 +51,8 @@ const gameSpellData = require('./gameSpellData');
 const spellStacking = require('./spellStacking');
 const { loadJson, saveJson } = require('./store');
 const widgetManager = require('./widgetManager');
+const actionBarManager = require('./actionBarManager');
+const { AbilityGroupTracker, KNOWN_STANCES, KNOWN_INVOCATIONS } = require('./abilityGroups');
 const ambiguousPopup = require('./ambiguousPopup');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
@@ -89,6 +91,7 @@ buffEngine.setActiveProfileId(profileStore.getActiveId());
 // whichever profile is currently active, not always just the default one
 // - see widgetManager.js's getActiveProfileIdFn doc.
 widgetManager.setActiveProfileIdFn(() => profileStore.getActiveId());
+actionBarManager.setActiveProfileIdFn(() => profileStore.getActiveId());
 // Note 21. Restored before any window is built, so the label is either there from the first
 // frame or not at all - appearing a moment later would read as a glitch.
 widgetManager.setSaveLoadoutLabelEnabledFn((enabled) => saveJson('loadoutLabelEnabled', enabled));
@@ -99,15 +102,93 @@ widgetManager.setActiveProfileNameFn(() => {
   const active = profileStore.getAll().find((pr) => pr.id === profileStore.getActiveId());
   return active ? active.name : '';
 });
-// The hide-auras hotkey that actually registered at startup, or null. See HIDE_HOTKEYS below.
+// The hide-auras hotkey that actually registered, or null. See registerHideHotkey below.
 let hideHotkey = null;
+// The user's own choice of key, persisted - NOT necessarily what's actually bound (registration
+// can fail if another app owns the key, in which case hideHotkey falls back to Alt+Shift+H while
+// this stays whatever was picked, so the Setup dropdown keeps showing their actual selection).
+let hideHotkeyChoice = loadJson('hideHotkeyChoice', 'ScrollLock');
+
+// It was 'Pause', which the owner picked because she never uses it in game - and Electron does
+// not accept it. Not "returns false": globalShortcut.register THROWS on it, so the graceful
+// "another application owns it" branch never ran and the hotkey never once worked. Confirmed by
+// starting the actual app, since no unit test launches Electron. 'Pause' is deliberately not
+// offered as a choice in the Setup dropdown for that reason - it can never succeed on this
+// Electron build, and offering it anyway would just be a silent dead end.
+//
+// Reported directly: on some keyboards, the OS reports the physical Pause key as sending Scroll
+// Lock's own virtual key code (or vice versa) - a driver/layout-level swap this app has no way to
+// see through, since globalShortcut only knows the accelerator NAME it registered, not which
+// physical key produced it. There's no way to register "the actual Pause key" that survives that
+// swap; making the choice itself user-configurable (rather than hardcoding one corner-of-keyboard
+// key and hoping) is the actual fix - whichever key the app is TOLD to grab is honestly the key
+// that has to be pressed, on any keyboard.
+function registerHideHotkey(choice, handler) {
+  if (hideHotkey) {
+    globalShortcut.unregister(hideHotkey);
+    hideHotkey = null;
+  }
+  if (choice === 'none') return;
+  const candidates = choice === 'Alt+Shift+H' ? [choice] : [choice, 'Alt+Shift+H'];
+  for (const accelerator of candidates) {
+    try {
+      if (globalShortcut.register(accelerator, handler)) {
+        hideHotkey = accelerator;
+        return;
+      }
+      debugLog(`Hide-auras hotkey "${accelerator}" is owned by another application - trying the next one`);
+    } catch (err) {
+      // An accelerator this build of Electron will not parse. Caught rather than allowed to take
+      // down startup, which is what the old code did.
+      debugLog(`Hide-auras hotkey "${accelerator}" was refused by Electron: ${err.message}`);
+    }
+  }
+  debugLog('No hide-auras hotkey could be registered - the button still works');
+}
+
+// Note 4's hotkey handler. Grabbed at the OS level, so EverQuest never sees the key at all while
+// this app is running - the only thing that makes a global shortcut safe here. Module scope (not
+// local to app.whenReady) so the Setup page's hotkey dropdown can call registerHideHotkey again
+// with this same handler when the user changes their choice, without re-running startup.
+function toggleMasterHidden() {
+  const hidden = widgetManager.setMasterHidden(!widgetManager.isMasterHidden());
+  actionBarManager.setMasterHidden(hidden);
+  const settingsWin = getMainWindow();
+  // Keep the button in the top bar honest - it is the only readout of a state that is otherwise
+  // invisible by definition.
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.webContents.send('overlay:masterStateChanged', { masterHidden: hidden });
+  }
+}
 
 const customTimerEngine = new CustomTimerEngine();
 const damageEngine = new DamageEngine();
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
-// widgetManager pulls in Electron's screen/BrowserWindow.
-customTimerEngine.setGetWidgetsFn(() => widgetManager.getAllWidgetConfigs());
+// widgetManager pulls in Electron's screen/BrowserWindow. Action bar gem cooldowns ride along as
+// pseudo-widgets (see actionBarManager.getPseudoWidgets's own comment) rather than this engine
+// needing a second, parallel trigger-matching implementation just for gems.
+customTimerEngine.setGetWidgetsFn(() => [
+  ...widgetManager.getAllWidgetConfigs(),
+  ...actionBarManager.getPseudoWidgets(),
+]);
+// Stance/invocation "active" tracking (see abilityGroups.js) - genuinely separate from
+// customTimerEngine above: a stance/invocation activation has to cross-trigger every OTHER gem in
+// its group (mutual exclusion), which the pseudo-widget/customTimer trigger model has no concept
+// of - each pseudo-widget's own trigger only ever affects itself there.
+const abilityGroupTracker = new AbilityGroupTracker();
+abilityGroupTracker.setGetGroupSlotsFn((group) => {
+  const out = [];
+  for (const bar of actionBarManager.getAllBars()) {
+    (bar.slots || []).forEach((slot, index) => {
+      if (slot.toggleGroup === group) {
+        out.push({ barId: bar.id, index, toggleName: slot.toggleName, toggleDurationSec: slot.toggleDurationSec });
+      }
+    });
+  }
+  return out;
+});
+abilityGroupTracker.setOnChangeFn(() => broadcast('actionBar:abilityGroupChanged', abilityGroupTracker.getAllActiveStates()));
 // See customTimerEngine._resolveCastName. getByName tries the exact name first and only then the
 // rank-stripped one, which is what tells a mote rank ("Cannibalize V" -> Cannibalize) apart from a
 // spell whose name merely ends in a numeral ("Yaulp III" -> itself).
@@ -181,10 +262,18 @@ function applyForegroundVisibility() {
   const state = foregroundWatcher.lastState;
   if (!autoHideOverlayEnabled || !state) {
     widgetManager.setForegroundHidden(false);
+    actionBarManager.setForegroundState({ autoHideEnabled: false, eqFocused: true, ownAppFocused: false });
     return;
   }
   const shouldShow = state.eqFocused || (showAurasWhenAppFocused && state.ownAppFocused);
   widgetManager.setForegroundHidden(!shouldShow);
+  // Action bars each decide for themselves via their own showWhenAppFocused (not the shared
+  // showAurasWhenAppFocused global widgets use) - see actionBarManager.isBarForegroundHidden.
+  actionBarManager.setForegroundState({
+    autoHideEnabled: true,
+    eqFocused: state.eqFocused,
+    ownAppFocused: state.ownAppFocused,
+  });
 }
 
 foregroundWatcher.on('focusChanged', applyForegroundVisibility);
@@ -325,6 +414,7 @@ logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
 // Note 19. A fourth listener for the same reason as the third: damage is not a buff, and giving
 // buffEngine a second job would mean every future change to either having to think about both.
 logService.watcher.on('line', (line) => damageEngine.handleLine(line));
+logService.watcher.on('line', (line) => abilityGroupTracker.handleLine(line));
 // A separate Diagnostics feed showing ONLY memorize/forget lines - raised 25 Aug straight out of
 // investigating why currentlyMemorized went stale after a loadout swap: the swap itself turned out
 // to print NOTHING at all (confirmed by searching a real log across the whole swap window - zero
@@ -630,6 +720,7 @@ setInterval(() => {
   // path that edits a widget without remembering to call this.
   refreshDamageOptions();
   damageEngine.tick();
+  abilityGroupTracker.sweep();
   // Note 20. Catches the two inputs that change without a zone line - editing the destination and
   // scribing a travel spell. Cheap: a breadth-first search over 104 nodes, only for auras that are
   // actually travel guides, and almost always zero of them.
@@ -671,6 +762,7 @@ app.whenReady().then(() => {
   soundService.registerProtocol();
   createMainWindow();
   widgetManager.initWidgets();
+  actionBarManager.initActionBars();
   logService.init();
   // Part of the shutdown instrumentation above - this is the third quit path,
   // and the only one that normally means "the user closed the app".
@@ -680,48 +772,7 @@ app.whenReady().then(() => {
     win.webContents.on('unresponsive', () => debugLog('SHUTDOWN WARNING: main window renderer unresponsive'));
   }
 
-  // Note 4's hotkey. Pause/Break, chosen by the owner because she never uses it in game - which
-  // is the only thing that makes a global shortcut safe here: it is grabbed at the OS level and
-  // EverQuest never sees the key at all while this app is running.
-  //
-  // Registration can genuinely fail (another app already owns the key), and it fails by
-  // returning false rather than throwing - so it is logged and the button in the top bar carries
-  // on working either way. The shortcut is never the only way to reach this.
-  const toggleMasterHidden = () => {
-    const hidden = widgetManager.setMasterHidden(!widgetManager.isMasterHidden());
-    const settingsWin = getMainWindow();
-    // Keep the button in the top bar honest - it is the only readout of a state that is
-    // otherwise invisible by definition.
-    if (settingsWin && !settingsWin.isDestroyed()) {
-      settingsWin.webContents.send('overlay:masterStateChanged', { masterHidden: hidden });
-    }
-  };
-
-  // Tried in order, first one that takes wins.
-  //
-  // It was 'Pause', which the owner picked because she never uses it in game - and Electron does
-  // not accept it. Not "returns false": globalShortcut.register THROWS on it, so the graceful
-  // "another application owns it" branch below never ran and the hotkey has never once worked.
-  // Nothing caught it because no unit test launches Electron; it took starting the actual app.
-  //
-  // Scroll Lock is the honest substitute - the same corner of the keyboard, equally unused in
-  // game. The chord is there in case something else already owns Scroll Lock, so the feature
-  // degrades to a worse key rather than to nothing.
-  const HIDE_HOTKEYS = ['ScrollLock', 'Alt+Shift+H'];
-  for (const accelerator of HIDE_HOTKEYS) {
-    try {
-      if (globalShortcut.register(accelerator, toggleMasterHidden)) {
-        hideHotkey = accelerator;
-        break;
-      }
-      debugLog(`Hide-auras hotkey "${accelerator}" is owned by another application - trying the next one`);
-    } catch (err) {
-      // An accelerator this build of Electron will not parse. Caught rather than allowed to take
-      // down startup, which is what the old code did.
-      debugLog(`Hide-auras hotkey "${accelerator}" was refused by Electron: ${err.message}`);
-    }
-  }
-  if (!hideHotkey) debugLog('No hide-auras hotkey could be registered - the button still works');
+  registerHideHotkey(hideHotkeyChoice, toggleMasterHidden);
 
   applyInstallRoot(logService.getState().eqFolder);
 
@@ -915,6 +966,23 @@ ipcMain.handle('ui:setTellPing', (_event, enabled) => {
   return on;
 });
 
+// Reported as missing the day tell pings shipped: a burst of tells (a busy conversation, or
+// someone spamming) machine-gunned the sound with no rate limit at all. 3s default - long enough
+// to silence a rapid burst, short enough that two genuinely separate tells a few seconds apart
+// both still ping. 0 means off - every tell pings, however close together, same as before this
+// existed. The actual rate-limiting happens in the renderer's own onLogLine handler (see
+// tellShouldPing in the main-window renderer), which is the only place that already tracks tell
+// lines; this is just the stored setting.
+ipcMain.handle('ui:getTellPingCooldownSec', () => {
+  const v = loadJson('tellPingCooldownSec', 3);
+  return typeof v === 'number' && v >= 0 ? v : 3;
+});
+ipcMain.handle('ui:setTellPingCooldownSec', (_event, seconds) => {
+  const v = Math.max(0, Math.min(30, Number(seconds) || 0));
+  saveJson('tellPingCooldownSec', v);
+  return v;
+});
+
 ipcMain.handle('ui:getSidebarWidth', () => clampStoredSidebarWidth(loadJson('sidebarWidth', SIDEBAR_DEFAULT)));
 ipcMain.handle('ui:setSidebarWidth', (_event, px) => {
   const width = clampStoredSidebarWidth(px);
@@ -984,6 +1052,7 @@ ipcMain.handle('settings:setAutoHideOverlay', (_event, enabled) => {
   } else {
     foregroundWatcher.stop();
     widgetManager.setForegroundHidden(false); // always show when the feature's off
+    actionBarManager.setForegroundState({ autoHideEnabled: false, eqFocused: true, ownAppFocused: false });
   }
   return autoHideOverlayEnabled;
 });
@@ -991,7 +1060,10 @@ ipcMain.handle('overlay:getMasterState', () => ({
   allUnlocked: widgetManager.areAllUnlocked(),
   masterHidden: widgetManager.isMasterHidden(),
 }));
-ipcMain.handle('overlay:setMasterHidden', (_event, hidden) => widgetManager.setMasterHidden(hidden));
+ipcMain.handle('overlay:setMasterHidden', (_event, hidden) => {
+  actionBarManager.setMasterHidden(hidden);
+  return widgetManager.setMasterHidden(hidden);
+});
 ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => widgetManager.setAllUnlocked(unlocked));
 ipcMain.handle('settings:getShowAurasWhenAppFocused', () => showAurasWhenAppFocused);
 ipcMain.handle('settings:setShowAurasWhenAppFocused', (_event, enabled) => {
@@ -1185,10 +1257,34 @@ ipcMain.handle('widget:setAlwaysOn', (_event, { id, value }) => widgetManager.se
 // Which key actually took, so the hint in the top bar names the one that works rather than the
 // one that was asked for. Null when none of them registered.
 ipcMain.handle('settings:getHideHotkey', () => hideHotkey);
+// The user's own choice (not necessarily what's bound - see registerHideHotkey's own comment on
+// why those can differ), for the Setup page dropdown to show the right selection.
+ipcMain.handle('settings:getHideHotkeyChoice', () => hideHotkeyChoice);
+ipcMain.handle('settings:setHideHotkeyChoice', (_event, choice) => {
+  hideHotkeyChoice = choice;
+  saveJson('hideHotkeyChoice', choice);
+  registerHideHotkey(choice, toggleMasterHidden);
+  return hideHotkey;
+});
 // The button that makes the whole thing reachable. Opening the folder rather than the file: the
 // question is nearly always "what happened on that day", which means picking one.
 ipcMain.handle('debug:openLogFolder', () => shell.openPath(DEBUG_LOG_DIR));
 ipcMain.handle('debug:logFolder', () => DEBUG_LOG_DIR);
+
+// For the About page's "Copy bug report" button. Today's file only, tail rather than the whole
+// thing - a report is about what just happened, and this project's own logs run to megabytes in
+// a single session (see docs/HANDOFF.md), which would make "paste this in Discord" impossible.
+// Returns '' rather than throwing when Diagnostics has never been turned on (no file exists yet)
+// or the file can't be read - the button still has the version info worth sending either way.
+ipcMain.handle('debug:getRecentLogTail', (_event, maxChars = 4000) => {
+  try {
+    const p = path.join(DEBUG_LOG_DIR, `detection-${debugLogDateStamp(new Date())}.log`);
+    const raw = fs.readFileSync(p, 'utf8');
+    return raw.length > maxChars ? raw.slice(-maxChars) : raw;
+  } catch {
+    return '';
+  }
+});
 ipcMain.handle('debug:getEnabled', () => debugLogEnabled);
 ipcMain.handle('debug:setEnabled', (_event, enabled) => {
   debugLogEnabled = !!enabled;
@@ -1223,6 +1319,60 @@ ipcMain.handle('widget:setName', (_event, { id, value }) => widgetManager.setNam
 ipcMain.handle('widget:toggleLock', (_event, id) => widgetManager.toggleLock(id));
 ipcMain.handle('widget:resetPosition', (_event, id) => widgetManager.resetPosition(id));
 ipcMain.handle('widget:isLocked', (_event, id) => widgetManager.isLocked(id));
+
+// The Action Bar overlay - see actionBarManager.js's own header comment. Multiple bars, same
+// {id, ...} shape every widget:* handler already uses.
+ipcMain.handle('actionBar:list', () => actionBarManager.getAllBars());
+ipcMain.handle('actionBar:getConfig', (_event, id) => actionBarManager.getConfig(id));
+ipcMain.handle('actionBar:create', (_event, { name }) => actionBarManager.createBar(name));
+ipcMain.handle('actionBar:delete', (_event, id) => actionBarManager.deleteBar(id));
+ipcMain.handle('actionBar:setName', (_event, { id, name }) => actionBarManager.setBarName(id, name));
+ipcMain.handle('actionBar:setIconsPerRow', (_event, { id, count }) => actionBarManager.setIconsPerRow(id, count));
+ipcMain.handle('actionBar:setIconSize', (_event, { id, px }) => actionBarManager.setIconSize(id, px));
+ipcMain.handle('actionBar:setMarginPx', (_event, { id, px }) => actionBarManager.setMarginPx(id, px));
+ipcMain.handle('actionBar:setVisible', (_event, { id, visible }) => actionBarManager.setVisible(id, visible));
+ipcMain.handle('actionBar:setShowWhenAppFocused', (_event, { id, enabled }) => actionBarManager.setShowWhenAppFocused(id, enabled));
+ipcMain.handle('actionBar:toggleLock', (_event, id) => actionBarManager.toggleLock(id));
+ipcMain.handle('actionBar:isLocked', (_event, id) => actionBarManager.isLocked(id));
+ipcMain.handle('actionBar:resetPosition', (_event, id) => actionBarManager.resetPosition(id));
+ipcMain.handle('actionBar:nudge', (_event, { id, dx, dy }) => actionBarManager.nudgePosition(id, dx, dy));
+ipcMain.handle('actionBar:setSlotIcon', (_event, { id, index, iconId }) => actionBarManager.setSlotIcon(id, index, iconId));
+ipcMain.handle('actionBar:setOpacity', (_event, { id, opacity }) => actionBarManager.setOpacity(id, opacity));
+ipcMain.handle('actionBar:setSlotName', (_event, { id, index, name }) => actionBarManager.setSlotName(id, index, name));
+ipcMain.handle('actionBar:setSlotDisabled', (_event, { id, index, disabled }) => actionBarManager.setSlotDisabled(id, index, disabled));
+ipcMain.handle('actionBar:setSlotCooldown', (_event, { id, index, cooldown }) => actionBarManager.setSlotCooldown(id, index, cooldown));
+ipcMain.handle('actionBar:setSlotCount', (_event, { id, count }) => actionBarManager.setSlotCount(id, count));
+ipcMain.handle('actionBar:setCooldownStyle', (_event, { id, style }) => actionBarManager.setCooldownStyle(id, style));
+ipcMain.handle('actionBar:setCooldownShowNumber', (_event, { id, enabled }) => actionBarManager.setCooldownShowNumber(id, enabled));
+ipcMain.handle('actionBar:setNameLabelSize', (_event, { id, size }) => actionBarManager.setNameLabelSize(id, size));
+ipcMain.handle('actionBar:setNameLabelAnchor', (_event, { id, anchor }) => actionBarManager.setNameLabelAnchor(id, anchor));
+ipcMain.handle('actionBar:setNameLabelColor', (_event, { id, color }) => actionBarManager.setNameLabelColor(id, color));
+ipcMain.handle('actionBar:setNameLabelWrap', (_event, { id, wrap }) => actionBarManager.setNameLabelWrap(id, wrap));
+ipcMain.handle('actionBar:setCooldownTextSize', (_event, { id, size }) => actionBarManager.setCooldownTextSize(id, size));
+ipcMain.handle('actionBar:setCooldownTextAnchor', (_event, { id, anchor }) => actionBarManager.setCooldownTextAnchor(id, anchor));
+ipcMain.handle('actionBar:setCooldownTextColor', (_event, { id, color }) => actionBarManager.setCooldownTextColor(id, color));
+ipcMain.handle('actionBar:setCooldownTextWrap', (_event, { id, wrap }) => actionBarManager.setCooldownTextWrap(id, wrap));
+ipcMain.handle('actionBar:setCooldownReplacesLabel', (_event, { id, replaces }) => actionBarManager.setCooldownReplacesLabel(id, replaces));
+ipcMain.handle('actionBar:setBorderWidth', (_event, { id, px }) => actionBarManager.setBorderWidth(id, px));
+ipcMain.handle('actionBar:setBorderOffset', (_event, { id, px }) => actionBarManager.setBorderOffset(id, px));
+ipcMain.handle('actionBar:setBorderColor', (_event, { id, color }) => actionBarManager.setBorderColor(id, color));
+ipcMain.handle('actionBar:setSlotBgColor', (_event, { id, index, color }) => actionBarManager.setSlotBgColor(id, index, color));
+ipcMain.handle('actionBar:setSlotNameSizeOverride', (_event, { id, index, size }) => actionBarManager.setSlotNameSizeOverride(id, index, size));
+ipcMain.handle('actionBar:setSlotInsetPx', (_event, { id, index, px }) => actionBarManager.setSlotInsetPx(id, index, px));
+ipcMain.handle('actionBar:setSlotToggleGroup', (_event, { id, index, group }) => actionBarManager.setSlotToggleGroup(id, index, group));
+ipcMain.handle('actionBar:setSlotToggleName', (_event, { id, index, name }) => actionBarManager.setSlotToggleName(id, index, name));
+ipcMain.handle('actionBar:setSlotToggleDurationSec', (_event, { id, index, sec }) => actionBarManager.setSlotToggleDurationSec(id, index, sec));
+ipcMain.handle('actionBar:getKnownAbilityGroups', () => ({
+  stances: KNOWN_STANCES,
+  invocations: KNOWN_INVOCATIONS,
+}));
+ipcMain.handle('actionBar:getAbilityGroupState', () => abilityGroupTracker.getAllActiveStates());
+ipcMain.handle('actionBar:setSlotMultiIcon', (_event, { id, index, enabled }) => actionBarManager.setSlotMultiIcon(id, index, enabled));
+ipcMain.handle('actionBar:setSlotSecondIcon', (_event, { id, index, iconId }) => actionBarManager.setSlotSecondIcon(id, index, iconId));
+ipcMain.handle('actionBar:setActiveProfileIds', (_event, { id, profileIds }) => actionBarManager.setActiveProfileIds(id, profileIds));
+ipcMain.handle('actionBar:copySettings', (_event, { id, fromId }) => actionBarManager.copySettingsFrom(id, fromId));
+ipcMain.handle('actionBar:duplicate', (_event, id) => actionBarManager.duplicateBar(id));
+ipcMain.handle('actionBar:clearAllTextOverrides', (_event, id) => actionBarManager.clearAllTextOverrides(id));
 ipcMain.handle('widget:setDisplayMode', (_event, { id, mode }) => widgetManager.setDisplayMode(id, mode));
 ipcMain.handle('widget:setTimerFormat', (_event, { id, value }) => widgetManager.setTimerFormat(id, value));
 ipcMain.handle('widget:setTextSize', (_event, { id, value }) => widgetManager.setTextSize(id, value));
@@ -1343,6 +1493,7 @@ ipcMain.handle('profiles:setActive', (_event, id) => {
     // re-evaluate every widget's visibility, not just swap the engine's
     // ambiguous-resolution bucket.
     widgetManager.applyProfileVisibility();
+    actionBarManager.applyProfileVisibility();
     broadcast('profiles:activeChanged', result);
   }
   return result;
@@ -1356,6 +1507,7 @@ ipcMain.handle('profiles:delete', (_event, id) => {
   // deleted profile wasn't the active one, since setActiveProfileId
   // already short-circuits on an unchanged id).
   widgetManager.removeProfileFromAllWidgets(id);
+  actionBarManager.removeProfileFromAllBars(id);
   buffEngine.removeProfile(id);
   buffEngine.setActiveProfileId(profileStore.getActiveId());
   broadcast('profiles:changed', profileStore.getAll());
@@ -1407,6 +1559,10 @@ app.on('will-quit', () => {
   // A global shortcut outlives the window that registered it, so leaving it registered means the
   // key stays captured from EverQuest after the app has gone.
   globalShortcut.unregisterAll();
+  // foregroundWatcher now keeps one persistent powershell.exe alive (see its own header comment
+  // on why) rather than spawning a fresh one per poll - without this it would linger as an
+  // orphaned process after the app closes instead of exiting with it.
+  foregroundWatcher.stop();
 });
 // A renderer dying takes its window with it, which can cascade into
 // window-all-closed and look like a clean quit - `reason` distinguishes a

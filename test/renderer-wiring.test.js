@@ -233,4 +233,4 @@ test('the OVERLAY renderer looks up only ids that exist in its own markup too', 
 });
 
 module.exports = () => report('renderer-wiring');
-if (require.main === module) process.exit(report('renderer-wiring') ? 1 : 0);
+if (require.main === module) report('renderer-wiring').then((n) => process.exit(n ? 1 : 0));

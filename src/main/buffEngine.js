@@ -29,6 +29,14 @@ const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
 const TICK_INTERVAL_MS = 1000;
 
+// How recently a spell must have finished memorizing to count as self-cast evidence for a bard
+// song landing with no cast-begin line of its own - see _attributeBardSongCaster's own comment.
+// Reported live: this server's auto-sing mechanic can start a bard song playing the instant it's
+// memorized, with no "You begin singing X." line at all, so a genuine self-cast fell through to
+// Unknown. 6s is generous enough to cover the memorize-to-first-tick gap without reaching back far
+// enough to credit an unrelated later memorize to an earlier landing.
+const BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS = 6000;
+
 // How long an INSTANT is kept available - a spell the roster has no duration for and which is not
 // marked as lasting forever, i.e. something that happened rather than something running.
 //
@@ -370,6 +378,10 @@ class BuffEngine extends EventEmitter {
     // selfAmbiguousResolutions above - kept as a real Map so every existing
     // .get/.set/.delete/.clear call site didn't need to change.
     this.currentlyMemorized = this._getOrCreateMemorizedMap(this.activeProfileId);
+    // Runtime-only, never persisted, never profile-scoped like currentlyMemorized itself - it
+    // only ever needs to answer "was this memorized a few seconds ago", not survive a restart or
+    // a loadout switch. See _attributeBardSongCaster and BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS.
+    this.recentlyMemorizedAt = new Map(); // lowercased name -> Date.now() it finished memorizing
     // Trim on load as well as on insert. A store saved before the cap existed can already hold
     // more than fourteen, and capping only new arrivals would leave that file permanently over
     // the limit - it would never come down on its own, because entries are only removed by a
@@ -422,6 +434,20 @@ class BuffEngine extends EventEmitter {
     // instead of it - this never changes what lands as a self buff, it only ever adds a second,
     // caster-aware observation of the same landing for isBardSong entries specifically.
     this.bardSongs = new Map();
+    // Lowercased song name -> true, for songs the memorize-window tier has ever confirmed as the
+    // player's own (see _attributeBardSongCaster and BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS).
+    // Requested directly: once caught being memorized right before an auto-sung landing, that
+    // should count as confirmed for as long as the spell STAYS memorized, not just for the 6s
+    // window - "it should stay that way until you unmem it." Cleared alongside currentlyMemorized
+    // itself (forget line, manual gem-bar correction, or "Forget all") so a re-memorize of the
+    // same name later needs its own fresh confirmation rather than trusting a stale one.
+    //
+    // Profile-scoped the same way currentlyMemorized itself is (see that field's own comment and
+    // gotcha #9) - runtime-only, not persisted, since it's derived confidence rather than data:
+    // carrying a confirmation across a loadout swap would be exactly the false-confidence bug that
+    // scoping currentlyMemorized per profile already exists to prevent.
+    this.bardSongConfirmedMineByProfile = new Map();
+    this.bardSongConfirmedMine = this._getOrCreateBardSongConfirmedSet(this.activeProfileId);
     this.blockedNames = new Map(); // lowercased name -> original-case name, see blockBuff()
     this.spellbookCheckFn = null; // (name) => boolean
     this.trackOthersEnabled = false;
@@ -607,6 +633,7 @@ class BuffEngine extends EventEmitter {
     this.activeProfileId = profileId;
     this.selfAmbiguousResolutions = this._getOrCreateSelfResolutionsMap(profileId);
     this.currentlyMemorized = this._getOrCreateMemorizedMap(profileId);
+    this.bardSongConfirmedMine = this._getOrCreateBardSongConfirmedSet(profileId);
     this.emit('memorizedChanged', this.getCurrentlyMemorized());
   }
 
@@ -621,6 +648,7 @@ class BuffEngine extends EventEmitter {
   removeProfile(profileId) {
     this.selfAmbiguousResolutionsByProfile.delete(profileId);
     this.currentlyMemorizedByProfile.delete(profileId);
+    this.bardSongConfirmedMineByProfile.delete(profileId);
     if (profileId === this.activeProfileId) {
       // this.selfAmbiguousResolutions/currentlyMemorized were direct
       // references to the Map objects just detached above - deleting them
@@ -631,6 +659,7 @@ class BuffEngine extends EventEmitter {
       // this stays correct on its own either way).
       this.selfAmbiguousResolutions = new Map();
       this.currentlyMemorized = new Map();
+      this.bardSongConfirmedMine = new Set();
     }
     this._saveSelfAmbiguousResolutions();
     this._saveCurrentlyMemorized();
@@ -798,6 +827,11 @@ class BuffEngine extends EventEmitter {
     const forgotten = matchForgetSpell(line);
     if (forgotten) {
       this.currentlyMemorized.delete(forgotten.toLowerCase());
+      this.bardSongConfirmedMine.delete(forgotten.toLowerCase());
+      // Also clears the raw memorize-window evidence itself (not just the durable confirmation
+      // built from it) - otherwise a forget arriving within BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS of
+      // the original memorize could immediately re-confirm the very attribution just cleared.
+      this.recentlyMemorizedAt.delete(forgotten.toLowerCase());
       this._saveCurrentlyMemorized();
       this.emit('memorizedChanged', this.getCurrentlyMemorized());
       this._checkForEndedBuffs(line);
@@ -1478,6 +1512,9 @@ class BuffEngine extends EventEmitter {
       if (song.endedText && line.includes(song.endedText)) {
         this.bardSongs.delete(key);
         changed = true;
+        if (song.castBy === 'You' && this.bardSongConfirmedMine.has(song.name.toLowerCase())) {
+          this._dropBardSongConfidence(song.name);
+        }
       }
     }
     if (changed) this.emit('bardSongsChanged', this.getActiveBardSongs());
@@ -1941,7 +1978,7 @@ class BuffEngine extends EventEmitter {
   _trackBardSongOnPlayer(known, key) {
     const landed = this.activeBuffs.get(key);
     if (!landed) return; // defensive only - _land() always sets this before calling here
-    const castBy = this._attributeBardSongCaster(known.name);
+    const castBy = this._attributeBardSongCaster(known.name, known);
     const bardKey = `${(castBy || 'unknown').toLowerCase()}::${known.name.toLowerCase()}`;
     this._debugLog(`BARD SONG "${known.name}" - attributed to ${castBy || 'Unknown'}`);
     this.bardSongs.set(bardKey, {
@@ -1960,18 +1997,110 @@ class BuffEngine extends EventEmitter {
   // already exists for other reasons, rather than threading a caster argument through every one of
   // _land()'s many call sites (see this project's own history with a whitelist/parameter list
   // missing one call site and silently losing a feature - not repeating that here).
-  _attributeBardSongCaster(name) {
+  //
+  // Reported live: a self-cast "Selo's Accelerating Chorus VI" was attributed to "Imperius" - not
+  // a groupmate at all, but a MOB with the exact same-named ability ("Imperius begins singing
+  // Selo's Accelerating Chorus.", confirmed in the raw log, ~20 minutes earlier the same session).
+  // Root cause was here, not in the mob/ally line: recentSelfCast.name carries the log's own rank
+  // suffix ("...VI"), and this compared it against `lower` - the roster's bare, unranked name -
+  // with no stripRankSuffix() first. So the self-check silently failed for EVERY ranked bard song
+  // cast, no matter how correct and recent, and fell through to _recentOtherCaster's answer - which
+  // has no expiry at all (see recentOtherCasts' own comment on why: deliberately valid for a whole
+  // group session), so a mob's cast from 20 minutes ago was still sitting there to be returned.
+  // Fixed the same way _rankForEntry already strips a rank suffix before comparing - self-cast
+  // evidence should never have been rank-sensitive to begin with, an unranked bard song ("Amplification"
+  // with no numeral) already matched fine, which is why this went unnoticed until a ranked one hit it.
+  _attributeBardSongCaster(name, known) {
     const lower = name.toLowerCase();
+    // Absolute, checked before even direct cast-begin evidence: a spell whose own roster entry
+    // says `targets: 'Self'` is mechanically impossible for anyone but the player to have cast in
+    // a way that lands on the player - there is no group/targeted version of it to be confused
+    // with (unlike gotcha #31's "Selo's Accelerating Chorus", a real group song a MOB happened to
+    // share a name with). Requested directly: "amplification should also never be unknown, it's
+    // always self only, so are a few other songs, like whistling warsong and jonthan's
+    // provocation" - confirmed against the roster: Amplification, Jonthan's Whistling Warsong and
+    // Jonthan's Provocation are all `targets: 'Self'`. Driven from that roster field rather than a
+    // hardcoded name list, so it covers every such song, not just the three named live.
+    if (known && known.targets === 'Self') {
+      return 'You';
+    }
     // The player's own confirmed cast, still within its window - direct, first-person evidence:
     // this exact "You begin casting/singing X" line was seen recently. Same check already used to
     // gate ally-buff landing (see the third-person suffix tier above).
-    if (this.recentSelfCast && this.recentSelfCast.name.toLowerCase() === lower && Date.now() < this.recentSelfCast.expiresAt) {
+    if (
+      this.recentSelfCast &&
+      stripRankSuffix(this.recentSelfCast.name).toLowerCase() === lower &&
+      Date.now() < this.recentSelfCast.expiresAt
+    ) {
       return 'You';
     }
     // A groupmate's own third-person "X begins casting/singing Y" line, seen recently for this
     // exact spell. _recentOtherCaster already existed purely for debug-log text ("never for making
     // one" per its own comment) - this is the first place its answer is actually acted on.
-    return this._recentOtherCaster(name);
+    const other = this._recentOtherCaster(name);
+    if (other) return other;
+    // A song the memorize-window tier below has confirmed as the player's own at some earlier
+    // point THIS memorization - checked before that tier itself so an already-confirmed song
+    // doesn't need a fresh memorize event every single repeat. Requested directly: "if the app
+    // caught you memming a song and attributed it to you within the 6s window, it should stay
+    // that way until you unmem it." Gated on still being memorized (not just once-confirmed-
+    // forever) so a genuine unmem/re-memorize - a real loadout swap, a different spell taking the
+    // slot - requires re-confirming rather than trusting a stale answer indefinitely; see the
+    // forget-line/removeMemorized/clearMemorized call sites, which all clear this alongside
+    // currentlyMemorized itself.
+    if (this.bardSongConfirmedMine.has(lower) && this.currentlyMemorized.has(lower)) {
+      return 'You';
+    }
+    // Last resort, only once real cast evidence (yours or an ally's) has come up empty: this
+    // server can auto-sing a bard song the instant it's memorized, with no "You begin singing X."
+    // line at all - see BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS. Not proof, but the only player who
+    // could have triggered "this was just memorized and started playing" is the one who memorized
+    // it, so a memorize event for this exact spell within the window counts as self-cast evidence.
+    // Confirmed durably (bardSongConfirmedMine, above) rather than just returned once, so this
+    // one-time observation keeps covering every later repeat of the same still-memorized song.
+    const memorizedAt = this.recentlyMemorizedAt.get(lower);
+    if (memorizedAt != null && Date.now() - memorizedAt <= BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS) {
+      this.bardSongConfirmedMine.add(lower);
+      return 'You';
+    }
+    // Genuinely last resort: if this exact song is already tracked as active under SOME caster,
+    // a re-land with no fresh evidence at all is far more likely to be that same still-running
+    // song repeating (this server's auto-sing mechanic can re-trigger a song with no cast-begin
+    // line of its own, same as the memorize case above) than a brand new, different caster's cast
+    // that happens to share a name. Reported live: the exact same songs showing under both "You"
+    // and "Unknown" at once, on a consistent ~19s offset - the "You" landing correctly attributed,
+    // then an auto-sing repeat a few seconds later found no fresh evidence and was attributed
+    // "Unknown" instead of recognised as the same song, creating a second entry. Without this, the
+    // "You" entry eventually expired on its own timer and the song then read as never cast at all
+    // ("it forgets I cast them"). Checked last, after every stronger signal, so a real ally
+    // starting the same-named song (caught by _recentOtherCaster above) is never overridden by a
+    // stale attribution here.
+    for (const song of this.bardSongs.values()) {
+      if (song.name.toLowerCase() === lower && song.expiresAt > Date.now()) {
+        return song.castBy;
+      }
+    }
+    return null;
+  }
+
+  // A confirmed-mine song wearing off WITHOUT ever being renewed by a fresh landing (as opposed
+  // to simply being overwritten in place, which never reaches this - see _trackBardSongOnPlayer's
+  // bardSongs.set()) is treated as a signal that whatever made the memorize-window confirmations
+  // trustworthy for this stretch of play may have changed - most likely a loadout swap this app
+  // has no other way to see (CLAUDE.md gotcha #9 explicitly rejected a general swap-detector as
+  // unreliable; this is a narrower, bard-song-specific signal built from a real observation - a
+  // song actually stopping - not that same rejected idea). Requested directly: "if a song stops
+  // being played, the confidence of the entire list drops." Un-confirms every OTHER confirmed-mine
+  // song too, not just this one, so a later repeat of any of them needs fresh evidence again
+  // rather than continuing to coast on confirmations that may now be stale. Deliberately does NOT
+  // touch currentlyMemorized/recentlyMemorizedAt - the gem itself may genuinely still be
+  // memorized, this is purely about whether the ATTRIBUTION is still trustworthy.
+  _dropBardSongConfidence(name) {
+    if (this.bardSongConfirmedMine.size === 0) return;
+    this._debugLog(
+      `BARD SONG CONFIDENCE DROP - "${name}" wore off without renewing, un-confirming ${this.bardSongConfirmedMine.size} song(s)`
+    );
+    this.bardSongConfirmedMine.clear();
   }
 
   // Ally-buff equivalent of _land() - same blocked-name guard (blocking a
@@ -2341,6 +2470,9 @@ class BuffEngine extends EventEmitter {
       if (song.expiresAt <= now) {
         this.bardSongs.delete(key);
         this._debugLog(`EXPIRED "${song.name}" (bard song, cast by ${song.castBy || 'unknown'}) - duration ran out`);
+        if (song.castBy === 'You' && this.bardSongConfirmedMine.has(song.name.toLowerCase())) {
+          this._dropBardSongConfidence(song.name);
+        }
       }
     }
     this.emit('bardSongsChanged', this.getActiveBardSongs());
@@ -2439,6 +2571,38 @@ class BuffEngine extends EventEmitter {
     this.currentlyMemorized.delete(key);
     this.currentlyMemorized.set(key, name);
     this._trimMemorized(this.currentlyMemorized);
+    this.recentlyMemorizedAt.set(key, Date.now());
+    this._reclaimBardSongFromUnknown(key);
+  }
+
+  // Bard buffs, like every other buff, do not stack - the game only ever keeps one instance of a
+  // given effect active on a character. If a song is currently tracked under some OTHER caster
+  // (including the honest "Unknown" bucket) and the player is now confirmed to have that exact
+  // spell memorized, it cannot genuinely still be a separate instance someone else is
+  // maintaining - a real second copy would already have collapsed into one, and no-stacking means
+  // the version actually surviving on the player right now is the more recent one. Requested
+  // directly: "buffs do not stack on bard buffs, so if you are seen to have memmed a spell, that
+  // same spell should be removed from the unknown list." Reattributed to 'You' rather than just
+  // deleted - the memorize event is real, freshly observed evidence of who owns it now, not
+  // nothing - and durably confirmed the same way the memorize-window tier is, so later repeats
+  // don't need to re-earn it.
+  _reclaimBardSongFromUnknown(lower) {
+    const toReclaim = [];
+    for (const [existingKey, song] of this.bardSongs) {
+      if (song.name.toLowerCase() === lower && song.castBy !== 'You') {
+        toReclaim.push([existingKey, song]);
+      }
+    }
+    if (toReclaim.length === 0) return;
+    for (const [existingKey, song] of toReclaim) {
+      this.bardSongs.delete(existingKey);
+      this.bardSongs.set(`you::${lower}`, { ...song, castBy: 'You' });
+      this._debugLog(
+        `BARD SONG "${song.name}" - reclaimed from "${song.castBy || 'Unknown'}" to You (buffs don't stack, and you were just seen memorizing it)`
+      );
+    }
+    this.bardSongConfirmedMine.add(lower);
+    this.emit('bardSongsChanged', this.getActiveBardSongs());
   }
 
   _getOrCreateMemorizedMap(profileId) {
@@ -2448,6 +2612,15 @@ class BuffEngine extends EventEmitter {
       this.currentlyMemorizedByProfile.set(profileId, map);
     }
     return map;
+  }
+
+  _getOrCreateBardSongConfirmedSet(profileId) {
+    let set = this.bardSongConfirmedMineByProfile.get(profileId);
+    if (!set) {
+      set = new Set();
+      this.bardSongConfirmedMineByProfile.set(profileId, set);
+    }
+    return set;
   }
 
   // Drops the stalest entries until the picture fits the gem bar. Map iterates in insertion
@@ -2488,6 +2661,8 @@ class BuffEngine extends EventEmitter {
   removeMemorized(name) {
     const lower = name.toLowerCase();
     if (!this.currentlyMemorized.delete(lower)) return false;
+    this.bardSongConfirmedMine.delete(lower);
+    this.recentlyMemorizedAt.delete(lower); // see the forget-line handler's own comment on why
     this._saveCurrentlyMemorized();
     this.emit('memorizedChanged', this.getCurrentlyMemorized());
     return true;
@@ -2496,6 +2671,8 @@ class BuffEngine extends EventEmitter {
   clearMemorized() {
     if (this.currentlyMemorized.size === 0) return false;
     this.currentlyMemorized.clear();
+    this.bardSongConfirmedMine.clear();
+    this.recentlyMemorizedAt.clear(); // see the forget-line handler's own comment on why
     this._saveCurrentlyMemorized();
     this.emit('memorizedChanged', this.getCurrentlyMemorized());
     return true;

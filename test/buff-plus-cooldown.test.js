@@ -154,4 +154,4 @@ test('the IPC round-trip carries buffDurationSec end to end', () => {
 });
 
 module.exports = () => report('buff-plus-cooldown');
-if (require.main === module) process.exit(report('buff-plus-cooldown') ? 1 : 0);
+if (require.main === module) report('buff-plus-cooldown').then((n) => process.exit(n ? 1 : 0));

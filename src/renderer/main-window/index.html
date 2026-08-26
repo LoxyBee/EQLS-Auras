@@ -71,6 +71,13 @@
         </div>
       </div>
 
+      <button class="nav-btn" data-page="page-action-bars" id="action-bars-nav-btn">Action Bars</button>
+      <div class="nav-submenu" id="action-bars-submenu">
+        <div class="nav-add-widget-row">
+          <button id="open-add-action-bar-modal-btn" class="nav-add-widget-btn">+ Add action bar</button>
+        </div>
+      </div>
+
       <button class="nav-btn" data-page="page-settings">Setup</button>
       <button class="nav-btn" data-page="page-log">Log</button>
       <button class="nav-btn" data-page="page-about">About</button>
@@ -683,29 +690,16 @@
                 </div></div>
               </div>
 
+              <!-- Alerts and Sounds used to be two separate topics, reported live as splitting one
+                   idea across two places - the warning-sound picker sat away from the warning-
+                   threshold slider it belongs right next to. One topic now; every element id below
+                   is unchanged from before the merge, so nothing in main-window.js needed to know
+                   this happened. -->
               <div class="topic" id="topic-alerts" data-topic>
                 <button type="button" class="topic-head" data-toggle>
                   <span class="chev"></span>
-                  <span class="topic-title">Alerts</span>
+                  <span class="topic-title">Alerts &amp; Sounds</span>
                   <span class="topic-summary" id="topic-alerts-summary"></span>
-                </button>
-                <div class="topic-body"><div class="topic-body-inner">
-                  <div class="row">
-                    <span class="label" title="When a buff's remaining time drops under this, its tile flashes red. Set to 0 to turn the flash off for this aura.">Expiring-soon flash:</span>
-                    <input type="range" id="widget-low-threshold-slider" min="0" max="120" step="5" />
-                    <span id="widget-low-threshold-value" class="slider-value">30s</span>
-                  </div>
-                  <div class="row">
-                    <label title="Flashes the tile briefly when the buff is first applied."><input type="checkbox" id="widget-landing-glow-checkbox" /> Glow when a buff lands</label>
-                  </div>
-                </div></div>
-              </div>
-
-              <div class="topic" id="topic-sounds" data-topic>
-                <button type="button" class="topic-head" data-toggle>
-                  <span class="chev"></span>
-                  <span class="topic-title">Sounds</span>
-                  <span class="topic-summary" id="topic-sounds-summary"></span>
                 </button>
                 <!-- Progressive disclosure: each sound's picker appears only once its own toggle
                      is on, and the volume only once SOMETHING can make a noise. Explanations are
@@ -713,7 +707,16 @@
                      rather than a wall of prose. -->
                 <div class="topic-body"><div class="topic-body-inner">
                   <div class="row">
-                    <label title="Plays a sound the moment the buff is applied."><input type="checkbox" id="widget-sound-land-checkbox" /> Play a sound when a buff lands</label>
+                    <span class="label" title="When a buff's remaining time drops under this, its tile flashes red. Set to 0 to turn the flash off for this aura.">Expiring-soon flash:</span>
+                    <input type="range" id="widget-low-threshold-slider" min="0" max="120" step="5" />
+                    <span id="widget-low-threshold-value" class="slider-value">30s</span>
+                  </div>
+                  <div class="row">
+                    <label id="widget-landing-glow-label" title="Flashes the tile briefly when the buff is first applied."><input type="checkbox" id="widget-landing-glow-checkbox" /> Glow when a buff lands</label>
+                  </div>
+
+                  <div class="row">
+                    <label id="widget-sound-land-label" title="Plays a sound the moment the buff is applied."><input type="checkbox" id="widget-sound-land-checkbox" /> Play a sound when a buff lands</label>
                   </div>
                   <div class="row sound-picker-row" id="widget-sound-land-row">
                     <span class="label">Land sound:</span>
@@ -724,7 +727,7 @@
                   </div>
 
                   <div class="row">
-                    <label title="Plays a sound the moment the buff runs out."><input type="checkbox" id="widget-sound-expire-checkbox" /> Play a sound when a buff expires</label>
+                    <label id="widget-sound-expire-label" title="Plays a sound the moment the buff runs out."><input type="checkbox" id="widget-sound-expire-checkbox" /> Play a sound when a buff expires</label>
                   </div>
                   <div class="row sound-picker-row" id="widget-sound-expire-row">
                     <span class="label">Expire sound:</span>
@@ -736,9 +739,11 @@
 
                   <!-- A toggle in front of the slider, because a bare slider sitting at 0 does not
                        read as "off", it reads as a setting nobody has got round to. The slider it
-                       reveals is still the stored value - see initSoundWarningToggle. -->
+                       reveals is still the stored value - see initSoundWarningToggle. Warn-early
+                       threshold and warning sound now sit directly together, which was the other
+                       half of this same reported request. -->
                   <div class="row">
-                    <label title="Plays a sound a set time before the buff runs out, while there is still time to recast."><input type="checkbox" id="widget-sound-warning-checkbox" /> Warn me before a buff expires</label>
+                    <label id="widget-sound-warning-label" title="Plays a sound a set time before the buff runs out, while there is still time to recast."><input type="checkbox" id="widget-sound-warning-checkbox" /> Warn me before a buff expires</label>
                   </div>
                   <div id="widget-sound-warning-group">
                     <div class="row">
@@ -946,6 +951,7 @@
           </p>
         </div>
 
+        <h3 class="settings-page-section-title">Display</h3>
 
         <div class="card" id="merge-rule-card">
           <h3>Merged tiles</h3>
@@ -961,34 +967,6 @@
             <strong>Same length, cast together</strong> only merges buffs that landed at about the
             same moment, so a group buff merges while two unrelated 24-minute buffs stay apart.
           </p>
-        </div>
-
-        <div class="card" id="trade-ping-card">
-          <h3>Trade requests</h3>
-          <div class="row">
-            <label title="Fires on &quot;&lt;Name&gt; is interested in making a trade.&quot; - the moment the request arrives, not when the trade completes or is cancelled. Draws nothing on screen; it is only ever a sound.">
-              <input type="checkbox" id="trade-ping-checkbox" />
-              Play a sound when someone asks to trade with you
-            </label>
-          </div>
-          <div class="row">
-            <label title="Fires on an incoming tell, whichever channel it arrives on.">
-              <input type="checkbox" id="tell-ping-checkbox" />
-              Play a sound when you get a tell
-            </label>
-          </div>
-        </div>
-
-        <div class="card" id="sounds-folder-card">
-          <h3>Sounds</h3>
-          <p class="hint">
-            Every aura's "Choose sound..." picker starts here by default, seeded with a handful of
-            sounds that ship with the app - drop your own mp3/wav/ogg/m4a files in and they'll be
-            ready to pick from too, right alongside the starters.
-          </p>
-          <div class="row">
-            <button type="button" id="open-sounds-folder-btn">📁 Open sounds folder</button>
-          </div>
         </div>
 
         <div class="card" id="ui-scale-card">
@@ -1018,6 +996,69 @@
             At larger sizes you may want to make this window bigger to match.
           </p>
         </div>
+
+        <h3 class="settings-page-section-title">Alerts &amp; sounds</h3>
+
+        <div class="card" id="trade-ping-card">
+          <h3>Trade requests</h3>
+          <div class="row">
+            <label title="Fires on &quot;&lt;Name&gt; is interested in making a trade.&quot; - the moment the request arrives, not when the trade completes or is cancelled. Draws nothing on screen; it is only ever a sound.">
+              <input type="checkbox" id="trade-ping-checkbox" />
+              Play a sound when someone asks to trade with you
+            </label>
+          </div>
+          <div class="row">
+            <label title="Fires on an incoming tell, whichever channel it arrives on.">
+              <input type="checkbox" id="tell-ping-checkbox" />
+              Play a sound when you get a tell
+            </label>
+          </div>
+          <!-- Only shown once tell pings are on - a burst of tells (someone spamming, or a busy
+               conversation) used to machine-gun the sound with no rate limit at all. -->
+          <div class="row" id="tell-ping-cooldown-row" style="display:none">
+            <span class="label" title="The shortest gap allowed between two tell-ping sounds. A second tell arriving before this much time has passed since the last ping stays silent - 0 means every tell pings, no matter how close together.">Minimum gap:</span>
+            <input type="range" id="tell-ping-cooldown-slider" min="0" max="30" step="1" />
+            <span id="tell-ping-cooldown-value" class="slider-value">3s</span>
+          </div>
+        </div>
+
+        <div class="card" id="sounds-folder-card">
+          <h3>Sounds</h3>
+          <p class="hint">
+            Every aura's "Choose sound..." picker starts here by default, seeded with a handful of
+            sounds that ship with the app - drop your own mp3/wav/ogg/m4a files in and they'll be
+            ready to pick from too, right alongside the starters.
+          </p>
+          <div class="row">
+            <button type="button" id="open-sounds-folder-btn">📁 Open sounds folder</button>
+          </div>
+        </div>
+
+        <h3 class="settings-page-section-title">Hotkeys</h3>
+
+        <div class="card" id="hide-hotkey-card">
+          <h3>Hide-auras hotkey</h3>
+          <div class="row">
+            <span class="label" title="Grabbed at the OS level, so EverQuest never sees the key at all while this app is running - pick one you never use in game. Not every key on this list can always be registered (another running app may already own it); if that happens the button in the top bar still works, and the hint below shows whichever key actually took.">Key:</span>
+            <select id="hide-hotkey-select" class="text-input">
+              <option value="ScrollLock">Scroll Lock</option>
+              <option value="F13">F13</option>
+              <option value="F14">F14</option>
+              <option value="F15">F15</option>
+              <option value="F16">F16</option>
+              <option value="Alt+Shift+H">Alt+Shift+H</option>
+              <option value="none">None (button only)</option>
+            </select>
+          </div>
+          <p class="hint" id="hide-hotkey-hint"></p>
+          <p class="hint">
+            Toggles the same "Hide auras" the button at the top of this window does - temporarily
+            clears every aura and action bar off the screen, changes no setting, and does not
+            survive a restart.
+          </p>
+        </div>
+
+        <h3 class="settings-page-section-title">App info</h3>
 
         <div class="card">
           <h3>Status</h3>
@@ -1198,120 +1239,328 @@
         </div>
       </section>
 
+      <!-- Same block-stack/topic structure as the widget settings panel above (identity block,
+           always-visible display-&-size block, then collapsible topics) - requested directly:
+           "the action bar menu to look the exact same as an aura menu, with the same formatting
+           and cards and headers and categories." Every element id is unchanged from before this
+           restructuring, so none of main-window.js's wiring needed to change, only the markup
+           around it. -->
+      <section id="page-action-bars" class="page">
+        <h2 class="page-title" id="page-action-bars-title">Action Bars</h2>
+
+        <div class="card" id="action-bars-intro-card">
+          <h3>Action bar covers</h3>
+          <p class="hint">
+            Each action bar is its own independent overlay, with its own position, size, gems and
+            look - the same way each aura is independent. Manage them under "Action Bars" in the
+            sidebar - click one to configure it, or "+ Add action bar" to create another.
+          </p>
+        </div>
+
+        <div id="action-bars-settings-panel" style="display:none">
+          <div class="block-stack">
+
+            <!-- Identity block: always visible, no cap - same shape as the widget panel's own. -->
+            <div class="block">
+              <h3 id="action-bar-settings-title">Action bar settings</h3>
+              <div class="row">
+                <span class="label">Name:</span>
+                <input type="text" id="action-bar-name-input" class="text-input" placeholder="Action bar name" />
+              </div>
+              <div class="row">
+                <span class="label" title="Untick them all to switch this action bar off entirely.">Show on profiles:</span>
+                <div id="action-bar-profiles-toggles" class="profile-toggle-list"></div>
+              </div>
+            </div>
+
+            <!-- Display & Size block: always visible, same as the widget panel's own. -->
+            <div class="block">
+              <p class="block-cap">Display &amp; size</p>
+              <div class="row">
+                <label title="Per-bar - only affects THIS action bar. Off by default, same as auras' own auto-hide-while-unfocused rule; turning it on keeps this one bar visible while you're configuring it, even though EQ isn't focused.">
+                  <input type="checkbox" id="action-bar-show-app-focused-checkbox" /> Show this bar while EQLS Auras is the active window
+                </label>
+              </div>
+              <div class="row position-controls">
+                <button type="button" id="action-bar-unlock-btn" class="btn-prominent">Unlock to move</button>
+                <button type="button" id="action-bar-reset-btn">Reset position</button>
+              </div>
+              <div class="row">
+                <span class="label">Nudge (1px):</span>
+                <div class="nudge-pad">
+                  <button type="button" id="action-bar-nudge-up" class="nudge-btn nudge-up" title="Move up 1px">&#8593;</button>
+                  <button type="button" id="action-bar-nudge-left" class="nudge-btn nudge-left" title="Move left 1px">&#8592;</button>
+                  <button type="button" id="action-bar-nudge-down" class="nudge-btn nudge-down" title="Move down 1px">&#8595;</button>
+                  <button type="button" id="action-bar-nudge-right" class="nudge-btn nudge-right" title="Move right 1px">&#8594;</button>
+                </div>
+              </div>
+              <div class="row">
+                <span class="label">Opacity:</span>
+                <input type="range" id="action-bar-opacity-slider" min="10" max="100" step="5" />
+                <span id="action-bar-opacity-value" class="slider-value">100%</span>
+              </div>
+              <div class="row">
+                <span class="label">Number of slots:</span>
+                <input type="range" id="action-bar-slot-count-slider" min="1" max="12" step="1" />
+                <span id="action-bar-slot-count-value" class="slider-value">12</span>
+              </div>
+              <div class="row">
+                <span class="label">Icons per row:</span>
+                <input type="range" id="action-bar-icons-slider" min="1" max="12" step="1" />
+                <span id="action-bar-icons-value" class="slider-value">12</span>
+              </div>
+              <div class="row">
+                <span class="label">Icon size:</span>
+                <input type="range" id="action-bar-size-slider" min="16" max="120" step="1" />
+                <span id="action-bar-size-value" class="slider-value">40px</span>
+              </div>
+              <div class="row">
+                <span class="label">Margin:</span>
+                <input type="range" id="action-bar-margin-slider" min="0" max="20" step="1" />
+                <span id="action-bar-margin-value" class="slider-value">2px</span>
+              </div>
+            </div>
+
+            <div class="block">
+              <p class="block-cap">Configuration</p>
+
+            <div class="topic" id="topic-action-bar-gems" data-topic>
+              <button type="button" class="topic-head" data-toggle>
+                <span class="chev"></span>
+                <span class="topic-title">Gems</span>
+                <span class="topic-summary"></span>
+              </button>
+              <div class="topic-body"><div class="topic-body-inner">
+                <p class="hint">
+                  Laid out the same way the calibration bar above wraps, so this mirrors your real
+                  action bar. Click a gem to edit it - icon, overlay name, disable, and cooldown
+                  all live together in one popup. None of this touches your real hotbar in any way.
+                </p>
+                <div id="action-bar-slots-grid" class="action-bar-slots-grid"></div>
+              </div></div>
+            </div>
+
+            <div class="topic" id="topic-action-bar-border" data-topic>
+              <button type="button" class="topic-head" data-toggle>
+                <span class="chev"></span>
+                <span class="topic-title">Gem border</span>
+                <span class="topic-summary"></span>
+              </button>
+              <div class="topic-body"><div class="topic-body-inner">
+                <p class="hint">One border for every gem - the offset pulls it inward from the tile's true edge, so a wider border doesn't grow past the icon.</p>
+                <div class="row">
+                  <span class="label">Width:</span>
+                  <input type="range" id="action-bar-border-width-slider" min="1" max="4" step="1" />
+                  <span id="action-bar-border-width-value" class="slider-value">2px</span>
+                </div>
+                <div class="row">
+                  <span class="label">Offset (inset):</span>
+                  <input type="range" id="action-bar-border-offset-slider" min="0" max="6" step="1" />
+                  <span id="action-bar-border-offset-value" class="slider-value">1px</span>
+                </div>
+                <div class="row">
+                  <span class="label">Colour:</span>
+                  <input type="color" id="action-bar-border-color-picker" value="#d2d6e1" />
+                </div>
+              </div></div>
+            </div>
+
+            <div class="topic" id="topic-action-bar-cooldown" data-topic>
+              <button type="button" class="topic-head" data-toggle>
+                <span class="chev"></span>
+                <span class="topic-title">Cooldown</span>
+                <span class="topic-summary"></span>
+              </button>
+              <div class="topic-body"><div class="topic-body-inner">
+                <p class="hint">One setting for every gem's cooldown - set per gem in an earlier build, moved here since it isn't something you'd want to pick differently gem to gem. The shade and the countdown number are independent - pick either, both, or neither. Every gem on cooldown also greys out, regardless of what's picked below.</p>
+                <div class="row">
+                  <span class="label">Shade style:</span>
+                </div>
+                <div class="row">
+                  <label><input type="radio" name="action-bar-cooldown-style" value="none" /> None</label>
+                </div>
+                <div class="row">
+                  <label>
+                    <input type="radio" name="action-bar-cooldown-style" value="wipe" checked />
+                    Sliding colour overlay (recedes top to bottom as it counts down)
+                  </label>
+                </div>
+                <div class="row">
+                  <label><input type="radio" name="action-bar-cooldown-style" value="radial" /> Clockwise colour wipe</label>
+                </div>
+                <div class="row">
+                  <label><input type="checkbox" id="action-bar-cooldown-show-number-checkbox" /> Show countdown number</label>
+                </div>
+
+                <h4 class="settings-subsection-title">Cooldown text</h4>
+                <p class="hint">Its own text options, independent of the gem name below - only draws anything while "Show countdown number" above is on.</p>
+                <div class="row">
+                  <label title="Hides the gem's name label while its cooldown number is showing - turn off if you've anchored the two to different corners and want both visible at once.">
+                    <input type="checkbox" id="action-bar-cooldown-replace-checkbox" /> Replace the name label while cooling down
+                  </label>
+                </div>
+                <div class="row">
+                  <label title="On: the number wraps and stays inside the gem's own bounds. Off: it can spill past the gem rather than being cut off."><input type="checkbox" id="action-bar-cooldown-text-wrap-checkbox" /> Wrap text to fit inside the gem</label>
+                </div>
+                <div class="row">
+                  <span class="label">Text size:</span>
+                  <input type="range" id="action-bar-cooldown-text-size-slider" min="6" max="20" step="1" />
+                  <span id="action-bar-cooldown-text-size-value" class="slider-value">13px</span>
+                </div>
+                <div class="row">
+                  <span class="label">Text color:</span>
+                  <input type="color" id="action-bar-cooldown-text-color-picker" value="#ffffff" />
+                </div>
+                <div class="row">
+                  <span class="label">Text position:</span>
+                </div>
+                <div class="anchor-grid" id="action-bar-cooldown-text-anchor-grid">
+                  <button type="button" class="anchor-cell" data-anchor="top-left" title="Top left"></button>
+                  <button type="button" class="anchor-cell" data-anchor="top-center" title="Top center"></button>
+                  <button type="button" class="anchor-cell" data-anchor="top-right" title="Top right"></button>
+                  <button type="button" class="anchor-cell" data-anchor="middle-left" title="Middle left"></button>
+                  <button type="button" class="anchor-cell" data-anchor="middle-center" title="Middle center"></button>
+                  <button type="button" class="anchor-cell" data-anchor="middle-right" title="Middle right"></button>
+                  <button type="button" class="anchor-cell" data-anchor="bottom-left" title="Bottom left"></button>
+                  <button type="button" class="anchor-cell" data-anchor="bottom-center" title="Bottom center"></button>
+                  <button type="button" class="anchor-cell" data-anchor="bottom-right" title="Bottom right"></button>
+                </div>
+              </div></div>
+            </div>
+
+            <div class="topic" id="topic-action-bar-name-text" data-topic>
+              <button type="button" class="topic-head" data-toggle>
+                <span class="chev"></span>
+                <span class="topic-title">Label text</span>
+                <span class="topic-summary"></span>
+              </button>
+              <div class="topic-body"><div class="topic-body-inner">
+                <div class="row">
+                  <label title="On: the name wraps and stays inside the gem's own bounds - best when gems are packed together. Off: it can spill past the gem rather than being cut off.">
+                    <input type="checkbox" id="action-bar-name-wrap-checkbox" /> Wrap text to fit inside the gem
+                  </label>
+                </div>
+                <div class="row">
+                  <span class="label">Text size:</span>
+                  <input type="range" id="action-bar-name-size-slider" min="6" max="20" step="1" />
+                  <span id="action-bar-name-size-value" class="slider-value">11px</span>
+                </div>
+                <div class="row">
+                  <span class="label">Text color:</span>
+                  <input type="color" id="action-bar-name-color-picker" value="#f0f1f5" />
+                </div>
+                <div class="row">
+                  <span class="label">Text position:</span>
+                </div>
+                <div class="anchor-grid" id="action-bar-name-anchor-grid">
+                  <button type="button" class="anchor-cell" data-anchor="top-left" title="Top left"></button>
+                  <button type="button" class="anchor-cell" data-anchor="top-center" title="Top center"></button>
+                  <button type="button" class="anchor-cell" data-anchor="top-right" title="Top right"></button>
+                  <button type="button" class="anchor-cell" data-anchor="middle-left" title="Middle left"></button>
+                  <button type="button" class="anchor-cell" data-anchor="middle-center" title="Middle center"></button>
+                  <button type="button" class="anchor-cell" data-anchor="middle-right" title="Middle right"></button>
+                  <button type="button" class="anchor-cell" data-anchor="bottom-left" title="Bottom left"></button>
+                  <button type="button" class="anchor-cell" data-anchor="bottom-center" title="Bottom center"></button>
+                  <button type="button" class="anchor-cell" data-anchor="bottom-right" title="Bottom right"></button>
+                </div>
+              </div></div>
+            </div>
+
+            </div>
+
+            <!-- Manage block: bottom of the panel, same position/shape as the widget panel's own
+               "Manage aura" block. -->
+            <div class="block">
+              <p class="block-cap">Manage action bar</p>
+              <div class="row">
+                <button type="button" id="action-bar-copy-settings-btn" title="Copies every visual style setting from the chosen bar - calibration, gems layout, border, cooldown and label text - onto this one. Position and the gems themselves are untouched.">Copy settings from...</button>
+                <button type="button" id="action-bar-remove-overrides-btn" title="Clears every gem's own text-size override back to this bar's shared name text size, without opening each one individually.">Remove all text overrides</button>
+              </div>
+              <div class="row">
+                <button type="button" id="delete-action-bar-btn" class="btn-danger">Delete this action bar</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
       <section id="page-about" class="page">
         <h2 class="page-title">About</h2>
 
         <div class="card">
           <h3>How auras work</h3>
           <p class="hint">
-            An aura is its own independent overlay window, with its own position, size, and buffs
-            shown. Your auras are listed under "Overlay Auras" in the sidebar - click one to
-            configure it, or use "+ Add aura" there to import a share code, add a premade aura, or
-            build a custom one from scratch. "Self Buffs" is the built-in one and can't be deleted - it
-            shows whatever you've marked "Overlay" on the Buff Tracker page's Known Buffs list. EQ needs
-            to run in windowed or borderless-windowed mode (not exclusive fullscreen) for auras to be
-            visible over it.
+            An aura is an overlay window with its own position, size, and buffs. Manage them under
+            "Overlay Auras" in the sidebar - click one to configure it, or "+ Add aura" to import a
+            share code, add a premade, or build a custom one. "Self Buffs" is built-in and can't be
+            deleted. EQ must run windowed or borderless-windowed (not exclusive fullscreen) for auras
+            to show over it.
           </p>
         </div>
 
         <div class="card">
           <h3>How loadout profiles work</h3>
           <p class="hint">
-            If this server lets you swap between different multiclass "loadouts," swapping can change
-            which spells you can actually cast without touching your spellbook file - which the app has
-            no other way to detect. That means a "this ambiguous text means buff X" answer it learned
-            under one loadout can quietly become wrong after you swap, with nothing telling you it
-            happened.
-          </p>
-          <p class="hint">
-            Loadout profiles fix this by giving each loadout its own separate memory of those answers.
-            Switch profiles from the bar at the top of the app whenever you actually swap loadouts - nothing
-            detects the swap automatically, so this is a manual habit, not something to expect the app to
-            catch on its own. Add a profile with the <code>+</code> button; rename or delete one from the
-            <code>⚙</code> "Manage" button next to it. Profiles also control which auras are on screen: an
-            aura shows only while one of the profiles it belongs to is the active one, so switching
-            profiles swaps your whole overlay layout along with the remembered answers. Set which profiles
-            an aura belongs to from "Loadout profiles..." in its own settings. An aura with no profiles
-            ticked shows on every profile.
-          </p>
-        </div>
-
-        <div class="card">
-          <h3>Where buff data comes from</h3>
-          <p class="hint">
-            EverQuest has no universal "buff landed" message - every spell has its own flavor text, matched
-            against ~3,300 real spells mined from the game's own data files. Much of that text is shared
-            across spells (e.g. "You begin to regenerate." covers ~30 different regen buffs), so text
-            alone often can't tell them apart - that's the problem the priority order below solves.
-          </p>
-          <p class="hint">
-            The app also never reads log history - it starts at the bottom of the file and only watches
-            new lines, for speed and to avoid re-triggering old chat/combat. That means state like your
-            current gem slots, active buffs, and group are built live and start empty on each launch or
-            restart - so an already-running ambiguous buff can get re-prompted once right after a restart.
+            If your server lets you swap multiclass loadouts without touching your spellbook, the app
+            can't detect the swap - so a remembered "this text means buff X" answer can quietly become
+            wrong. Profiles fix this by giving each loadout its own separate memory - switch profiles
+            yourself (bar at the top) whenever you swap loadouts, since nothing does it automatically.
+            Profiles also control which auras are visible: set this per aura under "Loadout profiles..."
+            in its own settings; an aura with none ticked shows on every profile.
           </p>
         </div>
 
         <div class="card">
           <h3>How a buff gets identified, most to least certain</h3>
+          <p class="hint">
+            EverQuest has no universal "buff landed" message, and a lot of landing text is shared
+            across multiple spells - so the app narrows down which buff it actually was, in this order:
+          </p>
           <ol class="about-priority-list">
-            <li>
-              <strong>You just cast it by name.</strong> If the log just showed "You begin casting X" (or
-              "You begin singing X" for bard songs), the very next landing line - even if that text is
-              shared by other spells - safely confirms it, because we already know exactly what you cast.
-            </li>
-            <li>
-              <strong>The landing text is unique to one buff.</strong> If only one spell in the whole
-              database uses that exact wording, it's safe to trust with no other context at all. This is
-              what catches instant clickies/AAs that produce no "begin casting" line to key off of.
-            </li>
-            <li>
-              <strong>Ambiguous text, narrowed by what's currently memorized.</strong> If several spells
-              share that landing text, but only one of them is sitting in one of your gem slots right now
-              (tracked from "You have finished memorizing X." / "You forget X." lines), it's almost
-              certainly that one - checked before the broader "ever scribed" check below because it's a
-              stronger signal: you can only ever cast what's actually memorized at the moment, so it tells
-              apart old ranks of a spell you leveled past from what you're actually using now, which
-              "scribed at some point" alone can't. The one exception applies here too: if someone else in
-              your group was just seen casting one of the candidates, it's not silently credited to you.
-            </li>
-            <li>
-              <strong>Ambiguous text, narrowed by your spellbook.</strong> If the memorized check above
-              didn't land on exactly one, but only one candidate is something you've ever scribed
-              (regardless of gem slot), it's almost certainly that one - same "someone else just cast it"
-              exception applies. This fallback exists because the memorized check only knows about gem
-              swaps made since the app was opened - it has no memory of what was in your gems before that,
-              so right after launch (before you've swapped anything) it has no memorized data to go on at
-              all, and this broader check fills that gap.
-            </li>
-            <li>
-              <strong>Ambiguous text during a "burst" (e.g. Quick Buff).</strong> Some abilities grant a
-              dozen-plus buffs at once with no per-buff cast line at all - without this check, every one of
-              those buffs would have no self-cast evidence whatsoever and would fall through to "probably
-              someone else's" below, disappearing even though they're genuinely yours. Anything ambiguous
-              that lands during that burst is presumed to be yours (you're the one who triggered it) - but
-              which specific buff it was is still never guessed.
-            </li>
-            <li>
-              <strong>Ambiguous text with no other signal.</strong> Most likely someone else's buff
-              landing on you - by this point, a genuine self-cast would already have matched one of the
-              signals above (named, unique, memorized, scribed, or a burst you triggered), so nothing left
-              to check most likely means an ally's group/AoE spell landed on you too. Hidden by default,
-              since tracking buffs cast on you by others is opt-in (Setup page) - this app is built around
-              tracking your own buffs first.
-            </li>
-            <li>
-              <strong>Still ambiguous? You get asked.</strong> If none of the above narrow it down to
-              exactly one buff, the app doesn't guess - it queues the choice for you, shown in the
-              Ambiguous Casts panel (Buff Tracker page) and in a small popup near the overlay, with a
-              button for each real candidate. Whichever one you pick is remembered, so that exact landing
-              text won't ask again - unless your group composition changes (group-targeted spells depend
-              on who's actually in your group) or you clear it yourself from "View remembered choices."
-            </li>
+            <li><strong>You just cast it by name.</strong> The next landing line confirms it.</li>
+            <li><strong>The landing text is unique to one buff.</strong> Confirmed with no other context.</li>
+            <li><strong>Ambiguous text, but only one candidate is memorized right now.</strong></li>
+            <li><strong>Ambiguous text, but only one candidate is anywhere in your spellbook.</strong></li>
+            <li><strong>Ambiguous text during a burst</strong> (e.g. Quick Buff) - presumed yours, since you triggered it.</li>
+            <li><strong>Ambiguous text with no other signal.</strong> Presumed someone else's buff landing
+              on you - hidden by default (opt-in on the Setup page).</li>
+            <li><strong>Still ambiguous? You get asked</strong> - in the Ambiguous Casts panel or a popup
+              near the overlay. Your answer is remembered until your group changes or you clear it under
+              "View remembered choices."</li>
           </ol>
+        </div>
+
+        <div class="card" id="bug-report-card">
+          <h3>Report a problem</h3>
+          <p class="hint">
+            Copies the app version and today's detection log (if Diagnostics has been turned on
+            under the Log page) to your clipboard, ready to paste wherever you report bugs - the
+            detection log is what actually makes a report diagnosable, since it records the exact
+            decision the app made and why.
+          </p>
+          <div class="row">
+            <button type="button" id="copy-bug-report-btn">📋 Copy bug report</button>
+            <span id="copy-bug-report-status" class="slider-value"></span>
+          </div>
         </div>
       </section>
     </div>
+    </div>
+  </div>
+
+  <div id="create-action-bar-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>New action bar</h3>
+        <button id="close-create-action-bar-modal" class="modal-close">✕</button>
+      </div>
+      <div class="row">
+        <input type="text" id="new-action-bar-name-input" placeholder="Action bar name" class="text-input" />
+      </div>
+      <div class="row">
+        <button id="create-action-bar-submit-btn">Create action bar</button>
+      </div>
     </div>
   </div>
 
@@ -1336,6 +1585,155 @@
       <ul id="new-profile-widget-checklist" class="buff-list modal-list"></ul>
       <div class="row">
         <button id="create-profile-submit-btn">Create profile</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="action-bar-icon-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <h3 id="action-bar-icon-modal-title">Edit gem</h3>
+        <button id="close-action-bar-icon-modal" class="modal-close">✕</button>
+      </div>
+      <div class="row">
+        <span class="label">Name:</span>
+        <input type="text" id="action-bar-slot-name-input" class="text-input" maxlength="40" placeholder="Overlay text (optional)" />
+      </div>
+      <div class="row">
+        <label>
+          <input type="checkbox" id="action-bar-slot-disable-checkbox" />
+          Disable this gem (icon, border and background all go to 0 opacity)
+        </label>
+      </div>
+      <div class="row">
+        <span id="action-bar-slot-cooldown-status" class="action-bar-slot-cooldown-status"></span>
+        <button type="button" id="action-bar-slot-cooldown-btn">Cooldown...</button>
+      </div>
+      <div class="row">
+        <label title="Only drawn while this gem has no icon - a stand-in for one, so you can use a plain colour (e.g. grey) with just an overlay name as a text-only tile.">
+          <input type="checkbox" id="action-bar-slot-bg-color-checkbox" /> Background colour (used when there's no icon)
+        </label>
+        <input type="color" id="action-bar-slot-bg-color-picker" value="#808080" />
+      </div>
+      <div class="row">
+        <label title="Overrides the bar-wide name text size for just this one gem.">
+          <input type="checkbox" id="action-bar-slot-text-size-override-checkbox" /> Override text size
+        </label>
+        <input type="range" id="action-bar-slot-text-size-override-slider" min="6" max="20" step="1" style="display:none" />
+        <span id="action-bar-slot-text-size-override-value" class="slider-value" style="display:none">11px</span>
+      </div>
+      <h4 class="settings-subsection-title">Stance / Invocation</h4>
+      <div class="row">
+        <label title="Ties this gem to a specific stance - activating it (or any other stance gem) puts every stance gem on a 6s cooldown, and shows a green active border on whichever one you actually picked, until the game lets you swap again.">
+          <input type="checkbox" id="action-bar-slot-stance-checkbox" /> This gem is a Stance
+        </label>
+      </div>
+      <div class="row">
+        <label title="Ties this gem to a specific invocation - activating it (or any other invocation gem) puts every invocation gem on its own configured cooldown, and shows a green active border on whichever one you actually picked.">
+          <input type="checkbox" id="action-bar-slot-invocation-checkbox" /> This gem is an Invocation
+        </label>
+      </div>
+      <div class="row" id="action-bar-slot-toggle-name-row" style="display:none">
+        <span class="label">Which one:</span>
+        <select id="action-bar-slot-toggle-name-select" class="text-input"></select>
+      </div>
+      <div class="row" id="action-bar-slot-toggle-duration-row" style="display:none">
+        <span class="label" title="Invocations keep their own cooldown length, unlike stances which the game always resets in a fixed 6 seconds.">Cooldown:</span>
+        <input type="range" id="action-bar-slot-toggle-duration-slider" min="1" max="120" step="1" />
+        <span id="action-bar-slot-toggle-duration-value" class="slider-value">6s</span>
+      </div>
+      <p class="hint" id="action-bar-slot-stance-fixed-hint" style="display:none">Stances always use the game's own fixed 6 second cooldown.</p>
+
+      <h4 class="settings-subsection-title">Icon</h4>
+      <div class="row">
+        <span class="label" title="Shrinks THIS gem's icon (and its cooldown wipe/pie) in from the tile's own edge, so a ring of the game's real hotbar button shows through underneath, with the background cleared so nothing dims it. Useful when the game itself draws something at the button's edge - an active/toggled ability's own white glow, for example - that a full-bleed icon would otherwise hide completely.">Icon inset:</span>
+        <input type="range" id="action-bar-slot-inset-slider" min="0" max="15" step="1" />
+        <span id="action-bar-slot-inset-value" class="slider-value">0px</span>
+      </div>
+      <div class="row">
+        <label title="Splits this gem's icon diagonally into two images - top-left and bottom-right.">
+          <input type="checkbox" id="action-bar-slot-multi-icon-checkbox" /> Multi icon (split diagonally)
+        </label>
+      </div>
+      <div class="row" id="action-bar-icon-target-row" style="display:none">
+        <span class="label">Editing:</span>
+        <label><input type="radio" name="action-bar-icon-target" value="primary" checked /> Icon 1 (top-left)</label>
+        <label><input type="radio" name="action-bar-icon-target" value="secondary" /> Icon 2 (bottom-right)</label>
+      </div>
+      <div class="row">
+        <button type="button" id="action-bar-icon-clear-btn" class="btn-prominent">Clear icon</button>
+      </div>
+      <div id="action-bar-icon-modal-picker"></div>
+    </div>
+  </div>
+
+  <div id="action-bar-cooldown-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <h3 id="action-bar-cooldown-modal-title">Set cooldown</h3>
+        <button id="close-action-bar-cooldown-modal" class="modal-close">✕</button>
+      </div>
+
+      <div class="row">
+        <span class="label">Cooldown length:</span>
+        <input type="number" id="action-bar-cooldown-duration-input" min="1" step="1" class="text-input" style="max-width:90px" />
+        <span class="label">seconds</span>
+      </div>
+
+      <h4 class="settings-subsection-title">What starts the cooldown?</h4>
+      <div id="action-bar-cooldown-trigger-types" class="trigger-type-list"></div>
+
+      <div id="action-bar-cooldown-chat-fields">
+        <div class="row">
+          <span class="label">Channel:</span>
+          <select id="action-bar-cooldown-channel-select">
+            <option value="say">Say</option>
+            <option value="group">Group</option>
+            <option value="guild">Guild</option>
+            <option value="tell">Tell (someone messages you)</option>
+          </select>
+        </div>
+        <div class="row" id="action-bar-cooldown-who-row">
+          <span class="label">From:</span>
+          <label><input type="radio" name="action-bar-cooldown-who" value="self" /> Yourself</label>
+          <label><input type="radio" name="action-bar-cooldown-who" value="name" /> Specific person:</label>
+          <input type="text" id="action-bar-cooldown-who-name" placeholder="Name" class="text-input" />
+        </div>
+        <div class="row">
+          <input
+            type="text"
+            id="action-bar-cooldown-chat-message"
+            placeholder="Starts the cooldown when this is said (just the words, e.g. hi)"
+            class="text-input"
+          />
+        </div>
+      </div>
+
+      <div id="action-bar-cooldown-raw-fields" style="display:none">
+        <div class="row">
+          <input
+            type="text"
+            id="action-bar-cooldown-trigger"
+            placeholder="Trigger text - the exact log line that starts the cooldown"
+            class="text-input"
+          />
+        </div>
+        <div class="row">
+          <label><input type="radio" name="action-bar-cooldown-match" value="exact" checked /> the whole line, exactly</label>
+          <label><input type="radio" name="action-bar-cooldown-match" value="contains" /> any line containing it</label>
+        </div>
+      </div>
+
+      <div id="action-bar-cooldown-skill-fields" style="display:none">
+        <div class="row">
+          <span class="label">Spell:</span>
+          <select id="action-bar-cooldown-skill-select"></select>
+        </div>
+      </div>
+
+      <div class="row">
+        <button type="button" id="action-bar-cooldown-save-btn" class="btn-prominent">Save cooldown</button>
+        <button type="button" id="action-bar-cooldown-remove-btn">Remove cooldown</button>
       </div>
     </div>
   </div>
@@ -1369,6 +1767,10 @@
         is nothing for it to tell you - and after that it is yours to switch off here. Drag it
         wherever you want it; it stays put and stays on every loadout, including ones you make later.
       </p>
+      <div class="row" id="loadout-label-position-row" style="display: none;">
+        <button type="button" id="loadout-label-unlock-btn" class="btn-prominent" title="While unlocked, click and drag the label anywhere on screen to move it. Lock it again when done - while locked it is fully click-through.">Unlock to move</button>
+        <button type="button" id="loadout-label-reset-position-btn" title="Brings the label back to a corner of your main screen.">Reset position</button>
+      </div>
     </div>
   </div>
 
@@ -1829,6 +2231,39 @@
     <li><button type="button" id="sidebar-context-reset" class="danger">Reset to default</button></li>
     <li><button type="button" id="sidebar-context-delete" class="danger">Delete</button></li>
   </ul>
+
+  <!-- Same right-click menu as an aura's sidebar row, scoped to what an action bar actually has
+       (no export/reset - no share-code or premade-origin concept exists for these). Requested
+       directly: "set up the same right click menu functionality on the action bars as is on the
+       auras, duplicate, rename, delete." -->
+  <ul id="action-bar-context-menu" class="context-menu" style="display:none">
+    <li><button type="button" id="action-bar-context-rename">Rename</button></li>
+    <li><button type="button" id="action-bar-context-duplicate">Duplicate</button></li>
+    <li><button type="button" id="action-bar-context-delete" class="danger">Delete</button></li>
+  </ul>
+
+  <!-- Copy-settings source picker - a button-triggered popup menu rather than a permanent
+       dropdown sitting in the Manage action bar card. Requested directly: "copy settings should be
+       a button that opens a drop down to copy settings, not have the drop down in the card." -->
+  <ul id="action-bar-copy-source-menu" class="context-menu" style="display:none"></ul>
+
+  <!-- Rename, from the sidebar's right-click menu - same plain-popup pattern as the widget
+       version just above (rename-widget-modal-backdrop), not a navigate-into-settings flow. -->
+  <div id="rename-action-bar-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Rename action bar</h3>
+        <button id="close-rename-action-bar-modal" class="modal-close">✕</button>
+      </div>
+      <div class="row">
+        <input type="text" id="rename-action-bar-input" class="text-input" />
+      </div>
+      <div class="row">
+        <button id="rename-action-bar-save-btn" class="btn-prominent">Save</button>
+        <button id="rename-action-bar-cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Rename, from the sidebar's right-click menu - reported live 25 Aug: "just amke them both
        popups that do not nav inside their aura, it's probably easier" - a plain popup rather than

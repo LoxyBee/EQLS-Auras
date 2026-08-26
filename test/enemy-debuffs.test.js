@@ -635,4 +635,4 @@ test('the engine is given the ally-mode list at startup too', () => {
 });
 
 module.exports = () => report('enemy-debuffs');
-if (require.main === module) process.exit(report('enemy-debuffs') ? 1 : 0);
+if (require.main === module) report('enemy-debuffs').then((n) => process.exit(n ? 1 : 0));

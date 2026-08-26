@@ -208,4 +208,4 @@ test('detection capability matches the recorded baseline', () => {
 });
 
 module.exports = () => report('roster');
-if (require.main === module) process.exit(report('roster') ? 1 : 0);
+if (require.main === module) report('roster').then((n) => process.exit(n ? 1 : 0));

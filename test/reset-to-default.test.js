@@ -167,4 +167,4 @@ test('it sits on the same line as Duplicate/Export/Delete, reported live 25 Aug'
 });
 
 module.exports = () => report('reset-to-default');
-if (require.main === module) process.exit(report('reset-to-default') ? 1 : 0);
+if (require.main === module) report('reset-to-default').then((n) => process.exit(n ? 1 : 0));

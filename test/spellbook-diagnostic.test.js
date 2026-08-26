@@ -104,4 +104,4 @@ test('the status reads as a warning rather than as an error or as nothing', () =
 });
 
 module.exports = () => report('spellbook-diagnostic');
-if (require.main === module) process.exit(report('spellbook-diagnostic') ? 1 : 0);
+if (require.main === module) report('spellbook-diagnostic').then((n) => process.exit(n ? 1 : 0));

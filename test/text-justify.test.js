@@ -131,4 +131,4 @@ test('recomputed every measurement, not cached from the first message - each mes
 });
 
 module.exports = () => report('text-justify');
-if (require.main === module) process.exit(report('text-justify') ? 1 : 0);
+if (require.main === module) report('text-justify').then((n) => process.exit(n ? 1 : 0));

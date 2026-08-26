@@ -217,4 +217,4 @@ test('switching display mode re-derives the shape synchronously, from real widge
 });
 
 module.exports = () => report('settings-panel-shapes');
-if (require.main === module) process.exit(report('settings-panel-shapes') ? 1 : 0);
+if (require.main === module) report('settings-panel-shapes').then((n) => process.exit(n ? 1 : 0));
