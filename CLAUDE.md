@@ -113,13 +113,72 @@ not yet exercised in a real play session.
 The prose below is the older triage from an earlier pass. Most of it has been overtaken by that
 table and is kept for the reasoning, not the status — where the two disagree, the table is right.
 
-## Standalone-tool auras' settings-panel shape — designed and built 25 Aug, premade creation still locked
+## Standalone-tool auras' settings-panel shape — designed and built 25 Aug; Travel guide unlocked 26 Aug, Damage parser still locked
 
-**Travel guide and Damage parser are built and working, but still locked out of the Add Aura
-premade list** as of 25 Aug — they remain in `PLANNED_PREMADE_WIDGETS` rather than
-`PREMADE_WIDGETS` in `main-window.js`, so no *new* one can be created yet. Existing auras of either
-kind, made before the original 24 Aug lock, are completely untouched and keep working exactly as
-they did.
+**Travel guide creation was unlocked 26 Aug, at the owner's direct request** — it's back in
+`PREMADE_WIDGETS` in `main-window.js` (`id: 'travel-guide'`, `group: 'standalone'`), with its own
+`SHAPE_FIELDS.travel` (`['list-format', 'timer-text', 'opacity', 'position', 'alerts',
+'travel-settings']` — see below for why 'sort'/'merge'/'borders' were dropped rather than kept from
+the 25 Aug shape, and what 'list-format' replaces them with). Damage parser is still locked out of
+the Add Aura premade list, exactly as this section originally described — it remains in
+`PLANNED_PREMADE_WIDGETS` rather than `PREMADE_WIDGETS`, so no *new* Damage parser can be created
+yet. Existing auras of either kind, made before the original 24 Aug lock, were untouched by any of
+this and kept working the whole time.
+
+**Travel guide also got several other things 26 Aug, all at the owner's request, not part of the
+original settings-panel rework:**
+- **A searchable zone-picker popup**, opened by `/tell` — see the destination-command redesign
+  below for exactly what word. It's a second always-on-top window
+  (`src/main/zonePromptPopup.js`, `src/renderer/zone-prompt/`), same shape as `ambiguousPopup.js`
+  but with a search box over the full zone list rather than a short candidate-button row.
+- **The same popup asks where the player currently is, chained right after a destination is set**,
+  if `widgetManager.getCurrentZone()` is still `null` (nothing ever replays zone history at
+  startup — see gotcha #19's sibling reasoning for `currentlyMemorized`). Picking an answer there
+  calls the exact same `applyZoneChangeAndNotify()` the real log-driven zone-change listener calls,
+  so it's indistinguishable from the app having seen a real zone line — including feeding
+  zone-gated aura visibility, not just the travel route. Only triggered off `/tell`, matching the
+  original ask: this is a reaction to the player actively using the travel aura, not a proactive
+  popup on every launch.
+- **The current zone is shown as the top line of the aura at all times** (`Current zone: <zone>`),
+  even before a destination is picked - asked for directly, and genuinely useful as a standalone
+  "where am I" readout independent of the route underneath it.
+- **Reaching the destination clears it automatically.** `travelRowsFor` shows "You are in <zone>"
+  for exactly one tick (the 1s interval, or the next zone line, whichever comes first), then calls
+  `widgetManager.setTravelDestination(widget.id, '')` right there, so the aura falls straight back
+  to its idle "Pick a destination" state with nothing further to do.
+
+**The destination command was redesigned the same day, after a real false-positive was reported.**
+The original design (23 Aug, Shara's own idea) read the *exact word* typed into a failed `/tell` as
+a possible zone name - `/tell qeynos`. The owner's own words on why that had to go: a real zone name
+(Freeport) is also a real player's name, so an ordinary social `/tell` to an offline guildmate could
+look exactly like a travel command, and it was happening in practice, not just in theory. **`main.js`
+no longer calls `resolveDestinationName` from the live `/tell` listener at all** - the exported
+function and its own tests in `zone-routing.test.js` are untouched (still a valid, tested pure
+utility), it is simply never invoked from the running app any more. The only thing the listener
+reacts to now is one fixed word, `TRAVEL_PICKER_COMMAND = 'eqtm'`. First built as a word longer
+than EverQuest's own 15-letter character-name cap (collision-proof, at the owner's own instruction
+that it "needs to be a name that no one has or will ever have"), then explicitly swapped to the
+short `eqtm` at the owner's own follow-up call - weighed against that same requirement, and chosen
+anyway for faster typing, accepting the (small, no longer zero) risk that a real player could
+someday be named it. Typing it again while the popup is already open closes it instead of doing
+nothing or reopening it (`pendingZonePrompt` truthy → `closeZonePrompt()` instead of
+`openZonePrompt`) - one command to remember for both directions. Every *other* `/tell` target,
+including a real zone name, is left completely alone by this aura.
+
+**Why 'sort'/'merge'/'borders' were dropped from `SHAPE_FIELDS.travel` when it was unlocked** (the
+25 Aug design above still had all three): a route leg is not a spell. 'sort' let someone pick
+"Alphabetical"/"Time remaining" for a widget whose rows MUST stay in the walking order the router
+returned — `widgetStore.createTravelGuide` hardcodes `sortOrder:'default'` for exactly that reason,
+so the control could only ever scramble a real route, not just look wrong. 'merge' collapses tiles
+"sharing a duration" into one — every travel leg carries the same infinite/no-duration shape, so it
+would have collapsed the entire route into a single tile. 'borders' colours a tile by spell
+category — a leg has no `spellCategory` at all, so it was pure dead weight (harmless, just useless,
+unlike the other two). See `test/category-borders.test.js` and `test/settings-panel-shapes.test.js`
+for the field-matrix tests that pin all of this. 'list-format' is the replacement: a new
+`SHAPE_FIELDS` key (independent of `'display-choice'`, since travel never offers the icon/list
+choice at all) that shows just the list-width/row-size sliders — the two sizing controls that
+actually shape how a multi-line route reads — without the icon-per-row/mirror-direction toggles
+that mean nothing when every row's `iconUrl` is `null`.
 
 **Why the lock existed:** both used to reuse the ordinary per-aura settings panel — the one built
 for a buff aura, with a "Buffs shown" card offering a source (self/ally/enemy) and a spell picker.
@@ -132,23 +191,24 @@ not supposed to follow this same UI format."*
 resolves to one of twelve shapes via `widgetShape()`, and a `SHAPE_FIELDS` table says which
 optional rows/cards each shape gets. Damage parser and Travel guide are each their own shape now,
 and neither includes the buff-picker card, the "Watching:" row, or the Display style radios — only
-their own settings block (`widget-damage-settings` / `widget-travel-settings`) plus the ordinary
-things every aura has (position, opacity, sort/merge/borders/timer-text, Alerts, Sounds, profiles,
-zones). Confirmed structurally (the shape-field matrix test) and by launching the app clean;
-**not yet confirmed by opening an existing Damage parser/Travel guide aura's settings and looking
-at it** — see docs/TESTING.md's "Settings-panel rework (25 Aug)" section for that checklist.
+their own settings block (`widget-damage-settings` / `widget-travel-settings`) plus whichever of
+the ordinary aura fields actually apply (Travel guide's own list narrowed further on 26 Aug — see
+above). Confirmed structurally (the shape-field matrix test) and by launching the app clean;
+**not yet confirmed by opening an existing Damage parser aura's settings and looking at it** — see
+docs/TESTING.md's "Settings-panel rework (25 Aug)" section for that checklist (its Travel guide
+half is superseded by the 26 Aug unlock above).
 
-**Still locked, deliberately — this is a separate decision from the panel design being done.**
-Re-enabling *creation* of a new Travel guide/Damage parser aura is a one-line mechanical change
-whenever wanted: add `id: 'travel-guide'` / `id: 'damage-parser'` entries back to
-`PREMADE_WIDGETS` in `main-window.js`, each with a `create()` calling
-`window.eqTracker.createTravelGuideWidget(name, '')` / `createDamageMeterWidget(name, false)` — the
-IPC channel, preload bridge and `widgetManager.js` functions behind both were never touched and
-still work end to end — then delete the two matching entries from `PLANNED_PREMADE_WIDGETS`. Don't
-do this without being asked; the design being finished doesn't imply the lock should lift on its
-own. **Give each a `group: 'standalone'`** when it moves — see the premade-list grouping note
-just below; an entry with no `group` is silently dropped from the Add Aura list rather than shown
-ungrouped (confirmed by `test/premade-list.test.js`'s own coverage of this).
+**Damage parser is still locked, deliberately — this is a separate decision from the panel design
+being done.** (Travel guide's own lock was lifted 26 Aug, at the owner's direct request — see
+above.) Re-enabling *creation* of a new Damage parser aura is a one-line mechanical change whenever
+wanted: add an `id: 'damage-parser'` entry back to `PREMADE_WIDGETS` in `main-window.js`, with a
+`create()` calling `window.eqTracker.createDamageMeterWidget(name, false)` — the IPC channel,
+preload bridge and `widgetManager.js` functions behind it were never touched and still work end to
+end — then delete the matching entry from `PLANNED_PREMADE_WIDGETS`. Don't do this without being
+asked; the design being finished doesn't imply the lock should lift on its own. **Give it a
+`group: 'standalone'`** when it moves — see the premade-list grouping note just below; an entry
+with no `group` is silently dropped from the Add Aura list rather than shown ungrouped (confirmed
+by `test/premade-list.test.js`'s own coverage of this).
 
 ## Premade list grouped by Timers / Event alerts / Standalone tools — 25 Aug
 

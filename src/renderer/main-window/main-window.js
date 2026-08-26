@@ -1215,6 +1215,7 @@ function initWidgetsPanel() {
   const debuffCastByRadios = document.querySelectorAll('input[name="widget-debuff-cast-by"]');
   const travelSettingsEl = document.getElementById('widget-travel-settings');
   const travelDestinationCurrentEl = document.getElementById('widget-travel-destination-current');
+  const travelCommandInputEl = document.getElementById('widget-travel-command-input');
   const damageSettingsEl = document.getElementById('widget-damage-settings');
   const fightTimeoutSlider = document.getElementById('widget-fight-timeout-slider');
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
@@ -2150,7 +2151,15 @@ function initWidgetsPanel() {
     'text-customTimer': ['text-fields', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'custom-timers'],
     'custom-timer': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'custom-timers'],
     'damage': ['sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'damage-settings'],
-    'travel': ['sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'travel-settings'],
+    // No 'sort' - the legs are fixed walking order and widgetStore.createTravelGuide hardcodes
+    // sortOrder:'default' for exactly that reason; offering "Alphabetical"/"Time remaining" here
+    // would let someone scramble their own directions. No 'merge' either - every leg carries the
+    // same infinite/no-duration shape, so "merge buffs sharing a duration" would collapse the
+    // whole route into one tile showing only the soonest, which for a route is all of them. No
+    // 'borders' - a route leg has no spell category to colour. 'list-format' (not tied to
+    // 'display-choice', since a travel aura never offers icon mode at all) gives the two controls
+    // that actually shape how a multi-line route reads: list width and row size.
+    'travel': ['list-format', 'timer-text', 'opacity', 'position', 'alerts', 'travel-settings'],
   };
 
   // Applies one shape's field set to every optional row/card, and returns the Set so
@@ -2230,7 +2239,11 @@ function initWidgetsPanel() {
     // for exactly this, because its per-mode groups defaulted to shown and had to be subtracted
     // back out for text.
     const showsIconOnly = has('display-choice') && widget.displayMode === 'icons';
-    const showsListOnly = has('display-choice') && widget.displayMode !== 'icons';
+    const listModeWithChoice = has('display-choice') && widget.displayMode !== 'icons';
+    // 'list-format' is for a shape that is list-mode ALWAYS and never offers the icon/list choice
+    // at all (Travel guide) - it still wants the list-width/row-size sizing controls, just not the
+    // "show icon on each row"/"mirror direction" pair, which mean nothing for a row with no icon.
+    const showsListOnly = listModeWithChoice || has('list-format');
     iconOnlySettings.style.display = showsIconOnly ? '' : 'none';
     iconPositionSettings.style.display = showsIconOnly ? '' : 'none';
     iconLabelSectionEl.style.display = showsIconOnly ? '' : 'none';
@@ -2239,7 +2252,7 @@ function initWidgetsPanel() {
     // offering a width for an edge that isn't drawn would be a control that does nothing.
     borderWidthRowEl.style.display = showsIconOnly && widget.categoryBordersEnabled !== false ? '' : 'none';
     listOnlySettings.style.display = showsListOnly ? '' : 'none';
-    displayListOnlySettings.style.display = showsListOnly ? '' : 'none';
+    displayListOnlySettings.style.display = listModeWithChoice ? '' : 'none';
     // Reported live 24 Aug, overriding the earlier reasoning: "text aura's do not need a sort by
     // toggle, they are one and done only." Sort order still exists and is still read internally
     // (it decides which one wins on the rare occasion more than one of the things a text aura
@@ -2466,7 +2479,10 @@ function initWidgetsPanel() {
   // used to have to be set AFTER updateDisplayModeVisibility ran, in THIS function, specifically
   // because the two functions never shared one answer - now there's only one answer, computed once.
   function renderBuffFilter(widget, fields) {
-    if (fields.has('travel-settings')) showTravelDestination(widget.travelDestination);
+    if (fields.has('travel-settings')) {
+      showTravelDestination(widget.travelDestination);
+      showTravelPickerCommand();
+    }
 
     if (fields.has('custom-timers')) {
       resetTimerForm();
@@ -3224,6 +3240,17 @@ function initWidgetsPanel() {
       description: 'Every bard song currently on you, no matter who cast it. Grouped by caster when that’s knowable (including your own casts) - everything else lands in an "Unknown" group instead of guessing.',
       create: (name) => window.eqTracker.createBardSongsWidget(name),
     },
+    {
+      id: 'travel-guide',
+      name: 'Travel guide',
+      group: 'standalone',
+      description:
+        'The shortest way from where you are to wherever you are going, one leg per line, with the ' +
+        'current zone shown at the top. In game, type /tell eqtm to pick a destination ' +
+        'from a searchable list (typing it again closes the list); it\'ll also ask where you ' +
+        'currently are the first time, and clears itself the moment you arrive.',
+      create: (name) => window.eqTracker.createTravelGuideWidget(name, ''),
+    },
   ];
 
   // Not-yet-built/locked premade ideas - shown inline in their eventual category as
@@ -3233,22 +3260,11 @@ function initWidgetsPanel() {
   // reported live, 25 Aug: a separate "Not built yet" bucket at the bottom meant a planned Buff
   // timer/Debuff-on-enemy entry never read as belonging with the timers it was a preview of.
   const PLANNED_PREMADE_WIDGETS = [
-    // Locked at the owner's instruction, 2026-08-24. Both were built and both were built wrong in
-    // the same way: a "standalone tool" aura (a route, a fight readout) was given the same
-    // settings-panel shape as an ordinary buff aura - a "Buffs shown" card offering a source and a
-    // spell picker that mean nothing for either of them. That shape needs its own design, not
-    // another patch on top of the buff-aura one. Existing Travel guide and Damage parser auras
-    // made before this change are untouched and keep working; this only closes the door on making
-    // new ones until the redesign lands. The working create() calls are still in this file, one
-    // scroll up in source history - nothing about the feature itself was removed.
-    {
-      name: 'Travel guide',
-      group: 'standalone',
-      description:
-        'The shortest way from where you are to wherever you are going, driven entirely by /tell ' +
-        '<zone> in game. Built, but its settings page still looks like a buff aura\'s - offering a ' +
-        '"Buffs shown" picker that does nothing for a route. Locked until it gets its own layout.',
-    },
+    // Locked at the owner's instruction, 2026-08-24: a "standalone tool" aura (a route, a fight
+    // readout) was given the same settings-panel shape as an ordinary buff aura - a "Buffs shown"
+    // card offering a source and a spell picker that mean nothing for either of them. Travel guide
+    // got its own shape (see SHAPE_FIELDS.travel above) and moved back into PREMADE_WIDGETS once
+    // that landed. Damage parser is still waiting on the same treatment.
     {
       name: 'Damage parser',
       group: 'standalone',
@@ -3915,10 +3931,36 @@ function initWidgetsPanel() {
   // destination meant alt-tabbing out of the game you were trying to travel in, which is backwards
   // for the one aura whose whole job happens while you are moving. What is left is a read-out, so
   // the aura can still be identified without guessing which one is pointing where.
+  // Cached rather than re-fetched every render - it's one global value (not per-widget, same as
+  // the destination itself), and re-fetching on every selectWidget call would be one more IPC
+  // round-trip for a value that only ever changes when the input below is actually edited.
+  let currentTravelPickerCommand = 'eqtm';
+  window.eqTracker.getTravelPickerCommand().then((cmd) => {
+    currentTravelPickerCommand = cmd;
+    if (document.activeElement !== travelCommandInputEl) travelCommandInputEl.value = cmd;
+    showTravelDestination(findWidget(selectedId)?.travelDestination);
+  });
+
   function showTravelDestination(destination) {
     if (!travelDestinationCurrentEl) return;
-    travelDestinationCurrentEl.textContent = destination || 'Nowhere yet - type /tell <zone> in game';
+    travelDestinationCurrentEl.textContent =
+      destination || `Nowhere yet - type /tell ${currentTravelPickerCommand} in game to pick one`;
   }
+
+  // Populates the command-word input from the cached value - skipped while it has focus, same
+  // reasoning as textMessageInput above (a re-render mid-edit shouldn't stomp what's being typed).
+  function showTravelPickerCommand() {
+    if (!travelCommandInputEl || document.activeElement === travelCommandInputEl) return;
+    travelCommandInputEl.value = currentTravelPickerCommand;
+  }
+
+  travelCommandInputEl.addEventListener('change', () => {
+    window.eqTracker.setTravelPickerCommand(travelCommandInputEl.value).then((cmd) => {
+      currentTravelPickerCommand = cmd;
+      travelCommandInputEl.value = cmd;
+      showTravelDestination(findWidget(selectedId)?.travelDestination);
+    });
+  });
 
   fightTimeoutSlider.addEventListener('input', () => {
     const sec = Number(fightTimeoutSlider.value);

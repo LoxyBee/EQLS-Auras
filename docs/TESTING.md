@@ -713,29 +713,82 @@ nothing left unclassified. On your largest log it found a five-person fight tota
 New premade in **+ Add aura → Premade aura → Travel guide**. Pick a destination and it shows the
 shortest way there from wherever you are, one step per line, redrawing every time you zone.
 
+- [ ] **Idle means fully gone (fixed 26 Aug, after the first version still showed a "Pick a
+      destination" placeholder)** — with no destination set, the aura should be completely
+      invisible: no text, no tile, nothing on screen at all, not even while the picker popup is
+      open setting one up. It only appears once a destination is actually picked.
+- [ ] **The top line reads "Current zone: \<zone\>"** while something IS being tracked (added
+      26 Aug) — not shown at all while idle, per the point above.
 - [ ] **Make one pointing somewhere far away and walk about.** The list should shorten as you get
-      closer, and the top line should always be the next thing to do.
-- [ ] **Arrive.** It should say "You are in \<zone\>" rather than going blank.
+      closer, and the line right under the zone header should always be the next thing to do.
+- [ ] **Arrive.** It should say "You are in \<zone\>" for a moment, then clear itself back to "Pick
+      a destination" on its own (added 26 Aug) — you shouldn't have to do anything to close it out.
 - [ ] **Check it uses your travel spells.** If you have a portal or a Circle scribed that helps, it
       should say "Cast \<spell\>" instead of walking you. If it offers a spell you do NOT have,
       that is a bug — tell me which.
-- [ ] **Change the destination** on the aura's settings page under **Travel guide**. The route
-      should update immediately.
 - [ ] **Boats and portals should be named as such** — "Sail to" and "Portal to" rather than "Go to".
+- [ ] **List width and Row size** (Travel guide's settings page, added 26 Aug) actually resize the
+      aura live — a long leg like "Sail to Butcherblock Mountains" shouldn't get clipped once you
+      widen it.
 
-**Setting the destination from inside the game (your design).** Type `/tell qeynos` and the game
-answers "Qeynos is not online at this time" — the aura reads that as the new destination. Both of
-those lines were already in your logs, so I did not have to guess at the wording.
+**Setting the destination, redesigned 26 Aug.** The original design read the *exact word* you
+typed in a failed `/tell` as a possible zone name (`/tell qeynos`). Dropped after you pointed out
+the real problem with it: "Freeport" is both a real zone AND a real player could be named it, so an
+ordinary social `/tell` to an offline guildmate could look exactly like a travel command — and it
+was actually happening, not just theoretical. **`/tell <a real zone name>` no longer does anything
+at all now** — the app never reads a /tell's target as a zone name any more, full stop.
 
-- [ ] **`/tell rivervale`** should point every travel aura at Rivervale without you touching the app.
-- [ ] **`/tell qeynos`** should give you South Qeynos. A /tell name cannot have spaces, so one word
-      has to do — and it prefers the short name the game itself uses.
-- [ ] **`/tell faydark`** should NOT pick one. It should list "The Greater Faydark" and "The Lesser
-      Faydark" and wait, because guessing would send you to the wrong one.
-- [ ] **`/tell nonsense`** should say there is no zone by that name.
-- [ ] **The start of the route always comes from the zone tracker**, never from the command — so
-      after a `/tell`, walking to a different zone should change the route without you retyping.
-- [ ] **Picking from the dropdown afterwards** should clear any "which did you mean" message.
+The only thing that does anything is one word, `/tell eqtm` by default — but now editable on the
+Travel guide settings page (added 26 Aug): a "Command word" text box, right above the destination
+readout. Short by your own choice, over a longer word past EverQuest's 15-letter name cap that
+would've made collision impossible rather than just unlikely — worth remembering if a real player
+named "Eqtm" ever shows up, and worth knowing you can change it yourself if that ever happens.
+
+- [ ] **Changing the Command word box** to something else and pressing Tab/clicking away should
+      make `/tell <new word>` work and `/tell eqtm` stop working, immediately, no restart needed.
+- [ ] **Clearing the box entirely** should fall back to `eqtm` rather than leaving the command
+      unreachable.
+
+- [ ] **`/tell eqtm`** opens a small popup titled "Where are you going?" with a search
+      box and the full zone list — type to filter, click one to pick it.
+- [ ] **An ordinary `/tell` to a real (offline) person should do absolutely nothing to this aura** —
+      no message on the overlay, no popup. This is the actual bug that prompted the redesign, so
+      it's worth deliberately testing with a real guildmate's name, not just assuming.
+- [ ] **Typing `/tell eqtm` again while the popup is already open closes it** instead of
+      doing nothing or reopening it — one command to remember either way.
+- [ ] **The popup should not steal focus from the game** — it appears without you having to alt-tab,
+      and you should be able to click a zone in it without the game losing focus first (a click on
+      it does focus the popup window itself, same as the ambiguous-cast popup already behaves).
+- [ ] **The ✕ button dismisses it** without picking anything - the old destination (if any) is
+      left untouched, this is cancel, not clear.
+- [ ] **"Stop tracking" (destination popup only, added 26 Aug)** clears the destination entirely -
+      reported live that there was no way to actually stop once one was set, closing the popup just
+      left the old route showing. After this, the aura goes back to "Pick a destination" idle.
+- [ ] **"Wrong current zone? Fix it" (destination popup only, added 26 Aug)** opens the "Where are
+      you now?" picker even though the app already thinks it knows your zone — reported live after
+      accidentally picking the wrong one, with no way back in short of physically zoning. `/tell
+      eqtm` alone can't reach this: once a current zone is set (even a wrong one) the command falls
+      through to the destination picker, so this button is the only way to correct it by hand.
+- [ ] **If the app doesn't know what zone you're currently in yet** (a fresh app launch, before it's
+      seen a real zone-change line in your log), setting a destination should chain straight into a
+      second popup, "Where are you now?", asking you to pick your current zone the same way.
+      Answering it should make the route appear immediately, using the zone you picked as the
+      starting point.
+- [ ] **The reverse chain always continues to the destination picker (fixed 26 Aug)** — if `/tell
+      eqtm` opened the "Where are you now?" popup first (because the zone was unknown) and there
+      was already an OLD destination active, answering it should immediately open the destination
+      picker next rather than just closing and silently leaving that stale destination in place.
+      Previously this only chained when no destination existed at all.
+- [ ] **`/tell eqtm` asks "Where are you now?" directly, skipping the destination popup, whenever
+      the zone is what's actually unknown** (fixed 26 Aug — previously this always reopened the
+      destination popup, which did nothing to fix an aura stuck on "Waiting for a zone line" if you
+      never physically zone during a session, e.g. camped in one dungeon after a restart).
+- [ ] **The zone list (both popups) no longer offers instance-tier variants** — no "Befallen 1
+      (Awakened)", "Befallen 3 (Fused)", etc., just the base zone names. `findRoute` still knows how
+      to route to a specific tier internally; it's only the pick-a-zone list that's narrowed.
+- [ ] **Walking to an actual new zone afterwards** should still update the route the normal way —
+      picking a current zone by hand is only ever a one-time stand-in for a real zone line, not a
+      replacement for the log-driven tracking.
 
 Three things to know:
 
@@ -1605,8 +1658,12 @@ level testing can stand in for:
 - [ ] **Open a Damage parser aura.** **Behaviour change, look at this one specifically**: no
       "Buffs shown" card and no "Watching:" row any more - previously both showed but did nothing.
       Its own Damage meter settings, plus sort/merge/borders/opacity/position/Alerts, remain.
-- [ ] **Open a Travel guide aura.** Same change as Damage parser - no picker, no Watching: row; its
-      own read-only destination display remains.
+- [ ] **Open a Travel guide aura.** **Narrowed further 26 Aug**, when creation was unlocked: same
+      as Damage parser (no picker, no Watching: row) but ALSO no Sort by, no Merge, no coloured
+      borders (none of the three mean anything for a route leg - see CLAUDE.md's Standalone-tool
+      section for why removing them was safe, not just tidy). Its own read-only destination
+      display, List width/Row size sliders, and Timer text topic remain. See the dedicated Travel
+      guide checklist above for the `/tell`/popup behavior itself.
 - [ ] **Switch an aura's Watching: row between self/ally while its settings are open** (an ordinary
       custom buff aura). Ally-grouping options should appear/disappear immediately, correctly, with
       no stale state left over from the previous source - this is the exact bug the old two-

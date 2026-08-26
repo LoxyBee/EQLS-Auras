@@ -1,8 +1,9 @@
-# Session Handoff — 25 August 2026
+# Session Handoff — 26 August 2026
 
-Written for whoever picks this up next, including Shara herself. Supersedes the 23 August version
-below the line — that one described a state that has since moved a long way; kept only because
-its working-practices section still holds.
+Written for whoever picks this up next, including Shara herself. Supersedes the 25 August version
+below the line — that one described a state that has since moved on for the travel guide
+specifically; everything else in it (the P0 detection toggles, note 26's stacking model, the
+settings-panel rework) is untouched and still current, so it's kept in full rather than trimmed.
 
 ## Read these first, in this order
 
@@ -10,12 +11,78 @@ its working-practices section still holds.
    it is the answer to "what is done".
 2. **`TESTING.md`** — everything built but **not yet confirmed in game**. Large, and deliberately
    so. Nothing in it counts as confirmed until you have seen it working. The newest section is
-   dated 25 Aug, near the bottom.
-3. **`CLAUDE.md`** — the durable source of truth. Conventions, architecture, and 29 detection
+   dated 26 Aug, under "Travel guide" — the old `/tell qeynos` checklist there was replaced
+   wholesale, not appended to, since the whole mechanism it tested is gone.
+3. **`CLAUDE.md`** — the durable source of truth. Conventions, architecture, and 31 detection
    gotchas that were each learned the hard way, plus the full backlog/priority list. Read the
    gotchas before touching detection.
 4. **`FEATURES.md`** — the original note-dump with the full reasoning behind each one.
 5. This file — what state the last session left things in.
+
+---
+
+## What landed this session (26 August)
+
+Smaller and more focused than 25 Aug's rework — one feature area (Travel guide), all at Shara's
+direct request over the course of the day, not a planned backlog item. Full reasoning lives in
+`CLAUDE.md`'s "Standalone-tool auras' settings-panel shape" section and in `main.js`'s own comments
+around `travelPickerCommand`/`zonePromptPopup` — this is the short version.
+
+- **Travel guide unlocked for new-aura creation.** It was built and working since 25 Aug but stuck
+  behind the same lock as Damage parser (`PLANNED_PREMADE_WIDGETS`, not `PREMADE_WIDGETS`) pending
+  a live decision. Shara asked for it directly; it's back in `PREMADE_WIDGETS` in
+  `main-window.js`. **Damage parser is still locked** — that was always a separate decision, not
+  a package deal, and nothing about it changed today.
+- **The `/tell <zone name>` destination command is gone, replaced by a fixed command word.** The
+  original design (23 Aug, Shara's own idea) read the literal word typed into a failed `/tell` as
+  a zone name — `/tell qeynos`. Dropped after a real false-positive risk was named: "Freeport" is
+  both a real zone and a real player's name, so an ordinary social `/tell` to an offline guildmate
+  could look exactly like a travel command. `resolveDestinationName` is untouched and still tested
+  (a valid pure utility) but `main.js` no longer calls it from the live listener at all. The only
+  thing the listener reacts to now is one word — default `eqtm`, deliberately short (weighed
+  against a longer, fully collision-proof word past EverQuest's 15-letter name cap, and chosen
+  anyway for faster typing) — and it's now **user-editable** on the Travel guide settings page
+  (`travelPickerCommand`, persisted like `debugLogEnabled`), not hardcoded.
+- **A searchable zone-picker popup** (`src/main/zonePromptPopup.js`, `src/preload/preload-zone-
+  prompt.js`, `src/renderer/zone-prompt/`) opens on the command word — same always-on-top shape as
+  `ambiguousPopup.js`, but a search box over the full zone list instead of a short candidate row.
+  It's dual-purpose: it asks for a **destination**, and — chained right after, or asked directly if
+  the app doesn't know where the player currently is — it asks for the **current zone** too, which
+  feeds `applyZoneChangeAndNotify()` exactly as if a real zone-change log line had been seen
+  (widget visibility, main-window zone display, route redraw, all of it). Typing the command word
+  again while the popup is open closes it (cancel, not clear); a "Stop tracking" button clears the
+  destination outright; a "Wrong current zone? Fix it" button re-opens the current-zone picker even
+  once the app already believes it knows — the only way back in short of physically zoning, added
+  after Shara reported picking the wrong one live with no way to correct it.
+- **The aura's own display got three small, all Shara-requested, changes**: a permanent
+  `Current zone: <zone>` header line even before a destination is picked; automatic return to the
+  idle "Pick a destination" state one tick after arrival (previously stuck showing "You are in
+  <zone>" until the destination was manually cleared); and, while there's genuinely nothing set,
+  the aura renders **nothing at all** — no placeholder text, no tile — rather than a "Pick a
+  destination" line sitting on screen at all times.
+- **`SHAPE_FIELDS.travel` dropped Sort/Merge/coloured borders and gained `list-format`.** None of
+  the three ever meant anything for a route leg (no `spellCategory` to border by, one infinite-
+  duration shape per leg so nothing to merge, and the router's own walking order must never be
+  re-sorted — `widgetStore.createTravelGuide` hardcodes `sortOrder:'default'` for exactly that
+  reason). `list-format` is the two sizing sliders (List width / Row size) that actually matter for
+  a multi-line route, without the icon-per-row toggles that mean nothing when every leg's icon is
+  null. See `test/category-borders.test.js` / `test/settings-panel-shapes.test.js` for the pinned
+  field matrix.
+
+**Verification state, this session:** no full `npm test` / `replay-log.js` run recorded here yet —
+run both before trusting this is committed, same standard as every other session. **Nothing in
+this section has been confirmed in a real play session** — see `TESTING.md`'s "Travel guide"
+checklist, rewritten today, for exactly what to click through: the command-word rebind, both
+popups (destination and current-zone), the "Stop tracking"/"Fix it" buttons, the auto-clear on
+arrival, and — most important, since it's the actual bug this redesign fixes — a real `/tell` to
+an offline guildmate producing no reaction from the aura at all.
+
+---
+
+# Prior handoff — 25 August 2026
+
+Kept in full — nothing below is superseded by 26 Aug's changes except the Travel guide command
+material, which the section above replaces.
 
 ---
 

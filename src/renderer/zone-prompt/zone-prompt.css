@@ -1,0 +1,158 @@
+* {
+  box-sizing: border-box;
+}
+
+/* Same app-wide ask as main-window.css: scrolls, never draws a visible scrollbar. */
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 17, 22, 0.94);
+  overflow: hidden;
+}
+
+/* Only this strip is draggable - the search box below needs clicks/typing, and the list needs
+   clicks, same reasoning as ambiguous-popup.css. */
+#drag-bar {
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #dfe3ee;
+  background: rgba(60, 90, 200, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: center;
+}
+
+#search-row {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  padding: 8px 8px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#zone-search {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  color: #f0f1f5;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+#zone-search:focus {
+  outline: none;
+  border-color: rgba(120, 150, 255, 0.6);
+}
+
+#zone-cancel {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #9a9fae;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+#zone-cancel:hover {
+  color: #dfe3ee;
+}
+
+#zone-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Only shown in destination mode - see zone-prompt.js's applyPrompt(). Lets you jump straight to
+   correcting the current zone even though the app already believes it knows one (an accidental
+   wrong pick otherwise had no way back in short of walking to a real zone line). */
+#zone-fix-current {
+  flex-shrink: 0;
+  margin: 0 8px 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #2a2e38;
+  color: #dfe3ee;
+  cursor: pointer;
+}
+
+#zone-fix-current:hover {
+  background: #363b47;
+}
+
+/* Also destination-mode only. Separate from the plain dismiss button on purpose: closing this
+   popup on its own leaves whatever destination was already set untouched (cancel), while this one
+   actually clears it (stop). */
+#zone-stop-tracking {
+  flex-shrink: 0;
+  margin: 0 8px 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 5px;
+  border: 1px solid rgba(220, 120, 120, 0.35);
+  background: rgba(120, 40, 40, 0.35);
+  color: #f0d8d8;
+  cursor: pointer;
+}
+
+#zone-stop-tracking:hover {
+  background: rgba(140, 50, 50, 0.5);
+}
+
+.zone-option {
+  text-align: left;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #2a2e38;
+  color: #dfe3ee;
+  cursor: pointer;
+}
+
+.zone-option:hover {
+  background: #363b47;
+}
+
+.zone-none,
+.zone-more {
+  font-size: 11px;
+  color: #9a9fae;
+  font-style: italic;
+  padding: 6px 4px;
+  text-align: center;
+}

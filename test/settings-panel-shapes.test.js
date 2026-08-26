@@ -111,15 +111,24 @@ test('allyDebuffAlert only creates its own shape on a text aura, not a list/icon
 // from SHAPE_FIELDS itself) so a shape silently losing a field it should have shows up as a
 // mismatch here, the same way the 'ally-grouping' regression that motivated this file would have.
 const FIELD_SHAPES = {
-  // damage/travel deliberately exclude 'display-choice' (and 'buff-source'/'buff-picker' below) -
+  // damage deliberately excludes 'display-choice' (and 'buff-source'/'buff-picker' below) -
   // CLAUDE.md's own words on this: "hiding the *rest* of the panel for these two kinds (Buffs
   // shown, the source row, the display-mode radios that mean nothing for either)". sort/merge/
-  // borders/timer-text/opacity/position/alerts are left AS THEY WERE for these two - CLAUDE.md
+  // borders/timer-text/opacity/position/alerts are left AS THEY WERE for damage - CLAUDE.md
   // scoped the fix to those three specifically, not everything a buff tile also has.
+  //
+  // Travel got its own real shape design (25 Aug, once it was unlocked for creation again): no
+  // 'sort' (the legs are a fixed walking order - widgetStore.createTravelGuide hardcodes
+  // sortOrder:'default' for exactly that reason, and offering a Sort-by radio here could actually
+  // scramble a real route), no 'merge' (every leg shares the same infinite/no-duration shape, so
+  // "merge buffs sharing a duration" would collapse the whole route into one tile), no 'borders'
+  // (a route leg has no spellCategory to colour - see category-borders.test.js). 'list-format'
+  // below is travel's own replacement for the list-width/row-size sizing it still wants.
   'display-choice': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer'],
-  'sort': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel'],
-  'merge': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel'],
-  'borders': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel'],
+  'sort': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage'],
+  'merge': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage'],
+  'borders': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage'],
+  'list-format': ['travel'],
   'timer-text': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel'],
   'opacity': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel'],
   'position': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel'],

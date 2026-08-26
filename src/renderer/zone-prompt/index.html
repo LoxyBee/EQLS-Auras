@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Which zone?</title>
+  <link rel="stylesheet" href="zone-prompt.css" />
+</head>
+<body>
+  <div id="drag-bar">Which zone?</div>
+  <div id="search-row">
+    <input type="search" id="zone-search" placeholder="Type to filter..." autocomplete="off" spellcheck="false" />
+    <button id="zone-cancel" title="Dismiss">✕</button>
+  </div>
+  <div id="zone-list"></div>
+  <button id="zone-fix-current" title="Opens the 'Where are you now?' picker so you can correct it, even though the app already thinks it knows.">Wrong current zone? Fix it</button>
+  <button id="zone-stop-tracking" title="Clears the destination entirely - the aura goes back to idle, not just this popup closing.">Stop tracking</button>
+  <script src="zone-prompt.js"></script>
+</body>
+</html>

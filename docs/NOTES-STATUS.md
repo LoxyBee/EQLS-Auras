@@ -3,7 +3,8 @@
 All 40 of your notes, in order, with what is built and what is not. Written 21 Aug 2026, brought
 up to date 24 Aug, the prose sections below the table corrected 25 Aug, and note 26 moved to DONE
 later the same day once `src/main/spellStacking.js` landed - see that row and "What's actually
-still open" below for what changed.
+still open" below for what changed. Note 20's row updated 26 Aug for the Travel guide unlock and
+`/tell` command redesign - see `docs/HANDOFF.md`.
 
 ## The short version
 
@@ -62,7 +63,7 @@ Anything marked DONE still needs your eyes in game. That list is `TESTING.md`, n
 | 17 | Mesmerize worked example: rank, per-mob timer, RESIST flash | **DONE** | Per-mob timer and RESIST flash were built. The rank now sets your own duration as well. Charm and mez carry the spreadsheet's +10%/tier unmeasured — every observation in your logs was cut short by the mob dying. |
 | 18 | Count same-named mobs from the land and resist lines | **SCRAPPED (24 Aug)** | Superseded by note 12's scrap - see that row. The counting mechanism this note asked for is what turned out to double-count a refreshed single target. |
 | 19 | Damage parser premade, placeholder in the meantime | **DONE** | Built. The placeholder is gone because the real one replaces it. |
-| 20 | Travel guide premade that knows your travel spells | **DONE** | Unblocked by research and built. Zone graph plus 61 travel spells, sourced EQL-specific and cross-checked against three others. |
+| 20 | Travel guide premade that knows your travel spells | **DONE** | Unblocked by research and built. Zone graph plus 61 travel spells, sourced EQL-specific and cross-checked against three others. Creation unlocked 26 Aug at your request; the `/tell <zone name>` command was replaced the same day by a fixed, editable command word plus a searchable zone-picker popup, after a real ordinary-`/tell` false positive — see `docs/HANDOFF.md`'s 26 Aug section. |
 
 ## 21–30
 
