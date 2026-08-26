@@ -4,6 +4,9 @@ on:
   push:
     branches: [master]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -18,8 +21,18 @@ jobs:
 
       - run: npm run dist
 
-      - name: Upload installer as a build artifact
-        uses: actions/upload-artifact@v4
+      # Fixed artifactName in package.json (EQLS-Auras-Setup.exe) means this download URL never
+      # changes across version bumps: always
+      # github.com/LoxyBee/EQLS-Auras/releases/download/latest-dev/EQLS-Auras-Setup.exe - safe to
+      # hand to someone (or something) that just wants to always fetch the current build.
+      # prerelease:false (not true) so it's also reachable at the permanent .../releases/latest URL.
+      - name: Publish latest installer as a release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: eqls-auras-installer
-          path: dist/*.exe
+          tag_name: latest-dev
+          name: Latest build
+          body: Automatically built from the latest push to master (commit ${{ github.sha }}).
+          prerelease: false
+          files: dist/*.exe

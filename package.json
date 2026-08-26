@@ -20,6 +20,7 @@
     "win": {
       "target": "nsis"
     },
+    "artifactName": "EQLS-Auras-Setup.exe",
     "files": [
       "src/**/*",
       "package.json"
