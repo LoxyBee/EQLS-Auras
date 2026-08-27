@@ -1,0 +1,504 @@
+{
+  "_comment": "Buff stacking model - see docs/BUFF-STACKING.md. A 'heading' is a slot: two buffs on the same heading are mutually exclusive, different headings stack. A 'line' is an upgrade ladder that shares a heading; members are low->high tier. blockedPairs are directional ground-truth from real logs. Covers CLR/SHM/BRD/ENC/DRU + universal lines; anything not here falls back to spellStacking.checkOverwrite.",
+
+  "headings": {
+    "ac.slot1": "Armor Class (slot 1 - Heroism/Skin)",
+    "ac.slot2": "Armor Class (slot 2 - Shielding/Yaulp)",
+    "ac.slot3": "Armor Class (slot 3 - Frenzy/Augment)",
+    "ac.slot4": "Armor Class (slot 4 - Aegis/Umbra)",
+    "hp.primary": "Hit points (primary - Heroism/Skin)",
+    "hp.symbol": "Hit points (Symbol line - requires gem)",
+    "hp.talisman": "Hit points (Shielding/Talisman)",
+    "hp.combination": "Hit points (Aegolism)",
+    "str.primary": "Strength (primary)",
+    "str.power": "Strength (Focus of Spirit)",
+    "str.short": "Strength (short duration - Yaulp/Frenzy)",
+    "str.avatar": "Strength (Avatar)",
+    "str.anthem": "Strength (bard Anthem)",
+    "str.infusion": "Strength (Infusion of Spirit)",
+    "dex.primary": "Dexterity (primary)",
+    "dex.power": "Dexterity (Focus / bard Chant of Battle)",
+    "dex.short": "Dexterity (short duration - Frenzy)",
+    "dex.avatar": "Dexterity (Avatar)",
+    "dex.infusion": "Dexterity (Infusion of Spirit)",
+    "agi.primary": "Agility (primary)",
+    "agi.short": "Agility (short duration - Frenzy)",
+    "agi.augment": "Agility (Speed Augmentation)",
+    "agi.avatar": "Agility (Avatar)",
+    "sta.primary": "Stamina (primary)",
+    "sta.infusion": "Stamina (Infusion of Spirit)",
+    "cha.primary": "Charisma (primary)",
+    "cha.bard": "Charisma (bard)",
+    "int.primary": "Intelligence (primary)",
+    "wis.primary": "Wisdom (primary)",
+    "haste.primary": "Melee haste (primary global slot)",
+    "haste.ervaj": "Melee haste (bard Ervaj - additive)",
+    "spellhaste": "Spell haste",
+    "ds.slot1": "Damage shield (slot 1)",
+    "ds.slot3": "Damage shield (slot 3 - druid coat)",
+    "absorb.primary": "Damage absorption (primary - rune/skin)",
+    "absorb.berserker": "Damage absorption (Berserker Spirit)",
+    "absorb.cleric": "Damage absorption (Guard of Vie)",
+    "atk.avatar": "Attack (Avatar)",
+    "regen.primary": "HP regeneration (primary)",
+    "regen.bard": "HP regeneration (bard songs - private)",
+    "manaregen.clarity": "Mana regeneration (Clarity)",
+    "manaregen.gift": "Mana regeneration (Gift)",
+    "manaregen.bard": "Mana regeneration (bard Chorus - private)",
+    "ac.bard": "Armor Class (bard songs - private)",
+    "resist.fire": "Fire resistance (primary)",
+    "resist.cold": "Cold resistance (primary)",
+    "resist.poison": "Poison resistance (primary)",
+    "resist.disease": "Disease resistance (primary)",
+    "resist.magic": "Magic resistance (primary)",
+    "resist.magicShield": "Magic resistance (caster Shielding line)",
+    "speed.primary": "Movement speed (primary global slot)",
+    "atk.primary": "Attack (primary)",
+    "proc.pageheal": "Melee proc heal (Blessing of the Page)"
+  },
+
+  "lines": [
+    {
+      "id": "cleric.heroism",
+      "name": "Heroism",
+      "classes": ["CLR", "PAL"],
+      "headings": ["ac.slot1", "hp.primary"],
+      "members": ["Courage", "Center", "Daring", "Bravery", "Valor", "Resolution", "Heroism", "Fortitude"],
+      "conflictsWith": ["druid.skin", "druid.protection"]
+    },
+    {
+      "id": "cleric.symbol",
+      "name": "Symbol line",
+      "classes": ["CLR"],
+      "headings": ["hp.symbol"],
+      "members": ["Symbol of Transal", "Symbol of Ryltan", "Symbol of Pinzarn", "Symbol of Naltron", "Symbol of Marzin"]
+    },
+    {
+      "id": "cleric.aegis",
+      "name": "Aegis line",
+      "classes": ["CLR", "PAL"],
+      "headings": ["ac.slot4"],
+      "members": ["Holy Armor", "Spirit Armor", "Guard", "Armor of Faith", "Shield of Words", "Aegis", "Bulwark of Faith"],
+      "conflictsWith": ["shaman.ac", "enchanter.ac"]
+    },
+    {
+      "id": "cleric.armor-of-protection",
+      "name": "Armor of Protection",
+      "classes": ["CLR"],
+      "headings": ["ac.slot2", "hp.talisman"],
+      "members": ["Armor of Protection", "Armor of the Faithful"],
+      "conflictsWith": ["cleric.yaulp", "enchanter.shielding", "shaman.talisman"]
+    },
+    {
+      "id": "cleric.yaulp",
+      "name": "Yaulp line",
+      "classes": ["CLR"],
+      "headings": ["ac.slot2", "atk.primary"],
+      "members": ["Yaulp", "Yaulp II", "Yaulp III", "Yaulp IV"],
+      "conflictsWith": ["cleric.armor-of-protection", "enchanter.shielding"]
+    },
+    {
+      "id": "cleric.blessing-piety",
+      "name": "Blessing of Piety",
+      "classes": ["CLR"],
+      "headings": ["spellhaste"],
+      "members": ["Blessing of Piety", "Blessing of Faith"]
+    },
+    {
+      "id": "cleric.reckless-strength",
+      "name": "Reckless Strength",
+      "classes": ["CLR", "PAL"],
+      "headings": ["str.primary"],
+      "members": ["Reckless Strength", "Frenzied Strength"]
+    },
+    {
+      "id": "cleric.guard-of-vie",
+      "name": "Guard of Vie",
+      "classes": ["CLR"],
+      "headings": ["absorb.cleric"],
+      "members": ["Ward of Vie", "Guard of Vie"]
+    },
+    {
+      "id": "cleric.blessing-page",
+      "name": "Blessing of the Page",
+      "classes": ["CLR"],
+      "headings": ["proc.pageheal"],
+      "members": ["Blessing of the Page", "Blessing of the Squire", "Blessing of the Knight", "Blessing of the Lord Commander"]
+    },
+    {
+      "id": "cleric.aegolism",
+      "name": "Aegolism",
+      "classes": ["CLR"],
+      "combination": true,
+      "headings": ["ac.slot1", "ac.slot4", "hp.combination"],
+      "blocks": ["cleric.heroism", "cleric.aegis", "cleric.symbol", "druid.skin", "druid.protection"],
+      "members": ["Aegolism"]
+    },
+
+    {
+      "id": "shaman.inner-fire",
+      "name": "Inner Fire",
+      "classes": ["SHM"],
+      "headings": ["ac.slot1", "hp.primary"],
+      "members": ["Inner Fire"],
+      "conflictsWith": ["cleric.heroism", "druid.skin", "druid.protection"]
+    },
+    {
+      "id": "shaman.strength",
+      "name": "Shaman Strength",
+      "classes": ["SHM"],
+      "headings": ["str.primary"],
+      "members": ["Strengthen", "Spirit Strength", "Raging Strength", "Tumultuous Strength", "Furious Strength", "Strength", "Maniacal Strength"],
+      "conflictsWith": ["druid.strength", "enchanter.berserker-spirit", "cleric.reckless-strength"],
+      "stacksWith": ["shaman.talisman", "shaman.frenzy", "cleric.yaulp", "shaman.avatar"]
+    },
+    {
+      "id": "shaman.dexterity",
+      "name": "Shaman Dexterity",
+      "classes": ["SHM"],
+      "headings": ["dex.primary"],
+      "members": ["Dexterous Aura", "Spirit of Monkey", "Deftness", "Dexterity", "Mortal Deftness"]
+    },
+    {
+      "id": "shaman.agility",
+      "name": "Shaman Agility",
+      "classes": ["SHM"],
+      "headings": ["agi.primary"],
+      "members": ["Feet like Cat", "Spirit of Cat", "Nimble", "Agility", "Deliriously Nimble"]
+    },
+    {
+      "id": "shaman.stamina",
+      "name": "Shaman Stamina",
+      "classes": ["SHM"],
+      "headings": ["sta.primary"],
+      "members": ["Spirit of Bear", "Spirit of Ox", "Health", "Stamina", "Riotous Health"]
+    },
+    {
+      "id": "shaman.charisma",
+      "name": "Shaman Charisma",
+      "classes": ["SHM"],
+      "headings": ["cha.primary"],
+      "members": ["Spirit of Snake", "Alluring Aura", "Glamour", "Charisma", "Unfailing Reverence"],
+      "conflictsWith": ["enchanter.charisma"]
+    },
+    {
+      "id": "shaman.ac",
+      "name": "Shaman AC",
+      "classes": ["SHM"],
+      "headings": ["ac.slot4"],
+      "members": ["Scale Skin", "Turtle Skin", "Protect", "Shifting Shield", "Guardian", "Shroud of the Spirits"],
+      "conflictsWith": ["cleric.aegis", "enchanter.ac"]
+    },
+    {
+      "id": "shaman.talisman",
+      "name": "Shaman Talisman (HP)",
+      "classes": ["SHM"],
+      "headings": ["hp.talisman"],
+      "members": ["Talisman of Tnarg", "Talisman of Altuna", "Talisman of Kragg", "Focus of Spirit"],
+      "conflictsWith": ["enchanter.shielding", "cleric.armor-of-protection"]
+    },
+    {
+      "id": "shaman.frenzy",
+      "name": "Frenzy line",
+      "classes": ["SHM"],
+      "headings": ["ac.slot3", "str.short", "dex.short", "agi.short"],
+      "members": ["Fleeting Fury", "Burst of Strength", "Frenzy", "Fury", "Rage", "Voice of the Berserker"],
+      "stacksWith": ["shaman.strength", "shaman.dexterity", "shaman.agility"]
+    },
+    {
+      "id": "shaman.haste",
+      "name": "Shaman Haste",
+      "classes": ["SHM"],
+      "headings": ["haste.primary"],
+      "members": ["Quickness", "Alacrity", "Celerity"],
+      "conflictsWith": ["enchanter.haste", "bard.haste-group", "bard.haste-self"]
+    },
+    {
+      "id": "shaman.regen",
+      "name": "Shaman Regeneration",
+      "classes": ["SHM"],
+      "headings": ["regen.primary"],
+      "members": ["Regeneration", "Chloroplast", "Regrowth"],
+      "conflictsWith": ["druid.regen"]
+    },
+    {
+      "id": "shaman.harnessing-of-spirit",
+      "name": "Harnessing of Spirit",
+      "classes": ["SHM"],
+      "combination": true,
+      "headings": ["hp.talisman", "str.primary", "dex.primary"],
+      "blocks": ["shaman.strength", "shaman.dexterity"],
+      "members": ["Harnessing of Spirit"]
+    },
+    {
+      "id": "shaman.infusion-of-spirit",
+      "name": "Infusion of Spirit",
+      "classes": ["SHM"],
+      "headings": ["str.infusion", "dex.infusion", "sta.infusion"],
+      "members": ["Infusion of Spirit"],
+      "stacksWith": ["shaman.strength", "shaman.dexterity", "shaman.stamina"]
+    },
+    {
+      "id": "shaman.avatar",
+      "name": "Avatar",
+      "classes": ["SHM"],
+      "headings": ["str.avatar", "dex.avatar", "agi.avatar", "atk.avatar"],
+      "members": ["Avatar", "Primal Avatar"],
+      "stacksWith": ["shaman.strength", "shaman.dexterity", "shaman.agility"]
+    },
+    {
+      "id": "shaman.movement",
+      "name": "Shaman movement",
+      "classes": ["SHM"],
+      "headings": ["speed.primary"],
+      "members": ["Spirit of Wolf", "Scale of Wolf", "Spirit of Cheetah"]
+    },
+
+    {
+      "id": "enchanter.haste",
+      "name": "Enchanter Haste",
+      "classes": ["ENC"],
+      "headings": ["haste.primary"],
+      "members": ["Quickness", "Alacrity", "Celerity", "Swift Like the Wind", "Aanya's Quickening", "Wonderous Rapidity"],
+      "conflictsWith": ["shaman.haste", "enchanter.augment", "bard.haste-group", "bard.haste-self"]
+    },
+    {
+      "id": "enchanter.augment",
+      "name": "Enchanter Augment (haste + AGI + AC)",
+      "classes": ["ENC"],
+      "headings": ["haste.primary", "ac.slot3", "agi.augment"],
+      "members": ["Augmentation", "Augment", "Visions of Grandeur"],
+      "conflictsWith": ["enchanter.haste", "shaman.haste"]
+    },
+    {
+      "id": "enchanter.ac",
+      "name": "Enchanter AC",
+      "classes": ["ENC"],
+      "headings": ["ac.slot4"],
+      "members": ["Haze", "Mist", "Cloud", "Obscure", "Shade", "Shadow", "Umbra"],
+      "conflictsWith": ["cleric.aegis", "shaman.ac"]
+    },
+    {
+      "id": "enchanter.shielding",
+      "name": "Enchanter Shielding (self)",
+      "classes": ["ENC", "MAG", "NEC", "WIZ"],
+      "headings": ["ac.slot2", "hp.talisman", "resist.magicShield"],
+      "members": ["Minor Shielding", "Lesser Shielding", "Shielding", "Major Shielding", "Greater Shielding", "Arch Shielding", "Shield of the Magi"],
+      "conflictsWith": ["shaman.talisman", "cleric.armor-of-protection", "cleric.yaulp"]
+    },
+    {
+      "id": "enchanter.charisma",
+      "name": "Enchanter Charisma",
+      "classes": ["ENC"],
+      "headings": ["cha.primary"],
+      "members": ["Sympathetic Aura", "Radiant Visage", "Adorning Grace", "Overwhelming Splendor"],
+      "conflictsWith": ["shaman.charisma"]
+    },
+    {
+      "id": "enchanter.intelligence",
+      "name": "Enchanter INT/WIS",
+      "classes": ["ENC"],
+      "headings": ["int.primary", "wis.primary"],
+      "members": ["Insight", "Brilliance", "Enlightenment"],
+      "note": "Insight and Brilliance cannot coexist; Enlightenment supersedes both."
+    },
+    {
+      "id": "enchanter.rune",
+      "name": "Enchanter Rune",
+      "classes": ["ENC"],
+      "headings": ["absorb.primary"],
+      "members": ["Rune I", "Rune II", "Rune III", "Rune IV", "Rune V"],
+      "conflictsWith": ["enchanter.berserker-spirit"]
+    },
+    {
+      "id": "enchanter.clarity",
+      "name": "Clarity (mana regen)",
+      "classes": ["ENC"],
+      "headings": ["manaregen.clarity"],
+      "members": ["Breeze", "Clarity", "Boon of the Clear Mind", "Clarity II", "Gift of Pure Thought"]
+    },
+    {
+      "id": "enchanter.gift",
+      "name": "Gift (mana pool)",
+      "classes": ["ENC"],
+      "headings": ["manaregen.gift"],
+      "members": ["Gift of Magic", "Gift of Insight", "Gift of Brilliance"]
+    },
+    {
+      "id": "enchanter.berserker-spirit",
+      "name": "Berserker Spirit",
+      "classes": ["ENC"],
+      "headings": ["str.primary", "absorb.berserker"],
+      "members": ["Berserker Spirit"],
+      "conflictsWith": ["shaman.strength", "druid.strength", "enchanter.rune"]
+    },
+
+    {
+      "id": "druid.skin",
+      "name": "Druid Skin",
+      "classes": ["DRU", "RNG"],
+      "headings": ["ac.slot1", "hp.primary"],
+      "members": ["Skin like Wood", "Skin like Rock", "Skin like Steel", "Skin like Diamond", "Skin like Nature", "Natureskin"],
+      "conflictsWith": ["cleric.heroism", "druid.protection"]
+    },
+    {
+      "id": "druid.protection",
+      "name": "Druid Protection (group)",
+      "classes": ["DRU"],
+      "headings": ["ac.slot1", "hp.primary"],
+      "members": ["Protection of Wood", "Protection of Rock", "Protection of Steel", "Protection of Diamond", "Protection of Nature", "Protection of the Glades"],
+      "conflictsWith": ["druid.skin", "cleric.heroism"]
+    },
+    {
+      "id": "druid.coat",
+      "name": "Druid Coat (AC + DS)",
+      "classes": ["DRU"],
+      "headings": ["ac.slot2", "ds.slot3"],
+      "members": ["Thistlecoat", "Barbcoat", "Bramblecoat", "Spikecoat", "Thorncoat", "Bladecoat"],
+      "conflictsWith": ["enchanter.shielding", "cleric.yaulp"]
+    },
+    {
+      "id": "druid.shield-of-thistles",
+      "name": "Druid Shield of Thistles (DS)",
+      "classes": ["DRU"],
+      "headings": ["ds.slot1"],
+      "members": ["Shield of Thistles", "Shield of Barbs", "Shield of Brambles", "Shield of Spikes", "Shield of Thorns", "Shield of Blades"]
+    },
+    {
+      "id": "druid.regen",
+      "name": "Druid Regeneration",
+      "classes": ["DRU"],
+      "headings": ["regen.primary"],
+      "members": ["Regeneration", "Chloroplast", "Regrowth"],
+      "conflictsWith": ["shaman.regen"]
+    },
+    {
+      "id": "druid.strength",
+      "name": "Druid Strength",
+      "classes": ["DRU"],
+      "headings": ["str.primary"],
+      "members": ["Strength of Earth", "Strength of Stone", "Storm Strength", "Girdle of Karana"],
+      "conflictsWith": ["shaman.strength", "enchanter.berserker-spirit"]
+    },
+    {
+      "id": "druid.movement",
+      "name": "Druid movement",
+      "classes": ["DRU"],
+      "headings": ["speed.primary"],
+      "members": ["Spirit of Wolf", "Scale of Wolf", "Spirit of Cheetah"]
+    },
+    {
+      "id": "druid.firefist",
+      "name": "Firefist",
+      "classes": ["DRU"],
+      "headings": ["atk.primary"],
+      "members": ["Firefist"],
+      "conflictsWith": ["cleric.yaulp"]
+    },
+
+    {
+      "id": "bard.haste-group",
+      "name": "Bard group haste",
+      "classes": ["BRD"],
+      "headings": ["haste.primary"],
+      "members": ["Anthem de Arms", "Vilia's Verses of Celerity", "Verses of Victory", "McVaxius' Rousing Rondo"],
+      "conflictsWith": ["enchanter.haste", "shaman.haste", "bard.haste-self"]
+    },
+    {
+      "id": "bard.haste-self",
+      "name": "Bard self haste (Jonthan's)",
+      "classes": ["BRD"],
+      "headings": ["haste.primary"],
+      "members": ["Jonthan's Whistling Warsong", "Jonthan's Provocation", "Jonthan's Inspiration"],
+      "conflictsWith": ["enchanter.haste", "shaman.haste", "bard.haste-group"]
+    },
+    {
+      "id": "bard.ervaj",
+      "name": "Bard Ervaj haste (additive)",
+      "classes": ["BRD"],
+      "headings": ["haste.ervaj"],
+      "members": ["Melody of Ervaj", "Composition of Ervaj"]
+    },
+    {
+      "id": "bard.selos",
+      "name": "Selo's run speed",
+      "classes": ["BRD"],
+      "headings": ["speed.primary"],
+      "members": ["Selo's Accelerando", "Selo's Accelerating Chorus", "Selo's Song of Travel"]
+    },
+    {
+      "id": "bard.regen",
+      "name": "Bard HP regen songs",
+      "classes": ["BRD"],
+      "headings": ["regen.bard"],
+      "members": ["Hymn of Restoration", "Cantata of Soothing", "Cantata of Replenishment"]
+    },
+    {
+      "id": "bard.manaregen",
+      "name": "Bard mana regen (Chorus)",
+      "classes": ["BRD"],
+      "headings": ["manaregen.bard"],
+      "members": ["Cassindra's Chant of Clarity", "Cassindra's Chorus of Clarity"]
+    },
+    {
+      "id": "bard.chant-of-battle",
+      "name": "Chant of Battle",
+      "classes": ["BRD"],
+      "headings": ["str.anthem", "dex.power", "ac.bard"],
+      "members": ["Chant of Battle"]
+    },
+
+    {
+      "id": "universal.resist-fire",
+      "name": "Fire resist",
+      "classes": ["CLR", "DRU", "SHM", "RNG", "PAL"],
+      "headings": ["resist.fire"],
+      "members": ["Endure Fire", "Resist Fire"]
+    },
+    {
+      "id": "universal.resist-cold",
+      "name": "Cold resist",
+      "classes": ["CLR", "DRU", "SHM", "RNG", "PAL"],
+      "headings": ["resist.cold"],
+      "members": ["Endure Cold", "Resist Cold"]
+    },
+    {
+      "id": "universal.resist-poison",
+      "name": "Poison resist",
+      "classes": ["CLR", "DRU", "SHM", "PAL"],
+      "headings": ["resist.poison"],
+      "members": ["Endure Poison", "Resist Poison", "Talisman of Shadoo"]
+    },
+    {
+      "id": "universal.resist-disease",
+      "name": "Disease resist",
+      "classes": ["CLR", "DRU", "SHM", "PAL"],
+      "headings": ["resist.disease"],
+      "members": ["Endure Disease", "Resist Disease", "Talisman of Jasinth"]
+    },
+    {
+      "id": "universal.resist-magic",
+      "name": "Magic resist",
+      "classes": ["CLR", "DRU", "SHM", "ENC", "RNG"],
+      "headings": ["resist.magic"],
+      "members": ["Endure Magic", "Resist Magic"]
+    }
+  ],
+
+  "blockedPairs": [
+    { "blocked": "Frenzy", "by": "Fury" },
+    { "blocked": "Riftwind's Protection", "by": "Fury" },
+    { "blocked": "Arch Shielding", "by": "Talisman of Altuna" },
+    { "blocked": "Symbol of Ryltan", "by": "Symbol of Pinzarn" },
+    { "blocked": "Valor of Marr", "by": "Alacrity" },
+    { "blocked": "Augmentation", "by": "Celerity" },
+    { "blocked": "Augmentation", "by": "Alacrity" },
+    { "blocked": "Center", "by": "Skin like Rock" },
+    { "blocked": "Skin like Wood", "by": "Center" },
+    { "blocked": "Boon of the Clear Mind", "by": "Clarity" },
+    { "blocked": "Breeze", "by": "Clarity" },
+    { "blocked": "Regeneration", "by": "Boil Blood" },
+    { "blocked": "Spirit of the Traveler", "by": "Spirit of Wolf" },
+    { "blocked": "Spirit of the Traveler", "by": "Spirit of Bih`Li" }
+  ]
+}

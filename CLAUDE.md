@@ -317,7 +317,15 @@ feed isn't the active mode, so toggling off/on can't resurrect an old burst. See
 `test/text-stack.test.js` (engine-level feed behaviour is mutation-tested) and TESTING.md's
 "Stacked text lines" checklist - **not yet run in a real session.**
 
-## Buff optimiser / Buff Planner (26 Aug) — page done, aura not yet built
+## Buff optimiser / Buff Planner (26 Aug) — page built but LOCKED, aura not yet built
+
+**Locked 27 Aug at Shara's request** ("lock the buff planner tab ... so that no one can access
+it") until the `buff-loadout` overlay aura ships. The sidebar nav button is removed from
+`index.html`; the `#page-planner` section and all of `buffPlanner.js` / `spellEffects.js` /
+`buffLines.js` stay in place and keep their tests. `initBuffPlanner()` bails immediately when
+`.nav-btn[data-page="page-planner"]` isn't found, so nothing wires up and no IPC fires. To
+re-enable: add the nav button back (`data-page="page-planner"`, `id="planner-nav-btn"`) — that's
+the whole change. `test/planner-wiring.test.js` pins the locked state.
 
 Shara's ask: "input 3 classes, spit out your highest-level buffs and the best setup across the 14
 buff slots." Design forks she chose: a main-window page **plus** a loadout aura, drag-to-reorder
@@ -327,8 +335,9 @@ character with a multiclass loadout, not three mains"), capped at **50** (the EQ
 level picker sits above the single row of three class dropdowns.
 
 **`src/main/buffPlanner.js`** is the brain - pure, no file/path access. `computePlan({ roster,
-classes, level, priorityOrder, checkStack, spellData })` -> `{ ..., slots, songSlots,
-permanentSlots, totals, statsKnown }`.
+classes, level, priorityOrder, checkStack, spellData, lines })` -> `{ ..., slots, songSlots,
+permanentSlots, totals, statsKnown, stackingKnown }`. `lines` is `src/shared/buffLines.js` (the
+heading model - see below and `docs/BUFF-STACKING.md`); `main.js` always passes it.
 - Candidates: every `kind:'buff'` roster entry one of the 3 classes can cast at the character
   level, whose `targets` can land on the player (`Self`/`Group`/`Friendly`/`Group Member`/`Single`
   - not Pet/Animal/Undead). **Heal-over-time spells excluded** (`scaleCategory` `hot`/`heal` -
@@ -344,7 +353,18 @@ permanentSlots, totals, statsKnown }`.
   (`{stat, value, order}`), not in the planner, not on screen; the term "SPA" is banned from
   `spellEffects.js` and `buffPlanner.js`, pinned by a test). Any effect that isn't one of those
   stats - heal components, procs, vision, illusion, focus limits, pacify - is discarded here and
-  never reaches the planner. `buffPlanner.NON_STAT_CATEGORIES` is the coarse companion filter
+  never reaches the planner.
+- **STATS list + weights (updated 27 Aug on Shara's review of a live plan):** added `HP regen`
+  (effect 0), `mana regen` (effect 15 - was mislabelled `max mana`; effect 15 is a per-tick mana
+  buff, Clarity-style, not a max-mana raise), `endurance regen` (effect 189), and `cast speed`
+  (effect 127, replacing the unused `spell haste` on effect 118). `max mana` moved to effect 97.
+  **`STAT_WEIGHT`: regen stats are 4x** ("mana and endurance regen should be a high priority") -
+  a per-tick value is small (~10-15) so it needs the multiplier to sit alongside a +40 stat;
+  **resists dropped to 0.1x** (0.15 for `all resists`) - was 0.25, still let 4-5 single-element
+  resist buffs fill the tail of the 14 ahead of anything useful. `cast speed` is a raw % scored
+  1.5x (top priority, like haste - Shara: "blessing of faith/piety is a cast speed buff and needs
+  the same priority as haste"). These effect numbers are the standard client ones, NOT verified
+  against her file - see TESTING.md's checklist for what to confirm. `buffPlanner.NON_STAT_CATEGORIES` is the coarse companion filter
   (whole categories: Duration Heals, Echoes, Delayed, Movement, Vision, Illusion:*, Spell Focus,
   Invulnerability, ...) so the plan is sane even with no spell file; with the file, a buff granting
   zero known stats is also dropped.
@@ -369,22 +389,29 @@ permanentSlots, totals, statsKnown }`.
   27 Aug when Shara posted a real, valid 14-buff cleric/shaman/bard loadout that ran `Strength`
   AND `Infusion of Spirit` AND `Talisman of Altuna` (all "stat" categories that overlap) and my
   category-collapse had thrown two of the fourteen away. **The planner does NOT collapse by
-  category.** Every stat/combat buff the classes can cast is a candidate. The ONLY removal is a
-  weaker *tier* of a buff line: `collapseByStacking` uses `spellStacking.checkOverwrite` (the
-  game's own effect-slot data - two buffs only collide where they carry the same effect in the
-  *same slot*, so a dedicated Strength buff and Infusion of Spirit, whose STR sits on a different
-  slot, both survive while `Strengthen`/`Raging Strength`/... are recognised as the same line and
-  the weaker dropped). A mutual/ambiguous pair keeps both. **`checkStack` is always wired when the
-  spell file is reachable** (not gated on the `useStackingModel` diagnostic toggle). No spell file
-  -> `collapseByCategory` fallback that only merges spells sharing a *base name* ("Yaulp III" over
-  "Yaulp"), `stackingKnown: false`.
-  A dropped tier goes to overflow with `reason: "<winner> is the stronger version"`. Three guards
-  keep it from over-collapsing (all learned from Shara's screenshots): it only ever compares buffs
-  of the **same category** (a tier line never spans categories - Talisman of Altuna in "Shielding"
-  is safe from a "Resist Buff" talisman); the loser must grant **nothing the winner doesn't**
-  (`hasUniqueStat` - Altuna's AC saves it even if resist slots collide); and it runs **once across
-  all pools together** then splits, so a permanent buff and a temp buff of the same line (Rage vs
-  Fury) get compared instead of both surviving in separate pools.
+  category.** Every stat/combat buff the classes can cast is a candidate.
+- **The heading model (`src/shared/buffLines.js` + `src/shared/data/buff-lines.json`)** is how
+  conflicts are resolved now - see `docs/BUFF-STACKING.md`. A **heading** is a slot; same heading =
+  mutually exclusive, different heading = stack. A **line** is an upgrade ladder sharing a heading,
+  `members` ordered low->high. `buff-lines.json` also carries `blockedPairs` (33 directional "X did
+  not take hold, blocked by Y" observations mined from real logs) and combination buffs (Aegolism,
+  Harnessing of Spirit) that `blocks` the individual lines they subsume.
+  `buffLines.stackDecision(incoming, active)` returns `overwrites` / `blocked` / `coexist` /
+  `unknown`. `buffPlanner.resolveByHeadings()` collapses each line to its best castable tier, then
+  walks candidates in priority order claiming headings, dropping anything whose heading is taken or
+  that `stackDecision` calls `blocked`/`overwrites` (-> overflow with a `reason`). Only
+  CLR/SHM/BRD/ENC/DRU + universal resist lines are defined so far; an `unknown` pair falls back to
+  `spellStacking.checkOverwrite`.
+- **`collapseByStacking` / `collapseByCategory` are the fallback** used only when `lines` is absent
+  (never, in the real app - `main.js` always passes `buffLines`); they set `approximate: true` /
+  `stackingKnown: false`. `checkStack` (`spellStacking.checkOverwrite`) is always wired when the
+  spell file is reachable, not gated on the `useStackingModel` diagnostic toggle.
+- **The Self Buffs overlay uses the same model to drop stale tiles.** `buffEngine.setLineStackFn()`
+  is wired in `main.js` to `buffLines.stackDecision`; in `_land()`, when a `kind:'buff'` spell
+  lands, any active buff the incoming one `overwrites` is removed immediately (logged
+  `ENDED "<x>" - replaced by "<y>"`). This runs unconditionally (measured pairs + strict line tiers
+  are not guesses); the old effect-slot heuristic behind `useStackingModel` now only handles pairs
+  `stackDecision` returns `unknown` for.
 - The headline stat shown on a row is matched by **name** to the category's calibrated stat, not
   by value - a "Charisma" buff that also gives +40 INT still leads with its CHA figure.
 - **Resist buffs are weighted 0.25x** in the default slot order (`STAT_WEIGHT` in spellEffects) -
@@ -405,8 +432,11 @@ A character-level input, one row of three class dropdowns, the 14-slot list, a "
 (shown only with BRD), a "Permanent buffs" card (shown when non-empty), one drag-to-reorder
 priority list covering the buff + song slots (HTML5 DnD), and a "Won't fit" card. Recomputes on
 every level/class/drag change and on `onActiveProfileChanged`.
-Tests: `test/buff-planner.test.js` (the maths, mutation-tested), `test/planner-wiring.test.js`
-(store + IPC + page markup). **Not yet run in the real app** - see docs/TESTING.md.
+Tests: `test/buff-planner.test.js` (the maths + heading model, mutation-tested),
+`test/buff-lines.test.js` (the shipped `buff-lines.json` + `stackDecision`),
+`test/planner-wiring.test.js` (store + IPC + page markup + the engine/planner both using
+`buffLines`), `test/spell-stacking.test.js` (the `buffEngine` stale-tile removal).
+**Not yet run in the real app** - see docs/TESTING.md.
 
 **Still to build - the `buff-loadout` aura** (Shara chose "page + aura"): a repeatable aura kind
 that renders the planned 14 as overlay tiles - active buffs counting down (cross-referenced against

@@ -485,6 +485,13 @@ class BuffEngine extends EventEmitter {
     // tools/replay-log.js, neither of which has the game's install files to read.
     this.stackVerdictFn = null; // (activeSpellId, incomingSpellId) => { overwrites, why } | null
     this.useStackingModel = false;
+    // The heading model (docs/BUFF-STACKING.md, src/shared/buffLines.js). (incomingName, activeName)
+    // => 'overwrites' | 'blocked' | 'coexist' | 'unknown'. Runs UNCONDITIONALLY in _land() for the
+    // 'overwrites' verdict - those come from a measured "did not take hold" pair in a real log, or a
+    // strict same-line tier bump (Yaulp III over Yaulp II), neither of which is a guess. The
+    // effect-slot heuristic above stays behind useStackingModel for the pairs the line data does not
+    // cover ('unknown').
+    this.lineStackFn = null; // set by main.js from buffLines.stackDecision
     this.durationMultiplierFn = () => 1;
     this.iconUrlFn = (iconId) => `eqicon://icon/Alternate%201/${iconId}`;
     this.debugLogFn = null; // (message) => void - see setDebugLogFn
@@ -513,6 +520,12 @@ class BuffEngine extends EventEmitter {
 
   setUseStackingModel(enabled) {
     this.useStackingModel = enabled;
+  }
+
+  // fn(incomingName, activeName) => 'overwrites' | 'blocked' | 'coexist' | 'unknown'. See the
+  // constructor comment on lineStackFn and _land()'s use of it.
+  setLineStackFn(fn) {
+    this.lineStackFn = fn;
   }
 
   // Lets iconService control which icon art set URLs point at, without
@@ -1902,9 +1915,23 @@ class BuffEngine extends EventEmitter {
     // reaching into cases nothing has confirmed. A verdict here only ever REMOVES a stale entry
     // still sitting in activeBuffs under a DIFFERENT name - the buff about to land below always
     // proceeds regardless, so a wrong or missing verdict never blocks the landing itself.
+    // The heading model / measured blocked-pairs (docs/BUFF-STACKING.md) - runs unconditionally,
+    // these are observed conflicts or strict tier bumps, not a guess. Only ever removes a stale
+    // tile still sitting under a DIFFERENT name; the incoming landing always proceeds below.
+    if (this.lineStackFn && known.scaleCategory === 'buff') {
+      for (const [activeKey, activeEntry] of [...this.activeBuffs]) {
+        if (activeKey === known.name.toLowerCase()) continue;
+        if (this.lineStackFn(known.name, activeEntry.name) === 'overwrites') {
+          this._debugLog(`ENDED "${activeEntry.name}" - replaced by "${known.name}" (same buff line / known conflict)`);
+          this.activeBuffs.delete(activeKey);
+        }
+      }
+    }
+    // The effect-slot heuristic, for pairs the line data does not cover - still behind the toggle.
     if (this.useStackingModel && this.stackVerdictFn && known.spellId && known.scaleCategory === 'buff') {
       for (const [activeKey, activeEntry] of this.activeBuffs) {
         if (activeKey === known.name.toLowerCase()) continue; // a recast of the same spell, not a conflict
+        if (this.lineStackFn && this.lineStackFn(known.name, activeEntry.name) !== 'unknown') continue;
         const activeKnown = this.buffStore.getByName(activeEntry.name);
         if (!activeKnown || !activeKnown.spellId || activeKnown.scaleCategory !== 'buff') continue;
         const verdict = this.stackVerdictFn(activeKnown.spellId, known.spellId);

@@ -29,7 +29,10 @@ const STATS = [
   { name: 'INT', effect: 10 },
   { name: 'CHA', effect: 8 },
   { name: 'haste', effect: 11 }, // stored 100-based: 141 = +41%
-  { name: 'spell haste', effect: 118 },
+  { name: 'cast speed', effect: 127 }, // reduces cast time. Shara, 27 Aug: same priority as haste.
+  { name: 'HP regen', effect: 0 }, // per-tick on a duration buff (heals/HoTs are filtered out before this)
+  { name: 'mana regen', effect: 15 }, // per-tick mana on a duration buff (Clarity etc.), not a max-mana raise
+  { name: 'endurance regen', effect: 189 },
   { name: 'fire resist', effect: 46 },
   { name: 'cold resist', effect: 47 },
   { name: 'poison resist', effect: 48 },
@@ -40,10 +43,10 @@ const STATS = [
   { name: 'rune', effect: 55 },
   { name: 'spell rune', effect: 78 },
   { name: 'max HP', effect: 69 },
-  { name: 'max mana', effect: 15 },
+  { name: 'max mana', effect: 97 },
 ];
 const STAT_BY_EFFECT = new Map(STATS.map((s, i) => [s.effect, { name: s.name, order: i }]));
-const MULTIPLIER_STATS = new Set(['haste', 'spell haste']); // 100-based, a bonus not a point total
+const MULTIPLIER_STATS = new Set(['haste', 'cast speed']); // 100-based, a bonus not a point total
 
 // How much a point of each stat is worth when ranking buffs of DIFFERENT stats for the default
 // slot order (the user drags to override). Attributes / AC / ATK count 1:1. Resists are weighted
@@ -53,8 +56,13 @@ const MULTIPLIER_STATS = new Set(['haste', 'spell haste']); // 100-based, a bonu
 const RESIST_STATS = new Set(['fire resist', 'cold resist', 'poison resist', 'disease resist', 'magic resist', 'all resists']);
 const STAT_WEIGHT = {
   'max HP': 0.02, 'max mana': 0.02, rune: 0.05, 'spell rune': 0.05, 'damage shield': 0.5,
-  'fire resist': 0.25, 'cold resist': 0.25, 'poison resist': 0.25, 'disease resist': 0.25,
-  'magic resist': 0.25, 'all resists': 0.25,
+  // Regen is a top priority (Shara, 27 Aug: "mana and endurance regen should be a high priority").
+  // A per-tick value is small (~10-15), so it needs a big multiplier to rank alongside a +40 stat.
+  'HP regen': 4, 'mana regen': 4, 'endurance regen': 4,
+  // Resists are "situational and lower priority" - dropped well below a real stat so 4-5 single-
+  // element resist buffs don't fill the tail of the 14 ahead of anything useful.
+  'fire resist': 0.1, 'cold resist': 0.1, 'poison resist': 0.1, 'disease resist': 0.1,
+  'magic resist': 0.1, 'all resists': 0.15,
 };
 
 const EFFECT_SLOTS = 12;
@@ -126,7 +134,8 @@ function categoryHeadline(installRoot, roster, spellId, category) {
 function statScore(installRoot, spellId) {
   let score = 0;
   for (const s of spellStats(installRoot, spellId)) {
-    if (MULTIPLIER_STATS.has(s.stat)) score += Math.max(0, Math.abs(s.value) - 100); // 141 -> +41
+    if (s.stat === 'haste') score += Math.max(0, Math.abs(s.value) - 100); // 141 -> +41
+    else if (s.stat === 'cast speed') score += Math.abs(s.value) * 1.5; // raw %, top-priority like haste
     else score += Math.abs(s.value) * (STAT_WEIGHT[s.stat] ?? 1);
   }
   return Math.round(score);

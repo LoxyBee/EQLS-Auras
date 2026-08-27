@@ -24,9 +24,20 @@ const {
   DEFAULT_LEVEL,
   MAX_CHARACTER_LEVEL,
 } = require('../src/main/buffPlanner');
+const buffLines = require('../src/shared/buffLines');
 
 const buff = (over) => ({ kind: 'buff', targets: 'Self', durationSec: 600, ...over });
 const stat = (name, value, order = 0) => ({ stat: name, value, order });
+
+// Load a hand-built line set for a test, restore the shipped data after.
+function withLines(headings, lines, blockedPairs, fn) {
+  buffLines.loadData({ headings: headings || {}, lines: lines || [], blockedPairs: blockedPairs || [] });
+  try {
+    fn(buffLines);
+  } finally {
+    buffLines.loadData();
+  }
+}
 
 // Stand-in for the real spellEffects.js wiring: { spellId -> [{stat,value,order}] }. The headline
 // is just the biggest one, which is enough for the tests.
@@ -149,76 +160,92 @@ test('a multiclass buff records every chosen class that can cast it', () => {
 });
 
 // ---------------------------------------------------------------------------
-// the real collapse: the game's stacking data
+// the heading model (src/shared/buffLines.js)
 // ---------------------------------------------------------------------------
 
-test('spellStacking drops the weaker tier of a line but keeps a different buff on other slots', () => {
+const HEADING_LINES = [
+  { id: 'shm.str', headings: ['str.primary'], members: ['Strengthen', 'Strength'], stacksWith: ['shm.frenzy'] },
+  { id: 'shm.frenzy', headings: ['ac.slot3', 'str.short'], members: ['Frenzy', 'Fury', 'Rage'], stacksWith: ['shm.str'] },
+  { id: 'shm.infusion', headings: ['str.infusion', 'dex.infusion'], members: ['Infusion of Spirit'], stacksWith: ['shm.str'] },
+  { id: 'shm.talisman', headings: ['hp.talisman'], members: ['Talisman of Altuna', 'Talisman of Kragg'] },
+  { id: 'shm.jasinth', headings: ['resist.disease'], members: ['Talisman of Jasinth'] },
+  { id: 'cleric.aegis', headings: ['ac.slot4'], members: ['Shield of Words', 'Aegis'] },
+  { id: 'shm.ac', headings: ['ac.slot4'], members: ['Guardian'], conflictsWith: ['cleric.aegis'] },
+  { id: 'cleric.aegolism', combination: true, headings: ['ac.slot1', 'ac.slot4', 'hp.combination'], blocks: ['cleric.aegis', 'shm.ac'], members: ['Aegolism'] },
+];
+
+test('two buffs that share a stat but sit on different headings BOTH stay', () => {
+  const roster = [
+    buff({ name: 'Strength', spellId: 1, category: 'Strength', classes: 'SHM 46', level: 46 }),
+    buff({ name: 'Fury', spellId: 2, category: 'Strength', classes: 'SHM 30', level: 30 }),
+    buff({ name: 'Infusion of Spirit', spellId: 3, category: 'Strength', classes: 'SHM 49', level: 49 }),
+  ];
+  withLines({}, HEADING_LINES, [], (lines) => {
+    const names = computePlan({ roster, classes: ['SHM'], lines }).candidates.map((c) => c.name).sort();
+    assert.deepEqual(names, ['Fury', 'Infusion of Spirit', 'Strength'], 'all three sit on different headings');
+  });
+});
+
+test('a line collapses to its highest castable tier', () => {
   const roster = [
     buff({ name: 'Strengthen', spellId: 1, category: 'Strength', classes: 'SHM 1', level: 1 }),
     buff({ name: 'Strength', spellId: 2, category: 'Strength', classes: 'SHM 46', level: 46 }),
-    buff({ name: 'Infusion of Spirit', spellId: 3, category: 'Strength', classes: 'SHM 49', level: 49 }),
   ];
-  // Strengthen and Strength are the same line (Strength cleanly overwrites Strengthen).
-  // Infusion of Spirit puts its STR on a different slot - it overwrites neither and neither
-  // overwrites it.
-  const checkStack = (activeId, incomingId) => {
-    if (activeId === 1 && incomingId === 2) return { overwrites: true }; // Strength beats Strengthen
-    return null; // everything else coexists
-  };
-  const plan = computePlan({ roster, classes: ['SHM'], checkStack });
-  assert.deepEqual(plan.candidates.map((c) => c.name).sort(), ['Infusion of Spirit', 'Strength']);
-  assert.equal(plan.stackingKnown, true);
-  assert.equal(plan.overflow.find((o) => o.name === 'Strengthen').reason, 'Strength is the stronger version');
+  withLines({}, HEADING_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['SHM'], lines });
+    assert.deepEqual(plan.candidates.map((c) => c.name), ['Strength']);
+    assert.equal(plan.overflow.find((o) => o.name === 'Strengthen').reason, 'Strength is the higher tier');
+  });
 });
 
-test('a mutual/ambiguous stacking pair keeps both - the player decides', () => {
+test('two different lines that share a heading conflict - one to overflow', () => {
   const roster = [
-    buff({ name: 'A', spellId: 1, category: 'X', classes: 'CLR 10', level: 10 }),
-    buff({ name: 'B', spellId: 2, category: 'X', classes: 'CLR 10', level: 10 }),
+    buff({ name: 'Shield of Words', spellId: 1, category: 'Armor Class', classes: 'CLR 45', level: 45 }),
+    buff({ name: 'Guardian', spellId: 2, category: 'Armor Class', classes: 'SHM 42', level: 42 }),
   ];
-  const checkStack = () => ({ overwrites: true }); // both directions say "overwrites"
-  assert.deepEqual(computePlan({ roster, classes: ['CLR'], checkStack }).candidates.map((c) => c.name).sort(), ['A', 'B']);
+  const spellData = fakeSpellData({ 1: [stat('AC', 40, 0)], 2: [stat('AC', 35, 0)] });
+  withLines({}, HEADING_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['CLR', 'SHM'], lines, spellData });
+    assert.deepEqual(plan.slots.map((s) => s.name), ['Shield of Words'], 'the bigger AC wins slot 4');
+    assert.equal(plan.overflow.find((o) => o.name === 'Guardian').reason, 'conflicts with Shield of Words');
+  });
 });
 
-test('stackingKnown is false when there is no spell file', () => {
-  const plan = computePlan({ roster: [buff({ name: 'X', spellId: 1, category: 'Strength', classes: 'CLR 10', level: 10 })], classes: ['CLR'] });
-  assert.equal(plan.stackingKnown, false);
-});
-
-test('collapse never fires across categories - Altuna (Shielding) survives a resist talisman', () => {
+test('cross-heading pairs never conflict - Talisman of Altuna (HP) and Talisman of Jasinth (disease resist)', () => {
   const roster = [
     buff({ name: 'Talisman of Altuna', spellId: 1, category: 'Shielding', classes: 'SHM 40', level: 40 }),
     buff({ name: 'Talisman of Jasinth', spellId: 2, category: 'Resist Buff', classes: 'SHM 50', level: 50 }),
   ];
-  const checkStack = () => ({ overwrites: true }); // even if the game says they conflict...
-  const names = computePlan({ roster, classes: ['SHM'], checkStack }).candidates.map((c) => c.name).sort();
-  assert.deepEqual(names, ['Talisman of Altuna', 'Talisman of Jasinth'], 'different categories are never collapsed');
-});
-
-test('a buff with a unique stat is not dropped as a "weaker version"', () => {
-  const roster = [
-    buff({ name: 'AC + Resist', spellId: 1, category: 'Shielding', classes: 'SHM 40', level: 40 }),
-    buff({ name: 'Pure Resist', spellId: 2, category: 'Shielding', classes: 'SHM 50', level: 50 }),
-  ];
-  const spellData = fakeSpellData({
-    1: [stat('AC', 40, 0), stat('magic resist', 20, 11)],
-    2: [stat('magic resist', 45, 11)],
+  withLines({}, HEADING_LINES, [], (lines) => {
+    const names = computePlan({ roster, classes: ['SHM'], lines }).candidates.map((c) => c.name).sort();
+    assert.deepEqual(names, ['Talisman of Altuna', 'Talisman of Jasinth']);
   });
-  const checkStack = (a, b) => (a === 1 && b === 2 ? { overwrites: true } : null); // Pure Resist "overwrites" AC + Resist
-  const names = computePlan({ roster, classes: ['SHM'], checkStack, spellData }).candidates.map((c) => c.name).sort();
-  assert.deepEqual(names, ['AC + Resist', 'Pure Resist'], 'AC + Resist keeps its slot - it has AC the other lacks');
 });
 
-test('a permanent buff and a temp buff of the same line are compared, not both kept', () => {
+test('a measured blocked-pair is honoured directionally, even across different lines', () => {
   const roster = [
-    buff({ name: 'Rage', spellId: 1, category: 'Strength', classes: 'SHM 45', level: 45 }),
-    buff({ name: 'Fury', spellId: 2, category: 'Strength', classes: 'SHM 30', level: 30, infiniteDuration: true, durationSec: null }),
+    buff({ name: 'Arch Shielding', spellId: 1, category: 'Shielding', classes: 'ENC 40', level: 40 }),
+    buff({ name: 'Talisman of Altuna', spellId: 2, category: 'Shielding', classes: 'SHM 40', level: 40 }),
   ];
-  const spellData = fakeSpellData({ 1: [stat('STR', 51, 2)], 2: [stat('STR', 30, 2)] });
-  const checkStack = (a, b) => (a === 2 && b === 1 ? { overwrites: true } : null); // Rage overwrites Fury
-  const plan = computePlan({ roster, classes: ['SHM'], checkStack, spellData });
-  const all = [...plan.candidates, ...plan.permanentSlots].map((c) => c.name);
-  assert.deepEqual(all, ['Rage'], 'Fury is dropped - Rage is the stronger version of the same line');
+  const pairs = [{ blocked: 'Arch Shielding', by: 'Talisman of Altuna' }];
+  withLines({}, [{ id: 'ench.shield', headings: ['x'], members: ['Arch Shielding'] }, { id: 'shm.tal', headings: ['y'], members: ['Talisman of Altuna'] }], pairs, () => {
+    // priority puts Talisman first, so Arch Shielding is the one that can't land
+    const plan = computePlan({ roster, classes: ['ENC', 'SHM'], lines: buffLines, priorityOrder: ['Talisman of Altuna'] });
+    assert.deepEqual(plan.slots.map((s) => s.name), ['Talisman of Altuna']);
+    assert.equal(plan.overflow.find((o) => o.name === 'Arch Shielding').reason, 'conflicts with Talisman of Altuna');
+  });
+});
+
+test('a combination buff blocks the individual lines it subsumes', () => {
+  const roster = [
+    buff({ name: 'Aegolism', spellId: 1, category: 'HP Buff (Line 1)', classes: 'CLR 50', level: 50 }),
+    buff({ name: 'Shield of Words', spellId: 2, category: 'Armor Class', classes: 'CLR 45', level: 45 }),
+  ];
+  withLines({}, HEADING_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['CLR'], lines, priorityOrder: ['Aegolism', 'Shield of Words'] });
+    assert.deepEqual(plan.slots.map((s) => s.name), ['Aegolism']);
+    assert.equal(plan.overflow.find((o) => o.name === 'Shield of Words').reason, 'conflicts with Aegolism');
+  });
 });
 
 test('the dragged priority order still overrides the default score order', () => {
@@ -227,8 +254,7 @@ test('the dragged priority order still overrides the default score order', () =>
     buff({ name: 'Small', spellId: 2, category: 'Agility', classes: 'CLR 10', level: 10 }),
   ];
   const spellData = fakeSpellData({ 1: [stat('STR', 100, 2)], 2: [stat('AGI', 5, 5)] });
-  // Big has the bigger score, but the user dragged Small to the top.
-  const plan = computePlan({ roster, classes: ['CLR'], spellData, priorityOrder: ['Small', 'Big'] });
+  const plan = computePlan({ roster, classes: ['CLR'], spellData, priorityOrder: ['Small', 'Big'], lines: buffLines });
   assert.deepEqual(plan.candidates.map((c) => c.name), ['Small', 'Big']);
 });
 

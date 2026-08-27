@@ -6486,6 +6486,11 @@ const PLANNER_CLASSES = ['BRD', 'BST', 'CLR', 'DRU', 'ENC', 'MAG', 'NEC', 'PAL',
 const PLANNER_MAX_LEVEL = 50;
 
 function initBuffPlanner() {
+  // Locked until the buff-loadout aura ships - the sidebar button is removed (see index.html), so
+  // there is no way to reach this page. Bail before wiring anything (incl. the profile-change
+  // listener) rather than keep a hidden page live.
+  if (!document.querySelector('.nav-btn[data-page="page-planner"]')) return;
+
   const classRowEl = document.getElementById('planner-class-rows');
   const levelInputEl = document.getElementById('planner-level-input');
   const slotListEl = document.getElementById('planner-slot-list');
@@ -6506,11 +6511,13 @@ function initBuffPlanner() {
   const emptyNoteEl = document.getElementById('planner-empty-note');
   const stackingStateEl = document.getElementById('planner-stacking-state');
   const activeProfileEl = document.getElementById('planner-active-profile');
+  const priorityResetEl = document.getElementById('planner-priority-reset');
   if (!classRowEl) return;
 
   let classes = []; // up to 3 class codes - mirrors the active profile
   let level = PLANNER_MAX_LEVEL; // the one shared character level
   let order = []; // buff names, the dragged priority order
+  let hasManualOrder = false; // true once the user has dragged (a non-empty saved buffPlanOrder)
 
   // One row, three class dropdowns - it's one multiclass character, not three mains, so there is
   // one level (the input above this row) and it applies to all three.
@@ -6648,6 +6655,15 @@ function initBuffPlanner() {
     fillList(overflowListEl, allOverflow, { reasonFromItem: true });
     overflowCardEl.style.display = allOverflow.length ? '' : 'none';
     overflowCountEl.textContent = String(allOverflow.length);
+
+    if (priorityResetEl) priorityResetEl.style.display = hasManualOrder ? '' : 'none';
+  }
+
+  if (priorityResetEl) {
+    priorityResetEl.addEventListener('click', () => {
+      hasManualOrder = false;
+      window.eqTracker.setPlannerOrder(null, []).then(recompute);
+    });
   }
 
   let dragName = null;
@@ -6678,6 +6694,7 @@ function initBuffPlanner() {
       });
       li.addEventListener('drop', (e) => {
         e.preventDefault();
+        hasManualOrder = true;
         window.eqTracker.setPlannerOrder(null, order).then(recompute);
       });
     });
@@ -6700,6 +6717,7 @@ function initBuffPlanner() {
         classes = Array.isArray(input.classes) ? input.classes : [];
         level = typeof input.level === 'number' ? input.level : PLANNER_MAX_LEVEL;
         order = Array.isArray(input.buffPlanOrder) ? input.buffPlanOrder : [];
+        hasManualOrder = order.length > 0;
         levelInputEl.value = String(level);
         const active = profiles.find((p) => p.id === activeId);
         activeProfileEl.textContent = active ? active.name : 'Default';
@@ -6719,7 +6737,7 @@ function initBuffPlanner() {
   buildClassSelects();
   levelInputEl.addEventListener('change', commitLevel);
 
-  const navBtn = document.getElementById('planner-nav-btn');
+  const navBtn = document.querySelector('.nav-btn[data-page="page-planner"]');
   if (navBtn) navBtn.addEventListener('click', loadInput);
   window.eqTracker.onActiveProfileChanged(() => loadInput());
 
