@@ -49,11 +49,22 @@ test('a bar that already has cooldownShowNumber saved is never re-migrated, even
   assert.equal(bar.cooldownShowNumber, false);
 });
 
-test('a brand new bar defaults to wipe shade, no number - unchanged from before the split', () => {
+test('a bar created via store.create defaults to wipe shade, no number - unchanged from before the split', () => {
   const store = makeStore(null);
-  const bar = store.getAll()[0];
+  const bar = store.create('Test Bar');
   assert.equal(bar.cooldownStyle, 'wipe');
   assert.equal(bar.cooldownShowNumber, false);
+});
+
+test('a fresh install starts with NO action bars - no empty overlay dropped on the game', () => {
+  const store = makeStore(null);
+  assert.deepEqual(store.getAll(), [], 'first run must not seed a default action bar');
+});
+
+test('an existing saved bar still loads normally - the no-default-bar change is fresh-install only', () => {
+  const multi = makeStore({ bars: [{ id: 'a', name: 'My Bar', visible: true, slots: [] }] });
+  assert.equal(multi.getAll().length, 1);
+  assert.equal(multi.getById('a').name, 'My Bar');
 });
 
 module.exports = () => report('action-bar-cooldown-style');

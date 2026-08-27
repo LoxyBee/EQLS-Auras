@@ -153,7 +153,15 @@ class ActionBarStore {
     if (legacy && typeof legacy === 'object') {
       return [this._normalizeBar({ id: crypto.randomUUID(), name: 'Action Bar', ...legacy })];
     }
-    return [defaultBar(crypto.randomUUID(), 'Action Bar 1')];
+    // Genuine fresh install (no actionBars.json, no legacy actionBar.json). Start with NO bars.
+    // The old default seeded one "Action Bar 1" that was showOnAllProfiles + visible, so a brand
+    // new user got 12 empty bordered squares dropped on top of the game before they had positioned
+    // anything, filled a single slot, or decided they wanted an action bar at all. Action bars are
+    // an opt-in feature - the "+ Add action bar" button (createBar, which scopes the new bar to the
+    // current loadout) is the front door. Zero bars is already a fully supported UI state (it is
+    // where deleting your last bar leaves you). Existing installs are untouched - they load through
+    // the `multi.bars` / `legacy` branches above.
+    return [];
   }
 
   _normalizeBar(b) {
