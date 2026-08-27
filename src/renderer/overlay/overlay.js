@@ -54,6 +54,8 @@ let currentConfig = {
   wrapText: false,
   iconJustify: 'left',
   textJustify: 'left',
+  stackTextLines: false,
+  maxStackTextLines: 2,
   groupAllyBuffs: false,
   groupAllyDirection: 'vertical',
   hideAllyNameOnTile: false,
@@ -910,7 +912,7 @@ function alwaysOnEntry() {
   };
 }
 
-function visibleBuffs(buffs) {
+function visibleBuffs(buffs, opts = {}) {
   // Before every filter below it, because none of them apply: there is nothing to include or
   // exclude, no duration to cap, and no source to read from.
   if (currentConfig.alwaysOn) return [alwaysOnEntry()];
@@ -1039,7 +1041,11 @@ function visibleBuffs(buffs) {
   // (death/wear-off/mez-broken detection needs that - see buffEngine's allyBuffs), this only
   // narrows what's DRAWN, the same way the text-aura rule above narrows drawing without touching
   // what's watched.
-  if (currentConfig.displayMode === 'text' || currentConfig.trackOnEnemies) return sorted.slice(0, 1);
+  if (currentConfig.trackOnEnemies) return sorted.slice(0, 1);
+  // A text aura is normally a single tile. The one exception is the stacked-line feed
+  // (renderTextFeed), which asks for the whole set with { noTextLimit: true } so it can track
+  // every recent firing rather than only the newest - see this file's render() dispatch.
+  if (currentConfig.displayMode === 'text') return opts.noTextLimit ? sorted : sorted.slice(0, 1);
   return sorted;
 }
 
@@ -1188,7 +1194,129 @@ let zeroDurationKeys = new Set();
 // that was already active before this window existed to hear about it.
 let hasRenderedBefore = false;
 
+// ---------------------------------------------------------------------------
+// Stacked-line text feed (config.stackTextLines)
+//
+// A plain text aura shows one line and replaces it every time something new fires - so a burst of
+// three resists in two seconds looks identical to one. With stacking on, each firing becomes its
+// own line in a short vertical feed (oldest on top, newest on the bottom, chat style) and each
+// line fades out on its own timer.
+//
+// Built here in the renderer, not the engine, because the engine already gives us what we need:
+// it keeps ONE active entry per trigger and just moves its clock forward on a repeat (an instant's
+// landedAt, or a customTimer's remainingSec jumping back up - the same signal the renewal sound
+// already reads). The feed watches that clock move and appends a line each time it does. Identical
+// consecutive lines merge with an "x3" rather than repeating, so spamming one resist can't blow
+// past the cap.
+// ---------------------------------------------------------------------------
+const textFeed = []; // [{ text, count, firstAt, lastAt }], oldest first
+const feedLastSeen = new Map(); // `${keyFor(b)}\u0000${renderedText}` -> { landedAt, remaining }
+let lastFeedSig = null;
+const FEED_FADE_MS = 1200; // how long a line spends visibly fading before it is pruned
+
+function resetTextFeed() {
+  textFeed.length = 0;
+  feedLastSeen.clear();
+  lastFeedSig = null;
+}
+
+function pushFeedLine(text, now) {
+  const last = textFeed[textFeed.length - 1];
+  if (last && last.text === text) {
+    // A repeat of the line already on the bottom - bump its count and restart its fade clock
+    // rather than adding a second identical row.
+    last.count += 1;
+    last.firstAt = now;
+    last.lastAt = now;
+    return;
+  }
+  textFeed.push({ text, count: 1, firstAt: now, lastAt: now });
+}
+
+function drawTextFeed(now, lifetimeMs) {
+  listEl.innerHTML = '';
+  tileRefs.clear();
+  listEl.className = 'buff-list';
+  listEl.dataset.mode = 'text-feed';
+  listEl.dataset.groupKey = '';
+  listEl.dataset.mergeKey = '';
+  for (const line of textFeed) {
+    const el = document.createElement('div');
+    el.className = 'text-tile text-feed-line';
+    el.textContent = line.count > 1 ? `${line.text}  x${line.count}` : line.text;
+    applyTextAuraStyle(el);
+    // Negative delay is deliberate and valid: a line that survives a redraw (because a DIFFERENT
+    // line aged out) resumes its fade from where it was rather than snapping back to full opacity.
+    const age = now - line.firstAt;
+    const delay = lifetimeMs - FEED_FADE_MS - age;
+    el.style.animation = `feed-fade ${FEED_FADE_MS}ms linear ${delay}ms forwards`;
+    listEl.appendChild(el);
+  }
+}
+
+function renderTextFeed(buffs) {
+  const pool = visibleBuffs(buffs, { noTextLimit: true });
+  const now = Date.now();
+  const lifetimeMs = Math.max(1, currentConfig.textAuraInstantSec || 6) * 1000;
+  const cap = Math.max(2, Math.min(4, currentConfig.maxStackTextLines || 2));
+  let sawNew = false;
+
+  const liveKeys = new Set();
+  for (const b of pool) {
+    const text = textFor(b);
+    if (!text) continue;
+    const srcKey = `${keyFor(b)}\u0000${text}`;
+    liveKeys.add(srcKey);
+    const seen = feedLastSeen.get(srcKey);
+    const landedAt = b.landedAt || null;
+    const remaining = typeof b.remainingSec === 'number' ? b.remainingSec : null;
+    let fired;
+    if (!seen) {
+      fired = true; // first time this exact line has appeared in the pool
+    } else if (landedAt !== null) {
+      fired = landedAt !== seen.landedAt; // an instant fired again
+    } else if (remaining !== null && seen.remaining !== null) {
+      fired = remaining > seen.remaining + 0.5; // a customTimer trigger re-fired (clock jumped up)
+    } else {
+      fired = false;
+    }
+    if (fired) {
+      pushFeedLine(text, now);
+      sawNew = true;
+    }
+    feedLastSeen.set(srcKey, { landedAt, remaining });
+  }
+  for (const k of feedLastSeen.keys()) {
+    if (!liveKeys.has(k)) feedLastSeen.delete(k);
+  }
+
+  // Age out whole lines, then hold to the visible-line cap (array is oldest-first, so the excess
+  // and the expired are both at the front).
+  for (let i = textFeed.length - 1; i >= 0; i--) {
+    if (now - textFeed[i].firstAt >= lifetimeMs) textFeed.splice(i, 1);
+  }
+  if (textFeed.length > cap) textFeed.splice(0, textFeed.length - cap);
+
+  const sig = `${textFeed.map((l) => `${l.firstAt}:${l.count}`).join('|')}|${cap}`;
+  if (sig !== lastFeedSig) {
+    lastFeedSig = sig;
+    drawTextFeed(now, lifetimeMs);
+  }
+
+  if (hasRenderedBefore && sawNew && currentConfig.soundOnLand) playAlertSound('land');
+  hasRenderedBefore = true;
+  reportSizeIfChanged();
+}
+
 function render(buffs) {
+  // The stacked-line text feed is its own render path - it keeps a short scrolling history of
+  // recent firings instead of one live tile, so none of the tile-diffing / merge / grouping
+  // machinery below applies. alwaysOn wins (nothing to stack when there is no event at all).
+  if (currentConfig.displayMode === 'text' && currentConfig.stackTextLines && !currentConfig.alwaysOn) {
+    renderTextFeed(buffs);
+    return;
+  }
+
   const visible = visibleBuffs(buffs);
   const isText = currentConfig.displayMode === 'text';
   const isIcon = currentConfig.displayMode === 'icons';
@@ -1475,6 +1603,9 @@ const LABEL_OVERFLOW_MARGIN_PX = 60;
 function applyConfig(config) {
   currentConfig = config;
   document.body.classList.toggle('text-aura', config.displayMode === 'text');
+  // Drop any stacked-line history the moment the feed is not the active mode, so toggling it off
+  // and back on (or switching display mode) never resurrects lines from a previous burst.
+  if (!(config.displayMode === 'text' && config.stackTextLines)) resetTextFeed();
   // Note 6 - the aura's own name in its move box, so a screen full of unlocked blue rectangles
   // says which is which. Set from applyConfig rather than once at boot because a rename arrives
   // as a config change, and the box would otherwise show the old name until the next restart.

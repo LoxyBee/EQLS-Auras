@@ -42,14 +42,21 @@ function ensureSlots(total) {
     const activeBorder = document.createElement('div');
     activeBorder.className = 'slot-active-border';
     activeBorder.style.display = 'none';
+    // The per-gem border (see actionBarStore.js's borderEnabled/borderWidthPx/borderOffsetPx/
+    // borderColor) - its own element, not a second outline on .slot itself, so it can be layered
+    // ON TOP of the bar-wide outline (drawn on .slot) rather than replacing it.
+    const customBorder = document.createElement('div');
+    customBorder.className = 'slot-custom-border';
+    customBorder.style.display = 'none';
     slot.appendChild(img);
     slot.appendChild(secondImg);
     slot.appendChild(cooldownOverlay);
     slot.appendChild(cooldownNumber);
     slot.appendChild(nameLabel);
+    slot.appendChild(customBorder);
     slot.appendChild(activeBorder);
     barEl.appendChild(slot);
-    slotEls.push({ slot, img, secondImg, cooldownOverlay, cooldownNumber, nameLabel, activeBorder });
+    slotEls.push({ slot, img, secondImg, cooldownOverlay, cooldownNumber, nameLabel, customBorder, activeBorder });
   }
 }
 
@@ -193,7 +200,7 @@ function render(config) {
   const borderColor = config.borderColor || '#d2d6e1';
 
   currentSlots = config.slots || [];
-  slotEls.forEach(({ slot, img, secondImg, nameLabel, cooldownOverlay }, i) => {
+  slotEls.forEach(({ slot, img, secondImg, nameLabel, cooldownOverlay, customBorder }, i) => {
     const s = currentSlots[i] || {};
     // Forces the WHOLE box invisible - icon, border and background together, not just the icon -
     // since opacity applies to the .slot element itself, which is what draws the border/background
@@ -201,6 +208,24 @@ function render(config) {
     slot.style.opacity = s.disabled ? '0' : '1';
     slot.style.outline = `${borderWidth}px solid ${borderColor}`;
     slot.style.outlineOffset = `-${borderOffset}px`;
+
+    // Per-gem border - drawn on its own child layer, on top of the bar-wide outline above, not
+    // tied to whether the gem has an icon. An inset box-shadow rather than a second outline -
+    // reported live: raising the BAR-WIDE offset made an already-visible custom border vanish,
+    // because two outlines in the same stacking context (one on .slot itself, one on this child)
+    // don't reliably respect normal parent/child paint order in Chromium - an outline can paint
+    // as a final decoration pass regardless of a descendant's z-index. A box-shadow is ordinary
+    // child content, painted above the parent's own outline exactly like any other child, so this
+    // sidesteps the ambiguity instead of depending on it. inset (not outline-offset) pulls the
+    // ring inward the same way.
+    if (s.borderEnabled) {
+      customBorder.style.display = '';
+      customBorder.style.inset = `${s.borderOffsetPx ?? 1}px`;
+      customBorder.style.boxShadow = `inset 0 0 0 ${s.borderWidthPx || 2}px ${s.borderColor || '#d2d6e1'}`;
+    } else {
+      customBorder.style.display = 'none';
+      customBorder.style.boxShadow = 'none';
+    }
 
     // Per-gem, not bar-wide - see actionBarStore.js's insetPx comment. Applied to the cooldown
     // overlay too, so a wipe/pie darkens exactly the visible (shrunk) icon rather than a
@@ -233,7 +258,10 @@ function render(config) {
     if (s.iconId == null || !iconSet) {
       img.style.display = 'none';
       // A stand-in for the icon, not a tint - only meaningful while there is no icon to cover it
-      // anyway. Empty string reverts to the CSS default (the dark calibration-box look).
+      // anyway. Empty string/null reverts to the CSS default (the dark calibration-box look);
+      // the literal string 'transparent' is its own explicit choice, distinct from "unset" -
+      // requested directly, since "unset" still shows the dark calibration tint, not a truly
+      // see-through gem. Any other string is a real CSS colour picked from the colour input.
       slot.style.backgroundColor = s.bgColor || '';
     } else {
       img.src = `eqicon://icon/${encodeURIComponent(iconSet)}/${s.iconId}`;

@@ -2060,3 +2060,101 @@ body.sidebar-resizing .sidebar {
 .context-menu button.danger {
   color: var(--danger);
 }
+
+/* ---------------------------------------------------------------------------
+   Buff Planner page (initBuffPlanner / src/main/buffPlanner.js)
+   --------------------------------------------------------------------------- */
+.planner-level-row,
+.planner-class-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.planner-class-select {
+  width: 90px;
+  flex: 0 0 auto;
+}
+#planner-level-input {
+  width: 64px;
+  flex: 0 0 auto;
+}
+.planner-slot-list {
+  margin: 8px 0 0;
+  padding-left: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.planner-priority-list,
+.planner-overflow-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.planner-buff-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+}
+.planner-slot-list .planner-buff-row {
+  margin-left: 2px;
+}
+.planner-draggable {
+  cursor: grab;
+}
+.planner-draggable:active {
+  cursor: grabbing;
+}
+.planner-dragging {
+  opacity: 0.4;
+}
+.planner-buff-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.planner-buff-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+.planner-buff-meta {
+  color: var(--ink-dim);
+  font-size: 11px;
+}
+.planner-buff-reason {
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-style: italic;
+  flex: 0 0 auto;
+}
+.planner-song-list,
+.planner-permanent-list {
+  margin: 8px 0 0;
+  padding-left: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.planner-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.planner-total-chip {
+  padding: 3px 9px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}

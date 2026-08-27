@@ -554,6 +554,34 @@ also present, since (2) only ever showed up that way.
       *Expect*: it fills in with whatever text the trigger actually matched on the real line, not
       the timer's own name.
 
+### Stacked text lines (25 Aug)
+
+New: text auras have a **"Stack multiple lines"** checkbox (Alerts & Sounds card, under "Show
+events for"). Off by default everywhere; **the Resist flash premade ships with it ON at 2 lines**.
+When on, a second event arriving while an earlier line is still up is added as a new fading line
+below it instead of silently replacing the text. A "Lines visible" slider (2-4, default 2) appears
+only once the checkbox is on. Identical back-to-back lines merge into one with an `x2` / `x3`
+rather than repeating. Built in `overlay.js`'s `renderTextFeed`; engine untouched.
+
+- [ ] **Make a fresh Resist flash aura and eat a few resists in quick succession.** *Expect*: each
+      distinct resist shows on its own line, newest at the bottom, up to 2 lines at once; the
+      older line fades out on its own a moment before the newer one. Two resists of the *same*
+      spell back-to-back should read as one line with `x2`, not two identical lines.
+- [ ] **Your own existing Resist flash aura already has stacking on after this update** - a
+      `widgets.json` v2->v3 migration turns it on (at 2 lines) for every Resist flash aura that
+      already exists, yours included. Open its settings once and confirm "Stack multiple lines" is
+      ticked and "Lines visible" shows 2. If you had previously widened it, that number is kept.
+- [ ] **A non-Resist text aura (Dispelled, Charm broke, anything hand-built) did NOT get stacking
+      turned on** by that migration - only Resist flash.
+- [ ] **Turn the checkbox off and the "Lines visible" slider disappears**; turn it back on and it
+      comes back at whatever it was. Toggling off then on mid-burst does not resurrect old lines.
+- [ ] **A plain (non-stacking) text aura, and the Dispelled premade, still behave exactly as
+      before** - one line, replaced each time.
+- [ ] **"Lines visible" actually caps it** - set it to 2, force 4 quick events, only the newest 2
+      are ever on screen.
+- [ ] **Left/Center/Right justification still works** with several lines stacked (each line can be
+      a different width - the anchored edge should stay put).
+
 ## The "Custom debuff aura" type (note 34)
 
 Add Aura → Custom → **Custom debuff aura**, beside Custom buff aura. A debuff on a mob arrives as a
@@ -568,6 +596,68 @@ places, neither obviously about debuffs. That is what this type saves you.
 ---
 
 # 3 — Making auras
+
+## Buff Planner page (26 Aug)
+
+New **"Buff Planner"** page in the sidebar. Set one character level (cap 50) at the top, then pick
+up to three classes in the row below; it shows the highest-level buff for every line those classes
+cover, packed into the 14 buff slots, with a drag-to-reorder priority list and a "Won't fit" list.
+Level + classes + priority order are stored **on the active loadout profile** - switch loadouts
+and it plans a different set. The plan itself is recomputed live every time from the current
+roster (nothing is cached).
+
+- [ ] **Every row shows a real, named character stat** - `+55 STR`, `+41% haste`, `+80 AC`, `+30
+      magic resist`. **Nothing should show a bare number-code anywhere** - if you see "SPA" or
+      "effect 73" or similar, that's a bug, screenshot it. A "Total stats" card at the top sums
+      every slotted buff, in character-sheet order (AC, ATK, the attributes, haste, resists, ...).
+- [ ] **Heals and pure utility are gone** - no Promised Renewal / Sacred Echo, no Levitate /
+      Vision / Illusion / run-speed. But **Spell Focus buffs (Blessing of Faith), Symbol, Blessing
+      of the Lord Commander, Guard of Vie ARE offered** - they're real slots.
+- [ ] **Buffs that affect the same stat but stack are ALL offered.** Pick cleric/shaman/bard @ 50:
+      the candidate list must include **Strength AND Infusion of Spirit AND Talisman of Altuna**
+      (all touch STR/AC but all stack), plus Stamina/Dexterity/Agility/Charisma/Symbol of
+      Naltron/Resolution/Shield of Words/Resist Magic - i.e. every buff in a real valid loadout.
+      Only *weaker tiers* of a line (Spirit Strength vs Strength, Yaulp vs Yaulp III) should be
+      collapsed away, and only when your EQ folder is set. If a lower tier still shows, or a
+      stacking buff is missing, say which.
+- [ ] **Cross-check 2-3 numbers** against the spell's own in-game description. Only STR/DEX/AGI/AC
+      are confirmed against your file; the rest (STA/CHA/WIS/INT/ATK/haste/resists/DS/max-HP) use
+      standard client effect ids. If one stat is consistently wrong, say which - one-line fix.
+- [ ] **Something you DO want is missing** (a Combat Innates buff, a regen buff) - it was dropped
+      because its effect id isn't on the stat whitelist yet. Tell me the spell name and I'll add it.
+- [ ] **"Total stats" is missing / says "set your EQ folder"** - it needs `spells_us.txt`, i.e.
+      your EQ folder set on the Setup page (the same one spellbook/icons use). If that's set and
+      it still can't read numbers, that's a bug.
+- [ ] **Set level 50, pick ENC / SHM / CLR.** *Expect*: 14 of 14 slots filled, each a different
+      category, each showing its stat number. A "Permanent buffs" card
+      showing **Yaulp III (CLR) and Fury (SHM)** - both pulled OUT of the 14. Note Infusion of
+      Spirit still holds the Strength slot in the 14 even though Fury is also "Strength" - the
+      permanent one keeps its own listing on purpose. No "Symphonic" card (no Bard). No
+      Celestial/heal-over-time spells anywhere. A "Won't fit — N" card below.
+- [ ] **Add BRD as one of the three classes.** *Expect*: a "Symphonic — N of 5 song slots" card
+      appears with bard songs only; the 14 buff slots may change (a bard haste song can beat the
+      spell haste and take over that line - no category should appear in both the buff list and
+      the song list).
+- [ ] **Remove BRD.** *Expect*: the Symphonic card disappears and its songs are gone from the plan
+      entirely (they're not castable without a Bard).
+- [ ] **Set level 30 with just SHM picked.** *Expect*: far fewer slots filled, only spells a
+      level-30 Shaman can actually cast. Change the level to 50 and more appear - the one level
+      applies to all three class slots at once.
+- [ ] **Drag a buff from the priority list to the top.** *Expect*: it moves into the slot list on
+      the next redraw; whatever was on the bubble drops to "Won't fit — no free slot". Reload the
+      page (or the app) and the order you set is still there.
+- [ ] **Switch loadout profiles on the Buff Tracker page, come back.** *Expect*: the planner now
+      shows that loadout's own classes/order (probably empty if you never set it up), and the
+      "active loadout" name at the top matches.
+- [ ] **Turn on "Use spell stacking model" (Log page → Diagnostics) and recompute.** *Expect*: the
+      line under the slot list reads "stacking model on", and any buff the game data says is
+      blocked by another in the plan moves to "Won't fit" with "blocked by X" instead of "no free
+      slot". With it off it's category-only and that's fine.
+- [ ] **A class with no buffs at the chosen level** (e.g. WIZ) contributes nothing and doesn't
+      error.
+
+*Not built yet: the "Buff Loadout" overlay aura that shows the planned set in-game with missing
+buffs greyed out. Page only for now.*
 
 ## The "Buff timer" premade
 

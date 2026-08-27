@@ -135,6 +135,9 @@ const FIELD_SHAPES = {
   'alerts': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel'],
   'text-fields': ['ally-alert', 'text', 'text-customTimer'],
   'text-instant': ['ally-alert', 'text'],
+  // "Stack multiple lines" + its "Lines visible" sub-slider - every text shape gets it, including
+  // text-customTimer (the Resist flash premade, which ships with it on).
+  'text-stack': ['ally-alert', 'text', 'text-customTimer'],
   'ally-alert-toggle': ['ally-alert', 'text', 'text-customTimer'],
   'always-on': ['ally-alert', 'text', 'text-customTimer'],
   'buff-source': ['custom-buff', 'ally-alert' /* excluded below on purpose - see the note */, 'text', 'text-customTimer'],

@@ -24,7 +24,8 @@ const path = require('path');
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
 const fs = require('fs');
-const { ipcMain, protocol, BrowserWindow, Menu, globalShortcut, shell } = require('electron');
+const { ipcMain, protocol, BrowserWindow, Menu, Tray, globalShortcut, shell } = require('electron');
+const { buildTrayIcon } = require('./trayIcon');
 const { createMainWindow, getMainWindow } = require('./mainWindow');
 const { LogService } = require('./logService');
 // Note 38. The zone matcher lives with the other log-line patterns; the seed list is data.
@@ -49,6 +50,8 @@ const { backfillBardSongs: _unusedBackfillBardSongs } = require('./rosterBackfil
 const { saveSnapshot, loadSnapshot } = require('./sessionSnapshot');
 const gameSpellData = require('./gameSpellData');
 const spellStacking = require('./spellStacking');
+const spellEffects = require('./spellEffects');
+const buffPlanner = require('./buffPlanner');
 const { loadJson, saveJson } = require('./store');
 const widgetManager = require('./widgetManager');
 const actionBarManager = require('./actionBarManager');
@@ -543,6 +546,7 @@ function applyInstallRoot(eqFolder) {
   currentInstallRoot = resolveInstallRoot(eqFolder);
   iconService.setEqFolder(currentInstallRoot);
   spellbookService.setInstallRoot(currentInstallRoot);
+  spellEffects.resetCache(); // its per-category stat map is built from the roster, which is about to change
   // Tagging is cheap and idempotent - it only writes when it actually changes something - so
   // running it every launch costs nothing after the first, and it self-heals after a re-seed.
   //
@@ -845,18 +849,41 @@ Menu.setApplicationMenu(Menu.buildFromTemplate([
   },
 ]));
 
+// Module-level, not a local inside whenReady - Electron destroys a Tray the moment its JS object
+// is garbage collected, and a function-local const would be eligible for GC as soon as
+// app.whenReady().then(...) returns.
+let appTray = null;
+
 app.whenReady().then(() => {
   iconService.registerProtocol();
   soundService.registerProtocol();
   createMainWindow();
+
+  // Requested directly, alongside making the window's own close button hide-to-tray instead of
+  // quitting (see mainWindow.js's own comment on that history) - a real Quit item is what makes
+  // hiding safe instead of just recreating the old "invisible orphan process" problem under a new
+  // name. Left-clicking the tray icon itself (not just the menu) also reopens the window, since
+  // that click reads as the more natural affordance than requiring right-click every time.
+  appTray = new Tray(buildTrayIcon());
+  appTray.setToolTip('EQLS Auras');
+  appTray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Show EQLS Auras', click: () => createMainWindow() },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() },
+    ])
+  );
+  appTray.on('click', () => createMainWindow());
   widgetManager.initWidgets();
   actionBarManager.initActionBars();
   logService.init();
-  // Part of the shutdown instrumentation above - this is the third quit path,
-  // and the only one that normally means "the user closed the app".
+  // Part of the shutdown instrumentation above. Closing the main window no longer always means
+  // quitting (see mainWindow.js - it hides to the tray unless app.quit() is already underway), so
+  // this now logs on every hide-to-tray too, not just a real shutdown - still useful context for a
+  // report, just not proof of a quit on its own the way it used to be.
   const win = getMainWindow();
   if (win) {
-    win.on('close', () => debugLog('SHUTDOWN: main window close event'));
+    win.on('close', () => debugLog('SHUTDOWN: main window close event (hide-to-tray unless a quit is already underway)'));
     win.webContents.on('unresponsive', () => debugLog('SHUTDOWN WARNING: main window renderer unresponsive'));
   }
 
@@ -1368,6 +1395,12 @@ ipcMain.handle('widget:setTextAuraSize', (_event, { id, value }) => widgetManage
 ipcMain.handle('widget:setTextAuraInstantSec', (_event, { id, value }) =>
   widgetManager.setTextAuraInstantSec(id, value)
 );
+ipcMain.handle('widget:setStackTextLines', (_event, { id, value }) =>
+  widgetManager.setStackTextLines(id, value)
+);
+ipcMain.handle('widget:setMaxStackTextLines', (_event, { id, value }) =>
+  widgetManager.setMaxStackTextLines(id, value)
+);
 ipcMain.handle('widget:setMergeSameDuration', (_event, { id, value }) =>
   widgetManager.setMergeSameDuration(id, value)
 );
@@ -1507,6 +1540,10 @@ ipcMain.handle('actionBar:getKnownAbilityGroups', () => ({
 ipcMain.handle('actionBar:getAbilityGroupState', () => abilityGroupTracker.getAllActiveStates());
 ipcMain.handle('actionBar:setSlotMultiIcon', (_event, { id, index, enabled }) => actionBarManager.setSlotMultiIcon(id, index, enabled));
 ipcMain.handle('actionBar:setSlotSecondIcon', (_event, { id, index, iconId }) => actionBarManager.setSlotSecondIcon(id, index, iconId));
+ipcMain.handle('actionBar:setSlotBorderEnabled', (_event, { id, index, enabled }) => actionBarManager.setSlotBorderEnabled(id, index, enabled));
+ipcMain.handle('actionBar:setSlotBorderWidth', (_event, { id, index, px }) => actionBarManager.setSlotBorderWidth(id, index, px));
+ipcMain.handle('actionBar:setSlotBorderOffset', (_event, { id, index, px }) => actionBarManager.setSlotBorderOffset(id, index, px));
+ipcMain.handle('actionBar:setSlotBorderColor', (_event, { id, index, color }) => actionBarManager.setSlotBorderColor(id, index, color));
 ipcMain.handle('actionBar:setActiveProfileIds', (_event, { id, profileIds }) => actionBarManager.setActiveProfileIds(id, profileIds));
 ipcMain.handle('actionBar:copySettings', (_event, { id, fromId }) => actionBarManager.copySettingsFrom(id, fromId));
 ipcMain.handle('actionBar:duplicate', (_event, id) => actionBarManager.duplicateBar(id));
@@ -1636,6 +1673,75 @@ ipcMain.handle('profiles:setActive', (_event, id) => {
   }
   return result;
 });
+// The buff optimiser (buffPlanner.js). Its input - the three classes+levels and the dragged
+// priority order - lives on the active loadout profile (profileStore). The plan itself is always
+// recomputed here from the live roster and the real stacking model, never stored: the roster is
+// rebuilt every launch (see buffStore's header) so a cached plan could silently drift.
+ipcMain.handle('planner:getInput', (_event, profileId) => {
+  const profile = profileStore.getProfile(profileId || profileStore.getActiveId());
+  return {
+    classes: (profile && profile.plannerClasses) || [],
+    level: (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL,
+    buffPlanOrder: (profile && profile.buffPlanOrder) || [],
+  };
+});
+ipcMain.handle('planner:setClasses', (_event, { profileId, classes }) => {
+  profileStore.setPlannerClasses(profileId || profileStore.getActiveId(), buffPlanner.normalizeClassCodes(classes));
+  return true;
+});
+ipcMain.handle('planner:setLevel', (_event, { profileId, level }) => {
+  profileStore.setPlannerLevel(profileId || profileStore.getActiveId(), level);
+  return true;
+});
+ipcMain.handle('planner:setOrder', (_event, { profileId, order }) => {
+  profileStore.setBuffPlanOrder(profileId || profileStore.getActiveId(), order);
+  return true;
+});
+ipcMain.handle('planner:compute', (_event, profileId) => {
+  const profile = profileStore.getProfile(profileId || profileStore.getActiveId());
+  const classes = (profile && profile.plannerClasses) || [];
+  const level = (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL;
+  const priorityOrder = (profile && profile.buffPlanOrder) || [];
+  // The planner ALWAYS uses the game's stacking data when the spell file is reachable - it's how it
+  // tells a weaker tier of a buff line from a different buff that stacks. (Independent of the
+  // `useStackingModel` diagnostic toggle, which gates the live detection engine, a riskier place.)
+  const checkStack = currentInstallRoot
+    ? (activeId, incomingId) => spellStacking.checkOverwrite(currentInstallRoot, activeId, incomingId)
+    : null;
+  // The real stat numbers - only available once the EQ folder is set (spells_us.txt). Without it
+  // the planner ranks by name alone and says so (statsKnown: false).
+  const roster = buffStore.getAll();
+  const spellData = currentInstallRoot
+    ? {
+        stats: (spellId) => spellEffects.spellStats(currentInstallRoot, spellId, level),
+        headline: (spellId, category) =>
+          spellEffects.categoryHeadline(currentInstallRoot, roster, spellId, category),
+        score: (spellId) => spellEffects.statScore(currentInstallRoot, spellId),
+        multiplierStats: spellEffects.MULTIPLIER_STATS,
+      }
+    : null;
+  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData });
+  // Attach a served icon url to everything the page will draw, same shape buffs:known uses.
+  const withIcons = (list) =>
+    list.map((c) => ({ ...c, iconUrl: c.iconId != null ? iconService.buildIconUrl(c.iconId) : null }));
+  return {
+    classes: plan.classes.map((c) => c.code),
+    level: plan.classes.length ? plan.classes[0].level : level,
+    hasBard: plan.hasBard,
+    statsKnown: plan.statsKnown,
+    totals: plan.totals,
+    slots: withIcons(plan.slots),
+    overflow: withIcons(plan.overflow),
+    candidates: withIcons(plan.candidates),
+    songSlots: withIcons(plan.songSlots),
+    songOverflow: withIcons(plan.songOverflow),
+    songCandidates: withIcons(plan.songCandidates),
+    permanentSlots: withIcons(plan.permanentSlots),
+    permanentOverflow: withIcons(plan.permanentOverflow),
+    stackingKnown: plan.stackingKnown,
+  };
+});
+
 ipcMain.handle('profiles:delete', (_event, id) => {
   const removed = profileStore.remove(id);
   if (!removed) return false;

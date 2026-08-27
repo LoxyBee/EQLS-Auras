@@ -284,6 +284,138 @@ project. `"<name> spell has worn off of"` in `contains` mode captures the freed 
 shape of capture, just landing on a target name here instead of a resisted spell name. See
 `test/charm-broke.test.js`.
 
+## Stacked text lines — text-aura feed (26 Aug)
+
+A **"Stack multiple lines"** checkbox on every text aura (`stackTextLines`, `SHAPE_FIELDS` key
+`text-stack`, on shapes `text`/`text-customTimer`/`ally-alert`). Owner's ask: a plain text aura
+replaces its one line on every new event, so a burst of three resists in two seconds looked
+identical to one - stack them as a short fading feed instead, each line its own trigger. **Off by
+default everywhere except the Resist flash premade** (`TEXT_AURA_PRESETS.resisted` sets
+`stackTextLines: true`), which is the case it exists for. A `maxStackTextLines` slider (2-4,
+default 2 - "so you can read the line before but it's not obnoxious", owner's words) is an
+expanding sub-option, shown only once the checkbox is on; `clampStackTextLines` in `widgetStore.js`
+is the one gate (`setMaxStackTextLines` and `normalizeWidget` both go through it, since `update()`
+deliberately doesn't normalize - same pattern as `clampInstantSec`). A **v2->v3 `widgets.json`
+migration** (`_loadOrMigrate`) turns `stackTextLines` on, at 2 lines, for every Resist flash aura
+that already exists - identified by `premadeOrigin.preset === 'resisted'` or, if that was lost, a
+text aura carrying a `"resisted your "` trigger - at the owner's request ("update all existing
+resist widgets, including my own"). Version-gated like the v1->v2 bard-song bump, so a later
+"actually, off" is not re-stomped; an already-widened "Lines visible" is kept.
+
+**Built entirely in the renderer, engine untouched** - `overlay.js`'s `renderTextFeed()` is its own
+`render()` branch (returns early, before the tile-diff/merge/group machinery, like the `grouped`
+path). It reads the same active-buff list every other aura gets and keeps a short local history:
+the engine already keeps ONE active entry per trigger and just moves its clock forward on a repeat
+(an instant's `landedAt`, a customTimer's `remainingSec` jumping back up - the exact signal the
+renewal sound already reads), so the feed watches that clock move and appends a line each time.
+Identical consecutive lines merge with an `x3` rather than repeating (so spamming one resist can't
+blow the cap). `visibleBuffs(buffs, { noTextLimit: true })` is the one signature change - the
+normal text path still slices to one tile. Lines fade via a CSS `feed-fade` keyframe with a
+per-line (possibly negative) `animation-delay` so a surviving line resumes its fade rather than
+restarting when a neighbour ages out. `resetTextFeed()` is called from `applyConfig` whenever the
+feed isn't the active mode, so toggling off/on can't resurrect an old burst. See
+`test/text-stack.test.js` (engine-level feed behaviour is mutation-tested) and TESTING.md's
+"Stacked text lines" checklist - **not yet run in a real session.**
+
+## Buff optimiser / Buff Planner (26 Aug) — page done, aura not yet built
+
+Shara's ask: "input 3 classes, spit out your highest-level buffs and the best setup across the 14
+buff slots." Design forks she chose: a main-window page **plus** a loadout aura, drag-to-reorder
+priority (not a curated ranking), the 3 classes **tied to the active loadout profile**, and -
+corrected 26 Aug after first build - **one shared character level, not per-class** ("it's one
+character with a multiclass loadout, not three mains"), capped at **50** (the EQ Legends cap). The
+level picker sits above the single row of three class dropdowns.
+
+**`src/main/buffPlanner.js`** is the brain - pure, no file/path access. `computePlan({ roster,
+classes, level, priorityOrder, checkStack, spellData })` -> `{ ..., slots, songSlots,
+permanentSlots, totals, statsKnown }`.
+- Candidates: every `kind:'buff'` roster entry one of the 3 classes can cast at the character
+  level, whose `targets` can land on the player (`Self`/`Group`/`Friendly`/`Group Member`/`Single`
+  - not Pet/Animal/Undead). **Heal-over-time spells excluded** (`scaleCategory` `hot`/`heal` -
+  Shara, 26 Aug: "heals should be excluded").
+- **Ranked purely by character-stat magnitude** - Shara, 27 Aug: "rank them by best, that means
+  numerical", "level and duration have absolutely 0 to do with anything", "actual character stats
+  only", "i don't want SPA anywhere near the calculations". **`spellEffects.js`** reads the real
+  +STR / +AC / haste% numbers from `spells_us.txt`'s effect slots (reusing `spellStacking.js`'s
+  `denseEffects`/`effectValue`). Its `STATS` list is the **complete set of character stats the
+  planner knows** - the 7 attributes, AC, ATK, haste, spell haste, the 5 resists + all-resists,
+  damage shield, rune, spell rune, max HP, max mana - each paired with the effect number the game
+  file uses (an implementation detail that appears **nowhere** else - not in the returned data
+  (`{stat, value, order}`), not in the planner, not on screen; the term "SPA" is banned from
+  `spellEffects.js` and `buffPlanner.js`, pinned by a test). Any effect that isn't one of those
+  stats - heal components, procs, vision, illusion, focus limits, pacify - is discarded here and
+  never reaches the planner. `buffPlanner.NON_STAT_CATEGORIES` is the coarse companion filter
+  (whole categories: Duration Heals, Echoes, Delayed, Movement, Vision, Illusion:*, Spell Focus,
+  Invulnerability, ...) so the plan is sane even with no spell file; with the file, a buff granting
+  zero known stats is also dropped.
+- Each category's headline stat is learned *empirically* (the stat most of that category's spells
+  grant - "Strength" -> STR, no hardcoded assumption). `betterCandidate` compares that number;
+  `orderCandidates` fills slots by `statScore` so the least valuable buffs drop first. `totals`
+  sums every slotted buff's stats (haste kept-best, not summed), in character-sheet order.
+  No EQ folder -> name order, `statsKnown: false`.
+- **STR/DEX/AGI/AC are confirmed against the owner's file** via `spell-stacking.test.js`'s
+  fixtures; the rest use the standard client effect numbers - a wrong one shows as an obviously
+  wrong number for a *named* stat, not gibberish. Live check in TESTING.md.
+- **Three pools** (`poolFor()` routes each candidate; permanent checked first):
+  - **14 spell-buff slots** and the **5-slot bard-song pool** (`songSlots`, only when BRD is one
+    of the classes - `isBardSongEntry` = `isBardSong` flag or Bard-only class list) go through
+    ONE `collapseByStacking` pass together (see the "category is a stat label" bullet below), then
+    split by pool; each pool then fills by priority order + stat score.
+  - **Uncapped permanent pool** (`permanentSlots`, `infiniteDuration` - Yaulp, Fury) collapses
+    SEPARATELY and is NOT deduped against the temp buffs: Fury (permanent shaman Strength) keeps
+    its own permanent listing even though a temp Strength buff is also in the 14. "Cast once and
+    forget" - the player wants it listed regardless (Shara, 27 Aug).
+- **The roster's `category` column is a STAT LABEL, not a stacking line** - learned the hard way
+  27 Aug when Shara posted a real, valid 14-buff cleric/shaman/bard loadout that ran `Strength`
+  AND `Infusion of Spirit` AND `Talisman of Altuna` (all "stat" categories that overlap) and my
+  category-collapse had thrown two of the fourteen away. **The planner does NOT collapse by
+  category.** Every stat/combat buff the classes can cast is a candidate. The ONLY removal is a
+  weaker *tier* of a buff line: `collapseByStacking` uses `spellStacking.checkOverwrite` (the
+  game's own effect-slot data - two buffs only collide where they carry the same effect in the
+  *same slot*, so a dedicated Strength buff and Infusion of Spirit, whose STR sits on a different
+  slot, both survive while `Strengthen`/`Raging Strength`/... are recognised as the same line and
+  the weaker dropped). A mutual/ambiguous pair keeps both. **`checkStack` is always wired when the
+  spell file is reachable** (not gated on the `useStackingModel` diagnostic toggle). No spell file
+  -> `collapseByCategory` fallback that only merges spells sharing a *base name* ("Yaulp III" over
+  "Yaulp"), `stackingKnown: false`.
+  A dropped tier goes to overflow with `reason: "<winner> is the stronger version"`. Three guards
+  keep it from over-collapsing (all learned from Shara's screenshots): it only ever compares buffs
+  of the **same category** (a tier line never spans categories - Talisman of Altuna in "Shielding"
+  is safe from a "Resist Buff" talisman); the loser must grant **nothing the winner doesn't**
+  (`hasUniqueStat` - Altuna's AC saves it even if resist slots collide); and it runs **once across
+  all pools together** then splits, so a permanent buff and a temp buff of the same line (Rage vs
+  Fury) get compared instead of both surviving in separate pools.
+- The headline stat shown on a row is matched by **name** to the category's calibrated stat, not
+  by value - a "Charisma" buff that also gives +40 INT still leads with its CHA figure.
+- **Resist buffs are weighted 0.25x** in the default slot order (`STAT_WEIGHT` in spellEffects) -
+  "situational and lower priority" (Shara) - so a +40 resist doesn't outrank a +40 stat buff for a
+  slot. The drag order still overrides everything.
+- The 14 slots are just `candidates.slice(0, 14)` after ordering by the user's dragged
+  `priorityOrder` (names), with un-ordered buffs following by `DEFAULT_CATEGORY_PRIORITY` then name.
+  Everything past 14 -> overflow `reason: "no free slot"`.
+
+**Data model**: `profileStore.js` grew `plannerClasses` (up to 3 codes), `plannerLevel` (1..50),
+and `buffPlanOrder` (names), per profile, all optional. `main.js` has
+`planner:getInput|setClasses|setLevel|setOrder|compute` -
+**`compute` is always recomputed live from `buffStore.getAll()`, never persisted** (the roster is
+rebuilt every launch, so a cached plan would drift - same reasoning as gotcha #29).
+
+**Page**: `initBuffPlanner()` in `main-window.js`, `#page-planner` / "Buff Planner" nav button.
+A character-level input, one row of three class dropdowns, the 14-slot list, a "Symphonic" card
+(shown only with BRD), a "Permanent buffs" card (shown when non-empty), one drag-to-reorder
+priority list covering the buff + song slots (HTML5 DnD), and a "Won't fit" card. Recomputes on
+every level/class/drag change and on `onActiveProfileChanged`.
+Tests: `test/buff-planner.test.js` (the maths, mutation-tested), `test/planner-wiring.test.js`
+(store + IPC + page markup). **Not yet run in the real app** - see docs/TESTING.md.
+
+**Still to build - the `buff-loadout` aura** (Shara chose "page + aura"): a repeatable aura kind
+that renders the planned 14 as overlay tiles - active buffs counting down (cross-referenced against
+the engine's `activeBuffs`), missing ones as greyed "not up" placeholders, so it doubles as a
+"what am I missing" checklist while buffing. Reuses `customTimerEngine`'s reverse-detection
+`alwaysOnEntry()` shape for the placeholders. Needs: a `widgetStore` kind, engine plumbing to feed
+it the plan + active state, `overlay.js` rendering, a `SHAPE_FIELDS` entry, and a premade-list
+entry under `group: 'standalone'`. Not started.
+
 ## Remaining backlog (see TaskList tool for live status)
 
 Historical numbering (#7, #13-#15) preserved from an earlier pass for continuity; everything else below is unnumbered, freshly triaged from a raw user note-dump into bugs-vs-features and rough time-to-execute. None of it has been scoped in detail yet - treat "quick/medium/large" as a sizing guess, not a commitment, and confirm design specifics with the user before starting anything in the Large bucket.

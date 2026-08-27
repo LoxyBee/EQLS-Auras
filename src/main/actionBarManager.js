@@ -478,6 +478,27 @@ function setSlotCooldown(id, index, cooldown) {
   return updateSlot(id, index, { cooldown: cooldown || null });
 }
 
+// Per-gem border, layered on top of the bar-wide one (see actionBarStore.js's own comment on
+// these fields) - same width/offset/colour shape as setBorderWidth/setBorderOffset/setBorderColor
+// below, just scoped to one slot via updateSlot instead of the whole bar.
+function setSlotBorderEnabled(id, index, enabled) {
+  return updateSlot(id, index, { borderEnabled: !!enabled });
+}
+
+function setSlotBorderWidth(id, index, px) {
+  const n = Math.max(1, Math.min(4, Math.round(Number(px) || 2)));
+  return updateSlot(id, index, { borderWidthPx: n });
+}
+
+function setSlotBorderOffset(id, index, px) {
+  const n = Math.max(0, Math.min(6, Math.round(Number(px) || 0)));
+  return updateSlot(id, index, { borderOffsetPx: n });
+}
+
+function setSlotBorderColor(id, index, color) {
+  return updateSlot(id, index, { borderColor: typeof color === 'string' && color ? color : '#d2d6e1' });
+}
+
 // Feeds every bar's slot cooldowns into the SAME detection engine every widget's custom timers
 // already run through (customTimerEngine.js), rather than building a second copy of trigger
 // matching just for gems - see main.js's setGetWidgetsFn wiring. Each active (below slotCount),
@@ -728,6 +749,10 @@ module.exports = {
   setSlotToggleDurationSec,
   setSlotMultiIcon,
   setSlotSecondIcon,
+  setSlotBorderEnabled,
+  setSlotBorderWidth,
+  setSlotBorderOffset,
+  setSlotBorderColor,
   setSlotCooldown,
   getPseudoWidgets,
 };

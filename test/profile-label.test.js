@@ -128,7 +128,7 @@ test('it can still be switched off', () => {
 test('an always-on aura draws without any buff', () => {
   assert.match(overlaySrc, /if \(currentConfig\.alwaysOn\) return \[alwaysOnEntry\(\)\];/);
   // And before every filter, since none of them have anything to act on.
-  const fn = overlaySrc.match(/function visibleBuffs\(buffs\) \{([\s\S]*?)\n\}/);
+  const fn = overlaySrc.match(/function visibleBuffs\(buffs, opts = \{\}\) \{([\s\S]*?)\n\}/);
   assert.ok(fn, 'visibleBuffs has been restructured');
   assert.ok(
     fn[1].indexOf('alwaysOn') < fn[1].indexOf('buffFilterMode'),

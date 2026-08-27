@@ -69,6 +69,18 @@ function clampInstantSec(value) {
   return Math.min(MAX_INSTANT_DISPLAY_SEC, Math.max(1, Math.round(value)));
 }
 
+// Stacked-line text feed - "Lines visible". 2 to 4: 2 so the line before the newest is still
+// readable, 4 so it stays an announcement rather than a scrolling combat log. A non-number (or a
+// share code asking for more) lands on 2 rather than throwing a wall of text at the overlay.
+const MIN_STACK_TEXT_LINES = 2;
+const MAX_STACK_TEXT_LINES = 4;
+
+function clampStackTextLines(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return MIN_STACK_TEXT_LINES;
+  return Math.min(MAX_STACK_TEXT_LINES, Math.max(MIN_STACK_TEXT_LINES, Math.round(n)));
+}
+
 function isTextAura(widget) {
   return !!widget && widget.displayMode === 'text';
 }
@@ -194,6 +206,17 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // stays on screen after it happens. Six by default, because a number that has to be found and
     // set before the feature works at all is a feature most people never see working.
     textAuraInstantSec: 6,
+    // Text auras only. When a second event arrives while an earlier one is still on screen, add it
+    // as a new line below rather than silently replacing the text - a short scrolling fade feed.
+    // Off by default, so every existing text aura (Resist flash, Dispelled, hand-built) behaves
+    // exactly as it did before. Turned on for the Resist flash premade specifically (see the
+    // `resisted` preset), where a burst of resists is the whole thing you want to see. See
+    // overlay.js's renderTextFeed.
+    stackTextLines: false,
+    // How many stacked lines stay on screen at once before the oldest drops off. 2 by default -
+    // enough to still read the line before the newest one, few enough that it stays an
+    // announcement and not a combat log. Capped at 4 for the same reason.
+    maxStackTextLines: 2,
     hideBardSongs: true,
     maxDurationFilterSec: 600,
     soundOnLand: false,
@@ -445,6 +468,11 @@ function defaultCustomWidget(name) {
     // stays on screen after it happens. Six by default, because a number that has to be found and
     // set before the feature works at all is a feature most people never see working.
     textAuraInstantSec: 6,
+    // Text auras only. Stack each new event as its own fading line instead of replacing the text -
+    // see the field's own comment in defaultSelfBuffsWidget and overlay.js's renderTextFeed. Off
+    // here; the Resist flash premade turns it on (TEXT_AURA_PRESETS.resisted).
+    stackTextLines: false,
+    maxStackTextLines: 2,
     soundOnLand: false,
     soundOnExpire: false,
     soundWarningSec: 0,
@@ -598,6 +626,8 @@ const SHAREABLE_FIELDS = [
   'textAuraMessage',
   'textAuraSize',
   'textAuraInstantSec',
+  'stackTextLines',
+  'maxStackTextLines',
   'soundOnLand',
   'soundOnExpire',
   'soundWarningSec',
@@ -720,6 +750,8 @@ function normalizeWidget(widget) {
     // otherwise produce an aura that silently shows its text for sixty seconds and no longer,
     // which looks like the setting not working rather than like a limit.
     textAuraInstantSec: clampInstantSec(widget.textAuraInstantSec),
+    stackTextLines: !!widget.stackTextLines,
+    maxStackTextLines: clampStackTextLines(widget.maxStackTextLines),
     hideBardSongs: !!widget.hideBardSongs,
     timerTextColor: typeof widget.timerTextColor === 'string' ? widget.timerTextColor : '#f0f1f5',
     groupAllyBuffs: !!widget.groupAllyBuffs,
@@ -826,6 +858,11 @@ const TEXT_AURA_PRESETS = {
     buffSource: 'customTimer',
     textAuraMessage: 'Your {spell} was resisted by {mob}',
     textAuraSize: 48,
+    // On by default here specifically: a resist rarely comes alone, and silently replacing the
+    // previous line meant a three-resist burst looked identical to one. 2 lines so the resist
+    // before the newest is still readable without it turning into a scrolling log.
+    stackTextLines: true,
+    maxStackTextLines: 2,
     triggerDurationSec: 4,
     width: 514,
     height: 81,
@@ -970,6 +1007,32 @@ class WidgetStore {
         for (const widget of data.widgets) widget.hideBardSongs = true;
         data.version = 2;
       }
+      // v2 -> v3: the Resist flash premade now ships with stacked text lines on (a burst of
+      // resists reads as several fading lines rather than the last one silently replacing the
+      // rest - see TEXT_AURA_PRESETS.resisted and overlay.js's renderTextFeed). Turn it on for
+      // every Resist flash aura that already exists, at the owner's request ("update all existing
+      // resist widgets, including my own"). Version-gated so a later "actually, off" choice is not
+      // re-stomped every launch. A Resist flash aura is identified by its premade origin, or - if
+      // that was lost - by a text aura carrying the preset's own "resisted your " trigger text.
+      if (data.version < 3) {
+        for (const widget of data.widgets) {
+          const byOrigin =
+            widget.premadeOrigin &&
+            widget.premadeOrigin.kind === 'textAura' &&
+            widget.premadeOrigin.preset === 'resisted';
+          const byTrigger =
+            widget.displayMode === 'text' &&
+            Array.isArray(widget.customTimers) &&
+            widget.customTimers.some(
+              (t) => typeof t.triggerText === 'string' && t.triggerText.toLowerCase().includes('resisted your')
+            );
+          if (byOrigin || byTrigger) {
+            widget.stackTextLines = true;
+            widget.maxStackTextLines = clampStackTextLines(widget.maxStackTextLines);
+          }
+        }
+        data.version = 3;
+      }
       this.store.saveJson('widgets', data);
       return data;
     }
@@ -990,7 +1053,7 @@ class WidgetStore {
 
     const selfBuffs = defaultSelfBuffsWidget(overrides);
 
-    const data = { version: 2, widgets: [selfBuffs] };
+    const data = { version: 3, widgets: [selfBuffs] };
     this.store.saveJson('widgets', data);
     return data;
   }
@@ -1681,4 +1744,7 @@ module.exports = {
   isTextAura,
   clampInstantSec,
   MAX_INSTANT_DISPLAY_SEC,
+  clampStackTextLines,
+  MIN_STACK_TEXT_LINES,
+  MAX_STACK_TEXT_LINES,
 };
