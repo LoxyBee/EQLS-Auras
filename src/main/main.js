@@ -51,6 +51,7 @@ const { saveSnapshot, loadSnapshot } = require('./sessionSnapshot');
 const gameSpellData = require('./gameSpellData');
 const spellStacking = require('./spellStacking');
 const spellEffects = require('./spellEffects');
+const buffLines = require('../shared/buffLines');
 const buffPlanner = require('./buffPlanner');
 const { loadJson, saveJson } = require('./store');
 const widgetManager = require('./widgetManager');
@@ -245,6 +246,8 @@ buffEngine.setStackVerdictFn((activeSpellId, incomingSpellId) =>
   currentInstallRoot ? spellStacking.stackVerdict(currentInstallRoot, activeSpellId, incomingSpellId) : null
 );
 buffEngine.setUseStackingModel(loadJson('useStackingModel', false));
+// The heading model / measured blocked-pairs (docs/BUFF-STACKING.md) - always on, no toggle.
+buffEngine.setLineStackFn((incomingName, activeName) => buffLines.stackDecision(incomingName, activeName));
 
 // Auto-hide overlay widgets while EQ isn't the focused window (backlog #6)
 // - on by default per explicit user request. The watcher itself only ever
@@ -1720,7 +1723,7 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
         multiplierStats: spellEffects.MULTIPLIER_STATS,
       }
     : null;
-  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData });
+  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines });
   // Attach a served icon url to everything the page will draw, same shape buffs:known uses.
   const withIcons = (list) =>
     list.map((c) => ({ ...c, iconUrl: c.iconId != null ? iconService.buildIconUrl(c.iconId) : null }));

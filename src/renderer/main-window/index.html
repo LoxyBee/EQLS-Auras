@@ -78,7 +78,11 @@
         </div>
       </div>
 
-      <button class="nav-btn" data-page="page-planner" id="planner-nav-btn">Buff Planner</button>
+      <!-- Buff Planner is LOCKED until the "buff-loadout" overlay aura is built (see
+           docs/NOTES-STATUS.md / CLAUDE.md). The page section (id page-planner) and all of
+           buffPlanner.js stay in place; only the sidebar button is removed, so nothing in the app
+           can reach it. To re-enable: add a nav-btn with data-page of page-planner and the id
+           planner-nav-btn back here (initBuffPlanner gates on that id). -->
 
       <button class="nav-btn" data-page="page-settings">Setup</button>
       <button class="nav-btn" data-page="page-log">Log</button>
@@ -1570,11 +1574,17 @@
         </div>
 
         <div class="card">
-          <h3>Priority order</h3>
+          <div class="planner-priority-head">
+            <h3>Priority order</h3>
+            <button type="button" id="planner-priority-reset" style="display:none">
+              Reset to recommended
+            </button>
+          </div>
           <p class="hint">
             Drag to reorder. The planner fills the buff slots (and the 5 song slots) from the top
             of this list down, taking each that doesn't clash with one already in. Anything it
-            can't fit shows under "Won't fit" below.
+            can't fit shows under "Won't fit" below. "Reset to recommended" clears your manual
+            order and ranks by stat value again.
           </p>
           <ul class="planner-priority-list" id="planner-priority-list"></ul>
         </div>

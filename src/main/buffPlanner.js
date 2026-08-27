@@ -189,24 +189,18 @@ function collapseByCategory(cands) {
   return { kept: [...byBase.values()], dropped: [], approximate: true };
 }
 
-// Does `a` grant a stat `b` doesn't? If so they aren't the same line even if they collide on a
-// shared stat - Talisman of Altuna (AC + resists) vs a pure-resist talisman: the resist slots may
-// collide but Altuna's AC makes it worth its own slot.
+// Does `a` grant a stat `b` doesn't? Used by the no-line fallback only.
 function hasUniqueStat(a, b) {
   const bStats = new Set((b.stats || []).map((s) => s.stat));
   return (a.stats || []).some((s) => s.value && !bStats.has(s.stat));
 }
 
-// The real collapse: the game's own stacking data (spellStacking.checkOverwrite reads the effect
-// slots from spells_us.txt). Only ever collapses two buffs of the SAME category (that's where a
-// tier line lives - Strengthen / Spirit Strength / ... / Strength) where the game data says one
-// cleanly overwrites the other AND the loser grants nothing the winner doesn't. So Strength and
-// Infusion of Spirit (same category, different effect slots, no overwrite) both survive; a weaker
-// Strength tier is dropped; and a cross-category pair (Talisman of Altuna in Shielding vs a resist
-// talisman) is never touched. A mutual/ambiguous pair keeps both.
+// FALLBACK collapse for when the line data isn't wired in (`lines` is null). Uses the game's own
+// effect-slot data (spellStacking.checkOverwrite) for a same-category tier collapse; without even
+// that, only merges shared base names. Imperfect - the real answer is resolveByHeadings below.
 function collapseByStacking(cands, checkStack) {
   if (!checkStack) return collapseByCategory(cands);
-  const droppedBy = new Map(); // loser name -> winner name
+  const droppedBy = new Map();
   for (let i = 0; i < cands.length; i++) {
     if (droppedBy.has(cands[i].name)) continue;
     for (let j = i + 1; j < cands.length; j++) {
@@ -214,14 +208,11 @@ function collapseByStacking(cands, checkStack) {
       const a = cands[i];
       const b = cands[j];
       if (a.spellId == null || b.spellId == null) continue;
-      if (a.category !== b.category) continue; // a tier line never spans categories
-      const bOverA = checkStack(a.spellId, b.spellId); // b incoming onto active a
-      const aOverB = checkStack(b.spellId, a.spellId);
-      const bWins = bOverA && bOverA.overwrites;
-      const aWins = aOverB && aOverB.overwrites;
+      if (a.category !== b.category) continue;
+      const bWins = (checkStack(a.spellId, b.spellId) || {}).overwrites;
+      const aWins = (checkStack(b.spellId, a.spellId) || {}).overwrites;
       if (bWins && !aWins && !hasUniqueStat(a, b)) droppedBy.set(a.name, b.name);
       else if (aWins && !bWins && !hasUniqueStat(b, a)) droppedBy.set(b.name, a.name);
-      // both, neither, or the loser has a unique stat -> keep both
     }
   }
   return {
@@ -229,8 +220,81 @@ function collapseByStacking(cands, checkStack) {
     dropped: cands
       .filter((c) => droppedBy.has(c.name))
       .map((c) => ({ ...c, reason: `${droppedBy.get(c.name)} is the stronger version` })),
-    approximate: false,
+    approximate: true,
   };
+}
+
+// THE REAL RESOLUTION - the heading model (see docs/BUFF-STACKING.md).
+//   1. Each buff line collapses to its highest castable tier.
+//   2. Candidates are ordered (user drag first, then stat score).
+//   3. Walking that order, each buff claims the effect "headings" its line occupies. A buff whose
+//      heading is already taken, or that a placed combination buff blocks, or that a placed buff is
+//      recorded as blocking (measured pairs), goes to overflow with the reason.
+//   4. A buff with no line data falls back to spellStacking.checkOverwrite against the placed set.
+// Nothing is dropped just for sharing a stat: Strength + Infusion of Spirit + Fury all stack
+// because they sit on different headings.
+function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
+  if (!lines) return collapseByStacking(cands, checkStack);
+
+  const dropped = [];
+
+  // 1. collapse each line to its best tier
+  const byLine = new Map();
+  const noLine = [];
+  for (const c of cands) {
+    const line = lines.lineForName(c.name);
+    if (!line) {
+      noLine.push(c);
+      continue;
+    }
+    const existing = byLine.get(line.id);
+    if (!existing) {
+      byLine.set(line.id, c);
+      continue;
+    }
+    const cIsBetter = lines.tierOf(line, c.name) > lines.tierOf(line, existing.name);
+    const better = cIsBetter ? c : existing;
+    const worse = cIsBetter ? existing : c;
+    dropped.push({ ...worse, reason: `${better.name} is the higher tier` });
+    byLine.set(line.id, better);
+  }
+
+  // 2. order
+  const ordered = orderCandidates([...byLine.values(), ...noLine], priorityOrder);
+
+  // 3. walk, claim headings
+  const occupied = new Map(); // heading id -> the buff holding it
+  const kept = [];
+  for (const c of ordered) {
+    const headings = lines.headingsForName(c.name);
+
+    let clash = null;
+    for (const placed of kept) {
+      const dec = lines.stackDecision(c.name, placed.name);
+      if (dec === 'blocked' || dec === 'overwrites') {
+        clash = placed.name;
+        break;
+      }
+      if (dec === 'unknown' && checkStack && c.spellId != null && placed.spellId != null) {
+        const a = checkStack(placed.spellId, c.spellId);
+        const b = checkStack(c.spellId, placed.spellId);
+        if ((a && a.overwrites) || (b && b.overwrites)) {
+          clash = placed.name;
+          break;
+        }
+      }
+    }
+    if (!clash) clash = headings.map((h) => occupied.get(h)).find(Boolean)?.name || null;
+
+    if (clash) {
+      dropped.push({ ...c, reason: `conflicts with ${clash}` });
+      continue;
+    }
+    kept.push(c);
+    for (const h of headings) occupied.set(h, c);
+  }
+
+  return { kept, dropped, approximate: false };
 }
 
 // The order the candidate list is shown in AND the order the slots are filled in. The user's own
@@ -296,14 +360,14 @@ function poolFor(cand, hasBard) {
 //     songSlots, songOverflow, songCandidates,   // the 5 bard-song slots (empty unless Bard picked)
 //     permanentSlots, permanentOverflow }        // permanent buffs (Yaulp/Fury), no cap
 // `classes` is a list of codes (or {code} objects); `level` is the one shared character level.
-function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData } = {}) {
+function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines } = {}) {
   const normClasses = normalizeClasses(classes, level);
   const empty = {
     classes: [],
     level: clampLevel(level == null ? DEFAULT_LEVEL : level),
     hasBard: false,
     statsKnown: !!spellData,
-    stackingKnown: !!checkStack,
+    stackingKnown: !!(lines || checkStack),
     slots: [], overflow: [], candidates: [],
     songSlots: [], songOverflow: [], songCandidates: [],
     permanentSlots: [], permanentOverflow: [],
@@ -316,16 +380,27 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   const raw = candidatesFor(roster || [], normClasses, spellData);
   const pool = (c) => poolFor(c, hasBard);
 
-  // ONE collapse across every pool together, THEN split - so a permanent buff and a temp buff of
-  // the same line (Rage vs Fury) get compared and only one kept. The ONLY thing removed is a buff
-  // the game's stacking data says is a weaker version of another (same category, cleanly
-  // overwritten, nothing unique). Everything else that stacks stays.
-  const collapsed = collapseByStacking(raw, checkStack);
-  const dropped = (which) => collapsed.dropped.filter((c) => pool(c) === which);
+  // Permanent buffs (Yaulp, Fury) are "cast once and forget" - they get their OWN uncapped pool and
+  // are resolved SEPARATELY, never deduped against the temp buffs (Shara, 27 Aug: Fury keeps its
+  // permanent listing even when a higher-tier temp Strength buff is also in the 14). Resolving them
+  // in the same heading walk as the temp buffs was throwing Fury away as "Rage is the higher tier".
+  const permRaw = raw.filter((c) => pool(c) === 'permanent');
+  const tempRaw = raw.filter((c) => pool(c) !== 'permanent');
 
-  const songCands = orderCandidates(collapsed.kept.filter((c) => pool(c) === 'song'), priorityOrder);
-  const buffCands = orderCandidates(collapsed.kept.filter((c) => pool(c) === 'buff'), priorityOrder);
-  const permCands = orderCandidates(collapsed.kept.filter((c) => pool(c) === 'permanent'), priorityOrder);
+  // ONE resolution across the temp spell-buff + bard-song pools together (bard songs claim the same
+  // shared headings as spell buffs where they overlap - haste, run speed - and their own private
+  // headings elsewhere), THEN split into pools for the slot caps.
+  const resolved = resolveByHeadings(tempRaw, priorityOrder, lines, checkStack);
+  const resolvedPerm = resolveByHeadings(permRaw, priorityOrder, lines, checkStack);
+  const dropped = (which) =>
+    which === 'permanent'
+      ? resolvedPerm.dropped
+      : resolved.dropped.filter((c) => pool(c) === which);
+  const keptOrdered = orderCandidates(resolved.kept, priorityOrder);
+
+  const songCands = keptOrdered.filter((c) => pool(c) === 'song');
+  const buffCands = keptOrdered.filter((c) => pool(c) === 'buff');
+  const permCands = orderCandidates(resolvedPerm.kept, priorityOrder);
 
   const buffs = fillSlots(buffCands, SLOT_COUNT);
   const songs = fillSlots(songCands, SONG_SLOT_COUNT);
@@ -335,7 +410,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     level: normClasses[0].level,
     hasBard,
     statsKnown: !!spellData,
-    stackingKnown: !collapsed.approximate, // false when there's no spell file - "line" collapse is a guess
+    stackingKnown: !resolved.approximate && !resolvedPerm.approximate,
     slots: buffs.slots,
     overflow: [...buffs.overflow, ...dropped('buff')],
     candidates: buffCands,

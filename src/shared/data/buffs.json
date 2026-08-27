@@ -11016,6 +11016,7 @@
   "othersLandingSuffix": " goes berserk.",
   "category": "Strength",
   "scaleCategory": "buff",
+  "infiniteDuration": true,
   "classes": "SHM 45",
   "level": 45,
   "manaCost": 100,

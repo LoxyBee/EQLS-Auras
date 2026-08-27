@@ -597,7 +597,11 @@ places, neither obviously about debuffs. That is what this type saves you.
 
 # 3 — Making auras
 
-## Buff Planner page (26 Aug)
+## Buff Planner page (26 Aug) — LOCKED 27 Aug, skip until unlocked
+
+**The sidebar button is removed** (Shara's call, until the buff-loadout aura ships), so none of the
+checks below can be run right now. They're kept for when it's re-enabled — the planner code itself
+(`buffPlanner.js`, `spellEffects.js`, `buffLines.js`) is still live and still tested.
 
 New **"Buff Planner"** page in the sidebar. Set one character level (cap 50) at the top, then pick
 up to three classes in the row below; it shows the highest-level buff for every line those classes
@@ -646,15 +650,48 @@ roster (nothing is cached).
 - [ ] **Drag a buff from the priority list to the top.** *Expect*: it moves into the slot list on
       the next redraw; whatever was on the bubble drops to "Won't fit — no free slot". Reload the
       page (or the app) and the order you set is still there.
+- [ ] **After that drag, a "Reset to recommended" button appears** next to the "Priority order"
+      heading (it's hidden until you have a manual order). Click it. *Expect*: the priority list
+      snaps back to stat-value ranking, the 14 slots recompute from scratch (this is where you'll
+      see the heading model actually pick and drop buffs), and the button disappears. Reload - the
+      manual order stays gone.
 - [ ] **Switch loadout profiles on the Buff Tracker page, come back.** *Expect*: the planner now
       shows that loadout's own classes/order (probably empty if you never set it up), and the
       "active loadout" name at the top matches.
-- [ ] **Turn on "Use spell stacking model" (Log page → Diagnostics) and recompute.** *Expect*: the
-      line under the slot list reads "stacking model on", and any buff the game data says is
-      blocked by another in the plan moves to "Won't fit" with "blocked by X" instead of "no free
-      slot". With it off it's category-only and that's fine.
+- [ ] **Regen and cast-speed buffs now rank high (27 Aug).** With your EQ folder set: a mana-regen
+      buff (Clarity-style), an endurance-regen buff, and Chloroplast should sit near the TOP of the
+      priority list, not the bottom. Blessing of Faith / Blessing of Piety should rank up with the
+      haste buffs (they're read as "cast speed" now). If any of these still show `+0` or the wrong
+      stat name, the effect number I used doesn't match your server's file - tell me the spell name
+      and what its in-game description says it does, it's a one-line fix.
+- [ ] **Fewer resist buffs in the 14.** Single-element resist buffs (Resist Fire/Cold/Magic/etc.)
+      are weighted right down now - you should see at most one or two sneak into the 14, and only
+      when there's genuinely nothing better. If you still see 4-5, say so.
+- [ ] **Rage shows in the "Permanent buffs" card, not the 14** (Shara, 27 Aug: "rage is permanent
+      too"). Both Rage and Yaulp III should be in that card together. Fury should NOT appear
+      separately - it's the same line as Rage, lower tier, so it's rolled up.
+- [ ] **The heading model is doing the resolving (26 Aug rework).** With your EQ folder set, pick
+      CLR / SHM / BRD @ 50. *Expect* in the 14: **Strength, Infusion of Spirit, Talisman of Altuna,
+      Symbol of Naltron, Resolution, Shield of Words, Resist Magic** all present together (Shara's
+      real reference loadout). *Expect* NOT present together: Arch Shielding alongside Talisman of
+      Altuna, or two AC-slot-4 buffs at once - the weaker goes to "Won't fit" with "conflicts with
+      X". Fury/Rage stay in the Permanent card even though Strength is in the 14.
 - [ ] **A class with no buffs at the chosen level** (e.g. WIZ) contributes nothing and doesn't
       error.
+
+### Self Buffs overlay - stale-tile removal via the heading model (26 Aug)
+
+The Self Buffs aura now drops a tile the moment a buff that replaces it lands, using the same
+`buff-lines.json` data as the planner. This is unconditional now (not behind the "Use spell
+stacking model" diagnostic toggle) for any pair the line data covers.
+
+- [ ] **Cast a low then a high tier of one line** (e.g. Spirit of the Puma then a higher rank, or
+      Frenzy then Fury). *Expect*: the old tile vanishes when the new one lands - not two tiles for
+      the same line. Diagnostics debug log (if on) shows `ENDED "<old>" - replaced by "<new>"`.
+- [ ] **Cast two buffs that genuinely stack** (Strength then Infusion of Spirit; Fury then
+      Strength). *Expect*: BOTH tiles stay up.
+- [ ] **A groupmate's buff that shares a line with one of yours** lands on you - the weaker of the
+      two should not linger as a dead tile.
 
 *Not built yet: the "Buff Loadout" overlay aura that shows the planned set in-game with missing
 buffs greyed out. Page only for now.*

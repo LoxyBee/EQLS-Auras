@@ -44,10 +44,16 @@
       "infiniteDuration": true
     }
   },
+  "Rage": {
+    "why": "Shara, 27 August 2026: \"rage is permanent, too\" - named directly while reviewing the Buff Planner, alongside Fury. Same berserk family, same \"Your frenzy fades.\" ended text.",
+    "set": {
+      "infiniteDuration": true
+    }
+  },
   "_CANDIDATES": [
     "NOT marked, because nobody has confirmed them - listed so the next person does not have to",
-    "rediscover them. Frenzy and Rage share Fury's exact ended text (\"Your frenzy fades.\") and are",
-    "the same berserk family, so they are very likely infinite too. Shara named Fury, not those, and",
+    "rediscover them. Frenzy shares Fury's exact ended text (\"Your frenzy fades.\") and is the same",
+    "berserk family, so it is very likely infinite too. Shara named Fury and Rage, not Frenzy, and",
     "guessing on her behalf is how a confident wrong number gets into the roster.",
     "",
     "The wider list worth reviewing: 31 roster entries have a landing text, no duration, and are NOT",

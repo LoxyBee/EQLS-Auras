@@ -107,6 +107,12 @@ test('planner:compute recomputes from the live roster and never persists a plan'
   assert.doesNotMatch(fn, /saveJson|profileStore\.set/, 'compute must be read-only');
 });
 
+test('the planner and the detection engine both use the heading model (buffLines)', () => {
+  assert.match(mainSrc, /const buffLines = require\('\.\.\/shared\/buffLines'\)/);
+  assert.match(mainSrc, /computePlan\(\{ roster,[\s\S]*?lines: buffLines/);
+  assert.match(mainSrc, /buffEngine\.setLineStackFn\(\(incomingName, activeName\) => buffLines\.stackDecision/);
+});
+
 test('planner:compute only reads the real stat numbers when the EQ folder is set', () => {
   const fn = mainSrc.match(/ipcMain\.handle\('planner:compute'[\s\S]*?\n\}\);/)[0];
   assert.match(fn, /currentInstallRoot\s*\?\s*\{[\s\S]*?spellEffects\.spellStats/);
@@ -132,9 +138,18 @@ test('planner:compute always uses the game stacking data when the spell file is 
 // the page
 // ---------------------------------------------------------------------------
 
-test('the Buff Planner page and its nav button exist', () => {
-  assert.match(html, /data-page="page-planner" id="planner-nav-btn"/);
+test('the Buff Planner is LOCKED - no nav button, but the page markup is kept intact', () => {
+  // The sidebar button is removed until the buff-loadout aura ships, so nothing can reach the
+  // page. The <section> and all its controls stay in the DOM so buffPlanner.js keeps its tests
+  // and re-enabling is a one-line change.
+  assert.doesNotMatch(html, /class="nav-btn"[^>]*data-page="page-planner"/, 'the Buff Planner nav button must not be live');
+  assert.doesNotMatch(html, /id="planner-nav-btn"/, 'the nav button id must be gone (initBuffPlanner gates on it)');
   assert.match(html, /<section id="page-planner" class="page">/);
+});
+
+test('initBuffPlanner bails when the (removed) nav button is absent', () => {
+  const fn = rendererSrc.match(/function initBuffPlanner\(\) \{[\s\S]*?\n\}\n/)[0];
+  assert.match(fn, /if \(!document\.querySelector\('\.nav-btn\[data-page="page-planner"\]'\)\) return;/);
 });
 
 test('every element initBuffPlanner queries is present in the markup', () => {
@@ -143,7 +158,8 @@ test('every element initBuffPlanner queries is present in the markup', () => {
     'planner-song-card', 'planner-song-list', 'planner-song-count',
     'planner-permanent-card', 'planner-permanent-list', 'planner-permanent-count',
     'planner-priority-list', 'planner-overflow-card', 'planner-overflow-list', 'planner-overflow-count',
-    'planner-empty-note', 'planner-stacking-state', 'planner-active-profile', 'planner-nav-btn',
+    'planner-empty-note', 'planner-stacking-state', 'planner-active-profile',
+    'planner-priority-reset',
   ];
   for (const id of ids) assert.ok(html.includes(`id="${id}"`), `#${id} missing from index.html`);
 });
@@ -172,6 +188,13 @@ test('the page persists every input and recomputes after each change', () => {
   assert.match(fn, /setPlannerLevel\(null, n\)\.then\(recompute\)/);
   assert.match(fn, /setPlannerOrder\(null, order\)\.then\(recompute\)/);
   assert.match(fn, /onActiveProfileChanged\(\(\) => loadInput\(\)\)/, 'a loadout switch must reload the plan');
+});
+
+test('"Reset to recommended" clears the saved priority order and is only shown when one exists', () => {
+  const fn = rendererSrc.match(/function initBuffPlanner\(\) \{[\s\S]*?\n\}\n/)[0];
+  assert.match(fn, /priorityResetEl\.addEventListener\('click'[\s\S]*?setPlannerOrder\(null, \[\]\)\.then\(recompute\)/);
+  assert.match(fn, /priorityResetEl\.style\.display = hasManualOrder \? '' : 'none'/);
+  assert.match(fn, /hasManualOrder = order\.length > 0/);
 });
 
 module.exports = () => report('planner-wiring');

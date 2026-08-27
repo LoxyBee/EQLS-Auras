@@ -1,9 +1,13 @@
 # Buff stacking rules — reference for the Buff Planner
 
-**Status: reference / not yet wired into code.** This is the spec the planner (`buffPlanner.js`,
-`spellStacking.js`, `spellEffects.js`) should eventually be rebuilt against. Today the planner
-approximates all of this with the roster's `category` column plus `spellStacking.checkOverwrite`,
-which gets the mechanical cases and misses the structural model below.
+**Status: wired into code (26 Aug).** The heading model in this doc is implemented as
+`src/shared/data/buff-lines.json` (the data) + `src/shared/buffLines.js` (the module,
+`stackDecision`). Both the Buff Planner (`buffPlanner.js`'s `resolveByHeadings`) and the Self Buffs
+overlay stale-tile removal (`buffEngine.js`'s `lineStackFn` path) resolve conflicts through it,
+falling back to `spellStacking.checkOverwrite` only for pairs no line covers (`'unknown'`).
+`buff-lines.json` currently defines CLR / SHM / BRD / ENC / DRU lines plus the universal resist
+lines; other classes still fall through to `checkOverwrite`. This doc stays the spec for filling
+in the rest.
 
 Grounded in the **EQ Legends** spell data and one of Shara's own gameplay logs, cross-checked
 against classic-EQ community documentation. Corrections from Shara (27 Aug) are marked **[SHARA]**.

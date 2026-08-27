@@ -2085,6 +2085,15 @@ body.sidebar-resizing .sidebar {
   flex-direction: column;
   gap: 3px;
 }
+.planner-priority-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.planner-priority-head h3 {
+  margin: 0;
+}
 .planner-priority-list,
 .planner-overflow-list {
   list-style: none;

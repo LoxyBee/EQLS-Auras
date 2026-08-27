@@ -28,6 +28,9 @@ const ROWS = [
   '300^Melody^0^^' + '0^'.repeat(168) + '1|11|141|0|100|0',
   '900^Big Heal^0^^' + '0^'.repeat(168) + '1|79|500|0|100|500',
   '500^Resist Magic^0^^' + '0^'.repeat(168) + '1|50|40|0|100|40', // effect 50 = magic resist, +40
+  '600^Clarity^0^^' + '0^'.repeat(168) + '1|15|12|0|100|12', // effect 15 = mana regen, +12/tick
+  '601^Chloroplast^0^^' + '0^'.repeat(168) + '1|0|15|0|100|15$2|189|8|0|100|8', // HP regen +15, endurance regen +8
+  '602^Blessing of Faith^0^^' + '0^'.repeat(168) + '1|127|30|0|100|30', // effect 127 = cast speed, +30%
 ];
 
 let installRoot;
@@ -84,7 +87,17 @@ test('statScore adds attribute points 1:1, turns haste into its bonus, weights r
   assert.equal(statScore(installRoot, 300), 41); // haste 141 -> +41
   assert.equal(statScore(installRoot, 1445), 55); // AC 50 + max HP 225 * 0.02 = 54.5 -> 55
   assert.equal(statScore(installRoot, 900), 0); // heal -> nothing
-  assert.equal(statScore(installRoot, 500), 10); // +40 magic resist * 0.25 = 10 - situational, lower priority
+  assert.equal(statScore(installRoot, 500), 4); // +40 magic resist * 0.1 = 4 - situational, well below a real stat
+});
+
+test('regen and cast speed rank high (Shara, 27 Aug)', () => {
+  assert.equal(statScore(installRoot, 600), 48); // mana regen 12 * 4
+  assert.equal(statScore(installRoot, 601), 92); // HP regen 15 * 4 + endurance regen 8 * 4
+  assert.equal(statScore(installRoot, 602), 45); // cast speed 30 * 1.5
+  const clarity = spellStats(installRoot, 600);
+  assert.equal(clarity[0].stat, 'mana regen');
+  const bof = spellStats(installRoot, 602);
+  assert.equal(bof[0].stat, 'cast speed');
 });
 
 test('no install root -> empty, never a throw', () => {
