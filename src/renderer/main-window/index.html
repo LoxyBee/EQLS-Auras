@@ -78,6 +78,8 @@
         </div>
       </div>
 
+      <button class="nav-btn" data-page="page-planner" id="planner-nav-btn">Buff Planner</button>
+
       <button class="nav-btn" data-page="page-settings">Setup</button>
       <button class="nav-btn" data-page="page-log">Log</button>
       <button class="nav-btn" data-page="page-about">About</button>
@@ -317,6 +319,21 @@
                 <span id="widget-text-instant-value" class="slider-value">6s</span>
               </div>
               <p class="hint" id="widget-text-instant-hint"></p>
+              <!-- Stacked-line feed. When a second event arrives while an earlier one is still on
+                   screen, it is added as a new line below rather than replacing the text - each
+                   line fades on its own timer. Off by default; the Resist flash premade ships with
+                   it on. See overlay.js's renderTextFeed. -->
+              <div class="row" id="widget-text-stack-row">
+                <label title="When another event happens while the last one is still showing, add it as a new line below instead of replacing the text. Each line fades out on its own. Useful for repeated resists - you see each one rather than only the last.">
+                  <input type="checkbox" id="widget-text-stack-checkbox" />
+                  Stack multiple lines
+                </label>
+              </div>
+              <div class="row" id="widget-text-stack-max-row">
+                <span class="label" title="How many lines stay on screen at once before the oldest drops off. 2 lets you still read the line before the newest without it becoming a scrolling log.">Lines visible:</span>
+                <input type="range" id="widget-text-stack-max-slider" min="2" max="4" step="1" />
+                <span id="widget-text-stack-max-value" class="slider-value">2</span>
+              </div>
               <p class="hint" id="widget-text-hint"></p>
               <!-- Note 19. Only ever shown on a damage meter - see the buffSource check in
                    main-window.js. Its own group rather than three loose rows, because none of
@@ -1491,6 +1508,84 @@
         </div>
       </section>
 
+      <section id="page-planner" class="page">
+        <h2 class="page-title">Buff Planner</h2>
+
+        <div class="card">
+          <h3>Your character</h3>
+          <p class="hint" id="planner-profile-note">
+            This belongs to the active loadout - <span id="planner-active-profile">Default</span>.
+            Switch loadouts on the Buff Tracker page to plan a different set.
+          </p>
+          <div class="row planner-level-row">
+            <span class="label">Character level:</span>
+            <input type="number" id="planner-level-input" class="text-input" min="1" max="50" value="50" />
+          </div>
+          <div class="row planner-class-row" id="planner-class-rows">
+            <span class="label">Classes:</span>
+            <!-- three class selects injected by main-window.js -->
+          </div>
+        </div>
+
+        <div class="card" id="planner-totals-card" style="display:none">
+          <h3>Total stats</h3>
+          <p class="hint" id="planner-stats-unknown" style="display:none">
+            Set your EQ folder on the Setup page and the planner can read the real +STR / +AC /
+            haste numbers from the game's spell file. Until then it can only sort by name.
+          </p>
+          <div class="planner-totals" id="planner-totals"></div>
+        </div>
+
+        <div class="card">
+          <h3>Best setup — <span id="planner-slot-count">0</span> of 14 buff slots</h3>
+          <p class="hint">
+            Every stat/combat buff your classes can cast, ranked by the stat number (not level or
+            duration), with the weaker tier of a buff line removed using the game's own stacking
+            data. Bard songs and never-expiring buffs get their own sections. You arrange the 14 -
+            drag the priority list below. <span id="planner-stacking-state"></span> Heals and pure
+            utility (levitate, vision, illusions) are left out.
+          </p>
+          <ol class="planner-slot-list" id="planner-slot-list"></ol>
+          <p class="hint" id="planner-empty-note" style="display:none">
+            Pick at least one class above to see a plan.
+          </p>
+        </div>
+
+        <div class="card" id="planner-song-card" style="display:none">
+          <h3>Symphonic — <span id="planner-song-count">0</span> of 5 song slots</h3>
+          <p class="hint">
+            Bard songs run in their own pool, separate from the 14 buff slots. Only shown when Bard
+            is one of your classes.
+          </p>
+          <ol class="planner-song-list" id="planner-song-list"></ol>
+        </div>
+
+        <div class="card" id="planner-permanent-card" style="display:none">
+          <h3>Permanent buffs — <span id="planner-permanent-count">0</span></h3>
+          <p class="hint">
+            Buffs that never wear off (Yaulp, Fury). Cast once and forget - kept out of the 14 so
+            they don't crowd the slots you actually re-cast.
+          </p>
+          <ol class="planner-permanent-list" id="planner-permanent-list"></ol>
+        </div>
+
+        <div class="card">
+          <h3>Priority order</h3>
+          <p class="hint">
+            Drag to reorder. The planner fills the buff slots (and the 5 song slots) from the top
+            of this list down, taking each that doesn't clash with one already in. Anything it
+            can't fit shows under "Won't fit" below.
+          </p>
+          <ul class="planner-priority-list" id="planner-priority-list"></ul>
+        </div>
+
+        <div class="card" id="planner-overflow-card" style="display:none">
+          <h3>Won't fit — <span id="planner-overflow-count">0</span></h3>
+          <p class="hint">More than the slots' worth, or a stacking clash. Reorder above to swap one in.</p>
+          <ul class="planner-overflow-list" id="planner-overflow-list"></ul>
+        </div>
+      </section>
+
       <section id="page-about" class="page">
         <h2 class="page-title">About</h2>
 
@@ -1615,11 +1710,43 @@
         <span id="action-bar-slot-cooldown-status" class="action-bar-slot-cooldown-status"></span>
         <button type="button" id="action-bar-slot-cooldown-btn">Cooldown...</button>
       </div>
+      <h4 class="settings-subsection-title">Background</h4>
+      <p class="hint">Only drawn while this gem has no icon.</p>
       <div class="row">
-        <label title="Only drawn while this gem has no icon - a stand-in for one, so you can use a plain colour (e.g. grey) with just an overlay name as a text-only tile.">
-          <input type="checkbox" id="action-bar-slot-bg-color-checkbox" /> Background colour (used when there's no icon)
+        <label><input type="radio" name="action-bar-slot-bg-mode" value="default" /> Default (calibration tint)</label>
+      </div>
+      <div class="row">
+        <label title="A stand-in for the icon, so you can use a plain colour (e.g. grey) with just an overlay name as a text-only tile.">
+          <input type="radio" name="action-bar-slot-bg-mode" value="custom" /> Custom colour
         </label>
         <input type="color" id="action-bar-slot-bg-color-picker" value="#808080" />
+      </div>
+      <div class="row">
+        <label title="Fully see-through, unlike Default - Default still shows the dark calibration tint behind a text-only gem.">
+          <input type="radio" name="action-bar-slot-bg-mode" value="transparent" /> Transparent (no colour)
+        </label>
+      </div>
+
+      <h4 class="settings-subsection-title">Border</h4>
+      <p class="hint">Drawn on top of the bar-wide border above, whether or not this gem has an icon.</p>
+      <div class="row">
+        <label>
+          <input type="checkbox" id="action-bar-slot-border-checkbox" /> Custom border for this gem
+        </label>
+      </div>
+      <div class="row" id="action-bar-slot-border-fields" style="display:none">
+        <span class="label">Width:</span>
+        <input type="range" id="action-bar-slot-border-width-slider" min="1" max="4" step="1" />
+        <span id="action-bar-slot-border-width-value" class="slider-value">2px</span>
+      </div>
+      <div class="row" id="action-bar-slot-border-fields-2" style="display:none">
+        <span class="label">Offset (inset):</span>
+        <input type="range" id="action-bar-slot-border-offset-slider" min="0" max="6" step="1" />
+        <span id="action-bar-slot-border-offset-value" class="slider-value">1px</span>
+      </div>
+      <div class="row" id="action-bar-slot-border-fields-3" style="display:none">
+        <span class="label">Colour:</span>
+        <input type="color" id="action-bar-slot-border-color-picker" value="#d2d6e1" />
       </div>
       <div class="row">
         <label title="Overrides the bar-wide name text size for just this one gem.">
@@ -1661,15 +1788,24 @@
           <input type="checkbox" id="action-bar-slot-multi-icon-checkbox" /> Multi icon (split diagonally)
         </label>
       </div>
-      <div class="row" id="action-bar-icon-target-row" style="display:none">
-        <span class="label">Editing:</span>
-        <label><input type="radio" name="action-bar-icon-target" value="primary" checked /> Icon 1 (top-left)</label>
-        <label><input type="radio" name="action-bar-icon-target" value="secondary" /> Icon 2 (bottom-right)</label>
+      <!-- Same gem-bar/gem-slot boxes the "Buffs shown" picker uses - one box per icon (two once
+           Multi icon is on), showing what's currently picked or a "+" if nothing is. Click a box
+           to open the actual picker in its own modal, rather than the picker grid sitting inline
+           here permanently. -->
+      <div id="action-bar-icon-gem-bar" class="gem-bar"></div>
+    </div>
+  </div>
+
+  <div id="action-bar-icon-picker-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <h3 id="action-bar-icon-picker-modal-title">Choose icon</h3>
+        <button id="close-action-bar-icon-picker-modal" class="modal-close">✕</button>
       </div>
       <div class="row">
         <button type="button" id="action-bar-icon-clear-btn" class="btn-prominent">Clear icon</button>
       </div>
-      <div id="action-bar-icon-modal-picker"></div>
+      <div id="action-bar-icon-picker-container"></div>
     </div>
   </div>
 

@@ -302,6 +302,23 @@ body.unlocked .drag-overlay {
   color: #ff8080 !important;
 }
 
+/* Stacked-line text feed (config.stackTextLines). Each line holds at full opacity for most of its
+   life, then fades over its final FEED_FADE_MS - the animation's delay (set inline per line in
+   overlay.js's drawTextFeed, and deliberately allowed to go negative so a line resumes its fade
+   rather than restarting it when a neighbour ages out) is what decides when that fade begins. */
+@keyframes feed-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.text-feed-line {
+  opacity: 1;
+}
+
 /* Note 37 - a coloured edge by what kind of spell a tile is showing.
    "red for damage/DoTs, green for heals/HoTs", extended to the other five categories the roster
    carries.

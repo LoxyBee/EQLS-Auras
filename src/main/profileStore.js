@@ -42,6 +42,42 @@ class ProfileStore {
     return this.data.profiles;
   }
 
+  getProfile(id) {
+    return this.data.profiles.find((p) => p.id === id) || null;
+  }
+
+  // The buff optimiser (see buffPlanner.js) hangs its input off the active loadout profile:
+  // "tied to the active profile" was Shara's own choice, on the theory that which classes you are
+  // running IS what a loadout is. `plannerClasses` is up to 3 class codes; `plannerLevel` is the
+  // ONE character level they all share (it's one multiclass character, not three mains - Shara,
+  // 26 Aug); `buffPlanOrder` is the buff names in the priority order she dragged them into, which
+  // the planner walks to fill the 14 slots. All optional - an untouched profile has none, and the
+  // planner treats that as "no plan yet".
+  setPlannerClasses(id, codes) {
+    const profile = this.data.profiles.find((p) => p.id === id);
+    if (!profile) return null;
+    profile.plannerClasses = Array.isArray(codes) ? codes.filter((c) => typeof c === 'string').slice(0, 3) : [];
+    this._save();
+    return profile;
+  }
+
+  setPlannerLevel(id, level) {
+    const profile = this.data.profiles.find((p) => p.id === id);
+    if (!profile) return null;
+    const n = Math.round(Number(level));
+    profile.plannerLevel = Number.isFinite(n) ? Math.min(50, Math.max(1, n)) : 50;
+    this._save();
+    return profile;
+  }
+
+  setBuffPlanOrder(id, order) {
+    const profile = this.data.profiles.find((p) => p.id === id);
+    if (!profile) return null;
+    profile.buffPlanOrder = Array.isArray(order) ? order.filter((n) => typeof n === 'string') : [];
+    this._save();
+    return profile;
+  }
+
   getActiveId() {
     return this.data.activeProfileId;
   }

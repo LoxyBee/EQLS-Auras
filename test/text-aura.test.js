@@ -78,7 +78,7 @@ function loadOverlayLogic() {
     pick(/function sortBuffs\(buffs, order\) \{[\s\S]*?\n\}/, 'sortBuffs'),
     pick(/function displayName\(buff\) \{[\s\S]*?\n\}/, 'displayName'),
     pick(/function textFor\(buff\) \{[\s\S]*?\n\}/, 'textFor'),
-    pick(/function visibleBuffs\(buffs\) \{[\s\S]*?\n\}/, 'visibleBuffs'),
+    pick(/function visibleBuffs\(buffs, opts = \{\}\) \{[\s\S]*?\n\}/, 'visibleBuffs'),
     pick(/function currentSourceBuffs\(\) \{[\s\S]*?\n\}/, 'currentSourceBuffs'),
   ];
   // eslint-disable-next-line no-new-func

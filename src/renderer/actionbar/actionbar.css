@@ -75,6 +75,21 @@ html, body {
   z-index: 3;
 }
 
+/* Per-gem border (see actionBarStore.js's borderEnabled/borderWidthPx/borderOffsetPx/borderColor)
+   - inset (offset) and box-shadow (width/colour) are set inline by actionbar.js's render. An
+   inset box-shadow rather than a second outline - two outlines in the same stacking context (this
+   element's own, plus .slot's bar-wide one) don't reliably respect normal z-index/paint order in
+   Chromium, and raising the bar-wide offset was observed making an already-visible custom border
+   vanish. A box-shadow is ordinary child content and paints above the parent's own outline like
+   any other child, sidestepping that. */
+.slot-custom-border {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  border-radius: 2px;
+}
+
 /* Stance/invocation "active" overlay - a second outline stacked on top of the ordinary
    configurable border (which uses outline-offset, drawn on .slot itself), not a replacement for
    it. A plain div's own outline, so it isn't subject to the <img> replaced-element sizing quirk

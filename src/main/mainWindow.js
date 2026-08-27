@@ -4,6 +4,17 @@ const { loadJson, saveJson } = require('./store');
 
 let mainWindow = null;
 
+// Set true only by app.quit() actually starting (see the 'before-quit' listener below), which
+// fires before any window's own 'close' event - so the close handler can tell "the user clicked
+// the window's own close button" (hide to tray) apart from "the app is genuinely quitting"
+// (let it close for real). Requested directly, once a tray icon existed to make "hide" recoverable
+// from: before this, closing the window WAS the only quit path (see that handler's own history),
+// which is exactly why hiding here used to be unsafe.
+let isQuitting = false;
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 const DEFAULT_BOUNDS = { width: 900, height: 650 };
 
 // Restores the window to wherever it was last, but only if that position is
@@ -42,6 +53,9 @@ function restoredBounds() {
 
 function createMainWindow() {
   if (mainWindow) {
+    // .show() as well as .focus() - this is also the tray icon's own "Show EQLS Auras" path now,
+    // and the window may be hidden (not destroyed) rather than merely unfocused.
+    mainWindow.show();
     mainWindow.focus();
     return mainWindow;
   }
@@ -108,16 +122,27 @@ function createMainWindow() {
   // behavior left the whole process running invisibly forever if any
   // widget was still open when the main window closed, with no taskbar
   // icon, tray icon, or exit button anywhere to stop it. Closing the main
-  // window now always quits the app outright, tearing down every widget
-  // window along with it - "close the one visible window" and "quit the
-  // app" are the same action from the user's side of the click-through
-  // overlay, and should behave the same.
-  mainWindow.on('close', () => {
+  // window used to always quit the app outright for exactly that reason -
+  // "close the one visible window" and "quit the app" had to be the same
+  // action, since nothing else could reach the process at all.
+  //
+  // Now that a tray icon exists (see main.js) with its own real Quit item,
+  // that's no longer true, and hiding is what most tray-companion apps do -
+  // requested directly, with an explicit second button for the case this
+  // history exists to prevent: closing the window hides it to the tray;
+  // the tray's Quit item (or anything else that calls app.quit()) is what
+  // actually tears everything down, flagged via isQuitting above so this
+  // handler can tell the two apart.
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+      return;
+    }
     // Flush immediately - the debounced save above may still be pending, and
     // quitting would drop it, silently losing the last move the user made.
     if (saveBoundsTimer) clearTimeout(saveBoundsTimer);
     if (!mainWindow.isDestroyed()) saveJson('mainWindowBounds', mainWindow.getNormalBounds());
-    app.quit();
   });
 
   mainWindow.on('closed', () => {

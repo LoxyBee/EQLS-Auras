@@ -159,6 +159,9 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetTextAuraSize: (id, value) => ipcRenderer.invoke('widget:setTextAuraSize', { id, value }),
   setWidgetTextAuraInstantSec: (id, value) =>
     ipcRenderer.invoke('widget:setTextAuraInstantSec', { id, value }),
+  setWidgetStackTextLines: (id, value) => ipcRenderer.invoke('widget:setStackTextLines', { id, value }),
+  setWidgetMaxStackTextLines: (id, value) =>
+    ipcRenderer.invoke('widget:setMaxStackTextLines', { id, value }),
   setWidgetMergeSameDuration: (id, value) =>
     ipcRenderer.invoke('widget:setMergeSameDuration', { id, value }),
   setWidgetCategoryBorders: (id, value) => ipcRenderer.invoke('widget:setCategoryBorders', { id, value }),
@@ -266,6 +269,14 @@ contextBridge.exposeInMainWorld('eqTracker', {
     ipcRenderer.on('profiles:activeChanged', (_event, id) => callback(id));
   },
 
+  // The buff optimiser (buffPlanner.js). Input lives on the active loadout profile; the plan is
+  // always recomputed on the main side from the live roster.
+  getPlannerInput: (profileId) => ipcRenderer.invoke('planner:getInput', profileId),
+  setPlannerClasses: (profileId, classes) => ipcRenderer.invoke('planner:setClasses', { profileId, classes }),
+  setPlannerLevel: (profileId, level) => ipcRenderer.invoke('planner:setLevel', { profileId, level }),
+  setPlannerOrder: (profileId, order) => ipcRenderer.invoke('planner:setOrder', { profileId, order }),
+  computePlan: (profileId) => ipcRenderer.invoke('planner:compute', profileId),
+
   getIconSets: () => ipcRenderer.invoke('icons:getSets'),
   getIconSet: () => ipcRenderer.invoke('icons:getSet'),
   setIconSet: (iconSet) => ipcRenderer.invoke('icons:setSet', iconSet),
@@ -314,6 +325,10 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getKnownAbilityGroups: () => ipcRenderer.invoke('actionBar:getKnownAbilityGroups'),
   setActionBarSlotMultiIcon: (id, index, enabled) => ipcRenderer.invoke('actionBar:setSlotMultiIcon', { id, index, enabled }),
   setActionBarSlotSecondIcon: (id, index, iconId) => ipcRenderer.invoke('actionBar:setSlotSecondIcon', { id, index, iconId }),
+  setActionBarSlotBorderEnabled: (id, index, enabled) => ipcRenderer.invoke('actionBar:setSlotBorderEnabled', { id, index, enabled }),
+  setActionBarSlotBorderWidth: (id, index, px) => ipcRenderer.invoke('actionBar:setSlotBorderWidth', { id, index, px }),
+  setActionBarSlotBorderOffset: (id, index, px) => ipcRenderer.invoke('actionBar:setSlotBorderOffset', { id, index, px }),
+  setActionBarSlotBorderColor: (id, index, color) => ipcRenderer.invoke('actionBar:setSlotBorderColor', { id, index, color }),
   setActionBarActiveProfileIds: (id, profileIds) => ipcRenderer.invoke('actionBar:setActiveProfileIds', { id, profileIds }),
   copyActionBarSettings: (id, fromId) => ipcRenderer.invoke('actionBar:copySettings', { id, fromId }),
   duplicateActionBar: (id) => ipcRenderer.invoke('actionBar:duplicate', id),

@@ -416,7 +416,7 @@ test('the count badge paints over the countdown bar, not under it', () => {
 test('merging happens after filtering and before sorting', () => {
   // After filtering, or an excluded buff would still be counted in a badge. Before sorting, so
   // the tile takes its place in the order by the time it actually shows.
-  const fn = overlaySrc.match(/function visibleBuffs\(buffs\) \{([\s\S]*?)\n\}/);
+  const fn = overlaySrc.match(/function visibleBuffs\(buffs, opts = \{\}\) \{([\s\S]*?)\n\}/);
   assert.ok(fn, 'visibleBuffs has been restructured');
   const body = fn[1];
   const filterAt = body.indexOf('excludedBuffNames');

@@ -48,6 +48,14 @@ const TOTAL_SLOTS = 12;
 // invocation.") rather than the "You begin to change your stance/invocation." precursor line,
 // which never says WHICH one was picked. Stances share a fixed 6s cooldown (the game's own rule,
 // not user-configurable); invocations use their own configurable toggleDurationSec per gem.
+//
+// borderEnabled/borderWidthPx/borderOffsetPx/borderColor - a per-gem border, same three options
+// (width/offset/colour) as the bar-wide border in BAR_SETTING_DEFAULTS, drawn as its OWN extra
+// outline layered on top of that bar-wide one rather than replacing it - requested directly:
+// "gem slots should have their own individual border options... that go over the top of the
+// action bars global border." Off by default (borderEnabled false) so an existing bar's look is
+// unchanged; deliberately independent of whether the gem has an icon - see actionbar.js's render,
+// which draws it on the same .slot box the bar-wide outline and the background colour both use.
 function emptySlot() {
   return {
     iconId: null,
@@ -62,6 +70,10 @@ function emptySlot() {
     toggleGroup: null,
     toggleName: null,
     toggleDurationSec: 6,
+    borderEnabled: false,
+    borderWidthPx: 2,
+    borderOffsetPx: 1,
+    borderColor: '#d2d6e1',
   };
 }
 
@@ -181,6 +193,12 @@ class ActionBarStore {
           toggleName: typeof s.toggleName === 'string' && s.toggleName ? s.toggleName : null,
           toggleDurationSec:
             typeof s.toggleDurationSec === 'number' ? Math.max(1, Math.min(120, Math.round(s.toggleDurationSec))) : 6,
+          borderEnabled: !!s.borderEnabled,
+          borderWidthPx:
+            typeof s.borderWidthPx === 'number' ? Math.max(1, Math.min(4, Math.round(s.borderWidthPx))) : 2,
+          borderOffsetPx:
+            typeof s.borderOffsetPx === 'number' ? Math.max(0, Math.min(6, Math.round(s.borderOffsetPx))) : 1,
+          borderColor: typeof s.borderColor === 'string' && s.borderColor ? s.borderColor : '#d2d6e1',
         });
       } else {
         out.push({ ...emptySlot(), iconId: typeof s === 'number' ? s : null });

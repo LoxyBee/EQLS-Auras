@@ -70,9 +70,13 @@ test('buffNames is still a flat array of names', () => {
   for (const n of saved.buffNames) assert.equal(typeof n, 'string', 'a gem object got persisted');
 });
 
-test('no migration was added, because none is needed', () => {
-  // A version bump here would be the tell that the shape changed after all.
-  assert.match(storeSrc, /version: 2/, 'the store version moved - did the buffNames shape change?');
+test('buffNames still has no migration of its own - the shape did not change', () => {
+  // The store version is now 3 (v2->v3 turned stacked text lines on for existing Resist flash
+  // auras - see text-stack.test.js; nothing to do with buffNames). If a version bump ever DOES
+  // coincide with a buffNames shape change, that change needs its own migration and this comment
+  // is where to notice it. The array coercion below is the only thing between an object-shaped
+  // buffNames and every aura being silently emptied.
+  assert.match(storeSrc, /version: 3, widgets: \[selfBuffs\]/, 'the store version moved again - if buffNames changed shape it needs its own migration');
   assert.match(
     storeSrc,
     /buffNames: Array\.isArray\(widget\.buffNames\) \? widget\.buffNames : \[\]/,

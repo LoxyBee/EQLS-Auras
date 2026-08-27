@@ -1,7 +1,14 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
 const { isVisibleInZone } = require('../shared/zoneVisibility');
-const { WidgetStore, LOADOUT_LABEL_KIND, normalizeDisplayMode, isTextAura, clampInstantSec } = require('./widgetStore');
+const {
+  WidgetStore,
+  LOADOUT_LABEL_KIND,
+  normalizeDisplayMode,
+  isTextAura,
+  clampInstantSec,
+  clampStackTextLines,
+} = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
@@ -940,6 +947,20 @@ function setTextAuraInstantSec(id, seconds) {
   return config;
 }
 
+function setStackTextLines(id, enabled) {
+  const config = widgetStore.update(id, { stackTextLines: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setMaxStackTextLines(id, count) {
+  // Clamped here (2..4) the same way setTextAuraInstantSec clamps - update() deliberately does not
+  // normalize, so a bad slider/share value has to be caught on the way through a setter.
+  const config = widgetStore.update(id, { maxStackTextLines: clampStackTextLines(count) });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setTextAuraSize(id, size) {
   const config = widgetStore.update(id, { textAuraSize: Number(size) || 32 });
   pushConfigChanged(id);
@@ -1287,6 +1308,8 @@ module.exports = {
   setTextAuraMessage,
   setTextAuraSize,
   setTextAuraInstantSec,
+  setStackTextLines,
+  setMaxStackTextLines,
   setHideBardSongs,
   setMaxDurationFilter,
   setShowRowIcon,

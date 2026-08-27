@@ -32,6 +32,7 @@ async function init() {
   initSoundsFolderLink();
   initBugReport();
   initActionBarsPage();
+  initBuffPlanner();
 }
 
 // Custom title bar (UX_VISUAL_DESIGN.md / the frameless-window follow-up) -
@@ -1202,6 +1203,11 @@ function initWidgetsPanel() {
   const textInstantValueEl = document.getElementById('widget-text-instant-value');
   const textInstantRowEl = document.getElementById('widget-text-instant-row');
   const textInstantHintEl = document.getElementById('widget-text-instant-hint');
+  const textStackCheckbox = document.getElementById('widget-text-stack-checkbox');
+  const textStackRowEl = document.getElementById('widget-text-stack-row');
+  const textStackMaxSlider = document.getElementById('widget-text-stack-max-slider');
+  const textStackMaxValueEl = document.getElementById('widget-text-stack-max-value');
+  const textStackMaxRowEl = document.getElementById('widget-text-stack-max-row');
   const displayModeRowEl = document.getElementById('widget-display-mode-row');
   const buffSourceTimerLabelEl = document.getElementById('widget-buff-source-timer-label');
   const categoryBordersCheckbox = document.getElementById('widget-category-borders-checkbox');
@@ -2146,9 +2152,9 @@ function initWidgetsPanel() {
     'bard-songs': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'ally-grouping'],
     'custom-buff': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'buff-source', 'buff-picker', 'ally-grouping'],
     'custom-debuff': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'debuff-cast-by', 'buff-picker', 'ally-grouping'],
-    'ally-alert': ['text-fields', 'text-instant', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-picker'],
-    'text': ['text-fields', 'text-instant', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'buff-picker'],
-    'text-customTimer': ['text-fields', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'custom-timers'],
+    'ally-alert': ['text-fields', 'text-instant', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-picker'],
+    'text': ['text-fields', 'text-instant', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'buff-picker'],
+    'text-customTimer': ['text-fields', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'custom-timers'],
     'custom-timer': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'custom-timers'],
     'damage': ['sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'damage-settings'],
     // No 'sort' - the legs are fixed walking order and widgetStore.createTravelGuide hardcodes
@@ -2219,6 +2225,12 @@ function initWidgetsPanel() {
     const showsTextInstant = has('text-instant') && !widget.alwaysOn;
     textInstantRowEl.style.display = showsTextInstant ? '' : 'none';
     textInstantHintEl.style.display = showsTextInstant ? '' : 'none';
+    // The "Lines visible" slider is an expanding sub-option: only shown once "Stack multiple
+    // lines" is actually on. Hidden entirely on "Always on screen" for the same reason
+    // "Show events for" is - there is no incoming event to stack.
+    const showsTextStack = has('text-stack') && !widget.alwaysOn;
+    textStackRowEl.style.display = showsTextStack ? '' : 'none';
+    textStackMaxRowEl.style.display = showsTextStack && widget.stackTextLines ? '' : 'none';
     // Her wording: "a toggle under text only custom creation". It belongs to this aura type and
     // nowhere else - the warning has no duration, so there is nothing for a tile aura to draw.
     allyAlertRowEl.style.display = has('ally-alert-toggle') ? '' : 'none';
@@ -2406,6 +2418,10 @@ function initWidgetsPanel() {
     const instantSec = widget.textAuraInstantSec || 6;
     textInstantSlider.value = String(instantSec);
     textInstantValueEl.textContent = `${instantSec}s`;
+    textStackCheckbox.checked = !!widget.stackTextLines;
+    const maxStackLines = widget.maxStackTextLines || 2;
+    textStackMaxSlider.value = String(maxStackLines);
+    textStackMaxValueEl.textContent = String(maxStackLines);
     soundLandCheckbox.checked = !!widget.soundOnLand;
     soundExpireCheckbox.checked = !!widget.soundOnExpire;
     const warningSec = widget.soundWarningSec || 0;
@@ -3905,6 +3921,17 @@ function initWidgetsPanel() {
     const seconds = Number(textInstantSlider.value);
     textInstantValueEl.textContent = `${seconds}s`;
     window.eqTracker.setWidgetTextAuraInstantSec(selectedId, seconds);
+  });
+  textStackCheckbox.addEventListener('change', () => {
+    // The "Lines visible" slider only means anything while stacking is on, so it expands and
+    // collapses with the checkbox rather than sitting there inert.
+    textStackMaxRowEl.style.display = textStackCheckbox.checked ? '' : 'none';
+    window.eqTracker.setWidgetStackTextLines(selectedId, textStackCheckbox.checked).then(updateLocalWidgetCache);
+  });
+  textStackMaxSlider.addEventListener('input', () => {
+    const n = Number(textStackMaxSlider.value);
+    textStackMaxValueEl.textContent = String(n);
+    window.eqTracker.setWidgetMaxStackTextLines(selectedId, n);
   });
   textAuraSizeSlider.addEventListener('input', () => {
     const size = Number(textAuraSizeSlider.value);
@@ -5527,15 +5554,30 @@ function initActionBarsPage() {
   const slotsGridEl = document.getElementById('action-bar-slots-grid');
   const iconModalBackdrop = document.getElementById('action-bar-icon-modal-backdrop');
   const iconModalTitle = document.getElementById('action-bar-icon-modal-title');
-  const iconModalPicker = document.getElementById('action-bar-icon-modal-picker');
+  const iconGemBarEl = document.getElementById('action-bar-icon-gem-bar');
+  const iconPickerModalBackdrop = document.getElementById('action-bar-icon-picker-modal-backdrop');
+  const iconPickerModalTitle = document.getElementById('action-bar-icon-picker-modal-title');
+  const iconPickerContainer = document.getElementById('action-bar-icon-picker-container');
+  const closeIconPickerModalBtn = document.getElementById('close-action-bar-icon-picker-modal');
   const iconModalClearBtn = document.getElementById('action-bar-icon-clear-btn');
   const closeIconModalBtn = document.getElementById('close-action-bar-icon-modal');
   const slotNameInput = document.getElementById('action-bar-slot-name-input');
   const slotDisableCheckbox = document.getElementById('action-bar-slot-disable-checkbox');
   const slotCooldownStatus = document.getElementById('action-bar-slot-cooldown-status');
   const slotCooldownBtn = document.getElementById('action-bar-slot-cooldown-btn');
-  const slotBgColorCheckbox = document.getElementById('action-bar-slot-bg-color-checkbox');
+  const slotBgModeRadios = document.querySelectorAll('input[name="action-bar-slot-bg-mode"]');
   const slotBgColorPicker = document.getElementById('action-bar-slot-bg-color-picker');
+  const slotBorderCheckbox = document.getElementById('action-bar-slot-border-checkbox');
+  const slotBorderFieldRows = [
+    document.getElementById('action-bar-slot-border-fields'),
+    document.getElementById('action-bar-slot-border-fields-2'),
+    document.getElementById('action-bar-slot-border-fields-3'),
+  ];
+  const slotBorderWidthSlider = document.getElementById('action-bar-slot-border-width-slider');
+  const slotBorderWidthValue = document.getElementById('action-bar-slot-border-width-value');
+  const slotBorderOffsetSlider = document.getElementById('action-bar-slot-border-offset-slider');
+  const slotBorderOffsetValue = document.getElementById('action-bar-slot-border-offset-value');
+  const slotBorderColorPicker = document.getElementById('action-bar-slot-border-color-picker');
   const slotTextSizeOverrideCheckbox = document.getElementById('action-bar-slot-text-size-override-checkbox');
   const slotTextSizeOverrideSlider = document.getElementById('action-bar-slot-text-size-override-slider');
   const slotTextSizeOverrideValue = document.getElementById('action-bar-slot-text-size-override-value');
@@ -5554,8 +5596,6 @@ function initActionBarsPage() {
     knownAbilityGroups = groups;
   });
   const slotMultiIconCheckbox = document.getElementById('action-bar-slot-multi-icon-checkbox');
-  const iconTargetRow = document.getElementById('action-bar-icon-target-row');
-  const iconTargetRadios = document.querySelectorAll('input[name="action-bar-icon-target"]');
   const borderWidthSlider = document.getElementById('action-bar-border-width-slider');
   const borderWidthValue = document.getElementById('action-bar-border-width-value');
   const borderOffsetSlider = document.getElementById('action-bar-border-offset-slider');
@@ -5612,6 +5652,7 @@ function initActionBarsPage() {
   let currentIconSet = '';
   let currentSlots = []; // [{ iconId, name, disabled, cooldown }] x 12
   let editingSlotIndex = null; // which slot the Edit gem modal is open for
+  let iconPickerTarget = 'primary'; // which icon ('primary'/'secondary') the nested icon-picker modal is editing
   const gemBoxes = []; // [{ box, img, placeholder }], index-aligned with the 12 slots
 
   function cooldownSummary(cooldown) {
@@ -5641,14 +5682,29 @@ function initActionBarsPage() {
       g.placeholder.style.display = 'none';
     }
     // Same diagonal split the overlay itself draws (see actionbar.js's render) - only actually
-    // splits once both halves are picked, matching the overlay's own rule.
+    // splits once both halves are picked, matching the overlay's own rule. Both halves need their
+    // own clip-path, one triangle each - the second image was previously left unclipped, so it sat
+    // as a full square on top of the primary icon and hid the split entirely rather than showing it.
     const splitting = s.multiIcon && s.iconId != null && s.secondIconId != null && currentIconSet;
     g.img.style.clipPath = splitting ? 'polygon(0 0, 100% 0, 0 100%)' : 'none';
     if (splitting) {
       g.secondImg.src = `eqicon://icon/${encodeURIComponent(currentIconSet)}/${s.secondIconId}`;
       g.secondImg.style.display = '';
+      g.secondImg.style.clipPath = 'polygon(100% 0, 100% 100%, 0 100%)';
     } else {
       g.secondImg.style.display = 'none';
+      g.secondImg.style.clipPath = 'none';
+    }
+    // Per-gem custom border preview (see actionBarStore.js's borderEnabled/borderWidthPx/
+    // borderOffsetPx/borderColor) - an outline rather than touching the box's own CSS border, so
+    // it layers on top the same way it does on the real overlay instead of replacing the box's
+    // existing static border.
+    if (s.borderEnabled) {
+      g.box.style.outline = `${s.borderWidthPx || 2}px solid ${s.borderColor || '#d2d6e1'}`;
+      g.box.style.outlineOffset = `-${s.borderOffsetPx ?? 1}px`;
+    } else {
+      g.box.style.outline = 'none';
+      g.box.style.outlineOffset = '';
     }
     g.box.classList.toggle('disabled', !!s.disabled);
     g.box.title = s.name ? `${s.name} (Slot ${index + 1})` : `Slot ${index + 1}`;
@@ -5656,22 +5712,51 @@ function initActionBarsPage() {
 
   function closeIconModal() {
     iconModalBackdrop.style.display = 'none';
-    iconModalPicker.innerHTML = '';
     editingSlotIndex = null;
   }
 
-  // Opens the ONE consolidated "Edit gem" modal - icon, overlay name, disable, and the cooldown
-  // status/button all live together here, rather than being spread across separate popups or
-  // inline page controls. Requested directly: "selections should be a modal."
-  // Rebuilds the picker grid for whichever icon (primary or, if multi icon is on, secondary) is
-  // currently selected in the "Editing:" radios - picking a thumbnail writes to that one and
-  // closes the modal, same single-click-to-set behaviour as before multi icon existed.
-  function renderIconPickerForTarget(index) {
-    const target = [...iconTargetRadios].find((r) => r.checked)?.value || 'primary';
+  // The Icon section of the "Edit gem" modal - same gem-bar/gem-slot boxes the "Buffs shown"
+  // picker uses (see buildGemSlot above), one box per icon: just Icon 1 normally, Icon 1 AND
+  // Icon 2 side by side once Multi icon is on. Requested directly: "when 2 icon options are
+  // selected, it should show 2 boxes instead of 1" - replacing the old single always-visible
+  // picker grid switched via an "Editing:" radio pair.
+  function buildIconGemBox(index, target, iconId) {
+    const box = document.createElement('button');
+    box.type = 'button';
+    const multi = !!currentSlots[index].multiIcon;
+    box.className = 'gem-slot' + (iconId == null ? ' gem-add' : '');
+    box.title = !multi ? 'Icon - click to choose' : target === 'secondary' ? 'Icon 2 (bottom-right) - click to choose' : 'Icon 1 (top-left) - click to choose';
+    if (iconId != null && currentIconSet) {
+      const img = document.createElement('img');
+      img.src = `eqicon://icon/${encodeURIComponent(currentIconSet)}/${iconId}`;
+      img.alt = '';
+      box.appendChild(img);
+    } else {
+      box.textContent = '+';
+    }
+    box.addEventListener('click', () => openIconPickerModal(index, target));
+    return box;
+  }
+
+  function renderIconGemBar(index) {
     const s = currentSlots[index];
+    iconGemBarEl.innerHTML = '';
+    iconGemBarEl.appendChild(buildIconGemBox(index, 'primary', s.iconId));
+    if (s.multiIcon) iconGemBarEl.appendChild(buildIconGemBox(index, 'secondary', s.secondIconId));
+  }
+
+  // The actual icon-picker grid, opened as its own modal on top of "Edit gem" rather than sitting
+  // inline in it permanently - "it should enter another modal for icon selection when + is
+  // clicked." Picking a thumbnail writes it, refreshes the gem-bar box behind it, and closes just
+  // this modal, leaving "Edit gem" open underneath.
+  function openIconPickerModal(index, target) {
+    iconPickerTarget = target;
+    const s = currentSlots[index];
+    const multi = !!s.multiIcon;
+    iconPickerModalTitle.textContent = !multi ? 'Choose icon' : target === 'secondary' ? 'Choose icon - Icon 2 (bottom-right)' : 'Choose icon - Icon 1 (top-left)';
     const currentIconId = target === 'secondary' ? s.secondIconId : s.iconId;
-    iconModalPicker.innerHTML = '';
-    iconModalPicker.appendChild(
+    iconPickerContainer.innerHTML = '';
+    iconPickerContainer.appendChild(
       buildIconPicker(currentIconId, (iconId) => {
         if (target === 'secondary') {
           currentSlots[index].secondIconId = iconId;
@@ -5681,20 +5766,16 @@ function initActionBarsPage() {
           window.eqTracker.setActionBarSlotIcon(selectedActionBarId, index, iconId);
         }
         refreshGemBox(index);
-        // While multi icon is on, the modal stays open after a pick instead of closing - closing
-        // after just the primary half meant reopening the modal to finish the job. Deliberately
-        // NOT auto-switching the "Editing:" target either (tried that, reported as a jarring
-        // flash and taking the choice away) - it just re-renders the SAME target's grid with the
-        // new pick highlighted, so re-picking it again (changing your mind) still works, and
-        // moving to the other half is a manual click on the radio, same as picking it the first
-        // time. A plain single-icon gem still closes on the first pick, unchanged from before.
-        if (s.multiIcon) {
-          renderIconPickerForTarget(index);
-          return;
-        }
-        closeIconModal();
+        renderIconGemBar(index);
+        closeIconPickerModal();
       })
     );
+    iconPickerModalBackdrop.style.display = 'flex';
+  }
+
+  function closeIconPickerModal() {
+    iconPickerModalBackdrop.style.display = 'none';
+    iconPickerContainer.innerHTML = '';
   }
 
   // Opens the ONE consolidated "Edit gem" modal - icon, overlay name, disable, and the cooldown
@@ -5726,8 +5807,19 @@ function initActionBarsPage() {
     slotNameInput.value = s.name || '';
     slotDisableCheckbox.checked = !!s.disabled;
     slotCooldownStatus.textContent = cooldownSummary(s.cooldown);
-    slotBgColorCheckbox.checked = !!s.bgColor;
-    slotBgColorPicker.value = s.bgColor || '#808080';
+    const bgMode = s.bgColor === 'transparent' ? 'transparent' : s.bgColor ? 'custom' : 'default';
+    slotBgModeRadios.forEach((r) => (r.checked = r.value === bgMode));
+    slotBgColorPicker.value = bgMode === 'custom' ? s.bgColor : '#808080';
+    slotBgColorPicker.style.display = bgMode === 'custom' ? '' : 'none';
+    slotBorderCheckbox.checked = !!s.borderEnabled;
+    slotBorderFieldRows.forEach((row) => {
+      if (row) row.style.display = s.borderEnabled ? '' : 'none';
+    });
+    slotBorderWidthSlider.value = s.borderWidthPx || 2;
+    slotBorderWidthValue.textContent = `${slotBorderWidthSlider.value}px`;
+    slotBorderOffsetSlider.value = s.borderOffsetPx ?? 1;
+    slotBorderOffsetValue.textContent = `${slotBorderOffsetSlider.value}px`;
+    slotBorderColorPicker.value = s.borderColor || '#d2d6e1';
     const hasOverride = typeof s.nameSizeOverride === 'number';
     slotTextSizeOverrideCheckbox.checked = hasOverride;
     slotTextSizeOverrideSlider.value = hasOverride ? s.nameSizeOverride : 11;
@@ -5742,9 +5834,7 @@ function initActionBarsPage() {
     slotToggleDurationValue.textContent = `${s.toggleDurationSec || 6}s`;
     syncSlotToggleUI(s.toggleGroup, s.toggleName);
     slotMultiIconCheckbox.checked = !!s.multiIcon;
-    iconTargetRow.style.display = s.multiIcon ? '' : 'none';
-    iconTargetRadios.forEach((r) => (r.checked = r.value === 'primary'));
-    renderIconPickerForTarget(index);
+    renderIconGemBar(index);
     iconModalBackdrop.style.display = 'flex';
   }
 
@@ -5897,10 +5987,13 @@ function initActionBarsPage() {
   iconModalBackdrop.addEventListener('click', (e) => {
     if (e.target === iconModalBackdrop) closeIconModal();
   });
+  closeIconPickerModalBtn.addEventListener('click', closeIconPickerModal);
+  iconPickerModalBackdrop.addEventListener('click', (e) => {
+    if (e.target === iconPickerModalBackdrop) closeIconPickerModal();
+  });
   iconModalClearBtn.addEventListener('click', () => {
     if (editingSlotIndex == null) return;
-    const target = [...iconTargetRadios].find((r) => r.checked)?.value || 'primary';
-    if (target === 'secondary') {
+    if (iconPickerTarget === 'secondary') {
       currentSlots[editingSlotIndex].secondIconId = null;
       window.eqTracker.setActionBarSlotSecondIcon(selectedActionBarId, editingSlotIndex, null);
     } else {
@@ -5908,23 +6001,16 @@ function initActionBarsPage() {
       window.eqTracker.setActionBarSlotIcon(selectedActionBarId, editingSlotIndex, null);
     }
     refreshGemBox(editingSlotIndex);
-    renderIconPickerForTarget(editingSlotIndex);
+    renderIconGemBar(editingSlotIndex);
+    closeIconPickerModal();
   });
   slotMultiIconCheckbox.addEventListener('change', () => {
     if (editingSlotIndex == null) return;
     const enabled = slotMultiIconCheckbox.checked;
     currentSlots[editingSlotIndex].multiIcon = enabled;
     window.eqTracker.setActionBarSlotMultiIcon(selectedActionBarId, editingSlotIndex, enabled);
-    iconTargetRow.style.display = enabled ? '' : 'none';
-    iconTargetRadios.forEach((r) => (r.checked = r.value === 'primary'));
     refreshGemBox(editingSlotIndex);
-    renderIconPickerForTarget(editingSlotIndex);
-  });
-  iconTargetRadios.forEach((r) => {
-    r.addEventListener('change', () => {
-      if (editingSlotIndex == null) return;
-      renderIconPickerForTarget(editingSlotIndex);
-    });
+    renderIconGemBar(editingSlotIndex);
   });
   slotNameInput.addEventListener('change', () => {
     if (editingSlotIndex == null) return;
@@ -5939,16 +6025,56 @@ function initActionBarsPage() {
     refreshGemBox(editingSlotIndex);
   });
   slotCooldownBtn.addEventListener('click', openCooldownModal);
+  // Default (null, the CSS calibration tint) / custom colour / transparent (explicit see-through,
+  // distinct from "unset" - see actionbar.js's render comment) - a 3-way radio rather than the
+  // checkbox this used to be, since a colour input alone can't express "no colour at all".
   function applySlotBgColor() {
     if (editingSlotIndex == null) return;
-    const color = slotBgColorCheckbox.checked ? slotBgColorPicker.value : null;
+    const mode = [...slotBgModeRadios].find((r) => r.checked)?.value || 'default';
+    slotBgColorPicker.style.display = mode === 'custom' ? '' : 'none';
+    const color = mode === 'transparent' ? 'transparent' : mode === 'custom' ? slotBgColorPicker.value : null;
     currentSlots[editingSlotIndex].bgColor = color;
     window.eqTracker.setActionBarSlotBgColor(selectedActionBarId, editingSlotIndex, color);
     refreshGemBox(editingSlotIndex);
   }
-  slotBgColorCheckbox.addEventListener('change', applySlotBgColor);
-  slotBgColorPicker.addEventListener('input', () => {
-    if (slotBgColorCheckbox.checked) applySlotBgColor();
+  slotBgModeRadios.forEach((r) => r.addEventListener('change', applySlotBgColor));
+  slotBgColorPicker.addEventListener('input', applySlotBgColor);
+
+  // Per-gem border, layered on top of the bar-wide one - same three options (width/offset/colour)
+  // as the bar-wide border topic, scoped to just this slot.
+  function applySlotBorderEnabled() {
+    if (editingSlotIndex == null) return;
+    const on = slotBorderCheckbox.checked;
+    slotBorderFieldRows.forEach((row) => {
+      if (row) row.style.display = on ? '' : 'none';
+    });
+    currentSlots[editingSlotIndex].borderEnabled = on;
+    window.eqTracker.setActionBarSlotBorderEnabled(selectedActionBarId, editingSlotIndex, on);
+    refreshGemBox(editingSlotIndex);
+  }
+  slotBorderCheckbox.addEventListener('change', applySlotBorderEnabled);
+  slotBorderWidthSlider.addEventListener('input', () => {
+    if (editingSlotIndex == null) return;
+    const px = Number(slotBorderWidthSlider.value);
+    slotBorderWidthValue.textContent = `${px}px`;
+    currentSlots[editingSlotIndex].borderWidthPx = px;
+    window.eqTracker.setActionBarSlotBorderWidth(selectedActionBarId, editingSlotIndex, px);
+    refreshGemBox(editingSlotIndex);
+  });
+  slotBorderOffsetSlider.addEventListener('input', () => {
+    if (editingSlotIndex == null) return;
+    const px = Number(slotBorderOffsetSlider.value);
+    slotBorderOffsetValue.textContent = `${px}px`;
+    currentSlots[editingSlotIndex].borderOffsetPx = px;
+    window.eqTracker.setActionBarSlotBorderOffset(selectedActionBarId, editingSlotIndex, px);
+    refreshGemBox(editingSlotIndex);
+  });
+  slotBorderColorPicker.addEventListener('input', () => {
+    if (editingSlotIndex == null) return;
+    const color = slotBorderColorPicker.value;
+    currentSlots[editingSlotIndex].borderColor = color;
+    window.eqTracker.setActionBarSlotBorderColor(selectedActionBarId, editingSlotIndex, color);
+    refreshGemBox(editingSlotIndex);
   });
   slotTextSizeOverrideCheckbox.addEventListener('change', () => {
     if (editingSlotIndex == null) return;
@@ -6091,6 +6217,10 @@ function initActionBarsPage() {
           toggleGroup: null,
           toggleName: null,
           toggleDurationSec: 6,
+          borderEnabled: false,
+          borderWidthPx: 2,
+          borderOffsetPx: 1,
+          borderColor: '#d2d6e1',
         }));
     setSlotGridColumns(config.iconsPerRow);
     for (let i = 0; i < 12; i++) refreshGemBox(i);
@@ -6343,4 +6473,255 @@ function initTradePing() {
       }
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// Buff Planner page (src/main/buffPlanner.js). Pick three classes + levels on
+// the active loadout profile, see the highest-level buff for every line they
+// cover packed into the 14 buff slots, and drag the priority order that
+// decides which buffs win a slot when there are more than 14. Everything is
+// recomputed on the main side from the live roster - this page only draws it.
+// ---------------------------------------------------------------------------
+const PLANNER_CLASSES = ['BRD', 'BST', 'CLR', 'DRU', 'ENC', 'MAG', 'NEC', 'PAL', 'RNG', 'SHD', 'SHM', 'WIZ'];
+const PLANNER_MAX_LEVEL = 50;
+
+function initBuffPlanner() {
+  const classRowEl = document.getElementById('planner-class-rows');
+  const levelInputEl = document.getElementById('planner-level-input');
+  const slotListEl = document.getElementById('planner-slot-list');
+  const slotCountEl = document.getElementById('planner-slot-count');
+  const totalsCardEl = document.getElementById('planner-totals-card');
+  const totalsEl = document.getElementById('planner-totals');
+  const statsUnknownEl = document.getElementById('planner-stats-unknown');
+  const songCardEl = document.getElementById('planner-song-card');
+  const songListEl = document.getElementById('planner-song-list');
+  const songCountEl = document.getElementById('planner-song-count');
+  const permCardEl = document.getElementById('planner-permanent-card');
+  const permListEl = document.getElementById('planner-permanent-list');
+  const permCountEl = document.getElementById('planner-permanent-count');
+  const priorityListEl = document.getElementById('planner-priority-list');
+  const overflowCardEl = document.getElementById('planner-overflow-card');
+  const overflowListEl = document.getElementById('planner-overflow-list');
+  const overflowCountEl = document.getElementById('planner-overflow-count');
+  const emptyNoteEl = document.getElementById('planner-empty-note');
+  const stackingStateEl = document.getElementById('planner-stacking-state');
+  const activeProfileEl = document.getElementById('planner-active-profile');
+  if (!classRowEl) return;
+
+  let classes = []; // up to 3 class codes - mirrors the active profile
+  let level = PLANNER_MAX_LEVEL; // the one shared character level
+  let order = []; // buff names, the dragged priority order
+
+  // One row, three class dropdowns - it's one multiclass character, not three mains, so there is
+  // one level (the input above this row) and it applies to all three.
+  function buildClassSelects() {
+    classRowEl.querySelectorAll('.planner-class-select').forEach((el) => el.remove());
+    for (let i = 0; i < 3; i++) {
+      const sel = document.createElement('select');
+      sel.className = 'text-input planner-class-select';
+      sel.innerHTML =
+        '<option value="">-</option>' +
+        PLANNER_CLASSES.map((c) => '<option value="' + c + '">' + c + '</option>').join('');
+      sel.value = classes[i] || '';
+      sel.addEventListener('change', commitClasses);
+      classRowEl.appendChild(sel);
+    }
+  }
+
+  function readClassSelects() {
+    const out = [];
+    for (const sel of classRowEl.querySelectorAll('.planner-class-select')) {
+      if (sel.value && !out.includes(sel.value)) out.push(sel.value);
+    }
+    return out;
+  }
+
+  function commitClasses() {
+    classes = readClassSelects();
+    window.eqTracker.setPlannerClasses(null, classes).then(recompute);
+  }
+
+  function commitLevel() {
+    let n = Math.round(Number(levelInputEl.value));
+    if (!Number.isFinite(n)) n = PLANNER_MAX_LEVEL;
+    n = Math.min(PLANNER_MAX_LEVEL, Math.max(1, n));
+    levelInputEl.value = String(n);
+    level = n;
+    window.eqTracker.setPlannerLevel(null, n).then(recompute);
+  }
+
+  // haste / spell haste come through 100-based (141 = +41%); everything else is additive points.
+  function fmtStat(label, value) {
+    if (label === 'haste' || label === 'spell haste') {
+      const pct = Math.round(value - 100);
+      return `${pct >= 0 ? '+' : ''}${pct}% ${label}`;
+    }
+    return `${value >= 0 ? '+' : ''}${Math.round(value)} ${label}`;
+  }
+
+  function buffRow(cand, opts) {
+    opts = opts || {};
+    const li = document.createElement('li');
+    li.className = 'planner-buff-row' + (opts.draggable ? ' planner-draggable' : '');
+    li.dataset.name = cand.name;
+    const thumb = buildIconThumb(cand.iconUrl);
+    if (thumb) li.appendChild(thumb);
+    const main = document.createElement('div');
+    main.className = 'planner-buff-main';
+    const name = document.createElement('span');
+    name.className = 'planner-buff-name';
+    name.textContent = cand.name;
+    const meta = document.createElement('span');
+    meta.className = 'planner-buff-meta';
+    // Lead with the stat this buff is ranked on (its category's headline), then its other stats in
+    // character-sheet order. Every entry here is a real, named character stat.
+    const stats = (cand.stats || []).slice().sort((a, b) => a.order - b.order);
+    const headline = cand.stat || (stats[0] && stats[0].stat) || null;
+    const statBit = headline
+      ? fmtStat(headline, cand.magnitude != null ? cand.magnitude : stats[0].value)
+      : cand.category;
+    const extra = stats
+      .filter((s) => s.stat !== headline)
+      .slice(0, 3)
+      .map((s) => fmtStat(s.stat, s.value))
+      .join('  ');
+    meta.textContent = [statBit, cand.castByClasses.join('/'), extra].filter(Boolean).join(' · ');
+    main.append(name, meta);
+    li.appendChild(main);
+    const reason = opts.reason || (opts.reasonFromItem ? cand.reason : null);
+    if (reason) {
+      const r = document.createElement('span');
+      r.className = 'planner-buff-reason';
+      r.textContent = reason;
+      li.appendChild(r);
+    }
+    return li;
+  }
+
+  const fillList = (el, list, opts) => {
+    el.innerHTML = '';
+    list.forEach((c) => el.appendChild(buffRow(c, opts)));
+  };
+
+  function render(plan) {
+    const hasClasses = plan.classes.length > 0;
+    emptyNoteEl.style.display = hasClasses ? 'none' : '';
+    slotCountEl.textContent = String(plan.slots.length);
+    stackingStateEl.textContent = plan.stackingKnown
+      ? ''
+      : 'Set your EQ folder on the Setup page so the planner can tell buff tiers apart properly.';
+
+    // Total stats across every slotted buff.
+    const totals = plan.totals || [];
+    totalsCardEl.style.display = hasClasses ? '' : 'none';
+    statsUnknownEl.style.display = plan.statsKnown ? 'none' : '';
+    totalsEl.innerHTML = '';
+    totals.forEach((t) => {
+      const chip = document.createElement('span');
+      chip.className = 'planner-total-chip';
+      chip.textContent = fmtStat(t.stat, t.value);
+      totalsEl.appendChild(chip);
+    });
+
+    fillList(slotListEl, plan.slots);
+
+    // Bard songs - their own 5-slot pool, only when Bard is one of the classes.
+    songCardEl.style.display = plan.hasBard ? '' : 'none';
+    songCountEl.textContent = String((plan.songSlots || []).length);
+    fillList(songListEl, plan.songSlots || []);
+
+    // Permanent buffs (Yaulp/Fury) - shown whenever any qualify.
+    const perm = plan.permanentSlots || [];
+    permCardEl.style.display = perm.length ? '' : 'none';
+    permCountEl.textContent = String(perm.length);
+    fillList(permListEl, perm);
+
+    // One priority list covering the buff slots AND the song slots (both are capped, so order
+    // matters for both); permanent buffs are uncapped so they aren't in it.
+    priorityListEl.innerHTML = '';
+    [...plan.candidates, ...(plan.songCandidates || [])].forEach((c) =>
+      priorityListEl.appendChild(buffRow(c, { draggable: true }))
+    );
+    wireDrag();
+
+    const allOverflow = [...plan.overflow, ...(plan.songOverflow || []), ...(plan.permanentOverflow || [])];
+    fillList(overflowListEl, allOverflow, { reasonFromItem: true });
+    overflowCardEl.style.display = allOverflow.length ? '' : 'none';
+    overflowCountEl.textContent = String(allOverflow.length);
+  }
+
+  let dragName = null;
+  function wireDrag() {
+    priorityListEl.querySelectorAll('.planner-draggable').forEach((li) => {
+      li.setAttribute('draggable', 'true');
+      li.addEventListener('dragstart', () => {
+        dragName = li.dataset.name;
+        li.classList.add('planner-dragging');
+      });
+      li.addEventListener('dragend', () => {
+        dragName = null;
+        li.classList.remove('planner-dragging');
+      });
+      li.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const over = li.dataset.name;
+        if (!dragName || dragName === over) return;
+        const items = [...priorityListEl.querySelectorAll('.planner-draggable')];
+        const names = items.map((x) => x.dataset.name);
+        const from = names.indexOf(dragName);
+        const to = names.indexOf(over);
+        if (from === -1 || to === -1) return;
+        names.splice(to, 0, names.splice(from, 1)[0]);
+        order = names;
+        const dragged = items[from];
+        priorityListEl.insertBefore(dragged, li);
+      });
+      li.addEventListener('drop', (e) => {
+        e.preventDefault();
+        window.eqTracker.setPlannerOrder(null, order).then(recompute);
+      });
+    });
+  }
+
+  function recompute() {
+    return window.eqTracker.computePlan(null).then((plan) => {
+      order = [...plan.candidates, ...(plan.songCandidates || [])].map((c) => c.name);
+      render(plan);
+    });
+  }
+
+  function loadInput() {
+    return Promise.all([
+      window.eqTracker.getPlannerInput(null),
+      window.eqTracker.getProfiles(),
+      window.eqTracker.getActiveProfileId(),
+    ])
+      .then(([input, profiles, activeId]) => {
+        classes = Array.isArray(input.classes) ? input.classes : [];
+        level = typeof input.level === 'number' ? input.level : PLANNER_MAX_LEVEL;
+        order = Array.isArray(input.buffPlanOrder) ? input.buffPlanOrder : [];
+        levelInputEl.value = String(level);
+        const active = profiles.find((p) => p.id === activeId);
+        activeProfileEl.textContent = active ? active.name : 'Default';
+        buildClassSelects();
+        return recompute();
+      })
+      .catch((err) => {
+        // Most likely cause: the app is running a build from before the planner IPC existed.
+        // Still draw the empty controls so the page isn't a blank card.
+        console.error('Buff Planner: could not load input -', err);
+        buildClassSelects();
+      });
+  }
+
+  // Draw the controls immediately, before the async load - they should be there even if the IPC
+  // round-trip is slow or fails.
+  buildClassSelects();
+  levelInputEl.addEventListener('change', commitLevel);
+
+  const navBtn = document.getElementById('planner-nav-btn');
+  if (navBtn) navBtn.addEventListener('click', loadInput);
+  window.eqTracker.onActiveProfileChanged(() => loadInput());
+
+  loadInput();
 }
