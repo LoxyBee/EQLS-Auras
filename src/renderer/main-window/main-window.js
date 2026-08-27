@@ -35,7 +35,7 @@ async function init() {
   initBuffPlanner();
 }
 
-// Custom title bar (UX_VISUAL_DESIGN.md / the frameless-window follow-up) -
+// Custom title bar (the frameless-window follow-up) -
 // the window itself has no native minimize/maximize/close any more, so
 // these three buttons are the only way to reach them. Double-clicking the
 // drag region toggles maximize too, since that's standard title-bar
@@ -63,7 +63,7 @@ function initTitleBar() {
   window.eqTracker.onWindowMaximizedChange(setMaximized);
 }
 
-// Topic disclosures (UX_VISUAL_DESIGN.md) - global, not scoped to any one
+// Topic disclosures - global, not scoped to any one
 // page, since every topic on every page is static markup already present
 // in the DOM at load time (shown/hidden and repopulated per selection, but
 // never created/destroyed), so wiring this once here covers all of them.
@@ -78,7 +78,7 @@ function initTopicToggles() {
   });
 }
 
-// UX_REDESIGN_PLAN.md's "default landing page": with no EQ folder
+// The "default landing page" rule: with no EQ folder
 // configured yet, land on Setup (promoted EQ-log-file card) instead of
 // Buff Tracker, so a fresh install's first screen is "let's find your
 // log" rather than an empty Buff Tracker page with no context for why
