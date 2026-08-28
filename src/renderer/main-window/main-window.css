@@ -2206,3 +2206,5 @@ body.sidebar-resizing .sidebar {
   cursor: help;
 }
 .lockout-pivot { opacity: 0.7; font-size: 11px; }
+/* A gap in the record is not a detail. It is the reason a cell above might be wrong. */
+.lockout-gapwarn { border-left: 3px solid #e8b04b; padding-left: 10px; margin-top: 6px; }

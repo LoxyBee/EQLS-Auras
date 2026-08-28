@@ -204,6 +204,42 @@ test('CRLF and LF files both parse', async () => {
   }
 });
 
+/**
+ * THE ONE THAT WOULD HAVE SHIPPED SILENTLY.
+ *
+ * `state.events` is capped at 5,000 and trimmed push-then-shift, so once it is full its length
+ * NEVER CHANGES AGAIN - and a backfill of the owner's own corpus fills it. Change detection written
+ * as `events.length !== before` therefore goes permanently dead at exactly the moment the app
+ * finishes loading, and the live grid would never update again for the rest of the session.
+ *
+ * That is what this service did until an adversarial audit caught it. Session D's optional
+ * `lockoutEngine.js` adapter has the same shape at its lines 55-61.
+ */
+test('change detection still fires after the event cap is reached', () => {
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => 'eqlog_Avenrae_rivervale.txt');
+  const st = s._stateFor('Avenrae');
+  // Saturate the cap directly - this is about what happens AT the cap, not about how it got there.
+  st.events = new Array(5000).fill({ key: 'x', kind: 'noop', civil: 0, at: '' });
+  assert.equal(st.events.length, 5000);
+
+  let fired = 0;
+  s.on('changed', () => { fired += 1; });
+  s.handleLine("[Mon Aug 31 09:20:00 2026] You have been assigned the task 'Potential of the Void - Lady Vox - Weekly'.");
+  assert.equal(st.events.length, 5000, 'the cap must still be holding, or this proves nothing');
+  assert.ok(fired > 0, 'a real change produced no event - the grid would be frozen');
+});
+
+test('irrelevant lines do not fire a redraw', () => {
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => 'eqlog_Avenrae_rivervale.txt');
+  s._stateFor('Avenrae');
+  let fired = 0;
+  s.on('changed', () => { fired += 1; });
+  s.handleLine('[Mon Aug 31 09:26:00 2026] Avenrae tells the guild, hello');
+  assert.equal(fired, 0);
+});
+
 // ---------------------------------------------------------------------------
 // THE UNCERTAINTY, all the way to the screen
 // ---------------------------------------------------------------------------
@@ -242,6 +278,23 @@ test('every state the core can emit is mapped in the renderer', () => {
   assert.ok(emitted.size >= 3, 'the state scan found nothing - the core has been restructured');
   const unmapped = [...emitted].filter((s) => !mapped.has(s));
   assert.deepEqual(unmapped, [], `states the UI would print raw: ${unmapped.join(', ')}`);
+});
+
+// The module tolerates a coverage hole under 24 h and lets the cell read `open` anyway - a
+// documented judgement, and a reasonable one, but it means an `open` can sit on a 23-hour hole.
+// Their own page renders `coverageHoles`, which excludes exactly those. Ours must not.
+test('tolerated coverage gaps are shown, not just the intolerable ones', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  // Comments stripped, for the same reason as the countdown test below: this block's own
+  // commentary explains why coverageHoles is the wrong source, and naming it there is not using it.
+  const block = js
+    .slice(js.indexOf('Raid lockouts (Session D'), js.indexOf('function renderMasterButtons'))
+    .split('\n')
+    .filter((l) => !l.trim().startsWith('//'))
+    .join('\n');
+  assert.ok(block.includes('coverageGaps'), 'the UI must read coverageGaps, which includes tolerated holes');
+  assert.ok(!/coverageHoles/.test(block), 'coverageHoles omits the tolerated gaps and must not be the source');
+  assert.ok(/not in the grid/.test(block), 'the consequence of a gap has to be stated');
 });
 
 // A countdown needs the reset hour. The reset hour has never been measured. If one appears, it was

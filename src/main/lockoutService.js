@@ -89,6 +89,27 @@ class LockoutService extends EventEmitter {
     if (typeof fn === 'function') this.currentFileFn = fn;
   }
 
+  /**
+   * A cheap fingerprint of everything the projections actually read.
+   *
+   * NOT `state.events.length`, which is the obvious choice and is WRONG. `events` is capped at
+   * 5,000 and trimmed with push-then-shift, so once it is full the length never changes again -
+   * and it IS full after a backfill of the owner's corpus, measured. Change detection built on it
+   * goes permanently silent at exactly the moment the app has finished loading, which is to say
+   * the live grid would never update again. Session D's optional `lockoutEngine.js` adapter has
+   * the same shape at its lines 55-61 and will have the same problem; they have been told.
+   *
+   * These five are the collections `project` and `projectGrid` read. seenCount can go DOWN when
+   * the dedupe index is pruned, which is still a change and still wants a redraw.
+   */
+  _signature(state) {
+    return (
+      state.kills.length + ':' + state.requests.length + ':' + state.grants.length + ':' +
+      Object.keys(state.tasks).length + ':' + Object.keys(state.instances).length + ':' +
+      state.seenCount
+    );
+  }
+
   _stateFor(character) {
     if (!this.states.has(character)) this.states.set(character, core.createState(character));
     return this.states.get(character);
@@ -109,9 +130,9 @@ class LockoutService extends EventEmitter {
       const character = core.characterFromLogFilename(path.basename(file));
       if (!character) return;
       const state = this._stateFor(character);
-      const before = state.events.length;
+      const before = this._signature(state);
       core.applyLine(state, line);
-      if (state.events.length !== before) this.emit('changed');
+      if (this._signature(state) !== before) this.emit('changed');
     } catch (err) {
       this._note(err);
     }

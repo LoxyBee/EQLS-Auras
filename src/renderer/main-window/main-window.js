@@ -4405,6 +4405,31 @@ function initWidgetsPanel() {
       `${grid.completedCount} done · ${grid.openCount} open · ${grid.conditionalCount} depends on the reset hour · ` +
       `${grid.uncertainCount} unclear · ${grid.notLookedCount} not looked`;
 
+    // COVERAGE GAPS, INCLUDING THE TOLERATED ONES. This is the most important line on the page
+    // after the grid itself.
+    //
+    // The module treats a hole shorter than 24 h as not worth downgrading a cell for, marks it
+    // `tolerated: true`, and lets the cell read `open` - whose own `because` then says "coverage
+    // spans the period". That threshold is a documented judgement rather than a measurement, and
+    // it is a reasonable one, but it means an `open` cell can sit on top of a 23-hour hole in the
+    // record. Session D's own page renders `coverageHoles`, which excludes the tolerated ones, so
+    // there they are invisible. Here they are not: an absence of evidence has to look like one,
+    // and that is the entire argument for this feature existing.
+    const gaps = (grid.period && grid.period.coverageGaps) || [];
+    if (gaps.length) {
+      const total = gaps.reduce((n, g) => n + (g.hours || 0), 0);
+      const tolerated = gaps.filter((g) => g.tolerated).length;
+      const warn = document.createElement('p');
+      warn.className = 'hint lockout-gapwarn';
+      warn.textContent =
+        `Your logs have ${gaps.length} gap${gaps.length === 1 ? '' : 's'} in this period, ` +
+        `${total.toFixed(1)}h in total` +
+        (tolerated ? ` — ${tolerated} of them short enough that the cells above still read "open" rather than "not looked"` : '') +
+        `. Anything that happened in a gap is not in the grid.`;
+      lockoutSummaryEl.appendChild(document.createElement('br'));
+      lockoutSummaryEl.appendChild(warn);
+    }
+
     for (const [key, meta] of Object.entries(LOCKOUT_STATES)) {
       const span = document.createElement('span');
       span.className = `lockout-key lockout-${key}`;
