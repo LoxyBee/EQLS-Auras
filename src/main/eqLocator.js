@@ -4,7 +4,17 @@ const path = require('path');
 // Folder names EverQuest (and common private-server clients) are typically
 // installed to on Windows. Not exhaustive - the user can always Browse to
 // their actual folder if auto-detect misses it.
+// EverQuest LEGENDS first, because that is the game this app is for and it installs nowhere near
+// the classic paths below. Measured on a real EQL machine: the install sits under
+// C:\Users\Public\Daybreak Game Company\Installed Games\EverQuest Legends
+// isValidEqFolder() accepts it happily and its Logs folder holds the eqlog files - it was simply
+// never in this list, so autoDetectEqFolder() returned null and a fresh install watched nothing
+// until the user found the folder picker in Setup for themselves.
+//
+// Additive and safe for anyone already running: logService.init() prefers a configured eqFolder
+// and only falls back to this list, so a working install is never re-pointed by it.
 const CANDIDATE_PATHS = [
+  'C:\\Users\\Public\\Daybreak Game Company\\Installed Games\\EverQuest Legends',
   'C:\\Program Files (x86)\\Sony\\EverQuest',
   'C:\\Program Files\\Sony\\EverQuest',
   'C:\\Program Files (x86)\\Steam\\steamapps\\common\\EverQuest F2P',
