@@ -85,6 +85,8 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 const logService = new LogService();
+const { LockoutService } = require('./lockoutService');
+const lockoutService = new LockoutService();
 const buffStore = new BuffStore({ loadJson, saveJson });
 const buffEngine = new BuffEngine(buffStore, { loadJson, saveJson });
 const profileStore = new ProfileStore({ loadJson, saveJson });
@@ -422,6 +424,29 @@ logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
 // buffEngine a second job would mean every future change to either having to think about both.
 logService.watcher.on('line', (line) => damageEngine.handleLine(line));
 logService.watcher.on('line', (line) => abilityGroupTracker.handleLine(line));
+// Raid lockouts. Its handleLine swallows and counts its own errors rather than throwing, because
+// this bus is shared with buff detection and everything else on it - see the note at the top of
+// lockoutService.js. A lockout parser that stops working is a disappointment; one that takes the
+// buff overlay down with it is not acceptable.
+logService.watcher.on('line', (line) => lockoutService.handleLine(line));
+
+// Both pulled from the watcher rather than pushed, so neither can go stale when the tailer rolls
+// to a new file. The current FILE is how a live line is attributed to a character - the 'line'
+// event carries only the string.
+lockoutService.setLogsFolderFn(() => logService.watcher.getStatus().logsFolder);
+lockoutService.setCurrentFileFn(() => logService.watcher.getStatus().currentFilePath);
+
+// Debounced, because a backfill applies well over a million lines and the renderer does not need
+// to hear about each one. Live play emits at human speed and coalesces to nothing.
+let lockoutPushTimer = null;
+lockoutService.on('changed', () => {
+  if (lockoutPushTimer) return;
+  lockoutPushTimer = setTimeout(() => {
+    lockoutPushTimer = null;
+    broadcast('lockouts:changed', lockoutService.getStatus());
+  }, 400);
+});
+lockoutService.on('backfillChanged', (status) => broadcast('lockouts:backfill', status));
 // A separate Diagnostics feed showing ONLY memorize/forget lines - raised 25 Aug straight out of
 // investigating why currentlyMemorized went stale after a loadout swap: the swap itself turned out
 // to print NOTHING at all (confirmed by searching a real log across the whole swap window - zero
@@ -913,6 +938,18 @@ app.whenReady().then(() => {
       createMainWindow();
     }
   });
+});
+
+// Raid lockouts. The scan is LAZY - it runs the first time the page is opened and not before, so
+// a user who never opens it pays nothing at startup. It is idempotent by the module's own
+// contract, so overlapping the live tailer is safe and re-running it costs only time.
+ipcMain.handle('lockouts:get', async () => {
+  if (lockoutService.backfillState === 'idle') await lockoutService.backfill();
+  return lockoutService.getProjection();
+});
+ipcMain.handle('lockouts:rescan', async () => {
+  await lockoutService.backfill();
+  return lockoutService.getProjection();
 });
 
 ipcMain.handle('log:getState', () => logService.getState());

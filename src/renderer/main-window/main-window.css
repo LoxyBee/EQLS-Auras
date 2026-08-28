@@ -2167,3 +2167,42 @@ body.sidebar-resizing .sidebar {
   font-size: 12px;
   font-weight: 600;
 }
+
+/* Raid lockouts. The five cell states are five DIFFERENT colours on purpose - "not looked" and
+   "open" must never be confusable at a glance, because the whole point of the feature is that they
+   are different facts. not-looked is deliberately the most washed-out: an absence of evidence
+   should look like an absence, not like a verdict. */
+.lockout-grid {
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 13px;
+}
+.lockout-grid th,
+.lockout-grid td {
+  border: 1px solid var(--line);
+  padding: 5px 9px;
+  text-align: center;
+  white-space: nowrap;
+}
+.lockout-grid th {
+  text-align: left;
+  font-weight: 600;
+  opacity: 0.85;
+}
+.lockout-cell { cursor: help; }
+.lockout-completed { background: rgba(80, 190, 120, 0.20); }
+.lockout-open      { background: rgba(90, 150, 235, 0.18); }
+.lockout-conditional { background: rgba(232, 176, 75, 0.22); }
+.lockout-unknown   { background: rgba(232, 120, 75, 0.18); }
+/* Nearly nothing. It is not a state of the boss; it is a gap in the record. */
+.lockout-not_looked { background: transparent; opacity: 0.45; font-style: italic; }
+
+.lockout-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.lockout-key {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: help;
+}
+.lockout-pivot { opacity: 0.7; font-size: 11px; }

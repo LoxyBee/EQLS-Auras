@@ -138,6 +138,12 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createTravelGuideWidget: (name, destination) => ipcRenderer.invoke('widget:createTravelGuide', { name, destination }),
   setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
+  // Raid lockouts. Read-only from the renderer's side: it asks for a projection and is told when
+  // one changed. Nothing here can write state.
+  getLockouts: () => ipcRenderer.invoke('lockouts:get'),
+  rescanLockouts: () => ipcRenderer.invoke('lockouts:rescan'),
+  onLockoutsChanged: (cb) => { ipcRenderer.on('lockouts:changed', (_e, s) => cb(s)); },
+  onLockoutBackfill: (cb) => { ipcRenderer.on('lockouts:backfill', (_e, s) => cb(s)); },
   getTravelPickerCommand: () => ipcRenderer.invoke('travel:getPickerCommand'),
   setTravelPickerCommand: (word) => ipcRenderer.invoke('travel:setPickerCommand', word),
   // Note 30. Receive-only. There is no matching "apply this code from chat" channel on purpose -

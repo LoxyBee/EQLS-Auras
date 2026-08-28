@@ -84,6 +84,7 @@
            can reach it. To re-enable: add a nav-btn with data-page of page-planner and the id
            planner-nav-btn back here (initBuffPlanner gates on that id). -->
 
+      <button class="nav-btn" data-page="page-lockouts" id="lockouts-nav-btn">Lockouts</button>
       <button class="nav-btn" data-page="page-settings">Setup</button>
       <button class="nav-btn" data-page="page-log">Log</button>
       <button class="nav-btn" data-page="page-about">About</button>
@@ -843,6 +844,56 @@
             </div>
 
           </div>
+        </div>
+      </section>
+
+      <!-- Raid lockouts. Session D's parsing module; this page renders its projection and adds
+           nothing to it. The uncertainty IS the feature - see the intro card, and see
+           lockoutService.js for why the folder is scanned rather than the newest file. -->
+      <section id="page-lockouts" class="page">
+        <h2 class="page-title">Raid lockouts</h2>
+
+        <div class="card">
+          <h3>What this shows, and what it will not pretend to know</h3>
+          <p class="hint">
+            EverQuest Legends does not print a raid lockout line, so this reads what the game
+            <em>does</em> print - the weekly task, by name, on the kill - and reports what that
+            supports. Where it cannot tell, it says so rather than guessing. A cell that reads
+            <strong>not looked</strong> means there is no log covering that week, which is not the
+            same as <strong>open</strong> and is never shown as open.
+          </p>
+          <p class="hint">
+            There is no countdown here on purpose. A countdown needs the reset hour, and the reset
+            hour has never been measured - only the reset day, which came from you rather than from
+            a measurement. Everything below carries where it came from.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <span class="label">Character</span>
+            <select id="lockout-character" class="text-input"></select>
+            <button type="button" id="lockout-rescan" class="btn-prominent">Rescan logs</button>
+            <span id="lockout-scan-status" class="hint"></span>
+          </div>
+          <p class="hint">
+            The whole Logs folder is read, not just the newest file - your log splitter writes a new
+            file every day, so a single file holds only part of the story.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>This period</h3>
+          <div id="lockout-summary" class="hint"></div>
+          <div id="lockout-grid-wrap" style="overflow-x:auto">
+            <table id="lockout-grid" class="lockout-grid"></table>
+          </div>
+          <div id="lockout-legend" class="lockout-legend"></div>
+        </div>
+
+        <div class="card">
+          <h3>Where these numbers came from</h3>
+          <div id="lockout-provenance" class="hint"></div>
         </div>
       </section>
 
