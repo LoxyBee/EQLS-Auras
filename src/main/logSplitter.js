@@ -9,15 +9,20 @@ const MONTHS = {
 
 // EQ log lines start with e.g. "[Sun Aug 16 12:11:41 2026] ..."
 //
-// TWO SPACES ARE ALLOWED BEFORE THE DAY, and that is not cosmetic. This format is C's ctime(),
-// which right-aligns the day in two columns, so the first nine days of every month are written
-// "Sep  1" and not "Sep 01". With a single space required, extractDateKey returned null for all of
-// them, lastDateKey kept its previous value, and every line from the 1st to the 9th was filed into
-// the last day of the PREVIOUS MONTH. Nine days in thirty, silently.
+// TOLERANCE, NOT A BUG FIX, and the difference is worth stating because it was got wrong once.
 //
-// No log on the machine this was found on covers a single-digit day, so it could not be confirmed
-// from the corpus - but lockoutCore.js:211 accepts both forms with a comment saying classic EQ
-// space-pads, and being tolerant costs a zero-padded log nothing.
+// The two-space form is what C's ctime()/asctime() produces: it right-aligns the day in two
+// columns, so the 1st to the 9th come out as "Aug  4". EverQuest Legends does NOT do this. It uses
+// strftime("%a %b %d %H:%M:%S %Y"), whose %d is zero-padded by definition, and the two formats look
+// so alike that one was mistaken for the other.
+//
+// MEASURED, on 28 real logs on this machine: 9,621,621 stamped lines, 1,957,073 of them on days 1
+// to 9, and the ORIGINAL one-space pattern read every single one. Zero failures. The client's own
+// line "[Tue Aug 04 13:33:15 2026] Logging to 'eqlog.txt' is now *ON*" is a byte-level example.
+//
+// So the widening below fixes nothing that was broken. It is kept because it is free, and because
+// it costs a zero-padded log nothing to also accept a format some other client might write. What it
+// is NOT is evidence that anything was ever misfiled - nothing was.
 const TIMESTAMP_PATTERN = /^\[\w{3} (\w{3}) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})\]/;
 const FLUSH_LINE_THRESHOLD = 5000;
 const POLL_INTERVAL_MS = 1000;
@@ -39,10 +44,14 @@ const SESSION_GAP_MS = 10 * 60 * 1000;
 // hotfix". So the rule is right and rare, which makes the RATE a very sharp instrument.
 //
 // If the parser ever stops understanding the log's format, that rate does not creep - it jumps
-// toward 100%, because it is one pattern reading one format. Five orders of magnitude. That is
-// exactly what happened here: the day pattern required one space where C's ctime writes two for
-// the 1st to the 9th, so on those days every line read as unstamped and every one of them was
-// filed under the last day of the previous month. Silently, because nothing was counting.
+// toward 100%, because it is one pattern reading one format. Five orders of magnitude.
+//
+// This exists because of a mistake rather than a bug: the day pattern was widened on the strength
+// of a reasoned claim that EverQuest space-pads single-digit days, and the claim was wrong - see
+// the note on TIMESTAMP_PATTERN, and 9.6 million real lines that say so. Nothing had been misfiled.
+// But the reason it took a measurement to find that out is that NOTHING WAS COUNTING. Had the day
+// pattern really stopped matching, every line of the 1st would have gone into the 31st's file and
+// the app would have carried on without a word.
 //
 // Five per cent is roughly eight thousand times the observed baseline, so this cannot cry wolf on
 // a real log; and the minimum sample stops a handful of broadcast lines in a quiet batch tripping

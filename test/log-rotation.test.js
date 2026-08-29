@@ -818,16 +818,13 @@ test('a log buried under more junk than one read window still rotates', () => {
 // The stamp EverQuest actually writes
 // ---------------------------------------------------------------------------
 
-// EQ's format is C's ctime(), which right-aligns the day in two columns: the first nine days of any
-// month are "Sep  1", not "Sep 01". The shared parser required exactly one space, so every such
-// line read as unstamped - which made this rotation refuse to touch the log at all, permanently,
-// for any character whose log head began in the first nine days of a month. 1 September, the date
-// this feature is aimed at, is one of them.
+// EverQuest Legends writes "Aug 04", zero-padded, one space - measured over 9,621,621 real lines
+// including 1,957,073 on days 1 to 9. These two tests are therefore TOLERANCE tests for a format
+// this client does not emit: C's ctime() right-aligns the day ("Aug  4"), the two formats look
+// almost identical, and one was briefly mistaken for the other here.
 //
-// No log on the machine this was found on covers a single-digit day, so it could not be confirmed
-// from the corpus. lockoutCore.js:211 accepts both forms deliberately, with a comment saying
-// classic EQ space-pads. Being tolerant costs a zero-padded log nothing, which is why it is safe to
-// act on that rather than wait.
+// They are kept because the tolerance is real and free, and because if the parser is going to
+// accept that form it should be held to doing so. They are NOT evidence of a bug that existed.
 test('a space-padded single-digit day is a timestamp, not an unstamped line', () => {
   assert.notEqual(extractTimestampMs('[Tue Sep  1 12:00:00 2026] You have slain Lady Vox!'), null,
     'the space-padded form still reads as unstamped');
@@ -839,13 +836,13 @@ test('a space-padded single-digit day is a timestamp, not an unstamped line', ()
   assert.notEqual(extractTimestampMs('[Tue Sep 15 12:00:00 2026] x'), null, 'two-digit days broke');
 });
 
-test('a log written in the first nine days of a month still rotates', () => {
+test('a log written in a space-padded format would still rotate', () => {
   const dir = tempLogs({
     'eqlog_Avenrae_rivervale.txt': '[Tue Sep  1 09:00:00 2026] You have slain Lady Vox!\n',
   });
   // Boundary is Tuesday 8 September; the log is from the 1st, so it is last week's and must go.
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 9, 12, 0, 0));
-  assert.equal(r.rotated.length, 1, 'a space-padded log was treated as unreadable and never rotates');
+  assert.equal(r.rotated.length, 1, 'a space-padded log would be treated as unreadable');
   assert.deepEqual(r.skippedUnreadable, []);
 });
 

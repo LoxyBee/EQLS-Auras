@@ -2,17 +2,22 @@
 /**
  * The per-day log splitter.
  *
- * It had no suite at all, which is how the bug below survived: EverQuest's stamp comes from C's
- * ctime(), which right-aligns the day in two columns, so the 1st to the 9th of any month are
- * written "Sep  1" and not "Sep 01". The pattern required exactly one space, so those lines read
- * as having no timestamp - and an unstamped line is filed under the day of the line before it.
+ * It had no suite at all. That is the finding worth keeping from all of this: a shipped module
+ * with no tests, whose behaviour when it cannot read a line is to file that line under whatever day
+ * it last recognised - quietly, and with nothing counting.
  *
  * That fall-through is CORRECT and it has to stay: EverQuest wraps long server broadcasts onto
  * continuation lines carrying no stamp of their own, and those do belong with the line above.
  * Measured on the owner's real log, it is also almost never used: 1,761,090 lines, TEN unstamped,
- * every one of them a continuation of "we must bring the servers down for a hotfix".
+ * every one of them a continuation of "we must bring the servers down for a hotfix". Which is what
+ * makes the RATE worth watching, and what the last tests here are about.
  *
- * Which is what makes the RATE worth watching, and what the last tests here are about.
+ * ON THE DAY FORMAT, since these tests exercise it. EverQuest Legends writes "Aug 04" - zero-padded,
+ * one space - measured over 9,621,621 real lines including 1,957,073 on days 1 to 9, every one of
+ * which the original pattern read correctly. C's ctime() right-aligns instead ("Aug  4"), the two
+ * look almost identical, and that resemblance produced a confident claim here that the first nine
+ * days of every month were being misfiled. THEY WERE NOT. The pattern now accepts both because the
+ * tolerance is free, and the tests below say which of the two they are exercising.
  */
 
 const assert = require('node:assert/strict');
@@ -59,7 +64,18 @@ async function split(body, opts = {}) {
 // The stamp EverQuest actually writes
 // ---------------------------------------------------------------------------
 
-test('both spellings of a single-digit day are the same instant', () => {
+// THE FORMAT THIS CLIENT ACTUALLY WRITES. Byte-for-byte from a real log:
+// "[Tue Aug 04 13:33:15 2026] Logging to 'eqlog.txt' is now *ON*." - the client's own line.
+test('the zero-padded day EverQuest actually writes parses', () => {
+  const ms = extractTimestampMs("[Tue Aug 04 13:33:15 2026] Logging to 'eqlog.txt' is now *ON*.");
+  assert.notEqual(ms, null, 'the real format read as an unstamped line');
+  assert.equal(new Date(ms).getDate(), 4);
+  assert.equal(new Date(ms).getMonth(), 7);
+});
+
+// TOLERANCE, for a format this client does not emit. Kept because it is free, and because if the
+// parser accepts the form it should be held to reading it correctly - not because it was ever seen.
+test('the ctime-style space-padded day is also accepted', () => {
   const padded = extractTimestampMs('[Tue Sep  1 12:00:00 2026] You have slain Lady Vox!');
   const zeroed = extractTimestampMs('[Tue Sep 01 12:00:00 2026] You have slain Lady Vox!');
   assert.notEqual(padded, null, 'the space-padded form reads as an unstamped line');
@@ -72,14 +88,15 @@ test('a two-digit day still parses, and rubbish still does not', () => {
   assert.equal(extractTimestampMs('[not a stamp] x'), null);
 });
 
-// THE REGRESSION. Before the pattern was widened, every line of the 1st to the 9th was filed into
-// the last day of the previous month - nine days in thirty, silently, in a shipped feature.
+// The month boundary, in the format the client really writes. This is the behaviour that matters
+// and it was never broken - but nothing tested it, which is how a claim that it WAS broken survived
+// long enough to reach two documents and two commit messages.
 test('the first of the month is filed under the first of the month', async () => {
   const { files, read } = await split(
     '[Mon Aug 31 23:00:00 2026] You have slain Lady Vox!\n' +
-    '[Tue Sep  1 09:00:00 2026] You have slain Lord Nagafen!\n' +
-    '[Tue Sep  1 10:00:00 2026] You have slain Master Yael!\n' +
-    '[Wed Sep  2 09:00:00 2026] You have slain Cazic Thule!\n'
+    '[Tue Sep 01 09:00:00 2026] You have slain Lord Nagafen!\n' +
+    '[Tue Sep 01 10:00:00 2026] You have slain Master Yael!\n' +
+    '[Wed Sep 02 09:00:00 2026] You have slain Cazic Thule!\n'
   );
   assert.deepEqual(files, [
     'eqlog_Avenrae_rivervale_2026-08-31.txt',
@@ -93,9 +110,18 @@ test('the first of the month is filed under the first of the month', async () =>
 
 test('every day of the first nine gets its own file', async () => {
   const lines = [];
-  for (let d = 1; d <= 9; d += 1) lines.push(`[Tue Sep  ${d} 09:00:00 2026] Day ${d}`);
+  for (let d = 1; d <= 9; d += 1) lines.push(`[Tue Sep 0${d} 09:00:00 2026] Day ${d}`);
   const { files } = await split(lines.join('\n') + '\n');
   assert.equal(files.length, 9, 'the first nine days did not produce nine files');
+});
+
+// The same run in the ctime form, so the tolerance is exercised end to end rather than only at the
+// parser. If EverQuest never writes this, nothing is lost; if some client does, this is the case.
+test('a space-padded log would also file each day separately', async () => {
+  const lines = [];
+  for (let d = 1; d <= 9; d += 1) lines.push(`[Tue Sep  ${d} 09:00:00 2026] Day ${d}`);
+  const { files } = await split(lines.join('\n') + '\n');
+  assert.equal(files.length, 9, 'the space-padded days did not produce nine files');
 });
 
 // ---------------------------------------------------------------------------
