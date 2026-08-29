@@ -753,6 +753,96 @@ test('the log being watched is the last one emptied, so the watcher stays on it'
   assert.ok(watched >= mule, 'the mule ended up with the newer mtime');
 });
 
+// THE WATCHED LOG IS NOT ALWAYS ONE OF THE ROTATED ONES, and that is the ordinary multi-box case:
+// the played character's log straddles the reset and is skipped, while a logged-out mule's is
+// entirely last week's and rotates. Rotating renews an mtime and the tailer follows the newest file
+// in the folder, so the mule leapfrogs her and the tailer moves to it - losing every line the
+// player writes until the next directory scan, for buffs and the damage meter as much as for this.
+//
+// Sorting the watched file last only helps when it is actually rotated. Real wall-clock times here,
+// because truncating stamps the real clock: a fixture clock set in the future makes the watched
+// file spuriously newest and the test passes for the wrong reason. That happened once already.
+test('the watcher stays put even when the watched log is the one skipped', () => {
+  const now = new Date();
+  const boundary = resetBoundaryBefore(now);
+  const at = (hoursFromBoundary, text) => {
+    const d = new Date(boundary.getTime() + hoursFromBoundary * 3600000);
+    const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+    const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()];
+    const p = (n) => String(n).padStart(2, '0');
+    return `[${wd} ${mo} ${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:00 ${d.getFullYear()}] ${text}\n`;
+  };
+
+  const dir = tempLogs({
+    // Hers straddles the reset, so it is refused.
+    'eqlog_Avenrae_rivervale.txt': at(-30, 'You have slain Lady Vox!') + at(2, 'still playing'),
+    // The mule's is entirely last week's, so it rotates.
+    'eqlog_Zzmule_rivervale.txt': at(-50, 'The mule stood in the bank.'),
+  });
+  const watched = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const muleFile = path.join(dir, 'eqlog_Zzmule_rivervale.txt');
+
+  const ago = (ms) => new Date(Date.now() - ms);
+  fs.utimesSync(muleFile, ago(600000), ago(600000));
+  fs.utimesSync(watched, ago(300000), ago(300000));
+  assert.ok(fs.statSync(watched).mtimeMs > fs.statSync(muleFile).mtimeMs, 'fixture: hers should start newest');
+
+  const s = svc(dir);
+  s.setCurrentFileFn(() => watched);
+  const r = s.rotateIfDue(now);
+
+  assert.deepEqual(r.rotated.map((x) => x.file), ['eqlog_Zzmule_rivervale.txt'], 'the wrong file rotated');
+  assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Avenrae_rivervale.txt']);
+  assert.ok(
+    fs.statSync(watched).mtimeMs >= fs.statSync(muleFile).mtimeMs,
+    'THE MULE TOOK THE NEWEST MTIME - the tailer will move to it and the player loses lines'
+  );
+});
+
+// The module records every way out of a check. Then the host grew two guards of its own that
+// return before the module is ever called, so the card went blank again - the same defect one
+// level up. Both host guards must leave the same kind of record.
+test('a check the host declines still leaves something the card can say', () => {
+  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const s = svc(dir);
+  const now = new Date(2026, 8, 2, 12, 0, 0);
+
+  s.noteHostSkip('the lockout scan is running; will try again shortly', now);
+  const st = s.getStatus();
+  assert.ok(st.lastCheck, 'the host skip left no record at all');
+  assert.match(st.lastCheck.reason, /lockout scan is running/);
+  assert.equal(st.lastCheck.at, now.toISOString());
+  assert.equal(st.lastCheck.rotated.length, 0);
+  // It must not masquerade as a completed run.
+  assert.equal(st.lastRun, null, 'a declined check was recorded as a run that did something');
+});
+
+test('both host guards are wired to record, not just to return', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const start = main.indexOf('function runLogRotation');
+  const body = main.slice(start, main.indexOf('\n}', start));
+  for (const guard of ['backfillState', 'bytesBehind']) {
+    const at = body.indexOf(guard);
+    assert.ok(at > -1, `the ${guard} guard is gone`);
+    const window = body.slice(at, at + 260);
+    assert.ok(
+      /noteHostSkip/.test(window),
+      `the ${guard} guard returns without recording, so the card says nothing while it waits`
+    );
+  }
+});
+
+// The manual Archive button empties the same log the grid is built from. Without rebuilding, a
+// press during a scan left the service reporting done, no errors, with half the lines missing.
+test('the manual archive button rebuilds the lockout grid too', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const at = main.indexOf("ipcMain.handle('log:archiveNow'");
+  assert.ok(at > -1, 'the archiveNow handler is gone - this test needs rewriting');
+  const handler = main.slice(at, at + 1200);
+  assert.ok(/lockoutService\.states\.clear\(\)/.test(handler), 'the grid is not rebuilt after a manual archive');
+  assert.ok(/backfillState = 'idle'/.test(handler), 'the scan is not re-armed after a manual archive');
+});
+
 // ---------------------------------------------------------------------------
 // Saying what happened, for longer than one minute
 // ---------------------------------------------------------------------------

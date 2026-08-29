@@ -491,14 +491,20 @@ function runLogRotation(why) {
     // of its stream and sets its own 'done' at the end, so clearing the map underneath it loses
     // whichever characters it had not reached - and it then reports ok, done, with one character
     // silently missing from the grid until someone hits rescan. Waiting a minute costs nothing.
-    if (lockoutService.backfillState === 'running') return;
+    if (lockoutService.backfillState === 'running') {
+      logRotationService.noteHostSkip('the lockout scan is running; will try again shortly');
+      return;
+    }
     // NOR WHILE THE SPLITTER STILL HAS A BACKLOG. Emptying the live log resets the splitter to the
     // start of a now-empty file, so anything it had not yet read never reaches Logs/Split/. The
     // archive still has every line, but the per-day folder - which is the one she opens - would
     // have a hole in it. A megabyte of slack: during play the splitter is a poll behind at most,
     // and it reads 140 MB in about a second, so this only ever bites a first launch against a very
     // large log.
-    if (logService.splitter.bytesBehind() > 1024 * 1024) return;
+    if (logService.splitter.bytesBehind() > 1024 * 1024) {
+      logRotationService.noteHostSkip('still splitting the log into per-day files; will try again shortly');
+      return;
+    }
     const report = logRotationService.rotateIfDue();
     if (report.rotated.length) {
       debugLog(`LOG ROTATION (${why}): archived ${report.rotated.length} file(s) for week ${report.boundary}`);
@@ -1062,7 +1068,19 @@ ipcMain.handle('log:setSplitOnGap', (_event, splitOnGap) => logService.setSplitO
 ipcMain.handle('log:chooseSplitFolder', () => logService.chooseSplitFolder());
 ipcMain.handle('log:resetSplitFolder', () => logService.resetSplitFolder());
 ipcMain.handle('log:openFolder', () => logService.openLogFolder());
-ipcMain.handle('log:archiveNow', () => logService.archiveNow());
+ipcMain.handle('log:archiveNow', () => {
+  // The manual Archive button empties the same log the lockout grid is built from, so the grid has
+  // to be rebuilt from what is now there - exactly as the weekly rotation does. Without this,
+  // pressing it during a scan left the service reporting done with no errors and half the lines
+  // missing: measured at 300,001 of 600,002 lost, and the grid quietly said so with a confident
+  // status. It degrades in the safe direction - toward not_looked, never toward a false open - but
+  // silently, which is the part worth fixing.
+  const result = logService.archiveNow();
+  lockoutService.states.clear();
+  lockoutService.backfillState = 'idle';
+  broadcast('lockouts:changed', lockoutService.getStatus());
+  return result;
+});
 ipcMain.handle('log:openArchiveFolder', () => logService.openArchiveFolder());
 
 ipcMain.handle('buffs:getActive', () => buffEngine.getActiveBuffs());

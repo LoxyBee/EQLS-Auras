@@ -381,6 +381,41 @@ class LogRotationService {
       }
     }
 
+    // KEEP THE WATCHER WHERE IT IS. Rotating renews a file's mtime and the tailer follows the
+    // newest file in the folder. Sorting the watched log last only helps when it is actually
+    // rotated - and the ordinary multi-box case is the opposite: the played character's log
+    // straddles the reset and is skipped, while a logged-out mule's is entirely last week's and
+    // rotates. The mule then holds the newest mtime and the tailer moves to it, losing every line
+    // the player writes until the next directory scan - for buffs and the damage meter too, not
+    // just this feature. Measured: watched-newest true before, false after.
+    //
+    // Touching the mtime changes no bytes. If it fails, the rotation still stands; it is noted.
+    if (report.rotated.length) {
+      const current = this.currentFileFn();
+      const base = current ? path.basename(current).toLowerCase() : null;
+      const rotatedTheWatchedOne = base && report.rotated.some((r) => r.file.toLowerCase() === base);
+      if (base && !rotatedTheWatchedOne) {
+        try {
+          // A millisecond past the newest file we just touched, rather than simply "now". Date has
+          // millisecond precision and the filesystem records mtimes finer than that, so stamping
+          // the current time could land BEHIND a file truncated moments earlier in the same
+          // millisecond - which put the mule back in front one run in three.
+          let newest = 0;
+          for (const r of report.rotated) {
+            try {
+              newest = Math.max(newest, fs.statSync(path.join(folder, r.file)).mtimeMs);
+            } catch (err) {
+              this._note(err);
+            }
+          }
+          const t = new Date(Math.max(Date.now(), newest) + 1);
+          fs.utimesSync(current, t, t);
+        } catch (err) {
+          this._note(err);
+        }
+      }
+    }
+
     report.ran = report.rotated.length > 0;
     return this._finish(report, now);
   }
@@ -431,6 +466,34 @@ class LogRotationService {
       this.lastRun = this.lastCheck;
     }
     return report;
+  }
+
+  /**
+   * Record a check the HOST declined to make, so the card can say so.
+   *
+   * The module was fixed so that every way out of a check leaves a record. Then the host grew two
+   * guards of its own - not during a lockout backfill, not while the splitter has a backlog - and
+   * both return before rotateIfDue is ever called, so nothing was recorded and the Setup card went
+   * blank again. Same defect, one level up.
+   */
+  noteHostSkip(reason, now = new Date()) {
+    return this._finish(
+      {
+        ran: false,
+        boundary: null,
+        boundaryDate: null,
+        rotated: [],
+        skippedEmpty: [],
+        skippedAlreadyDone: [],
+        skippedAlreadyCurrent: [],
+        skippedUnreadable: [],
+        skippedSpansBoundary: [],
+        skippedBusy: [],
+        failed: [],
+        reason,
+      },
+      now
+    );
   }
 
   _note(err) {
