@@ -13,11 +13,14 @@
  * makes the RATE worth watching, and what the last tests here are about.
  *
  * ON THE DAY FORMAT, since these tests exercise it. EverQuest Legends writes "Aug 04" - zero-padded,
- * one space - measured over 9,621,621 real lines including 1,957,073 on days 1 to 9, every one of
- * which the original pattern read correctly. C's ctime() right-aligns instead ("Aug  4"), the two
- * look almost identical, and that resemblance produced a confident claim here that the first nine
- * days of every month were being misfiled. THEY WERE NOT. The pattern now accepts both because the
- * tolerance is free, and the tests below say which of the two they are exercising.
+ * one space. Measured over every EQ log on this machine, deduplicated by content hash: 34 distinct
+ * files, 9,026,690 stamped lines, 1,381,716 of them on days 1 to 9, and the original pattern read
+ * every single one correctly. C's ctime() right-aligns instead ("Aug  4"); the two look almost
+ * identical, and that resemblance produced a confident claim here that the first nine days of every
+ * month were being misfiled. THEY WERE NOT.
+ *
+ * The pattern now accepts both because the tolerance is free, and the tests below say which of the
+ * two they are exercising.
  */
 
 const assert = require('node:assert/strict');

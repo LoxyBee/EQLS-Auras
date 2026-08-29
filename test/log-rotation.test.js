@@ -818,10 +818,11 @@ test('a log buried under more junk than one read window still rotates', () => {
 // The stamp EverQuest actually writes
 // ---------------------------------------------------------------------------
 
-// EverQuest Legends writes "Aug 04", zero-padded, one space - measured over 9,621,621 real lines
-// including 1,957,073 on days 1 to 9. These two tests are therefore TOLERANCE tests for a format
-// this client does not emit: C's ctime() right-aligns the day ("Aug  4"), the two formats look
-// almost identical, and one was briefly mistaken for the other here.
+// EverQuest Legends writes "Aug 04", zero-padded, one space - measured over every EQ log on this
+// machine, deduplicated: 9,026,690 stamped lines, 1,381,716 of them on days 1 to 9, zero misreads.
+// These two tests are therefore TOLERANCE tests for a format this client does not emit: C's ctime()
+// right-aligns the day ("Aug  4"), the two look almost identical, and one was mistaken for the
+// other here.
 //
 // They are kept because the tolerance is real and free, and because if the parser is going to
 // accept that form it should be held to doing so. They are NOT evidence of a bug that existed.

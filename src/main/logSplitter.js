@@ -12,13 +12,21 @@ const MONTHS = {
 // TOLERANCE, NOT A BUG FIX, and the difference is worth stating because it was got wrong once.
 //
 // The two-space form is what C's ctime()/asctime() produces: it right-aligns the day in two
-// columns, so the 1st to the 9th come out as "Aug  4". EverQuest Legends does NOT do this. It uses
-// strftime("%a %b %d %H:%M:%S %Y"), whose %d is zero-padded by definition, and the two formats look
-// so alike that one was mistaken for the other.
+// columns, so the 1st to the 9th come out as "Aug  4". EverQuest Legends writes the DAY with
+// strftime's %d, which is zero-padded - "Aug 04". The two formats look so alike that one was
+// mistaken for the other here. (The client does pad other columns: /who output for an AFK player
+// carries two spaces after the closing bracket. So "EQ never emits a double space" would be wrong;
+// what is true is that it does not space-pad the day.)
 //
-// MEASURED, on 28 real logs on this machine: 9,621,621 stamped lines, 1,957,073 of them on days 1
-// to 9, and the ORIGINAL one-space pattern read every single one. Zero failures. The client's own
-// line "[Tue Aug 04 13:33:15 2026] Logging to 'eqlog.txt' is now *ON*" is a byte-level example.
+// MEASURED over every EverQuest log on this machine, deduplicated by content hash - 67 files on
+// disk, 34 distinct, the rest being worktree copies of each other:
+//
+//     stamped lines                          9,026,690
+//     lines on days 1-9                      1,381,716   (Aug 04 through Aug 09)
+//     lines the ORIGINAL pattern misread             0
+//
+// The client's own line, byte for byte, is the example: "[Tue Aug 04 13:33:15 2026] Logging to
+// 'eqlog.txt' is now *ON*." - the bytes at the day are 20 30 34, space-zero-four.
 //
 // So the widening below fixes nothing that was broken. It is kept because it is free, and because
 // it costs a zero-padded log nothing to also accept a format some other client might write. What it
