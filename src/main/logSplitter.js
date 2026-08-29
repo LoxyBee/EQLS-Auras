@@ -8,7 +8,17 @@ const MONTHS = {
 };
 
 // EQ log lines start with e.g. "[Sun Aug 16 12:11:41 2026] ..."
-const TIMESTAMP_PATTERN = /^\[\w{3} (\w{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})\]/;
+//
+// TWO SPACES ARE ALLOWED BEFORE THE DAY, and that is not cosmetic. This format is C's ctime(),
+// which right-aligns the day in two columns, so the first nine days of every month are written
+// "Sep  1" and not "Sep 01". With a single space required, extractDateKey returned null for all of
+// them, lastDateKey kept its previous value, and every line from the 1st to the 9th was filed into
+// the last day of the PREVIOUS MONTH. Nine days in thirty, silently.
+//
+// No log on the machine this was found on covers a single-digit day, so it could not be confirmed
+// from the corpus - but lockoutCore.js:211 accepts both forms with a comment saying classic EQ
+// space-pads, and being tolerant costs a zero-padded log nothing.
+const TIMESTAMP_PATTERN = /^\[\w{3} (\w{3}) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})\]/;
 const FLUSH_LINE_THRESHOLD = 5000;
 const POLL_INTERVAL_MS = 1000;
 
@@ -255,4 +265,7 @@ class LogSplitter {
   }
 }
 
-module.exports = { LogSplitter };
+// extractTimestampMs is exported so the weekly rotation can ask "does this log still hold
+// anything from before the current lockout week" using the SAME stamp parser the splitter
+// uses, rather than a second copy of the pattern that could drift away from it.
+module.exports = { LogSplitter, extractTimestampMs };
