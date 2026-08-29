@@ -605,7 +605,10 @@ const ZONES = {
     connections: [
       { to: 'Erud\'s Crossing', via: 'boat', sources: ['zlizeqmap', 'eqlwiki', 'p99wiki'] },
       { to: 'Erudin Palace', via: 'land', sources: ['zlizeqmap'] },
-      { to: 'The Ruins of Old Paineel', via: 'portal', sources: ['eqlwiki', 'p99wiki'] },
+      // The Ruins of Old Paineel (The Hole) portal is EXIT-ONLY - you leave the Hole to Erudin
+      // but you do not enter it from here. Entry is the drop in Paineel. The Ruins of Old Paineel
+      // still lists its way out to Erudin; only this inbound direction is removed, so routing INTO
+      // the Hole now goes via Paineel. Shara, 28 Aug 2026: the route was sending her through Erudin.
       { to: 'Toxxulia Forest', via: 'land', sources: ['zlizeqmap', 'eqlwiki', 'p99wiki'] },
     ],
   },

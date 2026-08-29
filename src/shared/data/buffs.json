@@ -1875,6 +1875,7 @@
   "iconId": 24,
   "category": "Mana",
   "scaleCategory": "buff",
+  "durationSec": 12,
   "classes": "BRD 20",
   "level": 20,
   "manaCost": 0,

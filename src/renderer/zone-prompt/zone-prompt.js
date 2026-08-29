@@ -11,8 +11,6 @@ const TITLES = {
   currentZone: 'Where are you now?',
 };
 
-const RENDER_CAP = 60;
-
 let allZones = [];
 let currentMode = null;
 
@@ -20,8 +18,10 @@ function render() {
   const query = searchEl.value.trim().toLowerCase();
   const matches = query ? allZones.filter((z) => z.toLowerCase().includes(query)) : allZones;
   listEl.innerHTML = '';
-  const shown = matches.slice(0, RENDER_CAP);
-  for (const zone of shown) {
+  // Every match is a real zone, so every match is listed - no cap. The list used to slice to 60
+  // and show "+N more", but a zone the player wants can sit past that line with no way to see it
+  // except guessing more letters. Shara, 28 Aug 2026: "if it is a zone, list it."
+  for (const zone of matches) {
     const btn = document.createElement('button');
     btn.className = 'zone-option';
     btn.textContent = zone;
@@ -30,12 +30,7 @@ function render() {
     });
     listEl.appendChild(btn);
   }
-  if (matches.length > shown.length) {
-    const more = document.createElement('div');
-    more.className = 'zone-more';
-    more.textContent = `+${matches.length - shown.length} more - keep typing to narrow it down`;
-    listEl.appendChild(more);
-  } else if (!matches.length) {
+  if (!matches.length) {
     const none = document.createElement('div');
     none.className = 'zone-none';
     none.textContent = 'No zone matches that';

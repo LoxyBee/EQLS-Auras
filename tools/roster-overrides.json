@@ -79,5 +79,11 @@
     "set": {
       "durationSec": 30
     }
+  },
+  "Cassindra's Chant of Clarity": {
+    "why": "Shara, 28 August 2026: told directly it is 12 seconds. The spreadsheet gives it no duration, so it was showing a wrong value (1 minute) leaking in from elsewhere - shared landing text \"Your mind clears.\" is also Brilliance's (see gotcha #15), and the bard-song modal duration is 12s besides.",
+    "set": {
+      "durationSec": 12
+    }
   }
 }
