@@ -465,6 +465,28 @@ test('the host tells the rotation which log is being watched', () => {
   );
 });
 
+// The rotation empties the live log, which resets the splitter to the start of a now-empty file.
+// Anything the splitter had not yet read then never reaches Logs/Split/ - it is all still in the
+// archive, so nothing is lost from disk, but the per-day folder she actually opens has a hole.
+// Measured with both real modules: 400,000 unread lines, 400,000 missing from Split/.
+//
+// Not reachable at ordinary speeds (the splitter reads her real 140 MB log in 1.3 s against a
+// 60 s first check), so this guard is here to make the invariant explicit rather than accidental.
+test('the host will not empty the log while the splitter still has a backlog', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const start = main.indexOf('function runLogRotation');
+  assert.ok(start > -1, 'runLogRotation is gone - this test needs rewriting');
+  const body = main.slice(start, main.indexOf('\n}', start));
+  assert.ok(
+    /bytesBehind\(\)/.test(body),
+    'a rotation can fire while the splitter is behind, which puts a hole in the Split folder'
+  );
+  assert.ok(
+    body.indexOf('bytesBehind()') < body.indexOf('rotateIfDue'),
+    'the backlog guard is checked after the rotation has already happened'
+  );
+});
+
 // Every IPC channel the main process answers on should be reachable from the preload bridge.
 // An unreachable handler is dead weight that reads as a feature.
 test('every rotation IPC channel is one the renderer can actually reach', () => {

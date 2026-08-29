@@ -149,6 +149,30 @@ class LogSplitter {
     };
   }
 
+  /**
+   * How far the splitter still has to read before it has seen the whole live log.
+   *
+   * The weekly rotation asks this before emptying anything. Truncation makes _processOnce reset the
+   * offset to 0, so whatever the splitter had not reached yet never reaches Logs/Split/ - it is all
+   * safe in the archive, but the per-day folder gets a hole. Measured with the real modules: a
+   * rotation fired against a 400,000-line backlog left every one of those lines out of Split/.
+   *
+   * Not reachable at ordinary speeds - the splitter reads the owner's real 140 MB log in 1.3 s and
+   * the rotation's first check is a minute after launch - so this guard exists to make the
+   * invariant explicit rather than accidental, and to cover the case it would take: a first launch
+   * against a log somebody let grow for a year.
+   *
+   * Zero when splitting is off, because then there is nothing to protect.
+   */
+  bytesBehind() {
+    if (!this.enabled || !this.filePath) return 0;
+    try {
+      return Math.max(0, fs.statSync(this.filePath).size - this.offset);
+    } catch {
+      return 0;
+    }
+  }
+
   setOnFormatAlarm(fn) {
     if (typeof fn === 'function') this.onFormatAlarm = fn;
   }

@@ -474,6 +474,13 @@ function runLogRotation(why) {
     // whichever characters it had not reached - and it then reports ok, done, with one character
     // silently missing from the grid until someone hits rescan. Waiting a minute costs nothing.
     if (lockoutService.backfillState === 'running') return;
+    // NOR WHILE THE SPLITTER STILL HAS A BACKLOG. Emptying the live log resets the splitter to the
+    // start of a now-empty file, so anything it had not yet read never reaches Logs/Split/. The
+    // archive still has every line, but the per-day folder - which is the one she opens - would
+    // have a hole in it. A megabyte of slack: during play the splitter is a poll behind at most,
+    // and it reads 140 MB in about a second, so this only ever bites a first launch against a very
+    // large log.
+    if (logService.splitter.bytesBehind() > 1024 * 1024) return;
     const report = logRotationService.rotateIfDue();
     if (report.rotated.length) {
       debugLog(`LOG ROTATION (${why}): archived ${report.rotated.length} file(s) for week ${report.boundary}`);

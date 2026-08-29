@@ -149,6 +149,52 @@ test('a wrapped broadcast stays with the line it belongs to', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Telling the rotation when it is safe to empty the log
+// ---------------------------------------------------------------------------
+
+// The weekly rotation empties the live log. Truncation resets this splitter to the start of a
+// now-empty file, so whatever it had not yet read never reaches Split/ - safe in the archive, but
+// a hole in the per-day folder. Measured with both real modules: a rotation fired against a
+// 400,000-line backlog left every one of those lines out of Split/.
+test('it reports how much of the log it has still to read', async () => {
+  const lines = [];
+  for (let i = 0; i < 300; i += 1) lines.push(`[Tue Sep 15 09:00:00 2026] line ${i}`);
+  const body = lines.join('\n') + '\n';
+  const { dir, file } = tempLog(body);
+  const s = new LogSplitter(store());
+
+  // Nothing attached yet: nothing to protect, so nothing to report.
+  assert.equal(s.bytesBehind(), 0, 'an unattached splitter claimed a backlog');
+
+  s.attachToFile(file);
+  await settle(s);
+  assert.equal(s.bytesBehind(), 0, 'it claims a backlog after reading everything');
+
+  // The game writes more. Now it is behind by exactly that much.
+  const more = '[Tue Sep 15 09:30:00 2026] You have slain Lady Vox!\n';
+  fs.appendFileSync(file, more);
+  assert.equal(s.bytesBehind(), more.length, 'the backlog is not the size of what is unread');
+
+  s.stop();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// Splitting off means there is no per-day folder to put a hole in, so the rotation must not be
+// held up by a splitter that is not doing anything.
+test('a splitter that is turned off never holds up the rotation', async () => {
+  const { dir, file } = tempLog('[Tue Sep 15 09:00:00 2026] x\n'.repeat(50));
+  const s = new LogSplitter(store());
+  s.attachToFile(file);
+  await settle(s);
+  fs.appendFileSync(file, '[Tue Sep 15 10:00:00 2026] plenty more to read\n'.repeat(200));
+  assert.ok(s.bytesBehind() > 0, 'the fixture did not create a backlog');
+  s.setEnabled(false);
+  assert.equal(s.bytesBehind(), 0, 'a disabled splitter still claims a backlog');
+  s.stop();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
 // Noticing that it can no longer read the log
 // ---------------------------------------------------------------------------
 
