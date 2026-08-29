@@ -30,6 +30,27 @@ const POLL_INTERVAL_MS = 1000;
 // in-game quiet time.
 const SESSION_GAP_MS = 10 * 60 * 1000;
 
+// WHEN A LINE HAS NO READABLE STAMP, it is filed under the day of the line before it. That is
+// correct and it is why the rule exists: EverQuest wraps a long server broadcast onto continuation
+// lines that carry no stamp of their own, and those belong with the line above.
+//
+// It is also almost never used. Measured over the owner's real log: 1,761,090 lines, TEN of them
+// unstamped - 0.0006%, and all ten were continuations of "we must bring the servers down for a
+// hotfix". So the rule is right and rare, which makes the RATE a very sharp instrument.
+//
+// If the parser ever stops understanding the log's format, that rate does not creep - it jumps
+// toward 100%, because it is one pattern reading one format. Five orders of magnitude. That is
+// exactly what happened here: the day pattern required one space where C's ctime writes two for
+// the 1st to the 9th, so on those days every line read as unstamped and every one of them was
+// filed under the last day of the previous month. Silently, because nothing was counting.
+//
+// Five per cent is roughly eight thousand times the observed baseline, so this cannot cry wolf on
+// a real log; and the minimum sample stops a handful of broadcast lines in a quiet batch tripping
+// it. What it catches is the whole class: a client patch, a locale change, a format we have never
+// seen. The tool should notice when it can no longer read what it is reading.
+const UNSTAMPED_ALARM_RATIO = 0.05;
+const UNSTAMPED_ALARM_MIN_LINES = 200;
+
 function extractDateKey(line) {
   const match = TIMESTAMP_PATTERN.exec(line);
   if (!match) return null;
@@ -82,6 +103,37 @@ class LogSplitter {
     this.sessionSuffix = '';
     this.timer = null;
     this.processing = false;
+
+    // How much of the log this parser could and could not read. Cumulative for the session.
+    this.stampedLines = 0;
+    this.unstampedLines = 0;
+    // Set when a batch reads as mostly unreadable. Sticky, because the point of it is to still be
+    // there when somebody eventually looks.
+    this.formatAlarm = null;
+    // Injected by the host so this module keeps owning no logger. Defaults to saying nothing.
+    this.onFormatAlarm = () => {};
+  }
+
+  /**
+   * What the splitter has been able to read. The ratio is the useful part - see the note on
+   * UNSTAMPED_ALARM_RATIO for why an unstamped line is normal and a lot of them is not.
+   */
+  getStatus() {
+    const total = this.stampedLines + this.unstampedLines;
+    return {
+      enabled: this.enabled,
+      filePath: this.filePath,
+      outputDir: this.outputDir,
+      lastDateKeySeen: this.lastDateKeySeen,
+      stampedLines: this.stampedLines,
+      unstampedLines: this.unstampedLines,
+      unstampedRatio: total ? this.unstampedLines / total : 0,
+      formatAlarm: this.formatAlarm,
+    };
+  }
+
+  setOnFormatAlarm(fn) {
+    if (typeof fn === 'function') this.onFormatAlarm = fn;
   }
 
   attachToFile(filePath) {
@@ -154,6 +206,31 @@ class LogSplitter {
     });
   }
 
+  /**
+   * Did this batch read like a log we understand?
+   *
+   * Raised once and left standing. A batch that is mostly unreadable does not mean the log is
+   * broken - it means THIS PARSER has stopped matching what the game writes, and every one of
+   * those lines has just been filed under whatever day was last recognised. Saying so is the
+   * difference between the bug that prompted this (nine days a month quietly in the wrong file,
+   * for as long as nobody thought to check) and a line in the log that names it.
+   */
+  _checkReadability(stamped, unstamped, sample) {
+    const total = stamped + unstamped;
+    if (total < UNSTAMPED_ALARM_MIN_LINES) return;
+    const ratio = unstamped / total;
+    if (ratio < UNSTAMPED_ALARM_RATIO) return;
+    if (this.formatAlarm) return;
+    this.formatAlarm = {
+      ratio,
+      unstamped,
+      total,
+      sample,
+      lastDateKeySeen: this.lastDateKeySeen,
+    };
+    this.onFormatAlarm(this.formatAlarm);
+  }
+
   _persistProgress() {
     this.progress[this.filePath] = {
       offset: this.offset,
@@ -217,10 +294,20 @@ class LogSplitter {
     const stream = fs.createReadStream(this.filePath, { start: startOffset, encoding: 'utf8' });
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
+    let stampedBatch = 0;
+    let unstampedBatch = 0;
+    let firstUnstamped = null;
+
     rl.on('line', (line) => {
       if (line.length === 0) return;
       const parsedDateKey = extractDateKey(line);
-      if (parsedDateKey) lastDateKey = parsedDateKey;
+      if (parsedDateKey) {
+        lastDateKey = parsedDateKey;
+        stampedBatch += 1;
+      } else {
+        unstampedBatch += 1;
+        if (firstUnstamped === null) firstUnstamped = line.slice(0, 120);
+      }
       const dateKey = parsedDateKey || lastDateKey;
       if (!dateKey) return; // no timestamp seen yet - can't bucket this line
 
@@ -245,6 +332,9 @@ class LogSplitter {
 
     rl.on('close', () => {
       flush();
+      this.stampedLines += stampedBatch;
+      this.unstampedLines += unstampedBatch;
+      this._checkReadability(stampedBatch, unstampedBatch, firstUnstamped);
       let newSize;
       try {
         newSize = fs.statSync(this.filePath).size;
