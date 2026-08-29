@@ -4407,7 +4407,15 @@ function initWidgetsPanel() {
   // verdict, or the whole design is lost at the last inch.
   const LOCKOUT_STATES = {
     completed: { text: 'done', title: 'Observed completed this period.' },
-    open: { text: 'open', title: 'No kill observed since the reset, and the logs cover the whole period.' },
+    // NOT "the logs cover the whole period" - that is what the module's own `because` says, and on
+    // her live data it is false: 14 open cells while 68 of the period's 113 hours are unobserved
+    // across gaps short enough to be tolerated. The line below the grid says so, with numbers, and
+    // a tooltip contradicting it is worse than no tooltip.
+    open: {
+      text: 'open',
+      title: 'No kill seen since the reset, and no gap long enough to change that judgement - '
+        + 'see the note under the grid for what was not observed.',
+    },
     conditional: { text: 'depends', title: 'Falls either way depending on the reset hour, which has never been measured.' },
     // 'unknown' is the STATE the core sets; `uncertainCount` is what it calls the tally of them.
     // Mapping the count's name instead of the state's is exactly the unmapped-name failure this
@@ -4506,7 +4514,13 @@ function initWidgetsPanel() {
     const gaps = (grid.period && grid.period.coverageGaps) || [];
     if (gaps.length) {
       const total = gaps.reduce((n, g) => n + (g.hours || 0), 0);
-      const tolerated = gaps.filter((g) => g.tolerated).length;
+      // Only worth saying while there ARE open cells for it to be about. The clause describes
+        // what the grid above is showing, and after a rotation the grid is 25 "not looked" and no
+        // "open" at all - where it read "N of them short enough that the cells above still read
+        // open" directly underneath a line saying 0 open. That is the guaranteed state of this page
+        // for the first days after the weekly archive ships, and a page whose whole argument is
+        // that it never claims more than it knows cannot contradict itself in its own summary.
+        const tolerated = grid.openCount > 0 ? gaps.filter((g) => g.tolerated).length : 0;
       const warn = document.createElement('p');
       warn.className = 'hint lockout-gapwarn';
       warn.textContent =

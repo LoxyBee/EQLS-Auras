@@ -350,5 +350,70 @@ test('the projection survives the trip over IPC', async () => {
   assert.deepEqual(p, JSON.parse(JSON.stringify(p)), 'a Map, Set or Date has reached the payload');
 });
 
+
+// ---------------------------------------------------------------------------
+// The page must not contradict itself
+// ---------------------------------------------------------------------------
+
+const RENDERER = fs.readFileSync(
+  path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'),
+  'utf8'
+);
+const SETUP_HTML = fs.readFileSync(
+  path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'index.html'),
+  'utf8'
+);
+
+// After a rotation the grid is every cell "not looked" and no "open" at all - which is the
+// guaranteed state of this page for the first days after the weekly archive ships. The gap line
+// read "N of them short enough that the cells above still read open" directly under a summary
+// saying 0 open. On the page whose entire argument is that it never claims more than it knows,
+// that is the worst possible sentence.
+test('the tolerated-gap clause is not shown when there are no open cells', () => {
+  const at = RENDERER.indexOf('const tolerated =');
+  assert.ok(at > -1, 'the tolerated count is gone - this test needs rewriting');
+  const line = RENDERER.slice(at, RENDERER.indexOf(';', at));
+  assert.match(
+    line,
+    /openCount\s*>\s*0/,
+    'the clause describing "open" cells is emitted regardless of whether any open cells exist'
+  );
+});
+
+// The module's own `because` for an open cell says coverage spans the period. On the owner's live
+// data that is false - 14 open cells while 68 of the period's 113 hours are unobserved across
+// tolerated gaps - and the line below the grid says so with numbers. A tooltip that contradicts
+// the sentence beneath it is worse than no tooltip.
+test('the open cell does not claim the logs cover the whole period', () => {
+  const at = RENDERER.indexOf('open: {');
+  assert.ok(at > -1, 'the open state entry is gone - this test needs rewriting');
+  const entry = RENDERER.slice(at, at + 400);
+  assert.ok(
+    !/cover the whole period/.test(entry),
+    'the open tooltip still claims full coverage, which the gap line below it contradicts'
+  );
+  assert.ok(/see the note/.test(entry), 'the tooltip does not point at the gap line that qualifies it');
+});
+
+// The Setup card states the reset hour as a fact; the Lockouts page states it has never been
+// measured. Both are true of different things - the hour came from the owner's own Alt+Z reading,
+// and lockoutCore's RESET_RULE was never given it - but an app that asserts a number and then
+// denies having it has to say which is which.
+test('the reset hour names where it came from', () => {
+  const at = SETUP_HTML.indexOf("Tuesday at 11:00");
+  assert.ok(at > -1, 'the reset-hour sentence is gone - this test needs rewriting');
+  const para = SETUP_HTML.slice(at, at + 700);
+  assert.match(
+    para,
+    /your own\s+\n?\s*reading of the in-game/,
+    'the card asserts the reset hour without saying it came from the owner, not from the log'
+  );
+  assert.match(
+    para,
+    /never measured/,
+    'the card does not acknowledge that the Lockouts page still calls the hour unmeasured'
+  );
+});
+
 module.exports = () => report('lockouts');
 if (require.main === module) report('lockouts').then((n) => process.exit(n ? 1 : 0));

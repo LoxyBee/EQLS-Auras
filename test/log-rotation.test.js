@@ -911,6 +911,36 @@ test('every way a check can end leaves something a person could read', () => {
   }
 });
 
+// A RUN OF NUL PADDING IS NOT A SMALL AMOUNT OF JUNK. A writer that keeps its own file offset
+// across a truncation leaves as many NULs as the file used to be long - a whole week, which on the
+// owner's machine is over a hundred megabytes. A fixed search window never reaches the first real
+// line, so the log would be refused every week for ever while it grew without bound.
+//
+// WHICH MODE EVERQUEST USES IS UNMEASURED and cannot be settled from this machine: Logs/Archive
+// does not exist, so no truncation has ever happened to these files, and the absence of NUL bytes
+// in the corpus is therefore not evidence either way. This steps over the run instead of betting
+// on the answer.
+test('a log buried under megabytes of NUL padding still rotates', () => {
+  const now = new Date();
+  const boundary = resetBoundaryBefore(now);
+  const d = new Date(boundary.getTime() - 30 * 3600000);
+  const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+  const mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()];
+  const p = (n) => String(n).padStart(2, '0');
+  const line = `[${wd} ${mo} ${p(d.getDate())} ${p(d.getHours())}:00:00 ${d.getFullYear()}] You have slain Lady Vox!\n`;
+
+  // Comfortably past HEAD_BYTES_MAX, which is where the old fixed window gave up.
+  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': '' });
+  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  fs.writeFileSync(live, Buffer.concat([Buffer.alloc(5 * 1024 * 1024), Buffer.from(line)]));
+  const ago = (ms) => new Date(Date.now() - ms);
+  fs.utimesSync(live, ago(600000), ago(600000));
+
+  const r = svc(dir).rotateIfDue(now);
+  assert.deepEqual(r.skippedUnreadable, [], 'the padded log was refused and would be refused for ever');
+  assert.equal(r.rotated.length, 1);
+});
+
 // A head that begins with junk - a torn line, or the run of NUL bytes a writer holding its old
 // offset leaves behind after a truncation - used to make a log unreadable and therefore untouchable
 // for ever, growing without bound, in silence. The window escalates before giving up.

@@ -87,6 +87,8 @@ const HEAD_BYTES = 8192;
 // its old offset across a truncation - and giving up at 8 KB means such a log is never rotated
 // again, for ever, growing without bound. Two megabytes is still a single cheap read.
 const HEAD_BYTES_MAX = 2 * 1024 * 1024;
+// How much to read at a time when stepping over a run of NUL padding. See firstNonNulOffset.
+const CHUNK_BYTES = 1024 * 1024;
 
 /**
  * The timestamp on the earliest line of a log, or null if it cannot be established.
@@ -112,6 +114,36 @@ const HEAD_BYTES_MAX = 2 * 1024 * 1024;
  * Only NULs and whitespace are stepped over. Anything else and the line is returned untouched, so
  * this cannot promote a timestamp quoted in the middle of somebody's chat into the log's start.
  */
+/**
+ * The offset of the first byte that is not a NUL.
+ *
+ * A writer that keeps its own file offset across a truncation leaves exactly as many NUL bytes as
+ * the file used to be long. WHICH MODE EVERQUEST USES IS UNMEASURED: an append handle pads nothing,
+ * a read-write handle pads everything, and no log on this machine can settle it because
+ * `Logs/Archive` does not exist - the manual archive has never been run here, so no truncation has
+ * ever happened to these files. The absence of NUL bytes in the corpus is therefore not evidence
+ * either way, and it was briefly mistaken for some.
+ *
+ * If it is the padding case, the run is the size of the whole previous week - a hundred and forty
+ * megabytes on this machine - so a fixed two-megabyte search window never reaches the first real
+ * line, and the rotation would refuse that log for ever while it grew without bound. Stepping over
+ * the run costs one pass of a file we are about to copy anyway.
+ */
+function firstNonNulOffset(fd, size) {
+  const buf = Buffer.alloc(CHUNK_BYTES);
+  let at = 0;
+  while (at < size) {
+    const want = Math.min(CHUNK_BYTES, size - at);
+    const read = fs.readSync(fd, buf, 0, want, at);
+    if (!read) return at;
+    for (let i = 0; i < read; i += 1) {
+      if (buf[i] !== 0) return at + i;
+    }
+    at += read;
+  }
+  return size;
+}
+
 function stripPadding(line) {
   const at = line.indexOf('[');
   if (at <= 0) return line;
@@ -143,17 +175,20 @@ function firstStampMs(filePath, size) {
   let fd;
   try {
     fd = fs.openSync(filePath, 'r');
+    // Step over any NUL padding first, so the search window is spent on log rather than on zeroes.
+    const from = firstNonNulOffset(fd, size);
+    if (from >= size) return null;
     for (const window of [HEAD_BYTES, HEAD_BYTES_MAX]) {
-      const want = Math.min(window, size);
+      const want = Math.min(window, size - from);
       if (!want) return null;
       const buf = Buffer.alloc(want);
-      const read = fs.readSync(fd, buf, 0, want, 0);
+      const read = fs.readSync(fd, buf, 0, want, from);
       if (!read) return null;
       for (const line of buf.slice(0, read).toString('utf8').split('\n')) {
         const ms = extractTimestampMs(stripPadding(line));
         if (ms !== null) return ms;
       }
-      if (want >= size) return null;
+      if (from + want >= size) return null;
     }
     return null;
   } catch (err) {
