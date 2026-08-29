@@ -1201,6 +1201,29 @@
             <button id="open-archive-folder-btn">Open archive folder</button>
           </div>
           <p class="hint" id="archive-folder-status"></p>
+
+          <h4 class="settings-subsection-title">Weekly archive at the raid reset</h4>
+          <div class="row">
+            <label>
+              <input type="checkbox" id="log-rotation-checkbox" />
+              Archive last week's log after the Tuesday raid reset
+            </label>
+          </div>
+          <p class="hint">
+            The reset is Tuesday at 11:00 <em>by your computer's clock</em>. After it passes,
+            =Auras archives the log the next time it finds a quiet moment - so the live log holds
+            the current lockout week and the Lockouts page has less to work out for itself. It does
+            not archive a log you have already played on since the reset, because that would take
+            this week's own kills out of the file the Lockouts page reads.
+          </p>
+          <p class="hint">
+            Like the button above, but for every character's log rather than only the one being
+            watched. <strong>Nothing is deleted</strong> - each week is copied into the
+            <strong>Archive</strong> folder and the copy is checked before the live log is emptied.
+            Archived weeks are kept on disk, but the Lockouts page only reads the live log, so it
+            will not count them.
+            <span id="log-rotation-status"></span>
+          </p>
         </div>
 
         <div class="block">

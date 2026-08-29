@@ -140,6 +140,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
   // Raid lockouts. Read-only from the renderer's side: it asks for a projection and is told when
   // one changed. Nothing here can write state.
+  getLogRotationStatus: () => ipcRenderer.invoke('logRotation:getStatus'),
+  setLogRotationEnabled: (enabled) => ipcRenderer.invoke('logRotation:setEnabled', enabled),
   getLockouts: () => ipcRenderer.invoke('lockouts:get'),
   rescanLockouts: () => ipcRenderer.invoke('lockouts:rescan'),
   onLockoutsChanged: (cb) => { ipcRenderer.on('lockouts:changed', (_e, s) => cb(s)); },

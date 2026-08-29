@@ -87,6 +87,8 @@ if (!app.requestSingleInstanceLock()) {
 const logService = new LogService();
 const { LockoutService } = require('./lockoutService');
 const lockoutService = new LockoutService();
+const { LogRotationService } = require('./logRotation');
+const logRotationService = new LogRotationService({ loadJson, saveJson });
 const buffStore = new BuffStore({ loadJson, saveJson });
 const buffEngine = new BuffEngine(buffStore, { loadJson, saveJson });
 const profileStore = new ProfileStore({ loadJson, saveJson });
@@ -435,6 +437,68 @@ logService.watcher.on('line', (line) => lockoutService.handleLine(line));
 // event carries only the string.
 lockoutService.setLogsFolderFn(() => logService.watcher.getStatus().logsFolder);
 lockoutService.setCurrentFileFn(() => logService.watcher.getStatus().currentFilePath);
+
+/**
+ * Weekly log rotation at the lockout reset. See logRotation.js for the measurement behind the
+ * boundary and for why it truncates rather than deletes.
+ *
+ * Checked once a minute. That covers both the owner's own description - "the first time they log
+ * in after the reset" - and the app being left open across a Tuesday morning, which a check only at
+ * startup would miss entirely.
+ *
+ * Wrapped, because a rotation problem must never stop the app starting or keep it from tracking
+ * buffs. Nothing here is on the critical path for anything else.
+ */
+logRotationService.setLogsFolderFn(() => logService.watcher.getStatus().logsFolder);
+// Ten seconds of silence. Her own Archive-log warning says the safe moment is when EQ is not
+// writing, so the rotation waits for one rather than picking a moment at random.
+//
+// SEEDED TO NOW, not to zero, and that distinction is the whole guard. The watcher opens the log AT
+// THE END and emits nothing for what is already in it, so at launch no line has ever been seen and
+// "time since the last line" is vacuously enormous - every log looks quiet, including one the game
+// is writing to at that instant. Starting the clock at launch means the first rotation has to
+// observe a real lull. Assume it is busy until it demonstrably is not.
+let lastLogLineAt = Date.now();
+logService.watcher.on('line', () => { lastLogLineAt = Date.now(); });
+logRotationService.setIsQuietFn(() => Date.now() - lastLogLineAt > 10000);
+// So the tailed log is rotated LAST and keeps the newest mtime. Without this, emptying a
+// logged-out character's log after the played one drags the watcher onto the mule at its next
+// directory scan, and every line written in between is lost to buffs, lockouts and the rest.
+logRotationService.setCurrentFileFn(() => logService.watcher.getStatus().currentFilePath);
+logRotationService.loadSettings();
+
+function runLogRotation(why) {
+  try {
+    // NOT WHILE A BACKFILL IS IN FLIGHT. The backfill holds a per-file state object for the length
+    // of its stream and sets its own 'done' at the end, so clearing the map underneath it loses
+    // whichever characters it had not reached - and it then reports ok, done, with one character
+    // silently missing from the grid until someone hits rescan. Waiting a minute costs nothing.
+    if (lockoutService.backfillState === 'running') return;
+    const report = logRotationService.rotateIfDue();
+    if (report.rotated.length) {
+      debugLog(`LOG ROTATION (${why}): archived ${report.rotated.length} file(s) for week ${report.boundary}`);
+      // The lockout grid is built from those files, so it has to be rebuilt from what is now there.
+      lockoutService.states.clear();
+      lockoutService.backfillState = 'idle';
+      broadcast('lockouts:changed', lockoutService.getStatus());
+    }
+    if (report.failed.length) {
+      debugLog(`LOG ROTATION (${why}): ${report.failed.length} file(s) FAILED - ${JSON.stringify(report.failed)}`);
+    }
+    if (report.skippedUnreadable.length) {
+      // Not a failure and not a success. The log's head carried no readable timestamp, so whether
+      // it predates the week could not be established and it was left alone.
+      debugLog(`LOG ROTATION (${why}): could not read a timestamp in ${report.skippedUnreadable.join(', ')}`);
+    }
+  } catch (err) {
+    debugLog(`LOG ROTATION (${why}): threw - ${err && err.message}`);
+  }
+}
+// Once a minute, and that is cheaper than it sounds: when the log is busy the check costs one
+// comparison and returns, and when the week is already closed off it costs a readdir. A minute is
+// short enough that someone opening =Auras before the game gets their rotation promptly, and short
+// enough to catch a lull during a session left running across a Tuesday morning.
+setInterval(() => runLogRotation('interval'), 60 * 1000);
 
 // Debounced, because a backfill applies well over a million lines and the renderer does not need
 // to hear about each one. Live play emits at human speed and coalesces to nothing.
@@ -905,6 +969,11 @@ app.whenReady().then(() => {
   widgetManager.initWidgets();
   actionBarManager.initActionBars();
   logService.init();
+  // NO ROTATION CALL HERE, deliberately. It used to run one line below this, and at that moment the
+  // watcher has just opened the log at the end and seen nothing, so the ten-second quiet check
+  // cannot mean anything yet and passes for any log at all - including one the game is actively
+  // writing to. The minute timer above covers the same case a moment later, by which time silence
+  // is evidence instead of ignorance.
   // Part of the shutdown instrumentation above. Closing the main window no longer always means
   // quitting (see mainWindow.js - it hides to the tray unless app.quit() is already underway), so
   // this now logs on every hide-to-tray too, not just a real shutdown - still useful context for a
@@ -943,6 +1012,11 @@ app.whenReady().then(() => {
 // Raid lockouts. The scan is LAZY - it runs the first time the page is opened and not before, so
 // a user who never opens it pays nothing at startup. It is idempotent by the module's own
 // contract, so overlapping the live tailer is safe and re-running it costs only time.
+ipcMain.handle('logRotation:getStatus', () => logRotationService.getStatus());
+ipcMain.handle('logRotation:setEnabled', (_event, enabled) => {
+  logRotationService.setEnabled(enabled);
+  return logRotationService.getStatus();
+});
 ipcMain.handle('lockouts:get', async () => {
   if (lockoutService.backfillState === 'idle') await lockoutService.backfill();
   return lockoutService.getProjection();

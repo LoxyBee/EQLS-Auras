@@ -19,7 +19,9 @@
 const { spawn } = require('child_process');
 const path = require('path');
 
-const HOLD_MS = 22000;
+// Overridable, because some things only happen on a timer - the weekly rotation checks once a
+// minute, so seeing it decide anything at all needs a hold longer than that.
+const HOLD_MS = Number(process.env.EQLS_SMOKE_HOLD_MS) || 22000;
 const ROOT = path.join(__dirname, '..');
 const electron = require(path.join(ROOT, 'node_modules', 'electron'));
 

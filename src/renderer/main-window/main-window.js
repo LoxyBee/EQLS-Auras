@@ -4293,6 +4293,76 @@ function initWidgetsPanel() {
 
 
   // =========================================================================
+  // Weekly log rotation at the raid reset. The switch lives on the Archive log card in Setup,
+  // beside the manual button that does the same job, because they are the same action.
+  const logRotationCheckbox = document.getElementById('log-rotation-checkbox');
+  const logRotationStatusEl = document.getElementById('log-rotation-status');
+
+  function renderLogRotationStatus(s) {
+    if (!s) return;
+    logRotationCheckbox.checked = s.enabled !== false;
+    const last = s.lastRun;
+    // `boundaryDate` is the LOCAL calendar day of the reset. `boundary` beside it is a UTC string,
+    // and slicing a date out of that names the wrong day for anyone far enough east - so the field
+    // is read, never the string.
+    if (last && last.failed && last.failed.length) {
+      // Said out loud rather than swallowed, and said FIRST: a rotation that failed means the live
+      // log still holds more than this week, and the grid is reading a wider window than it thinks.
+      logRotationStatusEl.textContent =
+        ` The last attempt could not archive ${last.failed.length} file(s), so the live log still ` +
+        `holds more than this week.`;
+    } else if (last && last.skippedUnreadable && last.skippedUnreadable.length) {
+      logRotationStatusEl.textContent =
+        ` ${last.skippedUnreadable.length} log(s) had no readable timestamp at the top, so they ` +
+        `were left alone rather than archived on a guess.`;
+    } else if (last && last.rotated && last.rotated.length) {
+      logRotationStatusEl.textContent =
+        ` Last archived ${last.rotated.length} log${last.rotated.length === 1 ? '' : 's'} for the ` +
+        `week of ${last.boundaryDate}.`;
+    } else if (s.lastCheck && s.lastCheck.skippedSpansBoundary && s.lastCheck.skippedSpansBoundary.length) {
+      // Not an error, and worth saying: this is the state a player who raids on Tuesday will sit in
+      // all week, and without a word here it looks identical to the feature being broken.
+      logRotationStatusEl.textContent =
+        ' Not archiving this week - the log already has play from after the reset in it, and ' +
+        'archiving it would take those kills out of what the Lockouts page can see.';
+    } else if (s.lastCheck && s.lastCheck.skippedBusy && s.lastCheck.skippedBusy.length) {
+      logRotationStatusEl.textContent =
+        ' Waiting for a quiet moment - the game is writing to the log right now.';
+    } else if (s.lastCheck && /written to right now/.test(s.lastCheck.reason || '')) {
+      logRotationStatusEl.textContent =
+        ' Waiting for a quiet moment - the game is writing to the log right now.';
+    } else if (s.lastCheck && s.lastCheck.reason === 'no logs folder') {
+      logRotationStatusEl.textContent = ' Not running: no EverQuest Logs folder is set.';
+    } else if (s.lastError) {
+      logRotationStatusEl.textContent = ` Last problem: ${s.lastError}`;
+    } else if (s.lastCheck && s.lastCheck.skippedAlreadyDone && s.lastCheck.skippedAlreadyDone.length) {
+      logRotationStatusEl.textContent = ` This week's log has already been archived.`;
+    } else {
+      logRotationStatusEl.textContent = '';
+    }
+  }
+
+  window.eqTracker.getLogRotationStatus().then(renderLogRotationStatus);
+  // A rotation is one of the things that makes the grid change, so the same broadcast is the cue to
+  // re-read this. Without it the line here would keep saying whatever was true when Setup was
+  // first opened.
+  window.eqTracker.onLockoutsChanged(() => {
+    window.eqTracker.getLogRotationStatus().then(renderLogRotationStatus);
+  });
+  // And whenever Setup is opened. The check runs on a timer in the main process, so the line here
+  // is stale the moment after it is drawn - and the commonest thing it has to say ("waiting for a
+  // quiet moment") only ever becomes true AFTER the page has loaded. Reading it once at startup
+  // meant the card was permanently blank, which reads as nothing happening rather than as working.
+  const setupNavBtn = document.querySelector('.nav-btn[data-page="page-settings"]');
+  if (setupNavBtn) {
+    setupNavBtn.addEventListener('click', () => {
+      window.eqTracker.getLogRotationStatus().then(renderLogRotationStatus);
+    });
+  }
+  logRotationCheckbox.addEventListener('change', () => {
+    window.eqTracker.setLogRotationEnabled(logRotationCheckbox.checked).then(renderLogRotationStatus);
+  });
+
   // Raid lockouts (Session D's module; this only renders its projection)
   // =========================================================================
   //
