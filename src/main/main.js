@@ -449,6 +449,24 @@ lockoutService.setCurrentFileFn(() => logService.watcher.getStatus().currentFile
  * Wrapped, because a rotation problem must never stop the app starting or keep it from tracking
  * buffs. Nothing here is on the critical path for anything else.
  */
+// THE SPLITTER SAYING IT CANNOT READ THE LOG ANY MORE. Wired here rather than inside logService
+// because this is where debugLog lives - it writes the detection-YYYY-MM-DD.log file the owner can
+// actually find and send, where the first version of this only reached a console she never opens.
+//
+// An unstamped line is filed under the day of the line before it, which is right for the wrapped
+// server broadcasts it exists for - ten lines in 1,761,090 of her real log. A batch that is mostly
+// unstamped means something else entirely: the stamp pattern has stopped matching what the game
+// writes, and every one of those lines has just gone into the wrong day, silently.
+logService.splitter.setOnFormatAlarm((alarm) => {
+  const pct = (alarm.ratio * 100).toFixed(1);
+  debugLog(
+    `LOG SPLITTER: ${pct}% of the last ${alarm.total} lines had no readable timestamp ` +
+    `(normal is under 0.01%). They were filed under ${alarm.lastDateKeySeen}. The stamp format ` +
+    `may have changed. First one: ${JSON.stringify(alarm.sample)}`
+  );
+  broadcast('log:state', logService.getState());
+});
+
 logRotationService.setLogsFolderFn(() => logService.watcher.getStatus().logsFolder);
 // Ten seconds of silence. Her own Archive-log warning says the safe moment is when EQ is not
 // writing, so the rotation waits for one rather than picking a moment at random.

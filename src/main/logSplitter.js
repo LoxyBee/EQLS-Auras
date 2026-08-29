@@ -66,6 +66,13 @@ const SESSION_GAP_MS = 10 * 60 * 1000;
 // it. What it catches is the whole class: a client patch, a locale change, a format we have never
 // seen. The tool should notice when it can no longer read what it is reading.
 const UNSTAMPED_ALARM_RATIO = 0.05;
+// Enough lines for the ratio to mean something. ACCUMULATED ACROSS BATCHES, not required within
+// one - and that distinction is the difference between an alarm that works and one that cannot
+// fire at all. A batch is one poll, one second. Measured on the owner's real log, a second holds a
+// median of 6 lines, 60 at the 99th percentile and 182 at its absolute peak, so a live batch never
+// reaches two hundred. Requiring it per batch meant the alarm could only ever fire on a startup
+// backfill: a format that broke mid-session was 100% unreadable and announced nothing, which is
+// precisely the case it exists for.
 const UNSTAMPED_ALARM_MIN_LINES = 200;
 
 function extractDateKey(line) {
@@ -127,6 +134,11 @@ class LogSplitter {
     // Set when a batch reads as mostly unreadable. Sticky, because the point of it is to still be
     // there when somebody eventually looks.
     this.formatAlarm = null;
+    // The rolling window the ratio is judged over. Reset each time it is judged, so a bad patch of
+    // log cannot be diluted forever by the good hours either side of it.
+    this.windowStamped = 0;
+    this.windowUnstamped = 0;
+    this.windowSample = null;
     // Injected by the host so this module keeps owning no logger. Defaults to saying nothing.
     this.onFormatAlarm = () => {};
   }
@@ -236,6 +248,10 @@ class LogSplitter {
       splitOnGap: this.splitOnGap,
       outputDir: this.outputDir,
       customOutputDir: this.customOutputDir,
+      // Rides along with the settings because this is the payload that already reaches the Setup
+      // page. A counter nobody reads is not an improvement on not counting, and the first version
+      // of this alarm reached only a console the owner never opens.
+      formatAlarm: this.formatAlarm,
     };
   }
 
@@ -256,18 +272,29 @@ class LogSplitter {
    * difference between the bug that prompted this (nine days a month quietly in the wrong file,
    * for as long as nobody thought to check) and a line in the log that names it.
    */
-  _checkReadability(stamped, unstamped, sample) {
-    const total = stamped + unstamped;
-    if (total < UNSTAMPED_ALARM_MIN_LINES) return;
-    const ratio = unstamped / total;
-    if (ratio < UNSTAMPED_ALARM_RATIO) return;
+  _checkReadability(stamped, unstamped, sample, dateKey) {
     if (this.formatAlarm) return;
+    this.windowStamped += stamped;
+    this.windowUnstamped += unstamped;
+    if (this.windowSample === null && sample !== null) this.windowSample = sample;
+
+    const total = this.windowStamped + this.windowUnstamped;
+    if (total < UNSTAMPED_ALARM_MIN_LINES) return;
+
+    const ratio = this.windowUnstamped / total;
+    const unstampedInWindow = this.windowUnstamped;
+    const windowSample = this.windowSample;
+    this.windowStamped = 0;
+    this.windowUnstamped = 0;
+    this.windowSample = null;
+    if (ratio < UNSTAMPED_ALARM_RATIO) return;
+
     this.formatAlarm = {
       ratio,
-      unstamped,
+      unstamped: unstampedInWindow,
       total,
-      sample,
-      lastDateKeySeen: this.lastDateKeySeen,
+      sample: windowSample,
+      lastDateKeySeen: dateKey || this.lastDateKeySeen,
     };
     this.onFormatAlarm(this.formatAlarm);
   }
@@ -375,7 +402,10 @@ class LogSplitter {
       flush();
       this.stampedLines += stampedBatch;
       this.unstampedLines += unstampedBatch;
-      this._checkReadability(stampedBatch, unstampedBatch, firstUnstamped);
+      // lastDateKey, not this.lastDateKeySeen - the latter is assigned further down, so reading it
+      // here reported the PREVIOUS batch's day, or "null" on the first one. The whole value of the
+      // message is naming the day those lines went to.
+      this._checkReadability(stampedBatch, unstampedBatch, firstUnstamped, lastDateKey);
       let newSize;
       try {
         newSize = fs.statSync(this.filePath).size;

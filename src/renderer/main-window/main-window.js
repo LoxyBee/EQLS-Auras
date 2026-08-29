@@ -657,6 +657,24 @@ function initLogPanel() {
     errorEl.textContent = state.lastError || '';
 
     if (state.split) {
+      // The splitter files a line it cannot read under the day of the line before it. That is right
+      // for a wrapped server broadcast and wrong for everything else, so when it starts happening
+      // in bulk the only honest thing is to say so rather than carry on filing.
+      const warnEl = document.getElementById('split-format-warning');
+      if (warnEl) {
+        const alarm = state.split.formatAlarm;
+        if (alarm) {
+          warnEl.style.display = '';
+          warnEl.textContent =
+            `Heads up: ${(alarm.ratio * 100).toFixed(0)}% of the last ${alarm.total} lines had no ` +
+            `readable timestamp, so they were filed under ${alarm.lastDateKeySeen} rather than their ` +
+            `own day. Normally this is almost never. EverQuest's log format may have changed - the ` +
+            `split files may be wrong until it is looked at.`;
+        } else {
+          warnEl.style.display = 'none';
+          warnEl.textContent = '';
+        }
+      }
       splitEnabledCheckbox.checked = state.split.enabled;
       splitGapCheckbox.checked = state.split.splitOnGap;
       splitOutputFolderEl.textContent = state.split.outputDir || '-';

@@ -15,17 +15,8 @@ class LogService {
   constructor() {
     this.watcher = new LogWatcher();
     this.splitter = new LogSplitter({ loadJson, saveJson });
-    // Say it out loud rather than only counting it. See LogSplitter._checkReadability: a batch that
-    // is mostly unreadable means the stamp pattern has stopped matching what the game writes, and
-    // every one of those lines has been filed under the wrong day.
-    this.splitter.setOnFormatAlarm((alarm) => {
-      const pct = (alarm.ratio * 100).toFixed(1);
-      console.warn(
-        `LOG SPLITTER: ${pct}% of the last ${alarm.total} lines had no readable timestamp ` +
-        `(normal is under 0.01%). They were filed under ${alarm.lastDateKeySeen}. ` +
-        `The stamp format may have changed. First one: ${JSON.stringify(alarm.sample)}`
-      );
-    });
+    // The handler is injected by main.js, which owns debugLog and the window broadcast. It used to
+    // be set here and wrote to console.warn - a place the owner has no way to look.
     this.config = loadJson('config', {});
     this.lastError = null;
 

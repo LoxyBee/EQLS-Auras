@@ -148,6 +148,108 @@ test('a wrapped broadcast stays with the line it belongs to', async () => {
   assert.equal(out.trim().split('\n').length, 4, 'lines went missing or were duplicated');
 });
 
+// THE ALARM HAS TO WORK DURING PLAY, which the first version of it did not.
+//
+// A batch is one poll, one second. Measured on the owner's real log: a second holds a median of 6
+// lines, 60 at the 99th percentile, and 182 at its outright peak across 177,399 seconds of play.
+// The threshold needs 200 lines to judge a ratio - so requiring them within a single batch meant
+// the alarm could only ever fire on a startup backfill. A format that broke mid-session was 100%
+// unreadable and said nothing at all, which is the one case it exists for.
+//
+// The window therefore accumulates across batches. This feeds lines in at her real rate.
+test('a format that breaks during play is noticed, not only one broken at startup', async () => {
+  const { dir, file } = tempLog('[Tue Sep 15 09:00:00 2026] the log still reads normally\n');
+  const s = new LogSplitter(store());
+  const alarms = [];
+  s.setOnFormatAlarm((a) => alarms.push(a));
+  s.attachToFile(file);
+  await settle(s);
+  s.stop();
+
+  // Now the format changes under it. Six lines a second - her median - in one-second batches,
+  // none of which is anywhere near two hundred lines on its own.
+  for (let second = 0; second < 60; second += 1) {
+    let chunk = '';
+    for (let i = 0; i < 6; i += 1) chunk += `<a format nobody has seen> ${second}.${i}\n`;
+    fs.appendFileSync(file, chunk);
+    s._processOnce();
+    await settle(s);
+    if (alarms.length) break;
+  }
+  s.stop();
+
+  assert.equal(alarms.length, 1, 'A MID-SESSION FORMAT BREAK WENT UNANNOUNCED');
+  assert.ok(alarms[0].total >= 200, 'it judged the ratio on too few lines');
+  assert.ok(alarms[0].ratio > 0.9, 'the reported ratio does not describe what happened');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// The message is only worth having if it names the day those lines actually went to. It used to
+// read this.lastDateKeySeen, which is assigned two statements later, so it reported the previous
+// batch's day - or the word "null" on the first one.
+test('the alarm names the day the unreadable lines were filed under', async () => {
+  const lines = ['[Tue Sep 15 09:00:00 2026] a real line, so there is a day to fall back to'];
+  for (let i = 0; i < 300; i += 1) lines.push(`<unreadable> ${i}`);
+  const alarms = [];
+  const { s } = await split(lines.join('\n') + '\n', { onAlarm: (a) => alarms.push(a) });
+  assert.equal(alarms.length, 1);
+  assert.equal(
+    alarms[0].lastDateKeySeen,
+    '2026-09-15',
+    'the alarm cannot say which day the lines went into'
+  );
+  assert.equal(s.getStatus().formatAlarm.lastDateKeySeen, '2026-09-15');
+});
+
+// A counter nobody reads is not an improvement on not counting. The first version reached only a
+// console.warn, which the owner has no way to open. It has to travel on the payload that already
+// reaches the Setup page.
+test('the alarm travels on the settings payload the UI already reads', async () => {
+  const lines = [];
+  for (let i = 0; i < 300; i += 1) lines.push(`<unreadable> ${i}`);
+  const { s } = await split(
+    '[Tue Sep 15 09:00:00 2026] one good line\n' + lines.join('\n') + '\n'
+  );
+  assert.ok(s.getSettings().formatAlarm, 'getSettings does not carry the alarm to the renderer');
+
+  const renderer = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'),
+    'utf8'
+  );
+  assert.ok(/formatAlarm/.test(renderer), 'nothing in the renderer reads the alarm');
+
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const start = main.indexOf('setOnFormatAlarm');
+  assert.ok(start > -1, 'nothing in the host handles the alarm');
+  const handler = main.slice(start, start + 900);
+  assert.ok(/debugLog\(/.test(handler), 'the alarm never reaches the log file the owner can find');
+});
+
+// It must not fire twice for one broken format, and the window must not carry a stale sample
+// forward once it has been judged and found fine.
+test('a quiet window resets rather than accumulating forever', async () => {
+  const { dir, file } = tempLog('[Tue Sep 15 09:00:00 2026] first\n');
+  const s = new LogSplitter(store());
+  const alarms = [];
+  s.setOnFormatAlarm((a) => alarms.push(a));
+  s.attachToFile(file);
+  await settle(s);
+
+  // Three unstamped lines spread across five hundred good ones, in small batches.
+  for (let batch = 0; batch < 5; batch += 1) {
+    let chunk = '';
+    for (let i = 0; i < 100; i += 1) chunk += `[Tue Sep 15 10:00:00 2026] good ${batch}.${i}\n`;
+    if (batch < 3) chunk += 'We apologize for the disruption in gameplay.\n';
+    fs.appendFileSync(file, chunk);
+    s._processOnce();
+    await settle(s);
+  }
+  s.stop();
+  assert.deepEqual(alarms, [], 'a normal log with a few broadcasts tripped the alarm');
+  assert.equal(s.getStatus().formatAlarm, null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // ---------------------------------------------------------------------------
 // Telling the rotation when it is safe to empty the log
 // ---------------------------------------------------------------------------
