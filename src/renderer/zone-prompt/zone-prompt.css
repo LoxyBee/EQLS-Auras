@@ -95,9 +95,9 @@ body {
   gap: 4px;
 }
 
-/* Only shown in destination mode - see zone-prompt.js's applyPrompt(). Lets you jump straight to
-   correcting the current zone even though the app already believes it knows one (an accidental
-   wrong pick otherwise had no way back in short of walking to a real zone line). */
+/* Lets you jump straight to correcting the current zone even though the app already believes it
+   knows one (an accidental wrong pick otherwise had no way back in short of walking to a real
+   zone line). Visible in every mode - see zone-prompt.js's applyPrompt(). */
 #zone-fix-current {
   flex-shrink: 0;
   margin: 0 8px 6px;
@@ -114,9 +114,8 @@ body {
   background: #363b47;
 }
 
-/* Also destination-mode only. Separate from the plain dismiss button on purpose: closing this
-   popup on its own leaves whatever destination was already set untouched (cancel), while this one
-   actually clears it (stop). */
+/* Separate from the plain dismiss button on purpose: closing this popup on its own leaves whatever
+   destination was already set untouched (cancel), while this one actually clears it (stop). */
 #zone-stop-tracking {
   flex-shrink: 0;
   margin: 0 8px 8px;
