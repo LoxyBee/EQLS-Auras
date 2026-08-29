@@ -66,6 +66,36 @@ function resetBoundaryBefore(now = new Date()) {
   return d;
 }
 
+/**
+ * WHERE THE ROTATION ACTUALLY CUTS, which is NOT the reset instant.
+ *
+ * The reset is Tuesday 11:00 and that is what the archive is named for. But the thing that READS
+ * the live log - lockoutCore - starts its period at the boundary DAY, midnight, deliberately:
+ * `RESET_RULE.hour` is null and it will not pretend to know an hour it was never given.
+ *
+ * Cutting at 11:00 therefore removed eleven hours that the grid still considers part of the current
+ * period. To the grid that is not "archived", it is a GAP - and a gap under twenty-four hours is
+ * TOLERATED, which leaves the cells reading `open` rather than `not looked`. So a boss killed at
+ * 08:00 on a Tuesday was archived away and the grid then said, with no hedge at all, that the raid
+ * was available. Confidently wrong, in the direction that sends her to re-clear a lockout she
+ * already holds - the exact failure this feature exists to prevent.
+ *
+ * Verified on her real log: the rotation turned a 10.1 h tolerated gap into an 11.0 h tolerated
+ * gap, coverage still reported as spanning the period, every cell still `open`. It changed no
+ * answer only because she happens not to have raided between midnight and 11:00 in the weeks
+ * recorded. That is luck, not a guarantee.
+ *
+ * Cutting at the day start instead makes the live log hold EXACTLY the core's period. Anything in
+ * that ambiguous morning stays where the core can see it, and the core does the honest thing with
+ * it: `conditional`, "the reset hour has never been measured". The cost is that the log may retain
+ * up to eleven hours of last week - which is precisely what `conditional` is for.
+ */
+function rotationCutBefore(now = new Date()) {
+  const cut = new Date(resetBoundaryBefore(now).getTime());
+  cut.setHours(0, 0, 0, 0);
+  return cut;
+}
+
 /** `2026-09-01`, the local date of a boundary. Used to name archives and to recognise them again. */
 function boundaryKey(boundary) {
   const p = (n) => String(n).padStart(2, '0');
@@ -213,7 +243,13 @@ class LogRotationService {
     // Injected so this stays testable without Electron, same as every other service here.
     this.loadJson = loadJson || (() => ({}));
     this.saveJson = saveJson || (() => {});
-    this.enabled = true;
+    // OFF UNTIL SHE TURNS IT ON, and that is a deliberate choice rather than the obvious default.
+    // This is the one thing in the app that modifies her EverQuest files on a timer, and no
+    // rotation has ever run on a real machine - every one tested was against a temp folder or a
+    // copy. A feature that empties a game log should not arm itself on somebody's behalf before it
+    // has been watched doing it once. The Setup switch turns it on; one line here changes the
+    // default back once it has proved itself.
+    this.enabled = false;
     // Seconds of log silence required before touching a file. Defaults to "always quiet" so the
     // module stays usable without a host; main.js injects the real answer.
     this.isQuietFn = () => true;
@@ -262,8 +298,8 @@ class LogRotationService {
   }
 
   loadSettings() {
-    const cfg = this.loadJson('logRotation', { enabled: true });
-    this.enabled = cfg.enabled !== false;
+    const cfg = this.loadJson('logRotation', { enabled: false });
+    this.enabled = cfg.enabled === true;
     return { enabled: this.enabled };
   }
 
@@ -304,8 +340,13 @@ class LogRotationService {
       return this._finish(report, now);
     }
 
+    // The reset instant, which is what the archive is NAMED for and what the status reports.
     const boundary = resetBoundaryBefore(now);
+    // Where the bytes are actually divided. See rotationCutBefore - these are deliberately not the
+    // same instant, and the eleven hours between them is a wrong answer if they are conflated.
+    const cut = rotationCutBefore(now);
     report.boundary = boundary.toISOString();
+    report.cut = cut.toISOString();
     // The local calendar date of the boundary. The ISO string above is UTC, and slicing a date
     // off it names the wrong day for anyone far enough east or west - so the day is carried
     // explicitly rather than recovered from a string.
@@ -365,7 +406,7 @@ class LogRotationService {
           report.skippedUnreadable.push(name);
           continue;
         }
-        if (firstMs >= boundary.getTime()) {
+        if (firstMs >= cut.getTime()) {
           report.skippedAlreadyCurrent.push(name);
           continue;
         }
@@ -380,7 +421,7 @@ class LogRotationService {
         // the normal path: the servers are down at the reset, so the usual first launch afterwards
         // sees a log whose last line predates it.
         const lastMs = lastStampMs(live, stat.size);
-        if (lastMs !== null && lastMs >= boundary.getTime()) {
+        if (lastMs !== null && lastMs >= cut.getTime()) {
           report.skippedSpansBoundary.push(name);
           continue;
         }
@@ -556,6 +597,7 @@ class LogRotationService {
 module.exports = {
   LogRotationService,
   resetBoundaryBefore,
+  rotationCutBefore,
   boundaryKey,
   archiveNameFor,
   RESET_WEEKDAY,

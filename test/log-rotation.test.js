@@ -19,6 +19,7 @@ const { test, report } = require('./harness');
 const {
   LogRotationService,
   resetBoundaryBefore,
+  rotationCutBefore,
   boundaryKey,
   archiveNameFor,
   RESET_WEEKDAY,
@@ -35,8 +36,13 @@ function tempLogs(files) {
   }
   return dir;
 }
+// Rotation is OFF by default now - see 'it stays off until someone turns it on'. These tests are
+// about what it does once she has turned it on, so the helper opts in explicitly. A test that
+// wants the off state builds its own instance, so the default cannot be switched back without the
+// dedicated test noticing.
 const svc = (dir, opts) => {
   const s = new LogRotationService(opts);
+  s.setEnabled(true);
   s.setLogsFolderFn(() => dir);
   return s;
 };
@@ -280,13 +286,28 @@ test('turning it off means nothing is touched at all', () => {
   assert.deepEqual(archived(dir), []);
 });
 
-test('it is on unless someone turned it off', () => {
-  const s = new LogRotationService({ loadJson: (n, d) => d, saveJson: () => {} });
-  assert.equal(s.loadSettings().enabled, true);
+// OFF UNTIL SHE TURNS IT ON. This is the one thing in the app that modifies her game files on a
+// timer, and no rotation has ever run on a real machine. A feature that empties a log should not
+// arm itself on somebody's behalf before it has been watched doing it once.
+test('it stays off until someone turns it on', () => {
+  const fresh = new LogRotationService({ loadJson: (n, d) => d, saveJson: () => {} });
+  // BEFORE loadSettings, or this asserts nothing about the constructor - loadSettings overwrites
+  // the field, so reading it afterwards passes whatever the constructor did.
+  assert.equal(fresh.enabled, false, 'the constructor arms it unasked');
+  assert.equal(fresh.loadSettings().enabled, false, 'a fresh install arms it unasked');
+
+  // A settings file that predates this feature must not count as consent either.
+  const legacy = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  assert.equal(legacy.loadSettings().enabled, false, 'an old config with no key arms it unasked');
+
+  // And her actual choice is honoured.
+  const chosen = new LogRotationService({ loadJson: () => ({ enabled: true }), saveJson: () => {} });
+  assert.equal(chosen.loadSettings().enabled, true, 'turning it on does not stick');
 });
 
 test('no logs folder is a quiet no-op, not a throw', () => {
   const s = new LogRotationService();
+  s.setEnabled(true);
   let r;
   assert.doesNotThrow(() => { r = s.rotateIfDue(new Date(2026, 8, 2, 12, 0, 0)); });
   assert.equal(r.reason, 'no logs folder');
@@ -294,6 +315,7 @@ test('no logs folder is a quiet no-op, not a throw', () => {
 
 test('an unreadable logs folder is reported, not thrown', () => {
   const s = new LogRotationService();
+  s.setEnabled(true);
   s.setLogsFolderFn(() => path.join(os.tmpdir(), 'eqls-does-not-exist-' + Math.random()));
   let r;
   assert.doesNotThrow(() => { r = s.rotateIfDue(new Date(2026, 8, 2, 12, 0, 0)); });
@@ -508,7 +530,10 @@ test('every rotation IPC channel is one the renderer can actually reach', () => 
 test('turning it off through the toggle sticks, and is written down', () => {
   const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
   const saved = [];
-  const s = svc(dir, { loadJson: (n, d) => d, saveJson: (n, v) => saved.push([n, v]) });
+  // Built directly rather than through svc(), because svc() opts in for the tests that need it and
+  // this test is about the toggle itself - it has to own every call to it.
+  const s = new LogRotationService({ loadJson: (n, d) => d, saveJson: (n, v) => saved.push([n, v]) });
+  s.setLogsFolderFn(() => dir);
   assert.equal(s.setEnabled(false), false, 'setEnabled(false) did not turn it off');
   assert.deepEqual(saved, [['logRotation', { enabled: false }]], 'the choice was not persisted');
   const r = s.rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
@@ -639,6 +664,63 @@ test('a log that grows in the last moment before emptying is not emptied', () =>
   assert.match(r.failed[0].error, /grew from/);
   assert.ok(fs.readFileSync(live, 'utf8').includes('Nagafen'), 'THE LATE LINE WAS LOST');
   assert.deepEqual(archived(dir), [], 'the aborted attempt left an archive behind');
+});
+
+// ---------------------------------------------------------------------------
+// Where the cut is, which is not where the reset is
+// ---------------------------------------------------------------------------
+
+// The reset is Tuesday 11:00 and the archive is named for it. But lockoutCore starts its period at
+// the boundary DAY, midnight - RESET_RULE.hour is null and it will not invent an hour. Cutting at
+// 11:00 removed eleven hours the grid still counts, which to the grid is a GAP; and a gap under
+// twenty-four hours is TOLERATED, so the cells kept reading "open" instead of "not looked".
+//
+// A boss killed at 08:00 on a Tuesday was therefore archived away, and the grid then said the raid
+// was available with no hedge at all - sending her to re-clear a lockout she already holds.
+test('the eleven hours before the reset stay where the grid can see them', () => {
+  const cut = rotationCutBefore(new Date(2026, 8, 2, 12, 0, 0));
+  assert.equal(cut.getHours(), 0, 'the cut is not at the start of the day');
+  assert.equal(boundaryKey(cut), '2026-09-01', 'the cut is not on the boundary day');
+
+  // Last week, then a raid at 08:12 on the Tuesday morning - before the 11:00 reset, after
+  // midnight. The grid counts that morning; the rotation must not take it.
+  const dir = tempLogs({
+    'eqlog_Avenrae_rivervale.txt':
+      '[Sun Aug 30 21:00:00 2026] You have slain Lady Vox!\n' +
+      '[Tue Sep 01 08:12:00 2026] You have slain Lord Nagafen!\n',
+  });
+  const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
+  assert.equal(r.rotated.length, 0, 'IT ARCHIVED A KILL THE GRID STILL COUNTS');
+  assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Avenrae_rivervale.txt']);
+  assert.ok(
+    fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8').includes('Nagafen'),
+    'the Tuesday-morning kill left the live log'
+  );
+});
+
+// And the ordinary case still rotates: play that stops before midnight on the Tuesday is entirely
+// last week's as far as the grid is concerned, so there is nothing to lose by archiving it.
+test('play that ends before the boundary day still rotates', () => {
+  const dir = tempLogs({
+    'eqlog_Avenrae_rivervale.txt':
+      '[Sun Aug 30 21:00:00 2026] You have slain Lady Vox!\n' +
+      '[Mon Aug 31 23:50:00 2026] You have slain Lord Nagafen!\n',
+  });
+  const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
+  assert.equal(r.rotated.length, 1);
+});
+
+// The archive is still named for the RESET, not for the cut, because the reset is the thing that
+// happened. Both fall on the same day, so the name is unchanged - but they are different instants
+// and the report carries both.
+test('the archive is named for the reset while the bytes are cut at midnight', () => {
+  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
+  assert.equal(r.boundaryDate, '2026-09-01');
+  assert.ok(r.rotated[0].archivedTo.endsWith('_week_2026-09-01.txt'));
+  assert.notEqual(r.boundary, r.cut, 'the reset and the cut are being conflated again');
+  assert.equal(new Date(r.cut).getHours(), 0);
+  assert.equal(new Date(r.boundary).getHours(), RESET_HOUR);
 });
 
 // ---------------------------------------------------------------------------
