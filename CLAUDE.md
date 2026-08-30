@@ -286,8 +286,8 @@ Every entry in both `PREMADE_WIDGETS` and `PLANNED_PREMADE_WIDGETS` now carries 
 field (`'timers'` / `'event-alerts'` / `'standalone'`), replacing the old `STANDALONE_PREMADES` Set
 that only ever distinguished two buckets. `renderPremadeList()` builds each `PREMADE_GROUPS`
 section from both arrays together, filtered by that group - **the separate "Not built yet" section
-and `renderPlannedPremades()` function are gone entirely**; a planned/locked entry (Travel guide,
-Damage parser, First aggro, Global recovery) now renders inline, greyed out with its "Planned"
+and `renderPlannedPremades()` function are gone entirely**; a planned/locked entry (`Damage parser`,
+`First aggro` - the two still in `PLANNED_PREMADE_WIDGETS`) now renders inline, greyed out with its "Planned"
 badge, inside the same group heading its built siblings use, per the owner's explicit ask to *"roll
 the placeholders into their final categories."* `renderPremadeChoice(premade, planned)` is the one
 render path for both real and placeholder entries now, instead of two near-duplicate functions.

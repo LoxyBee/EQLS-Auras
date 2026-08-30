@@ -2,8 +2,8 @@
 
 A plain-English rundown of what the app actually does today, written as headline + one-liner
 pairs — the kind of list you'd use to show someone else the app, not a backlog. Everything here
-is *built and shipped*, not planned. For what's still coming, see `FEATURES.md`; for the
-session-by-session history behind any of these, see `CLAUDE.md`.
+is *built and shipped*, not planned. For what's still coming, see `docs/QOL-BACKLOG.md`; for the
+reasoning and history behind any of these, see `CLAUDE.md`.
 
 ---
 

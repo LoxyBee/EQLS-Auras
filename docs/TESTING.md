@@ -1446,10 +1446,10 @@ There is a test that fails the day a song and a spell share a message again, so 
 there rotting unnoticed. **Nothing for you to test.** Recorded because you said "this 6 second timer
 check will be needed later", and this is me saying it is ready and waiting.
 
-## Global recovery time (note 25)
+## Global recovery time (note 25) — WITHDRAWN
 
-Still a disabled placeholder. The `castOf` trigger that the cooldown premade introduced is the piece
-it needs, when you want it built.
+Built 30 Aug as a "Global recovery (GCD)" premade, then withdrawn the same day — the ~1.5s recovery
+only flashed on a whole-second overlay. See `docs/QOL-BACKLOG.md` #38. Nothing to test.
 
 ---
 
