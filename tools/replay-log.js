@@ -46,20 +46,16 @@ const { BuffEngine } = require('../src/main/buffEngine');
 const { FALLBACK_CONFIRM_WINDOW_MS } = require('../src/main/buffParser');
 const { SpellbookService } = require('../src/main/spellbookService');
 
-const DEFAULT_LOGS = [
-  'C:/Users/Lindsey/Desktop/eqlog_Shara_rivervale_2026-08-19.txt',
-  'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale.txt',
-  'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale2.txt',
-  'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale3.txt',
-  // rivervale4 is a byte-identical PREFIX of rivervale5 - its whole 79,352 lines are the first
-  // 79,352 of the other, verified by md5. Replaying both fed the same 79,352 lines through the
-  // engine twice, which inflated every absolute count this tool has ever printed by about 5%.
-  // Regression comparisons were unaffected, since both sides double-counted equally, but the
-  // headline numbers were wrong. Only the longer file is replayed.
-  'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale5.txt',
-  'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale_2026-08-17.txt',
-  'C:/Users/Lindsey/Desktop/EQL Source/eqlog_Shara_rivervale_2026-08-18.txt',
-];
+// With no paths given, replay every log tools/lib/owner-logs.js can find on this machine - it
+// reads the app's own configured EQ folder and takes the per-day Split/ files (continuous, no
+// overlap between days). This replaced a hardcoded list of C:/Users/Lindsey/... paths, which was
+// a different Windows account than any machine this has run on since, so it always found nothing.
+//
+// The documented baseline in the header (129 buffs, 211,546 landings, ...) was captured from that
+// original file set; a run over a different machine's logs will not match those absolute numbers.
+// The --diff of a before/after over the SAME set is the regression check, and that is unaffected.
+const { findOwnerLogs } = require('./lib/owner-logs');
+const DEFAULT_LOGS = findOwnerLogs();
 
 /** In-memory stand-in for src/main/store.js. */
 function memoryStore(initial = {}) {
@@ -292,7 +288,10 @@ async function main() {
     return false;
   });
   if (!files.length) {
-    console.error('No logs to replay. Pass paths, or put the owner logs where DEFAULT_LOGS expects them.');
+    console.error(
+      'No logs to replay. Pass paths explicitly, or point the app at your EQ Logs folder ' +
+      '(Setup page) so owner-logs.js can find them.'
+    );
     process.exit(2);
   }
 
