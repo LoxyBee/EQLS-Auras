@@ -42,6 +42,7 @@ let currentConfig = {
   soundOnExpire: false,
   soundWarningSec: 0,
   soundWarningLoopSec: 0,
+  soundCooldownSec: 0,
   landSoundId: null,
   expireSoundId: null,
   warningSoundId: null,
@@ -138,6 +139,13 @@ function playCustomSound(kind, soundId) {
 const lastAlertPlayedAt = new Map(); // kind -> ms timestamp
 const MIN_ALERT_INTERVAL_MS = 200;
 
+// The user-set per-aura cooldown (soundCooldownSec, reported live 30 Aug) - the shortest gap
+// between ANY two alert sounds from this aura, across all kinds. Distinct from MIN_ALERT_INTERVAL_MS
+// above (a fixed per-kind anti-double-fire guard); this one is a deliberate throttle for an aura
+// that refreshes constantly - a bard song pulsing every 6s set to sound only every 24, say. Shared
+// across kinds on purpose: "I just heard this aura" is the thing being rate-limited.
+let lastAnyAlertAt = 0;
+
 // One alert per render tick even if several buffs changed at once (e.g. a
 // multi-buff burst cast landing together) - a chime per buff would be a
 // wall of overlapping beeps instead of a useful cue.
@@ -150,7 +158,10 @@ function playAlertSound(kind) {
   const now = Date.now();
   const lastPlayed = lastAlertPlayedAt.get(kind);
   if (lastPlayed !== undefined && now - lastPlayed < MIN_ALERT_INTERVAL_MS) return;
+  const cooldownMs = (currentConfig.soundCooldownSec || 0) * 1000;
+  if (cooldownMs > 0 && now - lastAnyAlertAt < cooldownMs) return;
   lastAlertPlayedAt.set(kind, now);
+  lastAnyAlertAt = now;
   // Debug-only (see preload-overlay.js's debugLog bridge - gated the same as every other
   // detection line by the Diagnostics toggle, off by default). The shared debugLog() prefix is
   // only second-precision (toLocaleTimeString has no ms), which is too coarse to measure an
@@ -1318,12 +1329,14 @@ function render(buffs) {
   // The stacked-line text feed is its own render path - it keeps a short scrolling history of
   // recent firings instead of one live tile, so none of the tile-diffing / merge / grouping
   // machinery below applies. alwaysOn wins (nothing to stack when there is no event at all).
-  if (currentConfig.displayMode === 'text' && currentConfig.stackTextLines && !currentConfig.alwaysOn) {
+  if (currentConfig.displayMode === 'text' && currentConfig.stackTextLines && !currentConfig.alwaysOn && !previewActive) {
     renderTextFeed(buffs);
     return;
   }
 
-  const visible = visibleBuffs(buffs);
+  // QOL #1 - a preview shows exactly the sample it was handed, past every filter: the point is to
+  // judge the tile's look, not to re-test the aura's own spell list.
+  const visible = previewActive ? buffs : visibleBuffs(buffs);
   const isText = currentConfig.displayMode === 'text';
   const isIcon = currentConfig.displayMode === 'icons';
   const modeKey = isText ? 'text' : isIcon ? 'icons' : 'list';
@@ -1558,7 +1571,38 @@ let lastDamageRows = [];
 // takes its own. See pushTravelRoutes in main.js for why it is shaped that way.
 let lastTravelRoutes = {};
 
+// QOL #1 - "Preview this aura" from the settings panel. While active, currentSourceBuffs() hands
+// render() a sample set instead of the real one and visibleBuffs() lets it straight through, so
+// the tile shows regardless of what the aura actually filters to. Reverts on its own.
+let previewActive = false;
+
+function previewSampleBuffs() {
+  const now = Date.now();
+  const mk = (name, remainingSec, durationSec, extra = {}) => ({
+    name, remainingSec, durationSec, landedAt: now, spellCategory: 'buff',
+    iconUrl: null, showOnOverlay: true, ...extra,
+  });
+  switch (currentConfig.buffSource) {
+    case 'ally':
+      return [mk('Spirit of Wolf', 140, 300, { allyName: 'Graznthok' }), mk('Aegolism', 520, 600, { allyName: 'Faelinn' })];
+    case 'bardSongs':
+      return [mk("Selo's Accelerando", 15, 18, { allyName: 'You', isBardSong: true }), mk('Chorus of Marr', 12, 18, { allyName: 'Faelinn', isBardSong: true })];
+    case 'customTimer':
+      return [mk(currentConfig.name || 'Preview', 8, 12, { id: 'preview' })];
+    default:
+      return [mk('Spirit of Wolf', 140, 300), mk('Aegolism', 520, 600)];
+  }
+}
+
+window.eqOverlay.onPreview(({ durationMs } = {}) => {
+  const ms = Number(durationMs) > 0 ? Number(durationMs) : 6000;
+  previewActive = true;
+  render(currentSourceBuffs());
+  setTimeout(() => { previewActive = false; render(currentSourceBuffs()); }, ms);
+});
+
 function currentSourceBuffs() {
+  if (previewActive) return previewSampleBuffs();
   if (currentConfig.buffSource === 'ally') return lastAllyBuffs;
   // Backlog #15. Every bard song currently active on the player, already grouped-by-caster-ready
   // (see buffEngine.getActiveBardSongs - it emits `allyName` holding the CASTER here, reusing that

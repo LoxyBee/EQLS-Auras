@@ -200,5 +200,105 @@ test('a remembered folder that is NOT Windows Media still wins outright over the
   }
 });
 
+// --- #39: the browse/drop folder moved to userData/sounds, seeded from the install bundle ---
+
+function setupInstall(tmp, { withBundle = true } = {}) {
+  const installDir = path.join(tmp, 'EQLS Auras');
+  const bundleDir = path.join(installDir, 'sounds');
+  if (withBundle) {
+    fs.mkdirSync(bundleDir, { recursive: true });
+    fs.writeFileSync(path.join(bundleDir, 'Chime.wav'), Buffer.from('chime'));
+    fs.writeFileSync(path.join(bundleDir, 'Ping.mp3'), Buffer.from('ping'));
+    fs.writeFileSync(path.join(bundleDir, 'notes.txt'), 'not audio'); // must be ignored
+  }
+  const userDataDir = path.join(tmp, 'userData');
+  fs.mkdirSync(userDataDir, { recursive: true });
+  const app = makeAppStub({
+    isPackaged: true,
+    exePath: path.join(installDir, 'EQLS Auras.exe'),
+    appPath: path.join(installDir, 'resources', 'app.asar'),
+    userDataDir,
+  });
+  return { installDir, bundleDir, userDataDir, app };
+}
+
+test('#39: seedStarterSounds copies the shipped tones into userData/sounds/, audio only', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'auras-sounds-'));
+  try {
+    const { userDataDir, app } = setupInstall(tmp);
+    withStubbedElectron(app, () => require(SOUND_SERVICE_JS).seedStarterSounds());
+    const seeded = fs.readdirSync(path.join(userDataDir, 'sounds')).sort();
+    assert.deepEqual(seeded, ['Chime.wav', 'Ping.mp3'], 'seeded the wrong set (the .txt should be skipped)');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('#39: seeding is idempotent and never overwrites a file already there', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'auras-sounds-'));
+  try {
+    const { userDataDir, app } = setupInstall(tmp);
+    const target = path.join(userDataDir, 'sounds');
+    fs.mkdirSync(target, { recursive: true });
+    fs.writeFileSync(path.join(target, 'Chime.wav'), Buffer.from('MY EDIT')); // user changed it
+    fs.writeFileSync(path.join(target, 'MyOwn.wav'), Buffer.from('mine'));    // user's own file
+
+    withStubbedElectron(app, () => {
+      const s = require(SOUND_SERVICE_JS);
+      s.seedStarterSounds();
+      s.seedStarterSounds(); // twice - must not duplicate or restore
+    });
+
+    assert.equal(fs.readFileSync(path.join(target, 'Chime.wav'), 'utf8'), 'MY EDIT', 'overwrote a file the user had changed');
+    assert.ok(fs.existsSync(path.join(target, 'MyOwn.wav')), 'clobbered the user\'s own file');
+    assert.ok(fs.existsSync(path.join(target, 'Ping.mp3')), 'the missing starter was not filled in');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('#39: once seeded, the picker prefers userData/sounds/ over the install bundle', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'auras-sounds-'));
+  try {
+    const { userDataDir, app } = setupInstall(tmp);
+    let opened = null;
+    withStubbedElectron(
+      app,
+      () => {
+        const s = require(SOUND_SERVICE_JS);
+        s.seedStarterSounds();
+        return s.openPickerFolder();
+      },
+      { openPath: (p) => { opened = p; return Promise.resolve(''); } }
+    );
+    assert.equal(opened, path.join(userDataDir, 'sounds'));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('#39: a genuinely remembered folder still outranks the seeded one', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'auras-sounds-'));
+  try {
+    const { userDataDir, app } = setupInstall(tmp);
+    const own = path.join(tmp, 'my-own-sounds');
+    fs.mkdirSync(own, { recursive: true });
+    fs.writeFileSync(path.join(userDataDir, 'lastSoundPickerDir.json'), JSON.stringify(own), 'utf8');
+    let opened = null;
+    withStubbedElectron(
+      app,
+      () => {
+        const s = require(SOUND_SERVICE_JS);
+        s.seedStarterSounds();
+        return s.openPickerFolder();
+      },
+      { openPath: (p) => { opened = p; return Promise.resolve(''); } }
+    );
+    assert.equal(opened, own);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 module.exports = () => report('bundled-sounds');
 if (require.main === module) report('bundled-sounds').then((n) => process.exit(n ? 1 : 0));

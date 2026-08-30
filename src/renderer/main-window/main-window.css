@@ -256,6 +256,31 @@ body {
   padding-left: 10px;
 }
 
+/* The healthy counterpart to .warn - "yes, this is working". Used by the Buff Tracker page's
+   log-activity line (QOL #5). */
+.ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+/* About > What's changed (QOL #18). */
+.changelog-version {
+  margin: 14px 0 4px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.changelog-version:first-child { margin-top: 0; }
+.changelog-label {
+  margin: 6px 0 2px;
+  font-weight: 600;
+  color: var(--ink-mut);
+}
+.changelog-list {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.changelog-list li { margin: 2px 0; }
+
 .master-hide-btn {
   margin-left: auto;
   flex-shrink: 0;
@@ -418,6 +443,8 @@ body {
    reduced by exactly the border's own width so the text doesn't visibly
    shift when a button becomes active. */
 .nav-btn {
+  display: flex;
+  align-items: center;
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
@@ -425,6 +452,20 @@ body {
   padding: 8px 10px;
   font-size: 13px;
   cursor: pointer;
+}
+
+/* QOL #4 - the pending-work count on the Buff Tracker nav button. Pushed to the trailing edge. */
+.nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
 }
 
 .nav-btn:hover {
@@ -1830,6 +1871,41 @@ label.disabled {
   color: var(--ink);
 }
 .zone-add-none {
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--ink-mut);
+}
+
+/* The Skill-cast custom-timer trigger's spell search results (reported live 30 Aug). Same shape
+   as .zone-add-list. */
+.skill-search-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin: 4px 0;
+  background: var(--panel-2, var(--bg));
+}
+.skill-search-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.skill-search-option:hover {
+  background: var(--accent-soft);
+}
+/* Bard songs read the same way they do everywhere else in the app - underlined. */
+.skill-search-option.is-song {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.skill-search-none {
   padding: 5px 10px;
   font-size: 12px;
   color: var(--ink-mut);

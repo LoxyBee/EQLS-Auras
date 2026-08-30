@@ -232,5 +232,30 @@ test('the OVERLAY renderer looks up only ids that exist in its own markup too', 
   );
 });
 
+test('the sound picker keeps the settings-panel widget cache in sync (reported live 30 Aug)', () => {
+  // Choosing a sound saved fine and the overlay used it, but the panel re-rendered "Default beep"
+  // on the next open because setupSoundPicker never updated the renderer's own widget copy. Both
+  // the choose and the reset handlers must feed the returned config back through
+  // updateLocalWidgetCache.
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const start = js.indexOf('function setupSoundPicker(');
+  const end = js.indexOf('return render;', start); // last line of setupSoundPicker
+  const fn = js.slice(start, end);
+  const cacheUpdates = (fn.match(/updateLocalWidgetCache\(cfg\)/g) || []).length;
+  assert.ok(cacheUpdates >= 2, `setupSoundPicker updates the local cache ${cacheUpdates} time(s), need both the choose and the reset handlers`);
+});
+
+test('"Use default" is always shown, and the reset buttons are not hidden markup', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'index.html'), 'utf8');
+  for (const kind of ['land', 'expire', 'warning']) {
+    const m = html.match(new RegExp(`<button[^>]*id="widget-sound-${kind}-reset-btn"[^>]*>`));
+    assert.ok(m, `no reset button for ${kind}`);
+    assert.doesNotMatch(m[0], /display:\s*none/, `the ${kind} "Use default" button is hidden markup again`);
+  }
+  // render() greys it out on the default rather than hiding it.
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  assert.match(js, /resetBtn\.disabled = !soundId/);
+});
+
 module.exports = () => report('renderer-wiring');
 if (require.main === module) report('renderer-wiring').then((n) => process.exit(n ? 1 : 0));

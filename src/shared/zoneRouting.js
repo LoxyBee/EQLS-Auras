@@ -18,6 +18,7 @@
  */
 
 const { ZONES, TRAVEL_SPELLS } = require('./data/zoneGraph');
+const { ZONE_ALIASES } = require('./data/zoneAliases');
 
 // Display names differ from the wikis and sometimes from each other, so every lookup goes through
 // the same normaliser. Not a fuzzy match - just case and surrounding space, which is where the
@@ -248,6 +249,47 @@ function resolveDestinationName(text) {
   return null;
 }
 
+// shortName -> [pickable zone display names], built once. A few short names are shared (an
+// instance base and nothing else, mostly), so it is a list, not a single value.
+const BY_SHORTNAME = (() => {
+  const m = new Map();
+  for (const name of pickableZoneNames()) {
+    const sn = ZONES[name].shortName;
+    if (!sn) continue;
+    if (!m.has(sn)) m.set(sn, []);
+    m.get(sn).push(name);
+  }
+  return m;
+})();
+
+// The eqtm zone picker's search (QOL #30). Three sources, unioned and de-duplicated:
+//   1. the plain display-name substring match (what the picker did before)
+//   2. community nicknames + EQL raid-boss names (src/shared/data/zoneAliases.js)
+//   3. every zone's client shortName, auto-indexed - zero-maintenance, new zones covered for free
+// For 2 and 3 the match is exact-or-prefix in EITHER direction (alias === q, alias.startsWith(q),
+// or q.startsWith(alias)), never a free substring - so "nag" finds "naggy" but "a" does not pull
+// in every alias that happens to contain an 'a'. A multi-hit alias contributes all its zones and
+// the picker shows them all, exactly like an ambiguous substring match already does.
+function searchPickableZones(query) {
+  const q = normalize(query);
+  if (!q) return pickableZoneNames();
+  const out = new Set(pickableZoneNames().filter((n) => n.toLowerCase().includes(q)));
+  // Exact-or-prefix, either direction, but a prefix needs >=2 chars on the query side so a single
+  // typed letter does not pull in every alias / short name that starts with it.
+  const hit = (key) =>
+    key === q || (q.length >= 2 && key.startsWith(q)) || (key.length >= 2 && q.startsWith(key));
+  for (const entry of ZONE_ALIASES) {
+    if (hit(entry.a)) for (const z of entry.z) {
+      const canon = resolveZoneName(z);
+      if (canon && !ZONES[canon].isInstanceVariantOf) out.add(canon);
+    }
+  }
+  for (const [sn, names] of BY_SHORTNAME) {
+    if (hit(sn)) for (const n of names) out.add(n);
+  }
+  return [...out].sort((a, b) => a.localeCompare(b));
+}
+
 module.exports = {
   resolveDestinationName,
   findRoute,
@@ -255,5 +297,6 @@ module.exports = {
   resolveZoneName,
   allZoneNames,
   pickableZoneNames,
+  searchPickableZones,
   usableTravelSpells,
 };

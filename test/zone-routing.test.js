@@ -42,23 +42,37 @@ test('every connection points at a zone that exists', () => {
   assert.deepEqual(dangling, []);
 });
 
+// The Plane of Hate has no outbound edge ON PURPOSE (QOL #43): the Oasis portal is one-way in and
+// there is no zone line out - you leave by Gate / Origin / Alter Plane. It is the mirror image of
+// an instance tier (entry-only): exit-only-by-spell.
+const SINK_ZONES = new Set(['The Plane of Hate']);
+
 test('no zone is cut off from the rest', () => {
-  const stranded = zoneNames().filter((n) => !ZONES[n].connections.length);
+  const stranded = zoneNames().filter((n) => !ZONES[n].connections.length && !SINK_ZONES.has(n));
   assert.deepEqual(stranded, []);
 });
 
 // The research claim this rests on, checked here rather than taken on trust: every pair among the
-// 77 real places is routable, which is 5,852 ordered pairs.
+// real places is routable - except that a spell-only sink like the Plane of Hate can be reached
+// but not left by a zone line, which is correct, not a gap.
 test('every ordinary place can reach every other ordinary place', () => {
   const places = baseZones();
   assert.equal(places.length, 77, 'the set of real places has changed size');
   const broken = [];
   for (const a of places) {
     for (const b of places) {
-      if (a !== b && !findRoute(a, b).ok) broken.push(`${a} -> ${b}`);
+      if (a === b) continue;
+      // Routing OUT of a spell-only sink is expected to fail - it has no zone line. Routing INTO
+      // it must still work.
+      if (SINK_ZONES.has(a)) continue;
+      if (!findRoute(a, b).ok) broken.push(`${a} -> ${b}`);
     }
   }
   assert.deepEqual(broken.slice(0, 5), [], `${broken.length} unroutable pairs`);
+  // And the sinks ARE still reachable from an ordinary place.
+  for (const sink of SINK_ZONES) {
+    assert.ok(findRoute('Rivervale', sink).ok, `${sink} became unreachable`);
+  }
 });
 
 // Instance tiers are the interesting case, and they are one-way in the data ON PURPOSE - see

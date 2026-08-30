@@ -22,6 +22,7 @@ async function init() {
   initFirstRunLanding();
   initDetectionSettingsPanel();
   initBuffPanels();
+  initTrackerBadge();
   initWidgetsPanel();
   initKnownBuffsPanel();
   initCharacterSettingsPanel();
@@ -30,10 +31,48 @@ async function init() {
   initMergeRule();
   initTradePing();
   initSoundsFolderLink();
+  initConfigFolderLink();
+  initLogActivityLine();
   initBugReport();
   initActionBarsPage();
   initBuffPlanner();
   initLoggingWatch();
+  initChangelog();
+}
+
+// Backlog #18 - the "What's changed" list on the About page, from src/shared/data/changelog.js
+// (Documentation maintains the content; this just renders it).
+function initChangelog() {
+  const el = document.getElementById('changelog-body');
+  if (!el) return;
+  window.eqTracker.getChangelog().then((entries) => {
+    el.textContent = '';
+    if (!Array.isArray(entries) || !entries.length) {
+      el.textContent = 'Nothing recorded yet.';
+      return;
+    }
+    for (const entry of entries) {
+      const h = document.createElement('h4');
+      h.className = 'changelog-version';
+      h.textContent = entry.date ? `${entry.version} — ${entry.date}` : entry.version;
+      el.appendChild(h);
+      for (const [label, items] of [['New', entry.new], ['Fixes', entry.fixes]]) {
+        if (!Array.isArray(items) || !items.length) continue;
+        const lbl = document.createElement('p');
+        lbl.className = 'changelog-label';
+        lbl.textContent = label;
+        el.appendChild(lbl);
+        const ul = document.createElement('ul');
+        ul.className = 'changelog-list';
+        for (const it of items) {
+          const li = document.createElement('li');
+          li.textContent = it;
+          ul.appendChild(li);
+        }
+        el.appendChild(ul);
+      }
+    }
+  }).catch(() => { el.textContent = 'Could not load the changelog.'; });
 }
 
 // "EverQuest is running but not writing to its log" - main decides, this shows the in-app modal.
@@ -372,26 +411,59 @@ function initDetectionSettingsPanel() {
     }, 1500);
   });
   const memorizedStatusEl = document.getElementById('memorized-spells-status');
+  const spellbookCharNameEl = document.getElementById('spellbook-char-name');
+  const spellbookCharServerEl = document.getElementById('spellbook-char-server');
+  const spellbookCharHintEl = document.getElementById('spellbook-char-hint');
 
-  window.eqTracker.getSpellbookState().then((state) => {
+  function renderSpellbookState(state) {
     if (state.filePath) {
       spellbookStatusEl.textContent = `Found - ${state.spellCount} spells (${state.filePath})`;
       spellbookStatusEl.classList.remove('warn');
       spellbookMissingHintEl.style.display = 'none';
-      return;
+    } else {
+      // The old message here said it would "pick it up automatically once detected", which is not
+      // true and is expensive to believe: the game does not write this file on its own, so nothing
+      // was ever going to detect anything, and meanwhile every buff message shared between several
+      // spells was being thrown away for want of it. Say what is missing, where, and that it takes
+      // a command in game to create.
+      spellbookStatusEl.textContent = 'Not found - see below';
+      spellbookStatusEl.classList.add('warn');
+      spellbookMissingHintEl.style.display = '';
+      const where = state.folder ? `in ${state.folder}` : 'in your EQ install folder';
+      const named = state.fileNamePattern ? `named "${state.fileNamePattern}"` : 'ending in "-Spellbook.txt"';
+      spellbookMissingWhereEl.textContent = `Looking for a file ${named} ${where}.`;
     }
-    // The old message here said it would "pick it up automatically once detected", which is not
-    // true and is expensive to believe: the game does not write this file on its own, so nothing
-    // was ever going to detect anything, and meanwhile every buff message shared between several
-    // spells was being thrown away for want of it. Say what is missing, where, and that it takes
-    // a command in game to create.
-    spellbookStatusEl.textContent = 'Not found - see below';
-    spellbookStatusEl.classList.add('warn');
-    spellbookMissingHintEl.style.display = '';
-    const where = state.folder ? `in ${state.folder}` : 'in your EQ install folder';
-    const named = state.fileNamePattern ? `named "${state.fileNamePattern}"` : 'ending in "-Spellbook.txt"';
-    spellbookMissingWhereEl.textContent = `Looking for a file ${named} ${where}.`;
-  });
+    // QOL #14 - show what the typed-in character resolves to, and where the pattern is coming from.
+    if (spellbookCharHintEl) {
+      if (state.fileNamePattern) {
+        spellbookCharHintEl.textContent =
+          (state.manualCharacter ? 'Using the character above. ' : 'Detected from your log. ') +
+          `Looking for: ${state.fileNamePattern}`;
+      } else {
+        spellbookCharHintEl.textContent =
+          'No character detected yet - type your name and server above if the app is not finding the file.';
+      }
+    }
+  }
+
+  window.eqTracker.getSpellbookState().then(renderSpellbookState);
+  if (spellbookCharNameEl && spellbookCharServerEl) {
+    window.eqTracker.getSpellbookCharacter().then((c) => {
+      spellbookCharNameEl.value = c.name || '';
+      spellbookCharServerEl.value = c.server || '';
+    });
+    let spellbookCharTimer = null;
+    const pushSpellbookChar = () => {
+      clearTimeout(spellbookCharTimer);
+      spellbookCharTimer = setTimeout(() => {
+        window.eqTracker
+          .setSpellbookCharacter(spellbookCharNameEl.value, spellbookCharServerEl.value)
+          .then(renderSpellbookState);
+      }, 400);
+    };
+    spellbookCharNameEl.addEventListener('input', pushSpellbookChar);
+    spellbookCharServerEl.addEventListener('input', pushSpellbookChar);
+  }
 
   // The empty state is the important one and is styled as a warning, not a
   // neutral "nothing here": an empty memorized list is the single most common
@@ -899,6 +971,32 @@ function buildChatTriggerLine(channel, isSelf, name, message) {
   return '';
 }
 
+// QOL #4 - a count badge on the "Buff Tracker" nav button while ambiguous or unknown casts are
+// waiting to be resolved. They only surface on the Buff Tracker page itself or a popup, so
+// nothing in the app chrome tells you while you are on another page in game.
+function initTrackerBadge() {
+  const btn = document.querySelector('.nav-btn[data-page="page-tracker"]');
+  if (!btn) return;
+  const badge = document.createElement('span');
+  badge.className = 'nav-badge';
+  badge.style.display = 'none';
+  btn.appendChild(badge);
+  let ambiguous = 0;
+  let unknown = 0;
+  const paint = () => {
+    const n = ambiguous + unknown;
+    badge.textContent = n > 99 ? '99+' : String(n);
+    badge.style.display = n > 0 ? '' : 'none';
+    badge.title =
+      `${ambiguous} ambiguous cast${ambiguous === 1 ? '' : 's'} and ${unknown} unknown ` +
+      `- open Buff Tracker to sort them out`;
+  };
+  window.eqTracker.getAmbiguousCasts().then((c) => { ambiguous = c.length; paint(); });
+  window.eqTracker.onAmbiguousCastsChanged((c) => { ambiguous = c.length; paint(); });
+  window.eqTracker.getUnknownBuffs().then((b) => { unknown = b.length; paint(); });
+  window.eqTracker.onUnknownBuffsChanged((b) => { unknown = b.length; paint(); });
+}
+
 function initBuffPanels() {
   const unknownListEl = document.getElementById('unknown-buffs');
 
@@ -1232,6 +1330,9 @@ function initWidgetsPanel() {
   const soundWarningValueEl = document.getElementById('widget-sound-warning-value');
   const alertVolumeSlider = document.getElementById('widget-alert-volume-slider');
   const alertVolumeValueEl = document.getElementById('widget-alert-volume-value');
+  const soundCooldownRowEl = document.getElementById('widget-sound-cooldown-row');
+  const soundCooldownSlider = document.getElementById('widget-sound-cooldown-slider');
+  const soundCooldownValueEl = document.getElementById('widget-sound-cooldown-value');
   const soundWarningLoopSlider = document.getElementById('widget-sound-loop-slider');
   const soundWarningLoopValueEl = document.getElementById('widget-sound-loop-value');
   // Scoped per grid, not a bare '.anchor-cell' query - the label position
@@ -1391,7 +1492,9 @@ function initWidgetsPanel() {
   const newTimerModeRadios = document.querySelectorAll('input[name="widget-new-timer-trigger-mode"]');
   const newTimerChatFieldsEl = document.getElementById('widget-new-timer-chat-fields');
   const newTimerRawFieldsEl = document.getElementById('widget-new-timer-raw-fields');
-  const newTimerSkillSelect = document.getElementById('widget-new-timer-skill-select');
+  const newTimerSkillSelect = document.getElementById('widget-new-timer-skill-select'); // hidden input - holds the value
+  const newTimerSkillSearch = document.getElementById('widget-new-timer-skill-search');
+  const newTimerSkillOptions = document.getElementById('widget-new-timer-skill-options');
   const newTimerZoneSelect = document.getElementById('widget-new-timer-zone-select');
   const newTimerZoneDirectionRadios = document.querySelectorAll('input[name="widget-new-timer-zone-direction"]');
   const newTimerChannelSelect = document.getElementById('widget-new-timer-channel-select');
@@ -2495,6 +2598,7 @@ function initWidgetsPanel() {
     // over whatever was actively being typed. Skipped while the box has focus - if you're in it,
     // what you typed wins over what selectWidget thinks is there, full stop.
     if (document.activeElement !== textMessageInput) textMessageInput.value = widget.textAuraMessage || '';
+    renderTextMessagePreview();
     const textAuraSize = widget.textAuraSize || 32;
     textAuraSizeSlider.value = String(textAuraSize);
     textAuraSizeValueEl.textContent = `${textAuraSize}px`;
@@ -2524,6 +2628,11 @@ function initWidgetsPanel() {
     const alertVolume = typeof widget.alertVolume === 'number' ? widget.alertVolume : 100;
     alertVolumeSlider.value = alertVolume;
     alertVolumeValueEl.textContent = `${alertVolume}%`;
+    const soundCooldown = typeof widget.soundCooldownSec === 'number' ? widget.soundCooldownSec : 0;
+    if (soundCooldownSlider) {
+      soundCooldownSlider.value = soundCooldown;
+      soundCooldownValueEl.textContent = soundCooldown ? `${soundCooldown}s` : 'off';
+    }
     renderLandSoundPicker(widget.landSoundId);
     renderExpireSoundPicker(widget.expireSoundId);
     renderWarningSoundPicker(widget.warningSoundId);
@@ -2788,7 +2897,7 @@ function initWidgetsPanel() {
     newTimerMatchRadios.forEach((r) => (r.checked = r.value === 'exact'));
     newTimerTriggerInput.value = '';
     newTimerEndedInput.value = '';
-    newTimerSkillSelect.value = '';
+    setSkillTrigger('');
     newTimerZoneSelect.value = '';
     newTimerZoneDirectionRadios.forEach((r) => (r.checked = r.value === 'enter'));
     newTimerModeRadios.forEach((r) => (r.checked = r.value === 'chat'));
@@ -2845,11 +2954,11 @@ function initWidgetsPanel() {
       newTimerChatEndedMessageInput.value = timer.endedChat?.message || '';
       newTimerTriggerInput.value = '';
       newTimerEndedInput.value = '';
-      newTimerSkillSelect.value = '';
+      setSkillTrigger('');
       newTimerZoneSelect.value = '';
     } else if (timer.triggerMatch === 'castOf') {
       newTimerModeRadios.forEach((r) => (r.checked = r.value === 'skill'));
-      newTimerSkillSelect.value = timer.triggerText;
+      setSkillTrigger(timer.triggerText);
       newTimerTriggerInput.value = '';
       newTimerEndedInput.value = '';
       newTimerChannelSelect.value = 'say';
@@ -2869,7 +2978,7 @@ function initWidgetsPanel() {
       newTimerWhoNameInput.value = '';
       newTimerChatMessageInput.value = '';
       newTimerChatEndedMessageInput.value = '';
-      newTimerSkillSelect.value = '';
+      setSkillTrigger('');
     } else {
       newTimerModeRadios.forEach((r) => (r.checked = r.value === 'raw'));
       newTimerTriggerInput.value = timer.triggerText;
@@ -2879,7 +2988,7 @@ function initWidgetsPanel() {
       newTimerWhoNameInput.value = '';
       newTimerChatMessageInput.value = '';
       newTimerChatEndedMessageInput.value = '';
-      newTimerSkillSelect.value = '';
+      setSkillTrigger('');
       newTimerZoneSelect.value = '';
     }
     updateTimerChannelVisibility();
@@ -2903,9 +3012,9 @@ function initWidgetsPanel() {
   // last populated it, since this modal can open (editing an existing widget's own timers)
   // without the Add Aura modal ever having been opened this session at all.
   function openTimerModal(timer, iconUrl) {
-    window.eqTracker.getCastableBuffs().then((buffs) => {
-      castableBuffs = buffs;
-      populateSkillTriggerSelect();
+    Promise.all([window.eqTracker.getCastableBuffs(), window.eqTracker.getAllBuffNames()]).then(([castable, allNames]) => {
+      castableBuffs = castable;
+      allSkillNames = allNames;
       populateZoneTriggerSelect();
       resetTimerForm();
       if (timer) populateTimerForm(timer, iconUrl);
@@ -2915,29 +3024,71 @@ function initWidgetsPanel() {
     newTimerNameInput.focus();
   }
 
-  // A real dropdown for the same reason populateBuffTimerSelect is - type a letter to jump,
-  // scroll, arrow keys - over the same castable-spell list the cooldown premade already fetches
-  // (see openAddWidgetModal), refetched here since this modal can open independently of that one.
-  function populateSkillTriggerSelect() {
-    const sorted = [...castableBuffs].sort((a, b) => a.name.localeCompare(b.name));
-    newTimerSkillSelect.innerHTML = '';
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = '- choose a spell -';
-    newTimerSkillSelect.appendChild(placeholder);
-    for (const buff of sorted) {
-      const opt = document.createElement('option');
-      opt.value = buff.name;
-      opt.textContent = buff.name;
-      newTimerSkillSelect.appendChild(opt);
-    }
-    newTimerSkillSelect.value = '';
+  // The Skill-cast trigger's spell picker (reported live 30 Aug: needs a real filter bar, and bard
+  // songs were missing). Filters the WHOLE roster - allSkillNames comes from buffs:allNames, not
+  // the recast-time-filtered buffs:castable that fed the old <select>. Type to filter, click a real
+  // name to pick it; the hidden #widget-new-timer-skill-select input holds the value so every
+  // get/set of .value elsewhere in this modal is unchanged.
+  let allSkillNames = []; // [{ name, iconId, isBardSong }]
+
+  function setSkillTrigger(name) {
+    newTimerSkillSelect.value = name || '';
+    newTimerSkillSearch.value = name || '';
+    if (newTimerSkillOptions) newTimerSkillOptions.style.display = 'none';
   }
 
-  // Same real-dropdown reasoning as populateSkillTriggerSelect just above, over the same
-  // knownZones list the zone-gating picker (populateZoneSelect, initWidgetsPanel) already fetched
-  // once at startup - no separate fetch needed here, this modal just reads the same closure
-  // variable.
+  function renderSkillTriggerOptions() {
+    if (!newTimerSkillOptions) return;
+    const q = newTimerSkillSearch.value.trim().toLowerCase();
+    // Only while the field is focused or has text - an always-open 1,000-row list would bury the
+    // hint below it. When the field holds the already-picked name, that is not a query to filter on.
+    const typing = document.activeElement === newTimerSkillSearch && q !== newTimerSkillSelect.value.toLowerCase();
+    if (!typing || !q) {
+      newTimerSkillOptions.style.display = 'none';
+      return;
+    }
+    const matches = allSkillNames.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 200);
+    newTimerSkillOptions.innerHTML = '';
+    newTimerSkillOptions.style.display = '';
+    for (const s of matches) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'skill-search-option' + (s.isBardSong ? ' is-song' : '');
+      btn.textContent = s.name;
+      // mousedown, not click - the field blur (which hides this list) fires first otherwise.
+      btn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        setSkillTrigger(s.name);
+        newTimerSkillSearch.blur();
+      });
+      newTimerSkillOptions.appendChild(btn);
+    }
+    if (!matches.length) {
+      const none = document.createElement('div');
+      none.className = 'skill-search-none';
+      none.textContent = 'No spell or song matches that';
+      newTimerSkillOptions.appendChild(none);
+    }
+  }
+
+  newTimerSkillSearch.addEventListener('input', () => {
+    // Typing invalidates a previous pick until a new row is clicked.
+    newTimerSkillSelect.value = '';
+    renderSkillTriggerOptions();
+  });
+  newTimerSkillSearch.addEventListener('focus', renderSkillTriggerOptions);
+  newTimerSkillSearch.addEventListener('blur', () => setTimeout(() => {
+    if (document.activeElement !== newTimerSkillSearch) {
+      newTimerSkillOptions.style.display = 'none';
+      // Nothing valid was picked - snap the field back to whatever the hidden value holds (the
+      // last real pick, or empty).
+      newTimerSkillSearch.value = newTimerSkillSelect.value;
+    }
+  }, 120));
+
+  // A plain <select> is still fine here - there are ~104 zones and every one is a real place, so
+  // there is no typo path and no "hundreds of rows" problem the skill search above had to solve.
+  // Reads the same knownZones list the zone-gating picker already fetched once at startup.
   function populateZoneTriggerSelect() {
     const sorted = [...knownZones].sort((a, b) => a.localeCompare(b));
     newTimerZoneSelect.innerHTML = '';
@@ -3904,6 +4055,16 @@ function initWidgetsPanel() {
   resetPositionBtn.addEventListener('click', () => {
     window.eqTracker.resetWidgetPosition(selectedId);
   });
+  const previewBtn = document.getElementById('widget-preview-btn');
+  if (previewBtn) {
+    previewBtn.addEventListener('click', () => {
+      if (!selectedId) return;
+      previewBtn.disabled = true;
+      window.eqTracker.previewWidget(selectedId).finally(() => {
+        setTimeout(() => { previewBtn.disabled = false; }, 6500);
+      });
+    });
+  }
   buffSourceRadios.forEach((radio) => {
     radio.addEventListener('change', () => {
       if (!radio.checked) return;
@@ -3995,8 +4156,42 @@ function initWidgetsPanel() {
   // every keystroke instead, debounced so normal typing speed doesn't fire an IPC round-trip
   // per character - the box itself is always the source of truth for what's ON SCREEN either way,
   // this only controls how quickly the STORED copy catches up to it.
+  // QOL #8 - live preview of the {spell}/{caster}/{mob}/{profile} tokens, so you see the resolved
+  // line as you type instead of finding out in game. Sample values for the cast-time tokens;
+  // {profile} uses the real active loadout name.
+  const textMessagePreviewEl = document.getElementById('widget-text-message-preview');
+  let previewProfileName = 'Default';
+  function loadPreviewProfileName() {
+    Promise.all([window.eqTracker.getProfiles(), window.eqTracker.getActiveProfileId()])
+      .then(([list, id]) => {
+        previewProfileName = (list.find((p) => p.id === id) || {}).name || 'Default';
+        renderTextMessagePreview();
+      })
+      .catch(() => {});
+  }
+  function renderTextMessagePreview() {
+    if (!textMessagePreviewEl) return;
+    const raw = textMessageInput.value || '';
+    if (!raw.trim() || !/\{(spell|caster|mob|profile)\}/.test(raw)) {
+      textMessagePreviewEl.style.display = 'none';
+      return;
+    }
+    const resolved = raw
+      .replace(/\{spell\}/g, 'Spirit of Wolf')
+      .replace(/\{caster\}/g, 'Graznthok')
+      .replace(/\{mob\}/g, 'Graznthok')
+      .replace(/\{profile\}/g, previewProfileName || 'Default')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    textMessagePreviewEl.textContent = `Shows as:  ${resolved}`;
+    textMessagePreviewEl.style.display = '';
+  }
+  loadPreviewProfileName();
+  window.eqTracker.onActiveProfileChanged(() => loadPreviewProfileName());
+
   let textMessageSaveTimer = null;
   textMessageInput.addEventListener('input', () => {
+    renderTextMessagePreview();
     clearTimeout(textMessageSaveTimer);
     textMessageSaveTimer = setTimeout(() => {
       window.eqTracker.setWidgetTextAuraMessage(selectedId, textMessageInput.value).then(updateLocalWidgetCache);
@@ -4155,6 +4350,13 @@ function initWidgetsPanel() {
     alertVolumeValueEl.textContent = `${volume}%`;
     window.eqTracker.setWidgetAlertVolume(selectedId, volume);
   });
+  if (soundCooldownSlider) {
+    soundCooldownSlider.addEventListener('input', () => {
+      const secs = Number(soundCooldownSlider.value);
+      soundCooldownValueEl.textContent = secs ? `${secs}s` : 'off';
+      window.eqTracker.setWidgetSoundCooldownSec(selectedId, secs);
+    });
+  }
 
   // One picker per alert TYPE (land/expire/warning), not one shared sound
   // for the whole widget - see backlog #16. Factored into a helper since
@@ -4171,14 +4373,15 @@ function initWidgetsPanel() {
 
     function render(soundId) {
       currentSoundId = soundId;
+      // "Use default" is always shown, just disabled when already on the default beep - so it
+      // reads as an available choice next to "Choose sound...", not something that only appears
+      // once you are already off the default. Preview genuinely does nothing without a file.
+      resetBtn.disabled = !soundId;
+      previewBtn.style.display = soundId ? '' : 'none';
       if (!soundId) {
         nameEl.textContent = 'Default beep';
-        resetBtn.style.display = 'none';
-        previewBtn.style.display = 'none';
         return;
       }
-      resetBtn.style.display = '';
-      previewBtn.style.display = '';
       window.eqTracker.getSoundInfo(soundId).then((info) => {
         nameEl.textContent = info ? info.originalName : 'Default beep';
       });
@@ -4187,7 +4390,13 @@ function initWidgetsPanel() {
     chooseBtn.addEventListener('click', () => {
       window.eqTracker.pickSound().then((result) => {
         if (!result) return; // cancelled, or picked something with an unrecognized extension
-        window.eqTracker[setterName](selectedId, result.id).then(() => render(result.id));
+        // updateLocalWidgetCache: without it the settings panel's own copy of the widget still has
+        // the old landSoundId, so navigating away and back re-rendered this as "Default beep" even
+        // though the sound itself had changed (reported live 30 Aug).
+        window.eqTracker[setterName](selectedId, result.id).then((cfg) => {
+          updateLocalWidgetCache(cfg);
+          render(result.id);
+        });
       });
     });
     previewBtn.addEventListener('click', () => {
@@ -4197,7 +4406,10 @@ function initWidgetsPanel() {
       audio.play().catch(() => {});
     });
     resetBtn.addEventListener('click', () => {
-      window.eqTracker[setterName](selectedId, null).then(() => render(null));
+      window.eqTracker[setterName](selectedId, null).then((cfg) => {
+        updateLocalWidgetCache(cfg);
+        render(null);
+      });
     });
 
     return render;
@@ -4224,6 +4436,7 @@ function initWidgetsPanel() {
     if (soundWarningGroupEl) soundWarningGroupEl.style.display = warnOn ? '' : 'none';
     const anySound = soundLandCheckbox.checked || soundExpireCheckbox.checked || warnOn;
     if (alertVolumeRowEl) alertVolumeRowEl.style.display = anySound ? '' : 'none';
+    if (soundCooldownRowEl) soundCooldownRowEl.style.display = anySound ? '' : 'none';
   }
 
   if (soundWarningCheckbox) {
@@ -4378,6 +4591,7 @@ function initWidgetsPanel() {
   // something else changes it (unlocking a single aura, a profile switch).
   const masterUnlockAllBtn = document.getElementById('master-unlock-all-btn');
   const masterHideAllBtn = document.getElementById('master-hide-all-btn');
+  const masterMuteBtn = document.getElementById('master-mute-btn');
 
 
   // =========================================================================
@@ -4844,6 +5058,11 @@ function initWidgetsPanel() {
     // hidden would be the wrong half of the sentence.
     masterHideAllBtn.classList.toggle('active', state.masterHidden);
     masterHideAllBtn.textContent = state.masterHidden ? 'Auras hidden - show' : 'Hide auras';
+    // QOL #10 - same at-a-glance label treatment.
+    if (masterMuteBtn) {
+      masterMuteBtn.classList.toggle('active', state.soundsMuted);
+      masterMuteBtn.textContent = state.soundsMuted ? 'Sounds muted - unmute' : 'Mute sounds';
+    }
   }
   function refreshMasterButtons() {
     return window.eqTracker.getOverlayMasterState().then(renderMasterButtons);
@@ -4871,6 +5090,13 @@ function initWidgetsPanel() {
       window.eqTracker.setOverlayMasterHidden(!state.masterHidden).then(refreshMasterButtons)
     );
   });
+  if (masterMuteBtn) {
+    masterMuteBtn.addEventListener('click', () => {
+      window.eqTracker.getOverlayMasterState().then((state) =>
+        window.eqTracker.setOverlaySoundsMuted(!state.soundsMuted).then(refreshMasterButtons)
+      );
+    });
+  }
   refreshMasterButtons();
 
   addTimerBtn.addEventListener('click', () => openTimerModal());
@@ -5541,8 +5767,11 @@ function _pickLogFiles({ title = 'Choose a log file', hint = '', multi = false, 
     document.getElementById('log-picker-hint').textContent = hint;
     const list = document.getElementById('log-picker-list');
     list.innerHTML = '';
-    const mb = (n) => (n / 1048576).toFixed(1) + ' MB';
-    const sections = [['live', 'Current log folder'], ['split', 'Split (per-day)'], ['archive', 'Archive (weekly)']];
+    const mb = (n) => (typeof n === 'number' && n >= 0 ? `  (${(n / 1048576).toFixed(1)} MB)` : '');
+    const sections = [
+      ['live', 'Current log folder'], ['split', 'Split (per-day)'], ['archive', 'Archive (weekly)'],
+      ['export', 'Exported bundles'], ['backup', 'Backups'], // reused by the #3c config import picker
+    ];
     let firstInput = null;
     for (const [key, label] of sections) {
       const files = groups[key] || [];
@@ -5564,7 +5793,7 @@ function _pickLogFiles({ title = 'Choose a log file', hint = '', multi = false, 
         firstInput = firstInput || input;
         const lab = document.createElement('label');
         lab.appendChild(input);
-        lab.appendChild(document.createTextNode(` ${f.name}  (${mb(f.size)})`));
+        lab.appendChild(document.createTextNode(` ${f.name}${mb(f.size)}`));
         li.appendChild(lab);
         list.appendChild(li);
       }
@@ -5807,6 +6036,134 @@ function initSoundsFolderLink() {
   const btn = document.getElementById('open-sounds-folder-btn');
   if (!btn) return;
   btn.addEventListener('click', () => window.eqTracker.openSoundsFolder());
+}
+
+// Setup > App info > App data - opens the userData folder (QOL #3a), and "Back up now" snapshots
+// the whole folder into a dated subfolder (QOL #3b).
+function initConfigFolderLink() {
+  const openBtn = document.getElementById('open-config-folder-btn');
+  if (openBtn) openBtn.addEventListener('click', () => window.eqTracker.openConfigFolder());
+
+  const backupBtn = document.getElementById('backup-config-btn');
+  const statusEl = document.getElementById('backup-config-status');
+  if (backupBtn) {
+    backupBtn.addEventListener('click', async () => {
+      backupBtn.disabled = true;
+      if (statusEl) statusEl.textContent = 'Backing up…';
+      const r = await window.eqTracker.backupConfig().catch(() => ({ ok: false, error: 'failed' }));
+      backupBtn.disabled = false;
+      if (statusEl) {
+        statusEl.textContent = r.ok
+          ? `Backed up ${r.items} item${r.items === 1 ? '' : 's'} to  backups\\${r.path.split(/[\\/]/).pop()}`
+          : `Backup failed: ${r.error || 'unknown'}`;
+        statusEl.classList.toggle('warn', !r.ok);
+      }
+    });
+  }
+
+  // QOL #3c - export / import a portable config bundle.
+  const exportBtn = document.getElementById('export-config-btn');
+  const importBtn = document.getElementById('import-config-btn');
+  const openExportsBtn = document.getElementById('open-exports-folder-btn');
+  const xferStatusEl = document.getElementById('transfer-config-status');
+  const setXfer = (text, warn) => {
+    if (!xferStatusEl) return;
+    xferStatusEl.textContent = text;
+    xferStatusEl.classList.toggle('warn', !!warn);
+  };
+  if (openExportsBtn) openExportsBtn.addEventListener('click', () => window.eqTracker.openExportsFolder());
+  if (exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      exportBtn.disabled = true;
+      setXfer('Exporting…');
+      const r = await window.eqTracker.exportConfig().catch(() => ({ ok: false, error: 'failed' }));
+      exportBtn.disabled = false;
+      setXfer(
+        r.ok
+          ? `Exported to  exports\\${r.path.split(/[\\/]/).pop()}  — zip that folder to share it.`
+          : `Export failed: ${r.error || 'unknown'}`,
+        !r.ok
+      );
+    });
+  }
+  if (importBtn) {
+    importBtn.addEventListener('click', async () => {
+      const list = await window.eqTracker.listImportableConfig().catch(() => []);
+      if (!list.length) {
+        await appConfirm({
+          title: 'Nothing to import',
+          message: 'No exported bundle or backup was found. Export one first, or drop a bundle folder into the exports folder.',
+          okLabel: 'OK', hideCancel: true,
+        });
+        return;
+      }
+      const groups = { export: [], backup: [] };
+      for (const b of list) groups[b.group].push({ name: b.name, path: b.path });
+      const picked = await pickLogFiles({
+        title: 'Import config',
+        hint: 'Pick a bundle. Your current config is backed up first, then the app restarts.',
+        multi: false,
+        groups,
+      });
+      if (!picked) return;
+      const go = await appConfirm({
+        title: 'Import config',
+        message: 'Replace this PC\'s auras, profiles, known-buff edits, sounds and settings with the picked bundle?',
+        detail: 'Your current config is copied to backups\\ first. The app then restarts to load the new one.',
+        okLabel: 'Import and restart',
+        danger: true,
+      });
+      if (!go) return;
+      setXfer('Importing…');
+      const r = await window.eqTracker.importConfig(picked[0]).catch(() => ({ ok: false, error: 'failed' }));
+      if (r.ok) {
+        await appConfirm({
+          title: 'Imported',
+          message: `Imported ${r.items} item${r.items === 1 ? '' : 's'}. Restart the app now to load it.`,
+          detail: `Your previous config was saved to ${r.backedUpTo}`,
+          okLabel: 'OK', hideCancel: true,
+        });
+        setXfer('Imported — restart the app to apply.');
+      } else {
+        setXfer(`Import failed: ${r.error || 'unknown'}`, true);
+      }
+    });
+  }
+}
+
+// QOL #5 - a one-line "is the app reading my log right now?" answer at the top of the Buff Tracker
+// page. Polls a cheap main-process handler; a stale timestamp or the wrong filename is then
+// visible at a glance instead of only in Log > Diagnostics.
+function initLogActivityLine() {
+  const el = document.getElementById('log-activity-line');
+  if (!el) return;
+  const ago = (ms) => {
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s}s ago`;
+    const m = Math.round(s / 60);
+    return m < 60 ? `${m} min ago` : `${Math.round(m / 60)}h ago`;
+  };
+  async function tick() {
+    let a;
+    try { a = await window.eqTracker.getLogActivity(); } catch { return; }
+    el.classList.remove('warn', 'ok');
+    if (!a.folderSet) {
+      el.textContent = 'No EverQuest log folder is set yet — set it on the Log page.';
+      el.classList.add('warn');
+    } else if (!a.sawLine) {
+      el.textContent = `Watching ${a.file || 'for a log file'} — nothing read yet. Type something in game (or /log on) to confirm.`;
+    } else if (a.lastLineAgoMs < 15000) {
+      el.textContent = `Reading ${a.file} — last line ${ago(a.lastLineAgoMs)}.`;
+      el.classList.add('ok');
+    } else if (a.lastLineAgoMs < 90000) {
+      el.textContent = `Watching ${a.file} — last line ${ago(a.lastLineAgoMs)}.`;
+    } else {
+      el.textContent = `Watching ${a.file} — nothing for ${ago(a.lastLineAgoMs)}. If you are in game, check that /log on is active.`;
+      el.classList.add('warn');
+    }
+  }
+  tick();
+  setInterval(tick, 3000);
 }
 
 // About page's "Copy bug report" button - the simplest useful version of the backlog ask: the app

@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('eqTracker', {
   getVersionInfo: () => ipcRenderer.invoke('app:getVersionInfo'),
+  getChangelog: () => ipcRenderer.invoke('app:getChangelog'),
 
   getUiScale: () => ipcRenderer.invoke('ui:getScale'),
   setUiScale: (pct) => ipcRenderer.invoke('ui:setScale', pct),
@@ -113,12 +114,15 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getOverlayMasterState: () => ipcRenderer.invoke('overlay:getMasterState'),
   setOverlayAllUnlocked: (unlocked) => ipcRenderer.invoke('overlay:setAllUnlocked', unlocked),
   setOverlayMasterHidden: (hidden) => ipcRenderer.invoke('overlay:setMasterHidden', hidden),
+  setOverlaySoundsMuted: (muted) => ipcRenderer.invoke('overlay:setSoundsMuted', muted),
   onOverlayMasterStateChanged: (callback) => {
     ipcRenderer.on('overlay:masterStateChanged', () => callback());
   },
   setAutoHideOverlayEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoHideOverlay', enabled),
 
   getSpellbookState: () => ipcRenderer.invoke('spellbook:getState'),
+  getSpellbookCharacter: () => ipcRenderer.invoke('spellbook:getCharacter'),
+  setSpellbookCharacter: (name, server) => ipcRenderer.invoke('spellbook:setCharacter', { name, server }),
   getMemorizedSpells: () => ipcRenderer.invoke('spellbook:getMemorized'),
   forgetMemorizedSpell: (name) => ipcRenderer.invoke('spellbook:forgetMemorized', name),
   clearMemorizedSpells: () => ipcRenderer.invoke('spellbook:clearMemorized'),
@@ -174,6 +178,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getRecentShareCodes: () => ipcRenderer.invoke('shareCode:recent'),
   createTextAuraWidget: (name, preset) => ipcRenderer.invoke('widget:createTextAura', { name, preset }),
   getCastableBuffs: () => ipcRenderer.invoke('buffs:castable'),
+  getAllBuffNames: () => ipcRenderer.invoke('buffs:allNames'),
   createCooldownTimerWidget: (name, spellName, cooldownSec, iconId, buffDurationSec) =>
     ipcRenderer.invoke('widget:createCooldownTimer', { name, spellName, cooldownSec, iconId, buffDurationSec }),
   createGcdTimerWidget: (name, iconId) => ipcRenderer.invoke('widget:createGcdTimer', { name, iconId }),
@@ -258,6 +263,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetSoundOnExpire: (id, enabled) => ipcRenderer.invoke('widget:setSoundOnExpire', { id, enabled }),
   setWidgetSoundWarningSec: (id, seconds) => ipcRenderer.invoke('widget:setSoundWarningSec', { id, value: seconds }),
   setWidgetSoundWarningLoopSec: (id, seconds) => ipcRenderer.invoke('widget:setSoundWarningLoopSec', { id, value: seconds }),
+  setWidgetSoundCooldownSec: (id, seconds) => ipcRenderer.invoke('widget:setSoundCooldownSec', { id, value: seconds }),
   setWidgetLandSoundId: (id, soundId) => ipcRenderer.invoke('widget:setLandSoundId', { id, soundId }),
   setWidgetExpireSoundId: (id, soundId) => ipcRenderer.invoke('widget:setExpireSoundId', { id, soundId }),
   setWidgetWarningSoundId: (id, soundId) => ipcRenderer.invoke('widget:setWarningSoundId', { id, soundId }),
@@ -265,6 +271,14 @@ contextBridge.exposeInMainWorld('eqTracker', {
   pickSound: () => ipcRenderer.invoke('sounds:pick'),
   getSoundInfo: (id) => ipcRenderer.invoke('sounds:getInfo', id),
   openSoundsFolder: () => ipcRenderer.invoke('sounds:openFolder'),
+  openConfigFolder: () => ipcRenderer.invoke('app:openConfigFolder'),
+  backupConfig: () => ipcRenderer.invoke('app:backupConfig'),
+  exportConfig: () => ipcRenderer.invoke('config:export'),
+  listImportableConfig: () => ipcRenderer.invoke('config:listImportable'),
+  importConfig: (sourcePath) => ipcRenderer.invoke('config:import', sourcePath),
+  openExportsFolder: () => ipcRenderer.invoke('config:openExportsFolder'),
+  getLogActivity: () => ipcRenderer.invoke('log:activity'),
+  previewWidget: (id) => ipcRenderer.invoke('widget:preview', id),
   setWidgetListWidth: (id, width) => ipcRenderer.invoke('widget:setListWidth', { id, value: width }),
   setWidgetOpacity: (id, opacity) => ipcRenderer.invoke('widget:setOpacity', { id, value: opacity }),
   setWidgetBuffFilter: (id, mode, names) => ipcRenderer.invoke('widget:setBuffFilter', { id, mode, names }),

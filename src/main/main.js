@@ -35,7 +35,7 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
-const { findRoute, describeLeg, allZoneNames, pickableZoneNames } = require('../shared/zoneRouting');
+const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
 const { matchShareCodeInChat, splitReason } = require('../shared/shareCodeChat');
 const { TRAVEL_SPELLS } = require('../shared/data/zoneGraph');
@@ -62,6 +62,7 @@ const zonePromptPopup = require('./zonePromptPopup');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
 const soundService = require('./soundService');
+const configTransfer = require('./configTransfer');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'eqicon', privileges: { standard: true, supportFetchAPI: true, corsEnabled: true } },
@@ -477,7 +478,11 @@ logRotationService.setLogsFolderFn(() => logService.watcher.getStatus().logsFold
 // is writing to at that instant. Starting the clock at launch means the first rotation has to
 // observe a real lull. Assume it is busy until it demonstrably is not.
 let lastLogLineAt = Date.now();
-logService.watcher.on('line', () => { lastLogLineAt = Date.now(); });
+// lastLogLineAt is seeded to launch time (see above), so "how long since the last line" is
+// meaningless until at least one real line has arrived - this flag is the guard for the QOL #5
+// "is it working right now?" readout.
+let sawFirstLogLine = false;
+logService.watcher.on('line', () => { lastLogLineAt = Date.now(); sawFirstLogLine = true; });
 logRotationService.setIsQuietFn(() => Date.now() - lastLogLineAt > 10000);
 
 // IS EVERQUEST LOGGING? The tracker is dead in the water without `/log on`, and EQ Legends writes
@@ -558,6 +563,18 @@ logRotationService.setResetRule(savedReset);
 
 const savedLogTarget = loadJson('lockoutLogTarget', { path: null });
 if (savedLogTarget && savedLogTarget.path) lockoutService.setLogTarget(savedLogTarget.path);
+
+// QOL #14 - a manually entered character/server for the spellbook, for when auto detection off
+// the log picks the wrong one or none. `<name>_<server>` is the base the EQ client names its
+// per-character files with (eqlog_<base>.txt, <base>-<CLASS>-Spellbook.txt).
+let spellbookChar = loadJson('spellbookCharacter', { name: '', server: '' });
+function spellbookCharBase(c) {
+  const name = String((c && c.name) || '').trim();
+  const server = String((c && c.server) || '').trim();
+  if (!name) return '';
+  return server ? `${name}_${server}` : name;
+}
+if (spellbookCharBase(spellbookChar)) spellbookService.setCharacterOverride(spellbookCharBase(spellbookChar));
 
 function runLogRotation(why) {
   try {
@@ -1054,6 +1071,9 @@ let appTray = null;
 app.whenReady().then(() => {
   iconService.registerProtocol();
   soundService.registerProtocol();
+  // #39 - copy the shipped starter tones into userData/sounds/ so they survive uninstall and sit
+  // next to your auras. Idempotent; leaves your own files and any starter you deleted alone.
+  soundService.seedStarterSounds();
   createMainWindow();
 
   // Requested directly, alongside making the window's own close button hide-to-tray instead of
@@ -1223,6 +1243,17 @@ ipcMain.handle('lockouts:trim', async () => {
 });
 
 ipcMain.handle('log:getState', () => logService.getState());
+// QOL #5 - the "is it working right now?" readout on the Buff Tracker page. Which file is being
+// tailed and how long since a line last arrived from it.
+ipcMain.handle('log:activity', () => {
+  const s = logService.watcher.getStatus();
+  return {
+    file: s.currentFilePath ? path.basename(s.currentFilePath) : null,
+    folderSet: !!(s.logsFolder || s.currentFilePath),
+    sawLine: sawFirstLogLine,
+    lastLineAgoMs: sawFirstLogLine ? Date.now() - lastLogLineAt : null,
+  };
+});
 ipcMain.handle('log:chooseFolder', async () => {
   const state = await logService.chooseFolder();
   applyInstallRoot(state.eqFolder);
@@ -1260,6 +1291,9 @@ ipcMain.handle('travel:getZones', () => allZoneNames());
 // " (Fused)"), at the owner's request. `travel:getZones` above is untouched for anything that
 // still wants every zone including tiers.
 ipcMain.handle('travel:getPickableZones', () => pickableZoneNames());
+// The eqtm picker's search - display-name substring + community nicknames + boss names + client
+// short names, unioned (QOL #30). Zone-prompt renderer calls this per keystroke.
+ipcMain.handle('travel:searchZones', (_event, query) => searchPickableZones(query));
 ipcMain.handle('travel:getPickerCommand', () => travelPickerCommand);
 ipcMain.handle('travel:setPickerCommand', (_event, word) => {
   // Letters only, matching what a /tell name can even contain (matchOfflineTell's own pattern) -
@@ -1550,11 +1584,14 @@ ipcMain.handle('settings:setAutoHideOverlay', (_event, enabled) => {
 ipcMain.handle('overlay:getMasterState', () => ({
   allUnlocked: widgetManager.areAllUnlocked(),
   masterHidden: widgetManager.isMasterHidden(),
+  soundsMuted: widgetManager.isSoundsMuted(),
 }));
 ipcMain.handle('overlay:setMasterHidden', (_event, hidden) => {
   actionBarManager.setMasterHidden(hidden);
   return widgetManager.setMasterHidden(hidden);
 });
+// QOL #10 - global mute for every aura's alert sounds.
+ipcMain.handle('overlay:setSoundsMuted', (_event, muted) => widgetManager.setSoundsMuted(muted));
 ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => widgetManager.setAllUnlocked(unlocked));
 ipcMain.handle('settings:getShowAurasWhenAppFocused', () => showAurasWhenAppFocused);
 ipcMain.handle('settings:setShowAurasWhenAppFocused', (_event, enabled) => {
@@ -1578,12 +1615,25 @@ ipcMain.handle('spellbook:getState', () => ({
   spellCount: spellbookService.getCount(),
   ...spellbookService.getExpectation(),
 }));
+// QOL #14 - the manually entered character/server for the spellbook.
+ipcMain.handle('spellbook:getCharacter', () => ({ ...spellbookChar }));
+ipcMain.handle('spellbook:setCharacter', (_event, { name, server }) => {
+  spellbookChar = { name: String(name || '').trim(), server: String(server || '').trim() };
+  saveJson('spellbookCharacter', spellbookChar);
+  spellbookService.setCharacterOverride(spellbookCharBase(spellbookChar) || null);
+  return {
+    filePath: spellbookService.getFilePath(),
+    spellCount: spellbookService.getCount(),
+    ...spellbookService.getExpectation(),
+  };
+});
 ipcMain.handle('spellbook:getMemorized', () => memorizedWithIcons());
 ipcMain.handle('spellbook:forgetMemorized', (_event, name) => buffEngine.removeMemorized(name));
 ipcMain.handle('spellbook:clearMemorized', () => buffEngine.clearMemorized());
 
 ipcMain.handle('widget:list', () => widgetManager.getAllWidgetConfigs());
 ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig(id));
+ipcMain.handle('widget:preview', (_event, id) => widgetManager.previewWidget(id));
 // Note 6 - clicking an aura's name in its move box. Raises the settings window and tells it
 // which aura to open. Worth knowing: this pulls EverQuest out of focus, so with auto-hide on it
 // is also the moment your other auras vanish. The unlocked ones stay put, which is the only
@@ -1670,6 +1720,18 @@ ipcMain.handle('buffs:castable', () =>
       cooldownSec: e.reuseSec + (typeof e.castSec === 'number' ? e.castSec : 0),
       iconId: e.iconId ?? null,
     }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+);
+
+// Every spell name in the roster, for the "Skill cast" custom-timer trigger's search picker. A
+// castOf trigger fires on "You begin casting X" / "You begin singing X" - it needs no landing
+// text and no recast time, so it must NOT be filtered like buffs:castable (recast > 1.5s) or
+// buffs:trackable (has a duration). That filtering was why bard songs and instants were missing
+// from the picker. Reported live 30 Aug.
+ipcMain.handle('buffs:allNames', () =>
+  buffStore
+    .getAll()
+    .map((e) => ({ name: e.name, iconId: e.iconId ?? null, isBardSong: !!e.isBardSong }))
     .sort((a, b) => a.name.localeCompare(b.name))
 );
 
@@ -1904,6 +1966,7 @@ ipcMain.handle('widget:setSoundOnLand', (_event, { id, enabled }) => widgetManag
 ipcMain.handle('widget:setSoundOnExpire', (_event, { id, enabled }) => widgetManager.setSoundOnExpire(id, enabled));
 ipcMain.handle('widget:setSoundWarningSec', (_event, { id, value }) => widgetManager.setSoundWarningSec(id, value));
 ipcMain.handle('widget:setSoundWarningLoopSec', (_event, { id, value }) => widgetManager.setSoundWarningLoopSec(id, value));
+ipcMain.handle('widget:setSoundCooldownSec', (_event, { id, value }) => widgetManager.setSoundCooldownSec(id, value));
 ipcMain.handle('widget:setLandSoundId', (_event, { id, soundId }) => widgetManager.setLandSoundId(id, soundId));
 ipcMain.handle('widget:setExpireSoundId', (_event, { id, soundId }) => widgetManager.setExpireSoundId(id, soundId));
 ipcMain.handle('widget:setWarningSoundId', (_event, { id, soundId }) => widgetManager.setWarningSoundId(id, soundId));
@@ -1912,6 +1975,50 @@ ipcMain.handle('widget:setAlertVolume', (_event, { id, value }) => widgetManager
 ipcMain.handle('sounds:pick', () => soundService.pickAndImportSound(getMainWindow()));
 ipcMain.handle('sounds:getInfo', (_event, id) => soundService.getSoundInfo(id));
 ipcMain.handle('sounds:openFolder', () => soundService.openPickerFolder());
+// QOL #3a - the userData folder, where every aura / profile / setting JSON lives. For a manual
+// backup before an update.
+ipcMain.handle('app:openConfigFolder', () => shell.openPath(app.getPath('userData')));
+
+// QOL #3c - export / import the whole config as a portable bundle folder. See configTransfer.js.
+ipcMain.handle('config:export', () => configTransfer.exportConfig(app.getPath('userData')));
+ipcMain.handle('config:listImportable', () => configTransfer.listImportable(app.getPath('userData')));
+ipcMain.handle('config:import', (_event, sourcePath) => configTransfer.importConfig(app.getPath('userData'), sourcePath));
+ipcMain.handle('config:openExportsFolder', () => {
+  const dir = path.join(app.getPath('userData'), 'exports');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* ignore */ }
+  return shell.openPath(dir);
+});
+
+// QOL #3b - "Back up now". Copies userData into a dated folder inside itself, skipping the
+// Electron/Chromium cache dirs, the detection logs (large, ephemeral, not config) and the backups
+// folder itself. Walks the top-level children rather than fs.cpSync on the whole tree, so the
+// destination being a subfolder of the source is never a problem.
+ipcMain.handle('app:backupConfig', () => {
+  try {
+    const src = app.getPath('userData');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const dest = path.join(src, 'backups', `backup-${stamp}`);
+    fs.mkdirSync(dest, { recursive: true });
+    const SKIP = new Set([
+      'backups', 'detection-logs', 'Cache', 'GPUCache', 'Code Cache', 'DawnCache', 'DawnGraphiteCache',
+      'blob_storage', 'Local Storage', 'Session Storage', 'Shared Dictionary', 'Network', 'logs',
+    ]);
+    let items = 0;
+    for (const name of fs.readdirSync(src)) {
+      if (SKIP.has(name)) continue;
+      const from = path.join(src, name);
+      const to = path.join(dest, name);
+      try {
+        if (fs.statSync(from).isDirectory()) fs.cpSync(from, to, { recursive: true });
+        else fs.copyFileSync(from, to);
+        items += 1;
+      } catch (e) { /* skip a locked/odd entry, keep going */ }
+    }
+    return { ok: true, path: dest, items };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
 ipcMain.handle('widget:setListWidth', (_event, { id, value }) => widgetManager.setListWidth(id, value));
 ipcMain.on('widget:reportContentSize', (_event, { id, width, height, originX }) => widgetManager.fitToContent(id, width, height, originX));
 ipcMain.handle('widget:setOpacity', (_event, { id, value }) => widgetManager.setOpacity(id, value));
@@ -2180,3 +2287,5 @@ ipcMain.handle('app:getVersionInfo', () => {
     nodeVersion: process.versions.node,
   };
 });
+// Backlog #18 - the in-app changelog shown on the About page.
+ipcMain.handle('app:getChangelog', () => require('../shared/data/changelog').CHANGELOG);

@@ -15,11 +15,17 @@ let allZones = [];
 let currentMode = null;
 
 // No result cap: if a match is a real zone it is always listed (QOL-BACKLOG #31). The list is
-// ~104 zones unfiltered, which renders fine; nicknames/shorthand are a separate feature (#30)
-// and deliberately do not appear here.
-function render() {
-  const query = searchEl.value.trim().toLowerCase();
-  const matches = query ? allZones.filter((z) => z.toLowerCase().includes(query)) : allZones;
+// ~104 zones unfiltered, which renders fine.
+//
+// A non-empty query goes through the main process (searchZones) so it can union the plain
+// display-name substring match with community nicknames, raid-boss names and client short names
+// (#30). It is async, so a race token drops a stale result when the user keeps typing.
+let renderToken = 0;
+async function render() {
+  const query = searchEl.value.trim();
+  const myToken = ++renderToken;
+  const matches = query ? await window.eqZonePrompt.searchZones(query) : allZones;
+  if (myToken !== renderToken) return; // superseded by a newer keystroke
   listEl.innerHTML = '';
   for (const zone of matches) {
     const btn = document.createElement('button');

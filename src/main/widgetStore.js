@@ -81,6 +81,15 @@ function clampStackTextLines(value) {
   return Math.min(MAX_STACK_TEXT_LINES, Math.max(MIN_STACK_TEXT_LINES, Math.round(n)));
 }
 
+// Per-aura sound cooldown (reported live 30 Aug): the shortest gap allowed between two alert
+// sounds from one aura, so something that refreshes constantly (a bard song pulsing every 6s)
+// does not beep every time. 0 = off (every alert plays); ceiling 60s.
+function clampSoundCooldownSec(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(60, Math.max(0, Math.round(n)));
+}
+
 function isTextAura(widget) {
   return !!widget && widget.displayMode === 'text';
 }
@@ -223,6 +232,7 @@ function defaultSelfBuffsWidget(overrides = {}) {
     soundOnExpire: false,
     soundWarningSec: 0, // 0 = off
     soundWarningLoopSec: 0, // 0 = warn once only, matches soundWarningSec's own "0 = off" convention
+    soundCooldownSec: 0, // 0 = off - shortest gap between two alert sounds from this aura
     // null = default synthesized beep. A real soundService.js registry id
     // (see soundService.js) otherwise - one custom sound per alert TYPE,
     // not one shared sound for the whole widget, per backlog #16's "per
@@ -477,6 +487,7 @@ function defaultCustomWidget(name) {
     soundOnExpire: false,
     soundWarningSec: 0,
     soundWarningLoopSec: 0,
+    soundCooldownSec: 0,
     landSoundId: null,
     expireSoundId: null,
     warningSoundId: null,
@@ -632,6 +643,7 @@ const SHAREABLE_FIELDS = [
   'soundOnExpire',
   'soundWarningSec',
   'soundWarningLoopSec',
+  'soundCooldownSec',
   'alertVolume',
   'hideBardSongs',
   'timerTextColor',
@@ -764,6 +776,7 @@ function normalizeWidget(widget) {
     soundOnExpire: !!widget.soundOnExpire,
     soundWarningSec: typeof widget.soundWarningSec === 'number' ? widget.soundWarningSec : 0,
     soundWarningLoopSec: typeof widget.soundWarningLoopSec === 'number' ? widget.soundWarningLoopSec : 0,
+    soundCooldownSec: clampSoundCooldownSec(widget.soundCooldownSec),
     landSoundId: typeof widget.landSoundId === 'string' ? widget.landSoundId : null,
     expireSoundId: typeof widget.expireSoundId === 'string' ? widget.expireSoundId : null,
     warningSoundId: typeof widget.warningSoundId === 'string' ? widget.warningSoundId : null,
@@ -1779,6 +1792,7 @@ module.exports = {
   normalizeDisplayMode,
   isTextAura,
   clampInstantSec,
+  clampSoundCooldownSec,
   MAX_INSTANT_DISPLAY_SEC,
   clampStackTextLines,
   MIN_STACK_TEXT_LINES,

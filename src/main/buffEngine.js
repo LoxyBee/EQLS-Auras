@@ -12,6 +12,7 @@ const {
   matchDidNotTakeHold,
   matchOverwritten,
   matchSlain,
+  matchOwnDeath,
   matchAwakened,
   matchGroupMemberJoined,
   matchGroupMemberLeft,
@@ -720,6 +721,14 @@ class BuffEngine extends EventEmitter {
   handleLine(line) {
     const stripped = stripTimestamp(line);
     this._noteRefusedCast(line);
+
+    // Backlog #12 - death strips every buff and song. The game clears them all; if you rez you
+    // come back with none unless something restores them, and those re-register here like any
+    // other landing. The line carries nothing else any tier below reads, so clear the lot and stop.
+    if (matchOwnDeath(line)) {
+      this._clearOnDeath();
+      return;
+    }
 
     // Not itself a party-change line (isPartyChangeLine below doesn't match
     // it) - stash the name and let the self-join handling just below pick
@@ -1498,6 +1507,34 @@ class BuffEngine extends EventEmitter {
     }
 
     this._checkForEndedBuffs(line);
+  }
+
+  // Backlog #12. Death clears every self buff and every bard song on you - both maps hold only
+  // "things currently on the player", and the player is dead. Buffs YOU cast on someone else
+  // (allyBuffs) and debuffs on a mob (allyBuffs with onEnemy) are NOT touched: the ally is alive
+  // and the mob's debuff has its own timer. Custom timers are cleared by customTimerEngine's own
+  // death handling.
+  _clearOnDeath() {
+    let changed = false;
+    if (this.activeBuffs.size) {
+      this._debugLog(`DEATH - cleared ${this.activeBuffs.size} self buff(s)`);
+      this.activeBuffs.clear();
+      this.emit('buffsChanged', this.getActiveBuffs());
+      changed = true;
+    }
+    if (this.bardSongs.size) {
+      this._debugLog(`DEATH - cleared ${this.bardSongs.size} bard song(s)`);
+      this.bardSongs.clear();
+      this.emit('bardSongsChanged', this.getActiveBardSongs());
+      changed = true;
+    }
+    // A pending cast the player was mid-way through cannot land now - clear its confirm timer too,
+    // or it fires later and tries to confirm a buff on a corpse.
+    if (this.pendingCast) {
+      if (this.pendingCast.timer) clearTimeout(this.pendingCast.timer);
+      this.pendingCast = null;
+    }
+    return changed;
   }
 
   _checkForEndedBuffs(line) {

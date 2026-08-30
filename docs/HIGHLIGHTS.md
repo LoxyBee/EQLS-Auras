@@ -125,5 +125,14 @@ folder doesn't grow forever unmanaged.
 one that's wrong, or add something fully custom — your correction sticks even when the built-in
 spell data updates.
 
+**Move your whole setup to another PC.** Export every aura, profile, sound and setting to a
+folder, import it on the other machine — offline, no account, no cloud.
+
+**Preview an aura without alt-tabbing.** One button flashes a sample tile on the overlay so you
+can size, position and colour it against the real game window.
+
+**Mute everything with one click.** A top-bar toggle silences every alert sound for streaming or
+a call, without touching your per-aura settings.
+
 **Ships as a real Windows installer.** `npm run dist` produces an installer anyone can hand to a
 friend — no dev environment required to run it.

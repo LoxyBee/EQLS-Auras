@@ -6,6 +6,7 @@ const {
   matchActivate,
   matchOwnInterrupt,
   matchZoneChange,
+  matchOwnDeath,
   stripRankSuffix,
   rankValue,
 } = require('./buffParser');
@@ -353,6 +354,24 @@ class CustomTimerEngine extends EventEmitter {
   handleLine(line) {
     const stripped = stripTimestamp(line);
     const lowerLine = line.toLowerCase();
+
+    // Backlog #12 - death clears the timers that stand for something currently on the player: an
+    // active buff duration, a reverse "skill ready" hold, a half-satisfied AND combo. A recast
+    // COOLDOWN keeps ticking - the ability is still on cooldown whether you are alive or not.
+    if (matchOwnDeath(line)) {
+      let cleared = 0;
+      for (const [key, t] of this.activeTimers) {
+        if (t.phase === 'cooldown') continue;
+        this.activeTimers.delete(key);
+        cleared += 1;
+      }
+      this.timerSeenUntil.clear();
+      if (cleared) {
+        this._debugLog(`DEATH - cleared ${cleared} custom timer(s)`);
+        this.emit('activeChanged', this.getActive());
+      }
+      return;
+    }
 
     // Ends every currently-active timer whose endedText matches this line,
     // not just the first one found (the old behavior - it deleted one match

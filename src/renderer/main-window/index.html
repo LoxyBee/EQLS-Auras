@@ -56,6 +56,14 @@
         id="master-hide-all-btn"
         title="Temporarily clears every aura off the screen while you work. Changes no setting, and does not survive a restart."
       >Hide auras</button>
+      <!-- QOL #10 - for streaming / voice chat. Silences every aura's alert sounds without hiding
+           the tiles. Same "loud when active, not persisted" treatment as Hide auras, for the same
+           reason: a forgotten mute looks identical to the sounds being broken. -->
+      <button
+        class="master-hide-btn"
+        id="master-mute-btn"
+        title="Silences every aura's alert sounds. The tiles stay on screen. Changes no setting, and does not survive a restart."
+      >Mute sounds</button>
       <span class="master-hide-hint" id="master-hide-hint"></span>
     </div>
 
@@ -101,6 +109,12 @@
         <h2 class="page-title">Buff Tracker</h2>
 
         <h3 class="settings-page-section-title">Detection status</h3>
+
+        <!-- QOL #5 - the one-line "is the app actually reading my log right now?" answer. Until
+             this existed the only confirmation was Log > Diagnostics > Live feed. -->
+        <div class="card" id="log-activity-card">
+          <p id="log-activity-line" class="hint">Checking the log…</p>
+        </div>
 
         <!-- Front and centre on the landing page on purpose: an empty
              memorized list is the single most common reason a buff gets
@@ -275,6 +289,7 @@
               <div class="row position-controls" id="widget-position-row">
                 <button id="widget-lock-btn" class="btn-prominent" title="While unlocked, click and drag anywhere on the aura to move it, and drag an edge to resize. Lock it again when done - while locked it is fully click-through.">Unlock to move</button>
                 <button id="widget-reset-position-btn" title="Lost an aura? Dragged off-screen, or its monitor disconnected? This brings it back to a corner of your main screen.">Reset position</button>
+                <button id="widget-preview-btn" title="Flash a sample tile on this aura for a few seconds, so you can judge its size, position, colours and font without alt-tabbing into the game and casting something.">Preview</button>
               </div>
               <p class="hint" id="widget-position-hint"></p>
 
@@ -287,6 +302,7 @@
                 <span class="label" title="A text aura draws one line of words and nothing else - no icon, no countdown - and only ever shows one thing at a time, however many you pick. Leave this blank to use the name of the buff or trigger itself. {spell} fills in the actual spell/trigger name, {caster} or {mob} the name it landed on or came from (same value either way - use whichever reads naturally), {profile} the active loadout name.">Say:</span>
                 <input type="text" id="widget-text-message-input" class="text-input" placeholder="DISPELLED" />
               </div>
+              <p class="hint" id="widget-text-message-preview" style="display:none"></p>
               <div class="row" id="widget-always-on-row">
                 <label title="For an aura that just says something and stays, rather than one that appears when a spell lands. Write {profile} in the message above to show which loadout is active.">
                   <input type="checkbox" id="widget-always-on-checkbox" />
@@ -748,9 +764,9 @@
                   <div class="row sound-picker-row" id="widget-sound-land-row">
                     <span class="label">Land sound:</span>
                     <button type="button" id="widget-sound-land-choose-btn">Choose sound...</button>
-                    <button type="button" id="widget-sound-land-preview-btn" style="display:none">▶ Preview</button>
+                    <button type="button" id="widget-sound-land-reset-btn">Use default</button>
                     <span id="widget-sound-land-name" class="slider-value">Default beep</span>
-                    <button type="button" id="widget-sound-land-reset-btn" style="display:none">Use default beep</button>
+                    <button type="button" id="widget-sound-land-preview-btn" style="display:none">▶ Preview</button>
                   </div>
 
                   <div class="row">
@@ -759,9 +775,9 @@
                   <div class="row sound-picker-row" id="widget-sound-expire-row">
                     <span class="label">Expire sound:</span>
                     <button type="button" id="widget-sound-expire-choose-btn">Choose sound...</button>
-                    <button type="button" id="widget-sound-expire-preview-btn" style="display:none">▶ Preview</button>
+                    <button type="button" id="widget-sound-expire-reset-btn">Use default</button>
                     <span id="widget-sound-expire-name" class="slider-value">Default beep</span>
-                    <button type="button" id="widget-sound-expire-reset-btn" style="display:none">Use default beep</button>
+                    <button type="button" id="widget-sound-expire-preview-btn" style="display:none">▶ Preview</button>
                   </div>
 
                   <!-- A toggle in front of the slider, because a bare slider sitting at 0 does not
@@ -781,9 +797,9 @@
                     <div class="row sound-picker-row">
                       <span class="label">Warning sound:</span>
                       <button type="button" id="widget-sound-warning-choose-btn">Choose sound...</button>
-                      <button type="button" id="widget-sound-warning-preview-btn" style="display:none">▶ Preview</button>
+                      <button type="button" id="widget-sound-warning-reset-btn">Use default</button>
                       <span id="widget-sound-warning-name" class="slider-value">Default beep</span>
-                      <button type="button" id="widget-sound-warning-reset-btn" style="display:none">Use default beep</button>
+                      <button type="button" id="widget-sound-warning-preview-btn" style="display:none">▶ Preview</button>
                     </div>
                     <div class="row">
                       <span class="label" title="Repeats the warning this often while the buff stays under the threshold, instead of playing once. 0 means a single warning.">Loop warning every:</span>
@@ -796,6 +812,12 @@
                     <span class="label" title="Applies to every alert sound on this aura - custom files and the default beeps alike.">Volume:</span>
                     <input type="range" id="widget-alert-volume-slider" min="0" max="100" step="5" />
                     <span id="widget-alert-volume-value" class="slider-value">100%</span>
+                  </div>
+
+                  <div class="row" id="widget-sound-cooldown-row">
+                    <span class="label" title="The shortest gap allowed between two alert sounds from this aura, across all of its sounds. A sound arriving sooner stays silent. Useful for something that refreshes constantly - a bard song pulsing every 6 seconds set to only sound every 24, say. 0 means every alert plays.">Sound cooldown:</span>
+                    <input type="range" id="widget-sound-cooldown-slider" min="0" max="60" step="1" />
+                    <span id="widget-sound-cooldown-value" class="slider-value">off</span>
                   </div>
 
                   <div class="row">
@@ -970,6 +992,13 @@
             lot of generic text across many different spells) down to whichever one you actually have.
             Read from your EQ install folder above.
           </p>
+          <div class="row">
+            <span class="label" title="Fill these in only if the app is not finding your spellbook on its own - usually because more than one character's logs are in the folder. It builds the filename the EQ client uses and looks for that instead of guessing from the newest log.">Character:</span>
+            <input type="text" id="spellbook-char-name" class="text-input" placeholder="name" autocomplete="off" style="width:9em" />
+            <span>on</span>
+            <input type="text" id="spellbook-char-server" class="text-input" placeholder="server" autocomplete="off" style="width:8em" />
+          </div>
+          <p class="hint" id="spellbook-char-hint"></p>
           <div id="spellbook-missing-hint" style="display:none">
             <p class="hint warn-hint">
               <strong>This is worth fixing.</strong> EverQuest reuses the same buff message across
@@ -1015,7 +1044,7 @@
           <div class="row">
             <span class="label">Active log file:</span>
             <span id="log-file">-</span>
-            <button id="open-folder-btn">Open log folder</button>
+            <button id="open-folder-btn">📁 Open log folder</button>
           </div>
           <p id="log-error" class="error"></p>
         </div>
@@ -1109,7 +1138,8 @@
           <p class="hint">
             Every aura's "Choose sound..." picker starts here by default, seeded with a handful of
             sounds that ship with the app - drop your own mp3/wav/ogg/m4a files in and they'll be
-            ready to pick from too, right alongside the starters.
+            ready to pick from too, right alongside the starters. This folder lives with the rest of
+            your app data, so a config backup covers it and an uninstall leaves it alone.
           </p>
           <div class="row">
             <button type="button" id="open-sounds-folder-btn">📁 Open sounds folder</button>
@@ -1146,6 +1176,33 @@
           <h3>Status</h3>
           <p id="status">Checking...</p>
           <dl id="version-info"></dl>
+        </div>
+
+        <div class="card">
+          <h3>App data</h3>
+          <p class="hint">
+            Every aura, profile, known-buff correction, custom sound and setting lives in this
+            folder. Uninstalling the app never touches it. "Back up now" copies the whole thing
+            into a dated folder inside it, so you have a snapshot to fall back to before an update
+            or a big change.
+          </p>
+          <div class="row">
+            <button type="button" id="backup-config-btn" class="btn-prominent">Back up now</button>
+            <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
+          </div>
+          <p class="hint" id="backup-config-status"></p>
+          <p class="hint">
+            <strong>Move to another PC, or hand the app to someone:</strong> "Export config" writes
+            a bundle (auras, profiles, known-buff edits, sounds, settings) into a folder you can zip
+            and send. "Import config" replaces this PC's config with a bundle - your current config
+            is backed up first, and the app restarts.
+          </p>
+          <div class="row">
+            <button type="button" id="export-config-btn">Export config…</button>
+            <button type="button" id="import-config-btn">Import config…</button>
+            <button type="button" id="open-exports-folder-btn">📁 Open exports folder</button>
+          </div>
+          <p class="hint" id="transfer-config-status"></p>
         </div>
 
       </section>
@@ -1193,7 +1250,7 @@
           </div>
           <div class="row">
             <button id="archive-now-btn">Archive log now...</button>
-            <button id="open-archive-folder-btn">Open archive folder</button>
+            <button id="open-archive-folder-btn">📁 Open archive folder</button>
           </div>
           <p class="hint" id="archive-folder-status"></p>
 
@@ -1243,7 +1300,7 @@
                 </label>
               </div>
               <div class="row">
-                <button type="button" id="open-debug-log-folder-btn">Open the detection log folder</button>
+                <button type="button" id="open-debug-log-folder-btn">📁 Open the detection log folder</button>
                 <span class="hint" id="debug-log-folder-path"></span>
               </div>
               <div id="debug-line-feed" class="line-feed"></div>
@@ -1646,6 +1703,11 @@
 
       <section id="page-about" class="page">
         <h2 class="page-title">About</h2>
+
+        <div class="card" id="changelog-card">
+          <h3>What's changed</h3>
+          <div id="changelog-body" class="hint">Loading…</div>
+        </div>
 
         <div class="card">
           <h3>How auras work</h3>
@@ -2252,15 +2314,19 @@
       </div>
 
       <div id="widget-new-timer-skill-fields" style="display:none">
+        <!-- Type to filter the whole spell roster (bard songs included), click a real name to pick
+             it - the value is always a genuine spell string, never parsed from what was typed.
+             widget-new-timer-skill-select stays as a hidden input so every get/set of its .value
+             elsewhere is unchanged. -->
         <div class="row">
-          <select id="widget-new-timer-skill-select">
-            <option value="">- choose a spell -</option>
-          </select>
+          <input type="hidden" id="widget-new-timer-skill-select" />
+          <input type="text" id="widget-new-timer-skill-search" class="text-input" placeholder="Search for a spell or song..." autocomplete="off" />
         </div>
+        <div id="widget-new-timer-skill-options" class="skill-search-list" style="display:none"></div>
         <p class="hint">
-          Starts the instant you begin casting this spell - matched against the actual cast, not
-          against log text, so a ranked recast ("Rk. II", a trailing numeral) still starts it. An
-          interrupted cast cancels the timer instead of starting it.
+          Starts the instant you begin casting (or singing) this spell - matched against the actual
+          cast, not against log text, so a ranked recast ("Rk. II", a trailing numeral) still
+          starts it. An interrupted cast cancels the timer instead of starting it.
         </p>
       </div>
 

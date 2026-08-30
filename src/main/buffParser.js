@@ -293,6 +293,11 @@ const OTHERS_WORN_OFF_PATTERN = /^Your (.+) spell has worn off of (.+)\.$/;
 const SLAIN_BY_PATTERN = /^(.+) has been slain by .+!$/;
 const YOU_SLEW_PATTERN = /^You have slain (.+)!$/;
 
+// The PLAYER'S OWN death - a different wording from the mob-death lines above ("You HAVE been
+// slain by ...", not "<X> HAS been slain by ..."), which is why matchSlain never matched it.
+// Backlog #12: death strips every buff, so the engines clear their active state on this line.
+const OWN_DEATH_PATTERN = /^You have been slain by .+!$/;
+
 // "Orc legionnaire has been awakened by Shara."  (142)
 //
 // A mez broken early by damage, naming whoever broke it. This line was not known to the project
@@ -318,6 +323,11 @@ function matchSlain(line) {
   const stripped = stripTimestamp(line);
   const m = SLAIN_BY_PATTERN.exec(stripped) || YOU_SLEW_PATTERN.exec(stripped);
   return m ? m[1] : null;
+}
+
+// True when this line is the player's own death.
+function matchOwnDeath(line) {
+  return OWN_DEATH_PATTERN.test(stripTimestamp(line));
 }
 
 function matchAwakened(line) {
@@ -436,6 +446,7 @@ module.exports = {
   matchOwnInterrupt,
   matchOthersWornOff,
   matchSlain,
+  matchOwnDeath,
   matchAwakened,
   isFailureLine,
   isPartyChangeLine,
