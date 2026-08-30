@@ -15,12 +15,16 @@ const { EventEmitter } = require('node:events');
 const { test, report } = require('./harness');
 const { PsProbe, ForegroundWatcher, RESPONSE_DELIMITER } = require('../src/main/foregroundWatcher');
 
-/** A minimal stand-in for the object child_process.spawn() returns. */
+/** A minimal stand-in for the object child_process.spawn() returns. stdin/stdout are real
+ *  EventEmitters, matching child_process, so the 'error' listeners the probe attaches are valid. */
 function makeFakeProc() {
   const stdout = new EventEmitter();
+  const stdin = new EventEmitter();
+  stdin.writes = [];
+  stdin.write = (text) => { stdin.writes.push(text); };
   const proc = new EventEmitter();
   proc.stdout = stdout;
-  proc.stdin = { writes: [], write(text) { this.writes.push(text); } };
+  proc.stdin = stdin;
   proc.killed = false;
   proc.kill = () => {
     proc.killed = true;
@@ -51,7 +55,7 @@ function respond(proc, name, quns = 5) {
 
 test('a query writes the query script to stdin and resolves with the delimited response', async () => {
   const spawnFn = makeSpawnFn();
-  const probe = new PsProbe(spawnFn);
+  const probe = new PsProbe(spawnFn, 0);
   const resultPromise = probe.query();
   const proc = spawnFn.created[0];
   assert.ok(proc.stdin.writes.some((w) => w.includes('GetForegroundWindow')), 'setup script never written');
@@ -62,7 +66,7 @@ test('a query writes the query script to stdin and resolves with the delimited r
 
 test('only ONE powershell.exe is spawned across many queries - the process is reused, not respawned', async () => {
   const spawnFn = makeSpawnFn();
-  const probe = new PsProbe(spawnFn);
+  const probe = new PsProbe(spawnFn, 0);
   const p1 = probe.query();
   respond(spawnFn.created[0], 'eqgame');
   await p1;
@@ -74,7 +78,7 @@ test('only ONE powershell.exe is spawned across many queries - the process is re
 
 test('two queries in flight resolve in the order they were sent, matching PowerShell\'s own stdin processing order', async () => {
   const spawnFn = makeSpawnFn();
-  const probe = new PsProbe(spawnFn);
+  const probe = new PsProbe(spawnFn, 0);
   const first = probe.query();
   const second = probe.query();
   const proc = spawnFn.created[0];
@@ -87,16 +91,40 @@ test('two queries in flight resolve in the order they were sent, matching PowerS
 
 test('the process dying with a query in flight resolves that query to null instead of hanging forever', async () => {
   const spawnFn = makeSpawnFn();
-  const probe = new PsProbe(spawnFn);
+  const probe = new PsProbe(spawnFn, 0);
   const resultPromise = probe.query();
   const proc = spawnFn.created[0];
   proc.emit('exit', 1);
   assert.equal(await resultPromise, null);
 });
 
+test('an async EPIPE on stdin is handled, not crashed on, and resolves the query to null', async () => {
+  // stream.write() on a dead pipe does not throw - it emits 'error' asynchronously. Without a
+  // stdin 'error' listener that is an uncaught exception that takes the whole main process down
+  // (reported live as a "write EPIPE" crash dialog).
+  const spawnFn = makeSpawnFn();
+  const probe = new PsProbe(spawnFn, 0);
+  const pending = probe.query();
+  const proc = spawnFn.created[0];
+  assert.doesNotThrow(() => proc.stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' })));
+  assert.equal(await pending, null);
+  assert.equal(probe.proc, null, 'the broken process should have been dropped');
+});
+
+test('after a death the probe waits out its cooldown before spawning again', async () => {
+  const spawnFn = makeSpawnFn();
+  const probe = new PsProbe(spawnFn, 10000); // long cooldown
+  const first = probe.query();
+  spawnFn.created[0].emit('exit', 1);
+  await first;
+  const second = probe.query();
+  assert.equal(await second, null, 'a query during the cooldown just fails, best-effort');
+  assert.equal(spawnFn.created.length, 1, 'no fork-bomb respawn while cooling down');
+});
+
 test('a query after the process died respawns a fresh one rather than reusing the dead reference', async () => {
   const spawnFn = makeSpawnFn();
-  const probe = new PsProbe(spawnFn);
+  const probe = new PsProbe(spawnFn, 0);
   const first = probe.query();
   spawnFn.created[0].emit('exit', 1);
   await first;
@@ -108,7 +136,7 @@ test('a query after the process died respawns a fresh one rather than reusing th
 
 test('stop() ends stdin and kills the process, and fails any still-pending query', async () => {
   const spawnFn = makeSpawnFn();
-  const probe = new PsProbe(spawnFn);
+  const probe = new PsProbe(spawnFn, 0);
   const pending = probe.query();
   const proc = spawnFn.created[0];
   proc.stdin.end = () => { proc.stdin.ended = true; };
