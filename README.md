@@ -60,6 +60,7 @@ should be identical, because a change that loses detection is a failure even if 
 | **`docs/QOL-BACKLOG.md`** | The live backlog — every requested change, tagged and sequenced. Start here for "what's next". |
 | **`docs/TESTING.md`** | Everything built but not yet confirmed in game. The to-do list for live testing. |
 | **`docs/BUFF-STACKING.md`** | The buff-stacking heading model — spec for the Buff Planner, wired into `src/shared/buffLines.js`. |
+| **`docs/EVIDENCE.md`** | Provenance log for the raid-lockout parser — where every fact came from, and what's still unverified. |
 | **`docs/HIGHLIGHTS.md`** | Promo copy: taglines and feature summaries for a marketing page. Not a dev doc. |
 
 Older planning docs (`FEATURES.md`, `HANDOFF.md`, `NOTES-STATUS.md`, and earlier `UX_*` / `VISUAL_*`

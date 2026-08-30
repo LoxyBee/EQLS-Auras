@@ -6,6 +6,32 @@ Electron desktop app that tails an EverQuest log file in real time and shows a t
 
 Server context: the user plays **"EverQuest Legends"**, a custom/private EQ server (not live EQ, not a standard emulator ruleset) via a Daybreak launcher install. Log/spell-data formats matched the classic EQEmu-style schema closely enough to mine directly, but some values (durations, spell availability) may differ from live EQ. This server also has a **multiclass "loadout" mechanic**: the player can swap loadouts, which changes which spells are actually castable *without* touching the spellbook file — but it does generate a real burst of `"You forget X."`/`"You have finished memorizing Y."` lines (confirmed: ~14 events in ~15s for one observed swap). See gotcha #9 below — this is why loadout profiles (`profileStore.js`) exist.
 
+## Docs are written by a dedicated "Documentation" session — don't write them yourself
+
+Applies to a **new feature** or a **major edit** (a new subsystem, a behaviour change users will
+notice, a design decision worth recording, anything that needs a `docs/TESTING.md` checklist).
+That session writes the CODE (and its code comments) only; the documentation it implies — anything
+under `docs/` (including `docs/TESTING.md`, `docs/QOL-BACKLOG.md`, `docs/HIGHLIGHTS.md`) and any
+substantial new `CLAUDE.md` section — is handed to a separate session named **"Documentation"**,
+not written inline.
+
+**Does NOT apply to routine bug fixes, small refactors, or tweaks** — no message needed, just fix
+it. Only send Documentation something when the change is big enough that you'd otherwise be writing
+a docs update or a new CLAUDE.md note for it. When in doubt, a fix is small.
+
+- **Before you start**, check `ListAgents` for a live session whose name contains "Documentation".
+  If one is running, `SendMessage` it what you're about to build and which files you'll touch.
+- **When you finish** (or hit a doc-worthy milestone), send it the facts to write up: what
+  changed, why, reviewer notes, `docs/TESTING.md` checklist items, `docs/QOL-BACKLOG.md` entries
+  to add or mark done, and any new `CLAUDE.md` section that's needed.
+- **If no Documentation session is running**, tell the user, keep coding, and collect the pending
+  doc items in a list to hand off later. Do **not** start writing `docs/` or `QOL-BACKLOG.md`
+  yourself to fill the gap.
+- **Still do inline**: fixing a stale doc reference, a typo, a one-line note, and all code
+  comments. The handoff is for new sections, checklists, backlog status changes, and design
+  write-ups.
+- A one-off `/create-pr` PR body is fine to write yourself — that's not project docs.
+
 ## User's stated goals & priorities (read this before changing detection behavior)
 
 - **Self-buffs are the default and priority.** Tracking buffs cast by *others* on the player is opt-in, off by default, and explicitly deferred to live in the future multi-widget overlay system rather than the main window.
@@ -18,8 +44,12 @@ Server context: the user plays **"EverQuest Legends"**, a custom/private EQ serv
 ## Architecture
 
 - `src/main/main.js` — entry point, wires everything together, all `ipcMain` handlers.
-- `src/main/logWatcher.js` — tails the newest `eqlog_*.txt` in the Logs folder, polls every 200ms, never replays history.
-- `src/main/logSplitter.js` — continuously copies the log into per-day (and optionally per-session-gap) files; also has manual "Archive log" (copy + truncate) support in `logService.js`.
+- `src/main/logWatcher.js` — tails the newest `eqlog_*.txt` in the Logs folder, polls every 200ms, never replays history. `resyncOffset()` re-anchors it past a kept tail after a trim so nothing is re-emitted.
+- `src/main/logSplitter.js` — continuously copies the log into per-day (and optionally per-session-gap) files; also has manual "Archive log" (copy + truncate) support in `logService.js`. A re-split from offset 0 **dedupes against the day file's own tail** so lines are not doubled.
+- `src/main/logRotation.js` — the weekly log rotation, **ON by default** (see "Lockouts and log rotation" below). `trimAtBoundary()` is the manual "Trim log to this week" (backward EOF scan via `findWeekStartOffset`); `logHoldsCurrentWeek()` feeds the archive-now danger warning; it refuses to rotate a log with play after the reset (`skippedSpansBoundary`).
+- `src/main/lockoutCore.js` — pure raid-lockout parser (no `require`, no clock, no fs; lines + explicit `now` in, JSON-clonable state out). EQL prints **no lockout line**, so it keys off the weekly-task assignment lines around a boss kill. **No reset day is hardcoded** — `projectReset()` returns `provenance: 'not recorded'` until it has seen the same weekly assigned on both sides of a turnover. Provenance for every fact it relies on is in `docs/EVIDENCE.md` — read that before touching it.
+- `src/main/lockoutService.js` — wires `lockoutCore` to the app: backfill reads **only the live log** (was a whole-Logs-folder scan), plus `setLogTarget` ("Change log file"), `addLogs` ("Add split files", gap-gated), single-flight `rebuild()`, and `extraLogs` count.
+- `src/shared/easternReset.js` — resolves the weekly reset in `America/New_York`, DST-aware, `now` passed in. Consumed by `lockoutService` and `logRotation`. The reset day/hour is user-editable (store key `lockoutReset`, IPC `lockoutReset:get/set`, mirrored between the Lockouts page and Setup as one setting); default **Tuesday 11:00 US Eastern**.
 - `src/main/buffParser.js` — pure regex/text helpers: cast-begin ("casting" **and** "singing" — bard songs use a different verb), AA "activate" lines, failure messages, party join/leave messages, generic landing-text heuristics, and `stripRankSuffix`.
 - `src/main/buffStore.js` — buff database (`{name, durationSec, landingText, endedText, iconId, showOnOverlay}`). **The install (`src/shared/data/buffs.json`) is the source of truth for spell data, rebuilt fresh on every launch, not a version-gated one-time migration** — see gotcha #29. Only three things persist in userData across that rebuild: a fully custom entry (`custom: true`), a spell the user hand-corrected via Known Buffs' Save button (`edited: true`), and three small per-spell toggles with no install-side value (`showOnOverlay`; `isBardSong` once `isBardSongUserSet`; `noDurationScaling` once `noDurationScalingUserSet`).
 - `src/main/buffEngine.js` — the actual detection state machine. **Read the big comment block at the top of this file before touching detection logic** — it documents the full priority order (named cast > unique landing text > spellbook-narrowed ambiguous text > burst-window ambiguous text > opt-in others'-buff prompt) and why each layer exists.
@@ -48,6 +78,29 @@ Server context: the user plays **"EverQuest Legends"**, a custom/private EQ serv
 - `src/shared/data/buffs.json` — the starter roster: **1,052 entries, the spells EQ Legends actually has**. No longer mined. Built by `tools/build-roster.js` from `new spell roster to be added.xlsx` (the curated EQL list — authoritative for what exists and for durations) enriched from the game's own `spells_us.txt`/`spells_us_str.txt` (authoritative for TEXT, since detection is exact-string matching). Rebuild with `node tools/build-roster.js --write`; run it with no flag first for a report. Manual corrections live in `tools/roster-overrides.json` so a rebuild cannot silently undo them. The previous 11,337-entry mined roster is kept at `archive/buffs-legacy-11337.json` — outside `src/` so it never ships — for reference only; **do not restore it**, add the missing spell to the spreadsheet instead.
   - **Why smaller is the point.** "Is this landing line unique?" is judged by counting roster entries, so every spell this server does not have still voted on ambiguity. Measured against a real session: recognised landing lines went 45 → 83 and auto-confirmed 19 → 49. Gotcha #15's confirmed live bug is fixed by it — Armor of Protection is back, and `"You feel protected."` now correctly offers it as a candidate.
   - **`rosterBackfill.js` is no longer wired in.** It undid a mining mistake that no longer exists; run against the new roster it would re-read the client file and add ~1,499 other-expansion bard songs, taking 1,052 → ~2,551. A test in `test/roster.test.js` fails if it is ever called again.
+
+## Lockouts and log rotation
+
+Raid-lockout tracking and the log-management tools that grew alongside it (`feat/lockouts`, PR #15).
+
+- **No reset day is hardcoded, anywhere in the parser.** `lockoutCore.js` reports
+  `provenance: 'not recorded'` until it has observed the same weekly task on both sides of a
+  turnover. The two other published lockout trackers for this content both ship a typed Tuesday;
+  this one treats that as a hint, not a fact. Every line shape and every claim the core relies on
+  has its provenance written down in **`docs/EVIDENCE.md`** — read it before changing detection or
+  the reset logic. When a fact hasn't been verified, that file says so plainly; keep it that way.
+- **The reset setting is separate from the parser.** `src/shared/easternReset.js` +
+  `logRotation.js` carry a user-editable reset (default **Tuesday 11:00 US Eastern**, the owner's
+  first-hand operational choice, 23 Aug) used for *log rotation*. It's DST-aware and resolves to
+  one real instant regardless of the machine's timezone. This default does not leak into the
+  parser's "not recorded" stance.
+- **Weekly log rotation now defaults ON** — the single highest-risk change in this batch. Guardrails:
+  it refuses to rotate a log containing play *after* the reset boundary (`skippedSpansBoundary`,
+  with a status line explaining the skip); "Trim log to this week" verifies the archive's size
+  before rewriting the live log; and `logWatcher`/`logSplitter` `resyncOffset()` past the kept
+  tail so the trimmed week is never re-emitted to the buff engine or re-split.
+- **All lockout/log prompts are in-app modals** (`appConfirm()` / `pickLogFiles()` in
+  `main-window.js`), not native `window.confirm` / `dialog.showOpenDialog`.
 
 ## Detection engine gotchas (learned the hard way — don't re-break these)
 
