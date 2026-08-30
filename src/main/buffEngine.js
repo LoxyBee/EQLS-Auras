@@ -1869,12 +1869,23 @@ class BuffEngine extends EventEmitter {
    *
    * ROUNDING happens ONCE, over the combined multiplier. The two multipliers are order-independent
    * but rounding between them is not; doing it twice differs by up to a second.
+   *
+   * BARD SONGS then snap to the nearest 6 seconds (#17). Shara: song durations run in 6-second
+   * intervals, so a mote-scaled result of, say, 33s is really 36. Floored at 6 (one tick) so a
+   * short song can't round to nothing. Applied last, over the already-combined value, for the same
+   * reason the multipliers round once: quantising an intermediate step drifts.
    */
   _scaledDuration(entry) {
-    if (entry.noDurationScaling) return Math.round(entry.durationSec);
+    if (entry.noDurationScaling) return this._quantizeSong(entry, Math.round(entry.durationSec));
     const rankMult = 1 + (MOTE_DURATION_RATES[entry.scaleCategory] || 0) * this._rankForEntry(entry);
     const aaMult = isAAEligible(entry) ? this.durationMultiplierFn() : 1;
-    return Math.round(entry.durationSec * rankMult * aaMult);
+    return this._quantizeSong(entry, Math.round(entry.durationSec * rankMult * aaMult));
+  }
+
+  /** Snap a bard song's duration to the nearest 6s tick (#17); pass everything else through. */
+  _quantizeSong(entry, seconds) {
+    if (!entry.isBardSong) return seconds;
+    return Math.max(6, Math.round(seconds / 6) * 6);
   }
 
   /**

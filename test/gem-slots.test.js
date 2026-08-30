@@ -71,12 +71,11 @@ test('buffNames is still a flat array of names', () => {
 });
 
 test('buffNames still has no migration of its own - the shape did not change', () => {
-  // The store version is now 3 (v2->v3 turned stacked text lines on for existing Resist flash
-  // auras - see text-stack.test.js; nothing to do with buffNames). If a version bump ever DOES
-  // coincide with a buffNames shape change, that change needs its own migration and this comment
-  // is where to notice it. The array coercion below is the only thing between an object-shaped
-  // buffNames and every aura being silently emptied.
-  assert.match(storeSrc, /version: 3, widgets: \[selfBuffs\]/, 'the store version moved again - if buffNames changed shape it needs its own migration');
+  // The store version is now 4 (v3->v4 dropped the removed GCD tracker aura - nothing to do with
+  // buffNames). If a version bump ever DOES coincide with a buffNames shape change, that change
+  // needs its own migration and this comment is where to notice it. The array coercion below is
+  // the only thing between an object-shaped buffNames and every aura being silently emptied.
+  assert.match(storeSrc, /version: 4, widgets: \[selfBuffs\]/, 'the store version moved again - if buffNames changed shape it needs its own migration');
   assert.match(
     storeSrc,
     /buffNames: Array\.isArray\(widget\.buffNames\) \? widget\.buffNames : \[\]/,

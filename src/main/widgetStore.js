@@ -828,7 +828,7 @@ const BARD_SONGS_KIND = 'bard-songs-builtin';
 // The trigger modes customTimerEngine understands. Anything else is exact whole-line matching.
 // Kept beside the store rather than in the engine because this is the list the store validates
 // against, and a mode missing from HERE is a mode that silently stops working.
-const TRIGGER_MATCH_MODES = ['contains', 'castOf', 'anyCast', 'zoneEnter', 'zoneLeave'];
+const TRIGGER_MATCH_MODES = ['contains', 'castOf', 'zoneEnter', 'zoneLeave'];
 
 // Every scaleCategory:'charm' spell in the current roster (src/shared/data/buffs.json), for the
 // "Charm broke" text-aura preset below. A snapshot, not derived live from the roster at build time
@@ -1046,6 +1046,24 @@ class WidgetStore {
         }
         data.version = 3;
       }
+      // v3 -> v4: the GCD / global-recovery tracker (backlog #38) was removed - the recovery is
+      // ~1.5s and the overlay counts in whole seconds, so a correctly-timed tile only ever
+      // flashed. Drop any aura built from that premade, and strip a stray gcdRecovery/anyCast
+      // timer from anything else (there is no path that put one anywhere but a gcdTimer aura, but
+      // an imported share code could carry one). Version-gated, so nothing to redo on later loads.
+      if (data.version < 4) {
+        data.widgets = data.widgets.filter(
+          (w) => !(w.premadeOrigin && w.premadeOrigin.kind === 'gcdTimer')
+        );
+        for (const widget of data.widgets) {
+          if (Array.isArray(widget.customTimers)) {
+            widget.customTimers = widget.customTimers.filter(
+              (t) => !t.gcdRecovery && t.triggerMatch !== 'anyCast'
+            );
+          }
+        }
+        data.version = 4;
+      }
       this.store.saveJson('widgets', data);
       return data;
     }
@@ -1066,7 +1084,7 @@ class WidgetStore {
 
     const selfBuffs = defaultSelfBuffsWidget(overrides);
 
-    const data = { version: 3, widgets: [selfBuffs] };
+    const data = { version: 4, widgets: [selfBuffs] };
     this.store.saveJson('widgets', data);
     return data;
   }
@@ -1226,36 +1244,6 @@ class WidgetStore {
     return widget;
   }
 
-  // Backlog #38 - the GCD (global spell recovery) tracker. A custom-timer widget with one timer
-  // whose trigger is 'anyCast' (fires on every cast / song / activate line) and whose length is
-  // NOT the stored durationSec but the recovery for that specific cast, scaled by its mote rank -
-  // see customTimerEngine's gcdSecForRank / the def.gcdRecovery branch in handleLine. The stored
-  // 1.5 is the rank-0 value, kept as a sane fallback and for the settings panel's default.
-  createGcdTimer(name, { iconId, activeProfileIds } = {}) {
-    const widget = defaultCustomWidget(name || 'Global recovery');
-    widget.buffSource = 'customTimer';
-    widget.iconsPerRow = 1;
-    widget.customTimers = [
-      {
-        id: crypto.randomUUID(),
-        name: name || 'Global recovery',
-        durationSec: 1.5,
-        // Ignored for matching by the 'anyCast' mode, but the store/engine still want a non-empty
-        // triggerText on every timer - this is the placeholder that documents what it does.
-        triggerText: 'any cast',
-        triggerMatch: 'anyCast',
-        gcdRecovery: true,
-        endedText: '',
-        iconId: iconId ?? undefined,
-      },
-    ];
-    widget.buffNames = [name || 'Global recovery'];
-    widget.premadeOrigin = { kind: 'gcdTimer', iconId };
-    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
-    this.data.widgets.push(widget);
-    this._save();
-    return widget;
-  }
 
   // Note 20. The travel guide.
   //
@@ -1475,12 +1463,7 @@ class WidgetStore {
     // like cooldownSec below, because every Save from the form computes a definite value for
     // the CURRENT mode (undefined in chat mode, 'contains' or undefined in raw mode) and should
     // fully replace whatever the timer had before, not merge with it.
-    // A GCD timer (#38) is 'anyCast' by construction and the edit form has no control for that
-    // mode - keep it pinned so a Save through the ordinary trigger UI can't quietly turn it into
-    // an exact-match timer that then never fires.
-    timer.triggerMatch = timer.gcdRecovery
-      ? 'anyCast'
-      : TRIGGER_MATCH_MODES.includes(triggerMatch) ? triggerMatch : undefined;
+    timer.triggerMatch = TRIGGER_MATCH_MODES.includes(triggerMatch) ? triggerMatch : undefined;
     // Only touched when the caller actually said something about it. An empty box sends 0 and
     // clears it, which is right; a caller that has never heard of the field leaves it alone, which
     // is also right. Rewriting unconditionally meant any code path not yet updated for a new field

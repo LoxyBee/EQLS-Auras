@@ -28,7 +28,7 @@ section to **[Confirmed](#confirmed)** at the bottom so the active list stays sh
 | 8 | [Session, memory and stability](#8--session-memory-and-stability) | Restore, gem bar, crashes |
 | 9 | [Built, but nothing to test](#9--built-but-nothing-to-test) | Recorded so it isn't lost |
 | 10 | [Lockouts and log tools](#10--lockouts-and-log-tools) | Raid lockout grid, reset setting, log trim / rotation / archive |
-| 11 | [Backlog batch (30 Aug)](#11--backlog-batch-30-aug) | Death-clears, config export/import, preview button, GCD tracker, mute/sound-cooldown |
+| 11 | [Backlog batch (30 Aug)](#11--backlog-batch-30-aug) | Death-clears, config export/import, preview button, mute/sound-cooldown, zone aliases |
 | — | [Confirmed](#confirmed) | Done, kept as regression guards |
 
 ---
@@ -45,7 +45,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a cha
 a zone. If it is red, nothing below is worth doing yet — read the failure text, it says what broke
 and why.
 
-**74 suites** as of this writing, growing. The ones worth knowing by name, because each guards something that broke
+**73 suites** as of this writing, growing. The ones worth knowing by name, because each guards something that broke
 for real once:
 
 | Suite | Guards |
@@ -1539,14 +1539,6 @@ working as designed). Record: single-instance guard verified; fresh-start smoke 
 - [ ] **Per-aura "Sound cooldown"** — set 10s on an aura watching something that pulses (a bard
       song, Clarity) → the alert fires once, not on every pulse. Reopen the settings panel and the
       slider still shows 10s (it used to reset to 0).
-
-## GCD tracker (#38)
-
-- [ ] Add the **"Global recovery (GCD)"** premade (Timers group). Cast something → a ~1.5s tile
-      appears and counts down.
-- [ ] Cast a **high-mote-rank** spell → the tile is shorter (~1.3s at rank 7).
-- [ ] A **bard song** and an **AA activate** both trigger it.
-- [ ] Chat text containing the word "casting" does **not** trigger it.
 
 ## Skill-cast trigger picker + zone aliases (#44, #30)
 

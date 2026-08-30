@@ -39,9 +39,14 @@ function makeSpawnFn() {
   return spawnFn;
 }
 
-/** Writes a fake PowerShell response (a process name line, then the delimiter) to stdout. */
-function respond(proc, name) {
-  proc.stdout.emit('data', Buffer.from(`${name}\r\n${RESPONSE_DELIMITER}\r\n`));
+/**
+ * Writes a fake PowerShell response to stdout. The real script emits "<name>|<quns>"; `quns` here
+ * defaults to 5 (QUNS_ACCEPTS_NOTIFICATIONS - a normal windowed desktop). Pass a bare-name string
+ * with no pipe by setting quns to null, to check the degrade path.
+ */
+function respond(proc, name, quns = 5) {
+  const line = quns === null ? name : `${name}|${quns}`;
+  proc.stdout.emit('data', Buffer.from(`${line}\r\n${RESPONSE_DELIMITER}\r\n`));
 }
 
 test('a query writes the query script to stdin and resolves with the delimited response', async () => {
@@ -52,7 +57,7 @@ test('a query writes the query script to stdin and resolves with the delimited r
   assert.ok(proc.stdin.writes.some((w) => w.includes('GetForegroundWindow')), 'setup script never written');
   assert.ok(proc.stdin.writes.some((w) => w.includes(RESPONSE_DELIMITER)), 'query script never written');
   respond(proc, 'eqgame');
-  assert.equal(await resultPromise, 'eqgame');
+  assert.equal(await resultPromise, 'eqgame|5', 'query() returns the raw "<name>|<quns>" line; _poll parses it');
 });
 
 test('only ONE powershell.exe is spawned across many queries - the process is reused, not respawned', async () => {
@@ -98,7 +103,7 @@ test('a query after the process died respawns a fresh one rather than reusing th
   const second = probe.query();
   assert.equal(spawnFn.created.length, 2, 'no new process was spawned after the first one died');
   respond(spawnFn.created[1], 'eqgame');
-  assert.equal(await second, 'eqgame');
+  assert.equal(await second, 'eqgame|5');
 });
 
 test('stop() ends stdin and kills the process, and fails any still-pending query', async () => {
@@ -123,7 +128,7 @@ test('ForegroundWatcher emits focusChanged on the very first poll even if the st
   respond(spawnFn.created[0], 'notepad');
   await new Promise((r) => setImmediate(r));
   assert.equal(events.length, 1);
-  assert.deepEqual(events[0], { eqFocused: false, ownAppFocused: false });
+  assert.deepEqual(events[0], { eqFocused: false, ownAppFocused: false, foregroundFullscreen: false });
   watcher.stop();
 });
 
@@ -137,7 +142,7 @@ test('ForegroundWatcher does not re-emit when the poll returns the same state tw
   respond(spawnFn.created[0], 'eqgame');
   await p1;
   assert.equal(events.length, 1);
-  assert.deepEqual(events[0], { eqFocused: true, ownAppFocused: false });
+  assert.deepEqual(events[0], { eqFocused: true, ownAppFocused: false, foregroundFullscreen: false });
 
   const p2 = watcher._poll();
   respond(spawnFn.created[0], 'eqgame'); // identical result the second time
@@ -148,7 +153,50 @@ test('ForegroundWatcher does not re-emit when the poll returns the same state tw
   respond(spawnFn.created[0], 'notepad'); // now it actually changes
   await p3;
   assert.equal(events.length, 2);
-  assert.deepEqual(events[1], { eqFocused: false, ownAppFocused: false });
+  assert.deepEqual(events[1], { eqFocused: false, ownAppFocused: false, foregroundFullscreen: false });
+});
+
+// ---------------------------------------------------------------------------
+// Exclusive-fullscreen detection (#9)
+// ---------------------------------------------------------------------------
+
+test('QUNS_RUNNING_D3D_FULL_SCREEN (3) sets foregroundFullscreen, and clearing it fires again', async () => {
+  const spawnFn = makeSpawnFn();
+  const watcher = new ForegroundWatcher(spawnFn);
+  const events = [];
+  watcher.on('focusChanged', (s) => events.push(s));
+
+  const p1 = watcher._poll();
+  respond(spawnFn.created[0], 'eqgame', 3); // EQ, exclusive fullscreen
+  await p1;
+  assert.deepEqual(events.at(-1), { eqFocused: true, ownAppFocused: false, foregroundFullscreen: true });
+
+  const p2 = watcher._poll();
+  respond(spawnFn.created[0], 'eqgame', 3); // unchanged
+  await p2;
+  assert.equal(events.length, 1, 'an unchanged fullscreen state should not re-emit');
+
+  const p3 = watcher._poll();
+  respond(spawnFn.created[0], 'eqgame', 5); // dropped to windowed
+  await p3;
+  assert.deepEqual(events.at(-1), { eqFocused: true, ownAppFocused: false, foregroundFullscreen: false });
+});
+
+test('presentation mode (4) also counts; a bare name with no quns degrades to not-fullscreen', async () => {
+  const spawnFn = makeSpawnFn();
+  const watcher = new ForegroundWatcher(spawnFn);
+  const events = [];
+  watcher.on('focusChanged', (s) => events.push(s));
+
+  const p1 = watcher._poll();
+  respond(spawnFn.created[0], 'powerpnt', 4);
+  await p1;
+  assert.equal(events.at(-1).foregroundFullscreen, true);
+
+  const p2 = watcher._poll();
+  respond(spawnFn.created[0], 'powerpnt', null); // old-style bare response, no pipe
+  await p2;
+  assert.equal(events.at(-1).foregroundFullscreen, false, 'a missing quns must not read as fullscreen');
 });
 
 test('ForegroundWatcher.stop() tears down the underlying probe (no orphaned powershell.exe on app quit)', () => {

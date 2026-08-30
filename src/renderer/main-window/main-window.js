@@ -3435,16 +3435,6 @@ function initWidgetsPanel() {
       reverseExample: true,
     },
     {
-      id: 'gcd-timer',
-      name: 'Global recovery (GCD)',
-      group: 'timers',
-      description:
-        'A short countdown of the global recovery lockout after every cast - the ~1.5s before you ' +
-        'can begin the next spell. Covers every cast at once, nothing to pick. The length is ' +
-        'scaled down by the mote rank of the spell you just cast.',
-      create: (name) => window.eqTracker.createGcdTimerWidget(name),
-    },
-    {
       id: 'enemy-debuff',
       name: 'Debuff on an enemy',
       group: 'timers',
@@ -6164,6 +6154,15 @@ function initLogActivityLine() {
   }
   tick();
   setInterval(tick, 3000);
+
+  // QOL #9 - the exclusive-fullscreen warning shares this card. Push channel keeps it live; ask
+  // once on load for the current value (null = the foreground watcher is off, so leave it hidden).
+  const fsLine = document.getElementById('fullscreen-warning-line');
+  if (fsLine) {
+    const setFs = (active) => { fsLine.hidden = !active; };
+    window.eqTracker.getFullscreenState?.().then((v) => setFs(v === true)).catch(() => {});
+    window.eqTracker.onFullscreenWarning?.((active) => setFs(!!active));
+  }
 }
 
 // About page's "Copy bug report" button - the simplest useful version of the backlog ask: the app

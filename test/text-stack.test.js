@@ -148,10 +148,36 @@ test('a Resist flash aura the user had already widened keeps its own "Lines visi
   assert.equal(w.maxStackTextLines, 4);
 });
 
-test('the store version lands on 3 after the migration', () => {
+test('the store version lands on 4 after the migrations', () => {
   const store = loadWith([{ id: 'sb', kind: 'self-buffs-builtin', name: 'Self Buffs' }]);
   store.getById('sb'); // force load
-  assert.equal(store.data.version, 3);
+  assert.equal(store.data.version, 4);
+});
+
+test('v3->v4 drops a GCD-tracker aura and strips a stray anyCast timer', () => {
+  const store = loadWith(
+    [
+      { id: 'sb', kind: 'self-buffs-builtin', name: 'Self Buffs' },
+      {
+        id: 'gcd', kind: 'custom', name: 'Global recovery', buffSource: 'customTimer',
+        premadeOrigin: { kind: 'gcdTimer' },
+        customTimers: [{ id: 'g', name: 'GCD', durationSec: 1.5, triggerText: 'any cast', triggerMatch: 'anyCast', gcdRecovery: true }],
+      },
+      {
+        id: 'mixed', kind: 'custom', name: 'Mixed', buffSource: 'customTimer',
+        customTimers: [
+          { id: 'keep', name: 'Keep me', durationSec: 5, triggerText: 'hello', triggerMatch: 'contains' },
+          { id: 'strip', name: 'Stray', durationSec: 1.5, triggerText: 'x', triggerMatch: 'anyCast', gcdRecovery: true },
+        ],
+      },
+    ],
+    3
+  );
+  store.getById('sb'); // force load + migrate
+  assert.ok(!store.getById('gcd'), 'the GCD aura survived the migration');
+  const mixed = store.getById('mixed');
+  assert.deepEqual(mixed.customTimers.map((t) => t.id), ['keep'], 'the stray anyCast timer was not stripped');
+  assert.equal(store.data.version, 4);
 });
 
 // ---------------------------------------------------------------------------

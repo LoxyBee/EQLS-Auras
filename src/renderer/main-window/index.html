@@ -114,6 +114,12 @@
              this existed the only confirmation was Log > Diagnostics > Live feed. -->
         <div class="card" id="log-activity-card">
           <p id="log-activity-line" class="hint">Checking the log…</p>
+          <!-- QOL #9 - shown only while an exclusive-fullscreen app is detected in front. Hidden
+               otherwise, so it never adds noise on a normal windowed setup. -->
+          <p id="fullscreen-warning-line" class="hint warn" hidden>
+            EverQuest looks like it is running in exclusive full-screen — auras will not be visible
+            over it. Switch EQ to Windowed or Borderless Windowed.
+          </p>
         </div>
 
         <!-- Front and centre on the landing page on purpose: an empty
