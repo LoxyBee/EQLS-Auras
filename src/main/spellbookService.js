@@ -3,6 +3,7 @@ const path = require('path');
 const { stripRankSuffix } = require('./buffParser');
 
 const RELOAD_INTERVAL_MS = 30000;
+const SPELLBOOK_RE = /^(.+)-(.+)-Spellbook\.txt$/i;
 
 // The EQ client writes a per-character spellbook file in the install root,
 // e.g. "Shara_rivervale-SHM-Spellbook.txt" (one "<slot><TAB><Spell Name>"
@@ -12,15 +13,28 @@ const RELOAD_INTERVAL_MS = 30000;
 // message down to "this was almost certainly my own cast", since most
 // ambiguous text is only shared among a handful of spells and a given
 // character only has access to a few of them at most.
+//
+// The class segment in the filename is NEVER used to find or filter - the
+// match is `<base>-<anything>-Spellbook.txt`, case-insensitive. A multiclass
+// character (see profileStore.js / the loadout mechanic) has one spellbook
+// file per class it has run `/outputfile spellbook` on, and readdirSync
+// order is arbitrary, so all matching files are read and their spell lists
+// UNIONed. Semantics: "scribed in ANY loadout". Live gem-state tracking
+// (buffEngine's currentlyMemorized) narrows that back to the active loadout
+// on top, which is the layer that actually needs to be loadout-accurate.
 class SpellbookService {
   constructor() {
     this.installRoot = null;
     // Derived from the watched log file's name (eqlog_<base>.txt). The auto path.
     this.characterBaseName = null;
     // QOL #14 - a manual "<name>_<server>" the user typed on the Setup page, for when auto
-    // detection picks the wrong character (multiple logs) or none. Takes priority when set.
+    // detection picks the wrong character (multiple logs) or none. Beats the log-derived name.
     this.overrideBaseName = null;
-    this.filePath = null;
+    // An explicit file the user picked from "Change spellbook file..." - an absolute path. Beats
+    // both name paths: a safety valve for a machine with more than one character's spellbooks.
+    this.fileOverride = null;
+    // [{ path, className, count }] for whatever is currently loaded - drives the Setup status line.
+    this.loadedFiles = [];
     this.spellNames = new Set(); // lowercased, exact
     this.baseSpellNames = new Set(); // lowercased, rank suffix stripped
     this.timer = null;
@@ -46,8 +60,26 @@ class SpellbookService {
     this._resolveAndLoad();
   }
 
+  // An absolute path to a specific *-Spellbook.txt, or null to go back to name-based detection.
+  // Persisted by main.js under its own key.
+  setFileOverride(filePath) {
+    const next = filePath || null;
+    if (this.fileOverride === next) return;
+    this.fileOverride = next;
+    this._resolveAndLoad();
+  }
+
   _effectiveBaseName() {
     return this.overrideBaseName || this.characterBaseName;
+  }
+
+  // 'file' - a hand-picked file; 'manual' - the typed name/server; 'auto' - the log-derived name;
+  // 'none' - nothing to go on yet.
+  _mode() {
+    if (this.fileOverride) return 'file';
+    if (this.overrideBaseName) return 'manual';
+    if (this.characterBaseName) return 'auto';
+    return 'none';
   }
 
   _resolveAndLoad() {
@@ -55,50 +87,70 @@ class SpellbookService {
       clearInterval(this.timer);
       this.timer = null;
     }
-    this.filePath = this._findFile();
-    this._load();
-    if (this.filePath) {
-      this.timer = setInterval(() => this._load(), RELOAD_INTERVAL_MS);
+    this._load(this._findFiles());
+    if (this.loadedFiles.length) {
+      this.timer = setInterval(() => this._load(this._findFiles()), RELOAD_INTERVAL_MS);
     }
   }
 
-  _findFile() {
+  // Every spellbook file the current mode points at (absolute paths). A file override is just
+  // that one file; a name (typed or log-derived) is every `<base>-*-Spellbook.txt` in the root.
+  _findFiles() {
+    if (this.fileOverride) {
+      return fs.existsSync(this.fileOverride) ? [this.fileOverride] : [];
+    }
     const base = this._effectiveBaseName();
-    if (!this.installRoot || !base) return null;
+    if (!this.installRoot || !base) return [];
     let entries;
     try {
       entries = fs.readdirSync(this.installRoot);
     } catch {
-      return null;
+      return [];
     }
     const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp(`^${escaped}-.+-Spellbook\\.txt$`, 'i');
-    const match = entries.find((name) => pattern.test(name));
-    return match ? path.join(this.installRoot, match) : null;
+    return entries
+      .filter((name) => pattern.test(name))
+      .sort()
+      .map((name) => path.join(this.installRoot, name));
   }
 
-  _load() {
-    if (!this.filePath) {
-      this.spellNames = new Set();
-      this.baseSpellNames = new Set();
-      return;
-    }
+  // Class segment out of a spellbook filename, or '?'.
+  _classOf(filePath) {
+    const m = SPELLBOOK_RE.exec(path.basename(filePath));
+    return m ? m[2].toUpperCase() : '?';
+  }
+
+  _readOne(filePath) {
     try {
-      const content = fs.readFileSync(this.filePath, 'utf8');
-      const names = new Set();
-      const baseNames = new Set();
+      const content = fs.readFileSync(filePath, 'utf8');
+      const names = [];
       for (const line of content.split(/\r?\n/)) {
         const name = (line.split('\t')[1] || '').trim();
-        if (!name) continue;
+        if (name) names.push(name);
+      }
+      return names;
+    } catch {
+      return null;
+    }
+  }
+
+  _load(files) {
+    const names = new Set();
+    const baseNames = new Set();
+    const loaded = [];
+    for (const filePath of files) {
+      const spells = this._readOne(filePath);
+      if (spells === null) continue;
+      for (const name of spells) {
         names.add(name.toLowerCase());
         baseNames.add(stripRankSuffix(name).toLowerCase());
       }
-      this.spellNames = names;
-      this.baseSpellNames = baseNames;
-    } catch {
-      this.spellNames = new Set();
-      this.baseSpellNames = new Set();
+      loaded.push({ path: filePath, className: this._classOf(filePath), count: spells.length });
     }
+    this.spellNames = names;
+    this.baseSpellNames = baseNames;
+    this.loadedFiles = loaded;
   }
 
   has(spellName) {
@@ -107,30 +159,68 @@ class SpellbookService {
     return this.baseSpellNames.has(stripRankSuffix(spellName).toLowerCase());
   }
 
+  // First loaded file, kept for callers that predate multi-file. Prefer getLoadedFiles().
   getFilePath() {
-    return this.filePath;
+    return this.loadedFiles.length ? this.loadedFiles[0].path : null;
   }
 
+  getLoadedFiles() {
+    return this.loadedFiles.map((f) => ({ ...f }));
+  }
+
+  // Total across every loaded file (the union) - so a two-class character sees one honest number.
   getCount() {
     return this.spellNames.size;
+  }
+
+  // Every `*-Spellbook.txt` in the install root, for the "Change spellbook file..." picker -
+  // regardless of which character or class. Each with the character + class parsed from the name
+  // and its scribed-spell count. Empty when the root is unknown or unreadable.
+  listCandidates() {
+    if (!this.installRoot) return [];
+    let entries;
+    try {
+      entries = fs.readdirSync(this.installRoot);
+    } catch {
+      return [];
+    }
+    return entries
+      .filter((name) => SPELLBOOK_RE.test(name))
+      .sort()
+      .map((name) => {
+        const full = path.join(this.installRoot, name);
+        const m = SPELLBOOK_RE.exec(name);
+        const spells = this._readOne(full);
+        return {
+          path: full,
+          fileName: name,
+          character: m ? m[1] : name,
+          className: m ? m[2].toUpperCase() : '?',
+          count: spells ? spells.length : 0,
+        };
+      });
   }
 
   /**
    * Where it looked and what it looked for, so the settings window can say something actionable
    * when the file is not there instead of promising it will turn up on its own.
    *
-   * This is not a hypothetical. On the machine this was written on the file has never existed
+   * This is not a hypothetical. On the machine this was written on the file had never existed
    * across eight logged sessions, which means the spellbook check - the app's strongest tool for
-   * deciding whether an ambiguous buff message is yours - has been contributing nothing, and
+   * deciding whether an ambiguous buff message is yours - had been contributing nothing, and
    * hundreds of landings per session were being ignored for want of it.
    */
   getExpectation() {
     const base = this._effectiveBaseName();
     return {
       folder: this.installRoot,
-      fileNamePattern: base ? `${base}-<CLASS>-Spellbook.txt` : null,
-      // True when the pattern is coming from the manually entered character rather than the log.
-      manualCharacter: !!this.overrideBaseName,
+      mode: this._mode(),
+      // The class segment is a wildcard - any file named `<base>-<anything>-Spellbook.txt` counts.
+      fileNamePattern: base ? `${base}-<class>-Spellbook.txt` : null,
+      // Deprecated alias of `mode === 'manual'`, kept for callers not yet updated.
+      manualCharacter: this._mode() === 'manual',
+      // What is actually loaded right now: [{ path, className, count }].
+      files: this.getLoadedFiles(),
     };
   }
 }

@@ -123,6 +123,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getSpellbookState: () => ipcRenderer.invoke('spellbook:getState'),
   getSpellbookCharacter: () => ipcRenderer.invoke('spellbook:getCharacter'),
   setSpellbookCharacter: (name, server) => ipcRenderer.invoke('spellbook:setCharacter', { name, server }),
+  listSpellbookCandidates: () => ipcRenderer.invoke('spellbook:listCandidates'),
+  setSpellbookFileOverride: (filePath) => ipcRenderer.invoke('spellbook:setFileOverride', filePath),
   getMemorizedSpells: () => ipcRenderer.invoke('spellbook:getMemorized'),
   forgetMemorizedSpell: (name) => ipcRenderer.invoke('spellbook:forgetMemorized', name),
   clearMemorizedSpells: () => ipcRenderer.invoke('spellbook:clearMemorized'),
