@@ -1299,8 +1299,12 @@ function initWidgetsPanel() {
   const displayModeRadios = document.querySelectorAll('input[name="widget-display-mode"]');
   const timerFormatRadios = document.querySelectorAll('input[name="widget-timer-format"]');
   const sortOrderRadios = document.querySelectorAll('input[name="widget-sort-order"]');
-  const textSizeSlider = document.getElementById('widget-text-size-slider');
-  const textSizeValueEl = document.getElementById('widget-text-size-value');
+  // The countdown / row text size (the "Timer text" topic), capped at 28px - see widgetStore's
+  // own comment on the shared `textSize` field. Its slider used to share the id
+  // widget-text-size-slider with the text-aura MESSAGE slider below, so getElementById returned
+  // whichever came first in the document (the message one) and this control did nothing at all.
+  const textSizeSlider = document.getElementById('widget-timer-text-size-slider');
+  const textSizeValueEl = document.getElementById('widget-timer-text-size-value');
   const iconSizeSlider = document.getElementById('widget-icon-size-slider');
   const iconSizeValueEl = document.getElementById('widget-icon-size-value');
   const iconsPerRowSlider = document.getElementById('widget-icons-per-row-slider');
@@ -1344,8 +1348,8 @@ function initWidgetsPanel() {
   const iconPositionSettings = document.getElementById('widget-icon-position-settings');
   const textMessageInput = document.getElementById('widget-text-message-input');
   const textMessageRowEl = document.getElementById('widget-text-message-row');
-  // textAura*, not text* - there is already a textSizeSlider for the shared list/icon text size,
-  // and this is the separate, much larger one a text aura gets to itself.
+  // textAura*, not text* - there is already a textSizeSlider (above) for the shared countdown /
+  // row text size, and this is the separate, much larger one a text aura gets to itself.
   const textAuraSizeSlider = document.getElementById('widget-text-size-slider');
   const textAuraSizeValueEl = document.getElementById('widget-text-size-value');
   const textAuraSizeRowEl = document.getElementById('widget-text-size-row');

@@ -709,7 +709,14 @@ function normalizeWidget(widget) {
   return {
     ...widget,
     displayMode: normalizeDisplayMode(widget.displayMode),
-    textSize: typeof widget.textSize === 'number' ? widget.textSize : LEGACY_TEXT_SIZE_PX[widget.textSize] || DEFAULT_TEXT_SIZE,
+    // Clamped to the slider's own 8-28 range. The control was wired to the wrong DOM element for
+    // a while (a shared id with the much larger text-aura message slider, 12-120), so a text aura
+    // whose message size was dragged up also got its `textSize` pushed past 28 - harmless there
+    // (a text aura draws no countdown) but wrong if the aura is ever switched to a tile mode.
+    textSize: Math.min(
+      28,
+      Math.max(8, typeof widget.textSize === 'number' ? widget.textSize : LEGACY_TEXT_SIZE_PX[widget.textSize] || DEFAULT_TEXT_SIZE)
+    ),
     iconSize: typeof widget.iconSize === 'number' ? widget.iconSize : DEFAULT_ICON_SIZE,
     contentAnchor: widget.contentAnchor || DEFAULT_ANCHOR,
     iconsPerRow: typeof widget.iconsPerRow === 'number' ? widget.iconsPerRow : DEFAULT_ICONS_PER_ROW,
