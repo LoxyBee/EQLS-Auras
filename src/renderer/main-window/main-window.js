@@ -5767,8 +5767,11 @@ function _pickLogFiles({ title = 'Choose a log file', hint = '', multi = false, 
     document.getElementById('log-picker-hint').textContent = hint;
     const list = document.getElementById('log-picker-list');
     list.innerHTML = '';
-    const mb = (n) => (n / 1048576).toFixed(1) + ' MB';
-    const sections = [['live', 'Current log folder'], ['split', 'Split (per-day)'], ['archive', 'Archive (weekly)']];
+    const mb = (n) => (typeof n === 'number' && n >= 0 ? `  (${(n / 1048576).toFixed(1)} MB)` : '');
+    const sections = [
+      ['live', 'Current log folder'], ['split', 'Split (per-day)'], ['archive', 'Archive (weekly)'],
+      ['export', 'Exported bundles'], ['backup', 'Backups'], // reused by the #3c config import picker
+    ];
     let firstInput = null;
     for (const [key, label] of sections) {
       const files = groups[key] || [];
@@ -5790,7 +5793,7 @@ function _pickLogFiles({ title = 'Choose a log file', hint = '', multi = false, 
         firstInput = firstInput || input;
         const lab = document.createElement('label');
         lab.appendChild(input);
-        lab.appendChild(document.createTextNode(` ${f.name}  (${mb(f.size)})`));
+        lab.appendChild(document.createTextNode(` ${f.name}${mb(f.size)}`));
         li.appendChild(lab);
         list.appendChild(li);
       }
@@ -6054,6 +6057,75 @@ function initConfigFolderLink() {
           ? `Backed up ${r.items} item${r.items === 1 ? '' : 's'} to  backups\\${r.path.split(/[\\/]/).pop()}`
           : `Backup failed: ${r.error || 'unknown'}`;
         statusEl.classList.toggle('warn', !r.ok);
+      }
+    });
+  }
+
+  // QOL #3c - export / import a portable config bundle.
+  const exportBtn = document.getElementById('export-config-btn');
+  const importBtn = document.getElementById('import-config-btn');
+  const openExportsBtn = document.getElementById('open-exports-folder-btn');
+  const xferStatusEl = document.getElementById('transfer-config-status');
+  const setXfer = (text, warn) => {
+    if (!xferStatusEl) return;
+    xferStatusEl.textContent = text;
+    xferStatusEl.classList.toggle('warn', !!warn);
+  };
+  if (openExportsBtn) openExportsBtn.addEventListener('click', () => window.eqTracker.openExportsFolder());
+  if (exportBtn) {
+    exportBtn.addEventListener('click', async () => {
+      exportBtn.disabled = true;
+      setXfer('Exporting…');
+      const r = await window.eqTracker.exportConfig().catch(() => ({ ok: false, error: 'failed' }));
+      exportBtn.disabled = false;
+      setXfer(
+        r.ok
+          ? `Exported to  exports\\${r.path.split(/[\\/]/).pop()}  — zip that folder to share it.`
+          : `Export failed: ${r.error || 'unknown'}`,
+        !r.ok
+      );
+    });
+  }
+  if (importBtn) {
+    importBtn.addEventListener('click', async () => {
+      const list = await window.eqTracker.listImportableConfig().catch(() => []);
+      if (!list.length) {
+        await appConfirm({
+          title: 'Nothing to import',
+          message: 'No exported bundle or backup was found. Export one first, or drop a bundle folder into the exports folder.',
+          okLabel: 'OK', hideCancel: true,
+        });
+        return;
+      }
+      const groups = { export: [], backup: [] };
+      for (const b of list) groups[b.group].push({ name: b.name, path: b.path });
+      const picked = await pickLogFiles({
+        title: 'Import config',
+        hint: 'Pick a bundle. Your current config is backed up first, then the app restarts.',
+        multi: false,
+        groups,
+      });
+      if (!picked) return;
+      const go = await appConfirm({
+        title: 'Import config',
+        message: 'Replace this PC\'s auras, profiles, known-buff edits, sounds and settings with the picked bundle?',
+        detail: 'Your current config is copied to backups\\ first. The app then restarts to load the new one.',
+        okLabel: 'Import and restart',
+        danger: true,
+      });
+      if (!go) return;
+      setXfer('Importing…');
+      const r = await window.eqTracker.importConfig(picked[0]).catch(() => ({ ok: false, error: 'failed' }));
+      if (r.ok) {
+        await appConfirm({
+          title: 'Imported',
+          message: `Imported ${r.items} item${r.items === 1 ? '' : 's'}. Restart the app now to load it.`,
+          detail: `Your previous config was saved to ${r.backedUpTo}`,
+          okLabel: 'OK', hideCancel: true,
+        });
+        setXfer('Imported — restart the app to apply.');
+      } else {
+        setXfer(`Import failed: ${r.error || 'unknown'}`, true);
       }
     });
   }

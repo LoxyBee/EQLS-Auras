@@ -1191,6 +1191,18 @@
             <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
           </div>
           <p class="hint" id="backup-config-status"></p>
+          <p class="hint">
+            <strong>Move to another PC, or hand the app to someone:</strong> "Export config" writes
+            a bundle (auras, profiles, known-buff edits, sounds, settings) into a folder you can zip
+            and send. "Import config" replaces this PC's config with a bundle - your current config
+            is backed up first, and the app restarts.
+          </p>
+          <div class="row">
+            <button type="button" id="export-config-btn">Export config…</button>
+            <button type="button" id="import-config-btn">Import config…</button>
+            <button type="button" id="open-exports-folder-btn">📁 Open exports folder</button>
+          </div>
+          <p class="hint" id="transfer-config-status"></p>
         </div>
 
       </section>

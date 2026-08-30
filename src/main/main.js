@@ -62,6 +62,7 @@ const zonePromptPopup = require('./zonePromptPopup');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
 const soundService = require('./soundService');
+const configTransfer = require('./configTransfer');
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'eqicon', privileges: { standard: true, supportFetchAPI: true, corsEnabled: true } },
@@ -1977,6 +1978,16 @@ ipcMain.handle('sounds:openFolder', () => soundService.openPickerFolder());
 // QOL #3a - the userData folder, where every aura / profile / setting JSON lives. For a manual
 // backup before an update.
 ipcMain.handle('app:openConfigFolder', () => shell.openPath(app.getPath('userData')));
+
+// QOL #3c - export / import the whole config as a portable bundle folder. See configTransfer.js.
+ipcMain.handle('config:export', () => configTransfer.exportConfig(app.getPath('userData')));
+ipcMain.handle('config:listImportable', () => configTransfer.listImportable(app.getPath('userData')));
+ipcMain.handle('config:import', (_event, sourcePath) => configTransfer.importConfig(app.getPath('userData'), sourcePath));
+ipcMain.handle('config:openExportsFolder', () => {
+  const dir = path.join(app.getPath('userData'), 'exports');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* ignore */ }
+  return shell.openPath(dir);
+});
 
 // QOL #3b - "Back up now". Copies userData into a dated folder inside itself, skipping the
 // Electron/Chromium cache dirs, the detection logs (large, ephemeral, not config) and the backups
