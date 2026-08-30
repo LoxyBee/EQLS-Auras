@@ -2264,6 +2264,7 @@ function initWidgetsPanel() {
     if (widget.kind === 'self-buffs-builtin') return 'Self Buffs';
     if (widget.kind === 'ally-buffs-builtin') return 'Ally Buffs';
     if (widget.kind === 'bard-songs-builtin') return 'Bard Songs';
+    if (widget.kind === 'raid-named-builtin') return 'Raid named';
     if (widget.buffSource === 'damage') return 'Damage parser';
     if (widget.buffSource === 'travel') return 'Travel guide';
     if (widget.displayMode === 'text') return 'Custom text';
@@ -2317,6 +2318,7 @@ function initWidgetsPanel() {
     if (widget.kind === 'self-buffs-builtin') return 'self-buffs';
     if (widget.kind === 'ally-buffs-builtin') return 'ally-buffs';
     if (widget.kind === 'bard-songs-builtin') return 'bard-songs';
+    if (widget.kind === 'raid-named-builtin') return 'raid-named';
     if (widget.buffSource === 'damage') return 'damage';
     if (widget.buffSource === 'travel') return 'travel';
     if (widget.displayMode === 'text') {
@@ -2337,6 +2339,11 @@ function initWidgetsPanel() {
     // home on Self Buffs' own panel) - see widgetStore.js's defaultBardSongsWidget for the same
     // reasoning on the data side.
     'bard-songs': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'ally-grouping'],
+    // Backlog #33. No picker or source (content is the current zone's named list), no 'sort' (the
+    // board is fixed boss-then-mini order, like the travel route), no 'merge'/'borders' (no
+    // duration, no spell category). Just how it looks and where it sits, plus the list sizing
+    // controls that matter for a checklist ('list-format', same as travel).
+    'raid-named': ['list-format', 'timer-text', 'opacity', 'position', 'alerts'],
     'custom-buff': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'buff-source', 'buff-picker', 'ally-grouping'],
     'custom-debuff': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'debuff-cast-by', 'buff-picker', 'ally-grouping'],
     'ally-alert': ['text-fields', 'text-instant', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-picker'],
@@ -3478,6 +3485,26 @@ function initWidgetsPanel() {
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'charmBroke'),
     },
     {
+      id: 'loss-of-control',
+      name: 'Loss of control',
+      group: 'event-alerts',
+      description:
+        'Shows STUNNED / MESMERIZED / CHARMED / AFRAID / ROOTED / SNARED while one of those is on ' +
+        'you, and clears the instant it lifts. One tile, whichever applies. Watches the charm, ' +
+        'fear, root, snare, mez and stun wordings at once - the trigger list is editable to add more.',
+      create: (name) => window.eqTracker.createTextAuraWidget(name, 'lossOfControl'),
+    },
+    {
+      id: 'pet-status',
+      name: 'Pet status',
+      group: 'event-alerts',
+      description:
+        'For a charmed pet (bard or enchanter). Shows PET ENGAGED while it is fighting, PET IDLE ' +
+        'when it backs off, and PET GONE the moment your charm breaks. Reads the pet’s own ' +
+        '"Attacking ... Master" / "calming down" lines, so it works no matter which mob you have charmed.',
+      create: (name) => window.eqTracker.createTextAuraWidget(name, 'petStatus'),
+    },
+    {
       id: 'ally-buffs',
       name: 'Ally Buffs',
       group: 'standalone',
@@ -3490,6 +3517,16 @@ function initWidgetsPanel() {
       group: 'standalone',
       description: 'Every bard song currently on you, no matter who cast it. Grouped by caster when that’s knowable (including your own casts) - everything else lands in an "Unknown" group instead of guessing.',
       create: (name) => window.eqTracker.createBardSongsWidget(name),
+    },
+    {
+      id: 'raid-named',
+      name: 'Raid named',
+      group: 'standalone',
+      description:
+        'A checklist of the named mobs in the raid zone you are in - all shown when you enter, ' +
+        'greyed out as they die, reset to a full list when you re-enter (a fresh instance). ' +
+        'Covers Plane of Sky / Hate / Fear, Nagafen and Vox for now; add more as you visit them.',
+      create: (name) => window.eqTracker.createRaidNamedWidget(name),
     },
     {
       id: 'travel-guide',

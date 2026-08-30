@@ -26,6 +26,11 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onActiveDamageChanged: (callback) => {
     ipcRenderer.on('damage:active', (_event, rows) => callback(rows));
   },
+  // Backlog #33 - the current raid zone's named-kill board.
+  getActiveRaidNamed: () => ipcRenderer.invoke('raidNamed:getActive'),
+  onRaidNamedChanged: (callback) => {
+    ipcRenderer.on('raidNamed:active', (_event, rows) => callback(rows));
+  },
   getLockState: (widgetId) => ipcRenderer.invoke('widget:isLocked', widgetId),
   onLockChanged: (callback) => {
     ipcRenderer.on('widget:lockChanged', (_event, locked) => callback(locked));

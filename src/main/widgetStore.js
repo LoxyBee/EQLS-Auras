@@ -572,6 +572,22 @@ function defaultAllyBuffsWidget(name) {
 // shape as Ally Buffs, for the same reason - see that function's own comment.
 // Size/position/icons-per-row match the owner's own live Bard Songs widget as of 25 Aug - same
 // request as defaultSelfBuffsWidget/defaultAllyBuffsWidget above.
+// The "Raid named" board (backlog #33). No picker, no source - the content is the current raid
+// zone's named list, greyed as they die (see raidNamedTracker.js). A list, not icons: it reads as
+// a checklist. Non-singleton, user-adds-it, same shape as Bard Songs / Ally Buffs.
+function defaultRaidNamedWidget(name) {
+  return {
+    ...defaultCustomWidget(name),
+    kind: RAID_NAMED_KIND,
+    buffSource: 'raidNamed',
+    displayMode: 'list',
+    width: 220,
+    height: 260,
+    position: { x: 52, y: 120 },
+    categoryBorderWidthPx: 0,
+  };
+}
+
 function defaultBardSongsWidget(name) {
   return {
     ...defaultCustomWidget(name),
@@ -705,8 +721,14 @@ function normalizeWidget(widget) {
     // Existing widgets saved before ally-buff tracking existed have no
     // buffSource at all - they were always self-only, so 'self' is the
     // behavior-preserving default. ally-buffs-builtin always forces 'ally'
-    // regardless of what's stored, since its source isn't user-editable.
-    buffSource: widget.kind === 'ally-buffs-builtin' ? 'ally' : widget.buffSource || 'self',
+    // regardless of what's stored, since its source isn't user-editable;
+    // raid-named-builtin the same, forcing 'raidNamed'.
+    buffSource:
+      widget.kind === 'ally-buffs-builtin'
+        ? 'ally'
+        : widget.kind === RAID_NAMED_KIND
+          ? 'raidNamed'
+          : widget.buffSource || 'self',
     // Coerced for the same reason customTimers and excludedBuffNames are, and it was the one
     // list field missing the guard. Share codes are pasted out of chat by design, and overlay.js
     // feeds this straight into a Set - a non-array throws there and takes the whole render with
@@ -824,6 +846,10 @@ const LOADOUT_LABEL_KIND = 'loadout-label-builtin';
 // repeated string literals in several files instead of a shared constant is this project's own
 // stated lesson in that comment, not a pattern to repeat a third time.
 const BARD_SONGS_KIND = 'bard-songs-builtin';
+// Backlog #33 - the raid named-kill board. Like BARD_SONGS_KIND it has no buff picker and no
+// source choice (its content is fixed: the current zone's named list), so it reuses the same
+// settings-panel shape. Fed by raidNamedTracker.js, not buffEngine.
+const RAID_NAMED_KIND = 'raid-named-builtin';
 
 // The trigger modes customTimerEngine understands. Anything else is exact whole-line matching.
 // Kept beside the store rather than in the engine because this is the list the store validates
@@ -840,6 +866,32 @@ const CHARM_SPELL_NAMES = [
   'Allure', 'Allure of the Wild', 'Befriend Animal', 'Beguile', 'Beguile Animals',
   'Beguile Plants', 'Beguile Undead', 'Cajole Undead', 'Cajoling Whispers', 'Charm',
   'Charm Animals', 'Dominate Undead', "Solon's Bewitching Bravura", "Solon's Song of the Sirens",
+];
+
+// Backlog #36 - the "you can't act right now" text aura. { label, land, end } triples: `land` is
+// the exact line the game writes when that control lands ON THE PLAYER, `end` a substring of the
+// line when it lifts. Both drawn from the roster's own landingText/endedText for the charm / fear /
+// root / snare / mez families plus what actually appears in the owner's logs ("You are stunned!" /
+// "You are no longer stunned." 352/387 times, "You are ensnared." / "You have been entranced.").
+// The game's universal "You are no longer X." fade wording makes `end` reliable; the per-timer
+// `secs` is only a safety net for a missed fade line. Not exhaustive - mob-specific positional
+// stuns and unusual roots won't all be here - but the trigger list is editable like any aura's.
+const LOSS_OF_CONTROL = [
+  { label: 'STUNNED', land: 'You are stunned!', end: 'You are no longer stunned.', secs: 10 },
+  { label: 'STUNNED', land: 'You are stunned by a gust of air.', end: 'You are no longer stunned.', secs: 10 },
+  { label: 'STUNNED', land: 'You are struck by a sudden force.', end: 'You are no longer stunned.', secs: 10 },
+  { label: 'MESMERIZED', land: 'You have been entranced.', end: 'You are no longer entranced.', secs: 45 },
+  { label: 'MESMERIZED', land: 'You are mesmerized.', end: 'You are no longer mesmerized.', secs: 45 },
+  { label: 'CHARMED', land: 'You have been charmed.', end: 'You are no longer charmed.', secs: 45 },
+  { label: 'CHARMED', land: 'You are captivated by the bewitching tune.', end: 'You are no longer captivated.', secs: 45 },
+  { label: 'CHARMED', land: 'You are captivated by the haunting tune.', end: 'You are no longer captivated.', secs: 45 },
+  { label: 'AFRAID', land: 'Your mind fills with fear.', end: 'You are no longer afraid.', secs: 30 },
+  { label: 'AFRAID', land: 'Your mind snaps in terror.', end: 'You are no longer terrified.', secs: 30 },
+  { label: 'ROOTED', land: 'Your feet adhere to the ground.', end: 'Your feet come free.', secs: 40 },
+  { label: 'ROOTED', land: 'Your feet become entwined.', end: 'The roots fall from your feet.', secs: 40 },
+  { label: 'SNARED', land: 'You are ensnared.', end: 'You are no longer ensnared.', secs: 40 },
+  { label: 'SNARED', land: 'Your legs feel weak.', end: 'Strength returns to your legs.', secs: 40 },
+  { label: 'SNARED', land: 'You slow down as your feet are covered in tangling weeds.', end: 'The tangling weeds wither away.', secs: 40 },
 ];
 
 const TEXT_AURA_PRESETS = {
@@ -961,6 +1013,56 @@ const TEXT_AURA_PRESETS = {
       endedText: '',
     })),
   }),
+
+  // Backlog #36 - one text tile that shows what is stopping you acting (STUNNED / MESMERIZED /
+  // CHARMED / AFRAID / ROOTED / SNARED) and clears when it lifts. The message is '{spell}', which
+  // resolves to the firing timer's own name (see overlay.js textFor) - so the same aura shows the
+  // right word for whichever control landed. Exact-match triggers (not 'contains'): every `land`
+  // string here is a whole game line, and 'contains' on "stunned" would also catch "no longer
+  // stunned". `endedText` is the primary clear; `durationSec` is the fallback if that line is
+  // missed. Not stacked - the newest control replaces the line, which is the one you're under now.
+  lossOfControl: () => ({
+    buffSource: 'customTimer',
+    textAuraMessage: '{spell}',
+    textAuraSize: 48,
+    triggerDurationSec: 40,
+    customTimers: LOSS_OF_CONTROL.map((cc) => ({
+      id: crypto.randomUUID(),
+      name: cc.label,
+      durationSec: cc.secs,
+      triggerText: cc.land,
+      endedText: cc.end,
+    })),
+  }),
+
+  // Backlog #37 - "is my charmed pet fighting". A bard (Solon's Bewitching Bravura) or enchanter
+  // (Charm / Beguile / Allure) charmed pet takes a new name every charm, so this can't key on a
+  // pet name - it's a state readout off the pet's own speech lines, which ARE consistent:
+  //   "<X> told you, 'Attacking <target> Master.'"      -> engaged (repeats on every target switch)
+  //   "<X> says, 'Sorry, Master... calming down.'"       -> backed off
+  //   "<X> says, '...That is not a legal target.'"       -> can't attack, still yours
+  //   "Your <charm spell> spell has worn off of <mob>."  -> pet gone (same lines as charmBroke)
+  // '{spell}' shows the firing timer's label. Short-ish durations so a stale state fades; the
+  // engaged line re-fires constantly while the pet actually fights, keeping that tile alive.
+  petStatus: () => ({
+    buffSource: 'customTimer',
+    textAuraMessage: '{spell}',
+    textAuraSize: 44,
+    triggerDurationSec: 30,
+    customTimers: [
+      { id: crypto.randomUUID(), name: 'PET ENGAGED', durationSec: 30, triggerText: ", 'Attacking ", triggerMatch: 'contains', endedText: '' },
+      { id: crypto.randomUUID(), name: 'PET IDLE', durationSec: 20, triggerText: 'Sorry, Master... calming down.', triggerMatch: 'contains', endedText: '' },
+      { id: crypto.randomUUID(), name: 'PET IDLE', durationSec: 20, triggerText: 'That is not a legal target.', triggerMatch: 'contains', endedText: '' },
+      ...CHARM_SPELL_NAMES.map((name) => ({
+        id: crypto.randomUUID(),
+        name: 'PET GONE',
+        durationSec: 6,
+        triggerText: `${name} spell has worn off of`,
+        triggerMatch: 'contains',
+        endedText: '',
+      })),
+    ],
+  }),
 };
 
 // Note 21, as Shara redirected it on 21 August: the loadout label is a global option, not
@@ -990,6 +1092,7 @@ function defaultsForKind(kind, name) {
   if (kind === 'self-buffs-builtin') return defaultSelfBuffsWidget();
   if (kind === 'ally-buffs-builtin') return defaultAllyBuffsWidget(name);
   if (kind === BARD_SONGS_KIND) return defaultBardSongsWidget(name);
+  if (kind === RAID_NAMED_KIND) return defaultRaidNamedWidget(name);
   return defaultCustomWidget(name);
 }
 
@@ -1132,6 +1235,15 @@ class WidgetStore {
   createBardSongs(name, { activeProfileIds } = {}) {
     const widget = defaultBardSongsWidget(name);
     widget.premadeOrigin = { kind: 'bardSongs' };
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
+  createRaidNamed(name, { activeProfileIds } = {}) {
+    const widget = defaultRaidNamedWidget(name);
+    widget.premadeOrigin = { kind: 'raidNamed' };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();

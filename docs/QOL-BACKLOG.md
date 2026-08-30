@@ -8,11 +8,11 @@ supplying it); the retired `FEATURES.md` / `NOTES-STATUS.md` / `HANDOFF.md` are 
 45 items, organised by area. Items 1–32 are the original batch; 33–43 were added 30 Aug (Section
 C); 44–45 are enhancements that fell out of that work.
 
-**Done:** #1, #2, #3 (a/b/c), #4, #5, #7, #8, #10, #12, #14, #18, #22, #25, #28, #30, #31, #32,
-#39, #43, #44, #45, plus the lockout / log-tools batch (Section D). **#13** declined (offline
+**Done:** #1, #2, #3 (a/b/c), #4, #5, #7, #8, #9, #10, #12, #14, #17, #18, #22, #25, #28, #30, #31,
+#32, #39, #43, #44, #45, plus the lockout / log-tools batch (Section D). **#13** declined (offline
 app). **#15** superseded by #45. **#38** withdrawn (built, then pulled — recovery too short to
 render on a 1s overlay tick).
-**Still open:** #6, #9, #11, #16, #17, #19, #20, #21, #23, #24, #26, #27, #29, #33–37, #40, #41, #42.
+**Still open:** #6, #11, #16, #19, #20, #21, #23, #24, #26, #27, #29, #33–37, #40, #41, #42.
 
 Each item keeps the original ask. Tags describe **what kind of work it is**, not a judgement:
 
@@ -82,10 +82,14 @@ so there is no mode where it does nothing; the hint was simply stale.
 *Fixed:* a live `{spell}` / `{caster}` / `{mob}` / `{profile}` preview line under the "Say:"
 field, resolving as you type.
 
-### 9. Fullscreen warning — NEW
-The About page says EQ must be windowed / borderless. `foregroundWatcher.js` already knows when EQ
-is focused; it could also notice exclusive-fullscreen and say *"auras won't be visible over EQ
-right now"* instead of leaving you wondering why the overlay vanished.
+### 9. Fullscreen warning — NEW — DONE
+The About page says EQ must be windowed / borderless; when it isn't, the overlay silently vanishes.
+*Fixed:* `foregroundWatcher`'s PowerShell query also calls `SHQueryUserNotificationState` now —
+state 3 (D3D fullscreen) or 4 (presentation) sets a `foregroundFullscreen` flag on `focusChanged`.
+`main.js` broadcasts `overlay:fullscreenWarning`; the Buff Tracker page shows a warning line in
+the detection-status card. Only fires while the foreground watcher is running (auto-hide on).
+*(The `SHQueryUserNotificationState` P/Invoke is verified against MS docs but not yet run on the
+real machine — see TESTING.md.)*
 
 ### 10. Quick "mute all sounds" toggle in the top bar — NEW — DONE
 Next to "Hide auras". For streaming or voice chat, without walking every aura's sound settings.
@@ -132,11 +136,10 @@ true metronome is still wanted for something.
 ### 16. Remember stances & invocations between logouts — NEW
 Persist the user's chosen stances / invocations across restarts. (Depends on #20 / #21 existing.)
 
-### 17. Song durations round to the nearest 6 seconds — CHANGE
-Song durations run in 6-second intervals, not per-second. When a song duration is upgraded with
-motes, the result must be rounded to the nearest 6 seconds.
-*Today:* mote scaling (`buffEngine`, `_rankForEntry` / scaling math — see gotcha #27) rounds once
-over the combined multiplier with no 6-second quantisation for `isBardSong` entries.
+### 17. Song durations round to the nearest 6 seconds — CHANGE — DONE
+Song durations run in 6-second intervals. A mote-upgraded song duration must land on a 6s boundary.
+*Fixed:* `_scaledDuration` in `buffEngine.js` quantises `isBardSong` entries to a multiple of 6
+as the **last** step (after tier × AA), floored at 6. Non-song durations are untouched.
 
 ### 18. Changelog — NEW — DONE
 An in-app changelog.
@@ -390,10 +393,6 @@ parser provenance is `docs/EVIDENCE.md`.
 
 The cheap-wins and quick-wins phases are **done** (see the "Done" list at the top). What's left,
 roughly cheapest first:
-
-### Next up — quick, no new subsystems
-- **#17** round mote-scaled song durations to 6s — `buffEngine.js`, ~2 lines
-- **#9** exclusive-fullscreen warning — `foregroundWatcher.js` already has the hook
 
 ### Profile & app chrome
 - **#6 + #42** profile-cycle hotkey and/or `/tell` command word for macro profile swap

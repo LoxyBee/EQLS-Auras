@@ -732,6 +732,12 @@ function updateRef(ref, buff, isIcon) {
   ref.root.classList.toggle('cooldown-phase', cooling);
   if (cooling) ref.root.title = `${displayName(buff)} - cooling down, ready in ${buff.remainingSec}s`;
   else if (ref.root.title) ref.root.title = '';
+
+  // Backlog #33 - a killed named on the raid board. Dimmed and struck through, but kept on screen
+  // so the aura stays a "what's left" checklist. A killed named in a respawning zone still has a
+  // remainingSec, which the countdown line below shows.
+  ref.root.classList.toggle('raid-killed', !!buff.killed);
+  if (currentConfig.buffSource === 'raidNamed') ref.root.classList.toggle('raid-boss', buff.tier === 'boss');
   // A text aura has no countdown to update - it says its piece and disappears when whatever it is
   // watching ends. Checked rather than assumed, because it is the first tile without one.
   if (!ref.timeEl) return;
@@ -940,6 +946,11 @@ function visibleBuffs(buffs, opts = {}) {
   // not spells, so there is no buff list to match them against and no duration to cap. The main
   // process has already decided what this aura shows.
   if (currentConfig.buffSource === 'travel') return buffs;
+
+  // Backlog #33. The board already IS the current zone's whole named list - every row is meant to
+  // show, killed ones just dimmed (see the .killed class in render). No picker, no duration cap,
+  // same argument as travel/damage above.
+  if (currentConfig.buffSource === 'raidNamed') return buffs;
 
   if (currentConfig.buffSource === 'damage') {
     let rows = buffs;
@@ -1567,6 +1578,8 @@ let lastAllyBuffs = [];
 let lastBardSongs = [];
 let lastCustomTimers = [];
 let lastDamageRows = [];
+// Backlog #33. One shared board - the current raid zone's named list, killed ones flagged.
+let lastRaidNamed = [];
 // Note 20. Keyed by aura id - one broadcast carries every travel aura's route and each window
 // takes its own. See pushTravelRoutes in main.js for why it is shaped that way.
 let lastTravelRoutes = {};
@@ -1589,6 +1602,12 @@ function previewSampleBuffs() {
       return [mk("Selo's Accelerando", 15, 18, { allyName: 'You', isBardSong: true }), mk('Chorus of Marr', 12, 18, { allyName: 'Faelinn', isBardSong: true })];
     case 'customTimer':
       return [mk(currentConfig.name || 'Preview', 8, 12, { id: 'preview' })];
+    case 'raidNamed':
+      return [
+        mk('Lord Nagafen', null, null, { tier: 'boss', killed: false, infinite: true }),
+        mk('King Tranix', null, null, { tier: 'mini', killed: true, infinite: true }),
+        mk('Warlord Skarlon', null, null, { tier: 'mini', killed: false, infinite: true }),
+      ];
     default:
       return [mk('Spirit of Wolf', 140, 300), mk('Aegolism', 520, 600)];
   }
@@ -1636,6 +1655,9 @@ function currentSourceBuffs() {
   // reorder them by a time remaining they deliberately do not have.
   if (currentConfig.buffSource === 'damage') return lastDamageRows;
   if (currentConfig.buffSource === 'travel') return lastTravelRoutes[widgetId] || [];
+  // Backlog #33. One shared board (the current zone's named list), not per-widget - like damage,
+  // unlike travel/customTimer.
+  if (currentConfig.buffSource === 'raidNamed') return lastRaidNamed;
   return lastSelfBuffs;
 }
 
@@ -1861,6 +1883,15 @@ window.eqOverlay.getActiveCustomTimers().then((timers) => {
 });
 window.eqOverlay.onActiveCustomTimersChanged((timers) => {
   lastCustomTimers = timers;
+  render(currentSourceBuffs());
+});
+
+window.eqOverlay.getActiveRaidNamed().then((rows) => {
+  lastRaidNamed = rows;
+  render(currentSourceBuffs());
+});
+window.eqOverlay.onRaidNamedChanged((rows) => {
+  lastRaidNamed = rows;
   render(currentSourceBuffs());
 });
 
