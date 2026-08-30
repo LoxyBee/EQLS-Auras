@@ -900,7 +900,6 @@
 
         <div class="card">
           <h3 title="Set these AA and Exaltation abilities to match your character so timing reflects your real character, not base spell values. Changes nothing about what's detected — only how the countdowns run and how casts are handled.">AA setup</h3>
-
           <h4 class="settings-subsection-title" title="Extends how long buffs last, applied to every tracked buff so timers reflect your real extended durations instead of the base spell length.">Buff duration (Reinforcement + Exaltation)</h4>
           <div class="row">
             <span class="label">Spell Casting Reinforcement (AA):</span>
@@ -925,7 +924,6 @@
             <span class="label">Total bonus:</span>
             <span id="character-bonus-total">+0%</span>
           </div>
-
           <h4 class="settings-subsection-title" title="Reduces cast time on beneficial spells with a duration and a base cast of at least 3 seconds — nothing for instant or under-3s casts. Only used by the experimental &quot;cast-time-aware confirmation&quot; toggle under Diagnostics, and only affects how long the app waits before confirming or giving up on a cast.">Cast time (Spell Casting Deftness)</h4>
           <div class="row">
             <span class="label">Spell Casting Deftness (AA):</span>
@@ -935,31 +933,6 @@
               <option value="2">Rank 2 (25%)</option>
               <option value="3">Rank 3 (50%)</option>
             </select>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3 title="Your character's own spellbook resolves ambiguous buff messages (EQ reuses a lot of generic text across spells) down to whichever one you actually have. Read from your EQ install folder above. Which spells you have MEMORIZED right now is tracked separately, on the Buff Tracker page.">Spellbook detection</h3>
-          <div class="row">
-            <span class="label">Spellbook:</span>
-            <span id="spellbook-status">Checking...</span>
-          </div>
-          <div class="row">
-            <span class="label" title="Fill these in only if the app is not finding your spellbook on its own — usually because more than one character's logs are in the folder. It builds the filename the EQ client uses and looks for that instead of guessing from the newest log.">Character:</span>
-            <input type="text" id="spellbook-char-name" class="text-input" placeholder="name" autocomplete="off" style="width:9em" />
-            <span>on</span>
-            <input type="text" id="spellbook-char-server" class="text-input" placeholder="server" autocomplete="off" style="width:8em" />
-          </div>
-          <p class="hint" id="spellbook-char-hint"></p>
-          <div id="spellbook-missing-hint" style="display:none">
-            <p class="hint warn-hint" title="EverQuest reuses the same buff message across many different spells, and without your spellbook the app cannot tell which was yours — so it ignores them. One recent session threw away over 700 buff messages this way. The game does not write this file on its own; type the command below in game, logged in on this character, and re-run it whenever you scribe something new.">
-              <strong>This is worth fixing.</strong> Run this in game to generate your spellbook file:
-            </p>
-            <div class="row command-row">
-              <code id="spellbook-command">/outputfile spellbook</code>
-              <button type="button" id="copy-spellbook-command-btn">Copy</button>
-            </div>
-            <p class="hint" id="spellbook-missing-where"></p>
           </div>
         </div>
 
@@ -990,46 +963,28 @@
           <p id="log-error" class="error"></p>
         </div>
 
-        <div class="card" id="icon-set-card">
-          <h3>Icon set</h3>
+        <div class="card">
+          <h3 title="Your character's own spellbook resolves ambiguous buff messages (EQ reuses a lot of generic text across spells) down to whichever one you actually have. Read from your EQ install folder above. Which spells you have MEMORIZED right now is tracked separately, on the Buff Tracker page.">Spellbook detection</h3>
           <div class="row">
-            <span class="label" title="The game ships a few icon art styles. If icons look wrong or broken, switch this — a buff already showing correctly on your hotbar confirms which set matches your client. Applies to every aura.">Icon set:</span>
-            <select id="icon-set-select"></select>
+            <span class="label">Spellbook:</span>
+            <span id="spellbook-status">Checking...</span>
           </div>
-        </div>
-
-        <h3 class="settings-page-section-title">Display</h3>
-
-        <div class="card" id="merge-rule-card">
-          <h3>Merged tiles</h3>
-          <p class="hint">Applies to every aura with "Merge buffs that share a duration" turned on.</p>
           <div class="row">
-            <span class="label">Treat as the same:</span>
-            <label title="Simple and predictable, but a large part of the spell list lasts 24 minutes, so unrelated buffs merge too."><input type="radio" name="merge-rule" value="duration" /> Same length</label>
-            <label title="Only merges buffs that landed at about the same moment — a group buff merges while two unrelated 24-minute buffs stay apart."><input type="radio" name="merge-rule" value="burst" /> Same length, cast together</label>
+            <span class="label" title="Fill these in only if the app is not finding your spellbook on its own — usually because more than one character's logs are in the folder. It builds the filename the EQ client uses and looks for that instead of guessing from the newest log.">Character:</span>
+            <input type="text" id="spellbook-char-name" class="text-input" placeholder="name" autocomplete="off" style="width:9em" />
+            <span>on</span>
+            <input type="text" id="spellbook-char-server" class="text-input" placeholder="server" autocomplete="off" style="width:8em" />
           </div>
-        </div>
-
-        <div class="card" id="ui-scale-card">
-          <h3>App text size</h3>
-          <!-- A dropdown, deliberately not a slider. Changing this rescales the whole window,
-               including the control being dragged - so the handle moved out from under the cursor
-               mid-drag and the thing was unusable. A dropdown commits one value on release,
-               after the pointer has already left the control. -->
-          <div class="row">
-            <span class="label" title="Scales this settings window only — text, spacing and controls together. Your auras are unaffected (each has its own sizes in its own settings). At larger sizes you may want to make this window bigger to match.">Size:</span>
-            <select id="ui-scale-select" class="text-input">
-              <option value="80">80%</option>
-              <option value="90">90%</option>
-              <option value="100">100% (default)</option>
-              <option value="110">110%</option>
-              <option value="120">120%</option>
-              <option value="130">130%</option>
-              <option value="140">140%</option>
-              <option value="150">150%</option>
-              <option value="160">160%</option>
-            </select>
-            <button type="button" id="ui-scale-reset-btn">Reset</button>
+          <p class="hint" id="spellbook-char-hint"></p>
+          <div id="spellbook-missing-hint" style="display:none">
+            <p class="hint warn-hint" title="EverQuest reuses the same buff message across many different spells, and without your spellbook the app cannot tell which was yours — so it ignores them. One recent session threw away over 700 buff messages this way. The game does not write this file on its own; type the command below in game, logged in on this character, and re-run it whenever you scribe something new.">
+              <strong>This is worth fixing.</strong> Run this in game to generate your spellbook file:
+            </p>
+            <div class="row command-row">
+              <code id="spellbook-command">/outputfile spellbook</code>
+              <button type="button" id="copy-spellbook-command-btn">Copy</button>
+            </div>
+            <p class="hint" id="spellbook-missing-where"></p>
           </div>
         </div>
 
@@ -1065,48 +1020,121 @@
           </div>
         </div>
 
-        <h3 class="settings-page-section-title">Hotkeys</h3>
+        <!-- Cleanup workstream C - the set-once APP settings (icon set, merge rule, app text
+             size, hide hotkey, version + data) were always-open card groups under three section
+             headers, all equal weight with the things you actually act on. Now one block of
+             collapsed topic rows, sharing one border, like the aura panel's Configuration block.
+             AA setup stays its own open "Character setup" card at the top - it's character config,
+             not app config. Every element id is unchanged, so main-window.js's wiring is untouched. -->
+        <h3 class="settings-page-section-title">App settings</h3>
+        <p class="hint">Things you set once. Click a row to open it.</p>
 
-        <div class="card" id="hide-hotkey-card">
-          <h3>Hide-auras hotkey</h3>
-          <div class="row">
-            <span class="label" title="Toggles the same &quot;Hide auras&quot; as the top-bar button — clears every aura and action bar off the screen, changes no setting, doesn't survive a restart. Grabbed at the OS level so EverQuest never sees the key; pick one you never use in game. If another app already owns the key it can't be registered — the top-bar button still works, and the line below shows whichever key actually took.">Key:</span>
-            <select id="hide-hotkey-select" class="text-input">
-              <option value="ScrollLock">Scroll Lock</option>
-              <option value="F13">F13</option>
-              <option value="F14">F14</option>
-              <option value="F15">F15</option>
-              <option value="F16">F16</option>
-              <option value="Alt+Shift+H">Alt+Shift+H</option>
-              <option value="none">None (button only)</option>
-            </select>
+        <div class="block" id="app-settings-block">
+          <div class="topic" id="topic-icon-set" data-topic>
+            <button type="button" class="topic-head" data-toggle title="The game ships a few icon art styles. If icons look wrong or broken, switch this — a buff already showing correctly on your hotbar confirms which set matches your client. Applies to every aura.">
+              <span class="chev"></span>
+              <span class="topic-title">Icon set</span>
+              <span class="topic-summary" id="topic-icon-set-summary"></span>
+            </button>
+            <!-- id kept for initWidgetsPanel's iconSetCard lookup (a legacy Overlay-page display
+                 toggle - a no-op now that Icon set lives here on Setup, but it must not be null). -->
+            <div class="topic-body" id="icon-set-card"><div class="topic-body-inner">
+              <div class="row">
+                <span class="label">Icon set:</span>
+                <select id="icon-set-select"></select>
+              </div>
+            </div></div>
           </div>
-          <p class="hint" id="hide-hotkey-hint"></p>
-        </div>
 
-        <h3 class="settings-page-section-title">App info</h3>
-
-        <div class="card">
-          <h3>Status</h3>
-          <p id="status">Checking...</p>
-          <dl id="version-info"></dl>
-        </div>
-
-        <div class="card">
-          <h3>App data</h3>
-          <p class="hint">Every aura, profile, known-buff fix, sound and setting lives in one folder — uninstalling never touches it.</p>
-          <div class="row">
-            <button type="button" id="backup-config-btn" class="btn-prominent" title="Copies the whole app-data folder into a dated folder inside it, so you have a snapshot to fall back to before an update or a big change.">Back up now</button>
-            <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
+          <div class="topic" id="topic-merge-rule" data-topic>
+            <button type="button" class="topic-head" data-toggle title="Applies to every aura with &quot;Merge buffs that share a duration&quot; turned on.">
+              <span class="chev"></span>
+              <span class="topic-title">Merged tiles</span>
+              <span class="topic-summary" id="topic-merge-rule-summary"></span>
+            </button>
+            <div class="topic-body"><div class="topic-body-inner">
+              <div class="row">
+                <span class="label">Treat as the same:</span>
+                <label title="Simple and predictable, but a large part of the spell list lasts 24 minutes, so unrelated buffs merge too."><input type="radio" name="merge-rule" value="duration" /> Same length</label>
+                <label title="Only merges buffs that landed at about the same moment — a group buff merges while two unrelated 24-minute buffs stay apart."><input type="radio" name="merge-rule" value="burst" /> Same length, cast together</label>
+              </div>
+            </div></div>
           </div>
-          <p class="hint" id="backup-config-status"></p>
-          <p class="hint"><strong>Move to another PC, or hand the app to someone:</strong></p>
-          <div class="row">
-            <button type="button" id="export-config-btn" title="Writes a bundle (auras, profiles, known-buff edits, sounds, settings) into a folder you can zip and send.">Export config…</button>
-            <button type="button" id="import-config-btn" title="Replaces this PC's config with a bundle — your current config is backed up first, and the app restarts.">Import config…</button>
-            <button type="button" id="open-exports-folder-btn">📁 Open exports folder</button>
+
+          <div class="topic" id="topic-ui-scale" data-topic>
+            <button type="button" class="topic-head" data-toggle title="Scales this settings window only — text, spacing and controls together. Your auras are unaffected (each has its own sizes in its own settings). At larger sizes you may want to make this window bigger to match.">
+              <span class="chev"></span>
+              <span class="topic-title">App text size</span>
+              <span class="topic-summary" id="topic-ui-scale-summary"></span>
+            </button>
+            <div class="topic-body"><div class="topic-body-inner">
+              <!-- A dropdown, deliberately not a slider - changing this rescales the whole window,
+                   including the control being dragged. A dropdown commits one value on release. -->
+              <div class="row">
+                <span class="label">Size:</span>
+                <select id="ui-scale-select" class="text-input">
+                  <option value="80">80%</option>
+                  <option value="90">90%</option>
+                  <option value="100">100% (default)</option>
+                  <option value="110">110%</option>
+                  <option value="120">120%</option>
+                  <option value="130">130%</option>
+                  <option value="140">140%</option>
+                  <option value="150">150%</option>
+                  <option value="160">160%</option>
+                </select>
+                <button type="button" id="ui-scale-reset-btn">Reset</button>
+              </div>
+            </div></div>
           </div>
-          <p class="hint" id="transfer-config-status"></p>
+
+          <div class="topic" id="topic-hide-hotkey" data-topic>
+            <button type="button" class="topic-head" data-toggle title="Toggles the same &quot;Hide auras&quot; as the top-bar button — clears every aura and action bar off the screen, changes no setting, doesn't survive a restart. Grabbed at the OS level so EverQuest never sees the key; pick one you never use in game. If another app already owns the key it can't be registered — the top-bar button still works, and the line below shows whichever key actually took.">
+              <span class="chev"></span>
+              <span class="topic-title">Hide-auras hotkey</span>
+              <span class="topic-summary" id="topic-hide-hotkey-summary"></span>
+            </button>
+            <div class="topic-body"><div class="topic-body-inner">
+              <div class="row">
+                <span class="label">Key:</span>
+                <select id="hide-hotkey-select" class="text-input">
+                  <option value="ScrollLock">Scroll Lock</option>
+                  <option value="F13">F13</option>
+                  <option value="F14">F14</option>
+                  <option value="F15">F15</option>
+                  <option value="F16">F16</option>
+                  <option value="Alt+Shift+H">Alt+Shift+H</option>
+                  <option value="none">None (button only)</option>
+                </select>
+              </div>
+              <p class="hint" id="hide-hotkey-hint"></p>
+            </div></div>
+          </div>
+
+          <div class="topic" id="topic-app-info" data-topic>
+            <button type="button" class="topic-head" data-toggle title="Build version and where your saved data lives — set-once reference, plus the backup and move-to-another-PC tools.">
+              <span class="chev"></span>
+              <span class="topic-title">Version &amp; app data</span>
+              <span class="topic-summary" id="topic-app-info-summary"></span>
+            </button>
+            <div class="topic-body"><div class="topic-body-inner">
+              <p id="status">Checking...</p>
+              <dl id="version-info"></dl>
+              <p class="hint">Every aura, profile, known-buff fix, sound and setting lives in one folder — uninstalling never touches it.</p>
+              <div class="row">
+                <button type="button" id="backup-config-btn" class="btn-prominent" title="Copies the whole app-data folder into a dated folder inside it, so you have a snapshot to fall back to before an update or a big change.">Back up now</button>
+                <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
+              </div>
+              <p class="hint" id="backup-config-status"></p>
+              <p class="hint"><strong>Move to another PC, or hand the app to someone:</strong></p>
+              <div class="row">
+                <button type="button" id="export-config-btn" title="Writes a bundle (auras, profiles, known-buff edits, sounds, settings) into a folder you can zip and send.">Export config…</button>
+                <button type="button" id="import-config-btn" title="Replaces this PC's config with a bundle — your current config is backed up first, and the app restarts.">Import config…</button>
+                <button type="button" id="open-exports-folder-btn">📁 Open exports folder</button>
+              </div>
+              <p class="hint" id="transfer-config-status"></p>
+            </div></div>
+          </div>
         </div>
 
       </section>

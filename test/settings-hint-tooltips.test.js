@@ -70,20 +70,52 @@ test('workstream D - the Buff library folded into one collapsed topic below the 
   assert.doesNotMatch(page, /settings-page-section-title">Buff library/, 'the old always-open Buff library section header is still there');
 });
 
-test('Setup cards moved their prose to title= (AA setup, Icon set, Merged tiles, App text size, Sounds, App data)', () => {
+test('Setup: still-open cards carry their explanation in a title=', () => {
   const page = between('id="page-settings"', 'id="page-log"');
-  for (const anchor of ['AA setup', 'Icon set:', 'Treat as the same:', 'App text size', 'Open sounds folder', 'Back up now']) {
+  // Sounds (open) and App data (inside the App-info topic) keep per-control titles.
+  for (const anchor of ['Open sounds folder', 'Back up now', 'Export config']) {
     const at = page.indexOf(anchor);
     assert.ok(at !== -1, `"${anchor}" is gone from Setup`);
-    assert.ok(hasRealTitle(page.slice(at - 400, at + 300)), `"${anchor}" lost its explanation`);
+    assert.ok(hasRealTitle(page.slice(at - 400, at + 60)), `"${anchor}" lost its explanation`);
   }
-  // the big walls of prose that used to sit under these are gone from the VISIBLE markup - the
-  // phrases can still live inside a title= (that is the whole point), just not as a <p class="hint">.
+  // no >160-char paragraph hint left in the visible markup
   const paragraphs = page.match(/<p class="hint"[^>]*>([\s\S]*?)<\/p>/g) || [];
   for (const p of paragraphs) {
     const text = p.replace(/<[^>]+>/g, '').trim();
     assert.ok(text.length < 160, `a paragraph hint over 160 chars is still on the Setup page:\n${text}`);
   }
+});
+
+test('workstream C - the set-once settings live in ONE "App settings" block of collapsed topics', () => {
+  const page = between('id="page-settings"', 'id="page-log"');
+  // one shared container, not six cards
+  const block = page.indexOf('id="app-settings-block"');
+  assert.ok(block !== -1, 'the App settings block is gone');
+  const blockEnd = page.indexOf('</section>', block);
+  const body = page.slice(block, blockEnd);
+  for (const id of ['topic-icon-set', 'topic-merge-rule', 'topic-ui-scale', 'topic-hide-hotkey', 'topic-app-info']) {
+    const at = body.indexOf(`id="${id}"`);
+    assert.ok(at !== -1, `${id} is not inside the App settings block`);
+    assert.doesNotMatch(body.slice(at - 20, at), /topic open/, `${id} should start collapsed`);
+    const head = body.slice(at, body.indexOf('</button>', at));
+    assert.ok(hasRealTitle(head), `${id} head has no explanation title`);
+  }
+  // no per-item card wrapper inside the block - the whole point is one shared border
+  assert.doesNotMatch(body, /<div class="card"/, 'a per-topic card wrapper crept back into App settings');
+  // AA setup is CHARACTER config, not app config - stays its own open card, NOT in the block
+  assert.doesNotMatch(body, /topic-aa-setup|>AA setup</, 'AA setup was bundled into App settings - it belongs under Character setup');
+  const charSetup = page.indexOf('settings-page-section-title">Character setup');
+  assert.ok(charSetup !== -1 && charSetup < block, 'Character setup section is gone or below App settings');
+  assert.match(page.slice(charSetup, charSetup + 400), /class="card">\s*<h3[^>]*>AA setup<\/h3>/, 'AA setup is not an open card under Character setup');
+  // still open, NOT collapsed: EQ log file, Spellbook detection, Trade requests, Sounds
+  for (const id of ['eq-log-card', 'trade-ping-card', 'sounds-folder-card']) {
+    const at = page.indexOf(`id="${id}"`);
+    assert.ok(at !== -1);
+    assert.doesNotMatch(page.slice(at, at + 200), /class="topic"/, `${id} should have stayed an open card`);
+  }
+  // Setup section headers: Character setup, Client setup, Alerts & sounds, App settings
+  const headers = (page.match(/settings-page-section-title">([^<]+)</g) || []).map((m) => m.replace(/.*>/, '').replace(/<$/, ''));
+  assert.deepEqual(headers, ['Character setup', 'Client setup', 'Alerts &amp; sounds', 'App settings'], `Setup section headers are ${JSON.stringify(headers)}`);
 });
 
 test('index.html has meaningfully fewer class="hint" blocks than before the pass', () => {
