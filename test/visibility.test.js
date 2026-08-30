@@ -143,6 +143,19 @@ test('clearing the screen does NOT silence anything', () => {
   wm.setMasterHidden(false);
 });
 
+test('the global mute (QOL #10) silences every aura without hiding any of them', () => {
+  const aura = makeAura('Streamer safe');
+  assert.equal(wm.shouldBeAudible(aura), true);
+
+  wm.setSoundsMuted(true);
+  assert.equal(wm.isSoundsMuted(), true);
+  assert.equal(wm.shouldBeAudible(aura), false, 'mute must actually silence');
+  assert.equal(wm.shouldBeOnScreen(aura), true, 'mute must NOT take the tile off screen');
+
+  wm.setSoundsMuted(false);
+  assert.equal(wm.shouldBeAudible(aura), true, 'unmute restores it');
+});
+
 // --- note 31: unlocking beats profile-off ------------------------------------------------------
 
 test('unlocking one aura by hand puts it on screen even when its profile has it switched off', () => {

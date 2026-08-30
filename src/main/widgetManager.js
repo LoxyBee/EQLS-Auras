@@ -55,6 +55,10 @@ let foregroundHidden = false;
 // restart would look exactly like "all my auras broke overnight", and the cost of NOT persisting
 // it is one button press.
 let masterHidden = false;
+// QOL #10 - a global "mute every aura's alert sounds" toggle for streaming / voice chat. Runtime-
+// only for the same reason as masterHidden: a forgotten mute surviving a restart looks exactly
+// like the sounds having broken. Silences without hiding - the tiles stay on screen.
+let soundsMuted = false;
 // Auras the user unlocked ONE AT A TIME, which forces them on screen even when the active
 // loadout profile has them switched off (note 31) - you cannot drag something you cannot see.
 // Deliberately not populated by "Unlock all auras": that would dump every aura you own onto the
@@ -613,6 +617,7 @@ function shouldBeOnScreen(config) {
 // deliberately do NOT silence anything: hearing that a buff is about to drop while you are
 // tabbed out is most of the reason to have a sound at all.
 function shouldBeAudible(config) {
+  if (soundsMuted) return false;
   return isVisibleForActiveProfile(config);
 }
 
@@ -726,6 +731,20 @@ function setMasterHidden(hidden) {
 
 function isMasterHidden() {
   return masterHidden;
+}
+
+// QOL #10. Runtime-only (see soundsMuted's declaration). Re-pushes `audible` to every open aura
+// window - it does not touch visibility, so nothing appears or disappears.
+function setSoundsMuted(muted) {
+  const next = !!muted;
+  if (next === soundsMuted) return soundsMuted;
+  soundsMuted = next;
+  for (const config of widgetStore.getAll()) pushAudible(config);
+  return soundsMuted;
+}
+
+function isSoundsMuted() {
+  return soundsMuted;
 }
 
 function areAllUnlocked() {
@@ -1276,6 +1295,8 @@ module.exports = {
   applyProfileVisibility,
   setForegroundHidden,
   setMasterHidden,
+  isSoundsMuted,
+  setSoundsMuted,
   isMasterHidden,
   shouldBeAudible,
   // Exported for test/visibility.test.js. Nothing in the app calls it from outside this module -

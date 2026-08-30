@@ -56,6 +56,14 @@
         id="master-hide-all-btn"
         title="Temporarily clears every aura off the screen while you work. Changes no setting, and does not survive a restart."
       >Hide auras</button>
+      <!-- QOL #10 - for streaming / voice chat. Silences every aura's alert sounds without hiding
+           the tiles. Same "loud when active, not persisted" treatment as Hide auras, for the same
+           reason: a forgotten mute looks identical to the sounds being broken. -->
+      <button
+        class="master-hide-btn"
+        id="master-mute-btn"
+        title="Silences every aura's alert sounds. The tiles stay on screen. Changes no setting, and does not survive a restart."
+      >Mute sounds</button>
       <span class="master-hide-hint" id="master-hide-hint"></span>
     </div>
 
@@ -101,6 +109,12 @@
         <h2 class="page-title">Buff Tracker</h2>
 
         <h3 class="settings-page-section-title">Detection status</h3>
+
+        <!-- QOL #5 - the one-line "is the app actually reading my log right now?" answer. Until
+             this existed the only confirmation was Log > Diagnostics > Live feed. -->
+        <div class="card" id="log-activity-card">
+          <p id="log-activity-line" class="hint">Checking the log…</p>
+        </div>
 
         <!-- Front and centre on the landing page on purpose: an empty
              memorized list is the single most common reason a buff gets
@@ -1146,6 +1160,18 @@
           <h3>Status</h3>
           <p id="status">Checking...</p>
           <dl id="version-info"></dl>
+        </div>
+
+        <div class="card">
+          <h3>App data</h3>
+          <p class="hint">
+            Every aura, profile, known-buff correction and setting lives as plain JSON files in
+            this folder. Copy them somewhere safe before an update if you want a backstop -
+            uninstalling the app never touches it.
+          </p>
+          <div class="row">
+            <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
+          </div>
         </div>
 
       </section>

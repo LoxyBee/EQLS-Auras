@@ -256,6 +256,13 @@ body {
   padding-left: 10px;
 }
 
+/* The healthy counterpart to .warn - "yes, this is working". Used by the Buff Tracker page's
+   log-activity line (QOL #5). */
+.ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
 .master-hide-btn {
   margin-left: auto;
   flex-shrink: 0;

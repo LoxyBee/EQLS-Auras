@@ -477,7 +477,11 @@ logRotationService.setLogsFolderFn(() => logService.watcher.getStatus().logsFold
 // is writing to at that instant. Starting the clock at launch means the first rotation has to
 // observe a real lull. Assume it is busy until it demonstrably is not.
 let lastLogLineAt = Date.now();
-logService.watcher.on('line', () => { lastLogLineAt = Date.now(); });
+// lastLogLineAt is seeded to launch time (see above), so "how long since the last line" is
+// meaningless until at least one real line has arrived - this flag is the guard for the QOL #5
+// "is it working right now?" readout.
+let sawFirstLogLine = false;
+logService.watcher.on('line', () => { lastLogLineAt = Date.now(); sawFirstLogLine = true; });
 logRotationService.setIsQuietFn(() => Date.now() - lastLogLineAt > 10000);
 
 // IS EVERQUEST LOGGING? The tracker is dead in the water without `/log on`, and EQ Legends writes
@@ -1223,6 +1227,17 @@ ipcMain.handle('lockouts:trim', async () => {
 });
 
 ipcMain.handle('log:getState', () => logService.getState());
+// QOL #5 - the "is it working right now?" readout on the Buff Tracker page. Which file is being
+// tailed and how long since a line last arrived from it.
+ipcMain.handle('log:activity', () => {
+  const s = logService.watcher.getStatus();
+  return {
+    file: s.currentFilePath ? path.basename(s.currentFilePath) : null,
+    folderSet: !!(s.logsFolder || s.currentFilePath),
+    sawLine: sawFirstLogLine,
+    lastLineAgoMs: sawFirstLogLine ? Date.now() - lastLogLineAt : null,
+  };
+});
 ipcMain.handle('log:chooseFolder', async () => {
   const state = await logService.chooseFolder();
   applyInstallRoot(state.eqFolder);
@@ -1553,11 +1568,14 @@ ipcMain.handle('settings:setAutoHideOverlay', (_event, enabled) => {
 ipcMain.handle('overlay:getMasterState', () => ({
   allUnlocked: widgetManager.areAllUnlocked(),
   masterHidden: widgetManager.isMasterHidden(),
+  soundsMuted: widgetManager.isSoundsMuted(),
 }));
 ipcMain.handle('overlay:setMasterHidden', (_event, hidden) => {
   actionBarManager.setMasterHidden(hidden);
   return widgetManager.setMasterHidden(hidden);
 });
+// QOL #10 - global mute for every aura's alert sounds.
+ipcMain.handle('overlay:setSoundsMuted', (_event, muted) => widgetManager.setSoundsMuted(muted));
 ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => widgetManager.setAllUnlocked(unlocked));
 ipcMain.handle('settings:getShowAurasWhenAppFocused', () => showAurasWhenAppFocused);
 ipcMain.handle('settings:setShowAurasWhenAppFocused', (_event, enabled) => {
@@ -1915,6 +1933,9 @@ ipcMain.handle('widget:setAlertVolume', (_event, { id, value }) => widgetManager
 ipcMain.handle('sounds:pick', () => soundService.pickAndImportSound(getMainWindow()));
 ipcMain.handle('sounds:getInfo', (_event, id) => soundService.getSoundInfo(id));
 ipcMain.handle('sounds:openFolder', () => soundService.openPickerFolder());
+// QOL #3a - the userData folder, where every aura / profile / setting JSON lives. For a manual
+// backup before an update.
+ipcMain.handle('app:openConfigFolder', () => shell.openPath(app.getPath('userData')));
 ipcMain.handle('widget:setListWidth', (_event, { id, value }) => widgetManager.setListWidth(id, value));
 ipcMain.on('widget:reportContentSize', (_event, { id, width, height, originX }) => widgetManager.fitToContent(id, width, height, originX));
 ipcMain.handle('widget:setOpacity', (_event, { id, value }) => widgetManager.setOpacity(id, value));

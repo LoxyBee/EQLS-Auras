@@ -30,6 +30,8 @@ async function init() {
   initMergeRule();
   initTradePing();
   initSoundsFolderLink();
+  initConfigFolderLink();
+  initLogActivityLine();
   initBugReport();
   initActionBarsPage();
   initBuffPlanner();
@@ -4378,6 +4380,7 @@ function initWidgetsPanel() {
   // something else changes it (unlocking a single aura, a profile switch).
   const masterUnlockAllBtn = document.getElementById('master-unlock-all-btn');
   const masterHideAllBtn = document.getElementById('master-hide-all-btn');
+  const masterMuteBtn = document.getElementById('master-mute-btn');
 
 
   // =========================================================================
@@ -4844,6 +4847,11 @@ function initWidgetsPanel() {
     // hidden would be the wrong half of the sentence.
     masterHideAllBtn.classList.toggle('active', state.masterHidden);
     masterHideAllBtn.textContent = state.masterHidden ? 'Auras hidden - show' : 'Hide auras';
+    // QOL #10 - same at-a-glance label treatment.
+    if (masterMuteBtn) {
+      masterMuteBtn.classList.toggle('active', state.soundsMuted);
+      masterMuteBtn.textContent = state.soundsMuted ? 'Sounds muted - unmute' : 'Mute sounds';
+    }
   }
   function refreshMasterButtons() {
     return window.eqTracker.getOverlayMasterState().then(renderMasterButtons);
@@ -4871,6 +4879,13 @@ function initWidgetsPanel() {
       window.eqTracker.setOverlayMasterHidden(!state.masterHidden).then(refreshMasterButtons)
     );
   });
+  if (masterMuteBtn) {
+    masterMuteBtn.addEventListener('click', () => {
+      window.eqTracker.getOverlayMasterState().then((state) =>
+        window.eqTracker.setOverlaySoundsMuted(!state.soundsMuted).then(refreshMasterButtons)
+      );
+    });
+  }
   refreshMasterButtons();
 
   addTimerBtn.addEventListener('click', () => openTimerModal());
@@ -5807,6 +5822,49 @@ function initSoundsFolderLink() {
   const btn = document.getElementById('open-sounds-folder-btn');
   if (!btn) return;
   btn.addEventListener('click', () => window.eqTracker.openSoundsFolder());
+}
+
+// Setup > App info > App data - opens the userData folder for a manual backup (QOL #3a). Same
+// shape as the sounds-folder link above.
+function initConfigFolderLink() {
+  const btn = document.getElementById('open-config-folder-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => window.eqTracker.openConfigFolder());
+}
+
+// QOL #5 - a one-line "is the app reading my log right now?" answer at the top of the Buff Tracker
+// page. Polls a cheap main-process handler; a stale timestamp or the wrong filename is then
+// visible at a glance instead of only in Log > Diagnostics.
+function initLogActivityLine() {
+  const el = document.getElementById('log-activity-line');
+  if (!el) return;
+  const ago = (ms) => {
+    const s = Math.round(ms / 1000);
+    if (s < 60) return `${s}s ago`;
+    const m = Math.round(s / 60);
+    return m < 60 ? `${m} min ago` : `${Math.round(m / 60)}h ago`;
+  };
+  async function tick() {
+    let a;
+    try { a = await window.eqTracker.getLogActivity(); } catch { return; }
+    el.classList.remove('warn', 'ok');
+    if (!a.folderSet) {
+      el.textContent = 'No EverQuest log folder is set yet — set it on the Log page.';
+      el.classList.add('warn');
+    } else if (!a.sawLine) {
+      el.textContent = `Watching ${a.file || 'for a log file'} — nothing read yet. Type something in game (or /log on) to confirm.`;
+    } else if (a.lastLineAgoMs < 15000) {
+      el.textContent = `Reading ${a.file} — last line ${ago(a.lastLineAgoMs)}.`;
+      el.classList.add('ok');
+    } else if (a.lastLineAgoMs < 90000) {
+      el.textContent = `Watching ${a.file} — last line ${ago(a.lastLineAgoMs)}.`;
+    } else {
+      el.textContent = `Watching ${a.file} — nothing for ${ago(a.lastLineAgoMs)}. If you are in game, check that /log on is active.`;
+      el.classList.add('warn');
+    }
+  }
+  tick();
+  setInterval(tick, 3000);
 }
 
 // About page's "Copy bug report" button - the simplest useful version of the backlog ask: the app
