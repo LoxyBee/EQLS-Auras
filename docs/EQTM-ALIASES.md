@@ -192,7 +192,7 @@ name is confirmed.
 
 ## 3. Multi-hit aliases & judgement calls
 
-**Rule (Shara, 30 Aug): a nickname that matches several zones returns ALL of them** — the picker
+**Rule (the owner, 30 Aug): a nickname that matches several zones returns ALL of them** — the picker
 shows every hit and the player chooses, exactly like an ambiguous real-substring match already
 does. So the "ambiguous" aliases below are not a problem to solve, just entries that carry more
 than one `zones` value.
@@ -216,7 +216,7 @@ than one `zones` value.
 | `inny` | The Plane of Hate (Innoruuk) | per #30's own example. The swamp is `inno` / `innothule` / `inno swamp` — `inny` is not a swamp alias at all. |
 | `pos`, `posky` | The Plane of Sky | no Plane of Storms in EQL. |
 
-**Client short names are auto-indexed (Shara, 30 Aug):** the picker ALSO matches every zone's
+**Client short names are auto-indexed (the owner, 30 Aug):** the picker ALSO matches every zone's
 `shortName` (`gukbottom`, `soldungb`, `oot`, `commons`, `ecommons`, `gfaydark`, `beholder`,
 `qey2hh1`, …) with the same prefix/exact rule. Zero-maintenance — any future zone is covered
 automatically. `zoneGraph.js` already carries `shortName` on every entry. This is *in addition to*
@@ -236,7 +236,7 @@ they want, however they're used to." The one junk value, `__eql_newsebilis`, sti
 - [EQ Legends Wiki — Plane of Hate](https://eqlwiki.com/Plane_of_Hate) · [Plane of Sky](https://eqlwiki.com/Plane_of_Sky) · [Plane of Fear](https://eqlwiki.com/Plane_of_Fear)
 - [EQProgression — Master Yael](https://www.eqprogression.com/npc-master-yael/) · [Phinigel Autropos](https://www.eqprogression.com/npc-phinigel-autropos/)
 
-## 5. Open questions for Shara
+## 5. Open questions for the owner
 
 1. ~~Ambiguous aliases — return all or pick one?~~ **Answered 30 Aug: return all hits.** (§3.)
 2. ~~Auto-index client `shortName`s too?~~ **Answered 30 Aug: yes — do both** (auto-index + curated list). (§3.)
@@ -453,7 +453,7 @@ const EQTM_ALIASES = [
 
 **Wiring notes for whoever builds it:**
 - Three match sources, unioned: (a) the existing display-name substring search, (b) this
-  `EQTM_ALIASES` list, (c) **every zone's `zoneGraph.js` `shortName`** (auto-indexed, per Shara).
+  `EQTM_ALIASES` list, (c) **every zone's `zoneGraph.js` `shortName`** (auto-indexed, per the owner).
 - Match rule for (b) and (c): lowercase the query, then `alias === q` OR `alias.startsWith(q)` OR
   `q.startsWith(alias)`. Not free substring (`'a'` must not match `air`/`ak`/`ashenbone`).
 - On a hit, union the alias's `z` with whatever the normal display-name substring search already

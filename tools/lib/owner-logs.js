@@ -3,9 +3,9 @@
 // Finds the owner's real EverQuest logs on THIS machine, for the replay-log regression tool and
 // the couple of tests that cross-check a pattern against a real line.
 //
-// The old approach was a hardcoded list of C:/Users/Lindsey/Desktop/... paths - a different
-// Windows account than this machine has, so everything just silently "skipped". This reads the
-// app's own configured EQ folder instead, then falls back to the standard install location.
+// The old approach was a hardcoded list of absolute Desktop paths under a Windows account this
+// machine no longer has, so everything just silently "skipped". This reads the app's own
+// configured EQ folder instead, then falls back to the standard install location.
 
 const fs = require('fs');
 const path = require('path');

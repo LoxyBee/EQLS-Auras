@@ -608,7 +608,7 @@ places, neither obviously about debuffs. That is what this type saves you.
 
 ## Buff Planner page — LOCKED, skip
 
-The sidebar button is removed (Shara's call, until the buff-loadout overlay aura ships), so the
+The sidebar button is removed (the owner's call, until the buff-loadout overlay aura ships), so the
 page can't be reached. The planner code (`buffPlanner.js`, `spellEffects.js`, `buffLines.js`) is
 still live and unit-tested; its in-game checklist was retired here when the page was locked and
 will be rebuilt if the page is re-enabled. See `docs/BUFF-STACKING.md` for the model it uses.
@@ -1599,7 +1599,7 @@ Kept as regression guards — each of these was broken once.
   left is confirming it reads right live.
 - [ ] **Reverse detection (25 Aug).** Tick "Reverse detection" in the Custom triggers card, next
   to "+ Add trigger" (was a disabled per-trigger "Planned" checkbox in the timer modal until now —
-  moved to be whole-aura instead, per Shara's correction that it needed to work across triggers
+  moved to be whole-aura instead, per the owner's correction that it needed to work across triggers
   without setting a flag on each one separately). *Expect*, with a single Independent-mode trigger:
   the tile shows immediately, with no countdown (∞-style), from the moment the checkbox is ticked —
   with nothing logged yet. Trigger the text in-game (or via a synthetic log line): the tile should
