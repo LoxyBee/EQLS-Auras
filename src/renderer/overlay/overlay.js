@@ -1240,6 +1240,12 @@ function drawTextFeed(now, lifetimeMs) {
   listEl.dataset.mode = 'text-feed';
   listEl.dataset.groupKey = '';
   listEl.dataset.mergeKey = '';
+  // Each .text-tile is width:max-content, so lines of different lengths need the column's
+  // cross-axis alignment set explicitly or the shorter ones sit against the left edge even
+  // under centre/right justification (the window itself is already anchored to match - see
+  // fitToContent's TEXT_JUSTIFY_ORIGIN).
+  const FEED_ALIGN = { left: 'flex-start', center: 'center', right: 'flex-end' };
+  listEl.style.alignItems = FEED_ALIGN[currentConfig.textJustify] || 'flex-start';
   for (const line of textFeed) {
     const el = document.createElement('div');
     el.className = 'text-tile text-feed-line';
@@ -1660,6 +1666,7 @@ function applyConfig(config) {
     // sizing edge case browsers don't resolve consistently, and was
     // producing a wildly wrong (much too narrow) measured width. An
     // explicit pixel value removes the ambiguity entirely.
+    listEl.style.alignItems = ''; // cleared in case a text-feed left it set (see drawTextFeed)
     const perRow = config.iconsPerRow || 4;
     const iconSize = config.iconSize || 46;
     // +8 = .buff-list's own 4px horizontal padding x2 - box-sizing:border-box
@@ -1737,6 +1744,7 @@ function applyConfig(config) {
     listEl.style.maxWidth = '';
     listEl.style.margin = '';
     listEl.style.justifyContent = '';
+    listEl.style.alignItems = ''; // cleared in case a text-feed left it set (see drawTextFeed)
     // Icon mode sets an explicit pixel width above (see its comment) that
     // an explicit width always overrides the default stretch-to-fill
     // sizing list mode depends on - without resetting it here, a widget

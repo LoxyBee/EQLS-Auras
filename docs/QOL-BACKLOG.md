@@ -124,10 +124,14 @@ None of these stances can be selected. They should be.
 ### 21. Spellblade and Empowering Invocations missing — DATA
 Add them to the roster source. *Needs:* in-game names + data.
 
-### 22. Per-line centred justification for text-only auras — CHANGE
+### 22. Per-line centred justification for text-only auras — CHANGE — DONE 30 Aug
 Each line of a text-only aura should be centre-justified on its own, even when several lines are
 active at once.
-*Today:* text-aura rendering lives in `overlay.js` `renderTextFeed()` (the stacked-lines feed).
+*Fixed:* `overlay.js` `drawTextFeed()` now sets the feed column's `align-items` from
+`currentConfig.textJustify` (each `.text-tile` is `width:max-content`, so without an explicit
+cross-axis alignment shorter lines sit left even under centre/right); `applyConfig` clears it when
+leaving text-feed mode. Completes the already-wired `textJustify` setting (`test/text-justify.test.js`,
+8 cases, green). *(Change was authored ~27 Aug and sat uncommitted; committed 30 Aug.)*
 
 ### 23. Scheduled automatic log split — NEW
 Set a time of day to auto-split the log (useful for lockout tracking). A setting in Settings,
@@ -324,7 +328,8 @@ Sequenced by: (1) get out of the incoming fork's way, (2) cheap wins that unbloc
 ### Phase 1 — quick wins, post-merge, no new subsystems
 7. **#2** searchable "Only in:" zone picker — reuse `zonePromptPopup.js` wholesale
 8. **#25** line-aura border above the icon — `overlay.css`, own layer
-9. **#22** per-line centred justification for text auras — `overlay.js renderTextFeed()`
+9. ~~**#22** per-line centred justification for text auras~~ **DONE 30 Aug** (committed an
+   orphaned ~27 Aug change)
 10. **#17** round mote-scaled song durations to 6s — `buffEngine.js`, ~2 lines
 11. **#8** live `{spell}`/`{caster}`/`{profile}` preview under the "Say:" field
 12. **#1** "Preview this aura" button — flash a sample tile for ~5s
