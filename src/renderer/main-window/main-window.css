@@ -723,7 +723,10 @@ body {
   padding: 14px 18px 16px;
 }
 
-.block h3 {
+/* Card-level heading. `.block h3` (aura panel) and `.card h3` (every page) are one style - the
+   two are the same "Card / Topic" tier after the 30 Aug heading consolidation. */
+.block h3,
+.card h3 {
   margin: 0 0 8px;
   font-size: 15px;
   color: var(--ink);
@@ -875,12 +878,6 @@ body {
   color: var(--danger);
   font-size: 11.5px;
   margin-top: 8px;
-}
-
-.card h3 {
-  margin: 0 0 8px;
-  font-size: 15px;
-  color: var(--ink);
 }
 
 /* Splits the Setup page into "Client setup" / "Character setup" without a
