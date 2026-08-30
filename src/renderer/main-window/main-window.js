@@ -3284,6 +3284,16 @@ function initWidgetsPanel() {
       reverseExample: true,
     },
     {
+      id: 'gcd-timer',
+      name: 'Global recovery (GCD)',
+      group: 'timers',
+      description:
+        'A short countdown of the global recovery lockout after every cast - the ~1.5s before you ' +
+        'can begin the next spell. Covers every cast at once, nothing to pick. The length is ' +
+        'scaled down by the mote rank of the spell you just cast.',
+      create: (name) => window.eqTracker.createGcdTimerWidget(name),
+    },
+    {
       id: 'enemy-debuff',
       name: 'Debuff on an enemy',
       group: 'timers',
@@ -3382,11 +3392,6 @@ function initWidgetsPanel() {
       description:
         'Shows who hit the boss first, or who the boss hit first. Not built yet - and it can only ' +
         'ever be as complete as your own log, which does not see everything across a raid.',
-    },
-    {
-      name: 'Global recovery',
-      group: 'timers',
-      description: 'A countdown for the global recovery time between casts. Not built yet.',
     },
   ];
 

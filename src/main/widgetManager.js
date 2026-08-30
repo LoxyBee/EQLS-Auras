@@ -321,6 +321,15 @@ function createCooldownTimerWidget(name, spellName, cooldownSec, iconId, buffDur
   return config;
 }
 
+function createGcdTimerWidget(name, iconId) {
+  const config = widgetStore.createGcdTimer(name, {
+    iconId,
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
 function createBuffTimerWidget(name, spellName, source) {
   const config = widgetStore.createBuffTimer(name, {
     spellName,
@@ -1255,6 +1264,7 @@ module.exports = {
   createTextAuraWidget,
   createBuffTimerWidget,
   createCooldownTimerWidget,
+  createGcdTimerWidget,
   exportWidget,
   peekWidgetCode,
   importWidget,
