@@ -35,6 +35,17 @@ test('every getElementById in the renderer names an id that exists in the markup
   );
 });
 
+test('no id appears twice in index.html', () => {
+  // The renderer looks controls up with getElementById, which returns the FIRST match - so a
+  // duplicate id means one of the two controls is silently dead and the other may be driven by
+  // two listeners at once. Shipped once: widget-text-size-slider was on both the countdown-text
+  // slider and the text-aura message slider, and the countdown one did nothing.
+  const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+  const seen = new Set();
+  const dupes = ids.filter((id) => (seen.has(id) ? true : (seen.add(id), false)));
+  assert.deepEqual([...new Set(dupes)], [], `duplicate id(s) in index.html: ${[...new Set(dupes)].join(', ')}`);
+});
+
 test('ids created dynamically are not mistaken for missing ones', () => {
   // Guard for the test above rather than the app: if it ever starts reporting an id that IS
   // created at runtime, the check needs an allowlist rather than the app needing a fix.
