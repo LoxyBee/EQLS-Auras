@@ -111,5 +111,27 @@ test('it is wired IPC -> preload', () => {
   assert.match(read('src', 'preload', 'preload-main.js'), /setSpellbookFileOverride:/);
 });
 
+test('P3 - the Setup card has an always-available file picker wired to the override IPC', () => {
+  const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const js = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(html, /id="spellbook-file-select"/);
+  assert.match(html, /id="spellbook-file-reset"/);
+  // populated from the candidate list, its change pins the file, reset clears the pin
+  assert.match(js, /listSpellbookCandidates\(\)\.then/);
+  assert.match(js, /setSpellbookFileOverride\(spellbookFileSelectEl\.value\)/);
+  assert.match(js, /setSpellbookFileOverride\(''\)/);
+  // hidden only when there are genuinely no spellbook files at all
+  assert.match(js, /if \(!candidates\.length\) \{[\s\S]{0,80}spellbookFileRowEl\.style\.display = 'none'/);
+});
+
+test('P1 - the hint never shows a bare "<class>" placeholder the user cannot fill in', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const code = js.replace(/^\s*\/\/.*$/gm, '');
+  // the wildcard segment is softened before display
+  assert.match(code, /replace\('-<class>-', '-\(any class\)-'\)/);
+  assert.doesNotMatch(code, /Looking for: \$\{state\.fileNamePattern\}/, 'the raw pattern with <class> was shown verbatim');
+});
+
 module.exports = () => report('spellbook-multi-file');
 if (require.main === module) report('spellbook-multi-file').then((n) => process.exit(n ? 1 : 0));

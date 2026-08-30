@@ -969,6 +969,11 @@
             <span class="label">Spellbook:</span>
             <span id="spellbook-status">Checking...</span>
           </div>
+          <div class="row" id="spellbook-file-row" style="display:none">
+            <span class="label" title="For a machine with more than one character's spellbook files. Auto-detect uses the character from your newest log; pick a file here to pin it instead.">Use file:</span>
+            <select id="spellbook-file-select" class="text-input" style="max-width:22em"></select>
+            <button type="button" id="spellbook-file-reset" style="display:none">Back to auto</button>
+          </div>
           <div class="row">
             <span class="label" title="Only needed if the app can't find your spellbook itself — usually when several characters' logs share the folder. Builds the exact client filename instead of guessing from the newest log.">Character:</span>
             <input type="text" id="spellbook-char-name" class="text-input" placeholder="name" autocomplete="off" style="width:9em" />

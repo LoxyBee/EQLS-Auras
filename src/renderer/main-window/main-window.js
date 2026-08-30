@@ -415,9 +415,26 @@ function initDetectionSettingsPanel() {
   const spellbookCharServerEl = document.getElementById('spellbook-char-server');
   const spellbookCharHintEl = document.getElementById('spellbook-char-hint');
 
+  const spellbookFileRowEl = document.getElementById('spellbook-file-row');
+  const spellbookFileSelectEl = document.getElementById('spellbook-file-select');
+  const spellbookFileResetEl = document.getElementById('spellbook-file-reset');
+
+  // The class shown to the user: the class(es) actually loaded when we have a file, else nothing.
+  // The old text put a literal "<class>" in front of them, which reads as a placeholder they are
+  // meant to fill in - they cannot, the app does not care which class file it reads (it unions
+  // every one), and a multiclass character has several. Owner flagged it: "won't know their class".
+  function loadedClasses(state) {
+    const files = state.files || [];
+    return [...new Set(files.map((f) => f.className).filter((c) => c && c !== '?'))];
+  }
+
   function renderSpellbookState(state) {
+    renderSpellbookFilePicker(state);
     if (state.filePath) {
-      spellbookStatusEl.textContent = `Found - ${state.spellCount} spells (${state.filePath})`;
+      const classes = loadedClasses(state);
+      const cls = classes.length ? ` [${classes.join(', ')}]` : '';
+      const many = (state.files || []).length > 1 ? ` across ${state.files.length} files` : '';
+      spellbookStatusEl.textContent = `Found - ${state.spellCount} spells${many}${cls} (${state.filePath})`;
       spellbookStatusEl.classList.remove('warn');
       spellbookMissingHintEl.style.display = 'none';
     } else {
@@ -434,16 +451,51 @@ function initDetectionSettingsPanel() {
       spellbookMissingWhereEl.textContent = `Looking for a file ${named} ${where}.`;
     }
     // QOL #14 - show what the typed-in character resolves to, and where the pattern is coming from.
+    // fileNamePattern from the main process is "<base>-<class>-Spellbook.txt"; the "<class>" half
+    // is a wildcard, so soften it to "-(any class)-" here rather than showing what looks like a
+    // blank the user has to fill in.
     if (spellbookCharHintEl) {
-      if (state.fileNamePattern) {
+      const pattern = (state.fileNamePattern || '').replace('-<class>-', '-(any class)-');
+      if (state.mode === 'file') {
+        spellbookCharHintEl.textContent = 'Using the file picked below. Clear it to go back to auto-detection.';
+      } else if (pattern) {
         spellbookCharHintEl.textContent =
-          (state.manualCharacter ? 'Using the character above. ' : 'Detected from your log. ') +
-          `Looking for: ${state.fileNamePattern}`;
+          (state.mode === 'manual' ? 'Using the character above. ' : 'Detected from your log. ') +
+          `Looking for a file ${pattern} - any class file works.`;
       } else {
         spellbookCharHintEl.textContent =
-          'No character detected yet - type your name and server above if the app is not finding the file.';
+          'No character detected yet - type your name and server above, or pick a file below.';
       }
     }
+  }
+
+  // The "Change spellbook file..." safety valve (P3). Shown whenever the install folder has at
+  // least one *-Spellbook.txt at all - a single-character machine never needs it but seeing the
+  // one file listed is reassuring rather than noisy. Hidden entirely when there are none (the
+  // missing-file hint block covers that case).
+  function renderSpellbookFilePicker(state) {
+    if (!spellbookFileSelectEl) return;
+    window.eqTracker.listSpellbookCandidates().then((candidates) => {
+      if (!candidates.length) {
+        spellbookFileRowEl.style.display = 'none';
+        return;
+      }
+      spellbookFileRowEl.style.display = '';
+      const pinned = state.mode === 'file' ? state.filePath : '';
+      spellbookFileSelectEl.innerHTML = '';
+      const auto = document.createElement('option');
+      auto.value = '';
+      auto.textContent = 'Auto-detect (from newest log)';
+      spellbookFileSelectEl.appendChild(auto);
+      for (const c of candidates) {
+        const opt = document.createElement('option');
+        opt.value = c.path;
+        opt.textContent = `${c.character} - ${c.className} (${c.count} spells)`;
+        if (c.path === pinned) opt.selected = true;
+        spellbookFileSelectEl.appendChild(opt);
+      }
+      spellbookFileResetEl.style.display = pinned ? '' : 'none';
+    });
   }
 
   window.eqTracker.getSpellbookState().then(renderSpellbookState);
@@ -463,6 +515,15 @@ function initDetectionSettingsPanel() {
     };
     spellbookCharNameEl.addEventListener('input', pushSpellbookChar);
     spellbookCharServerEl.addEventListener('input', pushSpellbookChar);
+  }
+
+  if (spellbookFileSelectEl) {
+    spellbookFileSelectEl.addEventListener('change', () => {
+      window.eqTracker.setSpellbookFileOverride(spellbookFileSelectEl.value).then(renderSpellbookState);
+    });
+    spellbookFileResetEl.addEventListener('click', () => {
+      window.eqTracker.setSpellbookFileOverride('').then(renderSpellbookState);
+    });
   }
 
   // The empty state is the important one and is styled as a warning, not a
