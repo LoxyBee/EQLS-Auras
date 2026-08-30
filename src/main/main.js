@@ -587,6 +587,11 @@ function spellbookCharBase(c) {
 }
 if (spellbookCharBase(spellbookChar)) spellbookService.setCharacterOverride(spellbookCharBase(spellbookChar));
 
+// An explicit spellbook file the user picked from "Change spellbook file..." - beats both name
+// paths. Its own key so clearing the typed name/server doesn't disturb it and vice versa.
+let spellbookFileOverride = loadJson('spellbookFileOverride', '');
+if (spellbookFileOverride) spellbookService.setFileOverride(spellbookFileOverride);
+
 function runLogRotation(why) {
   try {
     // NOT WHILE A BACKFILL IS IN FLIGHT. The backfill holds a per-file state object for the length
@@ -1644,22 +1649,30 @@ ipcMain.handle('settings:setCharacter', (_event, settings) => {
   return settings;
 });
 
-ipcMain.handle('spellbook:getState', () => ({
-  filePath: spellbookService.getFilePath(),
-  spellCount: spellbookService.getCount(),
-  ...spellbookService.getExpectation(),
-}));
+function spellbookState() {
+  return {
+    filePath: spellbookService.getFilePath(),
+    spellCount: spellbookService.getCount(),
+    ...spellbookService.getExpectation(),
+  };
+}
+ipcMain.handle('spellbook:getState', spellbookState);
 // QOL #14 - the manually entered character/server for the spellbook.
 ipcMain.handle('spellbook:getCharacter', () => ({ ...spellbookChar }));
 ipcMain.handle('spellbook:setCharacter', (_event, { name, server }) => {
   spellbookChar = { name: String(name || '').trim(), server: String(server || '').trim() };
   saveJson('spellbookCharacter', spellbookChar);
   spellbookService.setCharacterOverride(spellbookCharBase(spellbookChar) || null);
-  return {
-    filePath: spellbookService.getFilePath(),
-    spellCount: spellbookService.getCount(),
-    ...spellbookService.getExpectation(),
-  };
+  return spellbookState();
+});
+// The "Change spellbook file..." safety valve: list every *-Spellbook.txt in the install root,
+// and pin one (or clear the pin with a falsy path). Own persisted key.
+ipcMain.handle('spellbook:listCandidates', () => spellbookService.listCandidates());
+ipcMain.handle('spellbook:setFileOverride', (_event, filePath) => {
+  spellbookFileOverride = String(filePath || '');
+  saveJson('spellbookFileOverride', spellbookFileOverride);
+  spellbookService.setFileOverride(spellbookFileOverride || null);
+  return spellbookState();
 });
 ipcMain.handle('spellbook:getMemorized', () => memorizedWithIcons());
 ipcMain.handle('spellbook:forgetMemorized', (_event, name) => buffEngine.removeMemorized(name));

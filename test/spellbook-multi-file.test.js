@@ -1,0 +1,115 @@
+'use strict';
+/**
+ * SpellbookService: multi-file union (a multiclass character has one spellbook file per class it
+ * has run `/outputfile spellbook` on) + the explicit file override ("Change spellbook file...").
+ *
+ * The class segment in the filename is never used to find or filter - the owner flagged not
+ * knowing their class / wanting an auto-check-all approach; the match was already a wildcard, and
+ * this makes it read every matching file rather than whichever readdirSync returned first.
+ */
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { test, report } = require('./harness');
+const { SpellbookService } = require('../src/main/spellbookService');
+
+function fixture() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eq-sb-'));
+  fs.writeFileSync(path.join(dir, 'Shara_rivervale-SHM-Spellbook.txt'), '1\tTorpor\n2\tSpirit of Wolf\n3\tRegrowth');
+  fs.writeFileSync(path.join(dir, 'Shara_rivervale-CLR-Spellbook.txt'), '1\tComplete Heal\n2\tAegolism\n3\tTorpor');
+  fs.writeFileSync(path.join(dir, 'Someone_else-WIZ-Spellbook.txt'), '1\tLure of Ice');
+  return dir;
+}
+
+test('a name match reads EVERY <base>-*-Spellbook.txt and unions the spell lists', () => {
+  const dir = fixture();
+  try {
+    const s = new SpellbookService();
+    s.setInstallRoot(dir);
+    s.setCharacterBaseName('Shara_rivervale');
+    // 3 SHM + 3 CLR, Torpor shared -> 5 unique
+    assert.equal(s.getCount(), 5);
+    assert.ok(s.has('Torpor') && s.has('Complete Heal') && s.has('Spirit of Wolf'));
+    assert.ok(!s.has('Lure of Ice'), 'another character\'s spellbook must not leak in');
+    assert.equal(s.getLoadedFiles().length, 2);
+    assert.deepEqual(s.getLoadedFiles().map((f) => f.className).sort(), ['CLR', 'SHM']);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('getExpectation reports mode and the loaded files, and drops the class from the pattern', () => {
+  const dir = fixture();
+  try {
+    const s = new SpellbookService();
+    s.setInstallRoot(dir);
+    s.setCharacterBaseName('Shara_rivervale');
+    const e = s.getExpectation();
+    assert.equal(e.mode, 'auto');
+    assert.equal(e.files.length, 2);
+    assert.doesNotMatch(e.fileNamePattern, /<CLASS>/, 'the uppercase <CLASS> token that reads as "you must know your class" is gone');
+    assert.match(e.fileNamePattern, /^Shara_rivervale-.*-Spellbook\.txt$/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a file override beats the typed name which beats the log-derived name', () => {
+  const dir = fixture();
+  try {
+    const s = new SpellbookService();
+    s.setInstallRoot(dir);
+    s.setCharacterBaseName('Shara_rivervale');   // auto
+    assert.equal(s.getExpectation().mode, 'auto');
+
+    s.setCharacterOverride('Someone_else');       // manual beats auto
+    assert.equal(s.getExpectation().mode, 'manual');
+    assert.ok(s.has('Lure of Ice') && !s.has('Torpor'));
+
+    const clrOnly = path.join(dir, 'Shara_rivervale-CLR-Spellbook.txt');
+    s.setFileOverride(clrOnly);                    // file beats both
+    assert.equal(s.getExpectation().mode, 'file');
+    assert.equal(s.getLoadedFiles().length, 1);
+    assert.ok(s.has('Complete Heal') && !s.has('Spirit of Wolf'), 'only the pinned CLR file should be loaded');
+
+    s.setFileOverride(null);                       // cleared -> back to the manual name
+    assert.equal(s.getExpectation().mode, 'manual');
+    assert.ok(s.has('Lure of Ice'));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a file override pointing at a missing file loads nothing rather than silently falling back', () => {
+  const dir = fixture();
+  try {
+    const s = new SpellbookService();
+    s.setInstallRoot(dir);
+    s.setCharacterBaseName('Shara_rivervale');
+    s.setFileOverride(path.join(dir, 'gone.txt'));
+    assert.equal(s.getCount(), 0);
+    assert.equal(s.getExpectation().mode, 'file');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('listCandidates enumerates every *-Spellbook.txt in the root with character + class + count', () => {
+  const dir = fixture();
+  try {
+    const s = new SpellbookService();
+    s.setInstallRoot(dir);
+    const c = s.listCandidates();
+    assert.equal(c.length, 3);
+    const shm = c.find((x) => x.className === 'SHM');
+    assert.equal(shm.character, 'Shara_rivervale');
+    assert.equal(shm.count, 3);
+    assert.ok(c.some((x) => x.character === 'Someone_else' && x.className === 'WIZ'));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('it is wired IPC -> preload', () => {
+  const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+  assert.match(read('src', 'main', 'main.js'), /ipcMain\.handle\('spellbook:listCandidates'/);
+  assert.match(read('src', 'main', 'main.js'), /ipcMain\.handle\('spellbook:setFileOverride'/);
+  assert.match(read('src', 'main', 'main.js'), /loadJson\('spellbookFileOverride'/);
+  assert.match(read('src', 'preload', 'preload-main.js'), /listSpellbookCandidates:/);
+  assert.match(read('src', 'preload', 'preload-main.js'), /setSpellbookFileOverride:/);
+});
+
+module.exports = () => report('spellbook-multi-file');
+if (require.main === module) report('spellbook-multi-file').then((n) => process.exit(n ? 1 : 0));
