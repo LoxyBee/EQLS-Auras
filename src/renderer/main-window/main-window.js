@@ -3478,6 +3478,16 @@ function initWidgetsPanel() {
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'charmBroke'),
     },
     {
+      id: 'loss-of-control',
+      name: 'Loss of control',
+      group: 'event-alerts',
+      description:
+        'Shows STUNNED / MESMERIZED / CHARMED / AFRAID / ROOTED / SNARED while one of those is on ' +
+        'you, and clears the instant it lifts. One tile, whichever applies. Watches the charm, ' +
+        'fear, root, snare, mez and stun wordings at once - the trigger list is editable to add more.',
+      create: (name) => window.eqTracker.createTextAuraWidget(name, 'lossOfControl'),
+    },
+    {
       id: 'ally-buffs',
       name: 'Ally Buffs',
       group: 'standalone',

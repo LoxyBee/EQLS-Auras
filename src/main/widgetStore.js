@@ -842,6 +842,32 @@ const CHARM_SPELL_NAMES = [
   'Charm Animals', 'Dominate Undead', "Solon's Bewitching Bravura", "Solon's Song of the Sirens",
 ];
 
+// Backlog #36 - the "you can't act right now" text aura. { label, land, end } triples: `land` is
+// the exact line the game writes when that control lands ON THE PLAYER, `end` a substring of the
+// line when it lifts. Both drawn from the roster's own landingText/endedText for the charm / fear /
+// root / snare / mez families plus what actually appears in the owner's logs ("You are stunned!" /
+// "You are no longer stunned." 352/387 times, "You are ensnared." / "You have been entranced.").
+// The game's universal "You are no longer X." fade wording makes `end` reliable; the per-timer
+// `secs` is only a safety net for a missed fade line. Not exhaustive - mob-specific positional
+// stuns and unusual roots won't all be here - but the trigger list is editable like any aura's.
+const LOSS_OF_CONTROL = [
+  { label: 'STUNNED', land: 'You are stunned!', end: 'You are no longer stunned.', secs: 10 },
+  { label: 'STUNNED', land: 'You are stunned by a gust of air.', end: 'You are no longer stunned.', secs: 10 },
+  { label: 'STUNNED', land: 'You are struck by a sudden force.', end: 'You are no longer stunned.', secs: 10 },
+  { label: 'MESMERIZED', land: 'You have been entranced.', end: 'You are no longer entranced.', secs: 45 },
+  { label: 'MESMERIZED', land: 'You are mesmerized.', end: 'You are no longer mesmerized.', secs: 45 },
+  { label: 'CHARMED', land: 'You have been charmed.', end: 'You are no longer charmed.', secs: 45 },
+  { label: 'CHARMED', land: 'You are captivated by the bewitching tune.', end: 'You are no longer captivated.', secs: 45 },
+  { label: 'CHARMED', land: 'You are captivated by the haunting tune.', end: 'You are no longer captivated.', secs: 45 },
+  { label: 'AFRAID', land: 'Your mind fills with fear.', end: 'You are no longer afraid.', secs: 30 },
+  { label: 'AFRAID', land: 'Your mind snaps in terror.', end: 'You are no longer terrified.', secs: 30 },
+  { label: 'ROOTED', land: 'Your feet adhere to the ground.', end: 'Your feet come free.', secs: 40 },
+  { label: 'ROOTED', land: 'Your feet become entwined.', end: 'The roots fall from your feet.', secs: 40 },
+  { label: 'SNARED', land: 'You are ensnared.', end: 'You are no longer ensnared.', secs: 40 },
+  { label: 'SNARED', land: 'Your legs feel weak.', end: 'Strength returns to your legs.', secs: 40 },
+  { label: 'SNARED', land: 'You slow down as your feet are covered in tangling weeds.', end: 'The tangling weeds wither away.', secs: 40 },
+];
+
 const TEXT_AURA_PRESETS = {
   // Note 17's red RESIST flash. Originally 1.4 seconds, her own number, raised to 5s at a later
   // request so the flash stayed readable rather than clearing on the sweep right after it
@@ -959,6 +985,27 @@ const TEXT_AURA_PRESETS = {
       triggerText: `${name} spell has worn off of`,
       triggerMatch: 'contains',
       endedText: '',
+    })),
+  }),
+
+  // Backlog #36 - one text tile that shows what is stopping you acting (STUNNED / MESMERIZED /
+  // CHARMED / AFRAID / ROOTED / SNARED) and clears when it lifts. The message is '{spell}', which
+  // resolves to the firing timer's own name (see overlay.js textFor) - so the same aura shows the
+  // right word for whichever control landed. Exact-match triggers (not 'contains'): every `land`
+  // string here is a whole game line, and 'contains' on "stunned" would also catch "no longer
+  // stunned". `endedText` is the primary clear; `durationSec` is the fallback if that line is
+  // missed. Not stacked - the newest control replaces the line, which is the one you're under now.
+  lossOfControl: () => ({
+    buffSource: 'customTimer',
+    textAuraMessage: '{spell}',
+    textAuraSize: 48,
+    triggerDurationSec: 40,
+    customTimers: LOSS_OF_CONTROL.map((cc) => ({
+      id: crypto.randomUUID(),
+      name: cc.label,
+      durationSec: cc.secs,
+      triggerText: cc.land,
+      endedText: cc.end,
     })),
   }),
 };
