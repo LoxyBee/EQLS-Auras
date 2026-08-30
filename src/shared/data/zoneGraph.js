@@ -605,7 +605,9 @@ const ZONES = {
     connections: [
       { to: 'Erud\'s Crossing', via: 'boat', sources: ['zlizeqmap', 'eqlwiki', 'p99wiki'] },
       { to: 'Erudin Palace', via: 'land', sources: ['zlizeqmap'] },
-      { to: 'The Ruins of Old Paineel', via: 'portal', sources: ['eqlwiki', 'p99wiki'] },
+      // No edge back to The Ruins of Old Paineel (The Hole): the Erudin teleport pad is INSIDE
+      // The Hole and only takes you OUT (arrival is the Erudin Palace jail). The only way IN is
+      // the ground route through Paineel. Modelled one-way, same as an instance tier - QOL #32.
       { to: 'Toxxulia Forest', via: 'land', sources: ['zlizeqmap', 'eqlwiki', 'p99wiki'] },
     ],
   },
@@ -740,7 +742,9 @@ const ZONES = {
     nameConfidence: 'inferred',
     connections: [
       { to: 'Neriak - Commons', via: 'land', sources: ['zlizeqmap'] },
-      { to: 'The Ruins of Old Paineel', via: 'portal', sources: ['eqlwiki', 'p99wiki'], coarse: true },
+      // No edge back to The Ruins of Old Paineel (The Hole): the Neriak teleport pad is INSIDE
+      // The Hole and only takes you OUT (arrival is atop the Neriak Cleric guild). Entry is the
+      // ground route through Paineel only. Modelled one-way - QOL #32.
     ],
   },
   'Oggok': {
@@ -925,7 +929,7 @@ const NOT_TRAVEL_SPELLS = {
  *   - 'Permafrost Keep' and 'The Permafrost Caverns - Group' are both mapped to zone short name 'permafrost'. They may be one place under two labels in EQL, or two. Unverified.
  *   - East Freeport <-> North Freeport is the single edge no independent source corroborates. ZlizEQMap lists North Freeport as connecting only to West Freeport. Plausible but unconfirmed.
  *   - Oasis of Marr -> Plane of Hate is an EverQuest Legends change. In classic EQ / P99 the Plane of Hate has no ground connection at all (wizard Alter Plane: Hate only). Direction is one-way in, per eqlwiki; modelled here as undirected. Verify before routing OUT of Plane of Hate.
- *   - The Hole <-> Erudin and The Hole <-> Neriak 3rd Gate are teleporters listed by both wikis but absent from ZlizEQMap's table.
+ *   - The Hole -> Erudin and The Hole -> Neriak 3rd Gate are teleporters listed by both wikis but absent from ZlizEQMap's table. Modelled one-way (out of The Hole only): the pads are inside The Hole and every documented entrance is the ground route via Paineel (QOL #32, researched 30 Aug).
  *   - Names for the 37 zones the player has never entered are inferred classic long names, not observed EQL strings. Do not display them as authoritative.
  */
 

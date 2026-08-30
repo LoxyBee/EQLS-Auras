@@ -1804,6 +1804,37 @@ label.disabled {
   font-weight: 600;
 }
 
+/* The "Only in:" zone search results (QOL #2). A scrollable list of real zone
+   names; clicking one adds it. Shown only while the search field is in use. */
+.zone-add-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin: 4px 0;
+  background: var(--surface, var(--bg));
+}
+.zone-add-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.zone-add-option:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.zone-add-none {
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--ink-mut);
+}
+
 /* The two position controls sit above the rest of Display & size, separated
    by a rule - they're actions, not settings, and mixing them into the slider
    list is what made them easy to overlook. */

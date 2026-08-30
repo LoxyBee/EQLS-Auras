@@ -1653,7 +1653,7 @@ function initWidgetsPanel() {
   let knownZones = [];
   window.eqTracker.getKnownZones().then((zones) => {
     knownZones = zones;
-    if (selectedId) populateZoneSelect(findWidget(selectedId));
+    if (selectedId) renderZoneAddOptions(findWidget(selectedId));
   });
 
   // Filled in from whichever hotkey actually registered, rather than hard-coded. The markup used
@@ -1707,23 +1707,55 @@ function initWidgetsPanel() {
   // The warning underneath is the part that matters. A zone rule is a NEW way for an aura to be
   // missing with no explanation, which is the failure this project keeps having - so when the rule
   // is what is hiding it, the panel says so and names the zone you are actually in.
-  // Rebuilds the "+ Add a zone..." dropdown to offer every known zone EXCEPT the ones already
-  // picked - there is nothing in the list that could be picked twice, so there is no dupe check
-  // left for the change handler to get wrong. Called every time renderWidgetZones is, from the
-  // same widget, so the two can never disagree about what is already picked.
-  function populateZoneSelect(widget) {
-    const selectEl = document.getElementById('widget-zone-select');
-    if (!selectEl) return;
+  // The "Only in:" zone adder (QOL #2). Type in #widget-zone-search to filter; every match is a
+  // button carrying a real zone name, and clicking one adds that name verbatim - the value added
+  // is never parsed from what was typed, so there is no typo/case path (the reason a plain <select>
+  // replaced a free-text box on 2026-08-24). Already-picked zones are excluded, so there is no dupe
+  // check left to get wrong. Called every time renderWidgetZones is, and when knownZones loads.
+  function renderZoneAddOptions(widget) {
+    const searchEl = document.getElementById('widget-zone-search');
+    const optionsEl = document.getElementById('widget-zone-options');
+    if (!searchEl || !optionsEl) return;
     const picked = new Set((widget?.visibleInZones || []).map((z) => z.toLowerCase()));
-    selectEl.innerHTML = '<option value="">+ Add a zone...</option>';
-    for (const zone of knownZones) {
-      if (picked.has(zone.toLowerCase())) continue;
-      const opt = document.createElement('option');
-      opt.value = zone;
-      opt.textContent = zone;
-      selectEl.appendChild(opt);
+    const query = searchEl.value.trim().toLowerCase();
+    // An always-open ~100-row list would bury the chips and the warning under it, so the results
+    // only show while the field has focus or a query.
+    const show = document.activeElement === searchEl || query.length > 0;
+    optionsEl.style.display = show ? '' : 'none';
+    optionsEl.innerHTML = '';
+    if (!show) return;
+    // No cap - every real-zone match is listed (same call as QOL #31's picker); ~104 max renders
+    // fine inside the scroll box.
+    const matches = knownZones.filter(
+      (z) => !picked.has(z.toLowerCase()) && (!query || z.toLowerCase().includes(query))
+    );
+    for (const zone of matches) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'zone-add-option';
+      btn.textContent = zone;
+      // mousedown, not click: the field blurs (hiding this list) before a click would land, so the
+      // button would vanish out from under the pointer. preventDefault keeps focus on the field so
+      // several zones can be added in a row.
+      btn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        if (!selectedId) return;
+        const current = findWidget(selectedId)?.visibleInZones || [];
+        window.eqTracker.setWidgetVisibleInZones(selectedId, [...current, zone]).then(() => {
+          searchEl.value = '';
+          // refreshWidgets alone only rebuilds the sidebar - re-render this panel from the freshly
+          // reloaded widget so the new chip appears and the zone drops out of the results.
+          refreshWidgets().then(() => renderWidgetZones(findWidget(selectedId)));
+        });
+      });
+      optionsEl.appendChild(btn);
     }
-    selectEl.value = '';
+    if (!matches.length) {
+      const none = document.createElement('div');
+      none.className = 'zone-add-none';
+      none.textContent = query ? 'No zone matches that' : 'Every known zone is already on the list';
+      optionsEl.appendChild(none);
+    }
   }
 
   function renderWidgetZones(widget) {
@@ -1732,7 +1764,7 @@ function initWidgetsPanel() {
     const listEl = document.getElementById('widget-zone-list');
     const warnEl = document.getElementById('widget-zone-warning');
     listEl.innerHTML = '';
-    populateZoneSelect(widget);
+    renderZoneAddOptions(widget);
     for (const zone of zones) {
       const chip = document.createElement('button');
       chip.type = 'button';
@@ -4072,21 +4104,20 @@ function initWidgetsPanel() {
       if (widget) updateLocalWidgetCache(widget);
     });
   });
-  const zoneSelect = document.getElementById('widget-zone-select');
-  zoneSelect.addEventListener('change', () => {
-    const zone = zoneSelect.value;
-    if (!zone || !selectedId) return;
-    const current = findWidget(selectedId)?.visibleInZones || [];
-    // populateZoneSelect already leaves out anything picked, so this option existing at all means
-    // it was not already on the list - nothing left here that needs its own dupe check.
-    window.eqTracker.setWidgetVisibleInZones(selectedId, [...current, zone]).then(() => {
-      // refreshWidgets alone only rebuilds the sidebar - it never re-rendered THIS panel, so a
-      // zone that WAS saved (a restart would show it) looked like it had done nothing at all.
-      // Re-render both the chip list and the dropdown (the new zone must drop out of its options)
-      // from the freshly reloaded widget.
-      refreshWidgets().then(() => renderWidgetZones(findWidget(selectedId)));
-    });
-  });
+  // The "Only in:" zone search (QOL #2). renderZoneAddOptions filters knownZones live and each
+  // result button adds its zone on mousedown; these just keep the results list in sync and hidden
+  // when the field is not in use.
+  const zoneSearch = document.getElementById('widget-zone-search');
+  zoneSearch.addEventListener('input', () => renderZoneAddOptions(findWidget(selectedId)));
+  zoneSearch.addEventListener('focus', () => renderZoneAddOptions(findWidget(selectedId)));
+  zoneSearch.addEventListener('blur', () => setTimeout(() => {
+    // A result button's mousedown preventDefaults, so focus never actually leaves during a pick;
+    // this only fires when the user clicks away for real.
+    if (document.activeElement !== zoneSearch) {
+      const optionsEl = document.getElementById('widget-zone-options');
+      if (optionsEl) optionsEl.style.display = 'none';
+    }
+  }, 120));
 
   mergeCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetMergeSameDuration(selectedId, mergeCheckbox.checked).then(refreshWidgets);
