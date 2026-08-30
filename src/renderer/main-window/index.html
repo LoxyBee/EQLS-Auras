@@ -253,274 +253,276 @@
             </div>
 
             <!-- Display & Size block: always visible -->
+            <!-- Cleanup workstream B - the "Display & size" block was one flat ~240-line run of
+                 every control, all shown at once for a given aura shape. Split into `.topic`
+                 accordions (Position / This aura / Size / Text / Layout). applySettingsPanelShape()
+                 still sets each row's own display individually - it now just toggles rows INSIDE
+                 the topics - and hideEmptyTopics() then hides a whole `.topic` (via `.topic-empty`,
+                 never `.topic-body`) when every row it contains is hidden for the current shape.
+                 Every element id is unchanged, so no other JS moved. -->
             <div class="block">
               <p class="block-cap">Display &amp; size</p>
 
-              <!-- Position controls live here rather than up in the identity
-                   block: moving and resizing IS display, and they're the most
-                   used controls in this panel - previously easy to miss. -->
-              <div class="row position-controls" id="widget-position-row">
-                <button id="widget-lock-btn" class="btn-prominent" title="While unlocked, click and drag anywhere on the aura to move it, and drag an edge to resize. Lock it again when done - while locked it is fully click-through.">Unlock to move</button>
-                <button id="widget-reset-position-btn" title="Brings an aura that's off-screen or on a disconnected monitor back to a corner of your main screen.">Reset position</button>
-                <button id="widget-preview-btn" title="Flashes a sample tile for a few seconds so you can judge size, position, colour and font without going in-game.">Preview</button>
-              </div>
-              <p class="hint" id="widget-position-hint"></p>
-
-              <div class="row" id="widget-display-mode-row">
-                <span class="label">Display style:</span>
-                <label><input type="radio" name="widget-display-mode" value="list" /> List</label>
-                <label><input type="radio" name="widget-display-mode" value="icons" /> Tiles</label>
-              </div>
-              <div class="row" id="widget-text-message-row">
-                <span class="label" title="Blank uses the buff or trigger name. Tokens: {spell} = the spell/trigger name, {caster} or {mob} = who it came from or landed on, {profile} = the active loadout.">Say:</span>
-                <input type="text" id="widget-text-message-input" class="text-input" placeholder="DISPELLED" />
-              </div>
-              <p class="hint" id="widget-text-message-preview" style="display:none"></p>
-              <div class="row" id="widget-always-on-row">
-                <label title="For an aura that shows fixed text and stays put, not one that reacts to a spell. Use {profile} to show the active loadout.">
-                  <input type="checkbox" id="widget-always-on-checkbox" />
-                  Always on screen, with nothing to wait for
-                </label>
-              </div>
-              <p class="hint" id="widget-always-on-hint"></p>
-              <div class="row" id="widget-ally-alert-row">
-                <label title="Warns when a groupmate (or a mob) casts a mez, charm or snare — fired as the cast starts, ~2s before it lands. No countdown; the game never says when someone else's debuff ends. Tokens {caster} and {spell} work in the message.">
-                  <input type="checkbox" id="widget-ally-alert-checkbox" />
-                  Warn me when someone else casts these
-                </label>
-              </div>
-              <p class="hint" id="widget-ally-alert-hint"></p>
-              <div class="row" id="widget-text-size-row">
-                <span class="label">Text size:</span>
-                <input type="range" id="widget-text-size-slider" min="12" max="120" step="2" />
-                <span id="widget-text-size-value" class="slider-value">32px</span>
-              </div>
-              <!-- Reported live 24 Aug: "text only triggers however need a text justification
-                   setting, left right and middle". A text tile shrink-wraps to exactly the words
-                   it's showing, so this isn't CSS text-align (there's no fixed box to justify
-                   text within) - it's which edge of the aura's window stays anchored as that
-                   width changes between different messages. See overlay.js's
-                   reportSizeIfChanged. -->
-              <div class="row" id="widget-text-justify-row">
-                <span class="label" title="Which edge stays fixed as the message changes width: left grows rightward, right grows leftward, center grows both ways.">Justification:</span>
-                <label><input type="radio" name="widget-text-justify" value="left" /> Left</label>
-                <label><input type="radio" name="widget-text-justify" value="center" /> Center</label>
-                <label><input type="radio" name="widget-text-justify" value="right" /> Right</label>
-              </div>
-              <div class="row" id="widget-text-instant-row">
-                <span class="label" title="For spells with no duration (a nuke, heal, gate) — how long the text stays up after the cast.">Show events for:</span>
-                <input type="range" id="widget-text-instant-slider" min="1" max="60" step="1" />
-                <span id="widget-text-instant-value" class="slider-value">6s</span>
-              </div>
-              <p class="hint" id="widget-text-instant-hint"></p>
-              <!-- Stacked-line feed. When a second event arrives while an earlier one is still on
-                   screen, it is added as a new line below rather than replacing the text - each
-                   line fades on its own timer. Off by default; the Resist flash premade ships with
-                   it on. See overlay.js's renderTextFeed. -->
-              <div class="row" id="widget-text-stack-row">
-                <label title="A new event adds a line below instead of replacing the text; each line fades on its own. Good for repeated resists.">
-                  <input type="checkbox" id="widget-text-stack-checkbox" />
-                  Stack multiple lines
-                </label>
-              </div>
-              <div class="row" id="widget-text-stack-max-row">
-                <span class="label" title="How many lines show at once before the oldest drops. 2 keeps the previous line readable without a scrolling log.">Lines visible:</span>
-                <input type="range" id="widget-text-stack-max-slider" min="2" max="4" step="1" />
-                <span id="widget-text-stack-max-value" class="slider-value">2</span>
-              </div>
-              <p class="hint" id="widget-text-hint"></p>
-              <!-- Note 19. Only ever shown on a damage meter - see the buffSource check in
-                   main-window.js. Its own group rather than three loose rows, because none of
-                   them mean anything on any other aura. -->
-              <!-- Note 20. Shown only on a travel guide - see the buffSource check in
-                   main-window.js. -->
-              <!-- Set from in game, never from here. The destination dropdown that used to live
-                   in this card has been removed at the owner's instruction: this aura is driven by
-                   /tell while you are playing, and a picker here meant setting your route by
-                   alt-tabbing out of the game you are trying to travel in. The current destination
-                   is shown read-only so the aura can still be identified at a glance. Reworked
-                   26 Aug: /tell no longer reads the target as a possible zone name at all - a real
-                   zone name (Freeport) is also a real player's name, so an ordinary social /tell to
-                   an offline guildmate could look exactly like a travel command. Now there is one
-                   fixed word, deliberately longer than any real EverQuest character name can be. -->
-              <div id="widget-travel-settings" style="display:none">
-                <h4 class="settings-subsection-title">Travel guide</h4>
-                <div class="row">
-                  <span class="label">Going to:</span>
-                  <strong id="widget-travel-destination-current">Nowhere yet</strong>
-                </div>
-                <div class="row">
-                  <span class="label">Command word:</span>
-                  <input type="text" id="widget-travel-command-input" maxlength="24" style="width:140px" />
-                </div>
-                <p class="hint">
-                  Typed as <code>/tell &lt;word&gt;</code> in game to pop up a searchable zone list -
-                  click one to pick it. It will try to send a tell to the keyword you type, and the
-                  failure to do so will be what this module picks up from the log.
-                </p>
-                <p class="hint">
-                  Travel Guide will tell you how to get there from your current zone, but if it
-                  does not know it, you will be prompted first to enter your current location.
-                </p>
+              <!-- Position + opacity: where the aura sits and how visible it is. The most-used
+                   controls, so open by default and first. -->
+              <div class="topic open" id="topic-panel-position" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Position</span>
+                  <span class="topic-summary" id="topic-panel-position-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <div class="row position-controls" id="widget-position-row">
+                    <button id="widget-lock-btn" class="btn-prominent" title="While unlocked, click and drag anywhere on the aura to move it, and drag an edge to resize. Lock it again when done - while locked it is fully click-through.">Unlock to move</button>
+                    <button id="widget-reset-position-btn" title="Brings an aura that's off-screen or on a disconnected monitor back to a corner of your main screen.">Reset position</button>
+                    <button id="widget-preview-btn" title="Flashes a sample tile for a few seconds so you can judge its size, position, colour and font without going in-game.">Preview</button>
+                  </div>
+                  <p class="hint" id="widget-position-hint"></p>
+                  <div class="row" id="widget-opacity-row">
+                    <span class="label">Opacity:</span>
+                    <input type="range" id="widget-opacity-slider" min="0.2" max="1" step="0.05" />
+                  </div>
+                </div></div>
               </div>
 
-              <div id="widget-damage-settings" style="display:none">
-                <h4 class="settings-subsection-title">Damage meter</h4>
-                <div class="row">
-                  <label for="widget-fight-timeout-slider" title="How long with no damage before the meter ends the fight. The log has no &quot;fight over&quot; line, so it's a guess.">A fight ends after</label>
-                  <input type="range" id="widget-fight-timeout-slider" min="3" max="60" step="1" />
-                  <span id="widget-fight-timeout-value" class="slider-value"></span>
-                </div>
-                <div class="row">
-                  <label title="Your percentage still reflects your share of the whole fight - everyone else is still counted, just not shown.">
-                    <input type="checkbox" id="widget-mine-only-checkbox" />
-                    Only show my own row
-                  </label>
-                </div>
-                <div class="row">
-                  <label title="Total fight damage and its per-second rate — the only rate shown, since the log doesn't record how long each person swung.">
-                    <input type="checkbox" id="widget-total-row-checkbox" />
-                    Show the total line at the top
-                  </label>
-                </div>
+              <!-- This aura: the controls specific to what this aura is - a text message, an
+                   always-on plate, a groupmate-cast warning, a damage meter, a travel route. Hidden
+                   whole for aura types that have none of them. -->
+              <div class="topic open" id="topic-panel-this-aura" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">This aura</span>
+                  <span class="topic-summary" id="topic-panel-this-aura-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <div class="row" id="widget-text-message-row">
+                    <span class="label" title="Blank uses the buff or trigger name. Tokens: {spell} = the spell/trigger name, {caster} or {mob} = who it came from or landed on, {profile} = the active loadout.">Say:</span>
+                    <input type="text" id="widget-text-message-input" class="text-input" placeholder="DISPELLED" />
+                  </div>
+                  <p class="hint" id="widget-text-message-preview" style="display:none"></p>
+                  <div class="row" id="widget-always-on-row">
+                    <label title="For an aura that shows fixed text and stays put, not one that reacts to a spell. Use {profile} to show the active loadout.">
+                      <input type="checkbox" id="widget-always-on-checkbox" />
+                      Always on screen, with nothing to wait for
+                    </label>
+                  </div>
+                  <p class="hint" id="widget-always-on-hint"></p>
+                  <div class="row" id="widget-ally-alert-row">
+                    <label title="Warns when a groupmate (or a mob) casts a mez, charm or snare — fired as the cast starts, ~2s before it lands. No countdown; the game never says when someone else's debuff ends. Tokens {caster} and {spell} work in the message.">
+                      <input type="checkbox" id="widget-ally-alert-checkbox" />
+                      Warn me when someone else casts these
+                    </label>
+                  </div>
+                  <p class="hint" id="widget-ally-alert-hint"></p>
+                  <div class="row" id="widget-text-instant-row">
+                    <span class="label" title="For spells with no duration (a nuke, heal, gate) — how long the text stays up after the cast.">Show events for:</span>
+                    <input type="range" id="widget-text-instant-slider" min="1" max="60" step="1" />
+                    <span id="widget-text-instant-value" class="slider-value">6s</span>
+                  </div>
+                  <p class="hint" id="widget-text-instant-hint"></p>
+                  <!-- Stacked-line feed - a new event adds a line below instead of replacing the
+                       text; each line fades on its own. Off by default; the Resist flash premade
+                       ships with it on. See overlay.js's renderTextFeed. -->
+                  <div class="row" id="widget-text-stack-row">
+                    <label title="A new event adds a line below instead of replacing the text; each line fades on its own. Good for repeated resists.">
+                      <input type="checkbox" id="widget-text-stack-checkbox" />
+                      Stack multiple lines
+                    </label>
+                  </div>
+                  <div class="row" id="widget-text-stack-max-row">
+                    <span class="label" title="How many lines show at once before the oldest drops. 2 keeps the previous line readable without a scrolling log.">Lines visible:</span>
+                    <input type="range" id="widget-text-stack-max-slider" min="2" max="4" step="1" />
+                    <span id="widget-text-stack-max-value" class="slider-value">2</span>
+                  </div>
+                  <p class="hint" id="widget-text-hint"></p>
+                  <!-- Note 20. Shown only on a travel guide - see the buffSource check in
+                       main-window.js. Set from in game, never from here (the destination dropdown
+                       that used to live here was removed - this aura is driven by /tell while
+                       playing, and a picker here meant setting your route by alt-tabbing out). -->
+                  <div id="widget-travel-settings" style="display:none">
+                    <h4 class="settings-subsection-title">Travel guide</h4>
+                    <div class="row">
+                      <span class="label">Going to:</span>
+                      <strong id="widget-travel-destination-current">Nowhere yet</strong>
+                    </div>
+                    <div class="row">
+                      <span class="label">Command word:</span>
+                      <input type="text" id="widget-travel-command-input" maxlength="24" style="width:140px" />
+                    </div>
+                    <p class="hint">Typed as <code>/tell &lt;word&gt;</code> in game to pop up a searchable zone list.</p>
+                    <p class="hint">If it does not know your current zone, it asks for that first.</p>
+                  </div>
+
+                  <!-- Note 19. Only ever shown on a damage meter - see the buffSource check in
+                       main-window.js. -->
+                  <div id="widget-damage-settings" style="display:none">
+                    <h4 class="settings-subsection-title">Damage meter</h4>
+                    <div class="row">
+                      <label for="widget-fight-timeout-slider" title="How long with no damage before the meter ends the fight. The log has no &quot;fight over&quot; line, so it's a guess.">A fight ends after</label>
+                      <input type="range" id="widget-fight-timeout-slider" min="3" max="60" step="1" />
+                      <span id="widget-fight-timeout-value" class="slider-value"></span>
+                    </div>
+                    <div class="row">
+                      <label title="Your percentage still reflects your share of the whole fight - everyone else is still counted, just not shown.">
+                        <input type="checkbox" id="widget-mine-only-checkbox" />
+                        Only show my own row
+                      </label>
+                    </div>
+                    <div class="row">
+                      <label title="Total fight damage and its per-second rate — the only rate shown, since the log doesn't record how long each person swung.">
+                        <input type="checkbox" id="widget-total-row-checkbox" />
+                        Show the total line at the top
+                      </label>
+                    </div>
+                  </div>
+                </div></div>
               </div>
 
-              <!-- The "Also watch these spells on enemies" toggle that used to live here is gone,
-                   at the owner's instruction: it let a plain Custom buff aura opt into
-                   trackOnEnemies at runtime, but the buff/debuff picker is category-locked now
-                   (see isDetBuff/wantsDebuffs) - a buff aura can only ever pick buff-category
-                   spells, so there was never a debuff-category pick left for the toggle to apply
-                   to. Enemy tracking is now purely a property of which button built the aura -
-                   Custom debuff aura sets trackOnEnemies true forever at creation, Custom buff
-                   aura leaves it false forever - not a switch either kind can flip afterward. -->
-              <div class="row" id="widget-borders-row">
-                <label title="Colours each tile's edge by spell type — damage red, heals green, buffs blue, debuffs purple, and so on. Untyped spells keep their normal edge.">
-                  <input type="checkbox" id="widget-category-borders-checkbox" />
-                  Colour each tile's edge by spell type
-                </label>
-              </div>
-              <p class="hint" id="widget-borders-hint"></p>
-              <div class="row" id="widget-merge-row">
-                <label title="Collapses buffs of the same duration into one tile showing the soonest to expire and a count. What counts as &quot;the same&quot; is set on the Setup page.">
-                  <input type="checkbox" id="widget-merge-checkbox" />
-                  Merge buffs that share a duration into one tile
-                </label>
-              </div>
-              <p class="hint" id="widget-merge-hint"></p>
-              <div class="row" id="widget-sort-order-row">
-                <span class="label">Sort by:</span>
-                <label><input type="radio" name="widget-sort-order" value="default" /> Cast order</label>
-                <label><input type="radio" name="widget-sort-order" value="time-remaining" /> Time remaining</label>
-                <label><input type="radio" name="widget-sort-order" value="alphabetical" /> Alphabetical</label>
-              </div>
-              <div class="row" id="widget-opacity-row">
-                <span class="label">Opacity:</span>
-                <input type="range" id="widget-opacity-slider" min="0.2" max="1" step="0.05" />
-              </div>
-
-              <div id="widget-display-list-only-settings">
-                <div class="row">
-                  <label><input type="checkbox" id="widget-show-row-icon-checkbox" /> Show icon on each row</label>
-                </div>
-                <div class="row">
-                  <label><input type="checkbox" id="widget-mirror-row-checkbox" /> Mirror direction (icon on the right, bar counts down right-to-left)</label>
-                </div>
-              </div>
-
-              <div id="widget-display-icon-only-settings">
-                <div class="row">
-                  <span class="label">Tiles per row:</span>
-                  <input type="range" id="widget-icons-per-row-slider" min="1" max="20" step="1" />
-                  <span id="widget-icons-per-row-value" class="slider-value">4</span>
-                </div>
-                <div class="row">
-                  <span class="label" title="Where fewer buffs than &quot;Tiles per row&quot; sit within the reserved space, rather than always flush left.">Justification:</span>
-                  <label><input type="radio" name="widget-icon-justify" value="left" /> Left</label>
-                  <label><input type="radio" name="widget-icon-justify" value="center" /> Center</label>
-                  <label><input type="radio" name="widget-icon-justify" value="right" /> Right</label>
-                </div>
+              <!-- Size: how big the tiles or rows are. Open by default; hidden whole for aura
+                   types that draw one plate of words rather than tiles (text, sound). -->
+              <div class="topic open" id="topic-panel-size" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Size</span>
+                  <span class="topic-summary" id="topic-panel-size-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <div id="widget-list-only-settings">
+                    <div class="row">
+                      <span class="label">List width:</span>
+                      <input type="range" id="widget-list-width-slider" min="120" max="500" step="5" />
+                      <span id="widget-list-width-value" class="slider-value">220px</span>
+                    </div>
+                    <div class="row">
+                      <span class="label" title="Independent of text size, same as tile size is.">Row size:</span>
+                      <input type="range" id="widget-row-size-slider" min="18" max="60" step="1" />
+                      <span id="widget-row-size-value" class="slider-value">28px</span>
+                    </div>
+                  </div>
+                  <div id="widget-icon-only-settings">
+                    <div class="row">
+                      <span class="label">Tile size:</span>
+                      <input type="range" id="widget-icon-size-slider" min="24" max="96" step="2" />
+                      <span id="widget-icon-size-value" class="slider-value">46px</span>
+                    </div>
+                    <div class="row">
+                      <span class="label">Margin width:</span>
+                      <input type="range" id="widget-margin-width-slider" min="0" max="20" step="1" />
+                      <span id="widget-margin-width-value" class="slider-value">5px</span>
+                    </div>
+                    <!-- Only meaningful once "Colour each tile's edge by spell type" is on -
+                         toggled in JS alongside icon-mode visibility. -->
+                    <div class="row" id="widget-border-width-row" style="display:none">
+                      <span class="label">Edge width:</span>
+                      <input type="range" id="widget-border-width-slider" min="1" max="6" step="1" />
+                      <span id="widget-border-width-value" class="slider-value">1px</span>
+                    </div>
+                  </div>
+                </div></div>
               </div>
 
-              <div id="widget-list-only-settings">
-                <div class="row">
-                  <span class="label">List width:</span>
-                  <input type="range" id="widget-list-width-slider" min="120" max="500" step="5" />
-                  <span id="widget-list-width-value" class="slider-value">220px</span>
-                </div>
-                <div class="row">
-                  <span class="label" title="Independent of text size, same as tile size is.">Row size:</span>
-                  <input type="range" id="widget-row-size-slider" min="18" max="60" step="1" />
-                  <span id="widget-row-size-value" class="slider-value">28px</span>
-                </div>
+              <!-- Text: how the aura's words look - the text-aura message size, and which edge
+                   stays anchored as the message changes width. Collapsed. -->
+              <div class="topic" id="topic-panel-text" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Text</span>
+                  <span class="topic-summary" id="topic-panel-text-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <div class="row" id="widget-text-size-row">
+                    <span class="label">Text size:</span>
+                    <input type="range" id="widget-text-size-slider" min="12" max="120" step="2" />
+                    <span id="widget-text-size-value" class="slider-value">32px</span>
+                  </div>
+                  <!-- A text tile shrink-wraps to exactly the words it shows, so this is not CSS
+                       text-align - it is which edge of the aura's window stays anchored as that
+                       width changes between messages. See overlay.js's reportSizeIfChanged. -->
+                  <div class="row" id="widget-text-justify-row">
+                    <span class="label" title="Which edge stays fixed as the message changes width: left grows rightward, right grows leftward, center grows both ways.">Justification:</span>
+                    <label><input type="radio" name="widget-text-justify" value="left" /> Left</label>
+                    <label><input type="radio" name="widget-text-justify" value="center" /> Center</label>
+                    <label><input type="radio" name="widget-text-justify" value="right" /> Right</label>
+                  </div>
+                </div></div>
               </div>
 
-              <div id="widget-icon-only-settings">
-                <div class="row">
-                  <span class="label">Tile size:</span>
-                  <input type="range" id="widget-icon-size-slider" min="24" max="96" step="2" />
-                  <span id="widget-icon-size-value" class="slider-value">46px</span>
-                </div>
-                <div class="row">
-                  <span class="label">Margin width:</span>
-                  <input type="range" id="widget-margin-width-slider" min="0" max="20" step="1" />
-                  <span id="widget-margin-width-value" class="slider-value">5px</span>
-                </div>
-                <!-- Only meaningful once "Colour each tile's edge by spell type" is actually on -
-                     hidden otherwise rather than offering a width for an edge that isn't drawn.
-                     See widget-borders-row above; toggled in JS alongside icon-mode visibility. -->
-                <div class="row" id="widget-border-width-row" style="display:none">
-                  <span class="label">Edge width:</span>
-                  <input type="range" id="widget-border-width-slider" min="1" max="6" step="1" />
-                  <span id="widget-border-width-value" class="slider-value">1px</span>
-                </div>
+              <!-- Layout: how tiles are arranged - list vs tiles, sort, merge, edge colours,
+                   per-person grouping. Collapsed; hidden whole for a text aura (one plate of
+                   words, nothing to arrange). -->
+              <div class="topic" id="topic-panel-layout" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Layout</span>
+                  <span class="topic-summary" id="topic-panel-layout-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <div class="row" id="widget-display-mode-row">
+                    <span class="label">Display style:</span>
+                    <label><input type="radio" name="widget-display-mode" value="list" /> List</label>
+                    <label><input type="radio" name="widget-display-mode" value="icons" /> Tiles</label>
+                  </div>
+                  <div class="row" id="widget-sort-order-row">
+                    <span class="label">Sort by:</span>
+                    <label><input type="radio" name="widget-sort-order" value="default" /> Cast order</label>
+                    <label><input type="radio" name="widget-sort-order" value="time-remaining" /> Time remaining</label>
+                    <label><input type="radio" name="widget-sort-order" value="alphabetical" /> Alphabetical</label>
+                  </div>
+                  <div class="row" id="widget-merge-row">
+                    <label title="Collapses buffs of the same duration into one tile showing the soonest to expire and a count. What counts as &quot;the same&quot; is set on the Setup page.">
+                      <input type="checkbox" id="widget-merge-checkbox" />
+                      Merge buffs that share a duration into one tile
+                    </label>
+                  </div>
+                  <p class="hint" id="widget-merge-hint"></p>
+                  <!-- The "Also watch these spells on enemies" toggle that used to live here is
+                       gone - enemy tracking is a property of which button built the aura now, not
+                       a switch either kind can flip afterward. -->
+                  <div class="row" id="widget-borders-row">
+                    <label title="Colours each tile's edge by spell type — damage red, heals green, buffs blue, debuffs purple, and so on. Untyped spells keep their normal edge.">
+                      <input type="checkbox" id="widget-category-borders-checkbox" />
+                      Colour each tile's edge by spell type
+                    </label>
+                  </div>
+                  <p class="hint" id="widget-borders-hint"></p>
+                  <div id="widget-display-list-only-settings">
+                    <div class="row">
+                      <label><input type="checkbox" id="widget-show-row-icon-checkbox" /> Show icon on each row</label>
+                    </div>
+                    <div class="row">
+                      <label><input type="checkbox" id="widget-mirror-row-checkbox" /> Mirror direction (icon on the right, bar counts down right-to-left)</label>
+                    </div>
+                  </div>
+                  <div id="widget-display-icon-only-settings">
+                    <div class="row">
+                      <span class="label">Tiles per row:</span>
+                      <input type="range" id="widget-icons-per-row-slider" min="1" max="20" step="1" />
+                      <span id="widget-icons-per-row-value" class="slider-value">4</span>
+                    </div>
+                    <div class="row">
+                      <span class="label" title="Where fewer buffs than &quot;Tiles per row&quot; sit within the reserved space, rather than always flush left.">Justification:</span>
+                      <label><input type="radio" name="widget-icon-justify" value="left" /> Left</label>
+                      <label><input type="radio" name="widget-icon-justify" value="center" /> Center</label>
+                      <label><input type="radio" name="widget-icon-justify" value="right" /> Right</label>
+                    </div>
+                  </div>
+                  <!-- Only meaningful on an aura showing buffs cast on other people - hidden
+                       otherwise (see renderBuffFilter). -->
+                  <div id="widget-ally-grouping-settings" style="display:none">
+                    <div class="row">
+                      <label><input type="checkbox" id="widget-group-ally-checkbox" /> Group by player</label>
+                    </div>
+                    <div class="row" id="widget-ally-direction-row">
+                      <span class="label">Stack groups:</span>
+                      <label><input type="radio" name="widget-ally-direction" value="vertical" /> Vertically</label>
+                      <label><input type="radio" name="widget-ally-direction" value="horizontal" /> Side by side</label>
+                    </div>
+                    <div class="row">
+                      <label title="Grouping already puts the name in the heading and drops it from the buffs automatically. This drops it when grouping is off too."><input type="checkbox" id="widget-hide-ally-name-checkbox" /> Hide the player name on each buff</label>
+                    </div>
+                  </div>
+                </div></div>
               </div>
-
-              <!-- Only meaningful on an aura showing buffs cast on other people - hidden entirely
-                   otherwise (see renderBuffFilter). Moved below the icon-size/margin-width block
-                   at the owner's instruction, 2026-08-24. -->
-              <div id="widget-ally-grouping-settings" style="display:none">
-                <div class="row">
-                  <label><input type="checkbox" id="widget-group-ally-checkbox" /> Group by player</label>
-                </div>
-                <div class="row" id="widget-ally-direction-row">
-                  <span class="label">Stack groups:</span>
-                  <label><input type="radio" name="widget-ally-direction" value="vertical" /> Vertically</label>
-                  <label><input type="radio" name="widget-ally-direction" value="horizontal" /> Side by side</label>
-                </div>
-                <div class="row">
-                  <label title="Grouping already puts the name in the heading and drops it from the buffs automatically. This drops it when grouping is off too."><input type="checkbox" id="widget-hide-ally-name-checkbox" /> Hide the player name on each buff</label>
-                </div>
-              </div>
-            </div>
-
-            <!-- Moved OUT of #widget-buff-filter-card (24 Aug) - it used to live inside that
-                 card, and renderBuffFilter() sets filterCard.style.display = 'none' for a
-                 customTimer-source aura, which - because this row was a CHILD of that card - hid
-                 the row too, collapsing it to zero size the instant you picked "Your own text
-                 triggers." Its own display rule (buffSourceRow.style.display = '') was being set
-                 correctly the whole time; it just could not win against an ancestor's display:none.
-                 Reported as "opens up a menu you cannot escape from... cannot toggle back" -
-                 confirmed by literally measuring the row's on-screen rect collapse to 0x0x0x0 the
-                 moment the radio changed, via tools/_debug-buff-source.js (temporary, deleted).
-                 As a sibling now, its own visibility rule is the only one that applies to it. -->
-            <div class="row" id="widget-buff-source-row">
-              <span class="label">Watching:</span>
-              <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
-              <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
-              <!-- A text aura only. Every other aura has its source fixed when it is created;
-                   a text aura is meant to be able to react to anything the app can see, so it
-                   is where this can be changed afterwards. -->
-              <label id="widget-buff-source-timer-label" style="display:none">
-                <input type="radio" name="widget-buff-source" value="customTimer" /> Your own text triggers
-              </label>
-            </div>
-
-            <!-- Same slot as widget-buff-source-row above, and mutually exclusive with it (one
-                 aura kind is never both) - only a Custom debuff aura shows this one. -->
-            <div class="row" id="widget-debuff-cast-by-row">
-              <span class="label" title="Both watch the same spells on the same enemies with the same countdown. &quot;You&quot; only tracks one while there is evidence you cast it yourself. &quot;An ally&quot; tracks it the moment it lands, without needing to know who cast it - use this when a groupmate is the one debuffing.">Watching:</span>
-              <label><input type="radio" name="widget-debuff-cast-by" value="self" /> Cast by you</label>
-              <label><input type="radio" name="widget-debuff-cast-by" value="ally" /> Cast by an ally</label>
             </div>
 
             <!-- Configuration block: collapsible topics live together here -->
@@ -562,6 +564,35 @@
 
             <div class="block">
               <p class="block-cap">Configuration</p>
+
+              <!-- "Watching" - what this aura's source is. A topic inside Configuration at the
+                   owner's request. NOT inside #widget-buff-filter-card (renderBuffFilter hides
+                   that whole card for a customTimer-source aura, which as an ancestor once
+                   collapsed the source row to a 0x0 unclickable strip - "a menu you cannot escape
+                   from"). The Configuration block is never hidden as a whole, and hideEmptyPanel
+                   Topics adds .topic-empty (never a display:none ancestor) when neither row
+                   applies. The two rows are mutually exclusive - one aura kind is never both. -->
+              <div class="topic" id="topic-watching" data-topic>
+                <button type="button" class="topic-head" data-toggle>
+                  <span class="chev"></span>
+                  <span class="topic-title">Watching</span>
+                  <span class="topic-summary" id="topic-watching-summary"></span>
+                </button>
+                <div class="topic-body"><div class="topic-body-inner">
+                  <div class="row" id="widget-buff-source-row">
+                    <label><input type="radio" name="widget-buff-source" value="self" /> Your own buffs</label>
+                    <label><input type="radio" name="widget-buff-source" value="ally" /> Buffs you've cast on allies</label>
+                    <!-- A text aura only - every other aura has its source fixed at creation. -->
+                    <label id="widget-buff-source-timer-label" style="display:none">
+                      <input type="radio" name="widget-buff-source" value="customTimer" /> Your own text triggers
+                    </label>
+                  </div>
+                  <div class="row" id="widget-debuff-cast-by-row" title="Both watch the same spells on the same enemies with the same countdown. &quot;Cast by you&quot; only tracks one while there is evidence you cast it yourself. &quot;Cast by an ally&quot; tracks it the moment it lands, without needing to know who cast it - use this when a groupmate is the one debuffing.">
+                    <label><input type="radio" name="widget-debuff-cast-by" value="self" /> Cast by you</label>
+                    <label><input type="radio" name="widget-debuff-cast-by" value="ally" /> Cast by an ally</label>
+                  </div>
+                </div></div>
+              </div>
 
               <div class="topic" id="widget-custom-timers-card" data-topic style="display:none">
                 <button type="button" class="topic-head" data-toggle>

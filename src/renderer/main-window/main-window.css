@@ -866,6 +866,16 @@ body {
   max-height: 4000px;
 }
 
+/* Workstream B - a Display & size topic whose every row is hidden for the current aura shape
+   (a text aura has no Layout, a damage meter has no Size, ...). Set on the .topic itself by
+   hideEmptyPanelTopics, NEVER on .topic-body: driving .topic-body:display would spring the
+   child-of-display:none trap (a row inside then reads as hidden because an ancestor is, not
+   because of its own SHAPE_FIELDS rule) - exactly the bug that made the buff-source row
+   inescapable once (see its comment in index.html). */
+.topic.topic-empty {
+  display: none;
+}
+
 .topic-body-inner {
   padding: 6px 0 14px 6px;
   font-size: 12.5px;
