@@ -251,16 +251,16 @@
                      loadout-label aura sets it for itself, because a label naming the current
                      loadout is meaningless on only some of them - but nothing here sets it. -->
               </div>
-              <!-- A dropdown, not a free-text box with a datalist - picking a real option adds it
-                   immediately, no separate Add button and nothing to mistype. Already-added zones
-                   are left out of the list (see populateZoneSelect), so there is nothing here that
-                   could be picked twice. -->
+              <!-- Type to filter, then CLICK a real zone name to add it - the value added is always
+                   a genuine zone string off the list, never parsed from what was typed, so there is
+                   no typo/case-mismatch path (the reason a plain <select> replaced a free-text box
+                   on 2026-08-24). Already-added zones are left out of the results (see
+                   renderZoneAddOptions), so nothing can be picked twice. QOL #2. -->
               <div class="row" id="widget-zones-row">
                 <span class="label" title="Leave empty to show everywhere. Zones are exactly as the game names them - Befallen and Befallen 1 (Awakened) are separate. Pick as many as you want - the aura shows in ANY of them.">Only in:</span>
-                <select id="widget-zone-select" class="text-input">
-                  <option value="">+ Add a zone...</option>
-                </select>
+                <input type="text" id="widget-zone-search" class="text-input" placeholder="Type to find a zone, then click it..." autocomplete="off" />
               </div>
+              <div id="widget-zone-options" class="zone-add-list" style="display:none"></div>
               <div id="widget-zone-list" class="profile-toggle-list"></div>
               <p class="hint" id="widget-zone-warning" style="display:none"></p>
             </div>
@@ -656,7 +656,6 @@
                     <span class="label">Text color:</span>
                     <input type="color" id="widget-timer-text-color-picker" value="#f0f1f5" />
                   </div>
-                  <p class="hint">Not active yet.</p>
 
                   <div id="widget-icon-position-settings">
                     <div class="row">

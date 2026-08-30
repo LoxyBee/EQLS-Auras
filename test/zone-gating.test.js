@@ -209,24 +209,28 @@ test('the picker offers the observed zones', () => {
   assert.ok(KNOWN_ZONES.length >= 60, `only ${KNOWN_ZONES.length} seed zones`);
   assert.ok(KNOWN_ZONES.includes('Befallen') && KNOWN_ZONES.includes('Befallen 1 (Awakened)'));
   assert.ok(KNOWN_ZONES.includes('The Plane of Fear') && KNOWN_ZONES.includes('The Plane of Fear - Group'));
-  assert.match(html, /id="widget-zone-select"/);
+  assert.match(html, /id="widget-zone-search"/);
   assert.match(mainSrc, /ipcMain\.handle\('zone:known'/);
 });
 
-test('a real dropdown, not free text over a datalist', () => {
-  // Reversed at the owner's instruction, 2026-08-24: reported as only ever taking one zone and
-  // never live-updating. A <select> offering only real zone names has no typo/case-mismatch path
-  // left for either symptom to hide in - the tradeoff is a zone that has never appeared in the
-  // logs cannot be typed in ahead of time any more, which was a deliberate choice, not an oversight.
-  assert.match(html, /id="widget-zone-select" class="text-input"/);
+test('a filter field over a click-to-add list, never free text parsed into a value (QOL #2)', () => {
+  // The plain <select> (2026-08-24) replaced a free-text box + datalist with two reported bugs:
+  // only ever taking one zone, and never live-updating. QOL #2 brings back a search field but
+  // keeps the property that made the <select> right - you type to FILTER, then click a button
+  // whose label IS a real zone name, and that exact string is added. Nothing is parsed from what
+  // was typed, so there is still no typo/case-mismatch path.
+  assert.match(html, /id="widget-zone-search" class="text-input"/);
+  assert.match(html, /id="widget-zone-options"/);
+  assert.doesNotMatch(html, /id="widget-zone-select"/, 'the <select> is back');
   assert.doesNotMatch(html, /id="widget-zone-input"/, 'the old free-text box is back');
   assert.doesNotMatch(html, /<datalist id="known-zones">/, 'the old datalist is back');
 });
 
-test('picking an option adds it and re-renders both the chips and the dropdown itself', () => {
-  const fn = rendererSrc.match(/zoneSelect\.addEventListener\('change', \(\) => \{([\s\S]*?)\n {2}\}\);/);
-  assert.ok(fn, 'the zone-select change handler has been restructured');
-  assert.match(fn[1], /setWidgetVisibleInZones\(selectedId, \[\.\.\.current, zone\]\)/);
+test('picking a zone from the results adds it verbatim and re-renders both the chips and the results', () => {
+  const fn = rendererSrc.match(/function renderZoneAddOptions\(widget\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderZoneAddOptions has been renamed or restructured');
+  assert.match(fn[1], /addEventListener\('mousedown'/, 'a result must be added on mousedown, so the field blur does not eat the click');
+  assert.match(fn[1], /setWidgetVisibleInZones\(selectedId, \[\.\.\.current, zone\]\)/, 'the added value must be the real zone name off the list');
   assert.match(
     fn[1],
     /refreshWidgets\(\)\.then\(\(\) => renderWidgetZones\(findWidget\(selectedId\)\)\)/,
@@ -234,10 +238,10 @@ test('picking an option adds it and re-renders both the chips and the dropdown i
   );
 });
 
-test('an already-picked zone cannot appear in the dropdown to begin with', () => {
-  const fn = rendererSrc.match(/function populateZoneSelect\(widget\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(fn, 'populateZoneSelect has been renamed or restructured');
-  assert.match(fn[1], /picked\.has\(zone\.toLowerCase\(\)\)/, 'a picked zone could be offered, and picked, a second time');
+test('an already-picked zone is not offered in the results to begin with', () => {
+  const fn = rendererSrc.match(/function renderZoneAddOptions\(widget\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderZoneAddOptions has been renamed or restructured');
+  assert.match(fn[1], /picked\.has\(z\.toLowerCase\(\)\)/, 'a picked zone could be offered, and picked, a second time');
 });
 
 test('removing a chip re-renders live, not just after leaving and coming back', () => {
@@ -275,7 +279,7 @@ test('knownZones/currentZone/HOTKEY_LABELS live in the SAME function as their re
   assert.match(body, /let currentZone = null;/, 'currentZone no longer declared inside initWidgetsPanel');
   assert.match(body, /let knownZones = \[\];/, 'knownZones no longer declared inside initWidgetsPanel');
   assert.match(body, /const HOTKEY_LABELS = \{/, 'HOTKEY_LABELS no longer declared inside initWidgetsPanel');
-  assert.match(body, /function populateZoneSelect\(widget\) \{/, 'populateZoneSelect moved out of the function that owns knownZones');
+  assert.match(body, /function renderZoneAddOptions\(widget\) \{/, 'renderZoneAddOptions moved out of the function that owns knownZones');
   assert.match(body, /function renderWidgetZones\(widget\) \{/);
 
   // And the negative: initDetectionSettingsPanel must not have quietly kept its own copies behind,

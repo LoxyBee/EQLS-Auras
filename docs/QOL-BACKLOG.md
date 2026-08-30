@@ -29,11 +29,14 @@ font / sound / justification can all be judged without alt-tabbing into EQ and c
 Sounds already have Preview buttons; the tile doesn't. The **Always on screen** checkbox is the
 current workaround but it mutates config and has to be manually undone.
 
-### 2. Searchable zone picker for "Only in:" — CHANGE
+### 2. Searchable zone picker for "Only in:" — CHANGE — DONE 30 Aug
 The travel guide got a proper search-box popup (`zonePromptPopup.js` / `zone-prompt/`). The aura
 settings "Only in:" control should get the same thing, or a filter field.
-*Today:* "Only in:" is a raw `<select id="widget-zone-select">` (104 entries) at
-`index.html:259` — finding "Befallen 1 (Awakened)" is a scroll hunt.
+*Fixed:* the `<select id="widget-zone-select">` is replaced by a filter field
+(`#widget-zone-search`) plus a click-to-add results list (`#widget-zone-options` /
+`.zone-add-list`) — `renderZoneAddOptions()` replaces `populateZoneSelect()`. The value is always
+a genuine zone string picked from `knownZones`, never parsed from typed text, so the no-typo
+property the `<select>` was chosen for (24 Aug) is kept. `zone-gating.test.js` updated.
 
 ### 3. Full config backup / restore — NEW
 One button to export a bundle of **everything** — all auras, profiles, known-buff edits, settings —
@@ -63,11 +66,11 @@ A profile-cycle hotkey and/or an in-game command (`/tell eqprofile2`-style), sam
 master-hide hotkey and `/tell eqtm`. Loadout swaps stay manual (deliberate) but shouldn't require
 alt-tab → click chip → alt-back. Loadout swaps already generate log noise to hang a trigger off.
 
-### 7. Stale "Not active yet." hint on the Timer-text colour picker — FIX
-The hint under `index.html:658` says the control isn't wired.
-*Today:* it **is** wired end to end — `overlay.js:1621` sets `--timer-text-color` for list rows,
-and `overlay.js:735` passes `timerTextColor` to icon-mode tiles. So the hint is simply stale.
-**Open question:** just delete the hint, or is there a mode where it genuinely does nothing?
+### 7. Stale "Not active yet." hint on the Timer-text colour picker — FIX — DONE 30 Aug
+The hint said the control wasn't wired.
+*Fixed:* the hint is removed from `index.html`. The timer-text-colour control was verified wired
+end to end — list mode via `--timer-text-color`, icon mode via `applyTilePositionedTextStyle` —
+so there is no mode where it does nothing; the hint was simply stale.
 
 ### 8. Live preview of `{spell}` / `{caster}` / `{profile}` templating — NEW
 Show the resolved example string under the "Say:" field as you type, instead of finding out
@@ -145,11 +148,12 @@ the user. Must fire **even on first load**, in case the user has never archived.
 *Today:* `logService.js` has manual "Archive log" (copy + truncate); nothing checks size on
 startup.
 
-### 25. Line-aura images paint on top of their coloured border — FIX
-On line (list) auras the icon image sits above the coloured category border; the border should be
+### 25. Line-aura images paint on top of their coloured border — FIX — DONE 30 Aug
+On line (list) auras the icon image sat above the coloured category border; the border should be
 higher.
-*Today:* the category border is an `inset box-shadow` on the row (`overlay.css:339-340`), which
-an image child paints over. Fix means giving the border its own layer above the icon.
+*Fixed:* the category edge is redrawn on `.buff-row.cat::after` at `z-index: 3`, above every
+child, instead of as an inset `box-shadow` the flex-sibling icon could cover. Icon tiles are
+unchanged (nothing paints over their box-shadow). `overlay.css` only.
 
 ### 26. "You feel smaller" can only ever be Shrink, never Tiny Companion — CHANGE
 The disambiguation always resolves this landing text to Shrink.
@@ -187,12 +191,13 @@ it down"`.
 (~104 unfiltered, renders fine); dropped the now-unused `.zone-more` CSS rule. The "no matches"
 line is unchanged. No test covered this file; renderer-only change.
 
-### 32. The Hole route goes through Erudin instead of Paineel — FIX
-Routing to Ruins of Old Paineel (The Hole) sends you via Erudin; it should go via Paineel.
-*Today verified:* `zoneGraph.js` gives The Ruins of Old Paineel two-way edges to **both** Erudin
-(portal) and Paineel (land). BFS (fewest hops, gotcha #22) picks the Erudin path. Fix means
-deciding whether the Erudin portal is actually an entrance or exit-only (like the instance tiers
-in gotcha #23), or otherwise correcting that edge.
+### 32. The Hole route goes through Erudin instead of Paineel — FIX — DONE 30 Aug
+Routing to Ruins of Old Paineel (The Hole) sent you via Erudin; it should go via Paineel.
+*Fixed:* researched — the Erudin and Neriak-3rd-Gate teleport pads are *inside* The Hole and
+exit-only; every documented entrance is the Paineel ground route. Both edges are now one-way in
+`src/shared/data/zoneGraph.js` (removed `Erudin→Hole` and `Neriak-3rd-Gate→Hole`, kept the
+outbound exits), same shape as the instance-tier exclusion in gotcha #23. Sources in the caveat
+comment at the bottom of `zoneGraph.js`. `zone-routing.test.js` green.
 
 ---
 
@@ -240,12 +245,14 @@ pet-returning / pet-dead lines.
 *Needs:* the pet combat wordings from your log (pet hit, pet taunt / "My leader is…", pet death,
 `/pet back off` and `/pet get lost` acknowledgements).
 
-### 38. GCD tracker — NEW  *(this is the "Global recovery" placeholder, note #25)*
+### 38. GCD tracker — NEW — IN PROGRESS  *(the "Global recovery" premade placeholder)*
 Same item as the greyed **Global recovery** premade in the Timers group. A short countdown for the
 global recovery time between casts.
-*Today:* placeholder only. Needs the recovery value (fixed ~1.5s, or variable on this server?) and
-an anchor — starts on every `You begin casting` / `You activate` line.
-*Depends on:* the `castOf` trigger (note #15) — the mechanism already exists.
+*Scaling (owner-supplied, 30 Aug):* base **1.5s**, **−2% per mote tier**, displayed to the
+nearest 0.1s with exact halves rounding **down** (1.35 → 1.3). So it IS mote-scaled.
+*Build:* its own branch/PR — needs a new "any cast" trigger mode + rank parsing in
+`customTimerEngine.js` + a recovery-rate constant. Not a one-liner like #7/#32/#2/#25. Anchor:
+every `You begin casting` / `You activate` line. Full handoff to come when it lands.
 
 ### 39. Ship the bundled sound files into the Downloads folder — NEW / CHANGE
 Put the prebundled starter sounds where they're easy to browse and keep — the **Downloads**
@@ -273,6 +280,13 @@ Your open question ("chat read for macro profile swap? hotkey?") *is* backlog it
 (Profile switching without alt-tab). Recording both options there: a profile-cycle hotkey, and/or
 an in-game `/tell` command word your macros can fire (same pattern as `/tell eqtm`). Still need
 your call on which — or both.
+
+### 43. Plane of Hate ← Oasis of Marr portal is modelled two-way but is one-way in — FIX
+eqlwiki: there is no return portal from Plane of Hate — you Gate / Origin out. Same shape as #32
+(and gotcha #23). The `Plane of Hate → Oasis of Marr` edge in `zoneGraph.js` should be removed,
+keeping the inbound one.
+*Assigned:* Short Context, folded into their `eqtm` data expansion (this + #30 nicknames +
+boss-name search + comment-accuracy fixes on Plane of Sky / Plane of Fear).
 
 ---
 
@@ -312,30 +326,13 @@ parser provenance is `docs/EVIDENCE.md`.
 
 ---
 
-## Merge safety — file-contention notes
+## Working notes
 
-The `feat/lockouts` fork (PR #14) has merged, so items no longer need to wait on it. Several
-sessions still edit the tree in parallel, so the file-contention ranking below is kept as a
-caution — check `ListAgents` before editing a hot file.
-
-**Isolated data files / one-liners — low contention:**
-
-| # | Change | File | Needs from you |
-|---|--------|------|----------------|
-| 7  | Delete the stale "Not active yet." hint | `index.html` (1 line) | just a yes |
-| 32 | Fix The Hole routing edge | `src/shared/data/zoneGraph.js` (1 edge) | confirm: is the Erudin portal an entrance, or exit-only? |
-
-**Small, but in code multiple sessions rewrite often:**
-
-| # | Change | File |
-|---|--------|------|
-| 17 | Round mote-scaled song durations to 6 s | `buffEngine.js` (~2 lines in the scaling fn) |
-| 25 | Border above icon on line auras | `overlay.css` (small, maybe a pseudo-element) |
-| 26 | Give Shrink / Tiny Companion real durations | `tools/roster-overrides.json` (safe) — but making Tiny Companion *reachable* is detection logic (not safe) |
-
-**Not simple — need a spreadsheet change or a design pass:**
-20, 21 (new roster entries — `roster-overrides.json` only *edits* existing spells, it can't add
-them), plus everything in the "big" list below.
+- Several Claude sessions edit this tree in parallel — check `ListAgents` before touching a hot
+  file (`index.html`, `main-window.js`, `overlay.js`, `buffEngine.js` are the usual ones), and
+  route doc/backlog edits through the **Documentation** session (see `CLAUDE.md`).
+- `#20` / `#21` need new roster entries — `tools/roster-overrides.json` only *edits* existing
+  spells, it can't add them, so those wait on a spreadsheet change.
 
 ---
 
@@ -346,17 +343,17 @@ sit on it, (3) park anything waiting on your input, (4) big single-PR features l
 "needs the thing before it". (The `feat/lockouts` fork has merged, so nothing waits on it any more.)
 
 ### Phase 0 — cheap, isolated
-1. ~~**#31** remove the "+N more" cap in the `eqtm` picker — `zone-prompt.js`~~ **DONE 30 Aug**
-2. ~~**#28** Cassindra's Chant of Clarity → 12s — `roster-overrides.json`~~ **DONE (eq-tracker-d3)**
-3. **#7** delete the stale "Not active yet." hint — `index.html`  *(needs your yes)*
-4. **#32** fix The Hole routing edge — `zoneGraph.js`  *(need: is the Erudin portal an
-   entrance or exit-only?)*
+1. ~~**#31** remove the "+N more" cap in the `eqtm` picker~~ **DONE 30 Aug**
+2. ~~**#28** Cassindra's Chant of Clarity → 12s~~ **DONE (eq-tracker-d3)**
+3. ~~**#7** delete the stale "Not active yet." hint — `index.html`~~ **DONE 30 Aug**
+4. ~~**#32** fix The Hole routing edge — `zoneGraph.js`~~ **DONE 30 Aug** (Erudin/Neriak pads are
+   exit-only; edges made one-way)
 5. **#3a** "Open config folder" button — additive, mirrors "Open sounds folder"
 6. **#39** as a button ("Put starter sounds in my Downloads") — additive
 
 ### Phase 1 — quick wins, no new subsystems
-7. **#2** searchable "Only in:" zone picker — reuse `zonePromptPopup.js` wholesale
-8. **#25** line-aura border above the icon — `overlay.css`, own layer
+7. ~~**#2** searchable "Only in:" zone picker~~ **DONE 30 Aug** (filter field + click-to-add list)
+8. ~~**#25** line-aura border above the icon — `overlay.css`~~ **DONE 30 Aug** (`::after`, z-index 3)
 9. ~~**#22** per-line centred justification for text auras~~ **DONE 30 Aug** (committed an
    orphaned ~27 Aug change)
 10. **#17** round mote-scaled song durations to 6s — `buffEngine.js`, ~2 lines
@@ -375,7 +372,8 @@ sit on it, (3) park anything waiting on your input, (4) big single-PR features l
 
 ### Phase 3 — new tracker widgets  *(build the shared "counter / state" widget kind + overlay
 render + `SHAPE_FIELDS` entry once, then these stack on it, cheapest first)*
-20. **#38** GCD tracker — smallest; the `castOf` mechanism (#15) already exists
+20. **#38** GCD tracker — **IN PROGRESS** on its own branch/PR (scaling resolved: 1.5s base,
+    −2%/tier, nearest 0.1s, halves round down; needs an "any cast" trigger mode + rank parsing)
 21. **#34** bard 6s pulse tracker — pulse cadence is already confirmed, just needs surfacing
 22. **#36** loss-of-control widget (fear / charm / mez on you)
 23. **#37** pet-is-attacking tracker  *(need: pet combat wordings from your log)*
@@ -404,31 +402,27 @@ render + `SHAPE_FIELDS` entry once, then these stack on it, cheapest first)*
 - **#39** (full version) copy starter sounds to Downloads on first run, if the button (Phase 0)
   isn't enough
 
-### Recommended next 5
-**#7, #32, #2, #38, #25** — #7 and #32 clear the fork's path (#7 waits on d3 releasing
-`index.html`; #32 waits on one game-fact answer from you), #2 is a self-contained reuse win, #38
-is the smallest of the new trackers and proves out the widget-kind plumbing the rest of Phase 3
-needs, and #25 is a contained `overlay.css` fix.
-*(#31 done, #28 done.)*
+### Recommended next 5 — status
+
+**#7, #32, #2, #25 — done 30 Aug** (`feat/backlog-recommended-5`, PR #17). **#38 — in progress**
+on its own branch. So the whole recommended-5 batch is landed or building; pick the next 5 from
+Phase 1–3 above.
 
 ---
 
 ## Where I still need input
 
-- **#7** — delete the hint, or does it not work in some mode?
 - **#27** — which of the two meanings above?
 - **#20 / #21** — in-game names and effect data for the missing stances / invocations.
 - **#26** — the correct duration for Shrink / Tiny Companion, if you know it. (#28 is resolved: 12s.)
 - **#29** — a log line or two showing a debuff song you want caught.
 - **#30** — should the nickname list be hand-curated or pulled from somewhere?
-- **#32** — is the Erudin↔The Hole portal an entrance, or exit-only?
 - **#6 / #42** — profile swap: hotkey, in-game `/tell` command word, or both?
 - **#33** — per-zone running totals for the session, or just the current zone reset on entry?
 - **#34** — anchor the 6s pulse off any song-pulse line, or off your own song only?
 - **#35** — the exact invis-fade log wordings; and "before aggro" measured against what line?
 - **#36** — countdown or on/off only; and do root / snare / stun count as loss of control?
 - **#37** — the pet combat log wordings (attack, taunt, death, back-off ack).
-- **#38** — is global recovery a fixed ~1.5s on this server, or variable?
 - **#39** — copy sounds to Downloads on first run, or only via a button?
 - **#40** — match on all 14 gems or on key spells; show in the main window or an aura?
 - **#41** — what does the new mez premade do that the Mesmerize worked example (#17) doesn't?
