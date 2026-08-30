@@ -302,6 +302,12 @@ function createAllyBuffsWidget(name) {
   return config;
 }
 
+function createRaidNamedWidget(name) {
+  const config = widgetStore.createRaidNamed(name, { activeProfileIds: [getActiveProfileIdFn()] });
+  createWidgetWindow(config);
+  return config;
+}
+
 function createBardSongsWidget(name) {
   const config = widgetStore.createBardSongs(name, { activeProfileIds: [getActiveProfileIdFn()] });
   createWidgetWindow(config);
@@ -1306,6 +1312,7 @@ module.exports = {
   createCustomWidget,
   createAllyBuffsWidget,
   createBardSongsWidget,
+  createRaidNamedWidget,
   createDebuffWidget,
   createDamageMeterWidget,
   setDamageOptions,

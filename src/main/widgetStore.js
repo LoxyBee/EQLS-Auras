@@ -572,6 +572,22 @@ function defaultAllyBuffsWidget(name) {
 // shape as Ally Buffs, for the same reason - see that function's own comment.
 // Size/position/icons-per-row match the owner's own live Bard Songs widget as of 25 Aug - same
 // request as defaultSelfBuffsWidget/defaultAllyBuffsWidget above.
+// The "Raid named" board (backlog #33). No picker, no source - the content is the current raid
+// zone's named list, greyed as they die (see raidNamedTracker.js). A list, not icons: it reads as
+// a checklist. Non-singleton, user-adds-it, same shape as Bard Songs / Ally Buffs.
+function defaultRaidNamedWidget(name) {
+  return {
+    ...defaultCustomWidget(name),
+    kind: RAID_NAMED_KIND,
+    buffSource: 'raidNamed',
+    displayMode: 'list',
+    width: 220,
+    height: 260,
+    position: { x: 52, y: 120 },
+    categoryBorderWidthPx: 0,
+  };
+}
+
 function defaultBardSongsWidget(name) {
   return {
     ...defaultCustomWidget(name),
@@ -705,8 +721,14 @@ function normalizeWidget(widget) {
     // Existing widgets saved before ally-buff tracking existed have no
     // buffSource at all - they were always self-only, so 'self' is the
     // behavior-preserving default. ally-buffs-builtin always forces 'ally'
-    // regardless of what's stored, since its source isn't user-editable.
-    buffSource: widget.kind === 'ally-buffs-builtin' ? 'ally' : widget.buffSource || 'self',
+    // regardless of what's stored, since its source isn't user-editable;
+    // raid-named-builtin the same, forcing 'raidNamed'.
+    buffSource:
+      widget.kind === 'ally-buffs-builtin'
+        ? 'ally'
+        : widget.kind === RAID_NAMED_KIND
+          ? 'raidNamed'
+          : widget.buffSource || 'self',
     // Coerced for the same reason customTimers and excludedBuffNames are, and it was the one
     // list field missing the guard. Share codes are pasted out of chat by design, and overlay.js
     // feeds this straight into a Set - a non-array throws there and takes the whole render with
@@ -824,6 +846,10 @@ const LOADOUT_LABEL_KIND = 'loadout-label-builtin';
 // repeated string literals in several files instead of a shared constant is this project's own
 // stated lesson in that comment, not a pattern to repeat a third time.
 const BARD_SONGS_KIND = 'bard-songs-builtin';
+// Backlog #33 - the raid named-kill board. Like BARD_SONGS_KIND it has no buff picker and no
+// source choice (its content is fixed: the current zone's named list), so it reuses the same
+// settings-panel shape. Fed by raidNamedTracker.js, not buffEngine.
+const RAID_NAMED_KIND = 'raid-named-builtin';
 
 // The trigger modes customTimerEngine understands. Anything else is exact whole-line matching.
 // Kept beside the store rather than in the engine because this is the list the store validates
@@ -1037,6 +1063,7 @@ function defaultsForKind(kind, name) {
   if (kind === 'self-buffs-builtin') return defaultSelfBuffsWidget();
   if (kind === 'ally-buffs-builtin') return defaultAllyBuffsWidget(name);
   if (kind === BARD_SONGS_KIND) return defaultBardSongsWidget(name);
+  if (kind === RAID_NAMED_KIND) return defaultRaidNamedWidget(name);
   return defaultCustomWidget(name);
 }
 
@@ -1179,6 +1206,15 @@ class WidgetStore {
   createBardSongs(name, { activeProfileIds } = {}) {
     const widget = defaultBardSongsWidget(name);
     widget.premadeOrigin = { kind: 'bardSongs' };
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
+  createRaidNamed(name, { activeProfileIds } = {}) {
+    const widget = defaultRaidNamedWidget(name);
+    widget.premadeOrigin = { kind: 'raidNamed' };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();

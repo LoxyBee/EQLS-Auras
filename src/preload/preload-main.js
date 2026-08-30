@@ -137,6 +137,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createWidget: (name, buffSource) => ipcRenderer.invoke('widget:create', { name, buffSource }),
   createAllyBuffsWidget: (name) => ipcRenderer.invoke('widget:createAlly', { name }),
   createBardSongsWidget: (name) => ipcRenderer.invoke('widget:createBardSongs', { name }),
+  createRaidNamedWidget: (name) => ipcRenderer.invoke('widget:createRaidNamed', { name }),
   createDebuffWidget: (name) => ipcRenderer.invoke('widget:createDebuff', { name }),
   createDamageMeterWidget: (name, mineOnly) => ipcRenderer.invoke('widget:createDamageMeter', { name, mineOnly }),
   createTravelGuideWidget: (name, destination) => ipcRenderer.invoke('widget:createTravelGuide', { name, destination }),

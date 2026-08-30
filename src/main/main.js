@@ -35,6 +35,7 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
+const { RaidNamedTracker } = require('./raidNamedTracker');
 const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
 const { matchShareCodeInChat, splitReason } = require('../shared/shareCodeChat');
@@ -173,6 +174,7 @@ function toggleMasterHidden() {
 
 const customTimerEngine = new CustomTimerEngine();
 const damageEngine = new DamageEngine();
+const raidNamedTracker = new RaidNamedTracker();
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
 // widgetManager pulls in Electron's screen/BrowserWindow. Action bar gem cooldowns ride along as
@@ -386,6 +388,7 @@ function debugLog(message) {
 }
 buffEngine.setDebugLogFn(debugLog);
 customTimerEngine.setDebugLogFn(debugLog);
+raidNamedTracker.setDebugLogFn(debugLog);
 
 // AA "Spell Casting Reinforcement" (4 ranks) and Exaltation "Extended
 // Enhancement" (3 ranks) both extend buff durations by a flat percentage,
@@ -433,6 +436,7 @@ logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
 // Note 19. A fourth listener for the same reason as the third: damage is not a buff, and giving
 // buffEngine a second job would mean every future change to either having to think about both.
 logService.watcher.on('line', (line) => damageEngine.handleLine(line));
+logService.watcher.on('line', (line) => raidNamedTracker.handleLine(line));
 logService.watcher.on('line', (line) => abilityGroupTracker.handleLine(line));
 // Raid lockouts. Its handleLine swallows and counts its own errors rather than throwing, because
 // this bus is shared with buff detection and everything else on it - see the note at the top of
@@ -828,6 +832,22 @@ customTimerEngine.on('activeChanged', (timers) => {
   saveSessionSnapshotSoon();
 });
 damageEngine.on('activeChanged', (rows) => broadcast('damage:active', rows));
+// Backlog #33 - the named-kill board. Each row becomes an infinite buff-shaped tile (killed ones
+// flagged so overlay.js can dim them); a row with a live respawn countdown carries remainingSec.
+raidNamedTracker.on('changed', (rows) => broadcast('raidNamed:active', rows.map(raidNamedTile)));
+function raidNamedTile(row) {
+  return {
+    name: row.name,
+    tier: row.tier,
+    killed: row.killed,
+    infinite: row.respawnRemainingSec == null,
+    remainingSec: row.respawnRemainingSec,
+    durationSec: null,
+    iconUrl: null,
+    showOnOverlay: true,
+    spellCategory: 'buff',
+  };
+}
 
 /**
  * Note 20's destination command, redesigned 26 Aug. The original version (Shara's own design, 23
@@ -1298,6 +1318,7 @@ ipcMain.handle('buffs:getActiveAllies', () => buffEngine.getActiveAllyBuffs());
 ipcMain.handle('buffs:getActiveBardSongs', () => buffEngine.getActiveBardSongs());
 
 ipcMain.handle('damage:getActive', () => damageEngine.getActive());
+ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
 ipcMain.handle('travel:getRoutes', () => travelRoutes());
 ipcMain.handle('travel:getZones', () => allZoneNames());
 // Used only by the zone-prompt popup's pick list - no instance-tier variants (" (Awakened)",
@@ -1686,6 +1707,7 @@ ipcMain.handle('widget:isAudible', (_event, id) => {
 ipcMain.handle('widget:create', (_event, { name, buffSource }) => widgetManager.createCustomWidget(name, { buffSource }));
 ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAllyBuffsWidget(name));
 ipcMain.handle('widget:createBardSongs', (_event, { name }) => widgetManager.createBardSongsWidget(name));
+ipcMain.handle('widget:createRaidNamed', (_event, { name }) => widgetManager.createRaidNamedWidget(name));
 ipcMain.handle('widget:createDebuff', (_event, { name }) => widgetManager.createDebuffWidget(name));
 ipcMain.handle('widget:createDamageMeter', (_event, { name, mineOnly }) =>
   widgetManager.createDamageMeterWidget(name, mineOnly)
@@ -2250,6 +2272,7 @@ app.on('will-quit', () => {
   // on why) rather than spawning a fresh one per poll - without this it would linger as an
   // orphaned process after the app closes instead of exiting with it.
   foregroundWatcher.stop();
+  raidNamedTracker.stop();
 });
 // A renderer dying takes its window with it, which can cascade into
 // window-all-closed and look like a clean quit - `reason` distinguishes a

@@ -281,6 +281,21 @@ body.unlocked .drag-overlay {
   outline-offset: -2px;
 }
 
+/* Backlog #33 - the raid named-kill board. A killed named stays on the list, dimmed and struck
+   through; a boss-tier named reads a touch stronger than a lesser one. */
+.raid-killed {
+  opacity: 0.4;
+}
+.raid-killed .name,
+.raid-killed .tile-label {
+  text-decoration: line-through;
+}
+.raid-boss .name,
+.raid-boss .tile-label {
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
 .text-tile {
   width: max-content;
   max-width: 100%;
