@@ -1174,13 +1174,16 @@
         <div class="card">
           <h3>App data</h3>
           <p class="hint">
-            Every aura, profile, known-buff correction and setting lives as plain JSON files in
-            this folder. Copy them somewhere safe before an update if you want a backstop -
-            uninstalling the app never touches it.
+            Every aura, profile, known-buff correction, custom sound and setting lives in this
+            folder. Uninstalling the app never touches it. "Back up now" copies the whole thing
+            into a dated folder inside it, so you have a snapshot to fall back to before an update
+            or a big change.
           </p>
           <div class="row">
+            <button type="button" id="backup-config-btn" class="btn-prominent">Back up now</button>
             <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
           </div>
+          <p class="hint" id="backup-config-status"></p>
         </div>
 
       </section>

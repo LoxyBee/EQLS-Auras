@@ -5966,12 +5966,28 @@ function initSoundsFolderLink() {
   btn.addEventListener('click', () => window.eqTracker.openSoundsFolder());
 }
 
-// Setup > App info > App data - opens the userData folder for a manual backup (QOL #3a). Same
-// shape as the sounds-folder link above.
+// Setup > App info > App data - opens the userData folder (QOL #3a), and "Back up now" snapshots
+// the whole folder into a dated subfolder (QOL #3b).
 function initConfigFolderLink() {
-  const btn = document.getElementById('open-config-folder-btn');
-  if (!btn) return;
-  btn.addEventListener('click', () => window.eqTracker.openConfigFolder());
+  const openBtn = document.getElementById('open-config-folder-btn');
+  if (openBtn) openBtn.addEventListener('click', () => window.eqTracker.openConfigFolder());
+
+  const backupBtn = document.getElementById('backup-config-btn');
+  const statusEl = document.getElementById('backup-config-status');
+  if (backupBtn) {
+    backupBtn.addEventListener('click', async () => {
+      backupBtn.disabled = true;
+      if (statusEl) statusEl.textContent = 'Backing up…';
+      const r = await window.eqTracker.backupConfig().catch(() => ({ ok: false, error: 'failed' }));
+      backupBtn.disabled = false;
+      if (statusEl) {
+        statusEl.textContent = r.ok
+          ? `Backed up ${r.items} item${r.items === 1 ? '' : 's'} to  backups\\${r.path.split(/[\\/]/).pop()}`
+          : `Backup failed: ${r.error || 'unknown'}`;
+        statusEl.classList.toggle('warn', !r.ok);
+      }
+    });
+  }
 }
 
 // QOL #5 - a one-line "is the app reading my log right now?" answer at the top of the Buff Tracker

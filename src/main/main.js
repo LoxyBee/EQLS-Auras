@@ -1953,6 +1953,37 @@ ipcMain.handle('sounds:openFolder', () => soundService.openPickerFolder());
 // QOL #3a - the userData folder, where every aura / profile / setting JSON lives. For a manual
 // backup before an update.
 ipcMain.handle('app:openConfigFolder', () => shell.openPath(app.getPath('userData')));
+
+// QOL #3b - "Back up now". Copies userData into a dated folder inside itself, skipping the
+// Electron/Chromium cache dirs, the detection logs (large, ephemeral, not config) and the backups
+// folder itself. Walks the top-level children rather than fs.cpSync on the whole tree, so the
+// destination being a subfolder of the source is never a problem.
+ipcMain.handle('app:backupConfig', () => {
+  try {
+    const src = app.getPath('userData');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const dest = path.join(src, 'backups', `backup-${stamp}`);
+    fs.mkdirSync(dest, { recursive: true });
+    const SKIP = new Set([
+      'backups', 'detection-logs', 'Cache', 'GPUCache', 'Code Cache', 'DawnCache', 'DawnGraphiteCache',
+      'blob_storage', 'Local Storage', 'Session Storage', 'Shared Dictionary', 'Network', 'logs',
+    ]);
+    let items = 0;
+    for (const name of fs.readdirSync(src)) {
+      if (SKIP.has(name)) continue;
+      const from = path.join(src, name);
+      const to = path.join(dest, name);
+      try {
+        if (fs.statSync(from).isDirectory()) fs.cpSync(from, to, { recursive: true });
+        else fs.copyFileSync(from, to);
+        items += 1;
+      } catch (e) { /* skip a locked/odd entry, keep going */ }
+    }
+    return { ok: true, path: dest, items };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+});
 ipcMain.handle('widget:setListWidth', (_event, { id, value }) => widgetManager.setListWidth(id, value));
 ipcMain.on('widget:reportContentSize', (_event, { id, width, height, originX }) => widgetManager.fitToContent(id, width, height, originX));
 ipcMain.handle('widget:setOpacity', (_event, { id, value }) => widgetManager.setOpacity(id, value));

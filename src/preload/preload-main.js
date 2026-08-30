@@ -269,6 +269,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getSoundInfo: (id) => ipcRenderer.invoke('sounds:getInfo', id),
   openSoundsFolder: () => ipcRenderer.invoke('sounds:openFolder'),
   openConfigFolder: () => ipcRenderer.invoke('app:openConfigFolder'),
+  backupConfig: () => ipcRenderer.invoke('app:backupConfig'),
   getLogActivity: () => ipcRenderer.invoke('log:activity'),
   previewWidget: (id) => ipcRenderer.invoke('widget:preview', id),
   setWidgetListWidth: (id, width) => ipcRenderer.invoke('widget:setListWidth', { id, value: width }),
