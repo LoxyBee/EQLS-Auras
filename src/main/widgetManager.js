@@ -8,6 +8,7 @@ const {
   isTextAura,
   clampInstantSec,
   clampStackTextLines,
+  clampSoundCooldownSec,
 } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
@@ -1139,7 +1140,7 @@ function setSoundWarningSec(id, seconds) {
 }
 
 function setSoundCooldownSec(id, seconds) {
-  const config = widgetStore.update(id, { soundCooldownSec: widgetStore.clampSoundCooldownSec(seconds) });
+  const config = widgetStore.update(id, { soundCooldownSec: clampSoundCooldownSec(seconds) });
   pushConfigChanged(id);
   return config;
 }

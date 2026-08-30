@@ -143,6 +143,18 @@ test('clearing the screen does NOT silence anything', () => {
   wm.setMasterHidden(false);
 });
 
+test('setSoundCooldownSec actually saves, and clamps to 0..60', () => {
+  // Reported live 30 Aug: the slider "does not save" - reopening the panel showed it back at off.
+  // Root cause: the setter called widgetStore.clampSoundCooldownSec, but widgetStore here is a
+  // WidgetStore INSTANCE, not the module, so that was undefined() - a throw that ate the whole
+  // save. This drives the real manager path that broke.
+  const aura = makeAura('Songs');
+  const saved = wm.setSoundCooldownSec(aura.id, 24);
+  assert.equal(saved.soundCooldownSec, 24, 'the value did not persist');
+  assert.equal(wm.setSoundCooldownSec(aura.id, 999).soundCooldownSec, 60, 'no ceiling');
+  assert.equal(wm.setSoundCooldownSec(aura.id, -3).soundCooldownSec, 0, 'no floor');
+});
+
 test('the global mute (QOL #10) silences every aura without hiding any of them', () => {
   const aura = makeAura('Streamer safe');
   assert.equal(wm.shouldBeAudible(aura), true);
