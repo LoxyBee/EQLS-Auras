@@ -3495,6 +3495,16 @@ function initWidgetsPanel() {
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'lossOfControl'),
     },
     {
+      id: 'pet-status',
+      name: 'Pet status',
+      group: 'event-alerts',
+      description:
+        'For a charmed pet (bard or enchanter). Shows PET ENGAGED while it is fighting, PET IDLE ' +
+        'when it backs off, and PET GONE the moment your charm breaks. Reads the pet’s own ' +
+        '"Attacking ... Master" / "calming down" lines, so it works no matter which mob you have charmed.',
+      create: (name) => window.eqTracker.createTextAuraWidget(name, 'petStatus'),
+    },
+    {
       id: 'ally-buffs',
       name: 'Ally Buffs',
       group: 'standalone',

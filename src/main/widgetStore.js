@@ -1034,6 +1034,35 @@ const TEXT_AURA_PRESETS = {
       endedText: cc.end,
     })),
   }),
+
+  // Backlog #37 - "is my charmed pet fighting". A bard (Solon's Bewitching Bravura) or enchanter
+  // (Charm / Beguile / Allure) charmed pet takes a new name every charm, so this can't key on a
+  // pet name - it's a state readout off the pet's own speech lines, which ARE consistent:
+  //   "<X> told you, 'Attacking <target> Master.'"      -> engaged (repeats on every target switch)
+  //   "<X> says, 'Sorry, Master... calming down.'"       -> backed off
+  //   "<X> says, '...That is not a legal target.'"       -> can't attack, still yours
+  //   "Your <charm spell> spell has worn off of <mob>."  -> pet gone (same lines as charmBroke)
+  // '{spell}' shows the firing timer's label. Short-ish durations so a stale state fades; the
+  // engaged line re-fires constantly while the pet actually fights, keeping that tile alive.
+  petStatus: () => ({
+    buffSource: 'customTimer',
+    textAuraMessage: '{spell}',
+    textAuraSize: 44,
+    triggerDurationSec: 30,
+    customTimers: [
+      { id: crypto.randomUUID(), name: 'PET ENGAGED', durationSec: 30, triggerText: ", 'Attacking ", triggerMatch: 'contains', endedText: '' },
+      { id: crypto.randomUUID(), name: 'PET IDLE', durationSec: 20, triggerText: 'Sorry, Master... calming down.', triggerMatch: 'contains', endedText: '' },
+      { id: crypto.randomUUID(), name: 'PET IDLE', durationSec: 20, triggerText: 'That is not a legal target.', triggerMatch: 'contains', endedText: '' },
+      ...CHARM_SPELL_NAMES.map((name) => ({
+        id: crypto.randomUUID(),
+        name: 'PET GONE',
+        durationSec: 6,
+        triggerText: `${name} spell has worn off of`,
+        triggerMatch: 'contains',
+        endedText: '',
+      })),
+    ],
+  }),
 };
 
 // Note 21, as Shara redirected it on 21 August: the loadout label is a global option, not
