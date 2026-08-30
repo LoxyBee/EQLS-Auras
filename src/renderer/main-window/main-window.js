@@ -22,6 +22,7 @@ async function init() {
   initFirstRunLanding();
   initDetectionSettingsPanel();
   initBuffPanels();
+  initTrackerBadge();
   initWidgetsPanel();
   initKnownBuffsPanel();
   initCharacterSettingsPanel();
@@ -899,6 +900,32 @@ function buildChatTriggerLine(channel, isSelf, name, message) {
     return `${trimmedName} tells you, '${trimmedMessage}'`;
   }
   return '';
+}
+
+// QOL #4 - a count badge on the "Buff Tracker" nav button while ambiguous or unknown casts are
+// waiting to be resolved. They only surface on the Buff Tracker page itself or a popup, so
+// nothing in the app chrome tells you while you are on another page in game.
+function initTrackerBadge() {
+  const btn = document.querySelector('.nav-btn[data-page="page-tracker"]');
+  if (!btn) return;
+  const badge = document.createElement('span');
+  badge.className = 'nav-badge';
+  badge.style.display = 'none';
+  btn.appendChild(badge);
+  let ambiguous = 0;
+  let unknown = 0;
+  const paint = () => {
+    const n = ambiguous + unknown;
+    badge.textContent = n > 99 ? '99+' : String(n);
+    badge.style.display = n > 0 ? '' : 'none';
+    badge.title =
+      `${ambiguous} ambiguous cast${ambiguous === 1 ? '' : 's'} and ${unknown} unknown ` +
+      `- open Buff Tracker to sort them out`;
+  };
+  window.eqTracker.getAmbiguousCasts().then((c) => { ambiguous = c.length; paint(); });
+  window.eqTracker.onAmbiguousCastsChanged((c) => { ambiguous = c.length; paint(); });
+  window.eqTracker.getUnknownBuffs().then((b) => { unknown = b.length; paint(); });
+  window.eqTracker.onUnknownBuffsChanged((b) => { unknown = b.length; paint(); });
 }
 
 function initBuffPanels() {
@@ -2502,6 +2529,7 @@ function initWidgetsPanel() {
     // over whatever was actively being typed. Skipped while the box has focus - if you're in it,
     // what you typed wins over what selectWidget thinks is there, full stop.
     if (document.activeElement !== textMessageInput) textMessageInput.value = widget.textAuraMessage || '';
+    renderTextMessagePreview();
     const textAuraSize = widget.textAuraSize || 32;
     textAuraSizeSlider.value = String(textAuraSize);
     textAuraSizeValueEl.textContent = `${textAuraSize}px`;
@@ -3958,6 +3986,16 @@ function initWidgetsPanel() {
   resetPositionBtn.addEventListener('click', () => {
     window.eqTracker.resetWidgetPosition(selectedId);
   });
+  const previewBtn = document.getElementById('widget-preview-btn');
+  if (previewBtn) {
+    previewBtn.addEventListener('click', () => {
+      if (!selectedId) return;
+      previewBtn.disabled = true;
+      window.eqTracker.previewWidget(selectedId).finally(() => {
+        setTimeout(() => { previewBtn.disabled = false; }, 6500);
+      });
+    });
+  }
   buffSourceRadios.forEach((radio) => {
     radio.addEventListener('change', () => {
       if (!radio.checked) return;
@@ -4049,8 +4087,42 @@ function initWidgetsPanel() {
   // every keystroke instead, debounced so normal typing speed doesn't fire an IPC round-trip
   // per character - the box itself is always the source of truth for what's ON SCREEN either way,
   // this only controls how quickly the STORED copy catches up to it.
+  // QOL #8 - live preview of the {spell}/{caster}/{mob}/{profile} tokens, so you see the resolved
+  // line as you type instead of finding out in game. Sample values for the cast-time tokens;
+  // {profile} uses the real active loadout name.
+  const textMessagePreviewEl = document.getElementById('widget-text-message-preview');
+  let previewProfileName = 'Default';
+  function loadPreviewProfileName() {
+    Promise.all([window.eqTracker.getProfiles(), window.eqTracker.getActiveProfileId()])
+      .then(([list, id]) => {
+        previewProfileName = (list.find((p) => p.id === id) || {}).name || 'Default';
+        renderTextMessagePreview();
+      })
+      .catch(() => {});
+  }
+  function renderTextMessagePreview() {
+    if (!textMessagePreviewEl) return;
+    const raw = textMessageInput.value || '';
+    if (!raw.trim() || !/\{(spell|caster|mob|profile)\}/.test(raw)) {
+      textMessagePreviewEl.style.display = 'none';
+      return;
+    }
+    const resolved = raw
+      .replace(/\{spell\}/g, 'Spirit of Wolf')
+      .replace(/\{caster\}/g, 'Graznthok')
+      .replace(/\{mob\}/g, 'Graznthok')
+      .replace(/\{profile\}/g, previewProfileName || 'Default')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    textMessagePreviewEl.textContent = `Shows as:  ${resolved}`;
+    textMessagePreviewEl.style.display = '';
+  }
+  loadPreviewProfileName();
+  window.eqTracker.onActiveProfileChanged(() => loadPreviewProfileName());
+
   let textMessageSaveTimer = null;
   textMessageInput.addEventListener('input', () => {
+    renderTextMessagePreview();
     clearTimeout(textMessageSaveTimer);
     textMessageSaveTimer = setTimeout(() => {
       window.eqTracker.setWidgetTextAuraMessage(selectedId, textMessageInput.value).then(updateLocalWidgetCache);

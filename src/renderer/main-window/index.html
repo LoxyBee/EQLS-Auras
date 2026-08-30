@@ -289,6 +289,7 @@
               <div class="row position-controls" id="widget-position-row">
                 <button id="widget-lock-btn" class="btn-prominent" title="While unlocked, click and drag anywhere on the aura to move it, and drag an edge to resize. Lock it again when done - while locked it is fully click-through.">Unlock to move</button>
                 <button id="widget-reset-position-btn" title="Lost an aura? Dragged off-screen, or its monitor disconnected? This brings it back to a corner of your main screen.">Reset position</button>
+                <button id="widget-preview-btn" title="Flash a sample tile on this aura for a few seconds, so you can judge its size, position, colours and font without alt-tabbing into the game and casting something.">Preview</button>
               </div>
               <p class="hint" id="widget-position-hint"></p>
 
@@ -301,6 +302,7 @@
                 <span class="label" title="A text aura draws one line of words and nothing else - no icon, no countdown - and only ever shows one thing at a time, however many you pick. Leave this blank to use the name of the buff or trigger itself. {spell} fills in the actual spell/trigger name, {caster} or {mob} the name it landed on or came from (same value either way - use whichever reads naturally), {profile} the active loadout name.">Say:</span>
                 <input type="text" id="widget-text-message-input" class="text-input" placeholder="DISPELLED" />
               </div>
+              <p class="hint" id="widget-text-message-preview" style="display:none"></p>
               <div class="row" id="widget-always-on-row">
                 <label title="For an aura that just says something and stays, rather than one that appears when a spell lands. Write {profile} in the message above to show which loadout is active.">
                   <input type="checkbox" id="widget-always-on-checkbox" />

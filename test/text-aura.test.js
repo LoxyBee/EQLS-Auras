@@ -66,6 +66,10 @@ function loadOverlayLogic() {
     pick(/let mergeRule = '[a-z]+';/, 'mergeRule'),
     'let currentConfig = {};',
     'let widgetId = \'w1\';',
+    // QOL #1 preview mode - stubbed here; currentSourceBuffs references it but this suite never
+    // triggers a preview. The real previewSampleBuffs is exercised in preview-aura.test.js.
+    'let previewActive = false;',
+    'function previewSampleBuffs() { return []; }',
     'let lastSelfBuffs = [];',
     'let lastAllyBuffs = [];',
     'let lastCustomTimers = [];',

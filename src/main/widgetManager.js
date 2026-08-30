@@ -734,6 +734,40 @@ function isMasterHidden() {
   return masterHidden;
 }
 
+// QOL #1 - flash a sample tile on one aura's overlay window for a few seconds, from the settings
+// panel, so its size / position / colours / font can be judged without alt-tabbing into the game.
+// The overlay renderer builds the sample and reverts itself (see overlay.js's previewActive); this
+// side only has to make sure the window is on screen for the duration and then put it back.
+const PREVIEW_MS = 6000;
+const previewTimers = new Map(); // id -> timeout
+
+function previewWidget(id) {
+  const config = widgetStore.getById(id);
+  if (!config) return null;
+  let win = windows.get(id);
+  if (!win) {
+    createWidgetWindow(config);
+    win = windows.get(id);
+  }
+  if (!win || win.isDestroyed()) return config;
+
+  const start = () => {
+    if (win.isDestroyed()) return;
+    win.showInactive();
+    win.webContents.send('widget:preview', { durationMs: PREVIEW_MS });
+  };
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', start);
+  else start();
+
+  clearTimeout(previewTimers.get(id));
+  previewTimers.set(id, setTimeout(() => {
+    previewTimers.delete(id);
+    const cfg = widgetStore.getById(id);
+    if (cfg) applyVisibility(cfg); // back to hidden, or shown if the profile says so
+  }, PREVIEW_MS + 800));
+  return config;
+}
+
 // QOL #10. Runtime-only (see soundsMuted's declaration). Re-pushes `audible` to every open aura
 // window - it does not touch visibility, so nothing appears or disappears.
 function setSoundsMuted(muted) {
@@ -1302,6 +1336,7 @@ module.exports = {
   applyProfileVisibility,
   setForegroundHidden,
   setMasterHidden,
+  previewWidget,
   isSoundsMuted,
   setSoundsMuted,
   isMasterHidden,

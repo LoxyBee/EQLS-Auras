@@ -1605,6 +1605,7 @@ ipcMain.handle('spellbook:clearMemorized', () => buffEngine.clearMemorized());
 
 ipcMain.handle('widget:list', () => widgetManager.getAllWidgetConfigs());
 ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig(id));
+ipcMain.handle('widget:preview', (_event, id) => widgetManager.previewWidget(id));
 // Note 6 - clicking an aura's name in its move box. Raises the settings window and tells it
 // which aura to open. Worth knowing: this pulls EverQuest out of focus, so with auto-hide on it
 // is also the moment your other auras vanish. The unlocked ones stay put, which is the only
