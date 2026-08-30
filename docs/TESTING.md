@@ -27,6 +27,7 @@ section to **[Confirmed](#confirmed)** at the bottom so the active list stays sh
 | 7 | [The app window](#7--the-app-window) | Text size, sidebar, share codes, QOL |
 | 8 | [Session, memory and stability](#8--session-memory-and-stability) | Restore, gem bar, crashes |
 | 9 | [Built, but nothing to test](#9--built-but-nothing-to-test) | Recorded so it isn't lost |
+| 10 | [Lockouts and log tools](#10--lockouts-and-log-tools) | Raid lockout grid, reset setting, log trim / rotation / archive |
 | — | [Confirmed](#confirmed) | Done, kept as regression guards |
 
 ---
@@ -1426,6 +1427,59 @@ check will be needed later", and this is me saying it is ready and waiting.
 
 Still a disabled placeholder. The `castOf` trigger that the cooldown premade introduced is the piece
 it needs, when you want it built.
+
+---
+
+# 10 — Lockouts and log tools
+
+Shipped on `feat/lockouts` (PR #15): `ff4b7a5` plus follow-ups. All of this needs the real EQ
+client and, for the trim/rotation checks, a real log that spans more than one lockout week. See
+`docs/EVIDENCE.md` for why the lockout parser refuses to name a reset day it hasn't observed.
+
+## The weekly reset control
+
+- [ ] **Change the reset day/hour on the Lockouts page** — it mirrors to Setup, and a change made
+      on Setup mirrors back. It is one setting shown in two places.
+- [ ] **The grid's period heading follows it** — e.g. "Aug 25 – Sep 1, 2026" (short month names),
+      recomputed whenever the reset changes.
+- [ ] **The hour shown above the grid is your local time**; the control itself is labelled US
+      Eastern. Default is **Tuesday 11:00 US Eastern**.
+- [ ] **DST**: the reset resolves to the same real instant whether the PC clock is on Pacific,
+      Eastern or London, and across the daylight-saving change.
+
+## Reading a different log file
+
+- [ ] **"Change log file"** — pick a split or archived file; the grid re-reads it. **"Back to
+      live log"** restores the live tail.
+- [ ] **A missing target is dropped** — if the chosen file no longer exists, the app falls back to
+      the live log and persists that (stored target back to `null`), with no error.
+- [ ] **"Add split files"** — the picker pre-ticks only this week's day-files; earlier weeks start
+      unticked. The grid updates to include whatever you add.
+- [ ] **"Trim log to this week" disappears** once any extra file has been added.
+
+## Trimming and archiving
+
+- [ ] **"Trim log to this week"** on a live log spanning several weeks — an archive is created and
+      its size verified, the live log is rewritten down to the current lockout week, and the grid
+      rebuilds. The kept week is **not** re-emitted to the buff engine or re-split.
+- [ ] **"Archive log now"** uses an in-app modal, not a native dialog. When the log still holds the
+      current lockout week it shows a danger warning and an "Archive anyway" button.
+- [ ] **Weekly rotation is ON by default.** It does **not** rotate a log that has play after the
+      reset (`skippedSpansBoundary`); the status line explains why when it skips.
+
+## "EQ is running but not logging"
+
+- [ ] With EQ up and `/log` off, a modal appears after ~2.5 minutes.
+- [ ] `/log on` in-game plus "I've done it" clears it; and starting to log while the modal is open
+      dismisses it on its own.
+
+## Backfill and split correctness
+
+- [ ] **Backfill reads only the live log**, not the whole Logs folder.
+- [ ] **A re-split from offset 0 doesn't double lines** in the day file.
+- [ ] **Grid cells show the kill date.**
+- [ ] **Crash-safe config writes** — a crash mid-save can't leave a half-written `.json` (temp
+      file then rename).
 
 ---
 
