@@ -952,6 +952,9 @@ with "Colour each tile's edge by spell type".
       pair that is hardest for colour-blind players. The colours differ in brightness as well as
       hue to soften that. If any two are hard to tell apart on your monitor, say which — they are
       eight lines in one stylesheet.
+- [ ] **(QOL #25, 30 Aug)** On a **list-mode** aura where a row has an icon image, the coloured
+      edge is now drawn *over* the icon, not hidden behind it. Confirm the edge is fully visible
+      along a row that has an image.
 
 ## Merged tiles
 
@@ -1117,7 +1120,8 @@ it, the app falls back to Alt+Shift+H and the hint tells you which one you got.
 ## Zone-gated auras (note 38)
 
 In an aura's settings, under the loadout toggles: **"Only in:"**. Leave it empty and the aura shows
-everywhere. Type a zone and press Enter, or pick from the list, to limit it.
+everywhere. **(QOL #2, 30 Aug)** the old dropdown is now a filter field — type to narrow the zone
+list, click a result to add it as a chip.
 
 **The zone-tracking half is self-verified 25 Aug** by injecting `You have entered North
 Freeport.` into the live log and reading it straight back from the detection log: `ZONE now "North
@@ -1127,6 +1131,9 @@ you don't currently have one, and I didn't create one myself: doing that means w
 `widgets.json` while the app has it open, which risks racing the app's own save and corrupting
 your real config, so this half is left for you (or a future session with the app closed).
 
+- [ ] **(QOL #2)** Type part of a zone name in "Only in:" — the list narrows; click one and it
+      becomes a chip. An already-added zone does not reappear in the results. What lands as the
+      value is always a real zone string, never whatever you typed.
 - [ ] **Limit an aura to the zone you are in.** It should stay on screen.
 - [ ] **Zone somewhere else.** It should disappear, and its settings should say *"Hidden right now:
       you are in X, which is not on its list."*
