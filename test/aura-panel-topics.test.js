@@ -88,6 +88,36 @@ test('the collapse is class-driven, never topic-body display (the child-of-displ
   assert.match(css, /\.topic\.topic-empty \{\s*display: none;/);
 });
 
+test('the collapsed topic headers carry a value-preview summary that is actually wired', () => {
+  // B follow-up: each .topic-summary span shows the topic's current setting without opening it.
+  // Panel topics (Position/Size/Text/Layout) are filled by refreshPanelTopicSummaries, run at the
+  // end of applySettingsPanelShape and on any input/change in the panel.
+  for (const id of ['topic-panel-position-summary', 'topic-panel-size-summary', 'topic-panel-text-summary', 'topic-panel-layout-summary']) {
+    assert.match(html, new RegExp(`id="${id}"`), `${id} span is missing`);
+  }
+  assert.match(js, /function refreshPanelTopicSummaries\(\)/);
+  // the Size preview must key off which sizing group is visible, not the display-mode radio -
+  // a list-format shape (Travel guide / Raid named) shows list sliders with no radio checked.
+  const sizeFn = js.match(/function refreshPanelTopicSummaries\(\)[\s\S]*?\n  \}/)[0];
+  assert.match(sizeFn, /listOnlySettings[\s\S]{0,60}style\.display/, 'Size preview still reads the radio, not visibility');
+  const shape = js.match(/function applySettingsPanelShape\(widget\) \{[\s\S]*?\n  \}/)[0];
+  assert.ok(shape.includes('refreshPanelTopicSummaries()'), 'not called from applySettingsPanelShape');
+  assert.ok(
+    shape.indexOf('refreshPanelTopicSummaries()') > shape.indexOf('hideEmptyPanelTopics()'),
+    'must run after hideEmptyPanelTopics so a hidden topic is not summarised into view'
+  );
+  assert.match(js, /settingsPanel\.addEventListener\('input'[\s\S]{0,80}refreshPanelTopicSummaries/);
+
+  // App-settings topics (Setup page, workstream C) are filled by refreshAppSettingsSummaries.
+  for (const id of ['topic-icon-set-summary', 'topic-merge-rule-summary', 'topic-ui-scale-summary', 'topic-hide-hotkey-summary', 'topic-app-info-summary']) {
+    assert.match(html, new RegExp(`id="${id}"`), `${id} span is missing`);
+  }
+  assert.match(js, /function refreshAppSettingsSummaries\(\)/);
+  assert.match(js, /appSettingsBlock\.addEventListener\('change', refreshAppSettingsSummaries\)/);
+  // called after each async control load settles, or the previews are blank on first open
+  assert.ok((js.match(/refreshAppSettingsSummaries\(\)/g) || []).length >= 5, 'not called from every control load path');
+});
+
 test('every getElementById the panel-topic map names actually exists in index.html', () => {
   const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
   const mapSrc = js.match(/const panelTopicMembers = \{[\s\S]*?\n {2}\};/)[0];
