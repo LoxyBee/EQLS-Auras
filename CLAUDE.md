@@ -6,6 +6,27 @@ Electron desktop app that tails an EverQuest log file in real time and shows a t
 
 Server context: the user plays **"EverQuest Legends"**, a custom/private EQ server (not live EQ, not a standard emulator ruleset) via a Daybreak launcher install. Log/spell-data formats matched the classic EQEmu-style schema closely enough to mine directly, but some values (durations, spell availability) may differ from live EQ. This server also has a **multiclass "loadout" mechanic**: the player can swap loadouts, which changes which spells are actually castable *without* touching the spellbook file — but it does generate a real burst of `"You forget X."`/`"You have finished memorizing Y."` lines (confirmed: ~14 events in ~15s for one observed swap). See gotcha #9 below — this is why loadout profiles (`profileStore.js`) exist.
 
+## Docs are written by a dedicated "Documentation" session — don't write them yourself
+
+Any session building a **new feature** or making a **major edit** writes the CODE (and its
+code comments) only. The documentation that work implies — anything under `docs/` (including
+`docs/TESTING.md`, `docs/QOL-BACKLOG.md`, `docs/HIGHLIGHTS.md`) and any substantial new
+`CLAUDE.md` section — is handed off to a separate session named **"Documentation"**, not written
+inline.
+
+- **Before you start**, check `ListAgents` for a live session whose name contains "Documentation".
+  If one is running, `SendMessage` it what you're about to build and which files you'll touch.
+- **When you finish** (or hit a doc-worthy milestone), send it the facts to write up: what
+  changed, why, reviewer notes, `docs/TESTING.md` checklist items, `docs/QOL-BACKLOG.md` entries
+  to add or mark done, and any new `CLAUDE.md` section that's needed.
+- **If no Documentation session is running**, tell the user, keep coding, and collect the pending
+  doc items in a list to hand off later. Do **not** start writing `docs/` or `QOL-BACKLOG.md`
+  yourself to fill the gap.
+- **Still do inline**: fixing a stale doc reference, a typo, a one-line note, and all code
+  comments. The handoff is for new sections, checklists, backlog status changes, and design
+  write-ups.
+- A one-off `/create-pr` PR body is fine to write yourself — that's not project docs.
+
 ## User's stated goals & priorities (read this before changing detection behavior)
 
 - **Self-buffs are the default and priority.** Tracking buffs cast by *others* on the player is opt-in, off by default, and explicitly deferred to live in the future multi-widget overlay system rather than the main window.
