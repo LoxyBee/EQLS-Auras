@@ -127,53 +127,30 @@
              wrongly ignored, and it's invisible otherwise. See the "unknown"
              state styling in main-window.css. -->
         <div class="card" id="memorized-card">
-          <h3>What the app thinks you have memorized</h3>
-          <div id="memorized-gem-bar" class="gem-bar"></div>
+          <h3 title="Built from your &quot;You forget X.&quot; / &quot;finished memorizing X.&quot; lines as you swap gems, and remembered between sessions — NOT read from your spellbook file. The app never replays log history, so if you swap gems while it is closed this keeps showing the old loadout. Positions won't match your in-game bar: regular spells fill from the left, bard songs (underlined) from the right.">What the app thinks you have memorized</h3>
+          <div id="memorized-gem-bar" class="gem-bar" title="Click any gem to forget it — a wrong entry here makes the app ignore buffs it should be tracking."></div>
           <div class="row">
             <p id="memorized-spells-status" class="memorized-summary">Checking...</p>
             <button type="button" id="clear-memorized-btn" style="display:none">Forget all</button>
           </div>
-          <p class="hint" id="memorized-hint">
-            Built from "You forget X." / "You have finished memorizing X." lines as you swap gems, and
-            remembered between sessions. It is <strong>not</strong> read from your spellbook file, and the
-            app never replays log history - so if you change gems while it's closed, this will still be
-            showing the old loadout. <strong>Click any gem to forget it</strong> when that happens; a wrong
-            entry here makes the app ignore buffs it should be tracking. The log never says <em>which</em>
-            slot a spell went into, so positions won't match your in-game bar - regular spells fill from the
-            left, bard songs (underlined) from the right.
-          </p>
+          <p class="hint" id="memorized-hint">Remembered between sessions, not read from your spellbook — click a gem to forget it if it's wrong. <a href="#" data-page="page-about">More on the About page.</a></p>
         </div>
 
         <h3 class="settings-page-section-title">Needs your attention</h3>
 
         <div class="card">
-          <h3>Ambiguous casts</h3>
-          <p class="hint">
-            EQ's message for this buff is shared by several different spells, so pick which one it
-            actually was - this can show up for your own casts too (e.g. two scribed spells sharing
-            the same text), not just when "track buffs from others" is on.
-          </p>
+          <h3 title="EQ's message for this buff is shared by several spells, so pick which one it was. This can show for your own casts too (two scribed spells sharing the same text), not only when &quot;track buffs from others&quot; is on.">Ambiguous casts</h3>
           <ul id="ambiguous-buffs" class="buff-list">
             <li class="empty">None right now.</li>
           </ul>
           <div class="row">
-            <button id="reset-ambiguous-btn" class="btn-danger">Reset remembered choices</button>
+            <button id="reset-ambiguous-btn" class="btn-danger" title="Clears the &quot;this text means buff X&quot; answers you gave before, so anything ambiguous prompts you again instead of reusing an old answer. Doesn't affect what's currently active.">Reset remembered choices</button>
             <button id="view-ambiguous-resolutions-btn">View remembered choices...</button>
           </div>
-          <p class="hint">
-            Remembered choices are "this text means buff X" answers from resolving an ambiguous cast
-            before - cleared here so anything ambiguous prompts you again instead of reusing an old
-            answer. Doesn't affect what's currently active.
-          </p>
         </div>
 
         <div class="card">
-          <h3>Unknown casts</h3>
-          <p class="hint">
-            Casts that landed (or that we detected as landing) but aren't in the buff database yet.
-            This will also pick up non-buff spells you cast on enemies (heals, nukes) since the log
-            doesn't distinguish those - just Dismiss those.
-          </p>
+          <h3 title="Casts that landed but aren't in the buff database yet. Also picks up non-buff spells you cast on enemies (heals, nukes), since the log doesn't distinguish those — just Dismiss them.">Unknown casts</h3>
           <ul id="unknown-buffs" class="buff-list">
             <li class="empty">None right now.</li>
           </ul>
@@ -182,13 +159,7 @@
         <h3 class="settings-page-section-title">Buff library</h3>
 
         <div class="card">
-          <h3>Custom buffs</h3>
-          <p class="hint">
-            Buffs you've added yourself, or promoted from an Unknown cast. Add one here to pre-load a
-            buff you know about, in case it doesn't turn up as an unknown cast first. Since these
-            didn't come from the game's own spell files they don't get an icon automatically - use
-            "Choose icon..." on one to pick its art.
-          </p>
+          <h3 title="Buffs you've added yourself, or promoted from an Unknown cast. Add one to pre-load a buff you know about in case it doesn't turn up as an unknown cast first. These get no automatic icon — use &quot;Choose icon...&quot; to pick art.">Custom buffs</h3>
           <div class="row">
             <button id="open-add-buff-modal-btn">Add a new buff...</button>
             <button id="open-custom-buffs-modal-btn">View custom buffs...</button>
@@ -196,13 +167,7 @@
         </div>
 
         <div class="card">
-          <h3>Known buffs</h3>
-          <p class="hint">
-            Everything the app knows how to time, with its duration and whether it shows on the built-in
-            "Self Buffs" aura. Edit a duration and click Save, or uncheck "Overlay" to track something
-            without cluttering that aura. (Other auras you create on the Auras page pick their
-            own buffs independently of this checkbox.)
-          </p>
+          <h3 title="Everything the app knows how to time, with its duration and whether it shows on the built-in Self Buffs aura. Edit a duration and Save, or uncheck Overlay to track a buff without cluttering that aura. Other auras pick their own buffs independently of this checkbox.">Known buffs</h3>
           <button id="open-known-buffs-modal-btn">Browse known buffs...</button>
         </div>
       </section>
@@ -212,7 +177,7 @@
 
         <div class="card" id="widgets-intro-card">
           <p class="hint">
-            An aura is its own overlay window - pick one from the sidebar, or Add aura to create one.
+            An aura is its own overlay window — pick one from the sidebar, or add one.
             <a href="#" data-page="page-about">Full explanation on the About page.</a>
           </p>
         </div>
@@ -223,13 +188,8 @@
         <div class="card" id="all-auras-card">
           <h3>All auras</h3>
           <div class="row">
-            <button type="button" id="master-unlock-all-btn">Unlock all auras</button>
+            <button type="button" id="master-unlock-all-btn" title="A toggle — press again to re-lock. Makes every aura draggable and resizable at once. An unlocked aura is never auto-hidden, so you can always see what you're moving. Doesn't change which profiles an aura belongs to.">Unlock all auras</button>
           </div>
-          <p class="hint">
-            A toggle - press again to re-lock everything. Makes every aura draggable and resizable at
-            once. An unlocked aura is never auto-hidden, so you can always see what you're moving.
-            Doesn't change which profiles an aura belongs to.
-          </p>
 
           <h4 class="settings-subsection-title">When to show them</h4>
           <div class="row">
@@ -932,18 +892,9 @@
         <h3 class="settings-page-section-title">Character setup</h3>
 
         <div class="card">
-          <h3>AA setup</h3>
-          <p class="hint">
-            Set these AA and Exaltation abilities to match your character so the app's timing
-            reflects your real character instead of base spell values. None of this changes what's
-            detected - only how the countdowns run and how casts are handled.
-          </p>
+          <h3 title="Set these AA and Exaltation abilities to match your character so timing reflects your real character, not base spell values. Changes nothing about what's detected — only how the countdowns run and how casts are handled.">AA setup</h3>
 
-          <h4>Buff duration (Reinforcement + Exaltation)</h4>
-          <p class="hint">
-            Extends how long buffs last, applied to every tracked buff so timers reflect your real,
-            extended durations instead of the base spell length.
-          </p>
+          <h4 class="settings-subsection-title" title="Extends how long buffs last, applied to every tracked buff so timers reflect your real extended durations instead of the base spell length.">Buff duration (Reinforcement + Exaltation)</h4>
           <div class="row">
             <span class="label">Spell Casting Reinforcement (AA):</span>
             <select id="aa-reinforcement-select">
@@ -968,14 +919,7 @@
             <span id="character-bonus-total">+0%</span>
           </div>
 
-          <h4>Cast time (Spell Casting Deftness)</h4>
-          <p class="hint">
-            Reduces cast time on beneficial spells that have a duration and a base cast time of at
-            least 3 seconds - nothing for instant spells or fast (under 3s) casts, per its own
-            tooltip. Only used by the experimental "cast-time-aware confirmation" toggle under
-            Diagnostics, and only affects how long the app waits before confirming or giving up on a
-            cast, not anything else.
-          </p>
+          <h4 class="settings-subsection-title" title="Reduces cast time on beneficial spells with a duration and a base cast of at least 3 seconds — nothing for instant or under-3s casts. Only used by the experimental &quot;cast-time-aware confirmation&quot; toggle under Diagnostics, and only affects how long the app waits before confirming or giving up on a cast.">Cast time (Spell Casting Deftness)</h4>
           <div class="row">
             <span class="label">Spell Casting Deftness (AA):</span>
             <select id="deftness-select">
@@ -988,33 +932,21 @@
         </div>
 
         <div class="card">
-          <h3>Spellbook detection</h3>
+          <h3 title="Your character's own spellbook resolves ambiguous buff messages (EQ reuses a lot of generic text across spells) down to whichever one you actually have. Read from your EQ install folder above. Which spells you have MEMORIZED right now is tracked separately, on the Buff Tracker page.">Spellbook detection</h3>
           <div class="row">
             <span class="label">Spellbook:</span>
             <span id="spellbook-status">Checking...</span>
           </div>
-          <p class="hint">
-            Your character's own spellbook is used to resolve ambiguous buff messages (EQ reuses a
-            lot of generic text across many different spells) down to whichever one you actually have.
-            Read from your EQ install folder above.
-          </p>
           <div class="row">
-            <span class="label" title="Fill these in only if the app is not finding your spellbook on its own - usually because more than one character's logs are in the folder. It builds the filename the EQ client uses and looks for that instead of guessing from the newest log.">Character:</span>
+            <span class="label" title="Fill these in only if the app is not finding your spellbook on its own — usually because more than one character's logs are in the folder. It builds the filename the EQ client uses and looks for that instead of guessing from the newest log.">Character:</span>
             <input type="text" id="spellbook-char-name" class="text-input" placeholder="name" autocomplete="off" style="width:9em" />
             <span>on</span>
             <input type="text" id="spellbook-char-server" class="text-input" placeholder="server" autocomplete="off" style="width:8em" />
           </div>
           <p class="hint" id="spellbook-char-hint"></p>
           <div id="spellbook-missing-hint" style="display:none">
-            <p class="hint warn-hint">
-              <strong>This is worth fixing.</strong> EverQuest reuses the same buff message across
-              many different spells, and without your spellbook the app cannot tell which of them
-              was yours - so it ignores them. On one recent session that was over 700 buff messages
-              thrown away.
-            </p>
-            <p class="hint">
-              The game does not write this file on its own. Type this in game, logged in on this
-              character, and it only needs doing again when you scribe something new:
+            <p class="hint warn-hint" title="EverQuest reuses the same buff message across many different spells, and without your spellbook the app cannot tell which was yours — so it ignores them. One recent session threw away over 700 buff messages this way. The game does not write this file on its own; type the command below in game, logged in on this character, and re-run it whenever you scribe something new.">
+              <strong>This is worth fixing.</strong> Run this in game to generate your spellbook file:
             </p>
             <div class="row command-row">
               <code id="spellbook-command">/outputfile spellbook</code>
@@ -1022,10 +954,6 @@
             </div>
             <p class="hint" id="spellbook-missing-where"></p>
           </div>
-          <p class="hint">
-            Which spells you currently have <em>memorized</em> is tracked separately and shown on the
-            Buff Tracker page under "Detection status" - that's live gem state, not the spellbook file.
-          </p>
         </div>
 
         <h3 class="settings-page-section-title">Client setup</h3>
@@ -1058,32 +986,21 @@
         <div class="card" id="icon-set-card">
           <h3>Icon set</h3>
           <div class="row">
-            <span class="label">Icon set:</span>
+            <span class="label" title="The game ships a few icon art styles. If icons look wrong or broken, switch this — a buff already showing correctly on your hotbar confirms which set matches your client. Applies to every aura.">Icon set:</span>
             <select id="icon-set-select"></select>
           </div>
-          <p class="hint">
-            The game ships a few different icon art styles under the hood. If icons don't look right
-            (or show broken), try switching this - a buff already showing correctly on your hotbar
-            confirms which set matches your client. This applies to every aura.
-          </p>
         </div>
 
         <h3 class="settings-page-section-title">Display</h3>
 
         <div class="card" id="merge-rule-card">
           <h3>Merged tiles</h3>
+          <p class="hint">Applies to every aura with "Merge buffs that share a duration" turned on.</p>
           <div class="row">
             <span class="label">Treat as the same:</span>
-            <label><input type="radio" name="merge-rule" value="duration" /> Same length</label>
-            <label><input type="radio" name="merge-rule" value="burst" /> Same length, cast together</label>
+            <label title="Simple and predictable, but a large part of the spell list lasts 24 minutes, so unrelated buffs merge too."><input type="radio" name="merge-rule" value="duration" /> Same length</label>
+            <label title="Only merges buffs that landed at about the same moment — a group buff merges while two unrelated 24-minute buffs stay apart."><input type="radio" name="merge-rule" value="burst" /> Same length, cast together</label>
           </div>
-          <p class="hint">
-            Applies to every aura that has "Merge buffs that share a duration" turned on.
-            <strong>Same length</strong> is simple and predictable, but a large part of the spell
-            list lasts 24 minutes, so unrelated buffs will merge as well.
-            <strong>Same length, cast together</strong> only merges buffs that landed at about the
-            same moment, so a group buff merges while two unrelated 24-minute buffs stay apart.
-          </p>
         </div>
 
         <div class="card" id="ui-scale-card">
@@ -1093,7 +1010,7 @@
                mid-drag and the thing was unusable. A dropdown commits one value on release,
                after the pointer has already left the control. -->
           <div class="row">
-            <span class="label">Size:</span>
+            <span class="label" title="Scales this settings window only — text, spacing and controls together. Your auras are unaffected (each has its own sizes in its own settings). At larger sizes you may want to make this window bigger to match.">Size:</span>
             <select id="ui-scale-select" class="text-input">
               <option value="80">80%</option>
               <option value="90">90%</option>
@@ -1107,11 +1024,6 @@
             </select>
             <button type="button" id="ui-scale-reset-btn">Reset</button>
           </div>
-          <p class="hint">
-            Scales this settings window only - text, spacing and controls together. Your auras are
-            unaffected: each one has its own tile, text and label sizes in its own settings.
-            At larger sizes you may want to make this window bigger to match.
-          </p>
         </div>
 
         <h3 class="settings-page-section-title">Alerts &amp; sounds</h3>
@@ -1141,14 +1053,8 @@
 
         <div class="card" id="sounds-folder-card">
           <h3>Sounds</h3>
-          <p class="hint">
-            Every aura's "Choose sound..." picker starts here by default, seeded with a handful of
-            sounds that ship with the app - drop your own mp3/wav/ogg/m4a files in and they'll be
-            ready to pick from too, right alongside the starters. This folder lives with the rest of
-            your app data, so a config backup covers it and an uninstall leaves it alone.
-          </p>
           <div class="row">
-            <button type="button" id="open-sounds-folder-btn">📁 Open sounds folder</button>
+            <button type="button" id="open-sounds-folder-btn" title="Every aura's &quot;Choose sound...&quot; picker starts here, seeded with a few sounds that ship with the app. Drop your own mp3/wav/ogg/m4a files in and they're ready to pick alongside the starters. Lives with the rest of your app data, so a config backup covers it and an uninstall leaves it alone.">📁 Open sounds folder</button>
           </div>
         </div>
 
@@ -1157,7 +1063,7 @@
         <div class="card" id="hide-hotkey-card">
           <h3>Hide-auras hotkey</h3>
           <div class="row">
-            <span class="label" title="Grabbed at the OS level, so EverQuest never sees the key at all while this app is running - pick one you never use in game. Not every key on this list can always be registered (another running app may already own it); if that happens the button in the top bar still works, and the hint below shows whichever key actually took.">Key:</span>
+            <span class="label" title="Toggles the same &quot;Hide auras&quot; as the top-bar button — clears every aura and action bar off the screen, changes no setting, doesn't survive a restart. Grabbed at the OS level so EverQuest never sees the key; pick one you never use in game. If another app already owns the key it can't be registered — the top-bar button still works, and the line below shows whichever key actually took.">Key:</span>
             <select id="hide-hotkey-select" class="text-input">
               <option value="ScrollLock">Scroll Lock</option>
               <option value="F13">F13</option>
@@ -1169,11 +1075,6 @@
             </select>
           </div>
           <p class="hint" id="hide-hotkey-hint"></p>
-          <p class="hint">
-            Toggles the same "Hide auras" the button at the top of this window does - temporarily
-            clears every aura and action bar off the screen, changes no setting, and does not
-            survive a restart.
-          </p>
         </div>
 
         <h3 class="settings-page-section-title">App info</h3>
@@ -1186,26 +1087,16 @@
 
         <div class="card">
           <h3>App data</h3>
-          <p class="hint">
-            Every aura, profile, known-buff correction, custom sound and setting lives in this
-            folder. Uninstalling the app never touches it. "Back up now" copies the whole thing
-            into a dated folder inside it, so you have a snapshot to fall back to before an update
-            or a big change.
-          </p>
+          <p class="hint">Every aura, profile, known-buff fix, sound and setting lives in one folder — uninstalling never touches it.</p>
           <div class="row">
-            <button type="button" id="backup-config-btn" class="btn-prominent">Back up now</button>
+            <button type="button" id="backup-config-btn" class="btn-prominent" title="Copies the whole app-data folder into a dated folder inside it, so you have a snapshot to fall back to before an update or a big change.">Back up now</button>
             <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
           </div>
           <p class="hint" id="backup-config-status"></p>
-          <p class="hint">
-            <strong>Move to another PC, or hand the app to someone:</strong> "Export config" writes
-            a bundle (auras, profiles, known-buff edits, sounds, settings) into a folder you can zip
-            and send. "Import config" replaces this PC's config with a bundle - your current config
-            is backed up first, and the app restarts.
-          </p>
+          <p class="hint"><strong>Move to another PC, or hand the app to someone:</strong></p>
           <div class="row">
-            <button type="button" id="export-config-btn">Export config…</button>
-            <button type="button" id="import-config-btn">Import config…</button>
+            <button type="button" id="export-config-btn" title="Writes a bundle (auras, profiles, known-buff edits, sounds, settings) into a folder you can zip and send.">Export config…</button>
+            <button type="button" id="import-config-btn" title="Replaces this PC's config with a bundle — your current config is backed up first, and the app restarts.">Import config…</button>
             <button type="button" id="open-exports-folder-btn">📁 Open exports folder</button>
           </div>
           <p class="hint" id="transfer-config-status"></p>
