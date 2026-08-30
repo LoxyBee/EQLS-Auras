@@ -52,6 +52,15 @@ class LogWatcher extends EventEmitter {
     };
   }
 
+  // The log was REWRITTEN in place (see logRotation.trimAtBoundary) - not truncated to empty. Left
+  // alone, the next poll sees size < offset and re-reads the whole rewritten file from 0,
+  // re-emitting every kept line. Point the tailer straight at the new end instead.
+  resyncOffset(filePath, bytes) {
+    if (!this.currentFilePath || path.resolve(this.currentFilePath) !== path.resolve(filePath)) return;
+    this.offset = Math.max(0, bytes | 0);
+    this.lineBuffer = '';
+  }
+
   _findNewestLogFile() {
     let entries;
     try {

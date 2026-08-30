@@ -16,17 +16,18 @@
 // grid that stops updating is a disappointment; a buff overlay that stops updating because the
 // lockout parser hit an unexpected line is a betrayal of the thing she already shipped.
 //
-// WHY A FOLDER SCAN AND NOT THE WATCHER'S FILE
+// ONLY THE LIVE LOG
 //
-// `logWatcher` follows whichever `eqlog_*.txt` changed most recently, which is exactly right for
-// buffs and wrong here. Session D measured the reason: the two halves of the only reset measurement
-// they have live in DIFFERENT FILES — three task grants on 10 August in one, three more on the 11th
-// in another. Read only the newest and you see three grants of three different tasks, no repeat,
-// and the module correctly reports "not recorded" having been shown half the evidence.
+// The grid answers "what have I completed THIS lockout week". The weekly archive (logRotation.js)
+// empties the live log at the reset, so everything in it belongs to the current week - nothing has
+// to be inferred and nothing older must be read. So both `backfill()` (history before the app
+// opened) and `handleLine()` (live) work off the single file the tailer is on, and nothing else.
 //
-// And it lands on this app twice over, which they could not have known: `logSplitter.js` writes
-// per-day files BY DESIGN, continuously. She does not merely risk a log that rolls over — her own
-// splitter manufactures the split every day.
+// NOT `Logs/Split/` - that is an optional per-day-file feature of this app (logSplitter.js) that
+// has nothing to do with lockouts, and its files hold older weeks. NOT `Logs/Archive/` - the
+// weekly rotation's store, same reason. An earlier version scanned the whole folder; that was for
+// measuring the reset BOUNDARY across two files (project()/projectReset()), which the grid does
+// not use.
 //
 // ONE STATE PER CHARACTER
 //
@@ -39,6 +40,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const core = require('./lockoutCore');
+const { easternResetBefore, easternResetAfter } = require('../shared/easternReset');
 
 // Same shape logWatcher accepts, so a file this service reads is a file that service would watch.
 const LOG_FILE_PATTERN = /^eqlog_.+\.txt$/i;
@@ -71,6 +73,15 @@ class LockoutService extends EventEmitter {
     // this instantiable in a plain Node test with no Electron anywhere.
     this.logsFolderFn = () => null;
     this.currentFileFn = () => null;
+    // A file the user pointed the grid at from "Change log file"; null = the tailed live log.
+    this.logTarget = null;
+    // Extra per-day/archive files the user fed in via "Add split files". Tracked so the UI can tell
+    // it is looking at a stitched-together multi-file view - where "Trim the live log" makes no
+    // sense, because the extra coverage is not coming from the live log. Cleared on a full rebuild.
+    this.addedLogPaths = new Set();
+    // The reset day/hour the grid's period is measured from. The SAME value logRotation uses -
+    // main.js loads one store key and pushes it to both. null hour = lockoutCore's own default.
+    this.resetRule = { weekday: 2, hour: 11 };
     this.backfillState = 'idle'; // idle | running | done | failed
     this.lastBackfill = null;
     // Counted, never thrown. See the note at the top about the shared line bus.
@@ -87,6 +98,16 @@ class LockoutService extends EventEmitter {
   // the moment the line arrives.
   setCurrentFileFn(fn) {
     if (typeof fn === 'function') this.currentFileFn = fn;
+  }
+
+  // Set from main.js whenever the user changes the reset time (Lockouts page or Setup). Emits
+  // `changed` so the grid re-broadcasts under the new boundary.
+  setResetRule(rule) {
+    const weekday = Number.isInteger(rule && rule.weekday) ? ((rule.weekday % 7) + 7) % 7 : this.resetRule.weekday;
+    const hour = Number.isInteger(rule && rule.hour) ? Math.min(23, Math.max(0, rule.hour)) : this.resetRule.hour;
+    this.resetRule = { weekday, hour };
+    this.emit('changed');
+    return this.resetRule;
   }
 
   /**
@@ -144,66 +165,107 @@ class LockoutService extends EventEmitter {
   }
 
   /**
-   * Read the whole Logs folder once.
+   * Read the current live log once, from the top.
    *
-   * STREAMED, not read whole. Session D measured 434 MB across 15 files in 7.0 seconds, and one of
-   * those files is 112 MB — `readFileSync` on that would spike memory and block the main process
-   * with the window open. `readline` over a stream yields between chunks and the UI stays alive.
+   * ONLY THE LIVE LOG - the one file the tailer is on. NOT a folder scan.
    *
-   * Idempotent by the module's own contract, so running it twice is safe and running it after the
-   * live tailer has already seen some of the same lines is safe. That is clause 6 doing real work
-   * rather than being a nice property: a backfill ALWAYS overlaps the live stream.
+   * The grid answers "what have I completed THIS lockout week". The weekly archive
+   * (logRotation.js) empties the live log at the reset, so everything left in it belongs to the
+   * current week and nothing has to be inferred. Reading the per-day `Logs/Split/` files, the
+   * `Logs/Archive/` store, or any other `eqlog_*.txt` in the folder pulls in older weeks the grid
+   * must not count. `Logs/Split/` in particular is an optional feature of this app (see
+   * logSplitter.js) that has nothing to do with lockouts.
+   *
+   * (Session C's first version scanned the whole folder. That was for measuring the reset
+   * BOUNDARY across two files - project()/projectReset() - which the grid does not use. The
+   * owner's design is live-log-only.)
+   *
+   * STREAMED, not read whole - `readline` over a stream yields between chunks so the UI stays
+   * alive on a large log. Idempotent by the core's own contract (clause 6), so running it after
+   * the live tailer has already seen some of the same lines is safe.
    */
+  // Stream one file into its character's state. Idempotent (core clause 6), so overlapping the
+  // live tailer or an earlier backfill is safe. Returns the line count, or -1 if the name carried
+  // no character.
+  async _readInto(file) {
+    const character = core.characterFromLogFilename(path.basename(file));
+    if (!character) return -1;
+    const state = this._stateFor(character);
+    let lines = 0;
+    try {
+      // crlfDelay: Infinity - EverQuest logs are CRLF but a copy or an editor can leave LF.
+      const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
+      for await (const line of rl) { lines += 1; core.applyLine(state, line); }
+    } catch (err) {
+      this._note(err); // a locked or half-written log is ordinary
+    }
+    return lines;
+  }
+
+  // Set from the Lockouts page's "Change log file". When set, backfill reads THIS file instead of
+  // the tailed one - for looking at another character, or a log kept elsewhere. main.js persists it.
+  setLogTarget(filePath) {
+    this.logTarget = filePath || null;
+    return this.logTarget;
+  }
+
+  // "Add log files" from the Lockouts page: feed extra files (usually the Split/ files that cover a
+  // gap) into the existing grid without changing the live log or re-running the whole backfill.
+  async addLogs(paths) {
+    if (this._rebuilding) await this._rebuilding; // do not write states mid-rebuild
+    let lines = 0;
+    let read = 0;
+    for (const p of paths || []) {
+      if (!p || !fs.existsSync(p)) continue;
+      const n = await this._readInto(p);
+      if (n >= 0) { lines += n; read += 1; this.addedLogPaths.add(path.resolve(p)); }
+    }
+    if (read) this.emit('changed');
+    return { ok: true, files: read, lines };
+  }
+
+  // Clear state and read from scratch, under a lock so two rapid "Change log file" / "Refresh" /
+  // page-open calls cannot interleave `states.clear()` with a running read. Handlers call this
+  // instead of doing the clear + backfill themselves.
+  async rebuild() {
+    if (this._rebuilding) return this._rebuilding;
+    this._rebuilding = (async () => {
+      this.states.clear();
+      this.addedLogPaths.clear();
+      this.backfillState = 'idle';
+      return this.backfill();
+    })();
+    try {
+      return await this._rebuilding;
+    } finally {
+      this._rebuilding = null;
+    }
+  }
+
   async backfill() {
     if (this.backfillState === 'running') return { ok: false, reason: 'already running' };
-    const folder = this.logsFolderFn();
-    if (!folder) {
+
+    // A stored "Change log file" target that has since been deleted/moved must not wedge the grid.
+    // Drop it and fall back to the live log; the host clears the persisted value.
+    let targetCleared = false;
+    if (this.logTarget && !fs.existsSync(this.logTarget)) {
+      this.logTarget = null;
+      targetCleared = true;
+    }
+    const file = this.logTarget || this.currentFileFn();
+    if (!file) {
       this.backfillState = 'failed';
-      this.lastError = 'no logs folder configured';
+      this.lastError = 'no live log file';
       this.emit('backfillChanged', this.getStatus());
-      return { ok: false, reason: 'no logs folder configured' };
+      return { ok: false, reason: 'no live log file', targetCleared };
     }
 
     this.backfillState = 'running';
     this.emit('backfillChanged', this.getStatus());
     const started = Date.now();
-    let files = [];
-    try {
-      files = fs
-        .readdirSync(folder)
-        .filter((n) => LOG_FILE_PATTERN.test(n))
-        .map((n) => path.join(folder, n));
-    } catch (err) {
-      this._note(err);
-      this.backfillState = 'failed';
-      this.emit('backfillChanged', this.getStatus());
-      return { ok: false, reason: `cannot read ${folder}` };
-    }
 
-    let lines = 0;
-    let read = 0;
-    for (const file of files) {
-      const character = core.characterFromLogFilename(path.basename(file));
-      if (!character) continue;
-      const state = this._stateFor(character);
-      try {
-        // crlfDelay: Infinity is not decoration. The corpus is MIXED - Session D measured 11 CRLF
-        // files and 4 LF-only, having first got this wrong by generalising from an all-CRLF
-        // sample. This handles both without the parser needing to care.
-        const rl = readline.createInterface({
-          input: fs.createReadStream(file),
-          crlfDelay: Infinity,
-        });
-        for await (const line of rl) {
-          lines += 1;
-          core.applyLine(state, line);
-        }
-        read += 1;
-      } catch (err) {
-        // One unreadable file must not abandon the rest. A locked or half-written log is ordinary.
-        this._note(err);
-      }
-    }
+    const lines = Math.max(0, await this._readInto(file));
+    const read = core.characterFromLogFilename(path.basename(file)) ? 1 : 0;
 
     this.backfillState = 'done';
     this.lastBackfill = {
@@ -215,7 +277,7 @@ class LockoutService extends EventEmitter {
     };
     this.emit('backfillChanged', this.getStatus());
     this.emit('changed');
-    return { ok: true, ...this.lastBackfill };
+    return { ok: true, ...this.lastBackfill, targetCleared };
   }
 
   getStatus() {
@@ -223,6 +285,8 @@ class LockoutService extends EventEmitter {
       backfill: this.backfillState,
       lastBackfill: this.lastBackfill,
       characters: [...this.states.keys()],
+      logTarget: this.logTarget || null,
+      extraLogs: this.addedLogPaths.size,
       errors: this.errors,
       lastError: this.lastError,
     };
@@ -235,6 +299,26 @@ class LockoutService extends EventEmitter {
    * pure function of (state, now) exactly as the core promises.
    */
   getProjection(now = civilNow()) {
+    // The reset is a US Eastern wall-clock time and moves itself across the daylight-saving change
+    // (easternReset.js). Resolve this week's boundary here, as an absolute instant, then hand
+    // lockoutCore its LOCAL civil components - the same frame the kill stamps are parsed in - so
+    // the grid is right whatever zone this machine is on.
+    const nowMs = new Date(now.year, now.month - 1, now.day, now.hour, now.minute, now.second).getTime();
+    const toCivil = (ms) => {
+      const d = new Date(ms);
+      return {
+        year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate(),
+        hour: d.getHours(), minute: d.getMinutes(), second: d.getSeconds(),
+      };
+    };
+    const boundaryMs = easternResetBefore(nowMs, this.resetRule.weekday, this.resetRule.hour);
+    const boundaryCivil = toCivil(boundaryMs);
+    const periodEndCivil = toCivil(easternResetAfter(nowMs, this.resetRule.weekday, this.resetRule.hour));
+    // `firstSeen` is a civilOf() integer - local components run through Date.UTC. Compare like
+    // for like: the boundary's local components through the same Date.UTC.
+    const b = new Date(boundaryMs);
+    const boundaryCivilOf = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate(), b.getHours(), b.getMinutes(), b.getSeconds());
+
     const out = [];
     for (const [character, state] of this.states) {
       try {
@@ -243,8 +327,23 @@ class LockoutService extends EventEmitter {
         // `project` - a UI that rendered only the former would silently lose every "not looked".
         out.push({
           character,
+          // The log's OWN COVERAGE reaches back before this week (any stamped line, kill or not) -
+          // the "Trim to this week" tool applies. `spans` is fed by every stamped line, unlike
+          // `firstSeen` which only moves on a modelled event.
+          spansPriorWeek: Array.isArray(state.spans) && state.spans.length > 0
+            && state.spans.reduce((m, sp) => (sp.from < m ? sp.from : m), Infinity) < boundaryCivilOf,
           projection: core.project(state, now),
-          grid: core.projectGrid(state, now),
+          // ALWAYS pass boundaryCivil - it is the Eastern reset resolved to this machine's local
+          // wall-clock frame, the same frame the kill stamps are parsed in. lockoutCore's
+          // resetWeekday/resetHour math path (kept for its own tests) computes the boundary in the
+          // `now` frame, which is only correct on a machine whose clock IS US Eastern. Production
+          // must never rely on it - it is passed here for display, not for the boundary.
+          grid: core.projectGrid(state, now, {
+            resetWeekday: this.resetRule.weekday,
+            resetHour: this.resetRule.hour,
+            boundaryCivil,
+            periodEndCivil,
+          }),
         });
       } catch (err) {
         this._note(err);

@@ -146,6 +146,22 @@ contextBridge.exposeInMainWorld('eqTracker', {
   rescanLockouts: () => ipcRenderer.invoke('lockouts:rescan'),
   onLockoutsChanged: (cb) => { ipcRenderer.on('lockouts:changed', (_e, s) => cb(s)); },
   onLockoutBackfill: (cb) => { ipcRenderer.on('lockouts:backfill', (_e, s) => cb(s)); },
+  // Lockouts-page log tools. The renderer shows in-app modals; these just move data.
+  listLockoutLogFiles: () => ipcRenderer.invoke('lockouts:listLogFiles'),
+  setLockoutLogTargetByPath: (p) => ipcRenderer.invoke('lockouts:setLogTargetByPath', p),
+  addLockoutLogsByPaths: (paths) => ipcRenderer.invoke('lockouts:addLogsByPaths', paths),
+  trimLockoutLog: () => ipcRenderer.invoke('lockouts:trim'),
+  archiveHoldsCurrentWeek: () => ipcRenderer.invoke('log:archiveHoldsCurrentWeek'),
+  // "EverQuest is running but not logging" - main watches for it, the renderer shows the modal.
+  onLoggingOff: (cb) => { ipcRenderer.on('logging:off', () => cb()); },
+  onLoggingOk: (cb) => { ipcRenderer.on('logging:ok', () => cb()); },
+  acknowledgeLogging: () => ipcRenderer.invoke('logging:acknowledge'),
+  recheckLogging: () => ipcRenderer.invoke('logging:recheck'),
+  // The reset day/hour. One setting; the Lockouts page and the Setup page both edit it and both
+  // hear when it changes.
+  getLockoutReset: () => ipcRenderer.invoke('lockoutReset:get'),
+  setLockoutReset: (rule) => ipcRenderer.invoke('lockoutReset:set', rule),
+  onLockoutResetChanged: (cb) => { ipcRenderer.on('lockoutReset:changed', (_e, r) => cb(r)); },
   getTravelPickerCommand: () => ipcRenderer.invoke('travel:getPickerCommand'),
   setTravelPickerCommand: (word) => ipcRenderer.invoke('travel:setPickerCommand', word),
   // Note 30. Receive-only. There is no matching "apply this code from chat" channel on purpose -

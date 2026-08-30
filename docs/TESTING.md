@@ -43,7 +43,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a cha
 a zone. If it is red, nothing below is worth doing yet — read the failure text, it says what broke
 and why.
 
-**52 suites, 802 cases** (as of 25 Aug — was 36/570). The ones worth knowing by name, because each guards something that broke
+**66 suites** as of this writing, growing. The ones worth knowing by name, because each guards something that broke
 for real once:
 
 | Suite | Guards |
@@ -575,6 +575,10 @@ rather than repeating. Built in `overlay.js`'s `renderTextFeed`; engine untouche
       turned on** by that migration - only Resist flash.
 - [ ] **Turn the checkbox off and the "Lines visible" slider disappears**; turn it back on and it
       comes back at whatever it was. Toggling off then on mid-burst does not resurrect old lines.
+- [ ] **Stacked lines respect the text justification setting (27 Aug fix).** With two lines of
+      different lengths showing at once, set justification to Center - both line boxes should be
+      centred on the same vertical axis, not left-aligned to each other. Check Left and Right too;
+      the stack of lines should hug the matching edge and stay put there as messages change length.
 - [ ] **A plain (non-stacking) text aura, and the Dispelled premade, still behave exactly as
       before** - one line, replaced each time.
 - [ ] **"Lines visible" actually caps it** - set it to 2, force 4 quick events, only the newest 2
@@ -597,89 +601,14 @@ places, neither obviously about debuffs. That is what this type saves you.
 
 # 3 — Making auras
 
-## Buff Planner page (26 Aug) — LOCKED 27 Aug, skip until unlocked
+## Buff Planner page — LOCKED, skip
 
-**The sidebar button is removed** (Shara's call, until the buff-loadout aura ships), so none of the
-checks below can be run right now. They're kept for when it's re-enabled — the planner code itself
-(`buffPlanner.js`, `spellEffects.js`, `buffLines.js`) is still live and still tested.
+The sidebar button is removed (Shara's call, until the buff-loadout overlay aura ships), so the
+page can't be reached. The planner code (`buffPlanner.js`, `spellEffects.js`, `buffLines.js`) is
+still live and unit-tested; its in-game checklist was retired here when the page was locked and
+will be rebuilt if the page is re-enabled. See `docs/BUFF-STACKING.md` for the model it uses.
 
-New **"Buff Planner"** page in the sidebar. Set one character level (cap 50) at the top, then pick
-up to three classes in the row below; it shows the highest-level buff for every line those classes
-cover, packed into the 14 buff slots, with a drag-to-reorder priority list and a "Won't fit" list.
-Level + classes + priority order are stored **on the active loadout profile** - switch loadouts
-and it plans a different set. The plan itself is recomputed live every time from the current
-roster (nothing is cached).
-
-- [ ] **Every row shows a real, named character stat** - `+55 STR`, `+41% haste`, `+80 AC`, `+30
-      magic resist`. **Nothing should show a bare number-code anywhere** - if you see "SPA" or
-      "effect 73" or similar, that's a bug, screenshot it. A "Total stats" card at the top sums
-      every slotted buff, in character-sheet order (AC, ATK, the attributes, haste, resists, ...).
-- [ ] **Heals and pure utility are gone** - no Promised Renewal / Sacred Echo, no Levitate /
-      Vision / Illusion / run-speed. But **Spell Focus buffs (Blessing of Faith), Symbol, Blessing
-      of the Lord Commander, Guard of Vie ARE offered** - they're real slots.
-- [ ] **Buffs that affect the same stat but stack are ALL offered.** Pick cleric/shaman/bard @ 50:
-      the candidate list must include **Strength AND Infusion of Spirit AND Talisman of Altuna**
-      (all touch STR/AC but all stack), plus Stamina/Dexterity/Agility/Charisma/Symbol of
-      Naltron/Resolution/Shield of Words/Resist Magic - i.e. every buff in a real valid loadout.
-      Only *weaker tiers* of a line (Spirit Strength vs Strength, Yaulp vs Yaulp III) should be
-      collapsed away, and only when your EQ folder is set. If a lower tier still shows, or a
-      stacking buff is missing, say which.
-- [ ] **Cross-check 2-3 numbers** against the spell's own in-game description. Only STR/DEX/AGI/AC
-      are confirmed against your file; the rest (STA/CHA/WIS/INT/ATK/haste/resists/DS/max-HP) use
-      standard client effect ids. If one stat is consistently wrong, say which - one-line fix.
-- [ ] **Something you DO want is missing** (a Combat Innates buff, a regen buff) - it was dropped
-      because its effect id isn't on the stat whitelist yet. Tell me the spell name and I'll add it.
-- [ ] **"Total stats" is missing / says "set your EQ folder"** - it needs `spells_us.txt`, i.e.
-      your EQ folder set on the Setup page (the same one spellbook/icons use). If that's set and
-      it still can't read numbers, that's a bug.
-- [ ] **Set level 50, pick ENC / SHM / CLR.** *Expect*: 14 of 14 slots filled, each a different
-      category, each showing its stat number. A "Permanent buffs" card
-      showing **Yaulp III (CLR) and Fury (SHM)** - both pulled OUT of the 14. Note Infusion of
-      Spirit still holds the Strength slot in the 14 even though Fury is also "Strength" - the
-      permanent one keeps its own listing on purpose. No "Symphonic" card (no Bard). No
-      Celestial/heal-over-time spells anywhere. A "Won't fit — N" card below.
-- [ ] **Add BRD as one of the three classes.** *Expect*: a "Symphonic — N of 5 song slots" card
-      appears with bard songs only; the 14 buff slots may change (a bard haste song can beat the
-      spell haste and take over that line - no category should appear in both the buff list and
-      the song list).
-- [ ] **Remove BRD.** *Expect*: the Symphonic card disappears and its songs are gone from the plan
-      entirely (they're not castable without a Bard).
-- [ ] **Set level 30 with just SHM picked.** *Expect*: far fewer slots filled, only spells a
-      level-30 Shaman can actually cast. Change the level to 50 and more appear - the one level
-      applies to all three class slots at once.
-- [ ] **Drag a buff from the priority list to the top.** *Expect*: it moves into the slot list on
-      the next redraw; whatever was on the bubble drops to "Won't fit — no free slot". Reload the
-      page (or the app) and the order you set is still there.
-- [ ] **After that drag, a "Reset to recommended" button appears** next to the "Priority order"
-      heading (it's hidden until you have a manual order). Click it. *Expect*: the priority list
-      snaps back to stat-value ranking, the 14 slots recompute from scratch (this is where you'll
-      see the heading model actually pick and drop buffs), and the button disappears. Reload - the
-      manual order stays gone.
-- [ ] **Switch loadout profiles on the Buff Tracker page, come back.** *Expect*: the planner now
-      shows that loadout's own classes/order (probably empty if you never set it up), and the
-      "active loadout" name at the top matches.
-- [ ] **Regen and cast-speed buffs now rank high (27 Aug).** With your EQ folder set: a mana-regen
-      buff (Clarity-style), an endurance-regen buff, and Chloroplast should sit near the TOP of the
-      priority list, not the bottom. Blessing of Faith / Blessing of Piety should rank up with the
-      haste buffs (they're read as "cast speed" now). If any of these still show `+0` or the wrong
-      stat name, the effect number I used doesn't match your server's file - tell me the spell name
-      and what its in-game description says it does, it's a one-line fix.
-- [ ] **Fewer resist buffs in the 14.** Single-element resist buffs (Resist Fire/Cold/Magic/etc.)
-      are weighted right down now - you should see at most one or two sneak into the 14, and only
-      when there's genuinely nothing better. If you still see 4-5, say so.
-- [ ] **Rage shows in the "Permanent buffs" card, not the 14** (Shara, 27 Aug: "rage is permanent
-      too"). Both Rage and Yaulp III should be in that card together. Fury should NOT appear
-      separately - it's the same line as Rage, lower tier, so it's rolled up.
-- [ ] **The heading model is doing the resolving (26 Aug rework).** With your EQ folder set, pick
-      CLR / SHM / BRD @ 50. *Expect* in the 14: **Strength, Infusion of Spirit, Talisman of Altuna,
-      Symbol of Naltron, Resolution, Shield of Words, Resist Magic** all present together (Shara's
-      real reference loadout). *Expect* NOT present together: Arch Shielding alongside Talisman of
-      Altuna, or two AC-slot-4 buffs at once - the weaker goes to "Won't fit" with "conflicts with
-      X". Fury/Rage stay in the Permanent card even though Strength is in the 14.
-- [ ] **A class with no buffs at the chosen level** (e.g. WIZ) contributes nothing and doesn't
-      error.
-
-### Self Buffs overlay - stale-tile removal via the heading model (26 Aug)
+## Self Buffs overlay - stale-tile removal via the heading model (26 Aug)
 
 The Self Buffs aura now drops a tile the moment a buff that replaces it lands, using the same
 `buff-lines.json` data as the planner. This is unconditional now (not behind the "Use spell
@@ -766,15 +695,10 @@ only be reached by a premade until now.
 - [ ] **Build a "containing" timer and check it fires.** Be specific with the text — a short word
       set to "containing" will fire on nearly every line.
 
-## Timers that need more than one thing to be true (note 9) — SUPERSEDED 25 Aug, do not test
+## Multi-condition timers
 
-**This whole section describes the "Extra conditions" feature, which no longer exists.** You said
-live, 25 Aug: "the extra conditions tab for a trigger should be completely removed because it's not
-in an obvious place... triggers should be done by just adding multiple triggers, then have a button
-to the left of edit, that toggles between AND and OR." It was removed outright, not reworked - see
-**"Trigger combine modes (25 Aug)"** near the end of this file for what replaced it (Independent /
-AND / OR on the ordinary trigger list every widget already has). Every checkbox below described a
-UI that is gone; testing them would just confirm they no longer exist.
+The "Extra conditions" per-trigger feature was removed and replaced by a per-aura AND/OR combine
+mode on the ordinary trigger list. See **"Trigger combine modes"** under [Confirmed](#confirmed).
 
 ## Add timer form layout (reported live 24 Aug) — the "Extra conditions" half is now moot
 
@@ -1823,9 +1747,9 @@ since it moved, but this is very likely already resolved rather than still open.
 ## P0 detection rework, cast-time filter, and self-buff overwrite detection (25 Aug) — none tested live
 
 Three related, independently-switchable Experimental toggles under **Log page → Diagnostics**, all
-**off by default**. See `docs/HANDOFF.md` and `docs/NOTES-STATUS.md`'s "P0 detection-engine
-rework" section for the full reasoning behind each. None of the three has been run against a real
-play session — that's the biggest thing left in this whole document.
+**off by default**. See `CLAUDE.md`'s "P0 — Detection engine" section for the full reasoning
+behind each. None of the three has been run against a real play session — that's the biggest thing
+left in this whole document.
 
 - [ ] **"Use evidence-based detection" OFF (default/legacy).** Confirm nothing changed from before
       this session — same landings, same `IGNORED`s, same prompts as always. This is the safety net:
@@ -1980,7 +1904,7 @@ clean. **Not yet re-confirmed against the real game**, and there's one specific 
 
 ## Small QOL batch (25 Aug) - none clicked in the real app yet
 
-Requested as a batch after reviewing FEATURES.md; all pass their own tests and the app smoke-
+Requested as a batch from the QOL backlog; all pass their own tests and the app smoke-
 launches clean, but none has actually been clicked through in a live session.
 
 - [ ] **Tell-ping cooldown.** Setup page → Trade requests → turn on "Play a sound when you get a

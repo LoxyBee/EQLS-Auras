@@ -11,17 +11,17 @@ const TITLES = {
   currentZone: 'Where are you now?',
 };
 
-const RENDER_CAP = 60;
-
 let allZones = [];
 let currentMode = null;
 
+// No result cap: if a match is a real zone it is always listed (QOL-BACKLOG #31). The list is
+// ~104 zones unfiltered, which renders fine; nicknames/shorthand are a separate feature (#30)
+// and deliberately do not appear here.
 function render() {
   const query = searchEl.value.trim().toLowerCase();
   const matches = query ? allZones.filter((z) => z.toLowerCase().includes(query)) : allZones;
   listEl.innerHTML = '';
-  const shown = matches.slice(0, RENDER_CAP);
-  for (const zone of shown) {
+  for (const zone of matches) {
     const btn = document.createElement('button');
     btn.className = 'zone-option';
     btn.textContent = zone;
@@ -30,12 +30,7 @@ function render() {
     });
     listEl.appendChild(btn);
   }
-  if (matches.length > shown.length) {
-    const more = document.createElement('div');
-    more.className = 'zone-more';
-    more.textContent = `+${matches.length - shown.length} more - keep typing to narrow it down`;
-    listEl.appendChild(more);
-  } else if (!matches.length) {
+  if (!matches.length) {
     const none = document.createElement('div');
     none.className = 'zone-none';
     none.textContent = 'No zone matches that';

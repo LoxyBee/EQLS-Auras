@@ -21,27 +21,27 @@
 // `logWatcher` already handles the result (`stat.size < offset` resets the offset to 0), verified
 // by simulating a rotation against the real watcher while it was running.
 //
-// THE RESET, MEASURED RATHER THAN TYPED. Tuesday, 11:00, local wall clock. Two Alt+Z readings
-// 10.84 hours apart landed 6 seconds from each other and both within 18 seconds of a clean
-// 11:00:00 on Tuesday 1 September 2026 - and every row of that window showed the same remaining
-// time, which is what establishes that all the locks share one reset rather than each running its
-// own. That is a measurement, not a constant somebody typed.
+// THE RESET, MEASURED RATHER THAN TYPED. Tuesday, 11:00 US Eastern. Two Alt+Z readings 10.84 hours
+// apart landed 6 seconds from each other and both within 18 seconds of a clean 11:00:00 on Tuesday
+// 1 September 2026 - and every row of that window showed the same remaining time, which is what
+// establishes that all the locks share one reset rather than each running its own. That is a
+// measurement, not a constant somebody typed.
 //
-// TIME ZONE, stated because it is an assumption and not a measurement. The reading came from a
-// machine running Eastern time. Working in LOCAL WALL CLOCK means the boundary self-adjusts across
-// the daylight-saving change on 1 November - it stays "11:00 as the clock on the wall reads" - and
-// that is the owner's stated expectation. It is correct for a player whose machine is on the same
-// clock as the server's reset and wrong by the offset for anyone else. If a non-Eastern user ever
-// reports the grid rolling over at the wrong time, THIS COMMENT IS THE REASON and the fix is to
-// resolve the boundary through a fixed zone instead.
+// TIME ZONE. The reset is the SERVER's, which runs on US Eastern, so the boundary is resolved in
+// America/New_York - see src/shared/easternReset.js. That handles the daylight-saving change on
+// its own (the boundary stays "11:00 as the Eastern clock reads", an hour apart in UTC either side
+// of it) and is correct whatever zone the player's own machine is on. Log-line timestamps are
+// parsed as local Dates - absolute instants - so comparing them against this Eastern-derived
+// instant is right regardless. The user may change the day/hour; those are Eastern too.
 
 const fs = require('fs');
 const path = require('path');
 const { extractTimestampMs } = require('./logSplitter');
+const { easternResetBefore } = require('../shared/easternReset');
 
-// 0 = Sunday, so 2 = Tuesday. Measured; see the header.
-const RESET_WEEKDAY = 2;
-const RESET_HOUR = 11;
+// 0 = Sunday, so 2 = Tuesday. Measured (Alt+Z, see the header); overridable by the user, who sets
+// the same value the Lockouts grid uses - the two must never differ. This is only the default.
+const DEFAULT_RESET = { weekday: 2, hour: 11 };
 
 // How long a log must have been still before it is touched. The host's own quiet check watches the
 // ONE log the tailer is following; this one asks each file directly, because a second account can
@@ -50,50 +50,26 @@ const RESET_HOUR = 11;
 const QUIET_MS = 10000;
 
 /**
- * The most recent reset boundary at or before `now`, in local time.
+ * The most recent reset boundary at or before `now`.
  *
- * Local wall clock deliberately - see the time-zone note in the header. `setHours` on a local Date
- * is what makes the daylight-saving transition a non-event rather than an hour of wrongness.
+ * The reset day/hour are US EASTERN - the server's zone - resolved to an absolute instant with the
+ * daylight-saving change already handled (easternReset.js). A player whose machine is on a
+ * different zone still gets the right instant, and comparisons against log-line timestamps (which
+ * logSplitter parses as local Dates, i.e. absolute instants) stay correct.
  */
-function resetBoundaryBefore(now = new Date()) {
-  const d = new Date(now.getTime());
-  d.setHours(RESET_HOUR, 0, 0, 0);
-  const back = (d.getDay() - RESET_WEEKDAY + 7) % 7;
-  d.setDate(d.getDate() - back);
-  // Landing in the future means today IS the reset weekday but the hour has not arrived yet, so
-  // the period that is actually current began a week earlier.
-  if (d.getTime() > now.getTime()) d.setDate(d.getDate() - 7);
-  return d;
+function resetBoundaryBefore(now = new Date(), rule = DEFAULT_RESET) {
+  const weekday = Number.isInteger(rule.weekday) ? rule.weekday : DEFAULT_RESET.weekday;
+  const hour = Number.isInteger(rule.hour) ? rule.hour : DEFAULT_RESET.hour;
+  return new Date(easternResetBefore(now, weekday, hour));
 }
 
 /**
- * WHERE THE ROTATION ACTUALLY CUTS, which is NOT the reset instant.
- *
- * The reset is Tuesday 11:00 and that is what the archive is named for. But the thing that READS
- * the live log - lockoutCore - starts its period at the boundary DAY, midnight, deliberately:
- * `RESET_RULE.hour` is null and it will not pretend to know an hour it was never given.
- *
- * Cutting at 11:00 therefore removed eleven hours that the grid still considers part of the current
- * period. To the grid that is not "archived", it is a GAP - and a gap under twenty-four hours is
- * TOLERATED, which leaves the cells reading `open` rather than `not looked`. So a boss killed at
- * 08:00 on a Tuesday was archived away and the grid then said, with no hedge at all, that the raid
- * was available. Confidently wrong, in the direction that sends her to re-clear a lockout she
- * already holds - the exact failure this feature exists to prevent.
- *
- * Verified on her real log: the rotation turned a 10.1 h tolerated gap into an 11.0 h tolerated
- * gap, coverage still reported as spanning the period, every cell still `open`. It changed no
- * answer only because she happens not to have raided between midnight and 11:00 in the weeks
- * recorded. That is luck, not a guarantee.
- *
- * Cutting at the day start instead makes the live log hold EXACTLY the core's period. Anything in
- * that ambiguous morning stays where the core can see it, and the core does the honest thing with
- * it: `conditional`, "the reset hour has never been measured". The cost is that the log may retain
- * up to eleven hours of last week - which is precisely what `conditional` is for.
+ * Where the rotation cuts the log. The grid's period begins exactly at the reset instant (the hour
+ * is always known now), so the cut is the same instant - the live log ends up holding precisely
+ * what the grid considers this week and nothing before it.
  */
-function rotationCutBefore(now = new Date()) {
-  const cut = new Date(resetBoundaryBefore(now).getTime());
-  cut.setHours(0, 0, 0, 0);
-  return cut;
+function rotationCutBefore(now = new Date(), rule = DEFAULT_RESET) {
+  return resetBoundaryBefore(now, rule);
 }
 
 /** `2026-09-01`, the local date of a boundary. Used to name archives and to recognise them again. */
@@ -229,6 +205,56 @@ function firstStampMs(filePath, size) {
 }
 
 /**
+ * The byte offset where the current lockout week begins - the first line at or after `cutMs`.
+ *
+ * SCANNED UPWARD from the end. The log is chronological, so there is a single transition: lines
+ * below it are >= cutMs, lines above are older. Reading backward in 64 KB chunks stops at that
+ * transition after touching only ~one week of the file, however large the whole thing is.
+ *
+ * Returns `size` if the newest line is already older than the boundary (whole file is last week),
+ * or 0 if the scan reaches the start without crossing it (whole file is this week). `fd` is an
+ * open read handle; the caller owns it.
+ */
+function findWeekStartOffset(fd, size, cutMs) {
+  const CH = 1 << 16;
+  let pos = size;                 // everything from pos..size has been processed
+  let weekStart = size;           // oldest line confirmed >= cutMs; `size` = none seen yet
+  let carry = Buffer.alloc(0);    // leading partial of the last buf - continues into the earlier chunk
+  const chunk = Buffer.alloc(CH);
+
+  while (pos > 0) {
+    const readStart = Math.max(0, pos - CH);
+    const want = pos - readStart;
+    fs.readSync(fd, chunk, 0, want, readStart);
+    const buf = Buffer.concat([chunk.slice(0, want), carry]); // buf[0] is at file offset readStart
+
+    const text = buf.toString('latin1'); // EQ logs are latin1/ASCII - 1 char == 1 byte, offsets hold
+    const segs = text.split('\n');
+    // segs[k] occupies [start_k, start_k + segs[k].length); the byte after it is '\n' (bar the last).
+    const starts = [];
+    let off = readStart;
+    for (const s of segs) { starts.push(off); off += s.length + 1; }
+
+    // segs[0] is a partial continuing from an earlier chunk unless we are at the file start.
+    const judgeFrom = readStart === 0 ? 0 : 1;
+    for (let k = segs.length - 1; k >= judgeFrom; k--) {
+      const line = segs[k];
+      if (!line.length) continue;
+      const ms = extractTimestampMs(stripPadding(line));
+      if (ms === null) continue;              // unstamped: leave weekStart, do not stop (goes to archive)
+      if (ms >= cutMs) weekStart = starts[k];
+      else return weekStart;                  // crossed the boundary
+    }
+    if (readStart === 0) return weekStart;     // reached the start of the file without crossing
+
+    const firstNL = buf.indexOf(0x0a);
+    carry = firstNL === -1 ? buf : buf.slice(0, firstNL + 1);
+    pos = readStart;
+  }
+  return weekStart;
+}
+
+/**
  * Rotates every character's log once per lockout week.
  *
  * THE FILESYSTEM IS THE RECORD OF WHETHER THIS ALREADY HAPPENED, deliberately, rather than a
@@ -243,13 +269,14 @@ class LogRotationService {
     // Injected so this stays testable without Electron, same as every other service here.
     this.loadJson = loadJson || (() => ({}));
     this.saveJson = saveJson || (() => {});
-    // OFF UNTIL SHE TURNS IT ON, and that is a deliberate choice rather than the obvious default.
-    // This is the one thing in the app that modifies her EverQuest files on a timer, and no
-    // rotation has ever run on a real machine - every one tested was against a temp folder or a
-    // copy. A feature that empties a game log should not arm itself on somebody's behalf before it
-    // has been watched doing it once. The Setup switch turns it on; one line here changes the
-    // default back once it has proved itself.
-    this.enabled = false;
+    // ON by default (owner's call). The weekly archive is what keeps the live log scoped to the
+    // current lockout week, which is what the Lockouts grid depends on - so it should work out of
+    // the box. It still refuses to touch a log that has been played on since the reset, and it
+    // copies-and-verifies before it truncates. An explicit off in the settings file is honoured.
+    this.enabled = true;
+    // The reset day/hour. The SAME value the Lockouts grid uses - main.js loads it once and pushes
+    // it to both. Defaulted here so the module works standalone in a test.
+    this.resetRule = { ...DEFAULT_RESET };
     // Seconds of log silence required before touching a file. Defaults to "always quiet" so the
     // module stays usable without a host; main.js injects the real answer.
     this.isQuietFn = () => true;
@@ -297,9 +324,20 @@ class LogRotationService {
     return this.enabled;
   }
 
+  // The reset day/hour. Set from main.js whenever the user changes it (Lockouts page or Setup -
+  // one setting, one store key), so this and lockoutCore always agree on where the week begins.
+  setResetRule(rule) {
+    const weekday = Number.isInteger(rule && rule.weekday) ? ((rule.weekday % 7) + 7) % 7 : this.resetRule.weekday;
+    const hour = Number.isInteger(rule && rule.hour) ? Math.min(23, Math.max(0, rule.hour)) : this.resetRule.hour;
+    this.resetRule = { weekday, hour };
+    return this.resetRule;
+  }
+
   loadSettings() {
-    const cfg = this.loadJson('logRotation', { enabled: false });
-    this.enabled = cfg.enabled === true;
+    // ON unless the file explicitly says otherwise. A missing file, or a missing key, is the
+    // default (on); only `enabled: false` written down turns it off.
+    const cfg = this.loadJson('logRotation', { enabled: true });
+    this.enabled = cfg.enabled !== false;
     return { enabled: this.enabled };
   }
 
@@ -341,10 +379,10 @@ class LogRotationService {
     }
 
     // The reset instant, which is what the archive is NAMED for and what the status reports.
-    const boundary = resetBoundaryBefore(now);
-    // Where the bytes are actually divided. See rotationCutBefore - these are deliberately not the
-    // same instant, and the eleven hours between them is a wrong answer if they are conflated.
-    const cut = rotationCutBefore(now);
+    const boundary = resetBoundaryBefore(now, this.resetRule);
+    // Where the bytes are actually divided. With a known hour this equals `boundary`; only a
+    // genuinely unset hour cuts at midnight instead (see rotationCutBefore).
+    const cut = rotationCutBefore(now, this.resetRule);
     report.boundary = boundary.toISOString();
     report.cut = cut.toISOString();
     // The local calendar date of the boundary. The ISO string above is UTC, and slicing a date
@@ -577,13 +615,124 @@ class LogRotationService {
     this.lastError = err && err.message ? err.message : String(err);
   }
 
+  // Does this log's last line fall in the current lockout week? If so, archiving it whole removes
+  // this week's kills from what the Lockouts grid reads - the manual "Archive log now" button
+  // warns on the strength of this.
+  logHoldsCurrentWeek(filePath, now = new Date()) {
+    try {
+      if (!filePath || !fs.existsSync(filePath)) return false;
+      const size = fs.statSync(filePath).size;
+      if (!size) return false;
+      const last = lastStampMs(filePath, size);
+      return last !== null && last >= rotationCutBefore(now, this.resetRule).getTime();
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /**
+   * Split ONE log at this week's reset: archive everything before it, keep everything after.
+   *
+   * The manual, any-number-of-weeks counterpart to rotateIfDue. The weekly rotation REFUSES a log
+   * that holds more than the current week (`skippedSpansBoundary`) rather than risk moving this
+   * week's kills into the archive - which leaves a multi-week log stuck. This is how the user
+   * unsticks it from the Lockouts page.
+   *
+   * Same care as rotateIfDue: only when the log has been quiet (EQ is not mid-write), the archived
+   * front is written to its own file and size-verified, and the live log is checked for growth
+   * before it is rewritten. `filePath` is the log to trim - normally the watched one.
+   */
+  trimAtBoundary(filePath, now = new Date()) {
+    const out = { ok: false, reason: null, archivedTo: null, archivedBytes: 0, keptBytes: 0, keptFrom: 0 };
+    try {
+      if (!filePath || !fs.existsSync(filePath)) { out.reason = 'no log file'; return out; }
+      if (!this.isQuietFn()) { out.reason = 'the log is being written to right now - try again in a moment'; return out; }
+
+      const size = fs.statSync(filePath).size;
+      if (!size) { out.reason = 'the log is empty'; return out; }
+      const cutMs = rotationCutBefore(now, this.resetRule).getTime();
+
+      // WHERE THIS WEEK STARTS. Scanned UPWARD from the end - the log is chronological, so this
+      // week's lines are all at the bottom and the scan stops the moment it crosses the boundary.
+      // On a multi-week log this touches ~one week of bytes rather than the whole file.
+      const sfd = fs.openSync(filePath, 'r');
+      let offset;
+      try {
+        offset = findWeekStartOffset(sfd, size, cutMs);
+      } finally {
+        fs.closeSync(sfd);
+      }
+
+      if (offset === 0) { out.reason = 'nothing before this week - the log is already just this week'; return out; }
+
+      const archiveDir = path.join(path.dirname(filePath), 'Archive');
+      fs.mkdirSync(archiveDir, { recursive: true });
+      const boundaryDate = boundaryKey(resetBoundaryBefore(now, this.resetRule));
+      const base = path.basename(filePath, path.extname(filePath));
+      let archivePath = path.join(archiveDir, `${base}_before_${boundaryDate}.txt`);
+      let n = 2;
+      while (fs.existsSync(archivePath)) archivePath = path.join(archiveDir, `${base}_before_${boundaryDate}_${n++}.txt`);
+
+      // Copy the front [0, offset) to the archive in 1 MB chunks - never the whole file in memory.
+      const rfd = fs.openSync(filePath, 'r');
+      const wfd = fs.openSync(archivePath, 'w');
+      const cbuf = Buffer.alloc(1 << 20);
+      let copied = 0;
+      try {
+        while (copied < offset) {
+          const want = Math.min(cbuf.length, offset - copied);
+          const nread = fs.readSync(rfd, cbuf, 0, want, copied);
+          if (!nread) break;
+          fs.writeSync(wfd, cbuf, 0, nread);
+          copied += nread;
+        }
+        fs.fsyncSync(wfd);
+      } finally {
+        fs.closeSync(rfd);
+        fs.closeSync(wfd);
+      }
+      if (fs.statSync(archivePath).size !== offset) {
+        try { fs.unlinkSync(archivePath); } catch (e) { /* leave it */ }
+        out.reason = 'the archive did not verify - nothing was changed';
+        return out;
+      }
+
+      // The kept tail is one week - small enough to hold while the live log is rewritten.
+      const keepLen = size - offset;
+      const keep = Buffer.alloc(keepLen);
+      if (keepLen) {
+        const kfd = fs.openSync(filePath, 'r');
+        fs.readSync(kfd, keep, 0, keepLen, offset);
+        fs.closeSync(kfd);
+      }
+      if (fs.statSync(filePath).size !== size) {
+        try { fs.unlinkSync(archivePath); } catch (e) { /* leave it */ }
+        out.reason = 'the log grew while the trim was running - try again';
+        return out;
+      }
+
+      fs.writeFileSync(filePath, keep); // truncates and replaces in one call
+      out.ok = true;
+      out.archivedTo = archivePath;
+      out.archivedBytes = offset;
+      out.keptBytes = keepLen;
+      out.keptFrom = offset; // the host resyncs the tailer/splitter to keepLen, not 0 - see main.js
+      return out;
+    } catch (err) {
+      this._note(err);
+      out.reason = err && err.message ? err.message : String(err);
+      return out;
+    }
+  }
+
   getStatus() {
     return {
       enabled: this.enabled,
+      resetRule: { ...this.resetRule },
       lastRun: this.lastRun,
       lastCheck: this.lastCheck,
       nextBoundaryAfterNow: (() => {
-        const b = resetBoundaryBefore(new Date());
+        const b = resetBoundaryBefore(new Date(), this.resetRule);
         const next = new Date(b.getTime());
         next.setDate(next.getDate() + 7);
         return next.toISOString();
@@ -600,6 +749,5 @@ module.exports = {
   rotationCutBefore,
   boundaryKey,
   archiveNameFor,
-  RESET_WEEKDAY,
-  RESET_HOUR,
+  DEFAULT_RESET,
 };

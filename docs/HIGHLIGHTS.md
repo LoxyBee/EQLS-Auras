@@ -96,12 +96,30 @@ starter sounds ships with the app so there's always something to choose from imm
 EverQuest Legends texture files — genuine in-game art, not placeholder graphics — with a choice of
 the game's alternate icon sets.
 
+## Raid lockouts, without the guesswork
+
+**Know when your lockouts actually reset.** EverQuest Legends never prints a lockout line, so the
+app reads the weekly-task messages the game *does* print on a raid kill and tracks each lockout
+from those.
+
+**It reports what it's seen, not a hardcoded reset day.** Other tools bake in a reset day and
+hope it's right. This one shows the reset as the window your own kill history actually supports,
+and says so plainly until it's seen enough to be sure.
+
+**Timezone-correct wherever you play.** The reset is a wall-clock time in US Eastern that shifts
+with daylight saving — the app converts it to a real instant so it lines up whether your PC is on
+Pacific, Eastern, or London time.
+
 ## Quality of life
+
+**Finds your game automatically.** Point it at nothing — the app locates your EverQuest Legends
+install and log folder on its own.
 
 **Trade pings.** An optional alert sound the moment someone sends you a trade request in-game.
 
-**The log gets organized for you.** Continuous per-day (and per-session) log splitting, plus a
-manual archive-and-truncate option, so your raw log folder doesn't grow forever unmanaged.
+**The log gets organized for you.** Continuous per-day (and per-session) log splitting, an
+automatic archive at each raid reset, plus a manual archive-and-truncate option — so your raw log
+folder doesn't grow forever unmanaged.
 
 **A Known Buffs library you can correct by hand.** Browse every spell the app knows about, fix
 one that's wrong, or add something fully custom — your correction sticks even when the built-in

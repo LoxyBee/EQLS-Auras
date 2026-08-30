@@ -94,6 +94,34 @@ function extractTimestampMs(line) {
   return Number.isNaN(ms) ? null : ms;
 }
 
+// Last wall-clock stamp already written into a per-day Split file. Used to make a
+// re-split from offset 0 (lost/reset splitProgress, or a bookmark file that was
+// wiped) a no-op instead of doubling every line: anything at or before this is
+// already on disk. Reads only the tail, since that is where the newest line is.
+function lastStampMsInFile(filePath) {
+  let fd;
+  try {
+    const size = fs.statSync(filePath).size;
+    if (!size) return null;
+    const readLen = Math.min(size, 65536);
+    const buf = Buffer.alloc(readLen);
+    fd = fs.openSync(filePath, 'r');
+    fs.readSync(fd, buf, 0, readLen, size - readLen);
+    const lines = buf.toString('latin1').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const ms = extractTimestampMs(lines[i]);
+      if (ms !== null) return ms;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* already gone */ }
+    }
+  }
+}
+
 function formatSessionSuffix(ms) {
   const d = new Date(ms);
   const hh = String(d.getHours()).padStart(2, '0');
@@ -299,6 +327,16 @@ class LogSplitter {
     this.onFormatAlarm(this.formatAlarm);
   }
 
+  // The live log was rewritten in place by a trim (logRotation.trimAtBoundary) - the front was
+  // moved to Archive and the kept tail is now at byte 0. This week's tail was ALREADY split into
+  // the per-day files, so re-reading it from 0 would double those lines. Skip straight to the new
+  // end. `lastTimestampMs` etc. carry over - the tail is the same content, just relocated.
+  resyncOffset(filePath, bytes) {
+    if (this.filePath !== filePath) return;
+    this.offset = Math.max(0, bytes | 0);
+    this._persistProgress();
+  }
+
   _persistProgress() {
     this.progress[this.filePath] = {
       offset: this.offset,
@@ -341,6 +379,16 @@ class LogSplitter {
     this.processing = true;
     const startOffset = this.offset;
     const baseName = path.basename(this.filePath, path.extname(this.filePath));
+    // Reading from byte 0 means the bookmark was lost or reset. This week's tail
+    // is already in the per-day files, so re-appending it would double it. Guard
+    // each incoming line against the day-file's own last stamp.
+    const dedupe = startOffset === 0;
+    const dedupeCutoff = new Map(); // outPath -> last ms already on disk (null = file absent/empty)
+    const dedupeKept = new Map();   // dateKey -> was the last stamped line kept? (for unstamped follow-on lines)
+    const cutoffFor = (outPath) => {
+      if (!dedupeCutoff.has(outPath)) dedupeCutoff.set(outPath, lastStampMsInFile(outPath));
+      return dedupeCutoff.get(outPath);
+    };
     const buffers = new Map(); // key: "dateKey|sessionSuffix" -> lines[]
     let bufferedLineCount = 0;
     let lastDateKey = this.lastDateKeySeen;
@@ -389,6 +437,22 @@ class LogSplitter {
         }
       } else {
         sessionSuffix = '';
+      }
+
+      if (dedupe) {
+        const suffixPart = sessionSuffix ? `_${sessionSuffix}` : '';
+        const outPath = path.join(this.outputDir, `${baseName}_${dateKey}${suffixPart}.txt`);
+        const cutoff = cutoffFor(outPath);
+        if (cutoff !== null) {
+          const ts = extractTimestampMs(line);
+          if (ts !== null) {
+            const keep = ts > cutoff;
+            dedupeKept.set(dateKey, keep);
+            if (!keep) return; // already on disk
+          } else if (dedupeKept.get(dateKey) === false) {
+            return; // trails a line we skipped
+          }
+        }
       }
 
       const key = `${dateKey}|${sessionSuffix}`;

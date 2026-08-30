@@ -103,15 +103,17 @@ Server context: the user plays **"EverQuest Legends"**, a custom/private EQ serv
 
 ## Where the backlog actually lives
 
-**`docs/NOTES-STATUS.md` is the live status of Shara's 40-note backlog** — one row per note, with what is
-built, what is not, and why. Read that before this section. As of 25 August 2026: **39 done, 0
-partial, 1 blocked (#28, needs the bug to recur), 1 skipped (#2, her call).** Also see
-`docs/HANDOFF.md` for the 25 Aug session summary, including the P0 detection rework below, the
-Bard Songs aura, Charm Broke premade, and the settings-panel rework — all shipped that session but
-not yet exercised in a real play session.
+**`docs/QOL-BACKLOG.md` is the live backlog** — every requested change, tagged (NEW / CHANGE /
+DATA / FIX / CLARIFY) and sequenced. Start there.
 
-The prose below is the older triage from an earlier pass. Most of it has been overtaken by that
-table and is kept for the reasoning, not the status — where the two disagree, the table is right.
+Shara's original 40-note backlog is **complete except #2** (a first-aggro premade, which she is
+supplying herself). The per-note record used to live in `docs/NOTES-STATUS.md` and the
+session-by-session reasoning in `docs/HANDOFF.md` / `docs/FEATURES.md`; all three were retired
+once the work landed — their history is in git. Where an item below references a note number,
+that's the original 40-note numbering.
+
+The prose below is older triage kept for the *reasoning* behind why things were built the way
+they were, not for status — `QOL-BACKLOG.md` and `docs/TESTING.md` are the current picture.
 
 ## Standalone-tool auras' settings-panel shape — designed and built 25 Aug; Travel guide unlocked 26 Aug, Damage parser still locked
 
@@ -465,8 +467,8 @@ Historical numbering (#7, #13-#15) preserved from an earlier pass for continuity
 
 **Status, 25 Aug: built, shipped OFF by default, not yet run against a real log session.** The
 early-return-vs-evidence fix described below is now `buffEngine.js`'s `useEvidenceModel` toggle
-("Use evidence-based detection" under Log page → Diagnostics) — see `docs/HANDOFF.md` and
-`docs/NOTES-STATUS.md`'s "P0 detection-engine rework" section for what it actually changes.
+("Use evidence-based detection" under Log page → Diagnostics); `test/evidence-based-detection.test.js`
+pins what it changes.
 **The roster-gap root cause below (missing spells making shared text look unique) was NOT
 re-mined** — that's still open exactly as described; the evidence-model toggle only fixes the
 early-return structure, not the roster gap. Keeping the original diagnosis below intact since the
@@ -502,7 +504,7 @@ was parked below as "idea only, NOT now" and has since been built anyway, as
 `buffEngine.js`'s `useCastTimeFilter` toggle ("Use cast-time-aware confirmation" under Diagnostics,
 independent of `useEvidenceModel` above). Uses `CAST_TIME_RATES` (sheet-sourced per-mote-tier cast
 time deltas) plus a confirmed Spell Casting Deftness AA multiplier, with a 500ms tolerance either
-side for log-timestamp rounding. See `docs/HANDOFF.md`. The "why parked" reasoning below is kept
+side for log-timestamp rounding. The "why parked" reasoning below is kept
 for context on what it does NOT yet handle (nothing beyond the sheet's per-category rate and the
 one confirmed AA multiplier — haste/focus effects still aren't modelled).
 

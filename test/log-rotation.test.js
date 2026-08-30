@@ -22,9 +22,10 @@ const {
   rotationCutBefore,
   boundaryKey,
   archiveNameFor,
-  RESET_WEEKDAY,
-  RESET_HOUR,
+  DEFAULT_RESET,
 } = require('../src/main/logRotation');
+const RESET_WEEKDAY = DEFAULT_RESET.weekday;
+const RESET_HOUR = DEFAULT_RESET.hour;
 const { extractTimestampMs } = require('../src/main/logSplitter');
 
 const LINE = '[Sat Aug 29 10:00:00 2026] You have slain Lady Vox!';
@@ -36,10 +37,9 @@ function tempLogs(files) {
   }
   return dir;
 }
-// Rotation is OFF by default now - see 'it stays off until someone turns it on'. These tests are
-// about what it does once she has turned it on, so the helper opts in explicitly. A test that
-// wants the off state builds its own instance, so the default cannot be switched back without the
-// dedicated test noticing.
+// Rotation is ON by default now - see 'it is on by default, and an explicit off is honoured'.
+// These tests still opt in explicitly so the default cannot be switched back without the dedicated
+// test noticing. A test that wants the off state builds its own instance.
 const svc = (dir, opts) => {
   const s = new LogRotationService(opts);
   s.setEnabled(true);
@@ -286,19 +286,21 @@ test('turning it off means nothing is touched at all', () => {
   assert.deepEqual(archived(dir), []);
 });
 
-// OFF UNTIL SHE TURNS IT ON. This is the one thing in the app that modifies her game files on a
-// timer, and no rotation has ever run on a real machine. A feature that empties a log should not
-// arm itself on somebody's behalf before it has been watched doing it once.
-test('it stays off until someone turns it on', () => {
+// ON BY DEFAULT (owner's call). The weekly archive is what keeps the live log scoped to the
+// current lockout week, so it should work out of the box - and it still copy-verifies before it
+// truncates and refuses a log played on since the reset. An explicit `enabled: false` is honoured.
+test('it is on by default, and an explicit off is honoured', () => {
   const fresh = new LogRotationService({ loadJson: (n, d) => d, saveJson: () => {} });
-  // BEFORE loadSettings, or this asserts nothing about the constructor - loadSettings overwrites
-  // the field, so reading it afterwards passes whatever the constructor did.
-  assert.equal(fresh.enabled, false, 'the constructor arms it unasked');
-  assert.equal(fresh.loadSettings().enabled, false, 'a fresh install arms it unasked');
+  assert.equal(fresh.enabled, true, 'the constructor should arm it');
+  assert.equal(fresh.loadSettings().enabled, true, 'a fresh install has it on');
 
-  // A settings file that predates this feature must not count as consent either.
+  // A settings file that predates this feature, with no key, is also the default (on).
   const legacy = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
-  assert.equal(legacy.loadSettings().enabled, false, 'an old config with no key arms it unasked');
+  assert.equal(legacy.loadSettings().enabled, true, 'an old config with no key is the default');
+
+  // Only an explicit false turns it off.
+  const off = new LogRotationService({ loadJson: () => ({ enabled: false }), saveJson: () => {} });
+  assert.equal(off.loadSettings().enabled, false, 'an explicit off must be honoured');
 
   // And her actual choice is honoured.
   const chosen = new LogRotationService({ loadJson: () => ({ enabled: true }), saveJson: () => {} });
@@ -670,32 +672,37 @@ test('a log that grows in the last moment before emptying is not emptied', () =>
 // Where the cut is, which is not where the reset is
 // ---------------------------------------------------------------------------
 
-// The reset is Tuesday 11:00 and the archive is named for it. But lockoutCore starts its period at
-// the boundary DAY, midnight - RESET_RULE.hour is null and it will not invent an hour. Cutting at
-// 11:00 removed eleven hours the grid still counts, which to the grid is a GAP; and a gap under
-// twenty-four hours is TOLERATED, so the cells kept reading "open" instead of "not looked".
-//
-// A boss killed at 08:00 on a Tuesday was therefore archived away, and the grid then said the raid
-// was available with no hedge at all - sending her to re-clear a lockout she already holds.
-test('the eleven hours before the reset stay where the grid can see them', () => {
+// The cut and the reset are now the SAME instant, because the reset hour is a known number (set by
+// the user, default 11:00) and lockoutCore starts its period exactly there. The grid and the
+// rotation therefore agree on where the week begins, and a kill before 11:00 on a Tuesday is last
+// week's to both - so archiving it is correct, not the defect it once was.
+test('the cut is the reset instant, and a pre-reset Tuesday kill is last week', () => {
   const cut = rotationCutBefore(new Date(2026, 8, 2, 12, 0, 0));
-  assert.equal(cut.getHours(), 0, 'the cut is not at the start of the day');
-  assert.equal(boundaryKey(cut), '2026-09-01', 'the cut is not on the boundary day');
+  assert.equal(cut.getHours(), RESET_HOUR, 'the cut is at the reset hour');
+  assert.equal(boundaryKey(cut), '2026-09-01', 'on the boundary day');
 
-  // Last week, then a raid at 08:12 on the Tuesday morning - before the 11:00 reset, after
-  // midnight. The grid counts that morning; the rotation must not take it.
+  // Last week, then a raid at 08:12 on the Tuesday morning - before the 11:00 reset. Both the grid
+  // and the rotation treat that as last week's, so the file is entirely rotatable.
   const dir = tempLogs({
     'eqlog_Avenrae_rivervale.txt':
       '[Sun Aug 30 21:00:00 2026] You have slain Lady Vox!\n' +
       '[Tue Sep 01 08:12:00 2026] You have slain Lord Nagafen!\n',
   });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
-  assert.equal(r.rotated.length, 0, 'IT ARCHIVED A KILL THE GRID STILL COUNTS');
+  assert.equal(r.rotated.length, 1, 'the whole file predates the reset instant');
+});
+
+// A kill AFTER the reset hour on the Tuesday is this week's - the file straddles the boundary and
+// must not be rotated.
+test('a post-reset Tuesday kill keeps the file this week', () => {
+  const dir = tempLogs({
+    'eqlog_Avenrae_rivervale.txt':
+      '[Sun Aug 30 21:00:00 2026] You have slain Lady Vox!\n' +
+      '[Tue Sep 01 14:30:00 2026] You have slain Lord Nagafen!\n',
+  });
+  const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
+  assert.equal(r.rotated.length, 0, 'a kill after 11:00 Tuesday is this week');
   assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Avenrae_rivervale.txt']);
-  assert.ok(
-    fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8').includes('Nagafen'),
-    'the Tuesday-morning kill left the live log'
-  );
 });
 
 // And the ordinary case still rotates: play that stops before midnight on the Tuesday is entirely
@@ -710,17 +717,24 @@ test('play that ends before the boundary day still rotates', () => {
   assert.equal(r.rotated.length, 1);
 });
 
-// The archive is still named for the RESET, not for the cut, because the reset is the thing that
-// happened. Both fall on the same day, so the name is unchanged - but they are different instants
-// and the report carries both.
-test('the archive is named for the reset while the bytes are cut at midnight', () => {
+// With a known reset hour the cut IS the reset - the report still carries both, and they match.
+test('the archive is named for the reset and the cut is the same instant', () => {
   const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(r.boundaryDate, '2026-09-01');
   assert.ok(r.rotated[0].archivedTo.endsWith('_week_2026-09-01.txt'));
-  assert.notEqual(r.boundary, r.cut, 'the reset and the cut are being conflated again');
-  assert.equal(new Date(r.cut).getHours(), 0);
+  assert.equal(r.boundary, r.cut, 'a known reset hour means the cut and the reset are one instant');
   assert.equal(new Date(r.boundary).getHours(), RESET_HOUR);
+});
+
+// The user's setting reaches the boundary maths.
+test('setResetRule moves the boundary and the cut', () => {
+  const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  s.setResetRule({ weekday: 4, hour: 6 }); // Thursday 06:00
+  assert.deepEqual(s.getStatus().resetRule, { weekday: 4, hour: 6 });
+  const b = resetBoundaryBefore(new Date(2026, 8, 5, 12, 0, 0), s.resetRule); // Sat 5 Sep
+  assert.equal(boundaryKey(b), '2026-09-03', 'looks back to Thursday');
+  assert.equal(b.getHours(), 6);
 });
 
 // ---------------------------------------------------------------------------
@@ -920,9 +934,16 @@ test('the manual archive button rebuilds the lockout grid too', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
   const at = main.indexOf("ipcMain.handle('log:archiveNow'");
   assert.ok(at > -1, 'the archiveNow handler is gone - this test needs rewriting');
-  const handler = main.slice(at, at + 1200);
-  assert.ok(/lockoutService\.states\.clear\(\)/.test(handler), 'the grid is not rebuilt after a manual archive');
-  assert.ok(/backfillState = 'idle'/.test(handler), 'the scan is not re-armed after a manual archive');
+  const handler = main.slice(at, main.indexOf('ipcMain.handle', at + 1));
+  assert.ok(/lockoutService\.rebuild\(\)/.test(handler), 'the grid is not rebuilt after a manual archive');
+  // The confirm is now an IN-APP modal in the renderer, and there is a pre-check handler so it
+  // can warn when the log holds this lockout week. NO OS dialogs anywhere in this file.
+  assert.ok(main.includes("ipcMain.handle('log:archiveHoldsCurrentWeek'"), 'the mid-week lockout pre-check is gone');
+  assert.ok(!/dialog\.show/.test(main.slice(main.indexOf("'lockouts:listLogFiles'"), main.indexOf("ipcMain.handle('log:archiveNow'") + 400)),
+    'a lockout/log tool still opens an OS dialog');
+  const rend = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const btn = rend.slice(rend.indexOf('archiveNowBtn.addEventListener'), rend.indexOf('archiveNowBtn.addEventListener') + 900);
+  assert.ok(/appConfirm/.test(btn) && /archiveHoldsCurrentWeek/.test(btn), 'the archive button no longer confirms in-app or no longer warns');
 });
 
 // ---------------------------------------------------------------------------
@@ -1087,6 +1108,102 @@ test('rotation writes nothing outside the logs folder', () => {
   // Everything it produced is inside the folder it was given.
   const produced = fs.readdirSync(path.join(dir, 'Archive'));
   assert.ok(produced.length === 1 && produced[0].startsWith('eqlog_'));
+});
+
+// ---------------------------------------------------------------------------
+// trimAtBoundary - the manual, any-number-of-weeks split
+// ---------------------------------------------------------------------------
+
+// The weekly rotation refuses a log that holds more than the current week. This is the escape
+// hatch: archive everything before the reset, keep this week, from a button on the Lockouts page.
+test('trimAtBoundary archives the old part and keeps this week', () => {
+  const dir = tempLogs({});
+  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  fs.writeFileSync(live, [
+    '[Sun Aug 24 20:00:00 2026] last week',
+    '[Tue Aug 25 08:00:00 2026] before the 11:00 ET reset - still last week',
+    '[Tue Aug 25 15:00:00 2026] after the reset - this week',
+    '[Thu Aug 27 21:00:00 2026] this week',
+  ].join('\r\n') + '\r\n');
+
+  const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  s.setResetRule({ weekday: 2, hour: 11 });
+  s.setIsQuietFn(() => true);
+  const r = s.trimAtBoundary(live, new Date(2026, 7, 29, 12, 0, 0));
+
+  assert.equal(r.ok, true, r.reason || '');
+  const kept = fs.readFileSync(live, 'utf8');
+  assert.ok(kept.includes('after the reset') && kept.includes('Thu Aug 27'), 'this week stayed');
+  assert.ok(!kept.includes('last week'), 'last week was removed');
+  const arch = fs.readFileSync(r.archivedTo, 'utf8');
+  assert.ok(arch.includes('Sun Aug 24') && arch.includes('before the 11:00 ET reset'), 'the old part was archived');
+  assert.ok(!arch.includes('after the reset'), 'this week was not archived');
+});
+
+test('trimAtBoundary is a no-op on a log that is already just this week', () => {
+  const dir = tempLogs({});
+  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const body = '[Thu Aug 27 21:00:00 2026] this week only\r\n';
+  fs.writeFileSync(live, body);
+  const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  s.setResetRule({ weekday: 2, hour: 11 });
+  s.setIsQuietFn(() => true);
+  const r = s.trimAtBoundary(live, new Date(2026, 7, 29, 12, 0, 0));
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /already just this week/);
+  assert.equal(fs.readFileSync(live, 'utf8'), body, 'the log is untouched');
+});
+
+test('trimAtBoundary refuses while the log is being written', () => {
+  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': '[Sun Aug 24 20:00:00 2026] x' });
+  const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  s.setResetRule({ weekday: 2, hour: 11 });
+  s.setIsQuietFn(() => false);
+  const r = s.trimAtBoundary(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), new Date(2026, 7, 29, 12, 0, 0));
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /being written/);
+});
+
+// The scan reads UPWARD from the end and stops at the boundary - a multi-week log is trimmed
+// without the whole thing being read or buffered. The split point still lands exactly right.
+test('trimAtBoundary walks up from the end on a multi-week log', () => {
+  const lines = [];
+  for (const d of [4, 11, 18]) for (let h = 0; h < 24; h += 2) {
+    lines.push(`[Tue Aug ${String(d).padStart(2, '0')} ${String(h).padStart(2, '0')}:00:00 2026] old week ${d}`);
+  }
+  lines.push('[Tue Aug 25 08:00:00 2026] Tuesday morning, before the 11:00 ET reset - last week');
+  lines.push('[Tue Aug 25 15:00:00 2026] first line of this week');
+  lines.push('[Thu Aug 27 21:00:00 2026] Lord Nagafen has been slain by X!');
+  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': lines.join('\r\n') + '\r\n' });
+  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const before = fs.statSync(live).size;
+
+  const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  s.setResetRule({ weekday: 2, hour: 11 });
+  s.setIsQuietFn(() => true);
+  const r = s.trimAtBoundary(live, new Date(2026, 7, 29, 12, 0, 0));
+
+  assert.equal(r.ok, true, r.reason || '');
+  assert.equal(r.keptBytes, fs.statSync(live).size, 'keptBytes is the new file size, for the host to resync to');
+  assert.equal(r.archivedBytes + r.keptBytes, before, 'nothing is lost between archive and keep');
+  const kept = fs.readFileSync(live, 'utf8');
+  assert.ok(kept.startsWith('[Tue Aug 25 15:00:00 2026] first line of this week'), 'this week starts exactly at the 11:00 ET boundary');
+  assert.ok(!kept.includes('old week') && !kept.includes('Tuesday morning'), 'nothing from before the boundary stayed');
+  const arch = fs.readFileSync(r.archivedTo, 'utf8');
+  assert.ok(arch.includes('old week 4') && arch.includes('Tuesday morning'), 'the pre-boundary part was archived');
+  assert.ok(!arch.includes('first line of this week'), 'this week was not archived');
+});
+
+test('trimAtBoundary: whole file older than the boundary -> archive all, keep nothing', () => {
+  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': '[Sun Aug 24 20:00:00 2026] last week only\r\n' });
+  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  s.setResetRule({ weekday: 2, hour: 11 });
+  s.setIsQuietFn(() => true);
+  const r = s.trimAtBoundary(live, new Date(2026, 7, 29, 12, 0, 0));
+  assert.equal(r.ok, true);
+  assert.equal(r.keptBytes, 0);
+  assert.equal(fs.readFileSync(live, 'utf8'), '', 'the live log is now empty');
 });
 
 module.exports = () => report('log-rotation');

@@ -18,10 +18,16 @@ function loadJson(name, fallback) {
   }
 }
 
+// Write through a temp file then rename, so a crash mid-write can never leave a
+// half-written (unparseable) JSON file - loadJson would then silently fall back
+// to its default and lose everything the file held. rename is atomic on the same
+// volume, which the temp file always is.
 function saveJson(name, data) {
   const filePath = path.join(app.getPath('userData'), `${name}.json`);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+  const tmp = `${filePath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
+  fs.renameSync(tmp, filePath);
 }
 
 module.exports = { loadJson, saveJson };

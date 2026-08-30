@@ -5,8 +5,8 @@ const crypto = require('crypto');
 // there) - built for servers with a multiclass "loadout" mechanic where the
 // player's actually-castable spell set can change without touching the
 // spellbook file, which otherwise left stale self-cast resolutions applied
-// forever after a swap (see HANDOFF.md's "unresolved bug" section for the
-// full history). DEFAULT_PROFILE_ID intentionally matches buffEngine.js's
+// forever after a swap (see CLAUDE.md detection gotcha #9 for the full
+// history). DEFAULT_PROFILE_ID intentionally matches buffEngine.js's
 // own migration bucket name, so an upgrading user's existing remembered
 // choices land in the same "Default" profile this store seeds on first run
 // - no separate migration coordination needed between the two files.
