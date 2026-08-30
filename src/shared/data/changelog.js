@@ -15,7 +15,6 @@ const CHANGELOG = [
     date: null,
     new: [
       'Raid lockout grid, weekly log rotation, and in-app log tools (change / add / trim the log)',
-      'Global recovery (GCD) tracker premade',
       '"Preview" button - flash a sample tile on an aura without alt-tabbing into the game',
       'Per-aura sound cooldown - stop an alert firing on every refresh of something that pulses',
       'Searchable spell picker for the "Skill cast" custom-timer trigger, with bard songs listed',

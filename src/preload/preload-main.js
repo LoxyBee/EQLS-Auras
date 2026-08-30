@@ -181,7 +181,6 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getAllBuffNames: () => ipcRenderer.invoke('buffs:allNames'),
   createCooldownTimerWidget: (name, spellName, cooldownSec, iconId, buffDurationSec) =>
     ipcRenderer.invoke('widget:createCooldownTimer', { name, spellName, cooldownSec, iconId, buffDurationSec }),
-  createGcdTimerWidget: (name, iconId) => ipcRenderer.invoke('widget:createGcdTimer', { name, iconId }),
   createBuffTimerWidget: (name, spellName, source) =>
     ipcRenderer.invoke('widget:createBuffTimer', { name, spellName, source }),
   getTrackableBuffs: () => ipcRenderer.invoke('buffs:trackable'),

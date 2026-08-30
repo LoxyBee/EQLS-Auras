@@ -319,14 +319,10 @@ is byte-identical to the plain Cooldown timer premade that already existed - car
 through `widgetManager` → the `widget:createCooldownTimer` IPC handler → the preload bridge. See
 `test/buff-plus-cooldown.test.js`.
 
-**`anyCast` trigger + the GCD tracker (QOL #38, 30 Aug).** `customTimerEngine.js` gained an
-`anyCast` trigger mode that fires on *any* cast / song / activate line (not one named spell like
-`castOf`). It backs the **"Global recovery (GCD)"** premade in the Timers group — a tile whose
-length is `1.5 × (1 − 0.02 × mote rank of the spell)`, rounded to the nearest 0.1s with exact
-halves rounding **down** (1.35 → 1.3), rank 0 = 1.5s. The per-cast duration is computed in
-`handleLine` via a `gcdRecovery` flag, the same shape `buffDurationSec` uses above. The −2%/tier
-rate is from the same mote sheet as the buff-duration / cast-time rates and carries the same
-"unmeasured against a live log" caveat.
+*(A "Global recovery (GCD)" premade + an `anyCast` trigger mode were built here 30 Aug and then
+**withdrawn** by the owner — the ~1.5s recovery only ever flashed on a whole-second overlay, not
+worth the surface area. `widgets.json` schema v3→v4 drops any GCD auras. Trigger modes are back to
+`contains` / `castOf` / `zoneEnter` / `zoneLeave`.)*
 
 **Same conversation, separate finding:** the Buff timer picker was offering spells with NO
 duration at all - Anarchy, an Enchanter nuke, showed up labelled "no duration." Owner: *"nukes are

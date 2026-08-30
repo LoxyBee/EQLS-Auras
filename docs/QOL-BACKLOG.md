@@ -9,8 +9,9 @@ supplying it); the retired `FEATURES.md` / `NOTES-STATUS.md` / `HANDOFF.md` are 
 C); 44–45 are enhancements that fell out of that work.
 
 **Done:** #1, #2, #3 (a/b/c), #4, #5, #7, #8, #10, #12, #14, #18, #22, #25, #28, #30, #31, #32,
-#38, #39, #43, #44, #45, plus the lockout / log-tools batch (Section D). **#13** declined
-(offline app). **#15** superseded by #45.
+#39, #43, #44, #45, plus the lockout / log-tools batch (Section D). **#13** declined (offline
+app). **#15** superseded by #45. **#38** withdrawn (built, then pulled — recovery too short to
+render on a 1s overlay tick).
 **Still open:** #6, #9, #11, #16, #17, #19, #20, #21, #23, #24, #26, #27, #29, #33–37, #40, #41, #42.
 
 Each item keeps the original ask. Tags describe **what kind of work it is**, not a judgement:
@@ -277,15 +278,15 @@ pet-returning / pet-dead lines.
 *Needs:* the pet combat wordings from your log (pet hit, pet taunt / "My leader is…", pet death,
 `/pet back off` and `/pet get lost` acknowledgements).
 
-### 38. GCD tracker — NEW — DONE  *(the "Global recovery" premade placeholder)*
-A "Global recovery (GCD)" premade in the Timers group — a short countdown of the global recovery
-time between casts.
-*Fixed:* a new `anyCast` custom-timer trigger mode (fires on any cast / song / activate line).
-Tile length = `1.5 × (1 − 0.02 × mote rank of the spell)`, rounded to the nearest 0.1s with exact
-halves rounding **down** (1.35 → 1.3); rank 0 = 1.5s. The −2%/tier comes from the same mote sheet
-as the buff-duration and cast-time rates (**unmeasured against a live log**, same caveat as those).
-The per-cast duration is computed in `handleLine` via a `gcdRecovery` flag, the same pattern the
-buff+cooldown premade uses for `buffDurationSec`.
+### 38. GCD tracker — NEW — WITHDRAWN
+A "Global recovery (GCD)" premade — a short countdown of the recovery time between casts.
+*Built 30 Aug, then withdrawn by the owner the same day.* The global recovery is only ~1.5s, and
+on a whole-second overlay tick that tile only ever flashed — not worth the surface area (a new
+`anyCast` trigger mode, per-spell cast-time injection, a store-schema bump). Removed entirely
+(`widgets.json` v3→v4 drops any GCD auras; trigger modes back to `contains` / `castOf` /
+`zoneEnter` / `zoneLeave`). The greyed "Global recovery" placeholder that used to sit in the
+Timers premade list is gone with it. Reopen only if the recovery turns out to matter and the
+overlay can show sub-second timing.
 
 ### 39. Ship the bundled sound files somewhere browsable — NEW / CHANGE — DONE
 Put the starter sounds where they're easy to browse and keep, not wiped on uninstall.
@@ -399,8 +400,7 @@ roughly cheapest first:
   *(need your call: hotkey, chat command, or both)*
 
 ### New tracker widgets  *(build the shared "counter / state" widget kind + overlay render +
-`SHAPE_FIELDS` entry once — #38's `anyCast` trigger + tracker plumbing is the first of these and
-is done; the rest stack on it, cheapest first)*
+`SHAPE_FIELDS` entry once, then the rest stack on it, cheapest first)*
 - **#34** bard 6s pulse tracker — pulse cadence is already confirmed, just needs surfacing
 - **#36** loss-of-control widget (fear / charm / mez on you)
 - **#37** pet-is-attacking tracker  *(need: pet combat wordings from your log)*

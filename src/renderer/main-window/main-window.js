@@ -3435,16 +3435,6 @@ function initWidgetsPanel() {
       reverseExample: true,
     },
     {
-      id: 'gcd-timer',
-      name: 'Global recovery (GCD)',
-      group: 'timers',
-      description:
-        'A short countdown of the global recovery lockout after every cast - the ~1.5s before you ' +
-        'can begin the next spell. Covers every cast at once, nothing to pick. The length is ' +
-        'scaled down by the mote rank of the spell you just cast.',
-      create: (name) => window.eqTracker.createGcdTimerWidget(name),
-    },
-    {
       id: 'enemy-debuff',
       name: 'Debuff on an enemy',
       group: 'timers',
