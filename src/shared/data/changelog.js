@@ -25,6 +25,7 @@ const CHANGELOG = [
       '"Mute sounds" toggle in the top bar',
       'Live {spell} / {caster} / {profile} preview under the "Say:" field',
       '"Open app data folder" and "Back up now" buttons; your sounds folder now lives with the rest of your app data',
+      'Export your whole setup to a folder and import it on another PC - offline, no account',
       'Type your character and server when the spellbook is not being found on its own',
       'Auras and timers stop when your character dies',
     ],

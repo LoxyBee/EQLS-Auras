@@ -5,9 +5,13 @@ multi-step aura type, aura scale, action-bar covers, etc.) lives in `CLAUDE.md`'
 backlog" section. Shara's original 40-note list is complete except note #2 (first-aggro, she is
 supplying it); the retired `FEATURES.md` / `NOTES-STATUS.md` / `HANDOFF.md` are in git history.
 
-42 requested items, organised by area. Items 1–32 are the original batch; 33–42 were added
-30 Aug (Section C). **Done so far:** #22, #28, #31, plus the lockout / log-tools batch written up
-in Section D.
+45 items, organised by area. Items 1–32 are the original batch; 33–43 were added 30 Aug (Section
+C); 44–45 are enhancements that fell out of that work.
+
+**Done:** #1, #2, #3 (a/b/c), #4, #5, #7, #8, #10, #12, #14, #18, #22, #25, #28, #30, #31, #32,
+#38, #39, #43, #44, #45, plus the lockout / log-tools batch (Section D). **#13** declined
+(offline app). **#15** superseded by #45.
+**Still open:** #6, #9, #11, #16, #17, #19, #20, #21, #23, #24, #26, #27, #29, #33–37, #40, #41, #42.
 
 Each item keeps the original ask. Tags describe **what kind of work it is**, not a judgement:
 
@@ -23,11 +27,13 @@ Each item keeps the original ask. Tags describe **what kind of work it is**, not
 
 ## A. Things that would genuinely make life easier
 
-### 1. "Preview this aura" button — NEW
-Flash a sample tile for ~5 s from the aura's settings panel, so tile size / position / colour /
-font / sound / justification can all be judged without alt-tabbing into EQ and casting something.
-Sounds already have Preview buttons; the tile doesn't. The **Always on screen** checkbox is the
-current workaround but it mutates config and has to be manually undone.
+### 1. "Preview this aura" button — NEW — DONE
+Flash a sample tile from the aura's settings panel to judge size / position / colour / font /
+sound / justification without alt-tabbing into EQ.
+*Fixed:* a **Preview** button next to Unlock / Reset position — `widgetManager.previewWidget(id)`
+flashes a sample tile on the aura's real overlay window for ~6s (creating and showing the window
+if it's hidden, then `applyVisibility` restores it). `overlay.js` `previewSampleBuffs()` switches
+on the aura's `buffSource`.
 
 ### 2. Searchable zone picker for "Only in:" — CHANGE — DONE 30 Aug
 The travel guide got a proper search-box popup (`zonePromptPopup.js` / `zone-prompt/`). The aura
@@ -38,28 +44,27 @@ settings "Only in:" control should get the same thing, or a filter field.
 a genuine zone string picked from `knownZones`, never parsed from typed text, so the no-typo
 property the `<select>` was chosen for (24 Aug) is kept. `zone-gating.test.js` updated.
 
-### 3. Full config backup / restore — NEW
-One button to export a bundle of **everything** — all auras, profiles, known-buff edits, settings —
-and one to import it. There's per-aura "Export as code" today, but no "export everything". Matters
-for handing the app to other people and for a safety net before an update.
+### 3. Full config backup / restore — NEW — DONE (all three parts)
+One button to export **everything** — auras, profiles, known-buff edits, settings — and one to
+import it. Matters for handing the app to other people and as a safety net before an update.
+- **3a. "Open app data folder" button** — DONE. Setup › App data. Opens `userData` in Explorer.
+- **3b. "Back up now" button** — DONE. `app:backupConfig` walks the top-level `userData`
+  children one at a time into `userData/backups/backup-<stamp>/`, skipping Chromium `Cache`,
+  `detection-logs`, and `backups` itself.
+- **3c. Portable export / import bundle** — DONE. `src/main/configTransfer.js`. Export writes
+  `userData/exports/eqls-config-<stamp>/` (every portable `.json` + `customSounds/` + `sounds/`,
+  minus a 14-entry machine-specific deny-list — window bounds, live gem/zone state, EQ folder
+  path, `splitProgress`). Import (in-app picker over exports **and** backups) takes a
+  `pre-import-<stamp>` safety backup, swaps the files in, and restarts. IPC
+  `config:export/import/listImportable/openExportsFolder`.
 
-Cheap stepping stones, in order of effort:
-- **3a. "Open config folder" button** — mirrors the existing "Open sounds folder" control (one
-  IPC handler + one button, opens the `userData` folder in Explorer). Lets you copy the JSON
-  files out by hand for a backup. ~10 additive lines, touches no existing logic.
-- **3b. "Back up now" button** — copies the config files into a dated file/folder inside
-  `userData`. Self-contained.
-- **3c.** the full export-bundle / import-bundle above.
+### 4. Attention badges on the sidebar — NEW — DONE
+A count badge on the "Buff Tracker" nav button when ambiguous / unknown casts are queued.
+*Fixed:* brass pill (`.nav-badge`), hidden at 0, shown while casts wait.
 
-### 4. Attention badges on the sidebar — NEW
-A `(2)` badge on the "Buff Tracker" nav button when ambiguous / unknown casts are queued. Right
-now they only surface on the Buff Tracker page or a popup — nothing in the app chrome tells you
-while you're playing on another page.
-
-### 5. "Is it working right now?" indicator — NEW
-A one-line status on the Buff Tracker page, e.g. *"Watching eqlog_Shara_rivervale.txt — last line
-3s ago"*. Currently the only confirmation the log is being tailed is Log → Diagnostics → Live
-feed. A stale timestamp or wrong filename would be immediately visible.
+### 5. "Is it working right now?" indicator — NEW — DONE
+*Fixed:* a *"Reading eqlog_X.txt — last line 3s ago"* line on the Buff Tracker page, fed by a
+new `log:activity` IPC, coloured ok / warn by how stale the last line is.
 
 ### 6. Profile switching without alt-tab — NEW
 A profile-cycle hotkey and/or an in-game command (`/tell eqprofile2`-style), same pattern as the
@@ -72,17 +77,20 @@ The hint said the control wasn't wired.
 end to end — list mode via `--timer-text-color`, icon mode via `applyTilePositionedTextStyle` —
 so there is no mode where it does nothing; the hint was simply stale.
 
-### 8. Live preview of `{spell}` / `{caster}` / `{profile}` templating — NEW
-Show the resolved example string under the "Say:" field as you type, instead of finding out
-in-game.
+### 8. Live preview of `{spell}` / `{caster}` / `{profile}` templating — NEW — DONE
+*Fixed:* a live `{spell}` / `{caster}` / `{mob}` / `{profile}` preview line under the "Say:"
+field, resolving as you type.
 
 ### 9. Fullscreen warning — NEW
 The About page says EQ must be windowed / borderless. `foregroundWatcher.js` already knows when EQ
 is focused; it could also notice exclusive-fullscreen and say *"auras won't be visible over EQ
 right now"* instead of leaving you wondering why the overlay vanished.
 
-### 10. Quick "mute all sounds" toggle in the top bar — NEW
+### 10. Quick "mute all sounds" toggle in the top bar — NEW — DONE
 Next to "Hide auras". For streaming or voice chat, without walking every aura's sound settings.
+*Fixed:* a top-bar toggle backed by a runtime-only `widgetManager.soundsMuted` flag that gates
+`shouldBeAudible` — **never persisted** (a fresh launch is always unmuted), and it silences
+without hiding any tiles.
 
 ---
 
@@ -91,20 +99,34 @@ Next to "Hide auras". For streaming or voice chat, without walking every aura's 
 ### 11. Drag-to-move action bar gem-slot settings — NEW
 Position the action-bar gem-slot settings by dragging.
 
-### 12. Auras stop when you die — NEW
+### 12. Auras stop when you die — NEW — DONE
 When the player dies, active auras/timers should stop rather than keep counting.
+*Fixed:* `buffParser.matchOwnDeath` (`/^You have been slain by .+!$/` — a different verb from the
+mob-death lines `matchSlain` catches). `buffEngine._clearOnDeath()` clears active buffs + bard
+songs + the pending cast; `customTimerEngine` clears active timers **except** ones in their
+recast-cooldown phase. Replay over the real corpus: 48 death-clears + 19 song-clears, no
+regression. Snapshot/restore needed no change (never-replay-history means a death *before* the
+app starts can't retroactively clear anything).
 
-### 13. Auto-updater — NEW
-App updates itself. Ties in with #18 (changelog).
+### 13. Auto-updater — NEW — DECLINED
+App updates itself. **Declined by the owner** — the app is offline-only and an auto-updater needs
+a network call. `#18` (changelog) covers "what changed" without it.
 
-### 14. Import character name / server, auto-build the filename — NEW
-Enter name + server and have the app derive the inventory / spellbook filename automatically.
-*Today:* `spellbookService.js` auto-detects `<CharName>-<Class>-Spellbook.txt`; this adds a manual
-entry path for when that fails.
+### 14. Import character name / server, auto-build the filename — NEW — DONE
+Enter name + server and have the app derive the spellbook filename automatically.
+*Fixed:* two fields (name + server) in Setup › Spellbook detection build `<name>_<server>` and
+feed `spellbookService.setCharacterOverride()` / `_effectiveBaseName()`, which beats the
+log-derived character name when set. Persisted as `spellbookCharacter`; `getExpectation()`
+reports `manualCharacter`. For when auto-detection picks the wrong log or none.
 
-### 15. Looping-sound premade — NEW
-A tempo generator: after a chat line is read, play a sound every X seconds, and keep going until
-a second chat line is read.
+### 15. Looping-sound premade — NEW — SUPERSEDED
+A tempo generator: after a chat line is read, play a sound every X seconds until a second chat
+line is read.
+*Superseded 30 Aug* by the per-aura **"Sound cooldown" slider** (`soundCooldownSec`, 0–60s) — the
+owner's replacement for this: rather than a metronome, it sets the shortest gap between any two
+alert sounds from one aura (across land/expire/warning). The motivating case (a pulsing buff
+beeping on every refresh) is solved by capping the rate, not by adding a loop. Reopen only if a
+true metronome is still wanted for something.
 
 ### 16. Remember stances & invocations between logouts — NEW
 Persist the user's chosen stances / invocations across restarts. (Depends on #20 / #21 existing.)
@@ -115,8 +137,12 @@ motes, the result must be rounded to the nearest 6 seconds.
 *Today:* mote scaling (`buffEngine`, `_rankForEntry` / scaling math — see gotcha #27) rounds once
 over the combined multiplier with no 6-second quantisation for `isBardSong` entries.
 
-### 18. Changelog — NEW
+### 18. Changelog — NEW — DONE
 An in-app changelog.
+*Fixed:* `src/shared/data/changelog.js` (a `CHANGELOG` array, newest first, `version: 'Unreleased'`
+at the top), `app:getChangelog` IPC, rendered on the About page under "What's changed"
+(`initChangelog()` → `#changelog-body`, `textContent`). The Documentation session owns the
+content — it updates the top entry (new features first, then fixes) in the pre-PR doc pass.
 
 ### 19. Indicator for whether an action-bar slot has a skill bound — NEW
 Show which action-bar slots currently have an active skill bound to them.
@@ -178,9 +204,14 @@ code (session eq-tracker-d3). Kept here for the record — drop from the active 
 Debuff-type bard songs (mez / slow / snare / dot songs) should be tracked on the Bard Songs aura.
 *Today:* only `kind:'buff'` songs feed the Bard Songs aura; debuff songs are not tracked there.
 
-### 30. Community shorthand / nicknames for zones in `eqtm` — NEW
-Recognise community nicknames and shorthand for zones ("inny", etc.), and also let the picker
-search by boss name.
+### 30. Community shorthand / nicknames for zones in `eqtm` — NEW — DONE
+Recognise community nicknames and shorthand for zones ("inny", etc.), and let the picker search
+by boss name.
+*Fixed:* `src/shared/data/zoneAliases.js` — 191 curated aliases (from `docs/EQTM-ALIASES.md` §6)
+plus an auto-indexed client short-name. `searchPickableZones()` unions substring + alias +
+short-name matches (exact-or-prefix, 2-char floor); `travel:searchZones` IPC feeds the
+`zone-prompt` renderer. Nicknames/boss-names are matched but still **not listed** in the
+real-zone results (that separation is #31's rule).
 
 ### 31. No "+N more" truncation in the `eqtm` search list — CHANGE — DONE 30 Aug
 If a match is a real zone, always list it — don't cap the results. Do **not** list nicknames or
@@ -203,8 +234,9 @@ comment at the bottom of `zoneGraph.js`. `zone-routing.test.js` green.
 
 ## C. New work — 30 Aug batch
 
-Ten items from a raw note-dump. Same tag meanings as above. Several need one more sentence from
-you before they can be scoped — flagged inline and repeated under "Where I still need input".
+A raw note-dump (33–43), plus 44–45 which came out of building it. Same tag meanings as above.
+Several need one more sentence from you before they can be scoped — flagged inline and repeated
+under "Where I still need input".
 
 ### 33. Zone-named kill tracker — NEW
 A widget that counts mob kills and labels the count with the current zone — e.g.
@@ -245,22 +277,24 @@ pet-returning / pet-dead lines.
 *Needs:* the pet combat wordings from your log (pet hit, pet taunt / "My leader is…", pet death,
 `/pet back off` and `/pet get lost` acknowledgements).
 
-### 38. GCD tracker — NEW — IN PROGRESS  *(the "Global recovery" premade placeholder)*
-Same item as the greyed **Global recovery** premade in the Timers group. A short countdown for the
-global recovery time between casts.
-*Scaling (owner-supplied, 30 Aug):* base **1.5s**, **−2% per mote tier**, displayed to the
-nearest 0.1s with exact halves rounding **down** (1.35 → 1.3). So it IS mote-scaled.
-*Build:* its own branch/PR — needs a new "any cast" trigger mode + rank parsing in
-`customTimerEngine.js` + a recovery-rate constant. Not a one-liner like #7/#32/#2/#25. Anchor:
-every `You begin casting` / `You activate` line. Full handoff to come when it lands.
+### 38. GCD tracker — NEW — DONE  *(the "Global recovery" premade placeholder)*
+A "Global recovery (GCD)" premade in the Timers group — a short countdown of the global recovery
+time between casts.
+*Fixed:* a new `anyCast` custom-timer trigger mode (fires on any cast / song / activate line).
+Tile length = `1.5 × (1 − 0.02 × mote rank of the spell)`, rounded to the nearest 0.1s with exact
+halves rounding **down** (1.35 → 1.3); rank 0 = 1.5s. The −2%/tier comes from the same mote sheet
+as the buff-duration and cast-time rates (**unmeasured against a live log**, same caveat as those).
+The per-cast duration is computed in `handleLine` via a `gcdRecovery` flag, the same pattern the
+buff+cooldown premade uses for `buffDurationSec`.
 
-### 39. Ship the bundled sound files into the Downloads folder — NEW / CHANGE
-Put the prebundled starter sounds where they're easy to browse and keep — the **Downloads**
-folder — rather than (or as well as) the `sounds/` folder next to the .exe.
-*Today:* `soundService.js`'s `bundledSoundsDir()` ships the starters in `sounds/` beside the exe
-and opens the picker there; that folder is wiped on uninstall. A copy dropped in `Downloads`
-survives uninstall, is easy to find, and is easy to share.
-*Open:* copy on first run, or a "Put starter sounds in my Downloads" button?
+### 39. Ship the bundled sound files somewhere browsable — NEW / CHANGE — DONE
+Put the starter sounds where they're easy to browse and keep, not wiped on uninstall.
+*Fixed (redesigned by the owner — `userData`, not Downloads):* the starter sounds, the "Choose
+sound…" browse folder, and files you drop in now all live in **`userData/sounds/`**, seeded on
+startup from the install `sounds/` bundle (`soundService.seedStarterSounds()` — idempotent, never
+overwrites a file already there, never touches user files). `defaultPickerDir()` prefers it. The
+install `sounds/` folder is purely the seed source now. One folder family with auras / profiles →
+one backup location (#3a/#3b), survives uninstall, nothing written to Downloads.
 
 ### 40. Memmed-spell set checker — "if these spells are memmed, show the set" — NEW
 Define named gem sets ("Raid heals", "Burn", "Utility"…). When the currently-memorised spells
@@ -281,12 +315,27 @@ Your open question ("chat read for macro profile swap? hotkey?") *is* backlog it
 an in-game `/tell` command word your macros can fire (same pattern as `/tell eqtm`). Still need
 your call on which — or both.
 
-### 43. Plane of Hate ← Oasis of Marr portal is modelled two-way but is one-way in — FIX
-eqlwiki: there is no return portal from Plane of Hate — you Gate / Origin out. Same shape as #32
-(and gotcha #23). The `Plane of Hate → Oasis of Marr` edge in `zoneGraph.js` should be removed,
-keeping the inbound one.
-*Assigned:* Short Context, folded into their `eqtm` data expansion (this + #30 nicknames +
-boss-name search + comment-accuracy fixes on Plane of Sky / Plane of Fear).
+### 43. Plane of Hate ← Oasis of Marr portal modelled two-way but is one-way in — FIX — DONE
+eqlwiki: no return portal from Plane of Hate — you Gate / Origin out. Same shape as #32 (and
+gotcha #23).
+*Fixed:* Plane of Hate's outbound `connections` are emptied (it's a spell-only sink); the inbound
+edge stays. Two `zone-routing` tests updated. Same commit tidied the Plane of Sky / Plane of Fear
+clarifying comments.
+
+### 44. Searchable spell picker for the "Skill cast" custom-timer trigger — CHANGE — DONE
+The trigger's spell picker was a `<select>`; bard songs were missing from it entirely.
+*Fixed:* a filter bar + click-list (like #2's zone picker). `buffs:allNames` now returns
+`{name, iconId, isBardSong}` for every roster spell — the old `buffs:castable` filtered to
+recast > 1.5s, which silently excluded songs and instants. Reported live 30 Aug.
+
+### 45. Per-aura "Sound cooldown" slider — NEW — DONE
+A 0–60s slider per aura (`soundCooldownSec`) setting the shortest gap between any two alert sounds
+from that aura, across all three kinds (land / expire / warning). Stops a pulsing buff beeping on
+every refresh. In `SHAREABLE_FIELDS` + `normalizeWidget`; clamped by
+`widgetStore.clampSoundCooldownSec`. This is the owner's replacement for the looping-sound aura
+(#15). *(A first cut didn't persist — `widgetManager.setSoundCooldownSec` called the clamp on the
+store instance instead of the module export, and the throw silently ate the whole `update()`;
+fixed same day.)*
 
 ---
 
@@ -338,75 +387,42 @@ parser provenance is `docs/EVIDENCE.md`.
 
 ## Implementation order
 
-Sequenced by: (1) cheap wins that unblock nothing else, (2) shared plumbing before the things that
-sit on it, (3) park anything waiting on your input, (4) big single-PR features last. A "→" means
-"needs the thing before it". (The `feat/lockouts` fork has merged, so nothing waits on it any more.)
+The cheap-wins and quick-wins phases are **done** (see the "Done" list at the top). What's left,
+roughly cheapest first:
 
-### Phase 0 — cheap, isolated
-1. ~~**#31** remove the "+N more" cap in the `eqtm` picker~~ **DONE 30 Aug**
-2. ~~**#28** Cassindra's Chant of Clarity → 12s~~ **DONE (eq-tracker-d3)**
-3. ~~**#7** delete the stale "Not active yet." hint — `index.html`~~ **DONE 30 Aug**
-4. ~~**#32** fix The Hole routing edge — `zoneGraph.js`~~ **DONE 30 Aug** (Erudin/Neriak pads are
-   exit-only; edges made one-way)
-5. **#3a** "Open config folder" button — additive, mirrors "Open sounds folder"
-6. **#39** as a button ("Put starter sounds in my Downloads") — additive
+### Next up — quick, no new subsystems
+- **#17** round mote-scaled song durations to 6s — `buffEngine.js`, ~2 lines
+- **#9** exclusive-fullscreen warning — `foregroundWatcher.js` already has the hook
 
-### Phase 1 — quick wins, no new subsystems
-7. ~~**#2** searchable "Only in:" zone picker~~ **DONE 30 Aug** (filter field + click-to-add list)
-8. ~~**#25** line-aura border above the icon — `overlay.css`~~ **DONE 30 Aug** (`::after`, z-index 3)
-9. ~~**#22** per-line centred justification for text auras~~ **DONE 30 Aug** (committed an
-   orphaned ~27 Aug change)
-10. **#17** round mote-scaled song durations to 6s — `buffEngine.js`, ~2 lines
-11. **#8** live `{spell}`/`{caster}`/`{profile}` preview under the "Say:" field
-12. **#1** "Preview this aura" button — flash a sample tile for ~5s
-13. **#5** "is it working right now?" status line on the Buff Tracker page
-14. **#4** sidebar attention badge for queued ambiguous/unknown casts
-15. **#10** "mute all sounds" toggle in the top bar
+### Profile & app chrome
+- **#6 + #42** profile-cycle hotkey and/or `/tell` command word for macro profile swap
+  *(need your call: hotkey, chat command, or both)*
 
-### Phase 2 — profile & app chrome
-16. **#6 + #42** profile-cycle hotkey and/or `/tell` command word for macro profile swap
-    *(need your call: hotkey, chat command, or both)*
-17. **#9** exclusive-fullscreen warning — `foregroundWatcher.js` already has the hook
-18. **#18** in-app changelog
-19. **#13** auto-updater  → #18
+### New tracker widgets  *(build the shared "counter / state" widget kind + overlay render +
+`SHAPE_FIELDS` entry once — #38's `anyCast` trigger + tracker plumbing is the first of these and
+is done; the rest stack on it, cheapest first)*
+- **#34** bard 6s pulse tracker — pulse cadence is already confirmed, just needs surfacing
+- **#36** loss-of-control widget (fear / charm / mez on you)
+- **#37** pet-is-attacking tracker  *(need: pet combat wordings from your log)*
+- **#33** zone-named kill tracker — reuses `damageEngine` death lines + zone tracking
+- **#40** memmed-spell set checker — reuses `currentlyMemorized`
+- **#41** second mez premade *(need the spec — what's different from #17's worked example)*
 
-### Phase 3 — new tracker widgets  *(build the shared "counter / state" widget kind + overlay
-render + `SHAPE_FIELDS` entry once, then these stack on it, cheapest first)*
-20. **#38** GCD tracker — **IN PROGRESS** on its own branch/PR (scaling resolved: 1.5s base,
-    −2%/tier, nearest 0.1s, halves round down; needs an "any cast" trigger mode + rank parsing)
-21. **#34** bard 6s pulse tracker — pulse cadence is already confirmed, just needs surfacing
-22. **#36** loss-of-control widget (fear / charm / mez on you)
-23. **#37** pet-is-attacking tracker  *(need: pet combat wordings from your log)*
-24. **#33** zone-named kill tracker — reuses `damageEngine` death lines + zone tracking
-25. **#40** memmed-spell set checker — reuses `currentlyMemorized`
-
-### Phase 4 — waiting on your input; slot in wherever it lands once answered
+### Blocked on your input
 - **#20 / #21** stances & invocations — need in-game names + effect data (spreadsheet change,
   `roster-overrides.json` can't add new spells)
 - **#26** Shrink / Tiny Companion — real durations + making Tiny Companion reachable (detection)
 - **#27** bard-song "no active" — which of the two meanings?
 - **#29** debuff bard songs tracked on the Bard Songs aura — need a sample log line
-- **#35** invis-drop-before-aggro body-pull tell → your own first-hit tracker (#2); need the
+- **#35** invis-drop-before-aggro body-pull tell → your own first-hit tracker; need the
   invis-fade wordings
 - **#41** new mez premade — need the spec (what's different from #17)
-- **#30** zone nicknames / boss-name search — hand-curated list or sourced from somewhere?
 
-### Phase 5 — big, each its own PR, no dependency on the above
-- **#3** full config backup / restore (bundle export + import)  → #3a, #3b
-- **#24 + #23** log management: size-check-on-load auto-archive + scheduled auto-split
-- **#14** character name / server import → auto-build the filename
+### Bigger, each mostly self-contained
+- **#24 + #23** log management: size-check-on-load auto-archive + scheduled time-of-day split
+  (the lockout batch did a manual trim + automatic weekly rotation — see Section D)
 - **#11 + #19** action-bar gem-slot drag positioning + bound-skill indicator
-- **#12** stop auras/timers when the player dies
-- **#15** looping-sound premade (tempo generator between two chat lines)
 - **#16** persist stances / invocations across restarts  → #20 / #21
-- **#39** (full version) copy starter sounds to Downloads on first run, if the button (Phase 0)
-  isn't enough
-
-### Recommended next 5 — status
-
-**#7, #32, #2, #25 — done 30 Aug** (`feat/backlog-recommended-5`, PR #17). **#38 — in progress**
-on its own branch. So the whole recommended-5 batch is landed or building; pick the next 5 from
-Phase 1–3 above.
 
 ---
 
@@ -414,15 +430,13 @@ Phase 1–3 above.
 
 - **#27** — which of the two meanings above?
 - **#20 / #21** — in-game names and effect data for the missing stances / invocations.
-- **#26** — the correct duration for Shrink / Tiny Companion, if you know it. (#28 is resolved: 12s.)
+- **#26** — the correct duration for Shrink / Tiny Companion, if you know it.
 - **#29** — a log line or two showing a debuff song you want caught.
-- **#30** — should the nickname list be hand-curated or pulled from somewhere?
 - **#6 / #42** — profile swap: hotkey, in-game `/tell` command word, or both?
 - **#33** — per-zone running totals for the session, or just the current zone reset on entry?
 - **#34** — anchor the 6s pulse off any song-pulse line, or off your own song only?
 - **#35** — the exact invis-fade log wordings; and "before aggro" measured against what line?
 - **#36** — countdown or on/off only; and do root / snare / stun count as loss of control?
 - **#37** — the pet combat log wordings (attack, taunt, death, back-off ack).
-- **#39** — copy sounds to Downloads on first run, or only via a button?
 - **#40** — match on all 14 gems or on key spells; show in the main window or an aura?
 - **#41** — what does the new mez premade do that the Mesmerize worked example (#17) doesn't?

@@ -28,6 +28,7 @@ section to **[Confirmed](#confirmed)** at the bottom so the active list stays sh
 | 8 | [Session, memory and stability](#8--session-memory-and-stability) | Restore, gem bar, crashes |
 | 9 | [Built, but nothing to test](#9--built-but-nothing-to-test) | Recorded so it isn't lost |
 | 10 | [Lockouts and log tools](#10--lockouts-and-log-tools) | Raid lockout grid, reset setting, log trim / rotation / archive |
+| 11 | [Backlog batch (30 Aug)](#11--backlog-batch-30-aug) | Death-clears, config export/import, preview button, GCD tracker, mute/sound-cooldown |
 | — | [Confirmed](#confirmed) | Done, kept as regression guards |
 
 ---
@@ -44,7 +45,7 @@ Zero dependencies, a few seconds, and it covers a lot of what used to need a cha
 a zone. If it is red, nothing below is worth doing yet — read the failure text, it says what broke
 and why.
 
-**66 suites** as of this writing, growing. The ones worth knowing by name, because each guards something that broke
+**74 suites** as of this writing, growing. The ones worth knowing by name, because each guards something that broke
 for real once:
 
 | Suite | Guards |
@@ -1487,6 +1488,80 @@ client and, for the trim/rotation checks, a real log that spans more than one lo
 - [ ] **Grid cells show the kill date.**
 - [ ] **Crash-safe config writes** — a crash mid-save can't leave a half-written `.json` (temp
       file then rename).
+
+---
+
+# 11 — Backlog batch (30 Aug)
+
+`feat/backlog-batch-2`. All unverified in a real session. The automated suite covers the code
+paths (death-clears, config-transfer, config-backup, sound-cooldown, preview-aura, changelog,
+zone-aliases, spellbook-diagnostic). A clean fresh-start smoke was **not** possible — the owner's
+dev build + a live `eqgame` held the single-instance lock, so a second launch exits 0 (guard
+working as designed). Record: single-instance guard verified; fresh-start smoke deferred.
+
+## Auras stop on death (#12)
+
+- [ ] **Die in-game** with self buffs + bard songs + a custom timer all active. *Expect*: buffs,
+      songs and the timer all clear at once.
+- [ ] **A cooldown-phase timer keeps counting** through the death — the ability is still on
+      cooldown when you're back up.
+- [ ] **Relaunch within 5 minutes** — the cleared timers do **not** come back from the session
+      snapshot.
+
+## Config export / import / backup (#3b, #3c)
+
+- [ ] **"Back up now"** (Setup › App data) → a dated `backups/backup-<stamp>/` folder with
+      `widgets.json` etc. inside; `detection-logs/` and `Cache/` are **not** copied.
+- [ ] **Export** on this PC, copy the folder to a second install, **Import** it → auras, profiles
+      and sounds arrive; the EQ folder path and window position stay whatever they are locally;
+      the app restarts; a `pre-import-<stamp>` backup exists afterward.
+
+## Manual character / server (#14)
+
+- [ ] **Clear the auto-detected character**, type a name + server → the spellbook file is found.
+      Setup › Spellbook detection shows it came from a manual entry (`manualCharacter`).
+
+## Preview button (#1)
+
+- [ ] **"Preview"** in an aura's settings → a sample tile flashes on that aura's overlay window
+      for ~6s then clears, with no alt-tab into the game. Try it on a few aura shapes (buff, ally,
+      text, custom timer).
+
+## Starter sounds in userData (#39)
+
+- [ ] **Fresh `userData`** (or delete `userData/sounds/`) and relaunch → `userData/sounds/` is
+      re-seeded from the bundle. "Choose sound…" opens there.
+
+## Mute + sound cooldown (#10, #45)
+
+- [ ] **"Mute sounds"** top-bar toggle silences every aura's alerts; untoggle restores them;
+      tiles stay visible throughout. A relaunch comes back **unmuted**.
+- [ ] **Per-aura "Sound cooldown"** — set 10s on an aura watching something that pulses (a bard
+      song, Clarity) → the alert fires once, not on every pulse. Reopen the settings panel and the
+      slider still shows 10s (it used to reset to 0).
+
+## GCD tracker (#38)
+
+- [ ] Add the **"Global recovery (GCD)"** premade (Timers group). Cast something → a ~1.5s tile
+      appears and counts down.
+- [ ] Cast a **high-mote-rank** spell → the tile is shorter (~1.3s at rank 7).
+- [ ] A **bard song** and an **AA activate** both trigger it.
+- [ ] Chat text containing the word "casting" does **not** trigger it.
+
+## Skill-cast trigger picker + zone aliases (#44, #30)
+
+- [ ] The **"Skill cast" custom-timer trigger** spell picker is a filter bar + click-list now, and
+      **bard songs appear in it** (they were missing before).
+- [ ] In the **`eqtm` picker**, a community nickname ("inny", "PoH") or a raid-boss name resolves
+      to the right zone. Nicknames still don't show up *as rows* in the real-zone results.
+
+## Line-aura edge, zone routing (#25, #32, #43)
+
+- [ ] On a **list-mode** aura with an icon image, the coloured category edge is drawn *over* the
+      icon (was hidden behind it).
+- [ ] Routing to **The Hole** goes via Paineel, not Erudin.
+- [ ] Routing **out of Plane of Hate** offers Gate/Origin (or no land route), not a portal to
+      Oasis of Marr.
 
 ---
 
