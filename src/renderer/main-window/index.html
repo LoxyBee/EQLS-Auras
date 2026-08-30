@@ -127,7 +127,7 @@
              wrongly ignored, and it's invisible otherwise. See the "unknown"
              state styling in main-window.css. -->
         <div class="card" id="memorized-card">
-          <h3 title="Built from your &quot;You forget X.&quot; / &quot;finished memorizing X.&quot; lines as you swap gems, and remembered between sessions — NOT read from your spellbook file. The app never replays log history, so if you swap gems while it is closed this keeps showing the old loadout. Positions won't match your in-game bar: regular spells fill from the left, bard songs (underlined) from the right.">What the app thinks you have memorized</h3>
+          <h3 title="Tracked from your forget/memorize log lines as you swap gems, and kept between sessions — not read from your spellbook. Swapping gems while the app is closed leaves this showing the old loadout. Order isn't your in-game order: spells fill from the left, bard songs (underlined) from the right.">What the app thinks you have memorized</h3>
           <div id="memorized-gem-bar" class="gem-bar" title="Click any gem to forget it — a wrong entry here makes the app ignore buffs it should be tracking."></div>
           <div class="row">
             <p id="memorized-spells-status" class="memorized-summary">Checking...</p>
@@ -139,12 +139,12 @@
         <h3 class="settings-page-section-title">Needs your attention</h3>
 
         <div class="card">
-          <h3 title="EQ's message for this buff is shared by several spells, so pick which one it was. This can show for your own casts too (two scribed spells sharing the same text), not only when &quot;track buffs from others&quot; is on.">Ambiguous casts</h3>
+          <h3 title="Several spells share this buff's EQ message — pick which one it was. Can appear for your own casts too (two scribed spells with the same text), not just others'.">Ambiguous casts</h3>
           <ul id="ambiguous-buffs" class="buff-list">
             <li class="empty">None right now.</li>
           </ul>
           <div class="row">
-            <button id="reset-ambiguous-btn" class="btn-danger" title="Clears the &quot;this text means buff X&quot; answers you gave before, so anything ambiguous prompts you again instead of reusing an old answer. Doesn't affect what's currently active.">Reset remembered choices</button>
+            <button id="reset-ambiguous-btn" class="btn-danger" title="Clears your past &quot;this text means buff X&quot; answers, so ambiguous casts prompt again instead of reusing an old choice. Doesn't affect what's active now.">Reset remembered choices</button>
             <button id="view-ambiguous-resolutions-btn">View remembered choices...</button>
           </div>
         </div>
@@ -167,12 +167,12 @@
               <span class="topic-summary">Custom &amp; known buffs</span>
             </button>
             <div class="topic-body"><div class="topic-body-inner">
-              <h4 class="settings-subsection-title" title="Buffs you've added yourself, or promoted from an Unknown cast. Add one to pre-load a buff you know about in case it doesn't turn up as an unknown cast first. These get no automatic icon — use &quot;Choose icon...&quot; to pick art.">Custom buffs</h4>
+              <h4 class="settings-subsection-title" title="Buffs you added yourself, or promoted from an Unknown cast. Add one ahead of time for a buff you know about. No automatic icon — use &quot;Choose icon…&quot;.">Custom buffs</h4>
               <div class="row">
                 <button id="open-add-buff-modal-btn">Add a new buff...</button>
                 <button id="open-custom-buffs-modal-btn">View custom buffs...</button>
               </div>
-              <h4 class="settings-subsection-title" title="Everything the app knows how to time, with its duration and whether it shows on the built-in Self Buffs aura. Edit a duration and Save, or uncheck Overlay to track a buff without cluttering that aura. Other auras pick their own buffs independently of this checkbox.">Known buffs</h4>
+              <h4 class="settings-subsection-title" title="Every spell the app can time, with its duration and its Self Buffs aura setting. Edit a duration and Save; uncheck Overlay to keep a buff off that aura. Other auras choose their own buffs regardless.">Known buffs</h4>
               <button id="open-known-buffs-modal-btn">Browse known buffs...</button>
             </div></div>
           </div>
@@ -195,7 +195,7 @@
         <div class="card" id="all-auras-card">
           <h3>All auras</h3>
           <div class="row">
-            <button type="button" id="master-unlock-all-btn" title="A toggle — press again to re-lock. Makes every aura draggable and resizable at once. An unlocked aura is never auto-hidden, so you can always see what you're moving. Doesn't change which profiles an aura belongs to.">Unlock all auras</button>
+            <button type="button" id="master-unlock-all-btn" title="Toggle — makes every aura draggable and resizable at once; press again to re-lock. Unlocked auras are never auto-hidden. Doesn't change profile membership.">Unlock all auras</button>
           </div>
 
           <h4 class="settings-subsection-title">When to show them</h4>
@@ -208,7 +208,7 @@
           <!-- Meaningless while auto-hide above is off - nothing is ever hidden in the first
                place, so this exception to a rule that isn't active would do nothing. -->
           <div class="row" id="show-auras-app-focused-row">
-            <label title="Off by default - useful while you're arranging auras, distracting otherwise. Note you don't need this just to move one: unlocking an aura always shows it regardless.">
+            <label title="Off by default — handy while arranging auras. You don't need it to move one: unlocking an aura always shows it.">
               <input type="checkbox" id="show-auras-app-focused-checkbox" />
               Also show them while this app is the focused window
             </label>
@@ -244,7 +244,7 @@
                    on 2026-08-24). Already-added zones are left out of the results (see
                    renderZoneAddOptions), so nothing can be picked twice. QOL #2. -->
               <div class="row" id="widget-zones-row">
-                <span class="label" title="Leave empty to show everywhere. Zones are exactly as the game names them - Befallen and Befallen 1 (Awakened) are separate. Pick as many as you want - the aura shows in ANY of them.">Only in:</span>
+                <span class="label" title="Leave empty to show everywhere. Zone names are exact — &quot;Befallen&quot; and &quot;Befallen 1 (Awakened)&quot; differ. Pick any number; the aura shows in any of them.">Only in:</span>
                 <input type="text" id="widget-zone-search" class="text-input" placeholder="Type to find a zone, then click it..." autocomplete="off" />
               </div>
               <div id="widget-zone-options" class="zone-add-list" style="display:none"></div>
@@ -261,8 +261,8 @@
                    used controls in this panel - previously easy to miss. -->
               <div class="row position-controls" id="widget-position-row">
                 <button id="widget-lock-btn" class="btn-prominent" title="While unlocked, click and drag anywhere on the aura to move it, and drag an edge to resize. Lock it again when done - while locked it is fully click-through.">Unlock to move</button>
-                <button id="widget-reset-position-btn" title="Lost an aura? Dragged off-screen, or its monitor disconnected? This brings it back to a corner of your main screen.">Reset position</button>
-                <button id="widget-preview-btn" title="Flash a sample tile on this aura for a few seconds, so you can judge its size, position, colours and font without alt-tabbing into the game and casting something.">Preview</button>
+                <button id="widget-reset-position-btn" title="Brings an aura that's off-screen or on a disconnected monitor back to a corner of your main screen.">Reset position</button>
+                <button id="widget-preview-btn" title="Flashes a sample tile for a few seconds so you can judge size, position, colour and font without going in-game.">Preview</button>
               </div>
               <p class="hint" id="widget-position-hint"></p>
 
@@ -272,19 +272,19 @@
                 <label><input type="radio" name="widget-display-mode" value="icons" /> Tiles</label>
               </div>
               <div class="row" id="widget-text-message-row">
-                <span class="label" title="A text aura draws one line of words and nothing else - no icon, no countdown - and only ever shows one thing at a time, however many you pick. Leave this blank to use the name of the buff or trigger itself. {spell} fills in the actual spell/trigger name, {caster} or {mob} the name it landed on or came from (same value either way - use whichever reads naturally), {profile} the active loadout name.">Say:</span>
+                <span class="label" title="Blank uses the buff or trigger name. Tokens: {spell} = the spell/trigger name, {caster} or {mob} = who it came from or landed on, {profile} = the active loadout.">Say:</span>
                 <input type="text" id="widget-text-message-input" class="text-input" placeholder="DISPELLED" />
               </div>
               <p class="hint" id="widget-text-message-preview" style="display:none"></p>
               <div class="row" id="widget-always-on-row">
-                <label title="For an aura that just says something and stays, rather than one that appears when a spell lands. Write {profile} in the message above to show which loadout is active.">
+                <label title="For an aura that shows fixed text and stays put, not one that reacts to a spell. Use {profile} to show the active loadout.">
                   <input type="checkbox" id="widget-always-on-checkbox" />
                   Always on screen, with nothing to wait for
                 </label>
               </div>
               <p class="hint" id="widget-always-on-hint"></p>
               <div class="row" id="widget-ally-alert-row">
-                <label title="For a groupmate's mez, charm or snare - warns you one has been cast so you know to be careful. No countdown: the game never prints a line saying when somebody else's debuff ends, so a timer would be invented. It fires as the cast starts, about two seconds before the spell lands. Write {caster} and {spell} in the message above - &quot;{caster} cast {spell} - be careful&quot;. The caster is named rather than called a party member because mobs cast these too.">
+                <label title="Warns when a groupmate (or a mob) casts a mez, charm or snare — fired as the cast starts, ~2s before it lands. No countdown; the game never says when someone else's debuff ends. Tokens {caster} and {spell} work in the message.">
                   <input type="checkbox" id="widget-ally-alert-checkbox" />
                   Warn me when someone else casts these
                 </label>
@@ -302,13 +302,13 @@
                    width changes between different messages. See overlay.js's
                    reportSizeIfChanged. -->
               <div class="row" id="widget-text-justify-row">
-                <span class="label" title="Which edge of the aura stays put as its message changes length - left keeps the left edge fixed and grows right, right keeps the right edge fixed and grows left, center grows evenly both ways.">Justification:</span>
+                <span class="label" title="Which edge stays fixed as the message changes width: left grows rightward, right grows leftward, center grows both ways.">Justification:</span>
                 <label><input type="radio" name="widget-text-justify" value="left" /> Left</label>
                 <label><input type="radio" name="widget-text-justify" value="center" /> Center</label>
                 <label><input type="radio" name="widget-text-justify" value="right" /> Right</label>
               </div>
               <div class="row" id="widget-text-instant-row">
-                <span class="label" title="Only applies to spells with no duration at all - a nuke, a heal, a gate. They happen rather than run, so there is nothing to count down; this is how long the words stay up afterwards.">Show events for:</span>
+                <span class="label" title="For spells with no duration (a nuke, heal, gate) — how long the text stays up after the cast.">Show events for:</span>
                 <input type="range" id="widget-text-instant-slider" min="1" max="60" step="1" />
                 <span id="widget-text-instant-value" class="slider-value">6s</span>
               </div>
@@ -318,13 +318,13 @@
                    line fades on its own timer. Off by default; the Resist flash premade ships with
                    it on. See overlay.js's renderTextFeed. -->
               <div class="row" id="widget-text-stack-row">
-                <label title="When another event happens while the last one is still showing, add it as a new line below instead of replacing the text. Each line fades out on its own. Useful for repeated resists - you see each one rather than only the last.">
+                <label title="A new event adds a line below instead of replacing the text; each line fades on its own. Good for repeated resists.">
                   <input type="checkbox" id="widget-text-stack-checkbox" />
                   Stack multiple lines
                 </label>
               </div>
               <div class="row" id="widget-text-stack-max-row">
-                <span class="label" title="How many lines stay on screen at once before the oldest drops off. 2 lets you still read the line before the newest without it becoming a scrolling log.">Lines visible:</span>
+                <span class="label" title="How many lines show at once before the oldest drops. 2 keeps the previous line readable without a scrolling log.">Lines visible:</span>
                 <input type="range" id="widget-text-stack-max-slider" min="2" max="4" step="1" />
                 <span id="widget-text-stack-max-value" class="slider-value">2</span>
               </div>
@@ -367,7 +367,7 @@
               <div id="widget-damage-settings" style="display:none">
                 <h4 class="settings-subsection-title">Damage meter</h4>
                 <div class="row">
-                  <label for="widget-fight-timeout-slider" title="How long the meter waits with nothing damaged before it decides the fight is over. The log has no &quot;fight over&quot; line, so this is always a bit of a guess.">A fight ends after</label>
+                  <label for="widget-fight-timeout-slider" title="How long with no damage before the meter ends the fight. The log has no &quot;fight over&quot; line, so it's a guess.">A fight ends after</label>
                   <input type="range" id="widget-fight-timeout-slider" min="3" max="60" step="1" />
                   <span id="widget-fight-timeout-value" class="slider-value"></span>
                 </div>
@@ -378,7 +378,7 @@
                   </label>
                 </div>
                 <div class="row">
-                  <label title="The fight's whole damage and its rate per second - the only place a rate is shown, since the log does not record how long each person was swinging.">
+                  <label title="Total fight damage and its per-second rate — the only rate shown, since the log doesn't record how long each person swung.">
                     <input type="checkbox" id="widget-total-row-checkbox" />
                     Show the total line at the top
                   </label>
@@ -394,14 +394,14 @@
                    Custom debuff aura sets trackOnEnemies true forever at creation, Custom buff
                    aura leaves it false forever - not a switch either kind can flip afterward. -->
               <div class="row" id="widget-borders-row">
-                <label title="Red for direct damage, amber for damage over time, green for heals, darker green for heals over time, blue for buffs, purple for debuffs, amber for pet spells, magenta for charms. Anything the roster has no type for keeps its normal edge.">
+                <label title="Colours each tile's edge by spell type — damage red, heals green, buffs blue, debuffs purple, and so on. Untyped spells keep their normal edge.">
                   <input type="checkbox" id="widget-category-borders-checkbox" />
                   Colour each tile's edge by spell type
                 </label>
               </div>
               <p class="hint" id="widget-borders-hint"></p>
               <div class="row" id="widget-merge-row">
-                <label title="One tile instead of many, showing the soonest to run out and a count of how many are behind it - a full group buff is otherwise a wall of tiles. What counts as &quot;the same&quot; is set once for the whole app, on the Setup page.">
+                <label title="Collapses buffs of the same duration into one tile showing the soonest to expire and a count. What counts as &quot;the same&quot; is set on the Setup page.">
                   <input type="checkbox" id="widget-merge-checkbox" />
                   Merge buffs that share a duration into one tile
                 </label>
@@ -788,7 +788,7 @@
                   </div>
 
                   <div class="row" id="widget-sound-cooldown-row">
-                    <span class="label" title="The shortest gap allowed between two alert sounds from this aura, across all of its sounds. A sound arriving sooner stays silent. Useful for something that refreshes constantly - a bard song pulsing every 6 seconds set to only sound every 24, say. 0 means every alert plays.">Sound cooldown:</span>
+                    <span class="label" title="Shortest gap between two alert sounds from this aura. Sounds arriving sooner stay silent. Good for a constantly-refreshing buff (e.g. a 6s bard-song pulse capped to once per 24s). 0 plays every alert.">Sound cooldown:</span>
                     <input type="range" id="widget-sound-cooldown-slider" min="0" max="60" step="1" />
                     <span id="widget-sound-cooldown-value" class="slider-value">off</span>
                   </div>
@@ -899,8 +899,8 @@
         <h3 class="settings-page-section-title">Character setup</h3>
 
         <div class="card">
-          <h3 title="Set these AA and Exaltation abilities to match your character so timing reflects your real character, not base spell values. Changes nothing about what's detected — only how the countdowns run and how casts are handled.">AA setup</h3>
-          <h4 class="settings-subsection-title" title="Extends how long buffs last, applied to every tracked buff so timers reflect your real extended durations instead of the base spell length.">Buff duration (Reinforcement + Exaltation)</h4>
+          <h3 title="Set your AA and Exaltation ranks so countdowns match your character, not the base spell values. Doesn't change what's detected — only timing.">AA setup</h3>
+          <h4 class="settings-subsection-title" title="Extends buff durations — applied to every tracked buff so timers match your real extended lengths.">Buff duration (Reinforcement + Exaltation)</h4>
           <div class="row">
             <span class="label">Spell Casting Reinforcement (AA):</span>
             <select id="aa-reinforcement-select">
@@ -924,7 +924,7 @@
             <span class="label">Total bonus:</span>
             <span id="character-bonus-total">+0%</span>
           </div>
-          <h4 class="settings-subsection-title" title="Reduces cast time on beneficial spells with a duration and a base cast of at least 3 seconds — nothing for instant or under-3s casts. Only used by the experimental &quot;cast-time-aware confirmation&quot; toggle under Diagnostics, and only affects how long the app waits before confirming or giving up on a cast.">Cast time (Spell Casting Deftness)</h4>
+          <h4 class="settings-subsection-title" title="Cuts cast time on duration buffs with a base cast of 3s or more. Only used by the experimental &quot;cast-time-aware confirmation&quot; toggle (Diagnostics) — affects how long the app waits on a cast, nothing else.">Cast time (Spell Casting Deftness)</h4>
           <div class="row">
             <span class="label">Spell Casting Deftness (AA):</span>
             <select id="deftness-select">
@@ -964,20 +964,20 @@
         </div>
 
         <div class="card">
-          <h3 title="Your character's own spellbook resolves ambiguous buff messages (EQ reuses a lot of generic text across spells) down to whichever one you actually have. Read from your EQ install folder above. Which spells you have MEMORIZED right now is tracked separately, on the Buff Tracker page.">Spellbook detection</h3>
+          <h3 title="EQ reuses buff text across spells; your spellbook narrows an ambiguous message to the one you actually have. Read from the EQ folder above. What's memorized right now is tracked separately (Buff Tracker page).">Spellbook detection</h3>
           <div class="row">
             <span class="label">Spellbook:</span>
             <span id="spellbook-status">Checking...</span>
           </div>
           <div class="row">
-            <span class="label" title="Fill these in only if the app is not finding your spellbook on its own — usually because more than one character's logs are in the folder. It builds the filename the EQ client uses and looks for that instead of guessing from the newest log.">Character:</span>
+            <span class="label" title="Only needed if the app can't find your spellbook itself — usually when several characters' logs share the folder. Builds the exact client filename instead of guessing from the newest log.">Character:</span>
             <input type="text" id="spellbook-char-name" class="text-input" placeholder="name" autocomplete="off" style="width:9em" />
             <span>on</span>
             <input type="text" id="spellbook-char-server" class="text-input" placeholder="server" autocomplete="off" style="width:8em" />
           </div>
           <p class="hint" id="spellbook-char-hint"></p>
           <div id="spellbook-missing-hint" style="display:none">
-            <p class="hint warn-hint" title="EverQuest reuses the same buff message across many different spells, and without your spellbook the app cannot tell which was yours — so it ignores them. One recent session threw away over 700 buff messages this way. The game does not write this file on its own; type the command below in game, logged in on this character, and re-run it whenever you scribe something new.">
+            <p class="hint warn-hint" title="EQ reuses buff messages across spells; without your spellbook the app can't tell which were yours, so it ignores them (700+ in one recent session). The game does not write this file on its own — run the command below in-game on this character, and again whenever you scribe something.">
               <strong>This is worth fixing.</strong> Run this in game to generate your spellbook file:
             </p>
             <div class="row command-row">
@@ -993,7 +993,7 @@
         <div class="card" id="trade-ping-card">
           <h3>Trade requests</h3>
           <div class="row">
-            <label title="Fires on &quot;&lt;Name&gt; is interested in making a trade.&quot; - the moment the request arrives, not when the trade completes or is cancelled. Draws nothing on screen; it is only ever a sound.">
+            <label title="Fires when a trade request arrives (not on complete/cancel). Sound only — nothing on screen.">
               <input type="checkbox" id="trade-ping-checkbox" />
               Play a sound when someone asks to trade with you
             </label>
@@ -1007,7 +1007,7 @@
           <!-- Only shown once tell pings are on - a burst of tells (someone spamming, or a busy
                conversation) used to machine-gun the sound with no rate limit at all. -->
           <div class="row" id="tell-ping-cooldown-row" style="display:none">
-            <span class="label" title="The shortest gap allowed between two tell-ping sounds. A second tell arriving before this much time has passed since the last ping stays silent - 0 means every tell pings, no matter how close together.">Minimum gap:</span>
+            <span class="label" title="Shortest gap between two tell pings. A tell arriving sooner stays silent. 0 pings every tell.">Minimum gap:</span>
             <input type="range" id="tell-ping-cooldown-slider" min="0" max="30" step="1" />
             <span id="tell-ping-cooldown-value" class="slider-value">3s</span>
           </div>
@@ -1016,7 +1016,7 @@
         <div class="card" id="sounds-folder-card">
           <h3>Sounds</h3>
           <div class="row">
-            <button type="button" id="open-sounds-folder-btn" title="Every aura's &quot;Choose sound...&quot; picker starts here, seeded with a few sounds that ship with the app. Drop your own mp3/wav/ogg/m4a files in and they're ready to pick alongside the starters. Lives with the rest of your app data, so a config backup covers it and an uninstall leaves it alone.">📁 Open sounds folder</button>
+            <button type="button" id="open-sounds-folder-btn" title="Every &quot;Choose sound…&quot; picker starts here, seeded with a few bundled sounds. Drop your own mp3/wav/ogg/m4a files in to pick them too. Stored with your app data — covered by backups, untouched by uninstall.">📁 Open sounds folder</button>
           </div>
         </div>
 
@@ -1031,7 +1031,7 @@
 
         <div class="block" id="app-settings-block">
           <div class="topic" id="topic-icon-set" data-topic>
-            <button type="button" class="topic-head" data-toggle title="The game ships a few icon art styles. If icons look wrong or broken, switch this — a buff already showing correctly on your hotbar confirms which set matches your client. Applies to every aura.">
+            <button type="button" class="topic-head" data-toggle title="EQ ships a few icon art styles. If icons look wrong, match this to how a buff looks on your hotbar. Applies to every aura.">
               <span class="chev"></span>
               <span class="topic-title">Icon set</span>
               <span class="topic-summary" id="topic-icon-set-summary"></span>
@@ -1062,7 +1062,7 @@
           </div>
 
           <div class="topic" id="topic-ui-scale" data-topic>
-            <button type="button" class="topic-head" data-toggle title="Scales this settings window only — text, spacing and controls together. Your auras are unaffected (each has its own sizes in its own settings). At larger sizes you may want to make this window bigger to match.">
+            <button type="button" class="topic-head" data-toggle title="Scales this window only — text, spacing and controls together. Auras are unaffected. You may want to enlarge the window to match at high scales.">
               <span class="chev"></span>
               <span class="topic-title">App text size</span>
               <span class="topic-summary" id="topic-ui-scale-summary"></span>
@@ -1089,7 +1089,7 @@
           </div>
 
           <div class="topic" id="topic-hide-hotkey" data-topic>
-            <button type="button" class="topic-head" data-toggle title="Toggles the same &quot;Hide auras&quot; as the top-bar button — clears every aura and action bar off the screen, changes no setting, doesn't survive a restart. Grabbed at the OS level so EverQuest never sees the key; pick one you never use in game. If another app already owns the key it can't be registered — the top-bar button still works, and the line below shows whichever key actually took.">
+            <button type="button" class="topic-head" data-toggle title="Same as the top-bar &quot;Hide auras&quot; button — clears every aura and action bar, changes no setting, resets on restart. Captured OS-wide (EQ never sees it), so pick a key you don't use in game. If another app owns it, registration fails — the button still works; the line below shows what took.">
               <span class="chev"></span>
               <span class="topic-title">Hide-auras hotkey</span>
               <span class="topic-summary" id="topic-hide-hotkey-summary"></span>
@@ -1122,7 +1122,7 @@
               <dl id="version-info"></dl>
               <p class="hint">Every aura, profile, known-buff fix, sound and setting lives in one folder — uninstalling never touches it.</p>
               <div class="row">
-                <button type="button" id="backup-config-btn" class="btn-prominent" title="Copies the whole app-data folder into a dated folder inside it, so you have a snapshot to fall back to before an update or a big change.">Back up now</button>
+                <button type="button" id="backup-config-btn" class="btn-prominent" title="Copies your whole app-data folder into a dated subfolder — a snapshot to fall back on before an update.">Back up now</button>
                 <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
               </div>
               <p class="hint" id="backup-config-status"></p>
@@ -1201,10 +1201,9 @@
             <span>:00 <strong>US Eastern</strong></span>
           </div>
           <p class="hint">
-            One reset setting — the Lockouts page uses the same value, and changing it there changes
-            it here. It is <em>US Eastern time</em> (the server's zone) and adjusts for daylight
-            saving automatically, so it is correct whatever time zone your computer is on. Default
-            is Tuesday 11:00, from your own reading of the in-game lockout timer.
+            One reset setting — the Lockouts page uses the same value, and changing it there
+            changes it here. <em>US Eastern</em> (the server's zone), DST-adjusted automatically.
+            Default Tuesday 11:00, from your own reading of the in-game lockout timer.
           </p>
           <p class="hint" id="log-rotation-status"></p>
         </div>
@@ -1242,12 +1241,10 @@
 
               <h4>Evidence-based detection</h4>
               <p class="hint">
-                Changes one thing: when a buff's landing text is unique but it looks like it's not
-                currently memorized by you (or an ally's instant-grant burst just fired), the app no
-                longer silently drops it. Instead it asks you, the same way any other ambiguous cast
-                does - because "not seen loaded this session" can go stale (a loadout swap, or the
-                app restarting mid-session) and isn't real proof the buff wasn't yours. Off by
-                default. If this misbehaves, turn it back off - nothing else changes when you do.
+                When a buff's landing text is unique but it looks like you don't have it memorized
+                (or an ally's instant-grant burst just fired), the app asks instead of silently
+                dropping it — "not seen loaded this session" goes stale after a loadout swap or a
+                restart, and isn't proof the buff wasn't yours. Off by default; safe to turn back off.
               </p>
               <div class="row">
                 <label>
@@ -1259,14 +1256,11 @@
 
               <h4>Cast-time-aware confirmation</h4>
               <p class="hint">
-                Changes one thing: after a named cast begins, the app waits for its own scaled cast
-                time (from the roster, adjusted for the spell's rank) instead of a flat 12 seconds
-                for every spell regardless of how fast it actually casts - plus half a second of
-                slack for log-timestamp rounding. Falls back to the flat 12 seconds for anything
-                the roster has no cast time for, so nothing is ever worse off than today. The
-                per-rank scaling rates come from the mote spreadsheet and are not independently
-                measured against your own logs the way some duration rates are. Off by default. If
-                this misbehaves, turn it back off - nothing else changes when you do.
+                After a named cast begins, the app waits for that spell's own scaled cast time
+                (roster value, adjusted for rank, plus 0.5s slack) instead of a flat 12 seconds.
+                Falls back to the flat 12s when the roster has no cast time. The per-rank rates come
+                from the mote spreadsheet, not measured against your logs. Off by default; safe to
+                turn back off.
               </p>
               <div class="row">
                 <label>
@@ -1278,17 +1272,12 @@
 
               <h4>Self-buff overwrite detection</h4>
               <p class="hint">
-                Changes one thing: EQ prints an explicit line when a buff on someone ELSE gets
-                overwritten, but nothing at all when it happens to one of your own buffs - so two
-                spells that share the same fade text (e.g. Nimble and Agility both say "Your
-                agility fades.") can leave a stale timer on screen for whichever one didn't actually
-                end. When this is on, the moment a new buff lands that the game's own stacking rules
-                say would replace one you already have active, the stale one is removed immediately
-                instead of waiting on an ambiguous fade line. Computed from the same spell data the
-                game itself uses - not a guess - but only for the core same-slot rule; some rarer
-                interactions (bard songs, damage-over-time, group-vs-single-target versions) aren't
-                covered yet and simply won't be caught either way. Off by default. If this
-                misbehaves, turn it back off - nothing else changes when you do.
+                EQ announces when a buff on someone else is overwritten, but not when it happens to
+                one of yours — so two spells with the same fade text (Nimble and Agility both say
+                "Your agility fades.") can leave a stale timer. When on, a newly-landed buff that the
+                game's stacking rules would replace clears the old one at once, instead of waiting
+                on the fade line. Core same-slot rule only; bard songs, DoTs and group-vs-single
+                versions aren't covered. Off by default; safe to turn back off.
               </p>
               <div class="row">
                 <label>
@@ -1341,7 +1330,7 @@
             <div class="block">
               <p class="block-cap">Display &amp; size</p>
               <div class="row">
-                <label title="Per-bar - only affects THIS action bar. Off by default, same as auras' own auto-hide-while-unfocused rule; turning it on keeps this one bar visible while you're configuring it, even though EQ isn't focused.">
+                <label title="Affects only this action bar. Off by default; turn it on to keep this bar visible while configuring it, even when EQ isn't focused.">
                   <input type="checkbox" id="action-bar-show-app-focused-checkbox" /> Show this bar while EQLS Auras is the active window
                 </label>
               </div>
@@ -1436,7 +1425,7 @@
                 <span class="topic-summary"></span>
               </button>
               <div class="topic-body"><div class="topic-body-inner">
-                <p class="hint">One setting for every gem's cooldown - set per gem in an earlier build, moved here since it isn't something you'd want to pick differently gem to gem. The shade and the countdown number are independent - pick either, both, or neither. Every gem on cooldown also greys out, regardless of what's picked below.</p>
+                <p class="hint">Applies to every gem's cooldown. The shade and the countdown number are independent — pick either, both, or neither. Gems on cooldown also grey out regardless.</p>
                 <div class="row">
                   <span class="label">Shade style:</span>
                 </div>
