@@ -267,6 +267,9 @@ log prints when *you* cast something.
       nothing links which of their casts caused which landing, so I left it unscaled rather than
       guess. If you see a groupmate's buff timing out early, that is why, and it is worth telling
       me.
+- [ ] **(#17) A mote-scaled bard song lands on a 6-second boundary.** Sing a ranked song and check
+      the starting number is a multiple of 6 (12, 18, 24, …), never something like 15 or 21.
+      Non-song buffs are unaffected.
 - [ ] **Set your AA and exaltation levels, then check a mez.** Mesmerize should NOT get longer when
       you raise them. Buffs should.
 
@@ -1165,6 +1168,18 @@ The zone box offers the 66 zones seen in your logs and accepts anything you type
 - [ ] **Both auto-hide settings moved** off the Setup page into the "All auras" card on Overlay
       Auras. Check they still actually work from their new home — the wiring is by element id so it
       should be unaffected, but worth confirming rather than assuming.
+
+## Exclusive-fullscreen warning (#9) — NEEDS LIVE VERIFICATION
+
+The `SHQueryUserNotificationState` P/Invoke behind this is checked against Microsoft's docs but
+has **not been run on the real machine** — this check is how we find out if it works.
+
+- [ ] **Put EQ in true exclusive full-screen.** *Expect*: a warning line appears in the
+      detection-status card on the Buff Tracker page ("auras can't draw over exclusive
+      full-screen", or similar).
+- [ ] **Switch EQ to Borderless Windowed.** *Expect*: the warning clears within ~1 second.
+- [ ] **With auto-hide (the foreground watcher) turned off**, the warning never appears — it's
+      gated on the watcher running.
 
 ---
 

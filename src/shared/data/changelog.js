@@ -27,12 +27,14 @@ const CHANGELOG = [
       'Export your whole setup to a folder and import it on another PC - offline, no account',
       'Type your character and server when the spellbook is not being found on its own',
       'Auras and timers stop when your character dies',
+      'A heads-up on the Buff Tracker page when EQ is in exclusive full-screen (auras can\'t draw over it)',
     ],
     fixes: [
       'The Hole travel route goes via Paineel instead of Erudin',
       'A line aura\'s coloured edge is no longer painted over by its row icon',
       'A picked alert sound keeps its name when you reopen the settings, and "Use default" is always there',
       'The stale "Not active yet." note is gone from the timer-text colour picker',
+      'Mote-scaled bard song timers now land on the real 6-second boundary',
     ],
   },
 ];
