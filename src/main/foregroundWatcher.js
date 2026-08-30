@@ -53,17 +53,30 @@ using System.Runtime.InteropServices;
 public class EQBTForegroundProbe {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+  [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int pquns);
 }
 "@
 `;
 
+// Response is "<processName>|<quns>". SHQueryUserNotificationState reports the shell's
+// do-not-disturb reason; QUNS_RUNNING_D3D_FULL_SCREEN (3) means an exclusive-fullscreen Direct3D
+// app is in front - which is exactly when an always-on-top overlay stops being composited over EQ
+// and the user is left wondering where the auras went (#9). QUNS_PRESENTATION_MODE (4) hides
+// notifications the same way. A '0' means the call failed and is treated as "not fullscreen".
 const PS_QUERY_SCRIPT = `
 $hwnd = [EQBTForegroundProbe]::GetForegroundWindow()
 $procId = 0
 [EQBTForegroundProbe]::GetWindowThreadProcessId($hwnd, [ref]$procId) | Out-Null
-try { (Get-Process -Id $procId -ErrorAction Stop).ProcessName } catch { '' }
+$name = try { (Get-Process -Id $procId -ErrorAction Stop).ProcessName } catch { '' }
+$quns = 0
+try { [EQBTForegroundProbe]::SHQueryUserNotificationState([ref]$quns) | Out-Null } catch { $quns = 0 }
+Write-Output ("{0}|{1}" -f $name, $quns)
 Write-Output '${RESPONSE_DELIMITER}'
 `;
+
+// QUNS_RUNNING_D3D_FULL_SCREEN / QUNS_PRESENTATION_MODE - the two states where an overlay will not
+// draw over the foreground app.
+const FULLSCREEN_QUNS = new Set([3, 4]);
 
 // One long-lived powershell.exe, fed a query over stdin per poll and read back over stdout - see
 // this file's own header comment on why a persistent process replaced spawning a fresh one every
@@ -209,7 +222,7 @@ class ForegroundWatcher extends EventEmitter {
     // focused is what auto-hide keys off, while this app being focused is an
     // independent, off-by-default option. Merging them here would make that
     // second setting impossible to express.
-    this.lastState = null; // { eqFocused, ownAppFocused }
+    this.lastState = null; // { eqFocused, ownAppFocused, foregroundFullscreen }
   }
 
   start() {
@@ -241,12 +254,21 @@ class ForegroundWatcher extends EventEmitter {
   async _poll() {
     const result = await this.probe.query();
     if (result == null) return; // best-effort - a single failed poll just keeps the last known state
-    const processName = result.toLowerCase();
+    // "<name>|<quns>" since the fullscreen probe was added; a bare name (no pipe) still parses,
+    // so an old fake response in a test, or a truncated line, degrades to "not fullscreen".
+    const [rawName, rawState] = String(result).split('|');
+    const processName = (rawName || '').toLowerCase();
     const eqFocused = processName === TARGET_PROCESS_NAME;
     const ownAppFocused = processName === OWN_PROCESS_NAME;
+    const foregroundFullscreen = FULLSCREEN_QUNS.has(Number(rawState));
     const prev = this.lastState;
-    if (!prev || prev.eqFocused !== eqFocused || prev.ownAppFocused !== ownAppFocused) {
-      this.lastState = { eqFocused, ownAppFocused };
+    if (
+      !prev ||
+      prev.eqFocused !== eqFocused ||
+      prev.ownAppFocused !== ownAppFocused ||
+      prev.foregroundFullscreen !== foregroundFullscreen
+    ) {
+      this.lastState = { eqFocused, ownAppFocused, foregroundFullscreen };
       this.emit('focusChanged', this.lastState);
     }
   }

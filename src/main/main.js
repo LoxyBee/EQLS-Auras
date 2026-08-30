@@ -289,6 +289,13 @@ function applyForegroundVisibility() {
 }
 
 foregroundWatcher.on('focusChanged', applyForegroundVisibility);
+// QOL #9 - tell the main window when an exclusive-fullscreen app is in front, so the Buff Tracker
+// page can explain why the auras vanished instead of leaving the user guessing. Broadcast on every
+// change (focusChanged only fires when the state actually flips); the renderer also asks for the
+// current value on load via the handler below.
+foregroundWatcher.on('focusChanged', (state) => {
+  broadcast('overlay:fullscreenWarning', !!(state && state.foregroundFullscreen));
+});
 if (autoHideOverlayEnabled) foregroundWatcher.start();
 
 // Permanent (not "remove before shipping" temp debug logging) - a running
@@ -1243,6 +1250,12 @@ ipcMain.handle('lockouts:trim', async () => {
 });
 
 ipcMain.handle('log:getState', () => logService.getState());
+// QOL #9 - current exclusive-fullscreen state, for the Buff Tracker page's warning line on load
+// (the push channel overlay:fullscreenWarning keeps it current after that). null when the
+// foreground watcher is off (auto-hide disabled) - nothing is polling, so we genuinely don't know.
+ipcMain.handle('overlay:fullscreenState', () =>
+  foregroundWatcher.lastState ? !!foregroundWatcher.lastState.foregroundFullscreen : null
+);
 // QOL #5 - the "is it working right now?" readout on the Buff Tracker page. Which file is being
 // tailed and how long since a line last arrived from it.
 ipcMain.handle('log:activity', () => {

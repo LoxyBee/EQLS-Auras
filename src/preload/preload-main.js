@@ -277,6 +277,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   importConfig: (sourcePath) => ipcRenderer.invoke('config:import', sourcePath),
   openExportsFolder: () => ipcRenderer.invoke('config:openExportsFolder'),
   getLogActivity: () => ipcRenderer.invoke('log:activity'),
+  getFullscreenState: () => ipcRenderer.invoke('overlay:fullscreenState'),
+  onFullscreenWarning: (cb) => ipcRenderer.on('overlay:fullscreenWarning', (_e, active) => cb(active)),
   previewWidget: (id) => ipcRenderer.invoke('widget:preview', id),
   setWidgetListWidth: (id, width) => ipcRenderer.invoke('widget:setListWidth', { id, value: width }),
   setWidgetOpacity: (id, opacity) => ipcRenderer.invoke('widget:setOpacity', { id, value: opacity }),
