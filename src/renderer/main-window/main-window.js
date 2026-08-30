@@ -375,26 +375,59 @@ function initDetectionSettingsPanel() {
     }, 1500);
   });
   const memorizedStatusEl = document.getElementById('memorized-spells-status');
+  const spellbookCharNameEl = document.getElementById('spellbook-char-name');
+  const spellbookCharServerEl = document.getElementById('spellbook-char-server');
+  const spellbookCharHintEl = document.getElementById('spellbook-char-hint');
 
-  window.eqTracker.getSpellbookState().then((state) => {
+  function renderSpellbookState(state) {
     if (state.filePath) {
       spellbookStatusEl.textContent = `Found - ${state.spellCount} spells (${state.filePath})`;
       spellbookStatusEl.classList.remove('warn');
       spellbookMissingHintEl.style.display = 'none';
-      return;
+    } else {
+      // The old message here said it would "pick it up automatically once detected", which is not
+      // true and is expensive to believe: the game does not write this file on its own, so nothing
+      // was ever going to detect anything, and meanwhile every buff message shared between several
+      // spells was being thrown away for want of it. Say what is missing, where, and that it takes
+      // a command in game to create.
+      spellbookStatusEl.textContent = 'Not found - see below';
+      spellbookStatusEl.classList.add('warn');
+      spellbookMissingHintEl.style.display = '';
+      const where = state.folder ? `in ${state.folder}` : 'in your EQ install folder';
+      const named = state.fileNamePattern ? `named "${state.fileNamePattern}"` : 'ending in "-Spellbook.txt"';
+      spellbookMissingWhereEl.textContent = `Looking for a file ${named} ${where}.`;
     }
-    // The old message here said it would "pick it up automatically once detected", which is not
-    // true and is expensive to believe: the game does not write this file on its own, so nothing
-    // was ever going to detect anything, and meanwhile every buff message shared between several
-    // spells was being thrown away for want of it. Say what is missing, where, and that it takes
-    // a command in game to create.
-    spellbookStatusEl.textContent = 'Not found - see below';
-    spellbookStatusEl.classList.add('warn');
-    spellbookMissingHintEl.style.display = '';
-    const where = state.folder ? `in ${state.folder}` : 'in your EQ install folder';
-    const named = state.fileNamePattern ? `named "${state.fileNamePattern}"` : 'ending in "-Spellbook.txt"';
-    spellbookMissingWhereEl.textContent = `Looking for a file ${named} ${where}.`;
-  });
+    // QOL #14 - show what the typed-in character resolves to, and where the pattern is coming from.
+    if (spellbookCharHintEl) {
+      if (state.fileNamePattern) {
+        spellbookCharHintEl.textContent =
+          (state.manualCharacter ? 'Using the character above. ' : 'Detected from your log. ') +
+          `Looking for: ${state.fileNamePattern}`;
+      } else {
+        spellbookCharHintEl.textContent =
+          'No character detected yet - type your name and server above if the app is not finding the file.';
+      }
+    }
+  }
+
+  window.eqTracker.getSpellbookState().then(renderSpellbookState);
+  if (spellbookCharNameEl && spellbookCharServerEl) {
+    window.eqTracker.getSpellbookCharacter().then((c) => {
+      spellbookCharNameEl.value = c.name || '';
+      spellbookCharServerEl.value = c.server || '';
+    });
+    let spellbookCharTimer = null;
+    const pushSpellbookChar = () => {
+      clearTimeout(spellbookCharTimer);
+      spellbookCharTimer = setTimeout(() => {
+        window.eqTracker
+          .setSpellbookCharacter(spellbookCharNameEl.value, spellbookCharServerEl.value)
+          .then(renderSpellbookState);
+      }, 400);
+    };
+    spellbookCharNameEl.addEventListener('input', pushSpellbookChar);
+    spellbookCharServerEl.addEventListener('input', pushSpellbookChar);
+  }
 
   // The empty state is the important one and is styled as a warning, not a
   // neutral "nothing here": an empty memorized list is the single most common

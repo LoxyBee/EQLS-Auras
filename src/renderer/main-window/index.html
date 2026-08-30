@@ -992,6 +992,13 @@
             lot of generic text across many different spells) down to whichever one you actually have.
             Read from your EQ install folder above.
           </p>
+          <div class="row">
+            <span class="label" title="Fill these in only if the app is not finding your spellbook on its own - usually because more than one character's logs are in the folder. It builds the filename the EQ client uses and looks for that instead of guessing from the newest log.">Character:</span>
+            <input type="text" id="spellbook-char-name" class="text-input" placeholder="name" autocomplete="off" style="width:9em" />
+            <span>on</span>
+            <input type="text" id="spellbook-char-server" class="text-input" placeholder="server" autocomplete="off" style="width:8em" />
+          </div>
+          <p class="hint" id="spellbook-char-hint"></p>
           <div id="spellbook-missing-hint" style="display:none">
             <p class="hint warn-hint">
               <strong>This is worth fixing.</strong> EverQuest reuses the same buff message across

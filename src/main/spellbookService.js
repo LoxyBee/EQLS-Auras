@@ -15,7 +15,11 @@ const RELOAD_INTERVAL_MS = 30000;
 class SpellbookService {
   constructor() {
     this.installRoot = null;
+    // Derived from the watched log file's name (eqlog_<base>.txt). The auto path.
     this.characterBaseName = null;
+    // QOL #14 - a manual "<name>_<server>" the user typed on the Setup page, for when auto
+    // detection picks the wrong character (multiple logs) or none. Takes priority when set.
+    this.overrideBaseName = null;
     this.filePath = null;
     this.spellNames = new Set(); // lowercased, exact
     this.baseSpellNames = new Set(); // lowercased, rank suffix stripped
@@ -33,6 +37,19 @@ class SpellbookService {
     this._resolveAndLoad();
   }
 
+  // QOL #14. The manual override; null/'' clears it and detection falls back to the log-derived
+  // name. Called from main.js on startup (persisted value) and on every edit of the Setup fields.
+  setCharacterOverride(name) {
+    const next = name || null;
+    if (this.overrideBaseName === next) return;
+    this.overrideBaseName = next;
+    this._resolveAndLoad();
+  }
+
+  _effectiveBaseName() {
+    return this.overrideBaseName || this.characterBaseName;
+  }
+
   _resolveAndLoad() {
     if (this.timer) {
       clearInterval(this.timer);
@@ -46,14 +63,15 @@ class SpellbookService {
   }
 
   _findFile() {
-    if (!this.installRoot || !this.characterBaseName) return null;
+    const base = this._effectiveBaseName();
+    if (!this.installRoot || !base) return null;
     let entries;
     try {
       entries = fs.readdirSync(this.installRoot);
     } catch {
       return null;
     }
-    const escaped = this.characterBaseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp(`^${escaped}-.+-Spellbook\\.txt$`, 'i');
     const match = entries.find((name) => pattern.test(name));
     return match ? path.join(this.installRoot, match) : null;
@@ -107,9 +125,12 @@ class SpellbookService {
    * hundreds of landings per session were being ignored for want of it.
    */
   getExpectation() {
+    const base = this._effectiveBaseName();
     return {
       folder: this.installRoot,
-      fileNamePattern: this.characterBaseName ? `${this.characterBaseName}-<CLASS>-Spellbook.txt` : null,
+      fileNamePattern: base ? `${base}-<CLASS>-Spellbook.txt` : null,
+      // True when the pattern is coming from the manually entered character rather than the log.
+      manualCharacter: !!this.overrideBaseName,
     };
   }
 }

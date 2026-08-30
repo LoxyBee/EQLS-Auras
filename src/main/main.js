@@ -563,6 +563,18 @@ logRotationService.setResetRule(savedReset);
 const savedLogTarget = loadJson('lockoutLogTarget', { path: null });
 if (savedLogTarget && savedLogTarget.path) lockoutService.setLogTarget(savedLogTarget.path);
 
+// QOL #14 - a manually entered character/server for the spellbook, for when auto detection off
+// the log picks the wrong one or none. `<name>_<server>` is the base the EQ client names its
+// per-character files with (eqlog_<base>.txt, <base>-<CLASS>-Spellbook.txt).
+let spellbookChar = loadJson('spellbookCharacter', { name: '', server: '' });
+function spellbookCharBase(c) {
+  const name = String((c && c.name) || '').trim();
+  const server = String((c && c.server) || '').trim();
+  if (!name) return '';
+  return server ? `${name}_${server}` : name;
+}
+if (spellbookCharBase(spellbookChar)) spellbookService.setCharacterOverride(spellbookCharBase(spellbookChar));
+
 function runLogRotation(why) {
   try {
     // NOT WHILE A BACKFILL IS IN FLIGHT. The backfill holds a per-file state object for the length
@@ -1602,6 +1614,18 @@ ipcMain.handle('spellbook:getState', () => ({
   spellCount: spellbookService.getCount(),
   ...spellbookService.getExpectation(),
 }));
+// QOL #14 - the manually entered character/server for the spellbook.
+ipcMain.handle('spellbook:getCharacter', () => ({ ...spellbookChar }));
+ipcMain.handle('spellbook:setCharacter', (_event, { name, server }) => {
+  spellbookChar = { name: String(name || '').trim(), server: String(server || '').trim() };
+  saveJson('spellbookCharacter', spellbookChar);
+  spellbookService.setCharacterOverride(spellbookCharBase(spellbookChar) || null);
+  return {
+    filePath: spellbookService.getFilePath(),
+    spellCount: spellbookService.getCount(),
+    ...spellbookService.getExpectation(),
+  };
+});
 ipcMain.handle('spellbook:getMemorized', () => memorizedWithIcons());
 ipcMain.handle('spellbook:forgetMemorized', (_event, name) => buffEngine.removeMemorized(name));
 ipcMain.handle('spellbook:clearMemorized', () => buffEngine.clearMemorized());

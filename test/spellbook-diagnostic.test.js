@@ -47,6 +47,39 @@ test('the service can say where it looked and what for', () => {
     'the pattern has to be recognisable as a real filename, or it helps nobody');
 });
 
+test('QOL #14 - a manually entered character overrides the log-derived one', () => {
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eq-sb-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'Auto_bertox-WIZ-Spellbook.txt'), '1\tFire');
+    fs.writeFileSync(path.join(dir, 'Manual_povar-SHM-Spellbook.txt'), '1\tHaste\n2\tRegen');
+    const svc = new SpellbookService();
+    svc.setInstallRoot(dir);
+    svc.setCharacterBaseName('Auto_bertox');
+    assert.ok(svc.getFilePath().endsWith('Auto_bertox-WIZ-Spellbook.txt'), 'the log-derived name should win when no override is set');
+    assert.equal(svc.getExpectation().manualCharacter, false);
+
+    svc.setCharacterOverride('Manual_povar');
+    assert.ok(svc.getFilePath().endsWith('Manual_povar-SHM-Spellbook.txt'), 'the override must take priority');
+    assert.equal(svc.getCount(), 2);
+    assert.equal(svc.getExpectation().manualCharacter, true);
+
+    svc.setCharacterOverride('');
+    assert.ok(svc.getFilePath().endsWith('Auto_bertox-WIZ-Spellbook.txt'), 'clearing the override falls back to the log-derived name');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('QOL #14 - it is wired end to end', () => {
+  assert.match(mainSrc, /ipcMain\.handle\('spellbook:setCharacter'/);
+  assert.match(mainSrc, /spellbookService\.setCharacterOverride\(/);
+  assert.match(mainSrc, /saveJson\('spellbookCharacter'/);
+  assert.match(read('src', 'preload', 'preload-main.js'), /setSpellbookCharacter:/);
+  assert.match(html, /id="spellbook-char-name"/);
+  assert.match(rendererSrc, /setSpellbookCharacter\(spellbookCharNameEl\.value, spellbookCharServerEl\.value\)/);
+});
+
 test('the expectation reaches the settings window', () => {
   assert.match(mainSrc, /\.\.\.spellbookService\.getExpectation\(\)/,
     'the state the window receives no longer carries where to look');
@@ -89,12 +122,13 @@ test('the explanation is shown ONLY when the file is missing', () => {
   assert.match(html, /id="spellbook-missing-hint" style="display:none"/, 'it starts visible');
   assert.match(rendererSrc, /spellbookMissingHintEl\.style\.display = 'none';/, 'it is never hidden again');
   assert.match(rendererSrc, /spellbookMissingHintEl\.style\.display = '';/, 'it is never shown');
-  const fn = rendererSrc.match(/getSpellbookState\(\)\.then\(\(state\) => \{([\s\S]*?)\n  \}\);/);
-  assert.ok(fn, 'the status handler has been restructured');
+  const fn = rendererSrc.match(/function renderSpellbookState\(state\) \{([\s\S]*?)\n  \}/);
+  assert.ok(fn, 'the status renderer has been renamed or restructured');
   assert.ok(
     fn[1].indexOf('state.filePath') < fn[1].indexOf('Not found'),
     'the found case must be handled first, or the warning shows even when all is well'
   );
+  assert.match(rendererSrc, /getSpellbookState\(\)\.then\(renderSpellbookState\)/);
 });
 
 test('the status reads as a warning rather than as an error or as nothing', () => {

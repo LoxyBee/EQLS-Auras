@@ -120,6 +120,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setAutoHideOverlayEnabled: (enabled) => ipcRenderer.invoke('settings:setAutoHideOverlay', enabled),
 
   getSpellbookState: () => ipcRenderer.invoke('spellbook:getState'),
+  getSpellbookCharacter: () => ipcRenderer.invoke('spellbook:getCharacter'),
+  setSpellbookCharacter: (name, server) => ipcRenderer.invoke('spellbook:setCharacter', { name, server }),
   getMemorizedSpells: () => ipcRenderer.invoke('spellbook:getMemorized'),
   forgetMemorizedSpell: (name) => ipcRenderer.invoke('spellbook:forgetMemorized', name),
   clearMemorizedSpells: () => ipcRenderer.invoke('spellbook:clearMemorized'),
