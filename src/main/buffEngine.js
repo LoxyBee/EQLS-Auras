@@ -1769,7 +1769,8 @@ class BuffEngine extends EventEmitter {
   // Without it the only lever was the global multiplier, which is all-or-
   // nothing: correcting one unscaled spell would have thrown out the scaling
   // every other buff genuinely needs.
-  // KNOWN DEFECT, DELIBERATELY LEFT IN PLACE PENDING A DECISION - see FEATURES.md note 24.
+  // KNOWN DEFECT, DELIBERATELY LEFT IN PLACE PENDING A DECISION - see the "Instant spells" /
+  // "The open decision underneath this" section in docs/TESTING.md.
   //
   // 275 of the 1,052 roster entries carry a landing text and NO durationSec. Multiplying an
   // absent duration gives NaN, that becomes expiresAt, and the sweep in _tick asks

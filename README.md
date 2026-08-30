@@ -38,7 +38,7 @@ it.
 Three things, in increasing order of how much they prove:
 
 ```
-node test/run.js            52 suites, 802 cases. Seconds, and launches nothing.
+node test/run.js            The whole test suite. Seconds, and launches nothing.
 node tools/smoke-launch.js  Starts the real app, holds, reports. Clicks nothing.
 node tools/replay-log.js    Runs 1.5 million real log lines through the real engine.
 ```
@@ -52,18 +52,18 @@ should be identical, because a change that loses detection is a failure even if 
 
 ---
 
-## The documentation, in reading order
+## The documentation
 
 | File | What it is |
 | --- | --- |
-| **`docs/HANDOFF.md`** | Start here. What state things are in and what needs a person. |
-| **`docs/NOTES-STATUS.md`** | Every one of Shara's 40 notes, with what is built and what is not. |
-| **`docs/TESTING.md`** | Everything built but not yet confirmed in game. This is the to-do list for testing. |
-| **`CLAUDE.md`** | Conventions, architecture, and 29 detection gotchas. Read the gotchas before touching detection. |
-| **`docs/FEATURES.md`** | The original note-dump, with the full reasoning behind each note. |
-| **`docs/OPUS-SESSION-STATE.md`** | A long continuity record of how the work was done and why. Section 9 is the current state. |
+| **`CLAUDE.md`** | Conventions, architecture, and the detection gotchas. Read the gotchas before touching detection. Its "Remaining backlog" section is the feature roadmap. |
+| **`docs/QOL-BACKLOG.md`** | The live backlog — every requested change, tagged and sequenced. Start here for "what's next". |
+| **`docs/TESTING.md`** | Everything built but not yet confirmed in game. The to-do list for live testing. |
+| **`docs/BUFF-STACKING.md`** | The buff-stacking heading model — spec for the Buff Planner, wired into `src/shared/buffLines.js`. |
+| **`docs/HIGHLIGHTS.md`** | Promo copy: taglines and feature summaries for a marketing page. Not a dev doc. |
 
-The three `docs/UX_*` and `docs/VISUAL_*` files are earlier design work, kept for reference.
+Older planning docs (`FEATURES.md`, `HANDOFF.md`, `NOTES-STATUS.md`, and earlier `UX_*` / `VISUAL_*`
+/ `OPUS-SESSION-STATE.md` design notes) were consolidated into the above; their history is in git.
 
 ---
 
