@@ -156,19 +156,26 @@
           </ul>
         </div>
 
-        <h3 class="settings-page-section-title">Buff library</h3>
-
-        <div class="card">
-          <h3 title="Buffs you've added yourself, or promoted from an Unknown cast. Add one to pre-load a buff you know about in case it doesn't turn up as an unknown cast first. These get no automatic icon — use &quot;Choose icon...&quot; to pick art.">Custom buffs</h3>
-          <div class="row">
-            <button id="open-add-buff-modal-btn">Add a new buff...</button>
-            <button id="open-custom-buffs-modal-btn">View custom buffs...</button>
+        <!-- QOL cleanup workstream D - "monitor vs manage". Detection status + Needs your
+             attention stay prominent above; the library (just two modal launchers) folds into
+             one collapsed topic so it stops competing with the live state for attention. -->
+        <div class="block">
+          <div class="topic" id="topic-buff-library" data-topic>
+            <button type="button" class="topic-head" data-toggle>
+              <span class="chev"></span>
+              <span class="topic-title">Buff library</span>
+              <span class="topic-summary">Custom &amp; known buffs</span>
+            </button>
+            <div class="topic-body"><div class="topic-body-inner">
+              <h4 class="settings-subsection-title" title="Buffs you've added yourself, or promoted from an Unknown cast. Add one to pre-load a buff you know about in case it doesn't turn up as an unknown cast first. These get no automatic icon — use &quot;Choose icon...&quot; to pick art.">Custom buffs</h4>
+              <div class="row">
+                <button id="open-add-buff-modal-btn">Add a new buff...</button>
+                <button id="open-custom-buffs-modal-btn">View custom buffs...</button>
+              </div>
+              <h4 class="settings-subsection-title" title="Everything the app knows how to time, with its duration and whether it shows on the built-in Self Buffs aura. Edit a duration and Save, or uncheck Overlay to track a buff without cluttering that aura. Other auras pick their own buffs independently of this checkbox.">Known buffs</h4>
+              <button id="open-known-buffs-modal-btn">Browse known buffs...</button>
+            </div></div>
           </div>
-        </div>
-
-        <div class="card">
-          <h3 title="Everything the app knows how to time, with its duration and whether it shows on the built-in Self Buffs aura. Edit a duration and Save, or uncheck Overlay to track a buff without cluttering that aura. Other auras pick their own buffs independently of this checkbox.">Known buffs</h3>
-          <button id="open-known-buffs-modal-btn">Browse known buffs...</button>
         </div>
       </section>
 

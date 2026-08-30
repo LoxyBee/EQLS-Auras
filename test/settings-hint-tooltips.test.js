@@ -54,6 +54,22 @@ test('the fullscreen warning line is NOT treated as a hint - it stays put', () =
   assert.match(html, /id="log-activity-line"/);
 });
 
+test('workstream D - the Buff library folded into one collapsed topic below the live state', () => {
+  const page = between('id="page-tracker"', 'id="page-overlay"');
+  // it is a topic (collapsible, closed by default - no `open` class), not two open cards
+  const at = page.indexOf('id="topic-buff-library"');
+  assert.ok(at !== -1, 'the Buff library topic is gone');
+  assert.match(page.slice(at - 60, at + 60), /class="topic" id="topic-buff-library" data-topic/, 'not a collapsible topic, or starts open');
+  // both launchers moved inside it, ids unchanged (JS wires by id)
+  const body = page.slice(at, page.indexOf('</section>', at));
+  for (const id of ['open-add-buff-modal-btn', 'open-custom-buffs-modal-btn', 'open-known-buffs-modal-btn']) {
+    assert.ok(body.includes(id), `${id} did not move into the library topic`);
+  }
+  // Detection status / Needs your attention stay as prominent section headers above it
+  assert.ok(page.indexOf('Detection status') < at && page.indexOf('Needs your attention') < at);
+  assert.doesNotMatch(page, /settings-page-section-title">Buff library/, 'the old always-open Buff library section header is still there');
+});
+
 test('Setup cards moved their prose to title= (AA setup, Icon set, Merged tiles, App text size, Sounds, App data)', () => {
   const page = between('id="page-settings"', 'id="page-log"');
   for (const anchor of ['AA setup', 'Icon set:', 'Treat as the same:', 'App text size', 'Open sounds folder', 'Back up now']) {
