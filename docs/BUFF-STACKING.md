@@ -9,8 +9,8 @@ falling back to `spellStacking.checkOverwrite` only for pairs no line covers (`'
 lines; other classes still fall through to `checkOverwrite`. This doc stays the spec for filling
 in the rest.
 
-Grounded in the **EQ Legends** spell data and one of Shara's own gameplay logs, cross-checked
-against classic-EQ community documentation. Corrections from Shara (27 Aug) are marked **[SHARA]**.
+Grounded in the **EQ Legends** spell data and one of the owner's own gameplay logs, cross-checked
+against classic-EQ community documentation. Corrections from the owner (27 Aug) are marked **[OWNER]**.
 
 ---
 
@@ -35,7 +35,7 @@ one buff per occupied heading — with the total across all of them.
 
 | # | Source | What it gives | Reliability |
 |---|--------|---------------|-------------|
-| 1 | **Measured blocked-pairs** (§5) — mined from Shara's own logs: "X did not take hold, blocked by Y" | Proven same-heading conflicts | Ground truth |
+| 1 | **Measured blocked-pairs** (§5) — mined from the owner's own logs: "X did not take hold, blocked by Y" | Proven same-heading conflicts | Ground truth |
 | 2 | **Spell-file directives** — `spells_us.txt` effect slots carrying `Block new spell if slot N is <effect> and < <value>` / `Overwrite existing spell if slot N is <effect> and < <value>` (effects 148 / 149, already parsed by `spellStacking.js`) | Machine-readable block/overwrite rules the client itself enforces | Authoritative where present |
 | 3 | **The line / heading tables** (§3, §6) — which spells are in which line, which heading each occupies, cross-class conflicts | The structural map | Classic-derived, EQL-cross-checked; ~90% |
 | 4 | **Effect-slot collision heuristic** (`spellStacking.checkOverwrite`) — "same effect id in the same numbered slot → they collide" | Fallback when 1–3 are silent | Conservative; misses the heading model, e.g. thinks 4 AC buffs conflict |
@@ -73,7 +73,7 @@ all at once. Bard AC songs are a *separate* private layer on top (see §7).
 | **HP (Strength)** | Strength of Nature +75, Divine Glory, Divine Strength | ✅ separate |
 | **HP (Combination)** | **Aegolism +1100** — blocks BOTH the Primary and Symbol columns (see §4) | replaces, doesn't stack |
 
-→ Shara's reference loadout stacks **Resolution (Primary) + Symbol of Naltron (Symbol) +
+→ the owner's reference loadout stacks **Resolution (Primary) + Symbol of Naltron (Symbol) +
 Talisman of Altuna (Talisman)** for HP — three different columns.
 → **Armor of the Faithful conflicts with Talisman of Altuna** on the Talisman HP column. Only
 one. The planner currently offers both.
@@ -109,7 +109,7 @@ it would downgrade.
 | **Infusion of Spirit** (49) | +50 STR, +55 DEX, +45 STA | Effects sit on **different numbered slots** than the individual stat lines → **stacks with** individual STR/DEX/STA buffs. |
 
 Community-verified answer: **Infusion of Spirit + individual Strength + individual Dexterity +
-individual Stamina beats Harnessing of Spirit + Stamina.** This is exactly Shara's loadout.
+individual Stamina beats Harnessing of Spirit + Stamina.** This is exactly the owner's loadout.
 
 ### 3.5 Other effect headings
 
@@ -121,7 +121,7 @@ individual Stamina beats Harnessing of Spirit + Stamina.** This is exactly Shara
 | **Damage absorption / rune** | **Absorption (Primary)** — ENC Rune I–V, NEC/WIZ skins · **Absorption (Berserker)** — Berserker Spirit / Bedlam · **Absorption (Shield of Song)** — bard, private · plus more bard-private absorb lines. All the non-Primary ones stack. | Bard `Guard of Vie` is *cleric* — Ward of Vie→Guard of Vie, ~700 pool + 10% magic mitigation, slot unverified. |
 | **HP regen** | **Regen slot 1 (Primary)** — DRU Regeneration→Chloroplast→Regrowth, SHM Regeneration→Chloroplast→Regrowth (one wins) · **Regen slot 4 (rider)** — Skin Like Nature +2, Natureskin +4 · **Regen slot 3/6** — Treeform/Spirit of Oak · **Bard Layer 2** — Hymn/Cantata (slot 1), Psalm/Niv's (slot 3). All layers stack. | |
 | **Mana regen** | **Seven independent buckets, all additive**: Clarity line (ENC Breeze→Clarity→Clarity II +11), Gift line (ENC, separate), Bard Chorus (Cassindra's), Bard Cantata, Druid Protection of the Glades, NEC Lich, self-only, worn. | Within Clarity: group Boon of the Clear Mind over Clarity II *downgrades* to +9. |
-| **Resists** (fire/cold/poison/disease/magic — each independent) | **Resist Primary** — Endure→Resist per element (CLR/DRU/SHM/RNG, one wins, higher cap beats lower: SHM/DRU +45 > CLR +40); shaman group upgrades Talisman of Jasinth (disease +45), Talisman of Shadoo (poison +45) · **Resist slot 2** — Magician fire shields · **Bard Layer 2** — Psalms (one resist each, +70/+196) and Rhythms (multi-resist, mutually exclusive with each other). | Bard Psalms **stack fully** with caster resist Primary. Classic max-resist = caster Primary + bard Psalm + flower/potion. **[SHARA]** resist buffs are situational — the planner weights them low (0.25×) in the default slot order. |
+| **Resists** (fire/cold/poison/disease/magic — each independent) | **Resist Primary** — Endure→Resist per element (CLR/DRU/SHM/RNG, one wins, higher cap beats lower: SHM/DRU +45 > CLR +40); shaman group upgrades Talisman of Jasinth (disease +45), Talisman of Shadoo (poison +45) · **Resist slot 2** — Magician fire shields · **Bard Layer 2** — Psalms (one resist each, +70/+196) and Rhythms (multi-resist, mutually exclusive with each other). | Bard Psalms **stack fully** with caster resist Primary. Classic max-resist = caster Primary + bard Psalm + flower/potion. **[OWNER]** resist buffs are situational — the planner weights them low (0.25×) in the default slot order. |
 | **Magic resist — casters** | ENC/MAG/NEC/WIZ Shielding line carries MR on a **"Magic Shield" heading separate from "Magic Resistance (Primary)"** → an INT caster stacks Resist Magic + Shielding MR (+275 ceiling). | |
 | **Movement speed** | **Speed (Primary)** — ONE global slot: SoW, wolf forms, Spirit of Cheetah, bard Selo's, and **snare/root debuffs write to the same slot** (casting a speed buff cures snare). Fastest wins; a shorter/weaker one that overwrites then expires leaves you unbuffed. | |
 | **Attack (melee)** | **ATK slot 1 (Primary)** — Firefist, shaman Strength line ATK, ENC Rampage/Berserker Spirit, Yaulp, Grim Aura · slots 2–5 for other sources · **Layer 2** — bard Jonthan's/McVaxius', stacks with everything. | |
@@ -154,7 +154,7 @@ of the Glades + Symbol of Marzin beats Aegolism).
 ## 5. Measured conflicts (ground truth)
 
 Every pair below is a real "your <spell> did not take hold. (Blocked by <spell>.)" line mined
-from Shara's own gameplay log. `count` = how many times it fired. **This table should be
+from the owner's own gameplay log. `count` = how many times it fired. **This table should be
 hard-coded and checked before anything else.**
 
 | Blocked spell | Blocked by | Count | Heading it proves |
@@ -287,13 +287,13 @@ classic; use the roster's own `level` field for what is castable.
 
 ## 7. Bard specifics (EQ Legends)
 
-**[SHARA] — corrections to classic behaviour:**
+**[OWNER] — corrections to classic behaviour:**
 
 1. **No twisting on EQL.** A bard has **5 active song effects at all times, automatically** —
    EQL removed the classic "sing→stop→switch→cycle" mechanic. The planner models this as a fixed
    **5-slot song pool**. Ignore the classic "3–5 twisted, 12-second recast lockout" rules
    entirely.
-2. **Instrument modifier is not the classic ×2.8.** EQL is lower — **[SHARA] ~140–150 max
+2. **Instrument modifier is not the classic ×2.8.** EQL is lower — **[OWNER] ~140–150 max
    instrument, plus ~60% from AA.** Exact EQL formula and cap **NOT YET RESEARCHED** — see §10.
    Until then the planner should rank bard songs by **base magnitude only** and show a note that
    instrument choice changes the real value.
@@ -457,8 +457,8 @@ duration (~50 normal buffs also lack `durationSec`).
 
 | # | Question | Why it matters | How to resolve |
 |---|---|---|---|
-| 1 | **EQL instrument/singing modifier** — real cap and formula. [SHARA]: ~140–150 instrument + ~60% AA, not classic ×2.8 | Bard song ranking is wrong without it | Parse the song's instrument-mod field from `spells_us.txt`; measure a known song's landed value in-game at a known instrument level |
-| 2 | **Mortal Deftness / Focus of Spirit cast-order** — classic docs say they stack only if Mortal Deftness is cast first (an effect-slot ordering quirk). [SHARA] doubts it applies to EQL. | If real, the planner can't just say "these two conflict" | The mechanism is real in classic EQ (stacking is evaluated slot-by-slot at cast time, so for a few specific pairs the order can decide whether both land). This is **not** an EQL measurement. **Do NOT hard-code this pair.** Test on EQL: cast in each order, check both land. Treat cast-order as a general *possibility* to be aware of, not a modelled rule, until measured. |
+| 1 | **EQL instrument/singing modifier** — real cap and formula. [OWNER]: ~140–150 instrument + ~60% AA, not classic ×2.8 | Bard song ranking is wrong without it | Parse the song's instrument-mod field from `spells_us.txt`; measure a known song's landed value in-game at a known instrument level |
+| 2 | **Mortal Deftness / Focus of Spirit cast-order** — classic docs say they stack only if Mortal Deftness is cast first (an effect-slot ordering quirk). [OWNER] doubts it applies to EQL. | If real, the planner can't just say "these two conflict" | The mechanism is real in classic EQ (stacking is evaluated slot-by-slot at cast time, so for a few specific pairs the order can decide whether both land). This is **not** an EQL measurement. **Do NOT hard-code this pair.** Test on EQL: cast in each order, check both land. Treat cast-order as a general *possibility* to be aware of, not a modelled rule, until measured. |
 | 3 | **Ward of the Divine** (CLR 50) — empty effect text on Legends | Planner can't rank an unknown buff | Read the actual `spells_us.txt` row |
 | 4 | **Armor of Protection HP column** — classic tables list it under both Heroism AND Shielding/Talisman | Determines what it blocks | Log test: cast with Resolution up, then with Talisman of Altuna up |
 | 5 | **Guard of Vie / Blessing lines slot assignments** — unverified | | `spells_us.txt` block/overwrite directives |

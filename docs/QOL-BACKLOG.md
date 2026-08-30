@@ -2,7 +2,7 @@
 
 **This is the live backlog.** The older architectural / re-work roadmap (custom-timer overhaul,
 multi-step aura type, aura scale, action-bar covers, etc.) lives in `CLAUDE.md`'s "Remaining
-backlog" section. Shara's original 40-note list is complete except note #2 (first-aggro, she is
+backlog" section. The owner's original 40-note list is complete except note #2 (first-aggro, she is
 supplying it); the retired `FEATURES.md` / `NOTES-STATUS.md` / `HANDOFF.md` are in git history.
 
 45 items, organised by area. Items 1–32 are the original batch; 33–43 were added 30 Aug (Section

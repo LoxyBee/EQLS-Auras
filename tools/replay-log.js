@@ -48,8 +48,8 @@ const { SpellbookService } = require('../src/main/spellbookService');
 
 // With no paths given, replay every log tools/lib/owner-logs.js can find on this machine - it
 // reads the app's own configured EQ folder and takes the per-day Split/ files (continuous, no
-// overlap between days). This replaced a hardcoded list of C:/Users/Lindsey/... paths, which was
-// a different Windows account than any machine this has run on since, so it always found nothing.
+// overlap between days). This replaced a hardcoded list of absolute paths under a Windows account
+// no machine this has run on since actually had, so it always found nothing.
 //
 // The documented baseline in the header (129 buffs, 211,546 landings, ...) was captured from that
 // original file set; a run over a different machine's logs will not match those absolute numbers.

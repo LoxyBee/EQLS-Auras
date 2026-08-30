@@ -21,11 +21,14 @@
 // `logWatcher` already handles the result (`stat.size < offset` resets the offset to 0), verified
 // by simulating a rotation against the real watcher while it was running.
 //
-// THE RESET, MEASURED RATHER THAN TYPED. Tuesday, 11:00 US Eastern. Two Alt+Z readings 10.84 hours
-// apart landed 6 seconds from each other and both within 18 seconds of a clean 11:00:00 on Tuesday
-// 1 September 2026 - and every row of that window showed the same remaining time, which is what
-// establishes that all the locks share one reset rather than each running its own. That is a
-// measurement, not a constant somebody typed.
+// THE RESET: TUESDAY, 11:00 US EASTERN — the owner's own reading, not something this app measured.
+// It comes from the owner's in-game Alt+Z lockout timer, stated first-hand. lockoutCore.js's
+// RESET_RULE and docs/EVIDENCE.md both record it as `provenance: 'stated'`, and lockoutCore's
+// parser deliberately runs with `hour: null` — "the reset hour has never been measured". Two Alt+Z
+// readings 10.84 hours apart on Tuesday 1 September 2026 landed within 6 seconds of each other and
+// within 18 seconds of 11:00:00, every row showing the same remaining time — consistent with one
+// shared reset, though consistency is not confirmation. This is the host-side default only; the
+// user may change the day/hour, and it must always match the Lockouts grid setting.
 //
 // TIME ZONE. The reset is the SERVER's, which runs on US Eastern, so the boundary is resolved in
 // America/New_York - see src/shared/easternReset.js. That handles the daylight-saving change on
@@ -39,8 +42,9 @@ const path = require('path');
 const { extractTimestampMs } = require('./logSplitter');
 const { easternResetBefore } = require('../shared/easternReset');
 
-// 0 = Sunday, so 2 = Tuesday. Measured (Alt+Z, see the header); overridable by the user, who sets
-// the same value the Lockouts grid uses - the two must never differ. This is only the default.
+// 0 = Sunday, so 2 = Tuesday. The owner's Alt+Z reading, not a measurement (see the header);
+// overridable by the user, who sets the same value the Lockouts grid uses - the two must never
+// differ. This is only the default.
 const DEFAULT_RESET = { weekday: 2, hour: 11 };
 
 // How long a log must have been still before it is touched. The host's own quiet check watches the
@@ -64,9 +68,15 @@ function resetBoundaryBefore(now = new Date(), rule = DEFAULT_RESET) {
 }
 
 /**
- * Where the rotation cuts the log. The grid's period begins exactly at the reset instant (the hour
- * is always known now), so the cut is the same instant - the live log ends up holding precisely
- * what the grid considers this week and nothing before it.
+ * Where the rotation cuts the log. Identical to `resetBoundaryBefore` today: the host always
+ * supplies an hour (default 11) and passes the same hour to lockoutCore's grid, so the cut and the
+ * grid's period boundary are the same instant.
+ *
+ * Kept as its own name because the two were briefly different (commit 6834d78 cut at the boundary
+ * DAY's midnight, when lockoutCore ran with `hour: null`, and named the archive for 11:00). If the
+ * grid ever goes back to an unknown hour, re-introduce that split HERE — never let the cut drift
+ * from what lockoutCore's grid uses, or a kill in the gap reads as "raid available" when it's
+ * done. That was 6834d78's bug.
  */
 function rotationCutBefore(now = new Date(), rule = DEFAULT_RESET) {
   return resetBoundaryBefore(now, rule);
@@ -380,8 +390,8 @@ class LogRotationService {
 
     // The reset instant, which is what the archive is NAMED for and what the status reports.
     const boundary = resetBoundaryBefore(now, this.resetRule);
-    // Where the bytes are actually divided. With a known hour this equals `boundary`; only a
-    // genuinely unset hour cuts at midnight instead (see rotationCutBefore).
+    // Where the bytes are actually divided. Equal to `boundary` today (the hour is always set);
+    // kept separate in case the cut and the boundary ever diverge again — see rotationCutBefore.
     const cut = rotationCutBefore(now, this.resetRule);
     report.boundary = boundary.toISOString();
     report.cut = cut.toISOString();

@@ -117,8 +117,8 @@ class LockoutService extends EventEmitter {
    * 5,000 and trimmed with push-then-shift, so once it is full the length never changes again -
    * and it IS full after a backfill of the owner's corpus, measured. Change detection built on it
    * goes permanently silent at exactly the moment the app has finished loading, which is to say
-   * the live grid would never update again. Session D's optional `lockoutEngine.js` adapter has
-   * the same shape at its lines 55-61 and will have the same problem; they have been told.
+   * the live grid would never update again. (A separate adapter module built alongside this one
+   * had the same shape and the same latent bug; its owner was told.)
    *
    * These five are the collections `project` and `projectGrid` read. seenCount can go DOWN when
    * the dedupe index is pruned, which is still a change and still wants a redraw.
