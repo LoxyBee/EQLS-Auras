@@ -1644,6 +1644,9 @@ ipcMain.handle('widget:createBuffTimer', (_event, { name, spellName, source }) =
 ipcMain.handle('widget:createCooldownTimer', (_event, { name, spellName, cooldownSec, iconId, buffDurationSec }) =>
   widgetManager.createCooldownTimerWidget(name, spellName, cooldownSec, iconId, buffDurationSec)
 );
+ipcMain.handle('widget:createGcdTimer', (_event, { name, iconId }) =>
+  widgetManager.createGcdTimerWidget(name, iconId)
+);
 // Spells worth a cooldown countdown - note 15.
 //
 // A DIFFERENT list from the trackable one below, deliberately. A cooldown is started by the cast

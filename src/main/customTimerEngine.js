@@ -3,12 +3,29 @@ const {
   stripTimestamp,
   matchCastBegin,
   matchSingingBegin,
+  matchActivate,
   matchOwnInterrupt,
   matchZoneChange,
   stripRankSuffix,
+  rankValue,
 } = require('./buffParser');
 
 const TICK_INTERVAL_MS = 1000;
+
+// GCD - the global spell-recovery lockout between casts (backlog #38). Base 1.5s, reduced 2% per
+// mote tier of the spell just cast. Shara supplied the rate, from the same "Benefits by category"
+// sheet as buffEngine's MOTE_DURATION_RATES / CAST_TIME_RATES; unmeasured against her own logs,
+// same status as those. Shown to the nearest 0.1s and an exact half rounds DOWN (1.35 -> 1.3),
+// per her spec. An un-ranked cast (rank 0) is the full 1.5s.
+const GCD_BASE_TENTHS = 15;
+const GCD_RATE_PCT_PER_TIER = 2;
+function gcdSecForRank(rank) {
+  const tier = Number.isFinite(rank) && rank > 0 ? rank : 0;
+  // Kept in tenths of a second so the round-half-DOWN lands exactly (13.5 is exact in FP; 1.35
+  // is not).
+  const tenths = (GCD_BASE_TENTHS * (100 - GCD_RATE_PCT_PER_TIER * tier)) / 100;
+  return Math.max(0.1, Math.ceil(tenths - 0.5) / 10);
+}
 
 // Much simpler sibling to BuffEngine, for user-defined timers keyed off
 // arbitrary log text rather than mined spell data - no ambiguity tiers, no
@@ -84,6 +101,10 @@ class CustomTimerEngine extends EventEmitter {
     // before the first real line ever reads a bare undefined.
     this.lastCapturedTextByTimerId = new Map();
     this.lastCapturedPrefixByTimerId = new Map();
+    // Mote rank of the cast/song/activate on the line _findTriggerMatches last looked at, 0 for
+    // none. Read right after, in the same handleLine, to scale a gcdRecovery timer's duration
+    // (backlog #38). Initialised so nothing before the first line reads undefined.
+    this.lastCastRankForGcd = 0;
     // Zone-trigger state. This engine keeps its own copy rather than reading widgetManager's
     // (which already tracks the same thing for zone-gating) for the same DI reasoning as
     // getWidgetsFn/setIconUrlFn - widgetManager pulls in Electron's screen/BrowserWindow, which
@@ -182,6 +203,11 @@ class CustomTimerEngine extends EventEmitter {
     const lowerLine = strippedLine.toLowerCase();
     // Parsed once, not per timer. Null for any line that is not the player starting a cast.
     const castSpell = this._castSpellFor(strippedLine);
+    // The raw name off this line's cast / song / activate (rank suffix intact), for the 'anyCast'
+    // trigger mode and the GCD duration calc - unlike castSpell it is not resolved against the
+    // roster, so a nuke or a click the roster does not carry still counts as "a cast happened".
+    const rawCastName = matchCastBegin(strippedLine) || matchActivate(strippedLine);
+    this.lastCastRankForGcd = rawCastName ? rankValue(rawCastName) : 0;
     // Zone transition, if this line reports one - parsed once, same reasoning as castSpell above.
     // matchZoneChange only ever names the NEW zone, so the zone being LEFT has to come from this
     // engine's own currentZone before it's overwritten. zoneLeft stays null on the very first zone
@@ -223,6 +249,10 @@ class CustomTimerEngine extends EventEmitter {
           // contains on "You begin casting Fire" also matches Fire Bolt, Fire Flux and four more.
           // Thirteen spells in the roster are a prefix of another one.
           hit = castSpell !== null && castSpell.toLowerCase() === trigger;
+        } else if (timer.triggerMatch === 'anyCast') {
+          // Fires on ANY cast / song / activate line, whatever the spell. triggerText is not used
+          // for matching (the GCD premade stores a placeholder). Built for the GCD tracker (#38).
+          hit = rawCastName !== null;
         } else if (timer.triggerMatch === 'zoneEnter') {
           // triggerText is a ZONE NAME here, not a line - same shape as castOf just above, for the
           // same reason: no line-matching mode could do this job (the zone-change line's own
@@ -386,18 +416,22 @@ class CustomTimerEngine extends EventEmitter {
         continue;
       }
 
+      // A gcdRecovery timer's length is not fixed - it is the global recovery for THIS cast,
+      // scaled by the spell's mote rank off the line _findTriggerMatches just parsed (#38).
+      const durSec = def.gcdRecovery ? gcdSecForRank(this.lastCastRankForGcd) : def.durationSec;
+
       // Reverse detection. See the class's own header comment on the 'hidden' phase for the full
       // shape - this is the other half, seeing the trigger for the first time. `reverse` came from
       // the owning WIDGET (see _resolveActivations), so this applies uniformly whether `key` is a
       // single definition's own id (independent) or a whole-widget AND/OR combo key.
       if (reverse) {
-        this._debugLog(`FIRED "${def.name}" - reverse trigger: "${stripped}" - hiding for ${def.durationSec}s`);
+        this._debugLog(`FIRED "${def.name}" - reverse trigger: "${stripped}" - hiding for ${durSec}s`);
         this.activeTimers.set(key, {
           id: key,
           defId: def.id,
           name: def.name,
-          durationSec: def.durationSec,
-          expiresAt: now + def.durationSec * 1000,
+          durationSec: durSec,
+          expiresAt: now + durSec * 1000,
           endedText: def.endedText || null,
           triggerMatch: def.triggerMatch || undefined,
           triggerText: def.triggerText || undefined,
@@ -409,7 +443,10 @@ class CustomTimerEngine extends EventEmitter {
         continue;
       }
 
-      this._debugLog(`FIRED "${def.name}" - trigger: "${stripped}"`);
+      this._debugLog(
+        `FIRED "${def.name}" - trigger: "${stripped}"` +
+          (def.gcdRecovery ? ` - GCD ${durSec}s (mote rank ${this.lastCastRankForGcd})` : '')
+      );
 
       this.activeTimers.set(key, {
         id: key,
@@ -419,8 +456,8 @@ class CustomTimerEngine extends EventEmitter {
         // per-widget string no definition owns.
         defId: def.id,
         name: def.name,
-        durationSec: def.durationSec,
-        expiresAt: now + def.durationSec * 1000,
+        durationSec: durSec,
+        expiresAt: now + durSec * 1000,
         endedText: def.endedText || null,
         // Carried through so an interrupt can find and cancel this again. Without them the check
         // above has an id and a name and no way to tell what kind of timer it is looking at.
@@ -635,4 +672,4 @@ class CustomTimerEngine extends EventEmitter {
   }
 }
 
-module.exports = { CustomTimerEngine };
+module.exports = { CustomTimerEngine, gcdSecForRank };
