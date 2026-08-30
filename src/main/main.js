@@ -1694,6 +1694,18 @@ ipcMain.handle('buffs:castable', () =>
     .sort((a, b) => a.name.localeCompare(b.name))
 );
 
+// Every spell name in the roster, for the "Skill cast" custom-timer trigger's search picker. A
+// castOf trigger fires on "You begin casting X" / "You begin singing X" - it needs no landing
+// text and no recast time, so it must NOT be filtered like buffs:castable (recast > 1.5s) or
+// buffs:trackable (has a duration). That filtering was why bard songs and instants were missing
+// from the picker. Reported live 30 Aug.
+ipcMain.handle('buffs:allNames', () =>
+  buffStore
+    .getAll()
+    .map((e) => ({ name: e.name, iconId: e.iconId ?? null, isBardSong: !!e.isBardSong }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+);
+
 // Only the spells that can actually be tracked, and which of the two ways each one supports.
 // The picker needs this to avoid offering "on an ally" for a spell whose roster entry has no
 // third-person landing text - that would build an aura which silently never lights up.
@@ -1925,6 +1937,7 @@ ipcMain.handle('widget:setSoundOnLand', (_event, { id, enabled }) => widgetManag
 ipcMain.handle('widget:setSoundOnExpire', (_event, { id, enabled }) => widgetManager.setSoundOnExpire(id, enabled));
 ipcMain.handle('widget:setSoundWarningSec', (_event, { id, value }) => widgetManager.setSoundWarningSec(id, value));
 ipcMain.handle('widget:setSoundWarningLoopSec', (_event, { id, value }) => widgetManager.setSoundWarningLoopSec(id, value));
+ipcMain.handle('widget:setSoundCooldownSec', (_event, { id, value }) => widgetManager.setSoundCooldownSec(id, value));
 ipcMain.handle('widget:setLandSoundId', (_event, { id, soundId }) => widgetManager.setLandSoundId(id, soundId));
 ipcMain.handle('widget:setExpireSoundId', (_event, { id, soundId }) => widgetManager.setExpireSoundId(id, soundId));
 ipcMain.handle('widget:setWarningSoundId', (_event, { id, soundId }) => widgetManager.setWarningSoundId(id, soundId));

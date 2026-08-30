@@ -1842,6 +1842,41 @@ label.disabled {
   color: var(--ink-mut);
 }
 
+/* The Skill-cast custom-timer trigger's spell search results (reported live 30 Aug). Same shape
+   as .zone-add-list. */
+.skill-search-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin: 4px 0;
+  background: var(--panel-2, var(--bg));
+}
+.skill-search-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.skill-search-option:hover {
+  background: var(--accent-soft);
+}
+/* Bard songs read the same way they do everywhere else in the app - underlined. */
+.skill-search-option.is-song {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.skill-search-none {
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--ink-mut);
+}
+
 /* The two position controls sit above the rest of Display & size, separated
    by a rule - they're actions, not settings, and mixing them into the slider
    list is what made them easy to overlook. */

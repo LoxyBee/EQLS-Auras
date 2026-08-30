@@ -1138,6 +1138,12 @@ function setSoundWarningSec(id, seconds) {
   return config;
 }
 
+function setSoundCooldownSec(id, seconds) {
+  const config = widgetStore.update(id, { soundCooldownSec: widgetStore.clampSoundCooldownSec(seconds) });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setSoundWarningLoopSec(id, seconds) {
   const config = widgetStore.update(id, { soundWarningLoopSec: seconds });
   pushConfigChanged(id);
@@ -1363,6 +1369,7 @@ module.exports = {
   setSoundOnExpire,
   setSoundWarningSec,
   setSoundWarningLoopSec,
+  setSoundCooldownSec,
   setLandSoundId,
   setExpireSoundId,
   setWarningSoundId,

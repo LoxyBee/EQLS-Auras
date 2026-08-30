@@ -42,6 +42,7 @@ let currentConfig = {
   soundOnExpire: false,
   soundWarningSec: 0,
   soundWarningLoopSec: 0,
+  soundCooldownSec: 0,
   landSoundId: null,
   expireSoundId: null,
   warningSoundId: null,
@@ -138,6 +139,13 @@ function playCustomSound(kind, soundId) {
 const lastAlertPlayedAt = new Map(); // kind -> ms timestamp
 const MIN_ALERT_INTERVAL_MS = 200;
 
+// The user-set per-aura cooldown (soundCooldownSec, reported live 30 Aug) - the shortest gap
+// between ANY two alert sounds from this aura, across all kinds. Distinct from MIN_ALERT_INTERVAL_MS
+// above (a fixed per-kind anti-double-fire guard); this one is a deliberate throttle for an aura
+// that refreshes constantly - a bard song pulsing every 6s set to sound only every 24, say. Shared
+// across kinds on purpose: "I just heard this aura" is the thing being rate-limited.
+let lastAnyAlertAt = 0;
+
 // One alert per render tick even if several buffs changed at once (e.g. a
 // multi-buff burst cast landing together) - a chime per buff would be a
 // wall of overlapping beeps instead of a useful cue.
@@ -150,7 +158,10 @@ function playAlertSound(kind) {
   const now = Date.now();
   const lastPlayed = lastAlertPlayedAt.get(kind);
   if (lastPlayed !== undefined && now - lastPlayed < MIN_ALERT_INTERVAL_MS) return;
+  const cooldownMs = (currentConfig.soundCooldownSec || 0) * 1000;
+  if (cooldownMs > 0 && now - lastAnyAlertAt < cooldownMs) return;
   lastAlertPlayedAt.set(kind, now);
+  lastAnyAlertAt = now;
   // Debug-only (see preload-overlay.js's debugLog bridge - gated the same as every other
   // detection line by the Diagnostics toggle, off by default). The shared debugLog() prefix is
   // only second-precision (toLocaleTimeString has no ms), which is too coarse to measure an

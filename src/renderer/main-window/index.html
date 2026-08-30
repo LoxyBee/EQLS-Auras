@@ -812,6 +812,12 @@
                     <span id="widget-alert-volume-value" class="slider-value">100%</span>
                   </div>
 
+                  <div class="row" id="widget-sound-cooldown-row">
+                    <span class="label" title="The shortest gap allowed between two alert sounds from this aura, across all of its sounds. A sound arriving sooner stays silent. Useful for something that refreshes constantly - a bard song pulsing every 6 seconds set to only sound every 24, say. 0 means every alert plays.">Sound cooldown:</span>
+                    <input type="range" id="widget-sound-cooldown-slider" min="0" max="60" step="1" />
+                    <span id="widget-sound-cooldown-value" class="slider-value">off</span>
+                  </div>
+
                   <div class="row">
                     <button type="button" id="widget-sound-open-folder-btn" title="Opens the folder &quot;Choose sound...&quot; starts in - drop your own mp3/wav/ogg/m4a files in there to have them ready to pick from.">📁 Open sounds folder</button>
                   </div>
@@ -2278,15 +2284,19 @@
       </div>
 
       <div id="widget-new-timer-skill-fields" style="display:none">
+        <!-- Type to filter the whole spell roster (bard songs included), click a real name to pick
+             it - the value is always a genuine spell string, never parsed from what was typed.
+             widget-new-timer-skill-select stays as a hidden input so every get/set of its .value
+             elsewhere is unchanged. -->
         <div class="row">
-          <select id="widget-new-timer-skill-select">
-            <option value="">- choose a spell -</option>
-          </select>
+          <input type="hidden" id="widget-new-timer-skill-select" />
+          <input type="text" id="widget-new-timer-skill-search" class="text-input" placeholder="Search for a spell or song..." autocomplete="off" />
         </div>
+        <div id="widget-new-timer-skill-options" class="skill-search-list" style="display:none"></div>
         <p class="hint">
-          Starts the instant you begin casting this spell - matched against the actual cast, not
-          against log text, so a ranked recast ("Rk. II", a trailing numeral) still starts it. An
-          interrupted cast cancels the timer instead of starting it.
+          Starts the instant you begin casting (or singing) this spell - matched against the actual
+          cast, not against log text, so a ranked recast ("Rk. II", a trailing numeral) still
+          starts it. An interrupted cast cancels the timer instead of starting it.
         </p>
       </div>
 

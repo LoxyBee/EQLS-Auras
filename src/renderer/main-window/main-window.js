@@ -1234,6 +1234,9 @@ function initWidgetsPanel() {
   const soundWarningValueEl = document.getElementById('widget-sound-warning-value');
   const alertVolumeSlider = document.getElementById('widget-alert-volume-slider');
   const alertVolumeValueEl = document.getElementById('widget-alert-volume-value');
+  const soundCooldownRowEl = document.getElementById('widget-sound-cooldown-row');
+  const soundCooldownSlider = document.getElementById('widget-sound-cooldown-slider');
+  const soundCooldownValueEl = document.getElementById('widget-sound-cooldown-value');
   const soundWarningLoopSlider = document.getElementById('widget-sound-loop-slider');
   const soundWarningLoopValueEl = document.getElementById('widget-sound-loop-value');
   // Scoped per grid, not a bare '.anchor-cell' query - the label position
@@ -1393,7 +1396,9 @@ function initWidgetsPanel() {
   const newTimerModeRadios = document.querySelectorAll('input[name="widget-new-timer-trigger-mode"]');
   const newTimerChatFieldsEl = document.getElementById('widget-new-timer-chat-fields');
   const newTimerRawFieldsEl = document.getElementById('widget-new-timer-raw-fields');
-  const newTimerSkillSelect = document.getElementById('widget-new-timer-skill-select');
+  const newTimerSkillSelect = document.getElementById('widget-new-timer-skill-select'); // hidden input - holds the value
+  const newTimerSkillSearch = document.getElementById('widget-new-timer-skill-search');
+  const newTimerSkillOptions = document.getElementById('widget-new-timer-skill-options');
   const newTimerZoneSelect = document.getElementById('widget-new-timer-zone-select');
   const newTimerZoneDirectionRadios = document.querySelectorAll('input[name="widget-new-timer-zone-direction"]');
   const newTimerChannelSelect = document.getElementById('widget-new-timer-channel-select');
@@ -2526,6 +2531,11 @@ function initWidgetsPanel() {
     const alertVolume = typeof widget.alertVolume === 'number' ? widget.alertVolume : 100;
     alertVolumeSlider.value = alertVolume;
     alertVolumeValueEl.textContent = `${alertVolume}%`;
+    const soundCooldown = typeof widget.soundCooldownSec === 'number' ? widget.soundCooldownSec : 0;
+    if (soundCooldownSlider) {
+      soundCooldownSlider.value = soundCooldown;
+      soundCooldownValueEl.textContent = soundCooldown ? `${soundCooldown}s` : 'off';
+    }
     renderLandSoundPicker(widget.landSoundId);
     renderExpireSoundPicker(widget.expireSoundId);
     renderWarningSoundPicker(widget.warningSoundId);
@@ -2790,7 +2800,7 @@ function initWidgetsPanel() {
     newTimerMatchRadios.forEach((r) => (r.checked = r.value === 'exact'));
     newTimerTriggerInput.value = '';
     newTimerEndedInput.value = '';
-    newTimerSkillSelect.value = '';
+    setSkillTrigger('');
     newTimerZoneSelect.value = '';
     newTimerZoneDirectionRadios.forEach((r) => (r.checked = r.value === 'enter'));
     newTimerModeRadios.forEach((r) => (r.checked = r.value === 'chat'));
@@ -2847,11 +2857,11 @@ function initWidgetsPanel() {
       newTimerChatEndedMessageInput.value = timer.endedChat?.message || '';
       newTimerTriggerInput.value = '';
       newTimerEndedInput.value = '';
-      newTimerSkillSelect.value = '';
+      setSkillTrigger('');
       newTimerZoneSelect.value = '';
     } else if (timer.triggerMatch === 'castOf') {
       newTimerModeRadios.forEach((r) => (r.checked = r.value === 'skill'));
-      newTimerSkillSelect.value = timer.triggerText;
+      setSkillTrigger(timer.triggerText);
       newTimerTriggerInput.value = '';
       newTimerEndedInput.value = '';
       newTimerChannelSelect.value = 'say';
@@ -2871,7 +2881,7 @@ function initWidgetsPanel() {
       newTimerWhoNameInput.value = '';
       newTimerChatMessageInput.value = '';
       newTimerChatEndedMessageInput.value = '';
-      newTimerSkillSelect.value = '';
+      setSkillTrigger('');
     } else {
       newTimerModeRadios.forEach((r) => (r.checked = r.value === 'raw'));
       newTimerTriggerInput.value = timer.triggerText;
@@ -2881,7 +2891,7 @@ function initWidgetsPanel() {
       newTimerWhoNameInput.value = '';
       newTimerChatMessageInput.value = '';
       newTimerChatEndedMessageInput.value = '';
-      newTimerSkillSelect.value = '';
+      setSkillTrigger('');
       newTimerZoneSelect.value = '';
     }
     updateTimerChannelVisibility();
@@ -2905,9 +2915,9 @@ function initWidgetsPanel() {
   // last populated it, since this modal can open (editing an existing widget's own timers)
   // without the Add Aura modal ever having been opened this session at all.
   function openTimerModal(timer, iconUrl) {
-    window.eqTracker.getCastableBuffs().then((buffs) => {
-      castableBuffs = buffs;
-      populateSkillTriggerSelect();
+    Promise.all([window.eqTracker.getCastableBuffs(), window.eqTracker.getAllBuffNames()]).then(([castable, allNames]) => {
+      castableBuffs = castable;
+      allSkillNames = allNames;
       populateZoneTriggerSelect();
       resetTimerForm();
       if (timer) populateTimerForm(timer, iconUrl);
@@ -2917,29 +2927,71 @@ function initWidgetsPanel() {
     newTimerNameInput.focus();
   }
 
-  // A real dropdown for the same reason populateBuffTimerSelect is - type a letter to jump,
-  // scroll, arrow keys - over the same castable-spell list the cooldown premade already fetches
-  // (see openAddWidgetModal), refetched here since this modal can open independently of that one.
-  function populateSkillTriggerSelect() {
-    const sorted = [...castableBuffs].sort((a, b) => a.name.localeCompare(b.name));
-    newTimerSkillSelect.innerHTML = '';
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = '- choose a spell -';
-    newTimerSkillSelect.appendChild(placeholder);
-    for (const buff of sorted) {
-      const opt = document.createElement('option');
-      opt.value = buff.name;
-      opt.textContent = buff.name;
-      newTimerSkillSelect.appendChild(opt);
-    }
-    newTimerSkillSelect.value = '';
+  // The Skill-cast trigger's spell picker (reported live 30 Aug: needs a real filter bar, and bard
+  // songs were missing). Filters the WHOLE roster - allSkillNames comes from buffs:allNames, not
+  // the recast-time-filtered buffs:castable that fed the old <select>. Type to filter, click a real
+  // name to pick it; the hidden #widget-new-timer-skill-select input holds the value so every
+  // get/set of .value elsewhere in this modal is unchanged.
+  let allSkillNames = []; // [{ name, iconId, isBardSong }]
+
+  function setSkillTrigger(name) {
+    newTimerSkillSelect.value = name || '';
+    newTimerSkillSearch.value = name || '';
+    if (newTimerSkillOptions) newTimerSkillOptions.style.display = 'none';
   }
 
-  // Same real-dropdown reasoning as populateSkillTriggerSelect just above, over the same
-  // knownZones list the zone-gating picker (populateZoneSelect, initWidgetsPanel) already fetched
-  // once at startup - no separate fetch needed here, this modal just reads the same closure
-  // variable.
+  function renderSkillTriggerOptions() {
+    if (!newTimerSkillOptions) return;
+    const q = newTimerSkillSearch.value.trim().toLowerCase();
+    // Only while the field is focused or has text - an always-open 1,000-row list would bury the
+    // hint below it. When the field holds the already-picked name, that is not a query to filter on.
+    const typing = document.activeElement === newTimerSkillSearch && q !== newTimerSkillSelect.value.toLowerCase();
+    if (!typing || !q) {
+      newTimerSkillOptions.style.display = 'none';
+      return;
+    }
+    const matches = allSkillNames.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 200);
+    newTimerSkillOptions.innerHTML = '';
+    newTimerSkillOptions.style.display = '';
+    for (const s of matches) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'skill-search-option' + (s.isBardSong ? ' is-song' : '');
+      btn.textContent = s.name;
+      // mousedown, not click - the field blur (which hides this list) fires first otherwise.
+      btn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        setSkillTrigger(s.name);
+        newTimerSkillSearch.blur();
+      });
+      newTimerSkillOptions.appendChild(btn);
+    }
+    if (!matches.length) {
+      const none = document.createElement('div');
+      none.className = 'skill-search-none';
+      none.textContent = 'No spell or song matches that';
+      newTimerSkillOptions.appendChild(none);
+    }
+  }
+
+  newTimerSkillSearch.addEventListener('input', () => {
+    // Typing invalidates a previous pick until a new row is clicked.
+    newTimerSkillSelect.value = '';
+    renderSkillTriggerOptions();
+  });
+  newTimerSkillSearch.addEventListener('focus', renderSkillTriggerOptions);
+  newTimerSkillSearch.addEventListener('blur', () => setTimeout(() => {
+    if (document.activeElement !== newTimerSkillSearch) {
+      newTimerSkillOptions.style.display = 'none';
+      // Nothing valid was picked - snap the field back to whatever the hidden value holds (the
+      // last real pick, or empty).
+      newTimerSkillSearch.value = newTimerSkillSelect.value;
+    }
+  }, 120));
+
+  // A plain <select> is still fine here - there are ~104 zones and every one is a real place, so
+  // there is no typo path and no "hundreds of rows" problem the skill search above had to solve.
+  // Reads the same knownZones list the zone-gating picker already fetched once at startup.
   function populateZoneTriggerSelect() {
     const sorted = [...knownZones].sort((a, b) => a.localeCompare(b));
     newTimerZoneSelect.innerHTML = '';
@@ -4157,6 +4209,13 @@ function initWidgetsPanel() {
     alertVolumeValueEl.textContent = `${volume}%`;
     window.eqTracker.setWidgetAlertVolume(selectedId, volume);
   });
+  if (soundCooldownSlider) {
+    soundCooldownSlider.addEventListener('input', () => {
+      const secs = Number(soundCooldownSlider.value);
+      soundCooldownValueEl.textContent = secs ? `${secs}s` : 'off';
+      window.eqTracker.setWidgetSoundCooldownSec(selectedId, secs);
+    });
+  }
 
   // One picker per alert TYPE (land/expire/warning), not one shared sound
   // for the whole widget - see backlog #16. Factored into a helper since
@@ -4226,6 +4285,7 @@ function initWidgetsPanel() {
     if (soundWarningGroupEl) soundWarningGroupEl.style.display = warnOn ? '' : 'none';
     const anySound = soundLandCheckbox.checked || soundExpireCheckbox.checked || warnOn;
     if (alertVolumeRowEl) alertVolumeRowEl.style.display = anySound ? '' : 'none';
+    if (soundCooldownRowEl) soundCooldownRowEl.style.display = anySound ? '' : 'none';
   }
 
   if (soundWarningCheckbox) {

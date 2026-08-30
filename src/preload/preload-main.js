@@ -175,6 +175,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getRecentShareCodes: () => ipcRenderer.invoke('shareCode:recent'),
   createTextAuraWidget: (name, preset) => ipcRenderer.invoke('widget:createTextAura', { name, preset }),
   getCastableBuffs: () => ipcRenderer.invoke('buffs:castable'),
+  getAllBuffNames: () => ipcRenderer.invoke('buffs:allNames'),
   createCooldownTimerWidget: (name, spellName, cooldownSec, iconId, buffDurationSec) =>
     ipcRenderer.invoke('widget:createCooldownTimer', { name, spellName, cooldownSec, iconId, buffDurationSec }),
   createGcdTimerWidget: (name, iconId) => ipcRenderer.invoke('widget:createGcdTimer', { name, iconId }),
@@ -259,6 +260,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetSoundOnExpire: (id, enabled) => ipcRenderer.invoke('widget:setSoundOnExpire', { id, enabled }),
   setWidgetSoundWarningSec: (id, seconds) => ipcRenderer.invoke('widget:setSoundWarningSec', { id, value: seconds }),
   setWidgetSoundWarningLoopSec: (id, seconds) => ipcRenderer.invoke('widget:setSoundWarningLoopSec', { id, value: seconds }),
+  setWidgetSoundCooldownSec: (id, seconds) => ipcRenderer.invoke('widget:setSoundCooldownSec', { id, value: seconds }),
   setWidgetLandSoundId: (id, soundId) => ipcRenderer.invoke('widget:setLandSoundId', { id, soundId }),
   setWidgetExpireSoundId: (id, soundId) => ipcRenderer.invoke('widget:setExpireSoundId', { id, soundId }),
   setWidgetWarningSoundId: (id, soundId) => ipcRenderer.invoke('widget:setWarningSoundId', { id, soundId }),
