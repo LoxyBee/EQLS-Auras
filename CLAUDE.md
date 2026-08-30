@@ -8,11 +8,16 @@ Server context: the user plays **"EverQuest Legends"**, a custom/private EQ serv
 
 ## Docs are written by a dedicated "Documentation" session — don't write them yourself
 
-Any session building a **new feature** or making a **major edit** writes the CODE (and its
-code comments) only. The documentation that work implies — anything under `docs/` (including
-`docs/TESTING.md`, `docs/QOL-BACKLOG.md`, `docs/HIGHLIGHTS.md`) and any substantial new
-`CLAUDE.md` section — is handed off to a separate session named **"Documentation"**, not written
-inline.
+Applies to a **new feature** or a **major edit** (a new subsystem, a behaviour change users will
+notice, a design decision worth recording, anything that needs a `docs/TESTING.md` checklist).
+That session writes the CODE (and its code comments) only; the documentation it implies — anything
+under `docs/` (including `docs/TESTING.md`, `docs/QOL-BACKLOG.md`, `docs/HIGHLIGHTS.md`) and any
+substantial new `CLAUDE.md` section — is handed to a separate session named **"Documentation"**,
+not written inline.
+
+**Does NOT apply to routine bug fixes, small refactors, or tweaks** — no message needed, just fix
+it. Only send Documentation something when the change is big enough that you'd otherwise be writing
+a docs update or a new CLAUDE.md note for it. When in doubt, a fix is small.
 
 - **Before you start**, check `ListAgents` for a live session whose name contains "Documentation".
   If one is running, `SendMessage` it what you're about to build and which files you'll touch.
