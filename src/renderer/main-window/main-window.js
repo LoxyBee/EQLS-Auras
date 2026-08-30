@@ -37,6 +37,42 @@ async function init() {
   initActionBarsPage();
   initBuffPlanner();
   initLoggingWatch();
+  initChangelog();
+}
+
+// Backlog #18 - the "What's changed" list on the About page, from src/shared/data/changelog.js
+// (Documentation maintains the content; this just renders it).
+function initChangelog() {
+  const el = document.getElementById('changelog-body');
+  if (!el) return;
+  window.eqTracker.getChangelog().then((entries) => {
+    el.textContent = '';
+    if (!Array.isArray(entries) || !entries.length) {
+      el.textContent = 'Nothing recorded yet.';
+      return;
+    }
+    for (const entry of entries) {
+      const h = document.createElement('h4');
+      h.className = 'changelog-version';
+      h.textContent = entry.date ? `${entry.version} — ${entry.date}` : entry.version;
+      el.appendChild(h);
+      for (const [label, items] of [['New', entry.new], ['Fixes', entry.fixes]]) {
+        if (!Array.isArray(items) || !items.length) continue;
+        const lbl = document.createElement('p');
+        lbl.className = 'changelog-label';
+        lbl.textContent = label;
+        el.appendChild(lbl);
+        const ul = document.createElement('ul');
+        ul.className = 'changelog-list';
+        for (const it of items) {
+          const li = document.createElement('li');
+          li.textContent = it;
+          ul.appendChild(li);
+        }
+        el.appendChild(ul);
+      }
+    }
+  }).catch(() => { el.textContent = 'Could not load the changelog.'; });
 }
 
 // "EverQuest is running but not writing to its log" - main decides, this shows the in-app modal.

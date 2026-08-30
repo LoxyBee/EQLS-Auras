@@ -263,6 +263,24 @@ body {
   font-weight: 600;
 }
 
+/* About > What's changed (QOL #18). */
+.changelog-version {
+  margin: 14px 0 4px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.changelog-version:first-child { margin-top: 0; }
+.changelog-label {
+  margin: 6px 0 2px;
+  font-weight: 600;
+  color: var(--ink-mut);
+}
+.changelog-list {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.changelog-list li { margin: 2px 0; }
+
 .master-hide-btn {
   margin-left: auto;
   flex-shrink: 0;
