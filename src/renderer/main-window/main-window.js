@@ -4232,14 +4232,15 @@ function initWidgetsPanel() {
 
     function render(soundId) {
       currentSoundId = soundId;
+      // "Use default" is always shown, just disabled when already on the default beep - so it
+      // reads as an available choice next to "Choose sound...", not something that only appears
+      // once you are already off the default. Preview genuinely does nothing without a file.
+      resetBtn.disabled = !soundId;
+      previewBtn.style.display = soundId ? '' : 'none';
       if (!soundId) {
         nameEl.textContent = 'Default beep';
-        resetBtn.style.display = 'none';
-        previewBtn.style.display = 'none';
         return;
       }
-      resetBtn.style.display = '';
-      previewBtn.style.display = '';
       window.eqTracker.getSoundInfo(soundId).then((info) => {
         nameEl.textContent = info ? info.originalName : 'Default beep';
       });
@@ -4248,7 +4249,13 @@ function initWidgetsPanel() {
     chooseBtn.addEventListener('click', () => {
       window.eqTracker.pickSound().then((result) => {
         if (!result) return; // cancelled, or picked something with an unrecognized extension
-        window.eqTracker[setterName](selectedId, result.id).then(() => render(result.id));
+        // updateLocalWidgetCache: without it the settings panel's own copy of the widget still has
+        // the old landSoundId, so navigating away and back re-rendered this as "Default beep" even
+        // though the sound itself had changed (reported live 30 Aug).
+        window.eqTracker[setterName](selectedId, result.id).then((cfg) => {
+          updateLocalWidgetCache(cfg);
+          render(result.id);
+        });
       });
     });
     previewBtn.addEventListener('click', () => {
@@ -4258,7 +4265,10 @@ function initWidgetsPanel() {
       audio.play().catch(() => {});
     });
     resetBtn.addEventListener('click', () => {
-      window.eqTracker[setterName](selectedId, null).then(() => render(null));
+      window.eqTracker[setterName](selectedId, null).then((cfg) => {
+        updateLocalWidgetCache(cfg);
+        render(null);
+      });
     });
 
     return render;
