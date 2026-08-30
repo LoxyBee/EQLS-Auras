@@ -1395,6 +1395,39 @@ function initWidgetsPanel() {
   const positionHintEl = document.getElementById('widget-position-hint');
   const timerTextTopicEl = document.getElementById('topic-timer-text');
   const alertsTopicEl = document.getElementById('topic-alerts');
+  // Cleanup workstream B - the "Display & size" block's accordion topics. applySettingsPanelShape
+  // toggles the rows inside them as before; hideEmptyTopics (called at the end) then hides a whole
+  // topic when every row it holds is hidden for the current shape. Position is always populated,
+  // so it is not in the map.
+  const panelTopicMembers = {
+    'topic-watching': ['widget-buff-source-row', 'widget-debuff-cast-by-row'],
+    'topic-panel-this-aura': [
+      'widget-text-message-row', 'widget-always-on-row', 'widget-ally-alert-row',
+      'widget-text-instant-row', 'widget-text-stack-row', 'widget-travel-settings',
+      'widget-damage-settings',
+    ],
+    'topic-panel-size': ['widget-list-only-settings', 'widget-icon-only-settings'],
+    'topic-panel-text': ['widget-text-size-row', 'widget-text-justify-row'],
+    'topic-panel-layout': [
+      'widget-display-mode-row', 'widget-sort-order-row', 'widget-merge-row', 'widget-borders-row',
+      'widget-display-list-only-settings', 'widget-display-icon-only-settings',
+      'widget-ally-grouping-settings',
+    ],
+  };
+  function hideEmptyPanelTopics() {
+    for (const [topicId, memberIds] of Object.entries(panelTopicMembers)) {
+      const topic = document.getElementById(topicId);
+      if (!topic) continue;
+      const anyVisible = memberIds.some((id) => {
+        const el = document.getElementById(id);
+        return el && el.style.display !== 'none';
+      });
+      // The class - never the topic-body's display - so a collapsed topic still collapses and the
+      // child-of-display:none trap (a row hidden because an ancestor is, not because of its own
+      // rule) is never sprung. See the CSS comment on .topic-empty.
+      topic.classList.toggle('topic-empty', !anyVisible);
+    }
+  }
   const iconLabelSectionEl = document.getElementById('widget-icon-label-section');
   const showIconLabelCheckbox = document.getElementById('widget-show-icon-label-checkbox');
   const iconLabelOptionsEl = document.getElementById('widget-icon-label-options');
@@ -2499,6 +2532,8 @@ function initWidgetsPanel() {
     // caster. Only a Custom debuff aura has this, since it's the only kind trackOnEnemies is ever
     // true on.
     debuffCastByRowEl.style.display = has('debuff-cast-by') ? '' : 'none';
+    // The "Watching" topic (inside Configuration) wraps the two rows above - hideEmptyPanelTopics
+    // adds .topic-empty to it when neither applies, so it never shows an empty collapsed header.
     // Custom timers are a wholly separate concept from buff-picking (own card, own heading) - not
     // a "buffs shown" filter mode at all, since there's no shared pool to pick from.
     customTimersCardEl.style.display = has('custom-timers') ? '' : 'none';
@@ -2515,6 +2550,10 @@ function initWidgetsPanel() {
     // landing on the player, unrelated to the Ally Buffs widget's own concern (buffs the player
     // casts on others).
     trackOthersRowEl.style.display = has('track-others') ? '' : 'none';
+
+    // Workstream B - after every individual row's display is set, collapse away any Display & size
+    // topic that ended up with nothing in it for this shape.
+    hideEmptyPanelTopics();
 
     return fields;
   }

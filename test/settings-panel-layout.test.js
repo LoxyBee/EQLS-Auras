@@ -103,7 +103,7 @@ test('nothing references the removed summary span', () => {
   assert.doesNotMatch(rendererSrc, /topic-buffs-shown-summary/);
 });
 
-test('what an aura watches sits next to the Buffs shown card, not nested inside it', () => {
+test('what an aura watches is not nested inside the Buffs shown card', () => {
   // Reversed at the owner's instruction, 2026-08-24, from an earlier session's "just place
   // everything is watching under buffs shown" - that put widget-buff-source-row INSIDE
   // #widget-buff-filter-card as a child, and renderBuffFilter() sets filterCard.style.display =
@@ -113,11 +113,18 @@ test('what an aura watches sits next to the Buffs shown card, not nested inside 
   // "opens up a menu you cannot escape from... cannot toggle back into your own buffs" - which is
   // exactly what a 0x0, unclickable "Watching:" row looks like from the user's side.
   //
-  // It is a SIBLING now, immediately before the card, so its own display rule is the only one
-  // that can ever apply to it - nothing above it in the DOM can hide it as a side effect again.
+  // It lives in its own "Watching" topic inside the Configuration block now (owner, 2026-08-29:
+  // "put the watching card as a sub menu inside configuration"). The Configuration block is never
+  // hidden as a whole, so no ancestor can collapse the row as a side effect; hideEmptyPanelTopics
+  // adds .topic-empty (a class on the .topic, never a display:none on an ancestor) when neither
+  // radio row applies to the current aura kind.
   const filterCardAt = panel.indexOf('id="widget-buff-filter-card"');
   const sourceRowAt = panel.indexOf('id="widget-buff-source-row"');
-  assert.ok(sourceRowAt >= 0 && sourceRowAt < filterCardAt, 'the source picker must appear before the Buffs shown card starts');
+  const watchingTopicAt = panel.indexOf('id="topic-watching"');
+  const cfgAt = panel.indexOf('block-cap">Configuration<');
+  assert.ok(sourceRowAt >= 0, 'the source picker is missing');
+  assert.ok(watchingTopicAt >= 0 && watchingTopicAt > cfgAt, 'the Watching topic is not inside the Configuration block');
+  assert.ok(sourceRowAt > watchingTopicAt, 'the source picker is not inside the Watching topic');
 
   const card = panel.slice(filterCardAt);
   const own = card.slice(0, card.indexOf('<div class="block"'));
@@ -134,11 +141,12 @@ test('what an aura watches sits next to the Buffs shown card, not nested inside 
 });
 
 test('the two things called "Buffs shown" are not both called that any more', () => {
-  // Display & size has a row that picks whether an aura watches you, an ally, or text triggers.
-  // It was labelled "Buffs shown:" - which would have been the second thing with that name on the
-  // same screen once the block above took the title. It is a source picker, so it now says so.
+  // The row that picks whether an aura watches you / an ally / text triggers was once labelled
+  // "Buffs shown:" - a clash with the block above. It is a source picker, so it now lives in its
+  // own "Watching" topic inside the Configuration block (workstream B, then owner 2026-08-29:
+  // "put the watching card as a sub menu inside configuration").
   assert.doesNotMatch(panel, /<span class="label">Buffs shown:<\/span>/, 'two things named Buffs shown');
-  assert.match(panel, /<span class="label">Watching:<\/span>/);
+  assert.match(panel, /id="topic-watching"[\s\S]{0,160}topic-title">Watching</, 'the source picker has no "Watching" topic');
   // The id is unchanged - a test in text-aura.test.js depends on it.
   assert.match(panel, /id="widget-buff-source-row"/);
   assert.match(panel, /id="widget-buff-source-timer-label"/);
