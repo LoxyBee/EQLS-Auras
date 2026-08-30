@@ -49,6 +49,35 @@ function bundledSoundsDir() {
   return path.join(base, 'sounds');
 }
 
+// The folder "Choose sound..." browses, and where you drop your own audio files (backlog #39).
+// Relocated from the install's own sounds/ folder to userData, so it survives an uninstall/
+// reinstall the same way your auras and profiles do, and so ONE backup ("Open app data folder"
+// on the Setup page) covers your sounds too. The install sounds/ folder is now only the SEED
+// source - seedStarterSounds() copies the shipped starter tones in here on startup.
+function starterSoundsDir() {
+  const dir = path.join(app.getPath('userData'), 'sounds');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// Copy the shipped starter tones from the install's sounds/ folder into userData/sounds/ once, so
+// the picker has something to offer and a real, backed-up folder to keep your own files in.
+// Idempotent: only copies a file that is not already there by name, so a starter you deleted on
+// purpose stays deleted, and your own files are never touched. Called from main.js on startup.
+function seedStarterSounds() {
+  try {
+    const from = bundledSoundsDir();
+    if (!fs.existsSync(from)) return;
+    const to = starterSoundsDir();
+    for (const name of fs.readdirSync(from)) {
+      if (!ALLOWED_EXTENSIONS.has(path.extname(name).toLowerCase())) continue;
+      const dest = path.join(to, name);
+      if (fs.existsSync(dest)) continue;
+      try { fs.copyFileSync(path.join(from, name), dest); } catch { /* skip a locked/odd file */ }
+    }
+  } catch { /* a missing or unreadable bundle is not fatal - the picker still works */ }
+}
+
 function defaultPickerDir() {
   const last = loadJson('lastSoundPickerDir', null);
   // Reported live: the sounds link kept opening C:\Windows\Media even after the bundled folder
@@ -61,10 +90,18 @@ function defaultPickerDir() {
   // rather than as a real pick. Any OTHER remembered folder (the user's own Downloads, a custom
   // sounds folder, wherever) is still trusted as deliberate and still wins outright.
   if (last && last !== WINDOWS_MEDIA_DIR && fs.existsSync(last)) return last;
+  // The userData sounds/ folder is the home now (#39). Fall back to the install seed folder only
+  // if seeding has not run yet or left it empty (a first launch, or dev), then Windows Media.
+  const hasFiles = (dir) => {
+    try { return fs.readdirSync(dir).some((n) => ALLOWED_EXTENSIONS.has(path.extname(n).toLowerCase())); }
+    catch { return false; }
+  };
+  const starter = starterSoundsDir();
+  if (hasFiles(starter)) return starter;
   const bundled = bundledSoundsDir();
-  if (fs.existsSync(bundled)) return bundled;
+  if (hasFiles(bundled)) return bundled;
   if (fs.existsSync(WINDOWS_MEDIA_DIR)) return WINDOWS_MEDIA_DIR;
-  return undefined; // let the OS dialog fall back to its own default
+  return starter; // an empty but real folder beats the OS dialog's own arbitrary default
 }
 
 // Lets someone drop their own audio files straight into whichever folder
@@ -201,4 +238,12 @@ function registerProtocol() {
   });
 }
 
-module.exports = { pickAndImportSound, getSoundInfo, registerProtocol, openPickerFolder, bundledSoundsDir };
+module.exports = {
+  pickAndImportSound,
+  getSoundInfo,
+  registerProtocol,
+  openPickerFolder,
+  bundledSoundsDir,
+  starterSoundsDir,
+  seedStarterSounds,
+};

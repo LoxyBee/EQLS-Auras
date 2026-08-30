@@ -1058,6 +1058,9 @@ let appTray = null;
 app.whenReady().then(() => {
   iconService.registerProtocol();
   soundService.registerProtocol();
+  // #39 - copy the shipped starter tones into userData/sounds/ so they survive uninstall and sit
+  // next to your auras. Idempotent; leaves your own files and any starter you deleted alone.
+  soundService.seedStarterSounds();
   createMainWindow();
 
   // Requested directly, alongside making the window's own close button hide-to-tray instead of
