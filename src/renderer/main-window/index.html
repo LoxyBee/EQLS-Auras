@@ -79,7 +79,7 @@
       </div>
 
       <!-- Buff Planner is LOCKED until the "buff-loadout" overlay aura is built (see
-           docs/NOTES-STATUS.md / CLAUDE.md). The page section (id page-planner) and all of
+           CLAUDE.md). The page section (id page-planner) and all of
            buffPlanner.js stay in place; only the sidebar button is removed, so nothing in the app
            can reach it. To re-enable: add a nav-btn with data-page of page-planner and the id
            planner-nav-btn back here (initBuffPlanner gates on that id). -->
@@ -847,53 +847,55 @@
         </div>
       </section>
 
-      <!-- Raid lockouts. Session D's parsing module; this page renders its projection and adds
-           nothing to it. The uncertainty IS the feature - see the intro card, and see
-           lockoutService.js for why the folder is scanned rather than the newest file. -->
+      <!-- Raid lockouts. Reads the current EQ log only; grid derived per boss-raid x tier. -->
       <section id="page-lockouts" class="page">
         <h2 class="page-title">Raid lockouts</h2>
-
-        <div class="card">
-          <h3>What this shows, and what it will not pretend to know</h3>
-          <p class="hint">
-            EverQuest Legends does not print a raid lockout line, so this reads what the game
-            <em>does</em> print - the weekly task, by name, on the kill - and reports what that
-            supports. Where it cannot tell, it says so rather than guessing. A cell that reads
-            <strong>not looked</strong> means there is no log covering that week, which is not the
-            same as <strong>open</strong> and is never shown as open.
-          </p>
-          <p class="hint">
-            There is no countdown here on purpose. A countdown needs the reset hour, and the reset
-            hour has never been measured - only the reset day, which came from you rather than from
-            a measurement. Everything below carries where it came from.
-          </p>
-        </div>
 
         <div class="card">
           <div class="row">
             <span class="label">Character</span>
             <select id="lockout-character" class="text-input"></select>
             <button type="button" id="lockout-rescan" class="btn-prominent">Rescan logs</button>
+            <button type="button" id="lockout-change-log">Change log file…</button>
+            <button type="button" id="lockout-reset-log-target" style="display:none">Back to live log</button>
             <span id="lockout-scan-status" class="hint"></span>
           </div>
-          <p class="hint">
-            The whole Logs folder is read, not just the newest file - your log splitter writes a new
-            file every day, so a single file holds only part of the story.
-          </p>
+          <p class="hint" id="lockout-log-target" style="display:none"></p>
         </div>
 
         <div class="card">
-          <h3>This period</h3>
-          <div id="lockout-summary" class="hint"></div>
+          <h3 id="lockout-period-heading">This period</h3>
           <div id="lockout-grid-wrap" style="overflow-x:auto">
             <table id="lockout-grid" class="lockout-grid"></table>
           </div>
-          <div id="lockout-legend" class="lockout-legend"></div>
+          <div id="lockout-summary" class="hint"></div>
         </div>
 
         <div class="card">
-          <h3>Where these numbers came from</h3>
-          <div id="lockout-provenance" class="hint"></div>
+          <h3>How this is read</h3>
+          <p class="hint">
+            Reads your current EQ log only (emptied weekly at the reset, so what's left is this
+            week). <strong>done</strong> = a boss kill for that raid is in the log at that tier.
+            <strong>open</strong> = the log covers the week and no such kill is in it.
+            <strong>not looked</strong> = the log doesn't cover the whole week.
+            <strong>depends</strong> = a kill on the reset day with the reset hour left unset.
+            No countdown, for the same reason.
+          </p>
+          <details class="lockout-options">
+            <summary>Reset time</summary>
+            <div class="row">
+              <span class="label">Week resets</span>
+              <select id="lockout-reset-day" class="text-input"></select>
+              <span>at</span>
+              <input type="number" id="lockout-reset-hour" class="text-input" min="0" max="23" step="1" value="11" style="width:4em" />
+              <span>:00 <strong>US Eastern</strong></span>
+            </div>
+            <p class="hint">
+              The server reset is US Eastern time — this adjusts for daylight saving on its own, and
+              is shown to you in your own local time above the grid. Same setting as
+              Setup &rsaquo; Archive log; changing it here changes it there.
+            </p>
+          </details>
         </div>
       </section>
 
@@ -903,12 +905,17 @@
         <h3 class="settings-page-section-title">Character setup</h3>
 
         <div class="card">
-          <h3>Buff duration bonuses</h3>
+          <h3>AA setup</h3>
           <p class="hint">
-            These AA and Exaltation abilities extend how long buffs last. Set them to match your
-            character so tracked timers reflect your real, extended durations instead of the base
-            spell length. This applies to every tracked buff - it doesn't change what's detected,
-            only how long the countdown runs.
+            Set these AA and Exaltation abilities to match your character so the app's timing
+            reflects your real character instead of base spell values. None of this changes what's
+            detected - only how the countdowns run and how casts are handled.
+          </p>
+
+          <h4>Buff duration (Reinforcement + Exaltation)</h4>
+          <p class="hint">
+            Extends how long buffs last, applied to every tracked buff so timers reflect your real,
+            extended durations instead of the base spell length.
           </p>
           <div class="row">
             <span class="label">Spell Casting Reinforcement (AA):</span>
@@ -933,16 +940,14 @@
             <span class="label">Total bonus:</span>
             <span id="character-bonus-total">+0%</span>
           </div>
-        </div>
 
-        <div class="card">
-          <h3>Cast-time bonus (Spell Casting Deftness)</h3>
+          <h4>Cast time (Spell Casting Deftness)</h4>
           <p class="hint">
-            This AA (3 ranks) reduces cast time on beneficial spells that have a duration and a
-            base cast time of at least 3 seconds - it does nothing for instant spells or fast
-            (under 3s) casts, per its own tooltip. Set it to match your character. Only used by the
-            experimental "cast-time-aware confirmation" toggle under Diagnostics, and only affects
-            how long the app waits before confirming or giving up on a cast, not anything else.
+            Reduces cast time on beneficial spells that have a duration and a base cast time of at
+            least 3 seconds - nothing for instant spells or fast (under 3s) casts, per its own
+            tooltip. Only used by the experimental "cast-time-aware confirmation" toggle under
+            Diagnostics, and only affects how long the app waits before confirming or giving up on a
+            cast, not anything else.
           </p>
           <div class="row">
             <span class="label">Spell Casting Deftness (AA):</span>
@@ -1164,11 +1169,6 @@
                to split, or a folder to write it into. -->
           <div id="split-sub-options">
             <div class="row">
-              <label title="There's no log line for /log off / /log on - the game just stops writing entirely while it's off. This detects that indirectly, by watching for a long gap between lines, so it can occasionally split at the wrong moment during a genuinely quiet stretch of play.">
-                <input type="checkbox" id="split-gap-checkbox" /> Start a new file after a logging gap (10+ min of no activity)
-              </label>
-            </div>
-            <div class="row">
               <span class="label">Output folder:</span>
               <span id="split-output-folder">-</span>
             </div>
@@ -1184,11 +1184,6 @@
           <p class="hint">
             EQ never clears this file itself, so it only grows. This copies the current log to a
             timestamped archive file, then <strong>erases the live log file's contents</strong>.
-          </p>
-          <p class="hint">
-            <strong>Do this with care:</strong> if EQ is actively writing to the log at the exact moment
-            it's cleared, there's a small chance of a lost line or a game hiccup. Safest to do it right
-            after logging out or right after <code>/log off</code>, not mid-fight.
           </p>
           <div class="row">
             <span class="label">Current log size:</span>
@@ -1207,27 +1202,23 @@
           <div class="row">
             <label>
               <input type="checkbox" id="log-rotation-checkbox" />
-              Archive last week's log after the Tuesday raid reset
+              Archive last week's log after the raid reset
             </label>
           </div>
+          <div class="row">
+            <span class="label">Week resets</span>
+            <select id="setup-reset-day" class="text-input"></select>
+            <span>at</span>
+            <input type="number" id="setup-reset-hour" class="text-input" min="0" max="23" step="1" value="11" style="width:4em" />
+            <span>:00 <strong>US Eastern</strong></span>
+          </div>
           <p class="hint">
-            The reset is Tuesday at 11:00 <em>by your computer's clock</em> — taken from your own
-            reading of the in-game lockout timer, not from anything in the log. (The Lockouts page
-            still shows the reset hour as never measured: that is the tracker's own rule, which has
-            not been given this number.) After it passes,
-            =Auras archives the log the next time it finds a quiet moment - so the live log holds
-            the current lockout week and the Lockouts page has less to work out for itself. It does
-            not archive a log you have already played on since the reset, because that would take
-            this week's own kills out of the file the Lockouts page reads.
+            One reset setting — the Lockouts page uses the same value, and changing it there changes
+            it here. It is <em>US Eastern time</em> (the server's zone) and adjusts for daylight
+            saving automatically, so it is correct whatever time zone your computer is on. Default
+            is Tuesday 11:00, from your own reading of the in-game lockout timer.
           </p>
-          <p class="hint">
-            Like the button above, but for every character's log rather than only the one being
-            watched. <strong>Nothing is deleted</strong> - each week is copied into the
-            <strong>Archive</strong> folder and the copy is checked before the live log is emptied.
-            Archived weeks are kept on disk, but the Lockouts page only reads the live log, so it
-            will not count them.
-            <span id="log-rotation-status"></span>
-          </p>
+          <p class="hint" id="log-rotation-status"></p>
         </div>
 
         <div class="block">
@@ -1239,21 +1230,9 @@
             </button>
             <div class="topic-body"><div class="topic-body-inner">
               <h4>Live log feed (for testing)</h4>
-              <p class="hint">
-                This shows new lines as they're written to your log file, so you can confirm tailing
-                works. Open the log file (see the Setup page) in Notepad, type a line at the end, and
-                save it - it should appear below within a second.
-              </p>
               <div id="line-feed" class="line-feed"></div>
 
               <h4>Detection log</h4>
-              <p class="hint">
-                Live feed of every buff/aura decision - self and ally buffs landing, expiring or
-                being ignored, and every custom trigger firing, ending or being restored after a
-                restart - and why. Useful for understanding a confusing moment without digging
-                through the raw log yourself. The same lines are saved to a file, one per day, so
-                you can go back to a moment that has already scrolled past.
-              </p>
               <!-- Off by default - reported live 25 Aug, asked for specifically as a manual,
                    enable-it-yourself tool rather than something always running in the background.
                    Gates the single debugLog() function in main.js that both engines write through,
@@ -1271,15 +1250,6 @@
               <div id="debug-line-feed" class="line-feed"></div>
 
               <h4>Memorized/forgotten spells</h4>
-              <p class="hint">
-                Live feed of ONLY "You forget X." and "You have finished memorizing X." lines -
-                the two lines that build the "currently memorized" picture detection relies on.
-                Nothing else shows here, so it's a fast way to check whether something you expect
-                to change gems (a loadout swap, in particular) actually printed anything at all -
-                confirmed 25 Aug that a full loadout swap can print nothing, which is exactly why
-                this exists: that gap would otherwise be invisible in the middle of everything else
-                the regular log feed and detection log show.
-              </p>
               <div id="memorized-line-feed" class="line-feed"></div>
 
               <h4>Evidence-based detection</h4>
@@ -2529,6 +2499,39 @@
         <button id="export-widget-modal-copy-btn">Copy</button>
       </div>
       <p class="hint" id="export-widget-modal-sound-warning" style="display:none"></p>
+    </div>
+  </div>
+
+  <!-- Generic in-app confirm. No OS dialogs - appConfirm() in main-window.js drives this. -->
+  <div id="app-confirm-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="app-confirm-title">Confirm</h3>
+        <button id="app-confirm-close" class="modal-close">✕</button>
+      </div>
+      <p id="app-confirm-message"></p>
+      <p class="hint" id="app-confirm-detail" style="display:none"></p>
+      <div class="row">
+        <button id="app-confirm-ok" class="btn-prominent">OK</button>
+        <button id="app-confirm-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- In-app log-file picker for the Lockouts tools. Lists what is in Logs\, Logs\Split\ and
+       Logs\Archive\ - no OS file browser. -->
+  <div id="log-picker-modal-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="log-picker-title">Choose a log file</h3>
+        <button id="log-picker-close" class="modal-close">✕</button>
+      </div>
+      <p class="hint" id="log-picker-hint"></p>
+      <ul id="log-picker-list" class="modal-list" style="max-height:50vh;overflow:auto"></ul>
+      <div class="row">
+        <button id="log-picker-ok" class="btn-prominent">Use selected</button>
+        <button id="log-picker-cancel">Cancel</button>
+      </div>
     </div>
   </div>
 

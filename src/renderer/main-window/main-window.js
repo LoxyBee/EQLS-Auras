@@ -33,6 +33,39 @@ async function init() {
   initBugReport();
   initActionBarsPage();
   initBuffPlanner();
+  initLoggingWatch();
+}
+
+// "EverQuest is running but not writing to its log" - main decides, this shows the in-app modal.
+function initLoggingWatch() {
+  let open = false;
+  let autoClosed = false;
+  // Logging started working while the prompt was up (false alarm, or the user fixed it) - drop it.
+  window.eqTracker.onLoggingOk(() => { if (open) { autoClosed = true; closeAppConfirm(false); } });
+  window.eqTracker.onLoggingOff(async () => {
+    if (open) return;
+    open = true;
+    autoClosed = false;
+    const done = await appConfirm({
+      title: 'EverQuest logging looks off',
+      message: 'EverQuest is running, but nothing is being written to its log — the tracker can’t see buffs, lockouts or anything else without it.',
+      detail: 'In game, type  /log on  then click "I’ve done it".',
+      okLabel: "I’ve done it",
+      cancelLabel: 'Dismiss',
+    });
+    open = false;
+    if (autoClosed) return;                         // it started working on its own
+    if (!done) { window.eqTracker.acknowledgeLogging(); return; }
+    const r = await window.eqTracker.recheckLogging();
+    if (r.seemsOff) {
+      await appConfirm({
+        title: 'Still nothing',
+        message: 'Still no log activity. Give it a few seconds after /log on, or check the log-folder path on the Setup page.',
+        okLabel: 'OK',
+        hideCancel: true,
+      });
+    }
+  });
 }
 
 // Custom title bar (the frameless-window follow-up) -
@@ -641,7 +674,6 @@ function initLogPanel() {
   const memorizedFeedEl = document.getElementById('memorized-line-feed');
 
   const splitEnabledCheckbox = document.getElementById('split-enabled-checkbox');
-  const splitGapCheckbox = document.getElementById('split-gap-checkbox');
   const splitOutputFolderEl = document.getElementById('split-output-folder');
   const splitChooseFolderBtn = document.getElementById('split-choose-folder-btn');
   const splitResetFolderBtn = document.getElementById('split-reset-folder-btn');
@@ -676,7 +708,6 @@ function initLogPanel() {
         }
       }
       splitEnabledCheckbox.checked = state.split.enabled;
-      splitGapCheckbox.checked = state.split.splitOnGap;
       splitOutputFolderEl.textContent = state.split.outputDir || '-';
       splitSubOptionsEl.style.display = state.split.enabled ? '' : 'none';
     }
@@ -741,9 +772,6 @@ function initLogPanel() {
   splitEnabledCheckbox.addEventListener('change', async () => {
     renderState(await window.eqTracker.setSplitEnabled(splitEnabledCheckbox.checked));
   });
-  splitGapCheckbox.addEventListener('change', async () => {
-    renderState(await window.eqTracker.setSplitOnGap(splitGapCheckbox.checked));
-  });
   splitChooseFolderBtn.addEventListener('click', async () => {
     renderState(await window.eqTracker.chooseSplitFolder());
   });
@@ -752,14 +780,20 @@ function initLogPanel() {
   });
 
   archiveNowBtn.addEventListener('click', async () => {
-    const confirmed = window.confirm(
-      "This copies the current log to a timestamped file, then erases the live log file's contents. " +
-        'Best done right after logging out or /log off, not mid-session. Continue?'
-    );
-    if (!confirmed) return;
+    const holdsWeek = await window.eqTracker.archiveHoldsCurrentWeek();
+    const go = await appConfirm({
+      title: 'Archive log now',
+      message: 'Archive the current log and empty the live log file?',
+      detail: holdsWeek
+        ? 'Your log currently holds this lockout week. Archiving it whole takes this week’s raid kills out of the file the Lockouts tab reads — the grid will show "not looked" until you play again. If you use the Lockouts tab, use "Trim log to this week" there instead.'
+        : 'Copies the current log to a timestamped file, then empties the live log. Best done right after /log off.',
+      okLabel: holdsWeek ? 'Archive anyway' : 'Archive',
+      danger: holdsWeek,
+    });
+    if (!go) return;
     const result = await window.eqTracker.archiveLogNow();
-    if (!result.ok) {
-      window.alert('Archive failed: ' + result.error);
+    if (!result.ok && result.error !== 'cancelled') {
+      await appConfirm({ title: 'Archive failed', message: result.error || 'unknown', okLabel: 'OK', hideCancel: true });
     }
     renderState(await window.eqTracker.getLogState());
   });
@@ -3307,7 +3341,7 @@ function initWidgetsPanel() {
         'like a buff aura\'s - offering a "Buffs shown" picker that does nothing for a damage row. ' +
         'Locked until it gets its own layout.',
     },
-    // The rest of the roadmap, shown in the app rather than only in FEATURES.md. Listing something
+    // The rest of the roadmap, shown in the app rather than only in docs/QOL-BACKLOG.md. Listing something
     // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
     // it looks to anyone using the app who did not write it.
     {
@@ -4395,11 +4429,99 @@ function initWidgetsPanel() {
   const lockoutCharSelect = document.getElementById('lockout-character');
   const lockoutRescanBtn = document.getElementById('lockout-rescan');
   const lockoutScanStatus = document.getElementById('lockout-scan-status');
+  const lockoutPeriodHeadingEl = document.getElementById('lockout-period-heading');
   const lockoutSummaryEl = document.getElementById('lockout-summary');
   const lockoutGridEl = document.getElementById('lockout-grid');
-  const lockoutLegendEl = document.getElementById('lockout-legend');
-  const lockoutProvenanceEl = document.getElementById('lockout-provenance');
   let lockoutData = null;
+
+  // --- Log tools ---
+  // "Change log file" / "Back to live log" sit next to Rescan. "Add split files" and "Trim to
+  // this week" are created inline next to the gap / multi-week notice in renderLockouts(), so they
+  // only appear when they apply.
+  const lkChangeLogBtn = document.getElementById('lockout-change-log');
+  const lkResetTargetBtn = document.getElementById('lockout-reset-log-target');
+  const lkLogTargetEl = document.getElementById('lockout-log-target');
+
+  function renderLogTools(data) {
+    const st = (data && data.status) || {};
+    if (lkLogTargetEl) {
+      lkLogTargetEl.textContent = st.logTarget ? `Reading ${st.logTarget}` : '';
+      lkLogTargetEl.style.display = st.logTarget ? '' : 'none';
+    }
+    if (lkResetTargetBtn) lkResetTargetBtn.style.display = st.logTarget ? '' : 'none';
+  }
+
+  // One in-flight guard for every "re-read the log" action, so a double-click or a Rescan mid-read
+  // cannot interleave (the main side is locked too, but the buttons should not look clickable).
+  let lockoutBusy = false;
+  async function withLockoutBusy(fn) {
+    if (lockoutBusy) return;
+    lockoutBusy = true;
+    for (const b of [lkChangeLogBtn, lkResetTargetBtn, lockoutRescanBtn]) if (b) b.disabled = true;
+    lockoutScanStatus.textContent = 'reading…';
+    try { await fn(); } finally {
+      lockoutBusy = false;
+      for (const b of [lkChangeLogBtn, lkResetTargetBtn, lockoutRescanBtn]) if (b) b.disabled = false;
+    }
+  }
+
+  if (lkChangeLogBtn) {
+    lkChangeLogBtn.addEventListener('click', async () => {
+      const groups = await window.eqTracker.listLockoutLogFiles();
+      const picked = await pickLogFiles({
+        title: 'Change log file',
+        hint: 'The grid will read this file instead of your live log. "Back to live log" undoes it.',
+        multi: false,
+        groups,
+        current: (lockoutData && lockoutData.status && lockoutData.status.logTarget) || null,
+      });
+      if (!picked) return;
+      withLockoutBusy(async () => applyLockoutData(await window.eqTracker.setLockoutLogTargetByPath(picked[0])));
+    });
+  }
+  if (lkResetTargetBtn) {
+    lkResetTargetBtn.addEventListener('click', () => {
+      withLockoutBusy(async () => applyLockoutData(await window.eqTracker.setLockoutLogTargetByPath(null)));
+    });
+  }
+
+  // The reset day/hour. One store key; this pair of controls and the pair on the Setup page both
+  // edit it and both listen for the change, so they can never diverge.
+  const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  // The old hardcoded value, shown before the stored one loads so the fields are never blank.
+  const RESET_DEFAULT = { weekday: 2, hour: 11 };
+  const resetControls = [
+    { day: document.getElementById('lockout-reset-day'), hour: document.getElementById('lockout-reset-hour') },
+    { day: document.getElementById('setup-reset-day'), hour: document.getElementById('setup-reset-hour') },
+  ].filter((c) => c.day && c.hour);
+  for (const c of resetControls) {
+    c.day.innerHTML = DAYS.map((d, i) => `<option value="${i}">${d}</option>`).join('');
+  }
+  function paintResetControls(rule) {
+    for (const c of resetControls) {
+      c.day.value = String(rule.weekday);
+      c.hour.value = String(rule.hour);
+    }
+  }
+  function commitReset(c) {
+    const weekday = Number(c.day.value);
+    let hour = Math.round(Number(c.hour.value));
+    if (c.hour.value === '' || !Number.isFinite(hour)) hour = RESET_DEFAULT.hour;
+    hour = Math.min(23, Math.max(0, hour));
+    window.eqTracker.setLockoutReset({ weekday, hour }).then(paintResetControls);
+  }
+  for (const c of resetControls) {
+    c.day.addEventListener('change', () => commitReset(c));
+    c.hour.addEventListener('change', () => commitReset(c));
+  }
+  paintResetControls(RESET_DEFAULT); // never blank; overwritten by the stored value below
+  window.eqTracker.getLockoutReset().then((r) => paintResetControls(r && Number.isInteger(r.hour) ? r : RESET_DEFAULT));
+  window.eqTracker.onLockoutResetChanged((rule) => {
+    paintResetControls(rule);
+    if (typeof renderLogRotationStatus === 'function') {
+      window.eqTracker.getLogRotationStatus().then(renderLogRotationStatus);
+    }
+  });
   let lockoutLoaded = false;
 
   // The five states the module can put on a cell, with the words shown to the reader. The wording
@@ -4424,6 +4546,16 @@ function initWidgetsPanel() {
     not_looked: { text: 'not looked', title: 'No log covers this week. This is NOT the same as open.' },
   };
 
+  // "2026-08-25" -> "Aug 25" (or "Aug 25, 2026" with the year). The bare ISO form stacked three
+  // dashes next to the en-dash in "2026-08-25 – 2026-09-01" and read like a subtraction.
+  const LK_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function lkPrettyDate(iso, withYear) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    if (!m) return String(iso || '');
+    const base = `${LK_MONTHS[Number(m[2]) - 1]} ${Number(m[3])}`;
+    return withYear ? `${base}, ${m[1]}` : base;
+  }
+
   function lockoutCell(cell) {
     const td = document.createElement('td');
     const meta = LOCKOUT_STATES[cell.state] || { text: cell.state, title: '' };
@@ -4432,6 +4564,14 @@ function initWidgetsPanel() {
     // `because` is the module's own sentence explaining this exact cell. Shown rather than
     // summarised, because a paraphrase is where hedging gets lost.
     td.title = `${meta.title}\n\n${cell.because || ''}`.trim();
+    // A "done" cell shows WHEN it was done - the first completion's date. The module already
+    // carries it as a field (cell.completedAt, "YYYY-MM-DD HH:MM:SS"); render the date part.
+    if (cell.state === 'completed' && cell.completedAt) {
+      const d = document.createElement('span');
+      d.className = 'lockout-killdate';
+      d.textContent = ` ${lkPrettyDate(String(cell.completedAt).slice(0, 10))}`;
+      td.appendChild(d);
+    }
     if (cell.decidedBy) {
       const s = document.createElement('span');
       s.className = 'lockout-pivot';
@@ -4446,9 +4586,8 @@ function initWidgetsPanel() {
     const entry = lockoutData.characters.find((c) => c.character === lockoutCharSelect.value)
       || lockoutData.characters[0];
     lockoutGridEl.innerHTML = '';
-    lockoutLegendEl.innerHTML = '';
     lockoutSummaryEl.textContent = '';
-    lockoutProvenanceEl.innerHTML = '';
+    if (lockoutPeriodHeadingEl) lockoutPeriodHeadingEl.textContent = 'This period';
     if (!entry || !entry.grid) {
       // Say WHICH nothing this is. "No logs read yet" covers three different situations - never
       // scanned, scanned and found no EverQuest folder, scanned and found no character logs - and
@@ -4471,6 +4610,27 @@ function initWidgetsPanel() {
     const cells = grid.cells || [];
     const raids = [...new Set(cells.map((c) => c.raid))];
     const tiers = [...new Set(cells.map((c) => c.difficultyLabel))];
+
+    // The week's date range, in the heading. Dates only - the reset time lives in the "Reset time"
+    // control below. periodEnd should always be there (lockoutCore fills it); fall back to
+    // start + 7 days so the heading never shows a "?".
+    if (lockoutPeriodHeadingEl && grid.period) {
+      const p = grid.period;
+      const start = String(p.periodStart || p.boundaryDay || '').slice(0, 10);
+      let end = String(p.periodEnd || '').slice(0, 10);
+      if (!end && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+        const d = new Date(`${start}T00:00:00`);
+        d.setDate(d.getDate() + 7);
+        end = d.toISOString().slice(0, 10);
+      }
+      if (start && end) {
+        const sameYear = start.slice(0, 4) === end.slice(0, 4);
+        lockoutPeriodHeadingEl.textContent =
+          `This period: ${lkPrettyDate(start, !sameYear)} – ${lkPrettyDate(end, true)}`;
+      } else {
+        lockoutPeriodHeadingEl.textContent = 'This period';
+      }
+    }
 
     const head = document.createElement('tr');
     head.appendChild(document.createElement('th'));
@@ -4498,8 +4658,9 @@ function initWidgetsPanel() {
     // Counts, straight from the module. Not recomputed here - a second count is a second chance to
     // disagree with the thing it is describing.
     lockoutSummaryEl.textContent =
-      `${grid.completedCount} done · ${grid.openCount} open · ${grid.conditionalCount} depends on the reset hour · ` +
-      `${grid.uncertainCount} unclear · ${grid.notLookedCount} not looked`;
+      `${grid.completedCount} done · ${grid.openCount} open · ${grid.notLookedCount} not looked` +
+      (grid.conditionalCount ? ` · ${grid.conditionalCount} depends` : '') +
+      (grid.uncertainCount ? ` · ${grid.uncertainCount} unclear` : '');
 
     // COVERAGE GAPS, INCLUDING THE TOLERATED ONES. This is the most important line on the page
     // after the grid itself.
@@ -4527,39 +4688,81 @@ function initWidgetsPanel() {
         `Your logs have ${gaps.length} gap${gaps.length === 1 ? '' : 's'} in this period, ` +
         `${total.toFixed(1)}h in total` +
         (tolerated ? ` — ${tolerated} of them short enough that the cells above still read "open" rather than "not looked"` : '') +
-        `. Anything that happened in a gap is not in the grid.`;
+        `. Anything that happened in a gap is not in the grid. `;
+      // If you split your log by accident, the missing hours are usually in Logs\Split\ - point
+      // the parser at those files. This does not touch the live log.
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.textContent = 'Add split files…';
+      addBtn.addEventListener('click', async () => {
+        const groups = await window.eqTracker.listLockoutLogFiles();
+        // Tick only the per-day files whose date falls inside THIS lockout week. Ticking every
+        // split file (the old behaviour) pulled in earlier weeks - which add their own nightly
+        // gaps and a "spans a prior week" flag that then offers a pointless "trim the live log".
+        const per = grid.period || {};
+        const lo = String(per.periodStart || per.boundaryDay || '').slice(0, 10);
+        const hi = String(per.periodEnd || '').slice(0, 10) || '9999-12-31';
+        const dateIn = (name) => {
+          const m = /(\d{4}-\d{2}-\d{2})/.exec(name || '');
+          return !!m && m[1] >= lo && m[1] <= hi;
+        };
+        const preselectPaths = (groups.split || []).filter((f) => dateIn(f.name)).map((f) => f.path);
+        const picked = await pickLogFiles({
+          title: 'Add split files',
+          hint: 'Ticked: the per-day files for this lockout week. Pick others only if you know they hold missing hours. This adds them to the grid for this session only — your live log is not touched.',
+          multi: true,
+          groups,
+          preselectPaths,
+        });
+        if (!picked) return;
+        addBtn.disabled = true;
+        const r = await window.eqTracker.addLockoutLogsByPaths(picked);
+        applyLockoutData(r.projection);
+        if (r.added && r.added.files === 0) {
+          await appConfirm({ title: 'Nothing added', message: 'Those files held no lines for this character.', okLabel: 'OK', hideCancel: true });
+        }
+      });
+      warn.appendChild(addBtn);
       lockoutSummaryEl.appendChild(document.createElement('br'));
       lockoutSummaryEl.appendChild(warn);
     }
 
-    for (const [key, meta] of Object.entries(LOCKOUT_STATES)) {
-      const span = document.createElement('span');
-      span.className = `lockout-key lockout-${key}`;
-      span.textContent = meta.text;
-      span.title = meta.title;
-      lockoutLegendEl.appendChild(span);
+    // The log reaches back before this week - offer to split it at the reset. ONLY for the live
+    // log: trimming a file loaded via "Change log file" would rewrite an archive or a mule's log.
+    const lkStatus = (lockoutData && lockoutData.status) || {};
+    const onLiveLog = !lkStatus.logTarget;
+    // Once extra per-day/archive files have been stitched in, the grid is a multi-file view and its
+    // prior-week coverage is coming from those files, not the live log - trimming the live log
+    // would do nothing useful, so the offer is hidden.
+    const multiLog = (lkStatus.extraLogs || 0) > 0;
+    if (entry.spansPriorWeek && onLiveLog && !multiLog) {
+      const p = document.createElement('p');
+      p.className = 'hint';
+      p.textContent = 'This log covers more than the current week. ';
+      const trimBtn = document.createElement('button');
+      trimBtn.type = 'button';
+      trimBtn.className = 'btn-danger';
+      trimBtn.textContent = 'Trim log to this week…';
+      trimBtn.addEventListener('click', async () => {
+        const go = await appConfirm({
+          title: 'Trim log to this week',
+          message: 'Archive everything before this week’s reset and rewrite the live log to just the current week?',
+          detail: 'The removed part is copied to Logs\\Archive\\ and size-verified before anything is changed. EverQuest can stay running.',
+          okLabel: 'Trim log',
+          danger: true,
+        });
+        if (!go) return;
+        trimBtn.disabled = true;
+        const r = await window.eqTracker.trimLockoutLog();
+        applyLockoutData(r.projection);
+        const rep = r.report || {};
+        await appConfirm(rep.ok
+          ? { title: 'Trimmed', message: `Archived ${(rep.archivedBytes / 1048576).toFixed(1)} MB.`, detail: rep.archivedTo, okLabel: 'OK', hideCancel: true }
+          : { title: 'Not trimmed', message: rep.reason || 'unknown', okLabel: 'OK', hideCancel: true });
+      });
+      p.appendChild(trimBtn);
+      lockoutSummaryEl.appendChild(p);
     }
-
-    // Provenance, verbatim. Every figure the module produces says where it came from, and this
-    // panel is where that survives into the UI instead of being flattened into a number.
-    const p = entry.projection || {};
-    const bits = [];
-    const reset = p.reset || {};
-    bits.push(`<strong>Reset boundary:</strong> ${reset.provenance || 'unknown'}` +
-      (reset.reason ? ` — ${reset.reason}` : ''));
-    if (grid.resetRule) {
-      bits.push(`<strong>Reset day:</strong> ${grid.resetRule.weekdayName || '?'} ` +
-        `(${grid.resetRule.provenance}${grid.resetRule.source ? `, ${grid.resetRule.source}` : ''}). ` +
-        `<strong>Reset hour:</strong> ${grid.resetRule.hour === null ? 'never measured' : grid.resetRule.hour}.`);
-    }
-    const period = p.period || {};
-    if (period.provenance) {
-      bits.push(`<strong>Period:</strong> ${period.provenance}` +
-        (period.atLeastDays ? ` — at least ${period.atLeastDays} days, a floor and not a value` : '') +
-        (period.basis ? `<br><span class="hint">${period.basis}</span>` : ''));
-    }
-    for (const c of p.caveats || []) bits.push(`<em>${c}</em>`);
-    lockoutProvenanceEl.innerHTML = bits.map((b) => `<p class="hint">${b}</p>`).join('');
   }
 
   function applyLockoutData(data) {
@@ -4574,10 +4777,9 @@ function initWidgetsPanel() {
     }
     if (prev && data.characters.some((c) => c.character === prev)) lockoutCharSelect.value = prev;
     const s = data.status || {};
-    lockoutScanStatus.textContent = s.lastBackfill
-      ? `read ${s.lastBackfill.files} file(s), ${s.lastBackfill.lines.toLocaleString()} lines in ${(s.lastBackfill.ms / 1000).toFixed(1)}s`
-      : s.backfill === 'running' ? 'reading…' : '';
+    lockoutScanStatus.textContent = s.backfill === 'running' ? 'reading…' : '';
     renderLockouts();
+    renderLogTools(data);
   }
 
   // Loaded the first time the page is opened, never at startup. The scan reads every log file in
@@ -4592,8 +4794,7 @@ function initWidgetsPanel() {
   document.getElementById('lockouts-nav-btn').addEventListener('click', loadLockoutsOnce);
   lockoutCharSelect.addEventListener('change', renderLockouts);
   lockoutRescanBtn.addEventListener('click', () => {
-    lockoutScanStatus.textContent = 'reading…';
-    window.eqTracker.rescanLockouts().then(applyLockoutData);
+    withLockoutBusy(async () => applyLockoutData(await window.eqTracker.rescanLockouts()));
   });
   window.eqTracker.onLockoutsChanged(() => {
     if (lockoutLoaded) window.eqTracker.getLockouts().then(applyLockoutData);
@@ -5225,6 +5426,155 @@ function initKnownBuffsPanel() {
 
 // Shared open/close wiring for the simple "button opens a modal" pattern -
 // backdrop click or the X closes it, same as the remembered-choices modal.
+// In-app confirm. No OS dialog. Resolves true on OK, false on Cancel / close / backdrop click.
+// One at a time. A second modal (e.g. "logging is off" firing while the log picker is open) waits
+// for the first to close rather than stacking two backdrops.
+let _modalOpen = false;
+function whenModalFree() {
+  if (!_modalOpen) return Promise.resolve();
+  return new Promise((res) => {
+    const t = setInterval(() => { if (!_modalOpen) { clearInterval(t); res(); } }, 80);
+  });
+}
+
+// Set while an appConfirm is on screen, so something else (e.g. "logging is OK now") can dismiss it.
+let _appConfirmClose = null;
+function closeAppConfirm(val = false) { if (_appConfirmClose) _appConfirmClose(val); }
+
+async function appConfirm(opts = {}) {
+  await whenModalFree();
+  return _appConfirm(opts);
+}
+function _appConfirm({ title = 'Confirm', message = '', detail = '', okLabel = 'OK', cancelLabel = 'Cancel', danger = false, hideCancel = false } = {}) {
+  return new Promise((resolve) => {
+    _modalOpen = true;
+    const bd = document.getElementById('app-confirm-modal-backdrop');
+    document.getElementById('app-confirm-title').textContent = title;
+    document.getElementById('app-confirm-message').textContent = message;
+    const detEl = document.getElementById('app-confirm-detail');
+    detEl.textContent = detail;
+    detEl.style.display = detail ? '' : 'none';
+    const ok = document.getElementById('app-confirm-ok');
+    const cancel = document.getElementById('app-confirm-cancel');
+    const closeX = document.getElementById('app-confirm-close');
+    cancel.style.display = hideCancel ? 'none' : '';
+    cancel.textContent = cancelLabel;
+    ok.textContent = okLabel;
+    ok.classList.toggle('btn-danger', !!danger);
+    ok.classList.toggle('btn-prominent', !danger);
+    const done = (val) => {
+      bd.style.display = 'none';
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+      closeX.removeEventListener('click', onCancel);
+      bd.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+      _appConfirmClose = null;
+      _modalOpen = false;
+      resolve(val);
+    };
+    const onOk = () => done(true);
+    const onCancel = () => done(false);
+    const onBackdrop = (e) => { if (e.target === bd) done(false); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') done(false);
+      else if (e.key === 'Enter') done(true);
+    };
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+    closeX.addEventListener('click', onCancel);
+    bd.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey);
+    _appConfirmClose = done;
+    bd.style.display = 'flex';
+  });
+}
+
+// In-app log-file picker. `groups` is { live:[], split:[], archive:[] } of { name, path, size }.
+// Resolves an array of chosen paths, or null on cancel.
+async function pickLogFiles(opts = {}) {
+  await whenModalFree();
+  return _pickLogFiles(opts);
+}
+function _pickLogFiles({ title = 'Choose a log file', hint = '', multi = false, groups = {}, preselectGroup = null, preselectPaths = null, current = null } = {}) {
+  const preselectSet = preselectPaths ? new Set(preselectPaths) : null;
+  return new Promise((resolve) => {
+    _modalOpen = true;
+    const bd = document.getElementById('log-picker-modal-backdrop');
+    document.getElementById('log-picker-title').textContent = title;
+    document.getElementById('log-picker-hint').textContent = hint;
+    const list = document.getElementById('log-picker-list');
+    list.innerHTML = '';
+    const mb = (n) => (n / 1048576).toFixed(1) + ' MB';
+    const sections = [['live', 'Current log folder'], ['split', 'Split (per-day)'], ['archive', 'Archive (weekly)']];
+    let firstInput = null;
+    for (const [key, label] of sections) {
+      const files = groups[key] || [];
+      if (!files.length) continue;
+      const h = document.createElement('li');
+      h.className = 'hint';
+      h.textContent = label;
+      list.appendChild(h);
+      for (const f of files) {
+        const li = document.createElement('li');
+        const input = document.createElement('input');
+        input.type = multi ? 'checkbox' : 'radio';
+        input.name = 'log-pick';
+        input.value = f.path;
+        if (multi && preselectSet) input.checked = preselectSet.has(f.path);
+        else if (multi && preselectGroup === key) input.checked = true;
+        if (!multi && current && f.path === current) input.checked = true;
+        input.addEventListener('change', syncOk);
+        firstInput = firstInput || input;
+        const lab = document.createElement('label');
+        lab.appendChild(input);
+        lab.appendChild(document.createTextNode(` ${f.name}  (${mb(f.size)})`));
+        li.appendChild(lab);
+        list.appendChild(li);
+      }
+    }
+    // For a single pick with no current match, default to the newest file so OK is never a no-op.
+    if (!multi && firstInput && !list.querySelector('input:checked')) firstInput.checked = true;
+    if (!list.children.length) {
+      const li = document.createElement('li');
+      li.className = 'hint';
+      li.textContent = 'No log files found.';
+      list.appendChild(li);
+    }
+    const ok = document.getElementById('log-picker-ok');
+    const cancel = document.getElementById('log-picker-cancel');
+    const closeX = document.getElementById('log-picker-close');
+    function syncOk() { ok.disabled = list.querySelectorAll('input:checked').length === 0; }
+    syncOk();
+    const done = (val) => {
+      bd.style.display = 'none';
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+      closeX.removeEventListener('click', onCancel);
+      bd.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+      _modalOpen = false;
+      resolve(val);
+    };
+    const onOk = () => {
+      const picked = [...list.querySelectorAll('input:checked')].map((i) => i.value);
+      done(picked.length ? picked : null);
+    };
+    const onCancel = () => done(null);
+    const onBackdrop = (e) => { if (e.target === bd) done(null); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') done(null);
+      else if (e.key === 'Enter' && !ok.disabled) onOk();
+    };
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+    closeX.addEventListener('click', onCancel);
+    bd.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey);
+    bd.style.display = 'flex';
+  });
+}
+
 function setupModalToggle(backdropId, openBtnId, closeBtnId, onOpen) {
   const backdrop = document.getElementById(backdropId);
   const openBtn = document.getElementById(openBtnId);

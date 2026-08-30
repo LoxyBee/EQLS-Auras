@@ -479,11 +479,85 @@ logRotationService.setLogsFolderFn(() => logService.watcher.getStatus().logsFold
 let lastLogLineAt = Date.now();
 logService.watcher.on('line', () => { lastLogLineAt = Date.now(); });
 logRotationService.setIsQuietFn(() => Date.now() - lastLogLineAt > 10000);
+
+// IS EVERQUEST LOGGING? The tracker is dead in the water without `/log on`, and EQ Legends writes
+// no "logging is now ON/OFF" line we could watch for (checked the owner's whole corpus). So this
+// is activity-based: if eqgame.exe is running but nothing has reached the tailer AND the log file
+// itself has not been written since the app launched, logging is almost certainly off - prompt.
+const APP_LAUNCH_MS = Date.now();
+let loggingSeemsOff = false;      // last verdict, so the prompt fires on the transition only
+let loggingPromptOpen = false;    // a modal is up; do not stack another
+let eqFirstSeenRunningMs = null;  // when we first confirmed eqgame.exe was up
+const LOGGING_GRACE_MS = 150000;  // 2.5 min of "EQ up, still nothing" before the first prompt
+
+function eqIsRunning() {
+  return new Promise((resolve) => {
+    const { execFile } = require('child_process');
+    execFile('tasklist', ['/FI', 'IMAGENAME eq eqgame.exe', '/NH'], { timeout: 6000, windowsHide: true }, (err, stdout) => {
+      resolve(!err && /eqgame\.exe/i.test(stdout || ''));
+    });
+  });
+}
+
+async function checkLoggingActive() {
+  // A line reached the tailer recently, or the log file grew since launch -> logging is working.
+  const status = logService.watcher.getStatus();
+  let logWorking = Date.now() - lastLogLineAt < LOGGING_GRACE_MS;
+  if (!logWorking && status.currentFilePath) {
+    try { logWorking = fs.statSync(status.currentFilePath).mtimeMs > APP_LAUNCH_MS + 3000; } catch (e) { /* ignore */ }
+  }
+
+  if (logWorking) {
+    if (loggingSeemsOff) { loggingSeemsOff = false; loggingPromptOpen = false; broadcast('logging:ok'); }
+    return;
+  }
+  if (loggingSeemsOff || loggingPromptOpen) return; // already flagged / asked
+
+  const running = await eqIsRunning();
+  if (!running) { eqFirstSeenRunningMs = null; return; } // EQ not up - nothing to log
+  if (eqFirstSeenRunningMs === null) eqFirstSeenRunningMs = Date.now();
+  // EQ must have been up, with still-zero activity, for the whole grace window - so a player who
+  // just launched EQ, or is briefly idle in an empty zone, is not nagged.
+  if (Date.now() - eqFirstSeenRunningMs < LOGGING_GRACE_MS) return;
+
+  loggingSeemsOff = true;
+  loggingPromptOpen = true;
+  debugLog('LOGGING: eqgame up >2.5min with no log activity - prompting for /log on');
+  broadcast('logging:off');
+}
+ipcMain.handle('logging:acknowledge', () => { loggingPromptOpen = false; return true; });
+ipcMain.handle('logging:recheck', async () => {
+  loggingPromptOpen = false;
+  loggingSeemsOff = false;
+  // A recheck is the user saying "I just did /log on" - give the client a moment to write.
+  await new Promise((r) => setTimeout(r, 4000));
+  const working = Date.now() - lastLogLineAt < LOGGING_GRACE_MS
+    || (() => { try { return fs.statSync(logService.watcher.getStatus().currentFilePath).mtimeMs > Date.now() - 8000; } catch (e) { return false; } })();
+  return { seemsOff: !working };
+});
+// First check after 90s, then every 60s. The grace window above is what actually gates the prompt.
+setTimeout(() => { checkLoggingActive(); setInterval(checkLoggingActive, 60000); }, 90000);
 // So the tailed log is rotated LAST and keeps the newest mtime. Without this, emptying a
 // logged-out character's log after the played one drags the watcher onto the mule at its next
 // directory scan, and every line written in between is lost to buffs, lockouts and the rest.
 logRotationService.setCurrentFileFn(() => logService.watcher.getStatus().currentFilePath);
 logRotationService.loadSettings();
+
+// ONE reset setting, two consumers. The Lockouts grid measures its week from it; the weekly
+// rotation cuts the log at it. The Lockouts page and the Setup page both edit the same store key,
+// so they can never disagree. Default is the Alt+Z measurement - Tuesday 11:00 local.
+const savedReset = loadJson('lockoutReset', { weekday: 2, hour: 11 });
+function applyResetRule(rule) {
+  const clean = lockoutService.setResetRule(rule); // clamps; returns the stored shape
+  logRotationService.setResetRule(clean);
+  saveJson('lockoutReset', clean);
+  return clean;
+}
+lockoutService.setResetRule(savedReset);
+logRotationService.setResetRule(savedReset);
+
+const savedLogTarget = loadJson('lockoutLogTarget', { path: null });
+if (savedLogTarget && savedLogTarget.path) lockoutService.setLogTarget(savedLogTarget.path);
 
 function runLogRotation(why) {
   try {
@@ -1048,13 +1122,104 @@ ipcMain.handle('logRotation:setEnabled', (_event, enabled) => {
   logRotationService.setEnabled(enabled);
   return logRotationService.getStatus();
 });
+
+ipcMain.handle('lockoutReset:get', () => lockoutService.resetRule);
+ipcMain.handle('lockoutReset:set', (_event, rule) => {
+  const applied = applyResetRule(rule);
+  // Push to every open window so the Lockouts page and the Setup page stay in step, and rebuild
+  // the grid under the new boundary.
+  broadcast('lockoutReset:changed', applied);
+  broadcast('lockouts:changed', lockoutService.getStatus());
+  return applied;
+});
+// If a stored "Change log file" target has gone missing, backfill drops it - persist that.
+function persistTargetIfCleared(r) {
+  if (r && r.targetCleared) saveJson('lockoutLogTarget', { path: null });
+  return r;
+}
+
 ipcMain.handle('lockouts:get', async () => {
-  if (lockoutService.backfillState === 'idle') await lockoutService.backfill();
+  if (lockoutService.backfillState === 'idle') persistTargetIfCleared(await lockoutService.backfill());
   return lockoutService.getProjection();
 });
 ipcMain.handle('lockouts:rescan', async () => {
-  await lockoutService.backfill();
+  persistTargetIfCleared(await lockoutService.rebuild());
   return lockoutService.getProjection();
+});
+
+// --- Lockouts-page log tools. NO OS dialogs - the renderer drives in-app modals; these handlers
+//     just list files and act on paths the renderer sends back. ---
+
+function lockoutLogsFolder() {
+  const p = logService.watcher.getStatus().currentFilePath;
+  return p ? path.dirname(p) : (logService.watcher.getStatus().logsFolder || null);
+}
+
+function listLogFilesIn(dir) {
+  try {
+    return fs.readdirSync(dir)
+      .filter((n) => /\.txt$/i.test(n) && /eqlog/i.test(n))
+      .map((n) => {
+        const full = path.join(dir, n);
+        let st;
+        try { st = fs.statSync(full); } catch (e) { st = null; }
+        return { name: n, path: full, size: st ? st.size : 0, mtime: st ? st.mtimeMs : 0 };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+  } catch (err) {
+    return [];
+  }
+}
+
+// What the in-app picker shows: the live folder, the per-day Split folder, the weekly Archive.
+ipcMain.handle('lockouts:listLogFiles', () => {
+  const folder = lockoutLogsFolder();
+  if (!folder) return { live: [], split: [], archive: [] };
+  return {
+    live: listLogFilesIn(folder),
+    split: listLogFilesIn(path.join(folder, 'Split')),
+    archive: listLogFilesIn(path.join(folder, 'Archive')),
+  };
+});
+
+ipcMain.handle('lockouts:setLogTargetByPath', async (_event, filePath) => {
+  lockoutService.setLogTarget(filePath || null);
+  saveJson('lockoutLogTarget', { path: filePath || null });
+  persistTargetIfCleared(await lockoutService.rebuild());
+  return lockoutService.getProjection();
+});
+
+// Feed extra files (the Split/ files covering a gap) into the current grid. Does NOT touch the
+// live log - it only adds to what the parser has seen this session.
+ipcMain.handle('lockouts:addLogsByPaths', async (_event, paths) => {
+  const added = await lockoutService.addLogs(Array.isArray(paths) ? paths : []);
+  return { projection: lockoutService.getProjection(), added };
+});
+
+// Split the watched log at this week's reset. The renderer has already confirmed in an in-app
+// modal; this just does it and rebuilds the grid.
+ipcMain.handle('lockouts:trim', async () => {
+  // Only the LIVE tailed log - never a file loaded via "Change log file" (that would rewrite an
+  // archive or a mule's log). The renderer hides the button in that case; this is the backstop.
+  const watched = logService.watcher.getStatus().currentFilePath;
+  if (lockoutService.logTarget && lockoutService.logTarget !== watched) {
+    return { report: { ok: false, reason: 'trim only works on your live log - switch back to it first' }, projection: lockoutService.getProjection() };
+  }
+  // The splitter must be caught up first, or the still-unsplit tail is lost when the file is
+  // rewritten. It polls every second, so "try again" clears in a moment.
+  if (logService.splitter.bytesBehind() > 0) {
+    return { report: { ok: false, reason: 'the day-file split is catching up - try again in a moment' }, projection: lockoutService.getProjection() };
+  }
+
+  const report = logRotationService.trimAtBoundary(watched);
+  if (report.ok) {
+    // The file was rewritten in place, not emptied - point the tailer and the splitter at the new
+    // end so they do not re-read (and re-emit / re-split) the kept week. See bug #1.
+    logService.watcher.resyncOffset(watched, report.keptBytes);
+    logService.splitter.resyncOffset(watched, report.keptBytes);
+    await lockoutService.rebuild();
+  }
+  return { report, projection: lockoutService.getProjection() };
 });
 
 ipcMain.handle('log:getState', () => logService.getState());
@@ -1068,16 +1233,17 @@ ipcMain.handle('log:setSplitOnGap', (_event, splitOnGap) => logService.setSplitO
 ipcMain.handle('log:chooseSplitFolder', () => logService.chooseSplitFolder());
 ipcMain.handle('log:resetSplitFolder', () => logService.resetSplitFolder());
 ipcMain.handle('log:openFolder', () => logService.openLogFolder());
-ipcMain.handle('log:archiveNow', () => {
-  // The manual Archive button empties the same log the lockout grid is built from, so the grid has
-  // to be rebuilt from what is now there - exactly as the weekly rotation does. Without this,
-  // pressing it during a scan left the service reporting done with no errors and half the lines
-  // missing: measured at 300,001 of 600,002 lost, and the grid quietly said so with a confident
-  // status. It degrades in the safe direction - toward not_looked, never toward a false open - but
-  // silently, which is the part worth fixing.
+// Whether archiving the whole log right now would take this lockout week's kills with it - the
+// renderer uses this to word its in-app confirm.
+ipcMain.handle('log:archiveHoldsCurrentWeek', () =>
+  logRotationService.logHoldsCurrentWeek(logService.watcher.getStatus().currentFilePath));
+
+ipcMain.handle('log:archiveNow', async () => {
+  // The renderer has already confirmed in an in-app modal (and warned if this holds the lockout
+  // week). The archive empties the same log the lockout grid is built from, so the grid is rebuilt
+  // from what is now there - exactly as the weekly rotation does.
   const result = logService.archiveNow();
-  lockoutService.states.clear();
-  lockoutService.backfillState = 'idle';
+  await lockoutService.rebuild();
   broadcast('lockouts:changed', lockoutService.getStatus());
   return result;
 });
@@ -1601,7 +1767,7 @@ ipcMain.handle('debug:logFolder', () => DEBUG_LOG_DIR);
 
 // For the About page's "Copy bug report" button. Today's file only, tail rather than the whole
 // thing - a report is about what just happened, and this project's own logs run to megabytes in
-// a single session (see docs/HANDOFF.md), which would make "paste this in Discord" impossible.
+// a single session, which would make "paste this in Discord" impossible.
 // Returns '' rather than throwing when Diagnostics has never been turned on (no file exists yet)
 // or the file can't be read - the button still has the version info worth sending either way.
 ipcMain.handle('debug:getRecentLogTail', (_event, maxChars = 4000) => {

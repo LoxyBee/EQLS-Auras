@@ -1333,9 +1333,18 @@ function applyLine(state, line) {
 // Extends the observation spans. Lines usually arrive in order; a line that
 // arrives out of order (two log files fed back to front) is merged rather than
 // starting a spurious span.
+// One span per play session (>30 min apart). Unbounded, this grows without limit on a huge
+// unarchived log and every line then rescans the whole array. Cap it: when full, the two OLDEST
+// spans are fused into one. That widens the oldest span across a gap - harmless, because only the
+// CURRENT period's spans decide a cell, and the earliest `from` (all `spansPriorWeek` needs) is
+// preserved.
+const MAX_SPANS = 2000;
+
 function noteCoverage(state, civil) {
   const spans = state.spans;
-  for (const sp of spans) {
+  // Iterate newest-first: lines usually arrive in order, so the match is at the end.
+  for (let i = spans.length - 1; i >= 0; i--) {
+    const sp = spans[i];
     if (civil >= sp.from - SPAN_GAP_MS && civil <= sp.to + SPAN_GAP_MS) {
       if (civil < sp.from) sp.from = civil;
       if (civil > sp.to) sp.to = civil;
@@ -1350,6 +1359,10 @@ function noteCoverage(state, civil) {
       spans[i - 1].to = Math.max(spans[i - 1].to, spans[i].to);
       spans.splice(i, 1);
     }
+  }
+  while (spans.length > MAX_SPANS) {
+    spans[0].to = spans[1].to;
+    spans.splice(1, 1);
   }
 }
 
@@ -1677,17 +1690,43 @@ function projectPeriod(state) {
 // NO COUNTDOWN. `available` is a state, never a time. The owner asked for no
 // countdown and the module could not honestly produce one anyway: the reset
 // hour is not recorded.
-function projectGrid(state, now) {
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function projectGrid(state, now, opts = {}) {
   requireCivil(now);
   const nowCivil = civilOf(now);
 
-  // The period boundary is a DAY, not an instant, because the rule is a day.
-  // Walk back to the most recent RESET_RULE.weekday at or before `now`.
+  // THE RESET RULE.
+  //
+  // Preferred: the host resolves the boundary itself - in US Eastern, with the daylight-saving
+  // change already handled - and passes `boundaryCivil` (and `periodEndCivil`), civil components
+  // in the SAME frame the kill stamps are in. The reset weekday/hour still come through for
+  // display and are Eastern.
+  //
+  // Fallback (tests, or a host that does not resolve it): `{ resetWeekday, resetHour }` and the
+  // boundary is computed here in the `now` frame. `RESET_RULE` if neither is given.
+  const userSet = Number.isInteger(opts.resetWeekday) || Number.isInteger(opts.resetHour) || !!opts.boundaryCivil;
+  const weekday = Number.isInteger(opts.resetWeekday) ? opts.resetWeekday : RESET_RULE.weekday;
+  const hour = Number.isInteger(opts.resetHour) ? opts.resetHour : RESET_RULE.hour;
+  const hourKnown = !!opts.boundaryCivil || hour !== null;
+  const weekdayName = WEEKDAY_NAMES[weekday] || RESET_RULE.weekdayName;
+
   const nowDay = Date.UTC(now.year, now.month - 1, now.day);
-  const dow = new Date(nowDay).getUTCDay();
-  const back = (dow - RESET_RULE.weekday + 7) % 7;
-  const boundaryDayStart = nowDay - back * 86400000;
-  const boundaryDayEnd = boundaryDayStart + 86400000;
+  let boundaryDayStart;
+  if (opts.boundaryCivil) {
+    boundaryDayStart = civilOf(opts.boundaryCivil);
+  } else {
+    // Walk back to the most recent reset weekday at or before `now`. Midnight when the hour is
+    // unknown; that weekday at `hour:00` when it is.
+    const dow = new Date(nowDay).getUTCDay();
+    const back = (dow - weekday + 7) % 7;
+    boundaryDayStart = nowDay - back * 86400000 + (hourKnown ? hour * 3600000 : 0);
+    if (hourKnown && back === 0 && nowCivil < boundaryDayStart) boundaryDayStart -= 7 * 86400000;
+  }
+  const boundaryDayEnd = hourKnown ? boundaryDayStart : boundaryDayStart + 86400000;
+  const periodEndCivil = opts.periodEndCivil
+    ? civilOf(opts.periodEndCivil)
+    : boundaryDayStart + 7 * 86400000;
 
   const coverageStart = state.firstSeen;
   const coverageEnd = state.lastSeen;
@@ -1775,7 +1814,9 @@ function projectGrid(state, now) {
   //
   // The pivot is the LATEST such kill, not the earliest: any reset at or before
   // it leaves at least one kill inside the period.
-  const onBoundaryDay = nowCivil >= boundaryDayStart && nowCivil < boundaryDayEnd;
+  // Only a possibility when the hour is unknown - with it pinned, the boundary is a point and
+  // there is no ambiguous day to be on.
+  const onBoundaryDay = !hourKnown && nowCivil >= boundaryDayStart && nowCivil < boundaryDayEnd;
   const priorBoundaryStart = boundaryDayStart - 7 * 86400000;
 
   const cells = [];
@@ -1787,7 +1828,9 @@ function projectGrid(state, now) {
     // Evaluate one hypothesis: what does the grid say if the period began at
     // `from`? Returns the cell state for difficulty `d`, ignoring coverage.
     const under = (from, d) => {
-      const dayEnd = from + 86400000;
+      // With the hour known `from` IS the boundary instant, so everything at or after it is in
+      // period and nothing sits in an ambiguous "boundary day" window.
+      const dayEnd = hourKnown ? from : from + 86400000;
       const period = mine.filter((k) => k.civil >= dayEnd);
       // PER TIER, and this used to be the bug. `onDay` and `unstated` were
       // both computed across the whole row, so ONE ambiguous kill blanked all
@@ -1864,7 +1907,20 @@ function projectGrid(state, now) {
       // "stop collapsing to ?" change — the structure a UI needs to render
       // "done if the reset was before 22:37, open if after" instead of a shrug.
       let decidedBy = null;
-      if (!spans) {
+      // A KILL LINE IS AN OBSERVATION, AND A COVERAGE GAP CANNOT UN-SEE IT.
+      //
+      // `!spans` downgrades a cell to `not_looked` when the log does not cover the whole period —
+      // correct for an `open` cell, because "no kill seen" is only evidence of absence when there
+      // was nothing you missed. But a cell that IS backed by a kill line at that tier in this
+      // period is `completed` regardless: the kill is in the log, it was read, and a hole
+      // elsewhere in the week does not make it un-happen. This is the module's own `evidence`
+      // split (completed = OBSERVED, open = INFERRED "only because coverage spans the period")
+      // finally applied here. Without it, a real kill in a partial log renders as `not_looked`.
+      const observed = h1.s === 'completed' && (h2.s === 'completed' || !onBoundaryDay);
+      if (observed) {
+        cellState = 'completed';
+        because = h1.why;
+      } else if (!spans) {
         cellState = 'not_looked';
         because = coverageStart === null
           ? 'no lines seen at all'
@@ -1891,7 +1947,7 @@ function projectGrid(state, now) {
         cellState = 'conditional';
         const say = (h) => (h.s === 'conditional' ? `${h.doneIf} — ${h.s}` : h.s);
         because =
-          `today is ${RESET_RULE.weekdayName} and the reset hour has never been measured, so ` +
+          `today is ${weekdayName} and the reset hour is not set, so ` +
           `whether the turnover has happened yet is unknown: "${say(h1)}" if it has, ` +
           `"${say(h2)}" if it has not`;
         decidedBy = {
@@ -1967,12 +2023,30 @@ function projectGrid(state, now) {
   }
 
   const by = (s) => cells.filter((c) => c.state === s);
+  const fmtBoundary = (civil) =>
+    hourKnown ? formatCivil(fromCivil(civil)).slice(0, 16) : formatCivil(fromCivil(civil)).slice(0, 10);
   return {
-    resetRule: RESET_RULE,
+    resetRule: (() => {
+      // Default is Tuesday 11:00 US Eastern; anything else is the user's own.
+      const isDefault = weekday === 2 && hour === 11;
+      const changed = userSet && !isDefault;
+      return {
+        weekday,
+        weekdayName,
+        hour,
+        zone: 'US Eastern',
+        provenance: changed ? 'set by you' : 'default',
+        source: changed ? 'your setting' : 'in-game lockout timer reading (Tuesday 11:00 Eastern)',
+      };
+    })(),
     period: {
+      // The exact week window, in the log's own local frame. `periodStart`/`periodEnd` carry the
+      // hour when it is known; `boundaryDay` stays the date-only form the old callers read.
       boundaryDay: formatCivil(fromCivil(boundaryDayStart)).slice(0, 10),
-      boundaryWeekday: RESET_RULE.weekdayName,
-      hourKnown: false,
+      boundaryWeekday: weekdayName,
+      periodStart: fmtBoundary(boundaryDayStart),
+      periodEnd: fmtBoundary(periodEndCivil),
+      hourKnown,
       // Stated once, at the top of the projection, so a caller cannot render
       // the grid without it being available to render alongside.
       evidenceNote:

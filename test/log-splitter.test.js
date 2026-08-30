@@ -353,5 +353,68 @@ test('it reports how much of the log it could actually read', async () => {
   assert.equal(st.unstampedRatio, 0);
 });
 
+// ---------------------------------------------------------------------------
+// Re-splitting from byte 0 must not double the day files
+// ---------------------------------------------------------------------------
+//
+// splitProgress.json is the only thing standing between "restart the app" and
+// "read the whole log again". If it is lost, reset, or a crash left it
+// half-written, the splitter resumes from offset 0 - and every line this week
+// is already in Logs/Split/. Appending it again doubles it.
+
+test('a re-split from offset 0 does not re-append lines already in the day file', async () => {
+  const body =
+    '[Tue Sep 15 09:00:00 2026] You have slain Lady Vox!\n' +
+    '[Tue Sep 15 09:00:05 2026] You have slain Lord Nagafen!\n' +
+    '[Tue Sep 15 09:00:10 2026] a server broadcast\n';
+  const { dir, file } = tempLog(body);
+
+  const first = new LogSplitter(store());
+  first.attachToFile(file);
+  await settle(first);
+  first.stop();
+
+  const outDir = path.join(dir, 'Split');
+  const dayFile = fs.readdirSync(outDir)[0];
+  const afterFirst = fs.readFileSync(path.join(outDir, dayFile), 'utf8');
+  assert.equal(afterFirst.match(/Lady Vox/g).length, 1);
+
+  // Fresh splitter, empty progress -> starts at offset 0, same log, same day file.
+  const second = new LogSplitter(store());
+  second.attachToFile(file);
+  await settle(second);
+  second.stop();
+
+  const afterSecond = fs.readFileSync(path.join(outDir, dayFile), 'utf8');
+  assert.equal(afterSecond, afterFirst, 'the second pass changed the day file');
+  assert.equal(afterSecond.match(/Lady Vox/g).length, 1);
+  assert.equal(afterSecond.match(/Lord Nagafen/g).length, 1);
+});
+
+test('a re-split still appends genuinely new lines past the day file tail', async () => {
+  const body =
+    '[Tue Sep 15 09:00:00 2026] You have slain Lady Vox!\n' +
+    '[Tue Sep 15 09:00:05 2026] You have slain Lord Nagafen!\n';
+  const { dir, file } = tempLog(body);
+
+  const first = new LogSplitter(store());
+  first.attachToFile(file);
+  await settle(first);
+  first.stop();
+
+  fs.appendFileSync(file, '[Tue Sep 15 09:30:00 2026] You have slain Cazic-Thule!\n', 'utf8');
+
+  const second = new LogSplitter(store());
+  second.attachToFile(file);
+  await settle(second);
+  second.stop();
+
+  const outDir = path.join(dir, 'Split');
+  const dayFile = fs.readdirSync(outDir)[0];
+  const out = fs.readFileSync(path.join(outDir, dayFile), 'utf8');
+  assert.equal(out.match(/Lady Vox/g).length, 1);
+  assert.equal(out.match(/Cazic-Thule/g).length, 1);
+});
+
 module.exports = () => report('log-splitter');
 if (require.main === module) report('log-splitter').then((n) => process.exit(n ? 1 : 0));

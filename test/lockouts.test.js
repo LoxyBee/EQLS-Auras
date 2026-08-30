@@ -32,6 +32,15 @@ function tempLogs(files) {
   return dir;
 }
 
+// The app feeds backfill the SINGLE live log the tailer is on, not a folder. This writes one file
+// and returns its path, for pointing setCurrentFileFn at.
+function liveLog(lines, name = 'eqlog_Avenrae_rivervale.txt', eol = '\r\n') {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-lockouts-'));
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, lines.join(eol) + eol, 'utf8');
+  return file;
+}
+
 // ---------------------------------------------------------------------------
 // The vendored core is not edited
 // ---------------------------------------------------------------------------
@@ -55,15 +64,15 @@ test('the vendored core stays pure — no requires, no clock, no filesystem', ()
 
 // Sharing one state between characters is what produced a four-second reset bracket when Session D
 // first ran the corpus: two people's grants, four seconds apart because they were grouped, read as
-// one task granted twice.
-test('two characters never share state', async () => {
-  const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt': [ASSIGN('Lord Nagafen')],
-    'eqlog_Shara_rivervale.txt': [ASSIGN('Lady Vox')],
-  });
+// one task granted twice. Attribution is by the file the tailer is on, which switches as the
+// player alt-tabs between characters.
+test('two characters never share state', () => {
   const s = new LockoutService();
-  s.setLogsFolderFn(() => dir);
-  await s.backfill();
+  let file = 'C:/eq/Logs/eqlog_Avenrae_rivervale.txt';
+  s.setCurrentFileFn(() => file);
+  s.handleLine(ASSIGN('Lord Nagafen'));
+  file = 'C:/eq/Logs/eqlog_Shara_rivervale.txt';
+  s.handleLine(ASSIGN('Lady Vox'));
   assert.deepEqual([...s.states.keys()].sort(), ['Avenrae', 'Shara']);
   const p = s.getProjection(civilNow(new Date(2026, 7, 12, 12, 0, 0)));
   const av = p.characters.find((c) => c.character === 'Avenrae');
@@ -115,46 +124,50 @@ test('a broken injected function is counted, not thrown', () => {
   assert.match(s.lastError, /watcher exploded/);
 });
 
-test('a missing logs folder fails cleanly and says so', async () => {
+test('no live log file fails cleanly and says so', async () => {
   const s = new LockoutService();
-  s.setLogsFolderFn(() => null);
+  s.setCurrentFileFn(() => null);
   const r = await s.backfill();
   assert.equal(r.ok, false);
-  assert.match(r.reason, /no logs folder/);
+  assert.match(r.reason, /no live log/);
 });
 
 // ---------------------------------------------------------------------------
-// The folder, not the newest file
+// Only the live log — not the folder, not Split/, not Archive/
 // ---------------------------------------------------------------------------
 
-// Measured by Session D: the two halves of the only reset measurement they have live in DIFFERENT
-// files. And it lands twice over here, because logSplitter.js writes per-day files by design - the
-// split is manufactured continuously rather than merely risked.
-test('the whole folder is read, not just the newest file', async () => {
-  const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt': [ASSIGN('Lord Nagafen')],
-    'eqlog_Avenrae_rivervale_2026-08-15.txt': [ASSIGN('Lady Vox')],
-    'eqlog_Avenrae_rivervale_2026-08-16.txt': [ASSIGN('Master Yael')],
-  });
+// The grid answers "this lockout week", and the weekly archive keeps the live log scoped to
+// exactly that. Reading dated Split/ files or the folder at large pulls in older weeks. The one
+// file the tailer is on is the whole input.
+test('only the live log is read, not the rest of the folder', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-lockouts-'));
+  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  fs.writeFileSync(live, ASSIGN('Lord Nagafen') + '\r\n', 'utf8');
+  // A dated file (as logSplitter.js would write) sitting right beside it, and a Split/ subfolder.
+  fs.writeFileSync(path.join(dir, 'eqlog_Avenrae_rivervale_2026-08-15.txt'), ASSIGN('Lady Vox') + '\r\n', 'utf8');
+  fs.mkdirSync(path.join(dir, 'Split'));
+  fs.writeFileSync(path.join(dir, 'Split', 'eqlog_Avenrae_rivervale_2026-08-16.txt'), ASSIGN('Master Yael') + '\r\n', 'utf8');
+
   const s = new LockoutService();
   s.setLogsFolderFn(() => dir);
+  s.setCurrentFileFn(() => live);
   const r = await s.backfill();
-  assert.equal(r.files, 3, 'all three files must be read');
+  assert.equal(r.files, 1, 'exactly one file - the live log');
   const bosses = s.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0)))
-    .characters[0].projection.bosses.map((b) => b.boss).sort();
-  assert.deepEqual(bosses, ['Lady Vox', 'Lord Nagafen', 'Master Yael']);
+    .characters[0].projection.bosses.map((b) => b.boss);
+  assert.deepEqual(bosses, ['Lord Nagafen'], 'Lady Vox and Master Yael are in other files and must not appear');
 });
 
-test('files that are not logs are ignored', async () => {
-  const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt': [ASSIGN('Lord Nagafen')],
-    'dbg.txt': ['not a log'],
-    'Sky.txt': ['also not a log'],
-  });
+test('a live file whose name is not an eqlog is handled without a crash', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-lockouts-'));
+  const odd = path.join(dir, 'dbg.txt');
+  fs.writeFileSync(odd, ASSIGN('Lord Nagafen') + '\r\n', 'utf8');
   const s = new LockoutService();
-  s.setLogsFolderFn(() => dir);
+  s.setCurrentFileFn(() => odd);
   const r = await s.backfill();
-  assert.equal(r.files, 1);
+  assert.equal(r.ok, true);
+  assert.equal(r.files, 0, 'no character could be parsed from the name, so nothing was read');
+  assert.equal(s.states.size, 0);
 });
 
 // A backfill ALWAYS overlaps the live tailer, so this is load-bearing rather than a nicety.
@@ -164,9 +177,9 @@ test('files that are not logs are ignored', async () => {
 // rejected. That counter is supposed to move. My first version of this test asserted nothing moved
 // at all and failed on precisely that counter, which is the test being wrong rather than the code.
 test('scanning twice changes only the duplicate counter', async () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': [ASSIGN('Lord Nagafen')] });
+  const file = liveLog([ASSIGN('Lord Nagafen')]);
   const s = new LockoutService();
-  s.setLogsFolderFn(() => dir);
+  s.setCurrentFileFn(() => file);
   const at = civilNow(new Date(2026, 7, 20, 12, 0, 0));
 
   await s.backfill();
@@ -190,17 +203,14 @@ test('scanning twice changes only the duplicate counter', async () => {
 
 // Mixed line endings, measured: 11 CRLF files and 4 LF-only. Session D generalised from an
 // all-CRLF sample and was wrong, so both are tested rather than assumed.
-test('CRLF and LF files both parse', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-eol-'));
-  fs.writeFileSync(path.join(dir, 'eqlog_Crlf_rivervale.txt'), ASSIGN('Lord Nagafen') + '\r\n', 'utf8');
-  fs.writeFileSync(path.join(dir, 'eqlog_Lfonly_rivervale.txt'), ASSIGN('Lady Vox') + '\n', 'utf8');
-  const s = new LockoutService();
-  s.setLogsFolderFn(() => dir);
-  await s.backfill();
-  const p = s.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0)));
-  for (const ch of ['Crlf', 'Lfonly']) {
-    const e = p.characters.find((c) => c.character === ch);
-    assert.ok(e && e.projection.bosses.length === 1, `${ch} produced no task`);
+test('CRLF and LF live logs both parse', async () => {
+  for (const [eol, name] of [['\r\n', 'eqlog_Crlf_rivervale.txt'], ['\n', 'eqlog_Lfonly_rivervale.txt']]) {
+    const file = liveLog([ASSIGN('Lord Nagafen')], name, eol);
+    const s = new LockoutService();
+    s.setCurrentFileFn(() => file);
+    await s.backfill();
+    const e = s.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0))).characters[0];
+    assert.ok(e && e.projection.bosses.length === 1, `${name} produced no task`);
   }
 });
 
@@ -314,23 +324,25 @@ test('there is no countdown anywhere in the lockout UI', () => {
   }
 });
 
-// The reset DAY came from the owner saying so; the reset HOUR has never been measured. Both facts
-// have to reach the screen, or the grid looks more certain than it is.
-test('the reset rule reaches the UI with its provenance and its null hour', () => {
-  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
-  const block = js.slice(js.indexOf('Raid lockouts (Session D'), js.indexOf('function renderMasterButtons'));
-  assert.ok(block.includes('resetRule.provenance'), 'the reset day must show where it came from');
-  assert.ok(/never measured/.test(block), 'the missing reset hour must be stated, not omitted');
-  assert.ok(block.includes('period.provenance'), 'the period must show its provenance');
-  assert.ok(/floor and not a value/.test(block), 'the period is a floor and must say so');
+// The page's own "How this is read" blurb still has to carry the two facts that keep the grid
+// honest: the reset day is only STATED (not measured), and the reset hour is not known - which is
+// why a boundary-day kill reads "depends" and there is no countdown.
+test('the how-this-is-read blurb states the reset is unmeasured', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'index.html'), 'utf8');
+  const at = html.indexOf('How this is read');
+  assert.ok(at > -1, 'the lockout explainer card is gone - this test needs rewriting');
+  const card = html.slice(at, at + 800);
+  assert.match(card, /reset/i, 'the blurb must mention the reset');
+  assert.match(card, /hour isn't known|hour is not known|reset hour/i, 'the missing reset hour must be stated');
+  assert.match(card, /no countdown/i, 'the absence of a countdown must be explained, not silent');
 });
 
 // The whole projection is a pure function of (state, now), so a grid rendered "now" and the same
 // grid rendered from the same state later must not drift on their own.
 test('the projection is a pure function of state and now', async () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': [ASSIGN('Lord Nagafen')] });
+  const file = liveLog([ASSIGN('Lord Nagafen')]);
   const s = new LockoutService();
-  s.setLogsFolderFn(() => dir);
+  s.setCurrentFileFn(() => file);
   await s.backfill();
   const at = civilNow(new Date(2026, 7, 20, 12, 0, 0));
   assert.equal(
@@ -342,9 +354,9 @@ test('the projection is a pure function of state and now', async () => {
 
 // Clause 4, at the boundary that matters: this crosses IPC to the renderer.
 test('the projection survives the trip over IPC', async () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': [ASSIGN('Lord Nagafen')] });
+  const file = liveLog([ASSIGN('Lord Nagafen')]);
   const s = new LockoutService();
-  s.setLogsFolderFn(() => dir);
+  s.setCurrentFileFn(() => file);
   await s.backfill();
   const p = s.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0)));
   assert.deepEqual(p, JSON.parse(JSON.stringify(p)), 'a Map, Set or Date has reached the payload');
@@ -395,24 +407,136 @@ test('the open cell does not claim the logs cover the whole period', () => {
   assert.ok(/see the note/.test(entry), 'the tooltip does not point at the gap line that qualifies it');
 });
 
-// The Setup card states the reset hour as a fact; the Lockouts page states it has never been
-// measured. Both are true of different things - the hour came from the owner's own Alt+Z reading,
-// and lockoutCore's RESET_RULE was never given it - but an app that asserts a number and then
-// denies having it has to say which is which.
-test('the reset hour names where it came from', () => {
-  const at = SETUP_HTML.indexOf("Tuesday at 11:00");
-  assert.ok(at > -1, 'the reset-hour sentence is gone - this test needs rewriting');
-  const para = SETUP_HTML.slice(at, at + 700);
-  assert.match(
-    para,
-    /your own\s+\n?\s*reading of the in-game/,
-    'the card asserts the reset hour without saying it came from the owner, not from the log'
-  );
-  assert.match(
-    para,
-    /never measured/,
-    'the card does not acknowledge that the Lockouts page still calls the hour unmeasured'
-  );
+// The reset day/hour is ONE setting now. Both pages carry the same controls (bound to the same
+// store key), so there is no contradiction to reconcile - but the Setup card still has to say
+// where the default came from: the owner's own in-game reading, not the log.
+test('the reset setting is on both pages and names where the default came from', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'index.html'), 'utf8');
+  assert.ok(html.includes('id="lockout-reset-day"') && html.includes('id="lockout-reset-hour"'),
+    'the Lockouts page must carry the reset controls');
+  assert.ok(html.includes('id="setup-reset-day"') && html.includes('id="setup-reset-hour"'),
+    'the Setup page must carry the same reset controls');
+  const setup = SETUP_HTML.slice(SETUP_HTML.indexOf('Weekly archive at the raid reset'), SETUP_HTML.indexOf('Weekly archive at the raid reset') + 1200);
+  assert.match(setup, /same value|changing it there/i, 'the Setup card must say it is the same setting as the Lockouts page');
+  assert.match(setup, /your own\s+reading of the in-game|in-game lockout timer/i,
+    'the default must be attributed to the owner\'s in-game reading, not the log');
+});
+
+// ---------------------------------------------------------------------------
+// Log tools: change target, add files
+// ---------------------------------------------------------------------------
+
+test('setLogTarget points backfill at a different file', async () => {
+  const other = liveLog([ASSIGN('Master Yael')], 'eqlog_Mule_rivervale.txt');
+  const live = liveLog([ASSIGN('Lord Nagafen')]);
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => live);
+  s.setLogTarget(other);
+  await s.backfill();
+  assert.deepEqual([...s.states.keys()], ['Mule'], 'backfill read the target, not the tailed file');
+  assert.equal(s.getStatus().logTarget, other);
+});
+
+test('addLogs feeds extra files into the grid without a full rebuild', async () => {
+  const live = liveLog([ASSIGN('Lord Nagafen')]);
+  const extra1 = liveLog([ASSIGN('Lady Vox')], 'eqlog_Avenrae_rivervale_2026-08-15.txt');
+  const extra2 = liveLog([ASSIGN('Master Yael')], 'eqlog_Avenrae_rivervale_2026-08-16.txt');
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => live);
+  await s.backfill();
+  let fired = 0;
+  s.on('changed', () => { fired += 1; });
+  const r = await s.addLogs([extra1, extra2, 'C:/does/not/exist.txt']);
+  assert.equal(r.files, 2);
+  assert.ok(fired >= 1, 'a change was emitted so the grid re-broadcasts');
+  const bosses = s.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0)))
+    .characters[0].projection.bosses.map((b) => b.boss).sort();
+  assert.deepEqual(bosses, ['Lady Vox', 'Lord Nagafen', 'Master Yael']);
+});
+
+test('addLogs marks the view as multi-file, and a rebuild clears that', async () => {
+  const live = liveLog([ASSIGN('Lord Nagafen')]);
+  const extra = liveLog([ASSIGN('Lady Vox')], 'eqlog_Avenrae_rivervale_2026-08-15.txt');
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => live);
+  await s.backfill();
+  assert.equal(s.getStatus().extraLogs, 0);
+  await s.addLogs([extra]);
+  assert.equal(s.getStatus().extraLogs, 1, 'the extra file is counted');
+  await s.rebuild();
+  assert.equal(s.getStatus().extraLogs, 0, 'a full rebuild forgets the stitched-in files');
+});
+
+test('the Trim offer is hidden once extra logs are stitched in', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const block = js.slice(js.indexOf('entry.spansPriorWeek'), js.indexOf('entry.spansPriorWeek') + 120);
+  assert.ok(/multiLog/.test(block) && /!multiLog/.test(block),
+    'the trim button condition must exclude the multi-file view');
+});
+
+test('Add split files pre-ticks only this week, not every split file', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const h = js.slice(js.indexOf("title: 'Add split files'") - 600, js.indexOf("title: 'Add split files'") + 200);
+  assert.ok(/preselectPaths/.test(h), 'it passes explicit paths, not a whole group');
+  assert.ok(!/preselectGroup:\s*'split'/.test(h), 'the old tick-everything path is gone');
+});
+
+test('a completed cell carries the kill date for the renderer', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  assert.ok(/lockout-killdate/.test(js) && /cell\.completedAt/.test(js),
+    'lockoutCell must render cell.completedAt');
+});
+
+test('spansPriorWeek is set when the log reaches before this week', async () => {
+  // A line from well before, plus one from this week.
+  const live = liveLog([
+    '[Sun Aug 24 20:00:00 2026] older',
+    ASSIGN('Lord Nagafen').replace('Aug 10 17:14:49', 'Aug 27 21:00:00'),
+  ]);
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => live);
+  s.setResetRule({ weekday: 2, hour: 11 });
+  await s.backfill();
+  const p = s.getProjection(civilNow(new Date(2026, 7, 29, 12, 0, 0)));
+  assert.equal(p.characters[0].spansPriorWeek, true);
+});
+
+// The grid boundary must be resolved in US Eastern and handed to lockoutCore as pre-computed
+// civil components - never left to lockoutCore's own weekday/hour math, which is only right on an
+// Eastern machine. This pins that lockoutService always passes it.
+test('getProjection always hands lockoutCore a pre-resolved boundaryCivil', async () => {
+  const file = liveLog([ASSIGN('Lord Nagafen')]);
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => file);
+  s.setResetRule({ weekday: 2, hour: 11 });
+  await s.backfill();
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'lockoutService.js'), 'utf8');
+  const call = src.slice(src.indexOf('core.projectGrid('), src.indexOf('core.projectGrid(') + 250);
+  assert.ok(/boundaryCivil/.test(call) && /periodEndCivil/.test(call),
+    'projectGrid must be called with boundaryCivil / periodEndCivil');
+});
+
+test('rebuild() is single-flight - two concurrent calls do not interleave', async () => {
+  const file = liveLog([ASSIGN('Lord Nagafen')]);
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => file);
+  const [a, b] = await Promise.all([s.rebuild(), s.rebuild()]);
+  // Both resolve, and the state is exactly one clean read - not a doubled or half-cleared one.
+  assert.equal(a.ok || b.ok, true);
+  assert.deepEqual([...s.states.keys()], ['Avenrae']);
+  const bosses = s.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0))).characters[0].projection.bosses;
+  assert.equal(bosses.length, 1, 'the task was recorded exactly once');
+});
+
+test('a missing log target is dropped, and backfill falls back to the live log', async () => {
+  const live = liveLog([ASSIGN('Lord Nagafen')]);
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => live);
+  s.setLogTarget('C:/gone/eqlog_Mule_rivervale.txt');
+  const r = await s.backfill();
+  assert.equal(r.targetCleared, true, 'backfill reports the dead target was dropped');
+  assert.equal(s.getStatus().logTarget, null);
+  assert.deepEqual([...s.states.keys()], ['Avenrae'], 'it read the live log instead');
 });
 
 module.exports = () => report('lockouts');
