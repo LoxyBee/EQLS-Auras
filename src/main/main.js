@@ -35,7 +35,7 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
-const { findRoute, describeLeg, allZoneNames, pickableZoneNames } = require('../shared/zoneRouting');
+const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
 const { matchShareCodeInChat, splitReason } = require('../shared/shareCodeChat');
 const { TRAVEL_SPELLS } = require('../shared/data/zoneGraph');
@@ -1260,6 +1260,9 @@ ipcMain.handle('travel:getZones', () => allZoneNames());
 // " (Fused)"), at the owner's request. `travel:getZones` above is untouched for anything that
 // still wants every zone including tiers.
 ipcMain.handle('travel:getPickableZones', () => pickableZoneNames());
+// The eqtm picker's search - display-name substring + community nicknames + boss names + client
+// short names, unioned (QOL #30). Zone-prompt renderer calls this per keystroke.
+ipcMain.handle('travel:searchZones', (_event, query) => searchPickableZones(query));
 ipcMain.handle('travel:getPickerCommand', () => travelPickerCommand);
 ipcMain.handle('travel:setPickerCommand', (_event, word) => {
   // Letters only, matching what a /tell name can even contain (matchOfflineTell's own pattern) -

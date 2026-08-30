@@ -372,6 +372,11 @@ const ZONES = {
   'The Plane of Fear': {
     shortName: 'fearplane',
     connections: [
+      // Two-way on EQL. Enter via the one-way spectre-cave portal in The Feerrott; leave via a
+      // separate exit portal on the Temple's 2nd floor that lands back in The Feerrott (or
+      // Gate/port). Two portals, net two-way - do not "fix" it back to classic one-way.
+      // eqlwiki.com/Plane_of_Fear, researched 30 Aug. (The instance variants below stay one-way
+      // out, per the instance-tier rule - CLAUDE.md gotcha #23.)
       { to: 'The Feerrott', via: 'portal', sources: ['zlizeqmap', 'eqlwiki', 'p99wiki'] },
     ],
   },
@@ -399,6 +404,10 @@ const ZONES = {
   'The Plane of Sky': {
     shortName: 'airplane',
     connections: [
+      // Two-way on EQL, unlike classic EQ (wizard-spell-only in, one-way out). Entry is a
+      // clickable orb in East Freeport (rock in the bay ~ -425,-1200); exit - jump off, Gate or
+      // port - also lands in East Freeport. Do not revert to one-way. eqlwiki.com/Plane_of_Sky,
+      // researched 30 Aug.
       { to: 'East Freeport', via: 'portal', sources: ['zlizeqmap', 'eqlwiki', 'p99wiki'] },
     ],
   },
@@ -646,9 +655,12 @@ const ZONES = {
   'The Plane of Hate': {
     shortName: 'hateplane',
     nameConfidence: 'inferred',
-    connections: [
-      { to: 'The Oasis of Marr', via: 'portal', sources: ['eqlwiki'] },
-    ],
+    // NO outbound edges, on purpose (QOL #43). The Oasis of Marr portal is one-way IN - there is
+    // no return portal and the zone has no zone line out at all; you leave by Gate / Origin /
+    // Alter Plane. So the router can bring you here (via Oasis, or the Alter Plane: Hate spell in
+    // TRAVEL_SPELLS) but correctly finds no zone-line route back. Same as an instance tier is
+    // entry-only, this is exit-only-by-spell. eqlwiki.com/Plane_of_Hate, researched 30 Aug.
+    connections: [],
   },
   'High Keep': {
     shortName: 'highkeep',
@@ -928,7 +940,7 @@ const NOT_TRAVEL_SPELLS = {
  * Known caveats, carried from the research rather than quietly dropped:
  *   - 'Permafrost Keep' and 'The Permafrost Caverns - Group' are both mapped to zone short name 'permafrost'. They may be one place under two labels in EQL, or two. Unverified.
  *   - East Freeport <-> North Freeport is the single edge no independent source corroborates. ZlizEQMap lists North Freeport as connecting only to West Freeport. Plausible but unconfirmed.
- *   - Oasis of Marr -> Plane of Hate is an EverQuest Legends change. In classic EQ / P99 the Plane of Hate has no ground connection at all (wizard Alter Plane: Hate only). Direction is one-way in, per eqlwiki; modelled here as undirected. Verify before routing OUT of Plane of Hate.
+ *   - Oasis of Marr -> Plane of Hate is an EverQuest Legends change (classic EQ / P99 have no ground connection at all - wizard Alter Plane: Hate only). Confirmed one-way IN (eqlwiki, 30 Aug): the Oasis portal only enters; Plane of Hate has no zone exit at all - you leave by Gate / Origin / Alter Plane. Modelled one-way; the Plane of Hate block has an empty connections array, and zone-routing tests exempt it from the reachable-OUT check the way they exempt the 27 instance tiers from the reachable-IN check.
  *   - The Hole -> Erudin and The Hole -> Neriak 3rd Gate are teleporters listed by both wikis but absent from ZlizEQMap's table. Modelled one-way (out of The Hole only): the pads are inside The Hole and every documented entrance is the ground route via Paineel (QOL #32, researched 30 Aug).
  *   - Names for the 37 zones the player has never entered are inferred classic long names, not observed EQL strings. Do not display them as authoritative.
  */
