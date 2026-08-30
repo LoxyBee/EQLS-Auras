@@ -13,6 +13,11 @@ const POLL_INTERVAL_MS = 300;
 // A query that never comes back within this long is treated as a dead/hung process and the whole
 // thing is respawned - better than a poll silently never resolving again.
 const QUERY_TIMEOUT_MS = 1500;
+// After the persistent powershell.exe dies, wait this long before spawning a replacement. Without
+// it, a powershell that cannot start (a loaded machine, an AV hook, a broken PATH) is respawned on
+// every 300ms poll - a fork bomb that IS the lag it was meant to avoid. Polls during the cooldown
+// just return null and the caller holds its last known focus state.
+const RESPAWN_COOLDOWN_MS = 3000;
 const RESPONSE_DELIMITER = '###EQBT-FG-END###';
 
 // The actual game client's process name - NOT the same as its window
@@ -87,16 +92,19 @@ class PsProbe {
   // spawnFn is injectable the same way focusGameWindow's execFileFn is - lets tests hand in a
   // fake child-process-shaped object (stdin.write, stdout as an EventEmitter, on('exit'/'error'))
   // instead of actually launching PowerShell.
-  constructor(spawnFn = spawn) {
+  constructor(spawnFn = spawn, respawnCooldownMs = RESPAWN_COOLDOWN_MS) {
     this.spawnFn = spawnFn;
+    this.respawnCooldownMs = respawnCooldownMs;
     this.proc = null;
     this.buffer = '';
     this.queue = []; // FIFO of {resolve, timer} - PowerShell processes stdin strictly in order,
     // so a query's response is always the next delimiter-terminated chunk, no query id needed.
+    // Set when a process dies; _ensureStarted refuses to spawn again before this passes.
+    this.coolUntil = 0;
   }
 
   _ensureStarted() {
-    if (this.proc) return;
+    if (this.proc || Date.now() < this.coolUntil) return;
     const proc = this.spawnFn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'ignore'],
@@ -104,15 +112,23 @@ class PsProbe {
     this.proc = proc;
     this.buffer = '';
     proc.stdout.on('data', (chunk) => this._onData(chunk));
-    // Both 'exit' and 'error' mean the process is gone - fail every still-pending query rather
-    // than leaving its promise hanging forever, and drop the reference so the next query respawns.
+    // 'exit', 'error', and a broken pipe on either stream all mean the process is gone. Fail every
+    // still-pending query rather than leaving its promise hanging, drop the reference, and hold off
+    // respawning for RESPAWN_COOLDOWN_MS. The stdin 'error' listener is the one that matters most:
+    // stream.write() on a dead pipe does NOT throw synchronously (the try/catch around the write
+    // never fires) - it emits 'error' asynchronously, and an unhandled 'error' on a stream is an
+    // uncaught exception that crashes the whole main process. Reported live as a "write EPIPE"
+    // crash dialog.
     const onGone = () => {
       if (this.proc !== proc) return;
       this.proc = null;
+      this.coolUntil = Date.now() + this.respawnCooldownMs;
       this._failAll();
     };
     proc.on('exit', onGone);
     proc.on('error', onGone);
+    proc.stdin.on('error', onGone);
+    proc.stdout.on('error', onGone);
     try {
       proc.stdin.write(PS_SETUP_SCRIPT);
     } catch {
