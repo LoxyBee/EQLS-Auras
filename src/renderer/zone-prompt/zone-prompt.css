@@ -148,8 +148,7 @@ body {
   background: #363b47;
 }
 
-.zone-none,
-.zone-more {
+.zone-none {
   font-size: 11px;
   color: #9a9fae;
   font-style: italic;
