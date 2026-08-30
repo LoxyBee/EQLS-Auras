@@ -386,5 +386,43 @@ test('a renewal goes through the same landing path, so it rescales too', () => {
   assert.ok(block.includes('this._land('), 'a renewal that does not go through _land will not rescale');
 });
 
+// ---------------------------------------------------------------------------
+// Bard songs snap to the nearest 6-second tick (#17)
+// ---------------------------------------------------------------------------
+
+// Shara: song durations run in 6-second intervals, so a mote-scaled result has to land on a
+// multiple of 6. Applied last, over the already-combined multiplier.
+test('a mote-scaled bard song rounds to the nearest 6s', () => {
+  const e = afterCasting(makeEngine(1), 'Chorus of Marr V');
+  // base 30, +10%/tier, tier 5 -> 30 x 1.5 = 45 -> nearest 6 is 48.
+  const d = e._scaledDuration(spell('Chorus of Marr', 30, 'buff', { isBardSong: true }));
+  assert.equal(d, 48);
+});
+
+test('rounding is toward the nearer tick in both directions', () => {
+  const e = makeEngine(1); // no cast held -> rank 0, no scaling
+  assert.equal(e._scaledDuration(spell('A', 33, 'buff', { isBardSong: true })), 36); // 33 -> 36
+  assert.equal(e._scaledDuration(spell('B', 32, 'buff', { isBardSong: true })), 30); // 32 -> 30
+  assert.equal(e._scaledDuration(spell('C', 30, 'buff', { isBardSong: true })), 30); // already a tick
+});
+
+test('a non-song at the same duration is left exactly where the maths put it', () => {
+  const e = makeEngine(1);
+  assert.equal(e._scaledDuration(spell('Not a song', 33, 'buff')), 33);
+});
+
+test('a short song floors at one 6s tick, never rounds to zero', () => {
+  const e = makeEngine(1);
+  assert.equal(e._scaledDuration(spell('Blip', 2, 'buff', { isBardSong: true })), 6);
+});
+
+test('the AA bonus is applied before the 6s snap, not after', () => {
+  // base 18, AA band 1.65 -> 29.7 -> round 30 -> already a tick. If the snap ran on 18 first
+  // (=18) and then AA (=29.7 -> 30) the answer is the same here; pick a base where it differs:
+  // base 20, AA 1.65 -> 33 -> snap 36. Snap-first would be 20->18, then 18 x 1.65 = 29.7 -> 30.
+  const e = makeEngine(1.65);
+  assert.equal(e._scaledDuration(spell('Anthem', 20, 'buff', { isBardSong: true })), 36);
+});
+
 module.exports = () => report('duration-scaling');
 if (require.main === module) report('duration-scaling').then((n) => process.exit(n ? 1 : 0));
