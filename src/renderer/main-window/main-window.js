@@ -657,6 +657,24 @@ function initLogPanel() {
     errorEl.textContent = state.lastError || '';
 
     if (state.split) {
+      // The splitter files a line it cannot read under the day of the line before it. That is right
+      // for a wrapped server broadcast and wrong for everything else, so when it starts happening
+      // in bulk the only honest thing is to say so rather than carry on filing.
+      const warnEl = document.getElementById('split-format-warning');
+      if (warnEl) {
+        const alarm = state.split.formatAlarm;
+        if (alarm) {
+          warnEl.style.display = '';
+          warnEl.textContent =
+            `Heads up: ${(alarm.ratio * 100).toFixed(0)}% of the last ${alarm.total} lines had no ` +
+            `readable timestamp, so they were filed under ${alarm.lastDateKeySeen} rather than their ` +
+            `own day. Normally this is almost never. EverQuest's log format may have changed - the ` +
+            `split files may be wrong until it is looked at.`;
+        } else {
+          warnEl.style.display = 'none';
+          warnEl.textContent = '';
+        }
+      }
       splitEnabledCheckbox.checked = state.split.enabled;
       splitGapCheckbox.checked = state.split.splitOnGap;
       splitOutputFolderEl.textContent = state.split.outputDir || '-';
@@ -4290,6 +4308,296 @@ function initWidgetsPanel() {
   // something else changes it (unlocking a single aura, a profile switch).
   const masterUnlockAllBtn = document.getElementById('master-unlock-all-btn');
   const masterHideAllBtn = document.getElementById('master-hide-all-btn');
+
+
+  // =========================================================================
+  // Weekly log rotation at the raid reset. The switch lives on the Archive log card in Setup,
+  // beside the manual button that does the same job, because they are the same action.
+  const logRotationCheckbox = document.getElementById('log-rotation-checkbox');
+  const logRotationStatusEl = document.getElementById('log-rotation-status');
+
+  function renderLogRotationStatus(s) {
+    if (!s) return;
+    logRotationCheckbox.checked = s.enabled !== false;
+    const last = s.lastRun;
+    // `boundaryDate` is the LOCAL calendar day of the reset. `boundary` beside it is a UTC string,
+    // and slicing a date out of that names the wrong day for anyone far enough east - so the field
+    // is read, never the string.
+    if (last && last.failed && last.failed.length) {
+      // Said out loud rather than swallowed, and said FIRST: a rotation that failed means the live
+      // log still holds more than this week, and the grid is reading a wider window than it thinks.
+      logRotationStatusEl.textContent =
+        ` The last attempt could not archive ${last.failed.length} file(s), so the live log still ` +
+        `holds more than this week.`;
+    } else if (last && last.skippedUnreadable && last.skippedUnreadable.length) {
+      logRotationStatusEl.textContent =
+        ` ${last.skippedUnreadable.length} log(s) had no readable timestamp at the top, so they ` +
+        `were left alone rather than archived on a guess.`;
+    } else if (last && last.rotated && last.rotated.length) {
+      logRotationStatusEl.textContent =
+        ` Last archived ${last.rotated.length} log${last.rotated.length === 1 ? '' : 's'} for the ` +
+        `week of ${last.boundaryDate}.`;
+    } else if (s.lastCheck && s.lastCheck.skippedSpansBoundary && s.lastCheck.skippedSpansBoundary.length) {
+      // Not an error, and worth saying: this is the state a player who raids on Tuesday will sit in
+      // all week, and without a word here it looks identical to the feature being broken.
+      logRotationStatusEl.textContent =
+        ' Not archiving this week - the log already has play from after the reset in it, and ' +
+        'archiving it would take those kills out of what the Lockouts page can see.';
+    } else if (s.lastCheck && s.lastCheck.skippedBusy && s.lastCheck.skippedBusy.length) {
+      logRotationStatusEl.textContent =
+        ' Waiting for a quiet moment - the game is writing to the log right now.';
+    } else if (s.lastCheck && /written to right now/.test(s.lastCheck.reason || '')) {
+      logRotationStatusEl.textContent =
+        ' Waiting for a quiet moment - the game is writing to the log right now.';
+    } else if (s.lastCheck && s.lastCheck.reason === 'no logs folder') {
+      logRotationStatusEl.textContent = ' Not running: no EverQuest Logs folder is set.';
+    } else if (s.lastError) {
+      logRotationStatusEl.textContent = ` Last problem: ${s.lastError}`;
+    } else if (s.lastCheck && s.lastCheck.skippedAlreadyDone && s.lastCheck.skippedAlreadyDone.length) {
+      logRotationStatusEl.textContent = ` This week's log has already been archived.`;
+    } else {
+      logRotationStatusEl.textContent = '';
+    }
+  }
+
+  window.eqTracker.getLogRotationStatus().then(renderLogRotationStatus);
+  // A rotation is one of the things that makes the grid change, so the same broadcast is the cue to
+  // re-read this. Without it the line here would keep saying whatever was true when Setup was
+  // first opened.
+  window.eqTracker.onLockoutsChanged(() => {
+    window.eqTracker.getLogRotationStatus().then(renderLogRotationStatus);
+  });
+  // And whenever Setup is opened. The check runs on a timer in the main process, so the line here
+  // is stale the moment after it is drawn - and the commonest thing it has to say ("waiting for a
+  // quiet moment") only ever becomes true AFTER the page has loaded. Reading it once at startup
+  // meant the card was permanently blank, which reads as nothing happening rather than as working.
+  const setupNavBtn = document.querySelector('.nav-btn[data-page="page-settings"]');
+  if (setupNavBtn) {
+    setupNavBtn.addEventListener('click', () => {
+      window.eqTracker.getLogRotationStatus().then(renderLogRotationStatus);
+    });
+  }
+  logRotationCheckbox.addEventListener('change', () => {
+    window.eqTracker.setLogRotationEnabled(logRotationCheckbox.checked).then(renderLogRotationStatus);
+  });
+
+  // Raid lockouts (Session D's module; this only renders its projection)
+  // =========================================================================
+  //
+  // THE UNCERTAINTY IS THE FEATURE. Everything here is written so that a cell the module could not
+  // decide stays undecided on screen. In particular `not_looked` NEVER renders as `open` - they are
+  // different colours, different words and different tooltips, because "I have no log for that
+  // week" and "you have not killed it" are different facts and conflating them is the exact failure
+  // this tool exists to avoid.
+  //
+  // There is deliberately NO COUNTDOWN. A countdown needs the reset hour, which has never been
+  // measured. If one appears here later, it was invented.
+  const lockoutCharSelect = document.getElementById('lockout-character');
+  const lockoutRescanBtn = document.getElementById('lockout-rescan');
+  const lockoutScanStatus = document.getElementById('lockout-scan-status');
+  const lockoutSummaryEl = document.getElementById('lockout-summary');
+  const lockoutGridEl = document.getElementById('lockout-grid');
+  const lockoutLegendEl = document.getElementById('lockout-legend');
+  const lockoutProvenanceEl = document.getElementById('lockout-provenance');
+  let lockoutData = null;
+  let lockoutLoaded = false;
+
+  // The five states the module can put on a cell, with the words shown to the reader. The wording
+  // matters as much as the colour: "not looked" has to read as an absence of evidence, not as a
+  // verdict, or the whole design is lost at the last inch.
+  const LOCKOUT_STATES = {
+    completed: { text: 'done', title: 'Observed completed this period.' },
+    // NOT "the logs cover the whole period" - that is what the module's own `because` says, and on
+    // her live data it is false: 14 open cells while 68 of the period's 113 hours are unobserved
+    // across gaps short enough to be tolerated. The line below the grid says so, with numbers, and
+    // a tooltip contradicting it is worse than no tooltip.
+    open: {
+      text: 'open',
+      title: 'No kill seen since the reset, and no gap long enough to change that judgement - '
+        + 'see the note under the grid for what was not observed.',
+    },
+    conditional: { text: 'depends', title: 'Falls either way depending on the reset hour, which has never been measured.' },
+    // 'unknown' is the STATE the core sets; `uncertainCount` is what it calls the tally of them.
+    // Mapping the count's name instead of the state's is exactly the unmapped-name failure this
+    // tool is named for - the cell rendered the raw string, unstyled. Caught by the test below.
+    unknown: { text: 'unclear', title: 'A kill this period at a tier the game did not state — one of this raid\'s tiers may be done.' },
+    not_looked: { text: 'not looked', title: 'No log covers this week. This is NOT the same as open.' },
+  };
+
+  function lockoutCell(cell) {
+    const td = document.createElement('td');
+    const meta = LOCKOUT_STATES[cell.state] || { text: cell.state, title: '' };
+    td.className = `lockout-cell lockout-${cell.state}`;
+    td.textContent = meta.text;
+    // `because` is the module's own sentence explaining this exact cell. Shown rather than
+    // summarised, because a paraphrase is where hedging gets lost.
+    td.title = `${meta.title}\n\n${cell.because || ''}`.trim();
+    if (cell.decidedBy) {
+      const s = document.createElement('span');
+      s.className = 'lockout-pivot';
+      s.textContent = ` (${cell.decidedBy.pivot})`;
+      td.appendChild(s);
+    }
+    return td;
+  }
+
+  function renderLockouts() {
+    if (!lockoutData) return;
+    const entry = lockoutData.characters.find((c) => c.character === lockoutCharSelect.value)
+      || lockoutData.characters[0];
+    lockoutGridEl.innerHTML = '';
+    lockoutLegendEl.innerHTML = '';
+    lockoutSummaryEl.textContent = '';
+    lockoutProvenanceEl.innerHTML = '';
+    if (!entry || !entry.grid) {
+      // Say WHICH nothing this is. "No logs read yet" covers three different situations - never
+      // scanned, scanned and found no EverQuest folder, scanned and found no character logs - and
+      // a page whose argument is that it names what it does not know cannot be vague about its
+      // own plumbing.
+      const st = (lockoutData && lockoutData.status) || {};
+      let why;
+      if (entry && entry.error) why = `Could not read the logs: ${entry.error}`;
+      else if (st.backfill === 'running') why = 'Reading your logs…';
+      else if (st.lastError === 'no logs folder configured' || st.backfill === 'failed') {
+        why = "EverQuest's folder has not been found. Set it on the Setup page and come back.";
+      } else if (st.backfill === 'done') {
+        why = 'Your Logs folder was read, but it holds no character logs this could use.';
+      } else why = 'Not read yet.';
+      lockoutSummaryEl.textContent = why;
+      return;
+    }
+
+    const grid = entry.grid;
+    const cells = grid.cells || [];
+    const raids = [...new Set(cells.map((c) => c.raid))];
+    const tiers = [...new Set(cells.map((c) => c.difficultyLabel))];
+
+    const head = document.createElement('tr');
+    head.appendChild(document.createElement('th'));
+    for (const t of tiers) {
+      const th = document.createElement('th');
+      th.textContent = t;
+      head.appendChild(th);
+    }
+    lockoutGridEl.appendChild(head);
+
+    for (const raid of raids) {
+      const tr = document.createElement('tr');
+      const th = document.createElement('th');
+      const row = cells.find((c) => c.raid === raid);
+      th.textContent = row ? row.label : raid;
+      th.title = row && row.bosses ? `Bosses: ${row.bosses.join(', ')}` : '';
+      tr.appendChild(th);
+      for (const t of tiers) {
+        const cell = cells.find((c) => c.raid === raid && c.difficultyLabel === t);
+        tr.appendChild(cell ? lockoutCell(cell) : document.createElement('td'));
+      }
+      lockoutGridEl.appendChild(tr);
+    }
+
+    // Counts, straight from the module. Not recomputed here - a second count is a second chance to
+    // disagree with the thing it is describing.
+    lockoutSummaryEl.textContent =
+      `${grid.completedCount} done · ${grid.openCount} open · ${grid.conditionalCount} depends on the reset hour · ` +
+      `${grid.uncertainCount} unclear · ${grid.notLookedCount} not looked`;
+
+    // COVERAGE GAPS, INCLUDING THE TOLERATED ONES. This is the most important line on the page
+    // after the grid itself.
+    //
+    // The module treats a hole shorter than 24 h as not worth downgrading a cell for, marks it
+    // `tolerated: true`, and lets the cell read `open` - whose own `because` then says "coverage
+    // spans the period". That threshold is a documented judgement rather than a measurement, and
+    // it is a reasonable one, but it means an `open` cell can sit on top of a 23-hour hole in the
+    // record. Session D's own page renders `coverageHoles`, which excludes the tolerated ones, so
+    // there they are invisible. Here they are not: an absence of evidence has to look like one,
+    // and that is the entire argument for this feature existing.
+    const gaps = (grid.period && grid.period.coverageGaps) || [];
+    if (gaps.length) {
+      const total = gaps.reduce((n, g) => n + (g.hours || 0), 0);
+      // Only worth saying while there ARE open cells for it to be about. The clause describes
+        // what the grid above is showing, and after a rotation the grid is 25 "not looked" and no
+        // "open" at all - where it read "N of them short enough that the cells above still read
+        // open" directly underneath a line saying 0 open. That is the guaranteed state of this page
+        // for the first days after the weekly archive ships, and a page whose whole argument is
+        // that it never claims more than it knows cannot contradict itself in its own summary.
+        const tolerated = grid.openCount > 0 ? gaps.filter((g) => g.tolerated).length : 0;
+      const warn = document.createElement('p');
+      warn.className = 'hint lockout-gapwarn';
+      warn.textContent =
+        `Your logs have ${gaps.length} gap${gaps.length === 1 ? '' : 's'} in this period, ` +
+        `${total.toFixed(1)}h in total` +
+        (tolerated ? ` — ${tolerated} of them short enough that the cells above still read "open" rather than "not looked"` : '') +
+        `. Anything that happened in a gap is not in the grid.`;
+      lockoutSummaryEl.appendChild(document.createElement('br'));
+      lockoutSummaryEl.appendChild(warn);
+    }
+
+    for (const [key, meta] of Object.entries(LOCKOUT_STATES)) {
+      const span = document.createElement('span');
+      span.className = `lockout-key lockout-${key}`;
+      span.textContent = meta.text;
+      span.title = meta.title;
+      lockoutLegendEl.appendChild(span);
+    }
+
+    // Provenance, verbatim. Every figure the module produces says where it came from, and this
+    // panel is where that survives into the UI instead of being flattened into a number.
+    const p = entry.projection || {};
+    const bits = [];
+    const reset = p.reset || {};
+    bits.push(`<strong>Reset boundary:</strong> ${reset.provenance || 'unknown'}` +
+      (reset.reason ? ` — ${reset.reason}` : ''));
+    if (grid.resetRule) {
+      bits.push(`<strong>Reset day:</strong> ${grid.resetRule.weekdayName || '?'} ` +
+        `(${grid.resetRule.provenance}${grid.resetRule.source ? `, ${grid.resetRule.source}` : ''}). ` +
+        `<strong>Reset hour:</strong> ${grid.resetRule.hour === null ? 'never measured' : grid.resetRule.hour}.`);
+    }
+    const period = p.period || {};
+    if (period.provenance) {
+      bits.push(`<strong>Period:</strong> ${period.provenance}` +
+        (period.atLeastDays ? ` — at least ${period.atLeastDays} days, a floor and not a value` : '') +
+        (period.basis ? `<br><span class="hint">${period.basis}</span>` : ''));
+    }
+    for (const c of p.caveats || []) bits.push(`<em>${c}</em>`);
+    lockoutProvenanceEl.innerHTML = bits.map((b) => `<p class="hint">${b}</p>`).join('');
+  }
+
+  function applyLockoutData(data) {
+    lockoutData = data;
+    const prev = lockoutCharSelect.value;
+    lockoutCharSelect.innerHTML = '';
+    for (const c of data.characters) {
+      const o = document.createElement('option');
+      o.value = c.character;
+      o.textContent = c.character;
+      lockoutCharSelect.appendChild(o);
+    }
+    if (prev && data.characters.some((c) => c.character === prev)) lockoutCharSelect.value = prev;
+    const s = data.status || {};
+    lockoutScanStatus.textContent = s.lastBackfill
+      ? `read ${s.lastBackfill.files} file(s), ${s.lastBackfill.lines.toLocaleString()} lines in ${(s.lastBackfill.ms / 1000).toFixed(1)}s`
+      : s.backfill === 'running' ? 'reading…' : '';
+    renderLockouts();
+  }
+
+  // Loaded the first time the page is opened, never at startup. The scan reads every log file in
+  // the folder, and a user who never opens this page should not pay for it.
+  function loadLockoutsOnce() {
+    if (lockoutLoaded) return;
+    lockoutLoaded = true;
+    lockoutScanStatus.textContent = 'reading…';
+    window.eqTracker.getLockouts().then(applyLockoutData);
+  }
+
+  document.getElementById('lockouts-nav-btn').addEventListener('click', loadLockoutsOnce);
+  lockoutCharSelect.addEventListener('change', renderLockouts);
+  lockoutRescanBtn.addEventListener('click', () => {
+    lockoutScanStatus.textContent = 'reading…';
+    window.eqTracker.rescanLockouts().then(applyLockoutData);
+  });
+  window.eqTracker.onLockoutsChanged(() => {
+    if (lockoutLoaded) window.eqTracker.getLockouts().then(applyLockoutData);
+  });
 
   function renderMasterButtons(state) {
     masterUnlockAllBtn.classList.toggle('active', state.allUnlocked);

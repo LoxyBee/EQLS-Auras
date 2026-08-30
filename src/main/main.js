@@ -85,6 +85,10 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 const logService = new LogService();
+const { LockoutService } = require('./lockoutService');
+const lockoutService = new LockoutService();
+const { LogRotationService } = require('./logRotation');
+const logRotationService = new LogRotationService({ loadJson, saveJson });
 const buffStore = new BuffStore({ loadJson, saveJson });
 const buffEngine = new BuffEngine(buffStore, { loadJson, saveJson });
 const profileStore = new ProfileStore({ loadJson, saveJson });
@@ -422,6 +426,122 @@ logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
 // buffEngine a second job would mean every future change to either having to think about both.
 logService.watcher.on('line', (line) => damageEngine.handleLine(line));
 logService.watcher.on('line', (line) => abilityGroupTracker.handleLine(line));
+// Raid lockouts. Its handleLine swallows and counts its own errors rather than throwing, because
+// this bus is shared with buff detection and everything else on it - see the note at the top of
+// lockoutService.js. A lockout parser that stops working is a disappointment; one that takes the
+// buff overlay down with it is not acceptable.
+logService.watcher.on('line', (line) => lockoutService.handleLine(line));
+
+// Both pulled from the watcher rather than pushed, so neither can go stale when the tailer rolls
+// to a new file. The current FILE is how a live line is attributed to a character - the 'line'
+// event carries only the string.
+lockoutService.setLogsFolderFn(() => logService.watcher.getStatus().logsFolder);
+lockoutService.setCurrentFileFn(() => logService.watcher.getStatus().currentFilePath);
+
+/**
+ * Weekly log rotation at the lockout reset. See logRotation.js for the measurement behind the
+ * boundary and for why it truncates rather than deletes.
+ *
+ * Checked once a minute. That covers both the owner's own description - "the first time they log
+ * in after the reset" - and the app being left open across a Tuesday morning, which a check only at
+ * startup would miss entirely.
+ *
+ * Wrapped, because a rotation problem must never stop the app starting or keep it from tracking
+ * buffs. Nothing here is on the critical path for anything else.
+ */
+// THE SPLITTER SAYING IT CANNOT READ THE LOG ANY MORE. Wired here rather than inside logService
+// because this is where debugLog lives - it writes the detection-YYYY-MM-DD.log file the owner can
+// actually find and send, where the first version of this only reached a console she never opens.
+//
+// An unstamped line is filed under the day of the line before it, which is right for the wrapped
+// server broadcasts it exists for - ten lines in 1,761,090 of her real log. A batch that is mostly
+// unstamped means something else entirely: the stamp pattern has stopped matching what the game
+// writes, and every one of those lines has just gone into the wrong day, silently.
+logService.splitter.setOnFormatAlarm((alarm) => {
+  const pct = (alarm.ratio * 100).toFixed(1);
+  debugLog(
+    `LOG SPLITTER: ${pct}% of the last ${alarm.total} lines had no readable timestamp ` +
+    `(normal is under 0.01%). They were filed under ${alarm.lastDateKeySeen}. The stamp format ` +
+    `may have changed. First one: ${JSON.stringify(alarm.sample)}`
+  );
+  broadcast('log:state', logService.getState());
+});
+
+logRotationService.setLogsFolderFn(() => logService.watcher.getStatus().logsFolder);
+// Ten seconds of silence. Her own Archive-log warning says the safe moment is when EQ is not
+// writing, so the rotation waits for one rather than picking a moment at random.
+//
+// SEEDED TO NOW, not to zero, and that distinction is the whole guard. The watcher opens the log AT
+// THE END and emits nothing for what is already in it, so at launch no line has ever been seen and
+// "time since the last line" is vacuously enormous - every log looks quiet, including one the game
+// is writing to at that instant. Starting the clock at launch means the first rotation has to
+// observe a real lull. Assume it is busy until it demonstrably is not.
+let lastLogLineAt = Date.now();
+logService.watcher.on('line', () => { lastLogLineAt = Date.now(); });
+logRotationService.setIsQuietFn(() => Date.now() - lastLogLineAt > 10000);
+// So the tailed log is rotated LAST and keeps the newest mtime. Without this, emptying a
+// logged-out character's log after the played one drags the watcher onto the mule at its next
+// directory scan, and every line written in between is lost to buffs, lockouts and the rest.
+logRotationService.setCurrentFileFn(() => logService.watcher.getStatus().currentFilePath);
+logRotationService.loadSettings();
+
+function runLogRotation(why) {
+  try {
+    // NOT WHILE A BACKFILL IS IN FLIGHT. The backfill holds a per-file state object for the length
+    // of its stream and sets its own 'done' at the end, so clearing the map underneath it loses
+    // whichever characters it had not reached - and it then reports ok, done, with one character
+    // silently missing from the grid until someone hits rescan. Waiting a minute costs nothing.
+    if (lockoutService.backfillState === 'running') {
+      logRotationService.noteHostSkip('the lockout scan is running; will try again shortly');
+      return;
+    }
+    // NOR WHILE THE SPLITTER STILL HAS A BACKLOG. Emptying the live log resets the splitter to the
+    // start of a now-empty file, so anything it had not yet read never reaches Logs/Split/. The
+    // archive still has every line, but the per-day folder - which is the one she opens - would
+    // have a hole in it. A megabyte of slack: during play the splitter is a poll behind at most,
+    // and it reads 140 MB in about a second, so this only ever bites a first launch against a very
+    // large log.
+    if (logService.splitter.bytesBehind() > 1024 * 1024) {
+      logRotationService.noteHostSkip('still splitting the log into per-day files; will try again shortly');
+      return;
+    }
+    const report = logRotationService.rotateIfDue();
+    if (report.rotated.length) {
+      debugLog(`LOG ROTATION (${why}): archived ${report.rotated.length} file(s) for week ${report.boundary}`);
+      // The lockout grid is built from those files, so it has to be rebuilt from what is now there.
+      lockoutService.states.clear();
+      lockoutService.backfillState = 'idle';
+      broadcast('lockouts:changed', lockoutService.getStatus());
+    }
+    if (report.failed.length) {
+      debugLog(`LOG ROTATION (${why}): ${report.failed.length} file(s) FAILED - ${JSON.stringify(report.failed)}`);
+    }
+    if (report.skippedUnreadable.length) {
+      // Not a failure and not a success. The log's head carried no readable timestamp, so whether
+      // it predates the week could not be established and it was left alone.
+      debugLog(`LOG ROTATION (${why}): could not read a timestamp in ${report.skippedUnreadable.join(', ')}`);
+    }
+  } catch (err) {
+    debugLog(`LOG ROTATION (${why}): threw - ${err && err.message}`);
+  }
+}
+// Once a minute, and that is cheaper than it sounds: when the log is busy the check costs one
+// comparison and returns, and when the week is already closed off it costs a readdir. A minute is
+// short enough that someone opening =Auras before the game gets their rotation promptly, and short
+// enough to catch a lull during a session left running across a Tuesday morning.
+setInterval(() => runLogRotation('interval'), 60 * 1000);
+
+// Debounced, because a backfill applies well over a million lines and the renderer does not need
+// to hear about each one. Live play emits at human speed and coalesces to nothing.
+let lockoutPushTimer = null;
+lockoutService.on('changed', () => {
+  if (lockoutPushTimer) return;
+  lockoutPushTimer = setTimeout(() => {
+    lockoutPushTimer = null;
+    broadcast('lockouts:changed', lockoutService.getStatus());
+  }, 400);
+});
+lockoutService.on('backfillChanged', (status) => broadcast('lockouts:backfill', status));
 // A separate Diagnostics feed showing ONLY memorize/forget lines - raised 25 Aug straight out of
 // investigating why currentlyMemorized went stale after a loadout swap: the swap itself turned out
 // to print NOTHING at all (confirmed by searching a real log across the whole swap window - zero
@@ -880,6 +1000,11 @@ app.whenReady().then(() => {
   widgetManager.initWidgets();
   actionBarManager.initActionBars();
   logService.init();
+  // NO ROTATION CALL HERE, deliberately. It used to run one line below this, and at that moment the
+  // watcher has just opened the log at the end and seen nothing, so the ten-second quiet check
+  // cannot mean anything yet and passes for any log at all - including one the game is actively
+  // writing to. The minute timer above covers the same case a moment later, by which time silence
+  // is evidence instead of ignorance.
   // Part of the shutdown instrumentation above. Closing the main window no longer always means
   // quitting (see mainWindow.js - it hides to the tray unless app.quit() is already underway), so
   // this now logs on every hide-to-tray too, not just a real shutdown - still useful context for a
@@ -915,6 +1040,23 @@ app.whenReady().then(() => {
   });
 });
 
+// Raid lockouts. The scan is LAZY - it runs the first time the page is opened and not before, so
+// a user who never opens it pays nothing at startup. It is idempotent by the module's own
+// contract, so overlapping the live tailer is safe and re-running it costs only time.
+ipcMain.handle('logRotation:getStatus', () => logRotationService.getStatus());
+ipcMain.handle('logRotation:setEnabled', (_event, enabled) => {
+  logRotationService.setEnabled(enabled);
+  return logRotationService.getStatus();
+});
+ipcMain.handle('lockouts:get', async () => {
+  if (lockoutService.backfillState === 'idle') await lockoutService.backfill();
+  return lockoutService.getProjection();
+});
+ipcMain.handle('lockouts:rescan', async () => {
+  await lockoutService.backfill();
+  return lockoutService.getProjection();
+});
+
 ipcMain.handle('log:getState', () => logService.getState());
 ipcMain.handle('log:chooseFolder', async () => {
   const state = await logService.chooseFolder();
@@ -926,7 +1068,19 @@ ipcMain.handle('log:setSplitOnGap', (_event, splitOnGap) => logService.setSplitO
 ipcMain.handle('log:chooseSplitFolder', () => logService.chooseSplitFolder());
 ipcMain.handle('log:resetSplitFolder', () => logService.resetSplitFolder());
 ipcMain.handle('log:openFolder', () => logService.openLogFolder());
-ipcMain.handle('log:archiveNow', () => logService.archiveNow());
+ipcMain.handle('log:archiveNow', () => {
+  // The manual Archive button empties the same log the lockout grid is built from, so the grid has
+  // to be rebuilt from what is now there - exactly as the weekly rotation does. Without this,
+  // pressing it during a scan left the service reporting done with no errors and half the lines
+  // missing: measured at 300,001 of 600,002 lost, and the grid quietly said so with a confident
+  // status. It degrades in the safe direction - toward not_looked, never toward a false open - but
+  // silently, which is the part worth fixing.
+  const result = logService.archiveNow();
+  lockoutService.states.clear();
+  lockoutService.backfillState = 'idle';
+  broadcast('lockouts:changed', lockoutService.getStatus());
+  return result;
+});
 ipcMain.handle('log:openArchiveFolder', () => logService.openArchiveFolder());
 
 ipcMain.handle('buffs:getActive', () => buffEngine.getActiveBuffs());

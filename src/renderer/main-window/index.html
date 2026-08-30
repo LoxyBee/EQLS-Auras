@@ -84,6 +84,7 @@
            can reach it. To re-enable: add a nav-btn with data-page of page-planner and the id
            planner-nav-btn back here (initBuffPlanner gates on that id). -->
 
+      <button class="nav-btn" data-page="page-lockouts" id="lockouts-nav-btn">Lockouts</button>
       <button class="nav-btn" data-page="page-settings">Setup</button>
       <button class="nav-btn" data-page="page-log">Log</button>
       <button class="nav-btn" data-page="page-about">About</button>
@@ -846,6 +847,56 @@
         </div>
       </section>
 
+      <!-- Raid lockouts. Session D's parsing module; this page renders its projection and adds
+           nothing to it. The uncertainty IS the feature - see the intro card, and see
+           lockoutService.js for why the folder is scanned rather than the newest file. -->
+      <section id="page-lockouts" class="page">
+        <h2 class="page-title">Raid lockouts</h2>
+
+        <div class="card">
+          <h3>What this shows, and what it will not pretend to know</h3>
+          <p class="hint">
+            EverQuest Legends does not print a raid lockout line, so this reads what the game
+            <em>does</em> print - the weekly task, by name, on the kill - and reports what that
+            supports. Where it cannot tell, it says so rather than guessing. A cell that reads
+            <strong>not looked</strong> means there is no log covering that week, which is not the
+            same as <strong>open</strong> and is never shown as open.
+          </p>
+          <p class="hint">
+            There is no countdown here on purpose. A countdown needs the reset hour, and the reset
+            hour has never been measured - only the reset day, which came from you rather than from
+            a measurement. Everything below carries where it came from.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="row">
+            <span class="label">Character</span>
+            <select id="lockout-character" class="text-input"></select>
+            <button type="button" id="lockout-rescan" class="btn-prominent">Rescan logs</button>
+            <span id="lockout-scan-status" class="hint"></span>
+          </div>
+          <p class="hint">
+            The whole Logs folder is read, not just the newest file - your log splitter writes a new
+            file every day, so a single file holds only part of the story.
+          </p>
+        </div>
+
+        <div class="card">
+          <h3>This period</h3>
+          <div id="lockout-summary" class="hint"></div>
+          <div id="lockout-grid-wrap" style="overflow-x:auto">
+            <table id="lockout-grid" class="lockout-grid"></table>
+          </div>
+          <div id="lockout-legend" class="lockout-legend"></div>
+        </div>
+
+        <div class="card">
+          <h3>Where these numbers came from</h3>
+          <div id="lockout-provenance" class="hint"></div>
+        </div>
+      </section>
+
       <section id="page-settings" class="page">
         <h2 class="page-title">Setup</h2>
 
@@ -1107,6 +1158,7 @@
           </p>
           <div class="row">
             <label><input type="checkbox" id="split-enabled-checkbox" /> Enable log splitting</label>
+            <p class="hint" id="split-format-warning" style="display:none"></p>
           </div>
           <!-- Meaningless while splitting itself is off - there's nothing being written for a gap
                to split, or a folder to write it into. -->
@@ -1150,6 +1202,32 @@
             <button id="open-archive-folder-btn">Open archive folder</button>
           </div>
           <p class="hint" id="archive-folder-status"></p>
+
+          <h4 class="settings-subsection-title">Weekly archive at the raid reset</h4>
+          <div class="row">
+            <label>
+              <input type="checkbox" id="log-rotation-checkbox" />
+              Archive last week's log after the Tuesday raid reset
+            </label>
+          </div>
+          <p class="hint">
+            The reset is Tuesday at 11:00 <em>by your computer's clock</em> — taken from your own
+            reading of the in-game lockout timer, not from anything in the log. (The Lockouts page
+            still shows the reset hour as never measured: that is the tracker's own rule, which has
+            not been given this number.) After it passes,
+            =Auras archives the log the next time it finds a quiet moment - so the live log holds
+            the current lockout week and the Lockouts page has less to work out for itself. It does
+            not archive a log you have already played on since the reset, because that would take
+            this week's own kills out of the file the Lockouts page reads.
+          </p>
+          <p class="hint">
+            Like the button above, but for every character's log rather than only the one being
+            watched. <strong>Nothing is deleted</strong> - each week is copied into the
+            <strong>Archive</strong> folder and the copy is checked before the live log is emptied.
+            Archived weeks are kept on disk, but the Lockouts page only reads the live log, so it
+            will not count them.
+            <span id="log-rotation-status"></span>
+          </p>
         </div>
 
         <div class="block">

@@ -15,6 +15,8 @@ class LogService {
   constructor() {
     this.watcher = new LogWatcher();
     this.splitter = new LogSplitter({ loadJson, saveJson });
+    // The handler is injected by main.js, which owns debugLog and the window broadcast. It used to
+    // be set here and wrote to console.warn - a place the owner has no way to look.
     this.config = loadJson('config', {});
     this.lastError = null;
 

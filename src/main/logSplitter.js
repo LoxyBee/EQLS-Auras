@@ -8,7 +8,30 @@ const MONTHS = {
 };
 
 // EQ log lines start with e.g. "[Sun Aug 16 12:11:41 2026] ..."
-const TIMESTAMP_PATTERN = /^\[\w{3} (\w{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})\]/;
+//
+// TOLERANCE, NOT A BUG FIX, and the difference is worth stating because it was got wrong once.
+//
+// The two-space form is what C's ctime()/asctime() produces: it right-aligns the day in two
+// columns, so the 1st to the 9th come out as "Aug  4". EverQuest Legends writes the DAY with
+// strftime's %d, which is zero-padded - "Aug 04". The two formats look so alike that one was
+// mistaken for the other here. (The client does pad other columns: /who output for an AFK player
+// carries two spaces after the closing bracket. So "EQ never emits a double space" would be wrong;
+// what is true is that it does not space-pad the day.)
+//
+// MEASURED over every EverQuest log on this machine, deduplicated by content hash - 67 files on
+// disk, 34 distinct, the rest being worktree copies of each other:
+//
+//     stamped lines                          9,026,690
+//     lines on days 1-9                      1,381,716   (Aug 04 through Aug 09)
+//     lines the ORIGINAL pattern misread             0
+//
+// The client's own line, byte for byte, is the example: "[Tue Aug 04 13:33:15 2026] Logging to
+// 'eqlog.txt' is now *ON*." - the bytes at the day are 20 30 34, space-zero-four.
+//
+// So the widening below fixes nothing that was broken. It is kept because it is free, and because
+// it costs a zero-padded log nothing to also accept a format some other client might write. What it
+// is NOT is evidence that anything was ever misfiled - nothing was.
+const TIMESTAMP_PATTERN = /^\[\w{3} (\w{3}) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})\]/;
 const FLUSH_LINE_THRESHOLD = 5000;
 const POLL_INTERVAL_MS = 1000;
 
@@ -19,6 +42,38 @@ const POLL_INTERVAL_MS = 1000;
 // to be before it's treated as a real logging break rather than normal
 // in-game quiet time.
 const SESSION_GAP_MS = 10 * 60 * 1000;
+
+// WHEN A LINE HAS NO READABLE STAMP, it is filed under the day of the line before it. That is
+// correct and it is why the rule exists: EverQuest wraps a long server broadcast onto continuation
+// lines that carry no stamp of their own, and those belong with the line above.
+//
+// It is also almost never used. Measured over the owner's real log: 1,761,090 lines, TEN of them
+// unstamped - 0.0006%, and all ten were continuations of "we must bring the servers down for a
+// hotfix". So the rule is right and rare, which makes the RATE a very sharp instrument.
+//
+// If the parser ever stops understanding the log's format, that rate does not creep - it jumps
+// toward 100%, because it is one pattern reading one format. Five orders of magnitude.
+//
+// This exists because of a mistake rather than a bug: the day pattern was widened on the strength
+// of a reasoned claim that EverQuest space-pads single-digit days, and the claim was wrong - see
+// the note on TIMESTAMP_PATTERN, and 9.6 million real lines that say so. Nothing had been misfiled.
+// But the reason it took a measurement to find that out is that NOTHING WAS COUNTING. Had the day
+// pattern really stopped matching, every line of the 1st would have gone into the 31st's file and
+// the app would have carried on without a word.
+//
+// Five per cent is roughly eight thousand times the observed baseline, so this cannot cry wolf on
+// a real log; and the minimum sample stops a handful of broadcast lines in a quiet batch tripping
+// it. What it catches is the whole class: a client patch, a locale change, a format we have never
+// seen. The tool should notice when it can no longer read what it is reading.
+const UNSTAMPED_ALARM_RATIO = 0.05;
+// Enough lines for the ratio to mean something. ACCUMULATED ACROSS BATCHES, not required within
+// one - and that distinction is the difference between an alarm that works and one that cannot
+// fire at all. A batch is one poll, one second. Measured on the owner's real log, a second holds a
+// median of 6 lines, 60 at the 99th percentile and 182 at its absolute peak, so a live batch never
+// reaches two hundred. Requiring it per batch meant the alarm could only ever fire on a startup
+// backfill: a format that broke mid-session was 100% unreadable and announced nothing, which is
+// precisely the case it exists for.
+const UNSTAMPED_ALARM_MIN_LINES = 200;
 
 function extractDateKey(line) {
   const match = TIMESTAMP_PATTERN.exec(line);
@@ -72,6 +127,66 @@ class LogSplitter {
     this.sessionSuffix = '';
     this.timer = null;
     this.processing = false;
+
+    // How much of the log this parser could and could not read. Cumulative for the session.
+    this.stampedLines = 0;
+    this.unstampedLines = 0;
+    // Set when a batch reads as mostly unreadable. Sticky, because the point of it is to still be
+    // there when somebody eventually looks.
+    this.formatAlarm = null;
+    // The rolling window the ratio is judged over. Reset each time it is judged, so a bad patch of
+    // log cannot be diluted forever by the good hours either side of it.
+    this.windowStamped = 0;
+    this.windowUnstamped = 0;
+    this.windowSample = null;
+    // Injected by the host so this module keeps owning no logger. Defaults to saying nothing.
+    this.onFormatAlarm = () => {};
+  }
+
+  /**
+   * What the splitter has been able to read. The ratio is the useful part - see the note on
+   * UNSTAMPED_ALARM_RATIO for why an unstamped line is normal and a lot of them is not.
+   */
+  getStatus() {
+    const total = this.stampedLines + this.unstampedLines;
+    return {
+      enabled: this.enabled,
+      filePath: this.filePath,
+      outputDir: this.outputDir,
+      lastDateKeySeen: this.lastDateKeySeen,
+      stampedLines: this.stampedLines,
+      unstampedLines: this.unstampedLines,
+      unstampedRatio: total ? this.unstampedLines / total : 0,
+      formatAlarm: this.formatAlarm,
+    };
+  }
+
+  /**
+   * How far the splitter still has to read before it has seen the whole live log.
+   *
+   * The weekly rotation asks this before emptying anything. Truncation makes _processOnce reset the
+   * offset to 0, so whatever the splitter had not reached yet never reaches Logs/Split/ - it is all
+   * safe in the archive, but the per-day folder gets a hole. Measured with the real modules: a
+   * rotation fired against a 400,000-line backlog left every one of those lines out of Split/.
+   *
+   * Not reachable at ordinary speeds - the splitter reads the owner's real 140 MB log in 1.3 s and
+   * the rotation's first check is a minute after launch - so this guard exists to make the
+   * invariant explicit rather than accidental, and to cover the case it would take: a first launch
+   * against a log somebody let grow for a year.
+   *
+   * Zero when splitting is off, because then there is nothing to protect.
+   */
+  bytesBehind() {
+    if (!this.enabled || !this.filePath) return 0;
+    try {
+      return Math.max(0, fs.statSync(this.filePath).size - this.offset);
+    } catch {
+      return 0;
+    }
+  }
+
+  setOnFormatAlarm(fn) {
+    if (typeof fn === 'function') this.onFormatAlarm = fn;
   }
 
   attachToFile(filePath) {
@@ -133,6 +248,10 @@ class LogSplitter {
       splitOnGap: this.splitOnGap,
       outputDir: this.outputDir,
       customOutputDir: this.customOutputDir,
+      // Rides along with the settings because this is the payload that already reaches the Setup
+      // page. A counter nobody reads is not an improvement on not counting, and the first version
+      // of this alarm reached only a console the owner never opens.
+      formatAlarm: this.formatAlarm,
     };
   }
 
@@ -142,6 +261,42 @@ class LogSplitter {
       splitOnGap: this.splitOnGap,
       customOutputDir: this.customOutputDir,
     });
+  }
+
+  /**
+   * Did this batch read like a log we understand?
+   *
+   * Raised once and left standing. A batch that is mostly unreadable does not mean the log is
+   * broken - it means THIS PARSER has stopped matching what the game writes, and every one of
+   * those lines has just been filed under whatever day was last recognised. Saying so is the
+   * difference between the bug that prompted this (nine days a month quietly in the wrong file,
+   * for as long as nobody thought to check) and a line in the log that names it.
+   */
+  _checkReadability(stamped, unstamped, sample, dateKey) {
+    if (this.formatAlarm) return;
+    this.windowStamped += stamped;
+    this.windowUnstamped += unstamped;
+    if (this.windowSample === null && sample !== null) this.windowSample = sample;
+
+    const total = this.windowStamped + this.windowUnstamped;
+    if (total < UNSTAMPED_ALARM_MIN_LINES) return;
+
+    const ratio = this.windowUnstamped / total;
+    const unstampedInWindow = this.windowUnstamped;
+    const windowSample = this.windowSample;
+    this.windowStamped = 0;
+    this.windowUnstamped = 0;
+    this.windowSample = null;
+    if (ratio < UNSTAMPED_ALARM_RATIO) return;
+
+    this.formatAlarm = {
+      ratio,
+      unstamped: unstampedInWindow,
+      total,
+      sample: windowSample,
+      lastDateKeySeen: dateKey || this.lastDateKeySeen,
+    };
+    this.onFormatAlarm(this.formatAlarm);
   }
 
   _persistProgress() {
@@ -207,10 +362,20 @@ class LogSplitter {
     const stream = fs.createReadStream(this.filePath, { start: startOffset, encoding: 'utf8' });
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
+    let stampedBatch = 0;
+    let unstampedBatch = 0;
+    let firstUnstamped = null;
+
     rl.on('line', (line) => {
       if (line.length === 0) return;
       const parsedDateKey = extractDateKey(line);
-      if (parsedDateKey) lastDateKey = parsedDateKey;
+      if (parsedDateKey) {
+        lastDateKey = parsedDateKey;
+        stampedBatch += 1;
+      } else {
+        unstampedBatch += 1;
+        if (firstUnstamped === null) firstUnstamped = line.slice(0, 120);
+      }
       const dateKey = parsedDateKey || lastDateKey;
       if (!dateKey) return; // no timestamp seen yet - can't bucket this line
 
@@ -235,6 +400,12 @@ class LogSplitter {
 
     rl.on('close', () => {
       flush();
+      this.stampedLines += stampedBatch;
+      this.unstampedLines += unstampedBatch;
+      // lastDateKey, not this.lastDateKeySeen - the latter is assigned further down, so reading it
+      // here reported the PREVIOUS batch's day, or "null" on the first one. The whole value of the
+      // message is naming the day those lines went to.
+      this._checkReadability(stampedBatch, unstampedBatch, firstUnstamped, lastDateKey);
       let newSize;
       try {
         newSize = fs.statSync(this.filePath).size;
@@ -255,4 +426,7 @@ class LogSplitter {
   }
 }
 
-module.exports = { LogSplitter };
+// extractTimestampMs is exported so the weekly rotation can ask "does this log still hold
+// anything from before the current lockout week" using the SAME stamp parser the splitter
+// uses, rather than a second copy of the pattern that could drift away from it.
+module.exports = { LogSplitter, extractTimestampMs };

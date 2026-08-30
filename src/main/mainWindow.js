@@ -89,6 +89,112 @@ function createMainWindow() {
     },
   });
 
+  // Renderer console, forwarded to stdout, ONLY when EQLS_SMOKE is set. Off in every normal
+  // launch, so it costs a shipped build nothing.
+  //
+  // It exists because a green test suite is not a rendered panel. No unit test in this project
+  // starts Electron, so a renderer that throws on load - a missing element, a temporal dead zone,
+  // a typo in an event name - produces a blank page and a completely green `node test/run.js`.
+  // That exact failure has now cost this ecosystem several days across two codebases. With this,
+  // tools/smoke-render.js can see what the page actually said.
+  if (process.env.EQLS_SMOKE) {
+    mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+      const where = sourceId ? ` (${String(sourceId).split(/[\/]/).pop()}:${line})` : '';
+      process.stdout.write(`RENDERER[${level}] ${message}${where}
+`);
+    });
+    mainWindow.webContents.on('render-process-gone', (_e, details) => {
+      process.stdout.write(`RENDERER GONE: ${JSON.stringify(details)}
+`);
+    });
+  }
+
+  // EQLS_SMOKE=lockouts additionally drives ONE fixed, read-only probe once the page has loaded:
+  // open the Lockouts tab and report what actually rendered. The string below is a constant in
+  // this file - nothing external is evaluated - and it only runs when the variable is set by
+  // tools/smoke-render.js.
+  //
+  // It exists because "the page loaded without errors" and "the panel rendered" are different
+  // claims, and only the second one is worth anything.
+  if (process.env.EQLS_SMOKE === 'lockouts') {
+    mainWindow.webContents.once('did-finish-load', () => {
+      const probe = `
+        (async () => {
+          const btn = document.getElementById('lockouts-nav-btn');
+          if (!btn) return 'PROBE: no lockouts nav button';
+          btn.click();
+          await new Promise((r) => setTimeout(r, 6000));
+          const page = document.getElementById('page-lockouts');
+          const rows = document.querySelectorAll('#lockout-grid tr').length;
+          const cells = document.querySelectorAll('#lockout-grid td').length;
+          const states = {};
+          for (const td of document.querySelectorAll('#lockout-grid td')) {
+            for (const c of td.classList) {
+              if (c.indexOf('lockout-') === 0 && c !== 'lockout-cell') states[c] = (states[c] || 0) + 1;
+            }
+          }
+          return 'PROBE: visible=' + (page && page.classList.contains('active')) +
+                 ' rows=' + rows + ' cells=' + cells +
+                 ' states=' + JSON.stringify(states) +
+                 ' summary=' + JSON.stringify((document.getElementById('lockout-summary')||{}).textContent || '') +
+                 ' scan=' + JSON.stringify((document.getElementById('lockout-scan-status')||{}).textContent || '');
+        })()
+      `;
+      mainWindow.webContents
+        .executeJavaScript(probe)
+        .then((r) => process.stdout.write(`RENDERER[1] ${r}
+`))
+        .catch((e) => process.stdout.write(`RENDERER[3] PROBE THREW: ${e && e.message}
+`));
+    });
+  }
+
+  // EQLS_SMOKE=rotation opens Setup and reports the weekly-archive card: whether the control is
+  // there, what it says, and what the main process answers when asked for its status.
+  //
+  // READ-ONLY, and that is not incidental. This feature's whole job is emptying the user's game
+  // log, and EverQuest is running on this machine with a live log of its own. The probe reads the
+  // checkbox, it never toggles it, and it never asks for a rotation. The periodic check runs a
+  // minute after launch while tools/smoke-render.js holds for twenty-two seconds, so a smoke run
+  // cannot reach a real rotation either - which is deliberate, not luck.
+  if (process.env.EQLS_SMOKE === 'rotation') {
+    mainWindow.webContents.once('did-finish-load', () => {
+      const probe = `
+        (async () => {
+          const nav = document.querySelector('.nav-btn[data-page="page-settings"]');
+          if (!nav) return 'PROBE: no Setup nav button';
+          nav.click();
+          await new Promise((r) => setTimeout(r, 2500));
+          const box = document.getElementById('log-rotation-checkbox');
+          const status = document.getElementById('log-rotation-status');
+          // Wait for the periodic check to have actually happened, rather than reporting on a
+          // status that has not been asked anything yet. It runs once a minute.
+          let ipc = null;
+          for (let i = 0; i < 75; i += 1) {
+            try { ipc = await window.eqTracker.getLogRotationStatus(); } catch (e) { ipc = { error: e && e.message }; break; }
+            if (ipc && ipc.lastCheck) break;
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+          // Re-open Setup now that a check has actually happened, so the line reported below is
+          // the one a person arriving at the card would read - not the one drawn before the main
+          // process had decided anything.
+          nav.click();
+          await new Promise((r) => setTimeout(r, 600));
+          const page = document.getElementById('page-settings');
+          return 'PROBE: setupVisible=' + (page && page.classList.contains('active')) +
+                 ' checkboxPresent=' + !!box +
+                 ' checked=' + (box ? box.checked : 'n/a') +
+                 ' statusText=' + JSON.stringify(status ? status.textContent : null) +
+                 ' ipc=' + JSON.stringify(ipc);
+        })()
+      `;
+      mainWindow.webContents
+        .executeJavaScript(probe)
+        .then((r) => process.stdout.write(`RENDERER[1] ${r}` + '\n'))
+        .catch((e) => process.stdout.write(`RENDERER[3] PROBE THREW: ${e && e.message}` + '\n'));
+    });
+  }
+
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'main-window', 'index.html'));
 
   // getNormalBounds(), not getBounds(): while maximized the latter reports the
