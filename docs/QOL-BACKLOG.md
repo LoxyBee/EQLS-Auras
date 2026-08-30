@@ -5,8 +5,9 @@ multi-step aura type, aura scale, action-bar covers, etc.) lives in `CLAUDE.md`'
 backlog" section. Shara's original 40-note list is complete except note #2 (first-aggro, she is
 supplying it); the retired `FEATURES.md` / `NOTES-STATUS.md` / `HANDOFF.md` are in git history.
 
-42 requested items, organised by area. Nothing here is started (except #28, resolved 30 Aug).
-Items 1–32 are the original batch; 33–42 were added 30 Aug (Section C).
+42 requested items, organised by area. Items 1–32 are the original batch; 33–42 were added
+30 Aug (Section C). **Done so far:** #22, #28, #31, plus the lockout / log-tools batch written up
+in Section D.
 
 Each item keeps the original ask. Tags describe **what kind of work it is**, not a judgement:
 
@@ -275,57 +276,85 @@ your call on which — or both.
 
 ---
 
-## Merge safety — what's safe to touch before the incoming fork
+## D. Shipped — lockout & log tools (30 Aug, PR #15)
 
-A complete new fork is coming that must merge cleanly. Ranked by conflict risk:
+Landed on `feat/lockouts` (`ff4b7a5` + follow-ups). Full architecture writeup is in `CLAUDE.md`
+("Lockouts and log rotation"); the in-game test checklist is `docs/TESTING.md` section 10;
+parser provenance is `docs/EVIDENCE.md`.
 
-**Safe to do now — isolated data files / pure deletions, trivial to re-apply if they do conflict:**
+- **Raid-lockout grid.** EQL prints no lockout line, so `lockoutCore.js` keys off the weekly-task
+  assignment lines around a boss kill. It never hardcodes a reset day — reports "not recorded"
+  until it has seen a turnover both ways.
+- **User-editable weekly reset** (`lockoutReset`, default Tuesday 11:00 US Eastern), DST-aware via
+  `src/shared/easternReset.js`, mirrored between the Lockouts page and Setup as one setting.
+- **Weekly log rotation now defaults ON**, with guardrails (won't rotate across a boundary with
+  post-reset play; status line explains a skip).
+- **"Trim log to this week"** — manual backward-EOF trim, archive size-verified before the live
+  log is rewritten, kept week not re-emitted/re-split.
+- **"Change log file" / "Add split files"** — read the lockout grid from a chosen split/archive
+  file; add-split pre-ticks only the current week; a missing target falls back to the live log.
+- **"EQ running but not logging" watcher** — modal prompt for `/log on` after a grace window.
+- **All lockout/log prompts are in-app modals** now (no native `window.confirm` /
+  `dialog.showOpenDialog`). The "start new file after a session gap" checkbox was removed.
+- **Fixes carried in the same batch:** crash-safe `store.saveJson` (temp-file-then-rename);
+  `logSplitter` no longer doubles lines on a re-split from offset 0; backfill reads only the live
+  log (was a whole-folder scan); grid cells show the kill date; period heading uses short month
+  names.
+
+**Related numbered items:**
+- **#23** (scheduled *time-of-day* auto-split, mirrored into the tracker tab) — **still open.**
+  This batch added a *manual* trim and an automatic *weekly* rotation at the reset boundary,
+  which is related but not a user-set daily schedule. May be lower-value now — the owner's call.
+- **#24** (auto-archive / prompt on load when the log is big, even on first load) — **partly.**
+  Weekly rotation is on by default, so last week auto-archives on load once the reset has passed,
+  and "Trim log to this week" is a prompt surface when the log spans a prior week. Not done: a
+  *size-threshold* check on first load regardless of reset timing.
+
+---
+
+## Merge safety — file-contention notes
+
+The `feat/lockouts` fork (PR #14) has merged, so items no longer need to wait on it. Several
+sessions still edit the tree in parallel, so the file-contention ranking below is kept as a
+caution — check `ListAgents` before editing a hot file.
+
+**Isolated data files / one-liners — low contention:**
 
 | # | Change | File | Needs from you |
 |---|--------|------|----------------|
 | 7  | Delete the stale "Not active yet." hint | `index.html` (1 line) | just a yes |
-| 28 | Correct Cassindra's Chant of Clarity duration | `tools/roster-overrides.json` (1 entry) | the real duration |
 | 32 | Fix The Hole routing edge | `src/shared/data/zoneGraph.js` (1 edge) | confirm: is the Erudin portal an entrance, or exit-only? |
-| 31 | Remove the "+N more" cap in the `eqtm` picker | `zone-prompt.js` (1–2 lines) | just a yes |
 
-**Small, but in code the fork will probably rewrite — better done *after* the merge:**
+**Small, but in code multiple sessions rewrite often:**
 
 | # | Change | File |
 |---|--------|------|
 | 17 | Round mote-scaled song durations to 6 s | `buffEngine.js` (~2 lines in the scaling fn) |
-| 22 | Per-line centred justification | `overlay.js` `renderTextFeed()` |
 | 25 | Border above icon on line auras | `overlay.css` (small, maybe a pseudo-element) |
 | 26 | Give Shrink / Tiny Companion real durations | `tools/roster-overrides.json` (safe) — but making Tiny Companion *reachable* is detection logic (not safe) |
 
-**Not simple — need a spreadsheet change or a design pass regardless of the fork:**
+**Not simple — need a spreadsheet change or a design pass:**
 20, 21 (new roster entries — `roster-overrides.json` only *edits* existing spells, it can't add
-them), plus everything in the "Bigger" list below.
-
-**Recommendation:** merge the fork first, then stack the small fixes on top. The only things worth
-doing beforehand are the four in the first table — none of them live in files a UI/feature fork
-is likely to rewrite.
+them), plus everything in the "big" list below.
 
 ---
 
 ## Implementation order
 
-Sequenced by: (1) get out of the incoming fork's way, (2) cheap wins that unblock nothing else,
-(3) shared plumbing before the things that sit on it, (4) park anything waiting on your input,
-(5) big single-PR features last. A "→" means "needs the thing before it".
+Sequenced by: (1) cheap wins that unblock nothing else, (2) shared plumbing before the things that
+sit on it, (3) park anything waiting on your input, (4) big single-PR features last. A "→" means
+"needs the thing before it". (The `feat/lockouts` fork has merged, so nothing waits on it any more.)
 
-### Phase 0 — before the fork merges  *(isolated, ~1 line each, trivial to re-apply)*
+### Phase 0 — cheap, isolated
 1. ~~**#31** remove the "+N more" cap in the `eqtm` picker — `zone-prompt.js`~~ **DONE 30 Aug**
 2. ~~**#28** Cassindra's Chant of Clarity → 12s — `roster-overrides.json`~~ **DONE (eq-tracker-d3)**
-3. **#7** delete the stale "Not active yet." hint — `index.html`  *(blocked: d3 owns index.html;
-   just needs your yes)*
+3. **#7** delete the stale "Not active yet." hint — `index.html`  *(needs your yes)*
 4. **#32** fix The Hole routing edge — `zoneGraph.js`  *(need: is the Erudin portal an
    entrance or exit-only?)*
-5. **#3a** "Open config folder" button — additive, mirrors "Open sounds folder"  *(blocked: needs
-   main.js + index.html)*
-6. **#39** as a button ("Put starter sounds in my Downloads") — additive  *(blocked: needs
-   main.js + index.html)*
+5. **#3a** "Open config folder" button — additive, mirrors "Open sounds folder"
+6. **#39** as a button ("Put starter sounds in my Downloads") — additive
 
-### Phase 1 — quick wins, post-merge, no new subsystems
+### Phase 1 — quick wins, no new subsystems
 7. **#2** searchable "Only in:" zone picker — reuse `zonePromptPopup.js` wholesale
 8. **#25** line-aura border above the icon — `overlay.css`, own layer
 9. ~~**#22** per-line centred justification for text auras~~ **DONE 30 Aug** (committed an
