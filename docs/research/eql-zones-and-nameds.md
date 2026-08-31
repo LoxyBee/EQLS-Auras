@@ -533,7 +533,7 @@ client emits — and they resolve several §5 flags:
 
 ### Apostrophe style = **BACKTICK** (`` ` ``), settled
 - `Coercer T\`vala has been slain by Innoruuk\`s Chosen!`
-- `Grandmaster R\`tal has been slain by Hocho!` — **also note casing: `R\`tal`, lowercase "tal"**
+- `Grandmaster R\`tal has been slain by <player>!` — **also note casing: `R\`tal`, lowercase "tal"**
   (not `R\`Tal` as eqlsource rendered it).
 - `Innoruuk\`s Chosen` (a summoned raid ally) — backtick throughout.
 ⇒ Apply to every unverified apostrophe name: **`High Priest M\`kari`, `Magi P\`Tasa`,
@@ -593,6 +593,101 @@ a will pillager/ravisher/sapper, a negotiator, an initiate familiar, a pledge fa
 ### Nagafen's Lair group-instance mobs seen (lowercase — open-world tier)
 a greater kobold, a greater kobold shaman, a noxious spider, a lava beetle, a lava duct crawler,
 a lava guardian, a death beetle, a sonic bat, a guano harvester, an imp protector.
+
+---
+
+## 6b. Supplement — unsurveyed dungeons (LOW confidence)
+
+**Confidence: LOW throughout.** eqlsource has NOT surveyed any of these zones; the only source is
+**eqlwiki.com, which is a P99 fork** (per `zoneGraph.js`'s own note). The owner's log contains
+**no `You have entered` or slain lines for any of these zones** — so none of it is EQL-verified.
+Treat as *classic reference pending an eqlsource survey or a real log*, not board-ready. All
+tiers/timers are classic P99 values.
+
+### Temple of Cazic-Thule — short `cazicthule`
+"You have entered" name (zoneGraph, trusted): **Temple of Cazic-Thule**. (eqlwiki calls it "The
+Lost Temple of Cazic-Thule" — the P99/classic long name, NOT what zoneGraph carries.) Feerrott
+dungeon, NOT the Plane of Fear. Has instance variants `2 (Adaptive)` / `3 (Fused)` / `4 (Refined)`.
+
+```json
+{
+  "Temple of Cazic-Thule": {
+    "matchKey": "Temple of Cazic-Thule", "shortName": "cazicthule",
+    "instancedOnEQL": true, "confidence": "low — eqlwiki/P99 only, no eqlsource, no log",
+    "nameds": [
+      { "name": "Avatar of Fear", "tier": "boss", "notes": "SK, ~lvl 38. classic primary boss." },
+      { "name": "Cazic Cenobite", "tier": "mini", "notes": "cleric, lvl 35-37." },
+      { "name": "Tae Ew Archon", "tier": "mini", "notes": "wizard, lvl 34." },
+      { "name": "Tae Ew Templar", "tier": "mini", "notes": "cleric, lvl 30." },
+      { "name": "Tae Ew Diviner", "tier": "mini", "notes": "enchanter, lvl 28." },
+      { "name": "Radiant", "tier": "lesser", "notes": "rogue, lvl 21-23." }
+    ],
+    "golems": ["Clay Golem (22-min respawn)", "Stone Golem", "Steel Golem"],
+    "caveat": "Avatar of Fear spelling/tier UNVERIFIED for EQL. Do not board this without a real slain line."
+  }
+}
+```
+
+### The City of Guk (Upper Guk) — short `guktop`
+"You have entered" name (zoneGraph): **The City of Guk**. zoneGraph also has `The City of Guk 4
+(Refined)`. Guk spawn cycle ~16m30s (eqlwiki). Named frogloks by clan: Tuk / Gaz / Ton / Shin.
+
+```json
+{
+  "The City of Guk": {
+    "matchKey": "The City of Guk", "commonName": "Upper Guk", "shortName": "guktop",
+    "instancedOnEQL": true, "confidence": "low — eqlwiki/P99 only",
+    "nameds": [
+      { "name": "the froglok shin lord", "tier": "boss", "notes": "lvl 30 paladin. lowercase per eqlwiki convention — VERIFY article/caps against a slain line." },
+      { "name": "a Froglok Nokta Shaman", "tier": "mini", "notes": "lvl 27." },
+      { "name": "an Ancient Croc", "tier": "mini", "notes": "lvl 30. eqlwiki also 'Ancient Crocodile' — inconsistent." },
+      { "name": "a Giant Heart Spider", "tier": "lesser", "notes": "lvl 15-21." }
+    ],
+    "caveat": "eqlsource's named index (232 nameds) did not surface a City-of-Guk roster distinct from Lower Guk. Needs an eqlsource pass."
+  }
+}
+```
+
+### The Estate of Unrest — short `unrest`
+"You have entered" name (zoneGraph): **The Estate of Unrest**. (eqlwiki drops the leading "The";
+trust zoneGraph.) Zone spawn pulse ~7m30s (eqlwiki).
+
+```json
+{
+  "The Estate of Unrest": {
+    "matchKey": "The Estate of Unrest", "shortName": "unrest",
+    "instancedOnEQL": "unknown — zoneGraph shows no instance variants", "confidence": "low — eqlwiki/P99 only",
+    "nameds": [
+      { "name": "Garanel Rucksif", "tier": "boss", "respawnMinutes": 22 },
+      { "name": "an undead knight of Unrest", "tier": "boss", "respawnMinutes": 22, "notes": "article/caps unverified." },
+      { "name": "Khrix Fritchoff", "tier": "mini" },
+      { "name": "Khrix's Abomination", "tier": "mini", "notes": "apostrophe — if EQL uses backtick (§6a) this is 'Khrix`s Abomination'." },
+      { "name": "Torklar Battlemaster", "tier": "mini", "notes": "20% spawn." },
+      { "name": "a priest of najena", "tier": "mini", "respawnMinutes": 22 },
+      { "name": "Reclusive ghoul magus", "tier": "mini", "notes": "50% spawn." },
+      { "name": "an undead barkeep", "tier": "lesser", "respawnMinutes": 22 },
+      { "name": "Shadowpincer", "tier": "lesser", "notes": "rare." },
+      { "name": "Lesser Blade Fiend", "tier": "lesser", "notes": "rare, 100%." },
+      { "name": "a reanimated hand", "tier": "lesser", "notes": "100%. (also a Lower Guk mob — name reused.)" }
+    ]
+  }
+}
+```
+
+### No EQL named data — do not board
+- **Clan RunnyEye** (`runnyeye`) — eqlwiki has faction notes only, no roster.
+- **Gorge of King Xorbb / Beholder's Maze** (`beholder`) — classic boss King Xorbb, but no EQL
+  source confirms the roster or slain-line spelling.
+- **Solusek's Eye / Sol A** (`soldunga`) — eqlsource's index attributes the shared lava-tube
+  nameds (Efreeti Lord Djarn, the Ragefires, King Tranix, Magus Rokyl, Targin the Rock, Warlord
+  Skarlon) to Nagafen's Lair, not here; Sol A's own roster is unknown. Low priority.
+- **The Temple of Solusek Ro** (`soltemple`) — classic merchant/quest hub, minimal nameds, no EQL
+  data. Skip unless the board wants it.
+
+### Net recommendation (supplement)
+Only **Temple of Cazic-Thule** and **The Estate of Unrest** have enough of a roster to be worth a
+future board entry, and both need an eqlsource survey or a real slain-line pass first. The other
+four have effectively no EQL-sourced named data — leave them out.
 
 ---
 
