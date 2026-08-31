@@ -153,6 +153,8 @@ const FIELD_SHAPES = {
   // content already is bard songs, unconditionally) or 'track-others' (global engine state, not
   // per-widget, already lives on Self Buffs) - only the grouping it was actually built for.
   'ally-grouping': ['ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff'],
+  // #29 - the Bard Songs aura's hybrid buff/debuff options (show debuff songs, split by type).
+  'bard-song-options': ['bard-songs'],
   'track-others': ['self-buffs'],
   'damage-settings': ['damage'],
   'travel-settings': ['travel'],

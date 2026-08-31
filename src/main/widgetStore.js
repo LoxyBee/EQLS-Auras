@@ -605,6 +605,12 @@ function defaultBardSongsWidget(name) {
     wrapText: true,
     iconsPerRow: 5,
     categoryBorderWidthPx: 2,
+    // #29 - the Bard Songs aura is a hybrid buff/debuff feed. Debuff songs (Largo's Melodic Binding
+    // and the like, on an enemy) are OFF by default; showDebuffSongs opts them in, and
+    // splitSongsByType then groups buff songs and debuff songs into separate sections. Both off by
+    // default (owner's call, 31 Aug).
+    showDebuffSongs: false,
+    splitSongsByType: false,
   };
 }
 
@@ -662,6 +668,8 @@ const SHAREABLE_FIELDS = [
   'soundCooldownSec',
   'alertVolume',
   'hideBardSongs',
+  'showDebuffSongs',
+  'splitSongsByType',
   'timerTextColor',
   'groupAllyBuffs',
   'groupAllyDirection',
@@ -794,6 +802,8 @@ function normalizeWidget(widget) {
     stackTextLines: !!widget.stackTextLines,
     maxStackTextLines: clampStackTextLines(widget.maxStackTextLines),
     hideBardSongs: !!widget.hideBardSongs,
+    showDebuffSongs: !!widget.showDebuffSongs,
+    splitSongsByType: !!widget.splitSongsByType,
     timerTextColor: typeof widget.timerTextColor === 'string' ? widget.timerTextColor : '#f0f1f5',
     groupAllyBuffs: !!widget.groupAllyBuffs,
     groupAllyDirection: widget.groupAllyDirection === 'horizontal' ? 'horizontal' : 'vertical',

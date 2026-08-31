@@ -236,6 +236,10 @@ buffEngine.setAllyDebuffAlertNamesFn(() => widgetManager.getAllyDebuffAlertNames
 buffEngine.setBardSongsVisibleFn(() =>
   widgetManager.getAllWidgetConfigs().some((w) => w.hideBardSongs === false)
 );
+// #29 - a debuff bard song landing on an enemy is only tracked when a Bard Songs aura wants it.
+buffEngine.setBardSongDebuffsWantedFn(() =>
+  widgetManager.getAllWidgetConfigs().some((w) => w.buffSource === 'bardSongs' && w.showDebuffSongs)
+);
 customTimerEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setTrackOthersEnabled(loadJson('trackOthersEnabled', false));
 buffEngine.setBlockedNames(loadJson('blockedBuffs', []));
@@ -2024,6 +2028,8 @@ ipcMain.handle('widget:setShowIconLabel', (_event, { id, enabled }) => widgetMan
 ipcMain.handle('widget:setIconLabelSize', (_event, { id, value }) => widgetManager.setIconLabelSize(id, value));
 ipcMain.handle('widget:setTimerTextColor', (_event, { id, value }) => widgetManager.setTimerTextColor(id, value));
 ipcMain.handle('widget:setGroupAllyBuffs', (_event, { id, value }) => widgetManager.setGroupAllyBuffs(id, value));
+ipcMain.handle('widget:setShowDebuffSongs', (_event, { id, value }) => widgetManager.setShowDebuffSongs(id, value));
+ipcMain.handle('widget:setSplitSongsByType', (_event, { id, value }) => widgetManager.setSplitSongsByType(id, value));
 ipcMain.handle('widget:setGroupAllyDirection', (_event, { id, value }) => widgetManager.setGroupAllyDirection(id, value));
 ipcMain.handle('widget:setHideAllyNameOnTile', (_event, { id, value }) => widgetManager.setHideAllyNameOnTile(id, value));
 ipcMain.handle('widget:setLabelTextColor', (_event, { id, value }) => widgetManager.setLabelTextColor(id, value));

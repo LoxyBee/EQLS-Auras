@@ -1092,6 +1092,18 @@ function setGroupAllyDirection(id, value) {
   return config;
 }
 
+function setShowDebuffSongs(id, value) {
+  const config = widgetStore.update(id, { showDebuffSongs: value });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setSplitSongsByType(id, value) {
+  const config = widgetStore.update(id, { splitSongsByType: value });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setHideAllyNameOnTile(id, value) {
   const config = widgetStore.update(id, { hideAllyNameOnTile: value });
   pushConfigChanged(id);
@@ -1388,6 +1400,8 @@ module.exports = {
   setActiveProfileIds,
   removeProfileFromAllWidgets,
   setGroupAllyBuffs,
+  setShowDebuffSongs,
+  setSplitSongsByType,
   setGroupAllyDirection,
   setHideAllyNameOnTile,
   setTimerTextColor,

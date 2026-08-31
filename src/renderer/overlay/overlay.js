@@ -60,6 +60,8 @@ let currentConfig = {
   groupAllyBuffs: false,
   groupAllyDirection: 'vertical',
   hideAllyNameOnTile: false,
+  showDebuffSongs: false,
+  splitSongsByType: false,
   timerTextColor: '#f0f1f5',
   labelTextColor: '#f0f1f5',
   iconMarginPx: 5,
@@ -354,6 +356,24 @@ function groupByAlly(buffs) {
 // flat list with a blank heading over it.
 function shouldGroupByAlly(visible) {
   return !!currentConfig.groupAllyBuffs && visible.some((b) => b.allyName);
+}
+
+// #29 - the Bard Songs aura only, and only once a debuff song is actually showing (nothing to
+// split otherwise). The heading text reuses the same allyName field the group renderer already
+// draws, so no rendering change is needed.
+function shouldSplitSongs(visible) {
+  return currentConfig.buffSource === 'bardSongs'
+    && !!currentConfig.splitSongsByType
+    && visible.some((b) => b.isDebuff);
+}
+
+function groupBySongType(buffs) {
+  const buffSongs = buffs.filter((b) => !b.isDebuff);
+  const debuffSongs = buffs.filter((b) => b.isDebuff);
+  const out = [];
+  if (buffSongs.length) out.push({ allyName: 'Buff songs', buffs: buffSongs });
+  if (debuffSongs.length) out.push({ allyName: 'Debuff songs', buffs: debuffSongs });
+  return out;
 }
 
 // Note 8's count, and deliberately ONE builder rather than two. Note 12 wants the identical badge
@@ -967,7 +987,8 @@ function visibleBuffs(buffs, opts = {}) {
   // allyCast/onEnemy filters below would either do nothing or, in hideBardSongs' case, strip
   // every single tile this aura has (every entry here has isBardSong true by construction).
   if (currentConfig.buffSource === 'bardSongs') {
-    return buffs.filter((b) => b.showOnOverlay !== false);
+    // #29 - debuff songs (on an enemy) ride the same feed but are opt-in.
+    return buffs.filter((b) => b.showOnOverlay !== false && (currentConfig.showDebuffSongs || !b.isDebuff));
   }
 
   let filtered;
@@ -1464,8 +1485,11 @@ function render(buffs) {
 
   // A text aura is a single tile, so there is nothing to group and no heading that would make
   // sense above one line of words.
-  const grouped = !isText && shouldGroupByAlly(visible);
-  const groups = grouped ? groupByAlly(visible) : null;
+  // #29 - the Bard Songs aura's "Split buffs / debuffs" toggle groups by song type instead of by
+  // caster; it wins over caster-grouping when both are on.
+  const splitSongs = !isText && shouldSplitSongs(visible);
+  const grouped = !isText && (splitSongs || shouldGroupByAlly(visible));
+  const groups = grouped ? (splitSongs ? groupBySongType(visible) : groupByAlly(visible)) : null;
   const groupKey = grouped
     ? `${currentConfig.groupAllyDirection || 'vertical'}|${groups.map((g) => `${g.allyName}:${g.buffs.length}`).join(',')}`
     : '';

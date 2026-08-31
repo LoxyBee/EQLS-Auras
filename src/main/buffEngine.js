@@ -505,6 +505,7 @@ class BuffEngine extends EventEmitter {
     this.iconUrlFn = (iconId) => `eqicon://icon/Alternate%201/${iconId}`;
     this.debugLogFn = null; // (message) => void - see setDebugLogFn
     this.bardSongsVisibleFn = () => true; // see setBardSongsVisibleFn
+    this.bardSongDebuffsWantedFn = () => false; // #29 - see setBardSongDebuffsWantedFn
     this.tickTimer = setInterval(() => this._tick(), TICK_INTERVAL_MS);
   }
 
@@ -1754,7 +1755,12 @@ class BuffEngine extends EventEmitter {
   // because something has to.
   _isValidRecipient(name, known) {
     if (/^[A-Za-z]+$/.test(name)) return true;
-    if (!this._isWatchedOnEnemies(known.name)) return false;
+    // A multi-word recipient ("a dry bones skeleton") is only a valid target when some aura has
+    // actually asked to see this spell on an enemy - a Custom debuff aura watching it, or (#29) a
+    // Bard Songs aura with "Also show debuff songs" on for a debuff bard song.
+    const wanted = this._isWatchedOnEnemies(known.name)
+      || (known.isBardSong && this.bardSongDebuffsWantedFn());
+    if (!wanted) return false;
     if (!MOB_NAME_PATTERN.test(name)) return false;
     return name.trim().split(/\s+/).length <= MOB_NAME_MAX_WORDS;
   }
@@ -2199,6 +2205,9 @@ class BuffEngine extends EventEmitter {
       return;
     }
     const key = `${allyName.toLowerCase()}::${known.name.toLowerCase()}`;
+    // #29 - a bard song that lands third-person (a debuff song like Largo's Melodic Binding on an
+    // enemy, or a buff song on a groupmate) is ALSO surfaced on the Bard Songs aura via
+    // _trackBardSongOnTarget, called once the duration-bearing allyBuffs entry below is set.
     const onEnemy = this._isEnemySpell(known);
     if (known.infiniteDuration) {
       this.allyBuffs.set(key, {
@@ -2243,6 +2252,30 @@ class BuffEngine extends EventEmitter {
       onEnemy,
     });
     this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+    if (known.isBardSong) this._trackBardSongOnTarget(known, allyName, this.allyBuffs.get(key));
+  }
+
+  // #29 - a third-person bard song landing (a debuff song on an enemy, a buff song on a groupmate)
+  // is mirrored into bardSongs so it shows on the Bard Songs aura. Keyed by target so the same song
+  // on two enemies is two entries. isDebuff drives the aura's optional show/split-debuffs behaviour
+  // and the debuff-coloured border. castBy is "You" when the enemy-side line was only reachable
+  // because the player's own recent cast explained it.
+  _trackBardSongOnTarget(known, targetName, entry) {
+    if (!entry) return;
+    const castBy = this._attributeBardSongCaster(known.name, known) || 'You';
+    const bardKey = `on:${targetName.toLowerCase()}::${known.name.toLowerCase()}`;
+    this.bardSongs.set(bardKey, {
+      name: known.name,
+      castBy,
+      onTarget: targetName,
+      isDebuff: this._isEnemySpell(known),
+      durationSec: entry.durationSec,
+      expiresAt: entry.expiresAt,
+      infinite: !!entry.infinite,
+      endedText: known.endedText || null,
+    });
+    this._debugLog(`BARD SONG "${known.name}" - ${this._isEnemySpell(known) ? 'debuff on' : 'buff on'} "${targetName}"`);
+    this.emit('bardSongsChanged', this.getActiveBardSongs());
   }
 
   // Called when the user assigns a duration (and optionally landing/ended
@@ -2344,6 +2377,12 @@ class BuffEngine extends EventEmitter {
   // silently swallowing prompts when nothing wired it up.
   setBardSongsVisibleFn(fn) {
     this.bardSongsVisibleFn = fn;
+  }
+
+  // #29 - injected by main.js, true when a Bard Songs aura has "Also show debuff songs" on. Lets a
+  // debuff bard song landing on a mob-named target count as a valid recipient (see _isValidRecipient).
+  setBardSongDebuffsWantedFn(fn) {
+    this.bardSongDebuffsWantedFn = fn;
   }
 
   // The one bard song among candidates that are NOT all songs, or null.
@@ -2878,29 +2917,31 @@ class BuffEngine extends EventEmitter {
     return [...this.unknownBuffs.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
   }
 
-  // For the Bard Songs aura. Same shape/sort as getActiveAllyBuffs() just above - specifically
-  // `allyName` reuses that exact field name (holding the caster here, not a recipient) rather than
-  // introducing a differently-named field, because that is what lets the overlay's existing
-  // group-by-player rendering work on this feed completely unmodified. No onEnemy/allyCast -
-  // neither concept applies to a buff that is always on the player.
+  // For the Bard Songs aura. Same shape/sort as getActiveAllyBuffs(). `allyName` reuses that exact
+  // field name - the caster for a song on the player, the TARGET for a third-person song (#29) -
+  // because that is what lets the overlay's existing group-by-player rendering work unmodified.
+  // `isDebuff` is set on a debuff song (Largo's Melodic Binding and the like) on an enemy; the aura
+  // hides those unless its Show debuff songs option is on, and can split them into their own group.
   getActiveBardSongs() {
     const now = Date.now();
     return [...this.bardSongs.values()]
       .map((b) => {
         const known = this.buffStore.getByName(b.name);
+        const isDebuff = !!b.isDebuff;
         return {
           name: b.name,
           // "Unknown" rather than null/empty - see the constructor's own comment on bardSongs.
           // Emitted here, not left for the overlay to fall back on, so the existing ally-grouping
           // renderer needs zero changes to draw an actual, visible bucket for this.
-          allyName: b.castBy || 'Unknown',
+          allyName: isDebuff ? b.onTarget : (b.castBy || 'Unknown'),
+          isDebuff,
           durationSec: b.durationSec,
           remainingSec: b.infinite ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
           infinite: !!b.infinite,
           showOnOverlay: known ? known.showOnOverlay !== false : true,
           iconUrl: known?.iconId != null ? this.iconUrlFn(known.iconId) : null,
           isBardSong: true,
-          spellCategory: known?.scaleCategory || null,
+          spellCategory: isDebuff ? 'debuff' : (known?.scaleCategory || null),
         };
       })
       .sort((a, b) => {

@@ -1530,6 +1530,10 @@ function initWidgetsPanel() {
   const marginWidthSlider = document.getElementById('widget-margin-width-slider');
   const allyGroupingSettingsEl = document.getElementById('widget-ally-grouping-settings');
   const groupAllyCheckbox = document.getElementById('widget-group-ally-checkbox');
+  const bardSongSettingsEl = document.getElementById('widget-bard-song-settings');
+  const showDebuffSongsCheckbox = document.getElementById('widget-show-debuff-songs-checkbox');
+  const splitSongsCheckbox = document.getElementById('widget-split-songs-checkbox');
+  const splitSongsRowEl = document.getElementById('widget-split-songs-row');
   const allyDirectionRadios = document.querySelectorAll('input[name="widget-ally-direction"]');
   const allyDirectionRow = document.getElementById('widget-ally-direction-row');
   const hideAllyNameCheckbox = document.getElementById('widget-hide-ally-name-checkbox');
@@ -1738,7 +1742,8 @@ function initWidgetsPanel() {
     // don't apply - and hideBardSongs (true on the inherited custom-widget default) would strip
     // every row, which is exactly why "Active on this aura" showed nothing on this premade.
     if (widget.buffSource === 'bardSongs') {
-      return source.filter((b) => b.showOnOverlay !== false);
+      // #29 - debuff songs are opt-in on this aura, same as overlay.js's visibleBuffs.
+      return source.filter((b) => b.showOnOverlay !== false && (widget.showDebuffSongs || !b.isDebuff));
     }
     if (widget.buffFilterMode === 'all') {
       let filtered = source.filter((b) => b.showOnOverlay !== false);
@@ -2478,7 +2483,7 @@ function initWidgetsPanel() {
     // and no 'track-others' (that toggle is global engine state, not per-widget, and already has a
     // home on Self Buffs' own panel) - see widgetStore.js's defaultBardSongsWidget for the same
     // reasoning on the data side.
-    'bard-songs': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'ally-grouping'],
+    'bard-songs': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'ally-grouping', 'bard-song-options'],
     // Backlog #33. No picker or source (content is the current zone's named list), no 'sort' (the
     // board is fixed boss-then-mini order, like the travel route), no 'merge'/'borders' (no
     // duration, no spell category). Just how it looks and where it sits, plus the list sizing
@@ -2649,6 +2654,7 @@ function initWidgetsPanel() {
     // offering a setting that could never do anything. A text aura draws no per-person tiles at
     // all, hence excluded from every text shape above.
     allyGroupingSettingsEl.style.display = has('ally-grouping') ? '' : 'none';
+    bardSongSettingsEl.style.display = has('bard-song-options') ? '' : 'none';
     // Only self-buffs-builtin, not ally - "track buffs cast on me by others" is about buffs
     // landing on the player, unrelated to the Ally Buffs widget's own concern (buffs the player
     // casts on others).
@@ -2793,6 +2799,9 @@ function initWidgetsPanel() {
     wrapTextCheckbox.checked = !!widget.wrapText;
     showIconLabelCheckbox.checked = !!widget.showIconLabel;
     groupAllyCheckbox.checked = !!widget.groupAllyBuffs;
+    showDebuffSongsCheckbox.checked = !!widget.showDebuffSongs;
+    splitSongsCheckbox.checked = !!widget.splitSongsByType;
+    splitSongsRowEl.style.display = widget.showDebuffSongs ? '' : 'none';
     allyDirectionRadios.forEach((r) => (r.checked = r.value === (widget.groupAllyDirection || 'vertical')));
     hideAllyNameCheckbox.checked = !!widget.hideAllyNameOnTile;
     allyDirectionRow.style.display = widget.groupAllyBuffs ? '' : 'none';
@@ -5344,6 +5353,14 @@ function initWidgetsPanel() {
   });
   hideAllyNameCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetHideAllyNameOnTile(selectedId, hideAllyNameCheckbox.checked);
+  });
+  // #29 - Bard Songs aura's hybrid buff/debuff options.
+  showDebuffSongsCheckbox.addEventListener('change', () => {
+    splitSongsRowEl.style.display = showDebuffSongsCheckbox.checked ? '' : 'none';
+    window.eqTracker.setWidgetShowDebuffSongs(selectedId, showDebuffSongsCheckbox.checked);
+  });
+  splitSongsCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetSplitSongsByType(selectedId, splitSongsCheckbox.checked);
   });
 
   timerTextColorPicker.addEventListener('input', () => {

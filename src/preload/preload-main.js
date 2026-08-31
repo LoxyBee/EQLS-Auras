@@ -261,6 +261,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetIconLabelAnchor: (id, anchor) => ipcRenderer.invoke('widget:setIconLabelAnchor', { id, value: anchor }),
   setWidgetTimerTextColor: (id, value) => ipcRenderer.invoke('widget:setTimerTextColor', { id, value }),
   setWidgetGroupAllyBuffs: (id, value) => ipcRenderer.invoke('widget:setGroupAllyBuffs', { id, value }),
+  setWidgetShowDebuffSongs: (id, value) => ipcRenderer.invoke('widget:setShowDebuffSongs', { id, value }),
+  setWidgetSplitSongsByType: (id, value) => ipcRenderer.invoke('widget:setSplitSongsByType', { id, value }),
   setWidgetGroupAllyDirection: (id, value) => ipcRenderer.invoke('widget:setGroupAllyDirection', { id, value }),
   setWidgetHideAllyNameOnTile: (id, value) => ipcRenderer.invoke('widget:setHideAllyNameOnTile', { id, value }),
   setWidgetLabelTextColor: (id, value) => ipcRenderer.invoke('widget:setLabelTextColor', { id, value }),

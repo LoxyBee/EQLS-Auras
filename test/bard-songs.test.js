@@ -46,6 +46,51 @@ function makeSong(buffStore, name = SONG) {
   buffStore.markBardSong(name);
 }
 
+// A fictional DEBUFF bard song - lands on an enemy, so it has a third-person suffix and a
+// debuff scaleCategory. #29: these show on the Bard Songs aura when "Also show debuff songs" is on.
+function makeDebuffSong(buffStore, name = 'Test Snare of Snaring') {
+  buffStore.upsert(name, 30, {
+    othersLandingSuffix: ` is bound by strands of test music.`,
+    endedText: `${name} fades.`,
+  });
+  const e = buffStore.getByName(name);
+  e.kind = 'det';
+  e.scaleCategory = 'debuff';
+  buffStore.markBardSong(name);
+  return name;
+}
+
+test('#29 - a debuff bard song landing on an enemy shows on the aura, marked as a debuff', () => {
+  const { engine, buffStore } = makeEngine();
+  engine.setBardSongDebuffsWantedFn(() => true); // a Bard Songs aura has "Also show debuff songs" on
+  const song = makeDebuffSong(buffStore);
+  engine.handleLine(`${TS}You begin singing ${song}.`);
+  engine.handleLine(`${TS}a dry bones skeleton is bound by strands of test music.`);
+  const songs = engine.getActiveBardSongs();
+  assert.equal(songs.length, 1);
+  assert.equal(songs[0].name, song);
+  assert.equal(songs[0].isDebuff, true);
+  assert.equal(songs[0].allyName, 'a dry bones skeleton', 'the enemy it landed on');
+  assert.equal(songs[0].spellCategory, 'debuff', 'so the aura draws the debuff-coloured border');
+});
+
+test('#29 - a debuff bard song is NOT tracked when no aura has asked to see debuff songs', () => {
+  const { engine, buffStore } = makeEngine();
+  // bardSongDebuffsWantedFn defaults to false - the "Also show debuff songs" option is off
+  const song = makeDebuffSong(buffStore);
+  engine.handleLine(`${TS}You begin singing ${song}.`);
+  engine.handleLine(`${TS}a dry bones skeleton is bound by strands of test music.`);
+  assert.equal(engine.getActiveBardSongs().length, 0, 'a multi-word mob recipient is not valid unless wanted');
+});
+
+test('#29 - a buff song on the player is not marked as a debuff', () => {
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  engine.handleLine(`${TS}You begin singing ${SONG}.`);
+  engine.handleLine(`${TS}${SONG} takes hold.`);
+  assert.equal(engine.getActiveBardSongs()[0].isDebuff, false);
+});
+
 // Amplification/Jonthan's Whistling Warsong/Jonthan's Provocation are all real roster entries
 // with targets:'Self' - mechanically impossible for anyone but the player to have cast in a way
 // that lands on the player. Mirrors makeSong exactly, plus the one extra field.
@@ -499,6 +544,31 @@ test('#27 - the bard-songs feed is wired IPC -> preload -> settings window', () 
   assert.match(renderer, /widget\.buffSource === 'bardSongs'\) return latestBardSongs/);
 });
 
+test('#29 - the show-debuff-songs / split-by-type options are wired end to end', () => {
+  const store = readSrc('src', 'main', 'widgetStore.js');
+  const mgr = readSrc('src', 'main', 'widgetManager.js');
+  const main = readSrc('src', 'main', 'main.js');
+  const preload = readSrc('src', 'preload', 'preload-main.js');
+  const overlay = readSrc('src', 'renderer', 'overlay', 'overlay.js');
+  const renderer = readSrc('src', 'renderer', 'main-window', 'main-window.js');
+
+  // defaults: both off, both persisted and shareable
+  assert.match(store, /showDebuffSongs: false/);
+  assert.match(store, /splitSongsByType: false/);
+  assert.match(store, /showDebuffSongs: !!widget\.showDebuffSongs/);
+  assert.match(store, /'showDebuffSongs',\s*\n\s*'splitSongsByType',/);
+  // manager -> IPC -> preload
+  assert.match(mgr, /function setShowDebuffSongs/);
+  assert.match(main, /ipcMain\.handle\('widget:setShowDebuffSongs'/);
+  assert.match(preload, /setWidgetShowDebuffSongs:/);
+  // overlay honours both
+  assert.match(overlay, /currentConfig\.showDebuffSongs \|\| !b\.isDebuff/);
+  assert.match(overlay, /function groupBySongType/);
+  assert.match(overlay, /function shouldSplitSongs/);
+  // the "Active on this aura" card in the settings window honours showDebuffSongs too
+  assert.match(renderer, /widget\.showDebuffSongs \|\| !b\.isDebuff/);
+});
+
 test('#27 - filterActiveBuffsForWidget does not strip a bard-songs aura with hideBardSongs inherited true', () => {
   const renderer = readSrc('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function filterActiveBuffsForWidget\(widget\) \{[\s\S]*?\n  \}/)[0];
@@ -507,7 +577,7 @@ test('#27 - filterActiveBuffsForWidget does not strip a bard-songs aura with hid
     fn.indexOf("widget.buffSource === 'bardSongs'") < fn.indexOf('if (widget.hideBardSongs)'),
     'the hideBardSongs filter would run first and strip every row'
   );
-  assert.match(fn, /buffSource === 'bardSongs'\) \{\s*return source\.filter/);
+  assert.match(fn, /buffSource === 'bardSongs'\) \{[\s\S]{0,220}return source\.filter/);
 });
 
 module.exports = () => report('bard-songs');

@@ -521,6 +521,15 @@
                       <label title="Grouping already puts the name in the heading and drops it from the buffs automatically. This drops it when grouping is off too."><input type="checkbox" id="widget-hide-ally-name-checkbox" /> Hide the player name on each buff</label>
                     </div>
                   </div>
+                  <!-- #29 - Bard Songs aura only. Debuff songs (on an enemy) ride the same feed. -->
+                  <div id="widget-bard-song-settings" style="display:none">
+                    <div class="row">
+                      <label title="Debuff songs like Largo's Melodic Binding land on an enemy, not you. Off by default; when on they show in this same aura with a debuff-coloured border."><input type="checkbox" id="widget-show-debuff-songs-checkbox" /> Also show debuff songs</label>
+                    </div>
+                    <div class="row" id="widget-split-songs-row">
+                      <label title="Puts buff songs and debuff songs in their own groups with their own heading, instead of one list."><input type="checkbox" id="widget-split-songs-checkbox" /> Split buff songs and debuff songs</label>
+                    </div>
+                  </div>
                 </div></div>
               </div>
             </div>
