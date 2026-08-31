@@ -88,6 +88,31 @@ test('a plain `set`-only override is not treated as an addition', () => {
   assert.deepEqual(buildAddedEntries(overrides, fakeGame([])), []);
 });
 
+test('`noGameLookup: true` skips the client-spell-data match (name collisions)', () => {
+  // "Divine Invocation" / "Defensive Stance" coincidentally match unrelated classic-EQ spells in
+  // spells_us.txt; without the flag the entry picked up that spell's endedText / others-suffix.
+  const overrides = { 'Divine Invocation': { why: 't', add: { noGameLookup: true, kind: 'buff', targets: 'Self', infiniteDuration: true } } };
+  const game = fakeGame([{ id: 28145, name: 'Divine Invocation', landed: 'WRONG SPELL.', wore: 'You are no longer watched.' }]);
+  const e = buildAddedEntries(overrides, game)[0];
+  assert.equal(e.landingText, undefined, 'no game landing text should have been pulled in');
+  assert.equal(e.endedText, undefined);
+  assert.equal(e.spellId, undefined);
+  assert.equal(e.noGameLookup, undefined, 'the build directive must not survive into the roster entry');
+});
+
+test('an added entry always gets a scaleCategory (default "none")', () => {
+  const overrides = { 'X Stance': { why: 't', add: { noGameLookup: true, kind: 'buff', category: 'Stance', targets: 'Self', infiniteDuration: true } } };
+  assert.equal(buildAddedEntries(overrides, fakeGame([]))[0].scaleCategory, 'none');
+});
+
+test('build-roster.js falls back to overrides-only when the spreadsheet is absent', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'tools', 'build-roster.js'), 'utf8');
+  assert.match(src, /overridesOnly = process\.argv\.includes\('--overrides-only'\) \|\| !fs\.existsSync\(SHEET\)/);
+  // it rebuilds from the current buffs.json + applies set/add
+  assert.match(src, /if \(overridesOnly\) \{[\s\S]*?JSON\.parse\(fs\.readFileSync\(OUT/);
+  assert.match(src, /Object\.assign\(e, ov\.set \|\| \{\}, ov\.add \|\| \{\}\)/);
+});
+
 test('build-roster.js wires buildAddedEntries into the roster before the sort, and the README documents it', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'tools', 'build-roster.js'), 'utf8');
   const call = src.indexOf('buildAddedEntries(overrides');

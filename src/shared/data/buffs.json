@@ -580,6 +580,14 @@
   "landingTextSharedBy": 3
  },
  {
+  "name": "Balanced Stance",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Stance",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
   "name": "Banish Summoned",
   "spellId": 116,
   "kind": "det",
@@ -780,6 +788,14 @@
   "castSec": 3,
   "reuseSec": 12,
   "targets": "Friendly"
+ },
+ {
+  "name": "Berserker Stance",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Stance",
+  "targets": "Self",
+  "infiniteDuration": true
  },
  {
   "name": "Berserker Strength",
@@ -2142,6 +2158,15 @@
   "targets": "Single"
  },
  {
+  "name": "Channeler Stance",
+  "landingText": "You assume a channeler stance.",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Stance",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
   "name": "Chant of Battle",
   "spellId": 700,
   "kind": "buff",
@@ -3343,6 +3368,14 @@
   "landingTextSharedBy": 3
  },
  {
+  "name": "Defensive Stance",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Stance",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
   "name": "Deftness",
   "spellId": 152,
   "kind": "buff",
@@ -3658,6 +3691,15 @@
   "castSec": 1,
   "reuseSec": 900,
   "targets": "Self"
+ },
+ {
+  "name": "Divine Invocation",
+  "landingText": "You begin reciting the divine invocation.",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Invocation",
+  "targets": "Self",
+  "infiniteDuration": true
  },
  {
   "name": "Divine Might",
@@ -4237,6 +4279,15 @@
   "targets": "Single"
  },
  {
+  "name": "Empowering Invocation",
+  "landingText": "You begin reciting the empowering invocation.",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Invocation",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
   "name": "Enchant Clay",
   "spellId": 1359,
   "iconId": 83,
@@ -4767,6 +4818,15 @@
   "castSec": 9,
   "reuseSec": 1.5,
   "targets": "Group"
+ },
+ {
+  "name": "Evasive Stance",
+  "landingText": "You assume an evasive stance.",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Stance",
+  "targets": "Self",
+  "infiniteDuration": true
  },
  {
   "name": "Everfount",
@@ -8083,6 +8143,23 @@
   "targets": "Pet"
  },
  {
+  "name": "Inversion Invocation",
+  "landingText": "You begin reciting the inversion invocation.",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Invocation",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
+  "name": "Inviolable Invocation",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Invocation",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
   "name": "Invisibility",
   "spellId": 42,
   "kind": "buff",
@@ -9074,6 +9151,14 @@
   "manaCost": 0,
   "castSec": 3,
   "targets": "Group"
+ },
+ {
+  "name": "Mage Hunter Stance",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Stance",
+  "targets": "Self",
+  "infiniteDuration": true
  },
  {
   "name": "Magical Monologue",
@@ -10356,6 +10441,22 @@
   "landingTextSharedBy": 2
  },
  {
+  "name": "Offensive Stance",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Stance",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
+  "name": "Overchannel Invocation",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Invocation",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
   "name": "Pacify",
   "spellId": 45,
   "kind": "buff",
@@ -11216,6 +11317,15 @@
   "castSec": 6.5,
   "reuseSec": 20,
   "targets": "Corpse"
+ },
+ {
+  "name": "Recovery Invocation",
+  "landingText": "You begin reciting the recovery invocation.",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Invocation",
+  "targets": "Self",
+  "infiniteDuration": true
  },
  {
   "name": "Refresh Summoning",
@@ -13668,6 +13778,14 @@
   "targets": "Self"
  },
  {
+  "name": "Spellblade Invocation",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Invocation",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
   "name": "Sphere of Light",
   "spellId": 373,
   "iconId": 37,
@@ -14582,6 +14700,14 @@
   "reuseSec": 1.5,
   "targets": "Single",
   "landingTextSharedBy": 2
+ },
+ {
+  "name": "Striker Stance",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Stance",
+  "targets": "Self",
+  "infiniteDuration": true
  },
  {
   "name": "Strip Enchantment",

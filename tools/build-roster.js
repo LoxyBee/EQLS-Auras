@@ -134,7 +134,11 @@ function buildAddedEntries(overrides, { spellByName, strById }, existingNames = 
   for (const [name, ov] of Object.entries(overrides)) {
     if (name === '_README' || !ov || !ov.add) continue;
     if (existingNames.has(name.toLowerCase())) continue; // the sheet already produced it - `set` covers that
-    const g = spellByName.get(name.toLowerCase());
+    // `noGameLookup: true` in the add block skips the client-spell-data match. Use it when the
+    // name coincidentally matches an unrelated spell in spells_us.txt (the EQL stance / invocation
+    // system is not the classic-EQ spells that share those names), so the entry is exactly what the
+    // add block says and nothing else.
+    const g = ov.add.noGameLookup ? null : spellByName.get(name.toLowerCase());
     const s = g ? strById.get(g[F_ID]) || [] : [];
     const entry = {
       name,
@@ -145,8 +149,13 @@ function buildAddedEntries(overrides, { spellByName, strById }, existingNames = 
       iconId: g ? Number(g[F_ICON]) || null : null,
       castSec: g ? Number(g[F_CAST_MS] || 0) / 1000 || null : null,
       reuseSec: g ? Number(g[F_RECAST_MS] || 0) / 1000 || null : null,
+      // A hand-added entry has no spreadsheet category to derive from; default to the safe "none"
+      // (no per-tier / AA duration scaling) unless the `add` block says otherwise.
+      scaleCategory: 'none',
       ...ov.add,
     };
+    if (!entry.scaleCategory) entry.scaleCategory = scaleCategory(entry.category, entry.kind);
+    delete entry.noGameLookup; // a build directive, not roster data
     for (const k of Object.keys(entry)) if (entry[k] == null) delete entry[k];
     added.push(entry);
   }
@@ -219,15 +228,39 @@ function main() {
   for (const [t, set] of gameBasesByText) gameSharedByText.set(t, set.size);
   console.log(`          : ${spellByName.size} spells, ${strById.size} string rows`);
 
-  // ---- spreadsheet
-  const wb = readWorkbook(SHEET);
-  const flat = wb.sheet('spells');
-  const runs = wb.sheetRuns('spells');
-
   const overrides = fs.existsSync(OVERRIDES) ? JSON.parse(fs.readFileSync(OVERRIDES, 'utf8')) : {};
 
   const roster = [];
   const problems = { noGameData: [], noText: [], durationMismatch: [], noIcon: [] };
+
+  // ---- spreadsheet, OR overrides-only when it isn't here
+  //
+  // The curated spreadsheet ("new spell roster to be added.xlsx") is not in the repo. When it is
+  // absent - or `--overrides-only` is passed - the roster is rebuilt from the CURRENT buffs.json
+  // plus roster-overrides.json: every `set` is re-applied to its entry and every `add` block is
+  // added. That is what makes the roster directly editable for corrections and additions without
+  // the spreadsheet (the owner's instruction, 30 Aug 2026). It cannot pick up brand-new spreadsheet
+  // rows - there is no spreadsheet - so a genuinely new bulk import still needs the xlsx.
+  const overridesOnly = process.argv.includes('--overrides-only') || !fs.existsSync(SHEET);
+  if (overridesOnly) {
+    if (!fs.existsSync(SHEET)) {
+      console.log(`\nspreadsheet not found (${path.relative(ROOT, SHEET)})`);
+    }
+    console.log('rebuilding from the current roster + roster-overrides.json (set + add only)\n');
+    const base = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+    for (const e of base) {
+      const ov = overrides[e.name];
+      // `set` and `add` both just overwrite fields on an entry that already exists - re-applying
+      // `add` here is what lets you edit an addition's `add` block and re-run to pick up the change.
+      if (ov) Object.assign(e, ov.set || {}, ov.add || {});
+      for (const k of Object.keys(e)) if (e[k] == null) delete e[k];
+      roster.push(e);
+    }
+  }
+
+  const wb = overridesOnly ? null : readWorkbook(SHEET);
+  const flat = overridesOnly ? [] : wb.sheet('spells');
+  const runs = overridesOnly ? [] : wb.sheetRuns('spells');
 
   for (let i = 1; i < runs.length; i++) {
     const rr = runs[i];

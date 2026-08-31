@@ -1,13 +1,13 @@
 {
-  "entries": 1052,
-  "autoConfirmable": 346,
-  "distinctNames": 1052,
-  "withLandingText": 720,
+  "entries": 1067,
+  "autoConfirmable": 352,
+  "distinctNames": 1067,
+  "withLandingText": 726,
   "withEndedText": 528,
   "withOthersSuffix": 810,
   "withIconId": 1051,
-  "distinctLandingTexts": 454,
-  "uniqueLandingTexts": 346,
+  "distinctLandingTexts": 460,
+  "uniqueLandingTexts": 352,
   "distinctOthersSuffix": 419,
   "uniqueOthersSuffix": 303
 }
