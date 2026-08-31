@@ -5956,7 +5956,12 @@ function setupModalToggle(backdropId, openBtnId, closeBtnId, onOpen) {
   });
 }
 
-init();
+init().finally(() => {
+  // Theme every native <select> and give the long ones a filter box. Runs after init so the
+  // populate blocks have already appended their <option>s; the component's own MutationObserver
+  // keeps up with any later repopulation.
+  if (window.SearchDropdown) window.SearchDropdown.enhanceAll(document);
+});
 
 // App text size for THIS window. Backed by Electron's zoom factor in main.js - see the note
 // there for why that rather than rewriting 316 hardcoded px values as rem.

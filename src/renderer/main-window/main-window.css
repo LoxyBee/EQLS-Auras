@@ -1778,7 +1778,7 @@ label.disabled {
 
 /* Every native <select> in the app, so none of them fall back to the OS's default grey control.
    The closed control is fully themed here; the drop-down list of <option>s is still drawn by the
-   OS on Windows and can't be recoloured - the searchable-dropdown widget (searchDropdown.js) is
+   OS on Windows and can't be recoloured - the searchable-dropdown widget (search-dropdown.js) is
    what replaces that for the long lists. */
 select {
   background: var(--panel-2);
@@ -1800,6 +1800,91 @@ select:focus { outline: none; border-color: var(--accent); }
 select:disabled { opacity: 0.5; cursor: default; }
 /* The list is OS-drawn on Windows and mostly ignores this, but Chromium honours it where it can. */
 select option { background: var(--panel); color: var(--ink); }
+
+/* search-dropdown.js: themed replacement for a native <select>, with a filter box for long lists.
+   The <select> stays in the DOM (source of truth) but is visually hidden; .sd-display is the
+   closed control, .sd-popup the open list. Everything here is the app's own palette. */
+.sd-wrap { position: relative; display: inline-block; }
+select.sd-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.sd-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 8em;
+  max-width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: 12px var(--sans);
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: left;
+}
+.sd-display:hover { border-color: var(--accent); }
+.sd-display:focus { outline: none; border-color: var(--accent); }
+.sd-display:disabled { opacity: 0.5; cursor: default; }
+.sd-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-text.sd-placeholder { color: var(--ink-faint); }
+.sd-caret { color: var(--accent); font-size: 10px; flex: none; }
+
+.sd-popup {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 2px);
+  left: 0;
+  min-width: 100%;
+  max-width: 22em;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+}
+.sd-filter {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font: 12px var(--sans);
+  padding: 4px 6px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+}
+.sd-filter:focus { outline: none; border-color: var(--accent); }
+.sd-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 15em;
+  overflow-y: auto;
+}
+.sd-item {
+  padding: 4px 8px;
+  font: 12px var(--sans);
+  color: var(--ink);
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sd-item:hover,
+.sd-item.sd-active { background: var(--panel-2); }
+.sd-item.sd-current { color: var(--accent); }
+.sd-item.sd-disabled { opacity: 0.4; cursor: default; }
+.sd-empty {
+  padding: 6px 8px;
+  font: 12px var(--sans);
+  color: var(--ink-faint);
+}
 
 .known-buff-add {
   margin: 4px 0 10px;
