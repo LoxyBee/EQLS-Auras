@@ -2849,7 +2849,6 @@ function initWidgetsPanel() {
     // over whatever was actively being typed. Skipped while the box has focus - if you're in it,
     // what you typed wins over what selectWidget thinks is there, full stop.
     if (document.activeElement !== textMessageInput) textMessageInput.value = widget.textAuraMessage || '';
-    renderTextMessagePreview();
     const textAuraSize = widget.textAuraSize || 32;
     textAuraSizeSlider.value = String(textAuraSize);
     textAuraSizeValueEl.textContent = `${textAuraSize}px`;
@@ -4436,42 +4435,8 @@ function initWidgetsPanel() {
   // every keystroke instead, debounced so normal typing speed doesn't fire an IPC round-trip
   // per character - the box itself is always the source of truth for what's ON SCREEN either way,
   // this only controls how quickly the STORED copy catches up to it.
-  // QOL #8 - live preview of the {spell}/{caster}/{mob}/{profile} tokens, so you see the resolved
-  // line as you type instead of finding out in game. Sample values for the cast-time tokens;
-  // {profile} uses the real active loadout name.
-  const textMessagePreviewEl = document.getElementById('widget-text-message-preview');
-  let previewProfileName = 'Default';
-  function loadPreviewProfileName() {
-    Promise.all([window.eqTracker.getProfiles(), window.eqTracker.getActiveProfileId()])
-      .then(([list, id]) => {
-        previewProfileName = (list.find((p) => p.id === id) || {}).name || 'Default';
-        renderTextMessagePreview();
-      })
-      .catch(() => {});
-  }
-  function renderTextMessagePreview() {
-    if (!textMessagePreviewEl) return;
-    const raw = textMessageInput.value || '';
-    if (!raw.trim() || !/\{(spell|caster|mob|profile)\}/.test(raw)) {
-      textMessagePreviewEl.style.display = 'none';
-      return;
-    }
-    const resolved = raw
-      .replace(/\{spell\}/g, 'Spirit of Wolf')
-      .replace(/\{caster\}/g, 'Graznthok')
-      .replace(/\{mob\}/g, 'Graznthok')
-      .replace(/\{profile\}/g, previewProfileName || 'Default')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-    textMessagePreviewEl.textContent = `Shows as:  ${resolved}`;
-    textMessagePreviewEl.style.display = '';
-  }
-  loadPreviewProfileName();
-  window.eqTracker.onActiveProfileChanged(() => loadPreviewProfileName());
-
   let textMessageSaveTimer = null;
   textMessageInput.addEventListener('input', () => {
-    renderTextMessagePreview();
     clearTimeout(textMessageSaveTimer);
     textMessageSaveTimer = setTimeout(() => {
       window.eqTracker.setWidgetTextAuraMessage(selectedId, textMessageInput.value).then(updateLocalWidgetCache);
@@ -6157,7 +6122,12 @@ function setupModalToggle(backdropId, openBtnId, closeBtnId, onOpen) {
   });
 }
 
-init();
+init().finally(() => {
+  // Theme every native <select> and give the long ones a filter box. Runs after init so the
+  // populate blocks have already appended their <option>s; the component's own MutationObserver
+  // keeps up with any later repopulation.
+  if (window.SearchDropdown) window.SearchDropdown.enhanceAll(document);
+});
 
 // App text size for THIS window. Backed by Electron's zoom factor in main.js - see the note
 // there for why that rather than rewriting 316 hardcoded px values as rem.
