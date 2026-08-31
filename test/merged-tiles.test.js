@@ -296,7 +296,7 @@ test('everything a merged tile draws once is part of the structural signature', 
   // counting down sends it to the back of the queue, so the LEAD changes while the group does
   // not - the count is the same, the identity is the same, nothing else in the check moves, and
   // the tile is left counting down one buff while naming another.
-  const sig = overlaySrc.match(/const mergeKey = visible\.map\([^;]+;/);
+  const sig = overlaySrc.match(/const mergeKey = tileBuffs\.map\([^;]+;/);
   assert.ok(sig, 'the merge signature has been restructured');
   assert.match(sig[0], /b\.mergedCount/, 'the badge count is not in the signature');
   assert.match(sig[0], /b\.name/, 'the lead name is not in the signature - the tile will go stale');
@@ -316,10 +316,10 @@ test('everything a merged tile draws once is part of the structural signature', 
  * changed nothing the tests could see.
  */
 function mergeSignature() {
-  const m = overlaySrc.match(/const mergeKey = (visible\.map\([\s\S]*?);\r?\n/);
+  const m = overlaySrc.match(/const mergeKey = (tileBuffs\.map\([\s\S]*?);\r?\n/);
   assert.ok(m, 'the merge signature has been restructured');
   // eslint-disable-next-line no-new-func
-  return new Function('visible', `return ${m[1]};`);
+  return new Function('tileBuffs', `return ${m[1]};`);
 }
 
 test('the signature actually changes when only the lead changes', () => {

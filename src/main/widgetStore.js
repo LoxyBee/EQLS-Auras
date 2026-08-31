@@ -684,6 +684,7 @@ const SHAREABLE_FIELDS = [
   'iconLabelAnchor',
   'iconDepletionShade',
   'timerColorRamp',
+  'expiredLingerSec',
   'wrapText',
   'iconJustify',
   'textJustify',
@@ -834,6 +835,9 @@ function normalizeWidget(widget) {
     // QOL #47 - fade the timer text from its normal colour through amber as the buff runs down,
     // a readable heads-up before the red expiring-soon flash. Off by default.
     timerColorRamp: !!widget.timerColorRamp,
+    // QOL #48 - icon mode only. Seconds to hold an expired tile on screen, greyed, before it
+    // clears. 0 (default) = the old behaviour, the tile vanishes the moment the buff ends.
+    expiredLingerSec: Math.max(0, Math.min(6, Number(widget.expiredLingerSec) || 0)),
     // Existing widgets saved before this field existed default to on for
     // the two "show everything" builtins (matches defaultSelfBuffsWidget/
     // defaultAllyBuffsWidget's own defaults for a fresh one) and off for

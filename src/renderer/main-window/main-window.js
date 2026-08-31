@@ -1745,6 +1745,8 @@ function initWidgetsPanel() {
   const displayListOnlySettings = document.getElementById('widget-display-list-only-settings');
   const iconJustifyRadios = document.querySelectorAll('input[name="widget-icon-justify"]');
   const iconDepletionSelect = document.getElementById('widget-icon-depletion-select');
+  const expiredLingerSlider = document.getElementById('widget-expired-linger-slider');
+  const expiredLingerValueEl = document.getElementById('widget-expired-linger-value');
   const deleteBtn = document.getElementById('delete-widget-btn');
   const duplicateWidgetBtn = document.getElementById('duplicate-widget-btn');
   const exportBtn = document.getElementById('export-widget-btn');
@@ -3039,6 +3041,11 @@ function initWidgetsPanel() {
       b.classList.toggle('active', b.dataset.anchor === (widget.iconLabelAnchor || 'top-center'))
     );
     if (iconDepletionSelect) iconDepletionSelect.value = widget.iconDepletionShade || 'none';
+    if (expiredLingerSlider) {
+      const linger = typeof widget.expiredLingerSec === 'number' ? widget.expiredLingerSec : 0;
+      expiredLingerSlider.value = linger;
+      expiredLingerValueEl.textContent = linger === 0 ? 'off' : `${linger}s`;
+    }
     updateIconLabelOptionsVisibility();
     const shapeFields = applySettingsPanelShape(widget);
     deleteBtn.style.display = widget.deletable ? '' : 'none';
@@ -5534,6 +5541,13 @@ function initWidgetsPanel() {
   if (iconDepletionSelect) {
     iconDepletionSelect.addEventListener('change', () => {
       window.eqTracker.setWidgetIconDepletionShade(selectedId, iconDepletionSelect.value);
+    });
+  }
+  if (expiredLingerSlider) {
+    expiredLingerSlider.addEventListener('input', () => {
+      const seconds = Number(expiredLingerSlider.value);
+      expiredLingerValueEl.textContent = seconds === 0 ? 'off' : `${seconds}s`;
+      window.eqTracker.setWidgetExpiredLingerSec(selectedId, seconds);
     });
   }
   textJustifyRadios.forEach((radio) => {

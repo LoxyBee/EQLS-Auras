@@ -523,6 +523,11 @@
                         <option value="radial">Radial (clock sweep)</option>
                       </select>
                     </div>
+                    <div class="row">
+                      <span class="label" title="When a buff runs out, hold its tile on screen for a moment — greyed, marked 'done' — instead of letting it vanish. 0 turns it off.">Linger when expired:</span>
+                      <input type="range" id="widget-expired-linger-slider" min="0" max="6" step="1" />
+                      <span id="widget-expired-linger-value" class="slider-value">off</span>
+                    </div>
                   </div>
                   <!-- Only meaningful on an aura showing buffs cast on other people - hidden
                        otherwise (see renderBuffFilter). -->

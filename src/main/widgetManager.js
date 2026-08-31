@@ -1176,6 +1176,12 @@ function setTimerColorRamp(id, enabled) {
   return config;
 }
 
+function setExpiredLingerSec(id, seconds) {
+  const config = widgetStore.update(id, { expiredLingerSec: Math.max(0, Math.min(6, Number(seconds) || 0)) });
+  pushConfigChanged(id);
+  return config;
+}
+
 // Profile membership IS this widget's on/off control (see
 // isVisibleForActiveProfile) - ticking/unticking the currently active
 // profile here has to show/hide it immediately, which is the whole point of
@@ -1522,6 +1528,7 @@ module.exports = {
   setShowIconLabel,
   setIconDepletionShade,
   setTimerColorRamp,
+  setExpiredLingerSec,
   setActiveProfileIds,
   removeProfileFromAllWidgets,
   setGroupAllyBuffs,

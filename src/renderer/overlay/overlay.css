@@ -466,6 +466,20 @@ body.unlocked .drag-overlay {
   animation: landing-glow 0.9s ease-out;
 }
 
+/* QOL #48 - the brief post-expiry linger. Greyed and dimmed so it clearly reads as "just ended",
+   not "still running"; the countdown text is replaced with a short word by overlay.js. */
+.buff-tile.expired-linger {
+  opacity: 0.45;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.buff-tile.expired-linger img,
+.buff-tile.expired-linger .tile-placeholder {
+  filter: grayscale(1);
+}
+.buff-tile.expired-linger .tile-time {
+  color: rgba(255, 255, 255, 0.75) !important;
+}
+
 
 /* Ally-buff grouping - tiles split by whose buff it is, each group under a
    heading naming that ally. Groups stack down the screen by default, or side

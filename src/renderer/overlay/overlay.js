@@ -765,6 +765,20 @@ function applyTilePositionedTextStyle(el, low, anchor, textSize, wrap, color) {
 }
 
 function updateRef(ref, buff, isIcon) {
+  // QOL #48 - a tile in its brief post-expiry linger. Greyed, labelled, no countdown, no shade,
+  // and explicitly not `.low` (remaining is 0, which would otherwise read as "expiring" and
+  // pulse red). render() has already kept it out of every sound/glow set.
+  if (buff._expired) {
+    ref.root.classList.add('expired-linger');
+    ref.root.classList.remove('low', 'just-landed');
+    if (isIcon) updateTileIcon(ref, buff);
+    if (ref.shadeEl) ref.shadeEl.style.display = 'none';
+    const t = ref.timeEl;
+    if (t) t.textContent = 'done';
+    return;
+  }
+  ref.root.classList.remove('expired-linger');
+
   // A 0-second custom timer trigger has nothing to show for any length of time - the tile exists
   // purely so the sound pipeline above has a buff to see land, not because there is a countdown
   // worth putting on screen. Opacity rather than not building the tile at all, since sound only
@@ -1232,6 +1246,13 @@ function reportSizeIfChanged() {
 // only when the visible buff set or the display mode actually changes.
 const tileRefs = new Map(); // lowercased buff name -> { root, timeEl, barEl? }
 
+// QOL #48 - icon-mode expired linger. `key -> { buff, until }`, where `buff` is a frozen copy of
+// the tile's last live state re-flagged `_expired`. `prevRealByKey` is the real (non-linger)
+// visible set from the previous render, the diff source for "what just vanished".
+const expiredLinger = new Map();
+let prevRealByKey = new Map();
+let lingerRerenderTimer = null;
+
 // Tracks every buff the ENGINE currently has active, regardless of this
 // widget's own display filters - deliberately not the same as "currently
 // shown here" (see shownNames below). Using the filtered/visible set for
@@ -1415,6 +1436,44 @@ function renderTextFeed(buffs) {
   reportSizeIfChanged();
 }
 
+// QOL #48 core. Given this render's REAL (non-linger) visible list, update expiredLinger: start
+// lingering anything that was real last render, is gone now, and had a genuine countdown; drop
+// lingers whose time is up or whose buff has come back. Returns the linger buffs to append and
+// the soonest `until` (for scheduling the clear-out re-render). Pure apart from the two
+// module-level Maps it is the owner of.
+function trackExpiredLinger(realVisible, keyFn, lingerMs) {
+  const now = Date.now();
+  const currentKeys = new Set(realVisible.map(keyFn));
+  for (const [key, buff] of prevRealByKey) {
+    if (currentKeys.has(key) || expiredLinger.has(key)) continue;
+    if (buff.infinite || buff.instant || buff.valueText != null) continue;
+    if (!(typeof buff.durationSec === 'number' && buff.durationSec > 0)) continue;
+    expiredLinger.set(key, {
+      buff: { ...buff, _expired: true, infinite: false, instant: false, remainingSec: 0 },
+      until: now + lingerMs,
+    });
+  }
+  let soonest = Infinity;
+  for (const [key, entry] of expiredLinger) {
+    if (currentKeys.has(key) || entry.until <= now) {
+      expiredLinger.delete(key);
+      continue;
+    }
+    if (entry.until < soonest) soonest = entry.until;
+  }
+  prevRealByKey = new Map(realVisible.map((b) => [keyFn(b), b]));
+  return { lingers: [...expiredLinger.values()].map((e) => e.buff), soonest };
+}
+
+function clearExpiredLinger() {
+  expiredLinger.clear();
+  prevRealByKey = new Map();
+  if (lingerRerenderTimer) {
+    clearTimeout(lingerRerenderTimer);
+    lingerRerenderTimer = null;
+  }
+}
+
 function render(buffs) {
   // The stacked-line text feed is its own render path - it keeps a short scrolling history of
   // recent firings instead of one live tile, so none of the tile-diffing / merge / grouping
@@ -1430,7 +1489,29 @@ function render(buffs) {
   const isText = currentConfig.displayMode === 'text';
   const isIcon = currentConfig.displayMode === 'icons';
   const modeKey = isText ? 'text' : isIcon ? 'icons' : 'list';
-  const visibleKeys = visible.map((b) => keyFor(b));
+
+  // QOL #48 - hold an expired icon tile briefly, greyed, rather than letting it vanish. The
+  // linger buffs are appended for the tile-facing parts of render() only (`tileBuffs`); every
+  // sound / glow / "genuinely expired" set below still works from the real `visible`, so the
+  // expire sound fires at the true expiry, not when the linger clears.
+  let tileBuffs = visible;
+  const lingerSec = isIcon && !previewActive ? currentConfig.expiredLingerSec || 0 : 0;
+  if (lingerSec > 0) {
+    const { soonest } = trackExpiredLinger(visible, keyFor, lingerSec * 1000);
+    if (expiredLinger.size) tileBuffs = [...visible, ...[...expiredLinger.values()].map((e) => e.buff)];
+    if (lingerRerenderTimer) clearTimeout(lingerRerenderTimer);
+    lingerRerenderTimer = null;
+    if (Number.isFinite(soonest)) {
+      lingerRerenderTimer = setTimeout(() => {
+        lingerRerenderTimer = null;
+        render(currentSourceBuffs());
+      }, Math.max(50, soonest - Date.now() + 20));
+    }
+  } else {
+    clearExpiredLinger();
+  }
+
+  const visibleKeys = tileBuffs.map((b) => keyFor(b));
   // NOT the same set as visibleKeys once merging is on, and the difference matters. The landing
   // glow and the alert sounds are worked out from RAW buff keys; a merged tile has a key of its
   // own that no raw buff ever carries, so matching against tile keys would leave a merged aura
@@ -1539,15 +1620,15 @@ function render(buffs) {
   //
   // Empty string for an unmerged tile, so an aura with merging off produces a constant signature
   // and behaves exactly as it did before any of this existed.
-  const mergeKey = visible.map((b) => (b.mergedCount ? `${b.mergedCount}:${b.name}` : '')).join('|');
+  const mergeKey = tileBuffs.map((b) => (b.mergedCount ? `${b.mergedCount}:${b.name}` : '')).join('|');
 
   // A text aura is a single tile, so there is nothing to group and no heading that would make
   // sense above one line of words.
   // #29 - the Bard Songs aura's "Split buffs / debuffs" toggle groups by song type instead of by
   // caster; it wins over caster-grouping when both are on.
-  const splitSongs = !isText && shouldSplitSongs(visible);
-  const grouped = !isText && (splitSongs || shouldGroupByAlly(visible));
-  const groups = grouped ? (splitSongs ? groupBySongType(visible) : groupByAlly(visible)) : null;
+  const splitSongs = !isText && shouldSplitSongs(tileBuffs);
+  const grouped = !isText && (splitSongs || shouldGroupByAlly(tileBuffs));
+  const groups = grouped ? (splitSongs ? groupBySongType(tileBuffs) : groupByAlly(tileBuffs)) : null;
   const groupKey = grouped
     ? `${currentConfig.groupAllyDirection || 'vertical'}|${groups.map((g) => `${g.allyName}:${g.buffs.length}`).join(',')}`
     : '';
@@ -1601,7 +1682,7 @@ function render(buffs) {
       return;
     }
 
-    for (const buff of visible) {
+    for (const buff of tileBuffs) {
       const ref = buildTile(buff, isText, isIcon);
       updateRef(ref, buff, isIcon);
       // Only a genuinely new arrival gets the one-shot glow - a tile
@@ -1632,7 +1713,7 @@ function render(buffs) {
     // out of its group and pile them flat at the top level - on every tick.
     // Any reordering that actually matters changes the group signature, which
     // takes the rebuild path above instead.
-    for (const buff of visible) {
+    for (const buff of tileBuffs) {
       const ref = tileRefs.get(keyFor(buff));
       updateRef(ref, buff, isIcon);
       if (!grouped) listEl.appendChild(ref.root);
@@ -1919,6 +2000,9 @@ function applyConfig(config) {
   // always reflects current reality (a picked buff, an edited icon)
   // immediately instead of waiting on the next tick.
   tileRefs.clear();
+  // QOL #48 - a config change re-identifies tiles; a linger held over from the old config (old
+  // mode, old source, old filter) would be re-attributed to whatever now sits at that key.
+  clearExpiredLinger();
   // See warningsSuppressedOnce. Changing a setting must not produce a sound.
   warningsSuppressedOnce = true;
   Promise.all([

@@ -2159,6 +2159,7 @@ ipcMain.handle('widget:setMirrorRowDirection', (_event, { id, enabled }) => widg
 ipcMain.handle('widget:setShowIconLabel', (_event, { id, enabled }) => widgetManager.setShowIconLabel(id, enabled));
 ipcMain.handle('widget:setIconDepletionShade', (_event, { id, value }) => widgetManager.setIconDepletionShade(id, value));
 ipcMain.handle('widget:setTimerColorRamp', (_event, { id, enabled }) => widgetManager.setTimerColorRamp(id, enabled));
+ipcMain.handle('widget:setExpiredLingerSec', (_event, { id, seconds }) => widgetManager.setExpiredLingerSec(id, seconds));
 ipcMain.handle('widget:setIconLabelSize', (_event, { id, value }) => widgetManager.setIconLabelSize(id, value));
 ipcMain.handle('widget:setTimerTextColor', (_event, { id, value }) => widgetManager.setTimerTextColor(id, value));
 ipcMain.handle('widget:setGroupAllyBuffs', (_event, { id, value }) => widgetManager.setGroupAllyBuffs(id, value));
