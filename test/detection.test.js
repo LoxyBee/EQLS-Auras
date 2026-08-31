@@ -716,5 +716,23 @@ test('a burst ally-landing is skipped when the recipient was just seen self-cast
   assert.ok(!log.some((l) => l.startsWith('ALLY LANDED')), "the groupmate's own self-buff was credited to the player");
   assert.ok(log.some((l) => l.includes('was just seen self-casting it')));
 });
+
+// ...but only recently. recentOtherCasts is a whole-session memory, so an old self-cast by a
+// groupmate must NOT retroactively suppress a burst landing (the player may genuinely have
+// group-cast it since - Infusion of Spirit: player casts 13:18, groupmate self-casts 00:04+1d).
+test('a stale other-cast does not suppress a burst ally-landing', () => {
+  const { engine, buffStore, log } = makeEngine();
+  const pick = buffStore
+    .getAll()
+    .find((b) => b.othersLandingSuffix
+      && !b.noBurstAllyAttribution
+      && buffStore.findAllByOthersLandingSuffix(b.othersLandingSuffix).length === 1);
+  assert.ok(pick);
+  engine.handleLine(`[Wed Aug 19 21:00:00 2026] Rwek begins casting ${pick.name}.`);
+  engine.recentOtherCastAt.set(pick.name.toLowerCase(), Date.now() - 90000); // 90s ago
+  engine.handleLine('[Wed Aug 19 21:14:02 2026] You activate Quick Buff.');
+  engine.handleLine(`[Wed Aug 19 21:14:03 2026] Rwek${pick.othersLandingSuffix}`);
+  assert.ok(log.some((l) => l.startsWith('ALLY LANDED')), 'a stale self-cast wrongly suppressed the landing');
+});
 module.exports = () => report('detection');
 if (require.main === module) report('detection').then((n) => process.exit(n ? 1 : 0));

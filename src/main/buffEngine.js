@@ -39,6 +39,14 @@ const TICK_INTERVAL_MS = 1000;
 // enough to credit an unrelated later memorize to an earlier landing.
 const BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS = 6000;
 
+// How recently a groupmate must have been seen casting a spell for "they just self-cast it" to
+// suppress a burst-context ally landing of that spell on them. recentOtherCasts itself is
+// unbounded (its bard-song attribution consumer wants a whole-session memory), so this bound lives
+// only at the suppression check. 60s is generous - the puma self-cast case is a 1s gap - while
+// still separating a genuine player group-cast from a groupmate self-casting the same spell hours
+// later.
+const OTHER_SELF_CAST_WINDOW_MS = 60000;
+
 // How long an INSTANT is kept available - a spell the roster has no duration for and which is not
 // marked as lasting forever, i.e. something that happened rather than something running.
 //
@@ -320,6 +328,14 @@ class BuffEngine extends EventEmitter {
     // made on anonymous evidence. One day's log carries 3,934 third-person cast lines against
     // 15 party-change lines to clear them, so "why did my buff not appear" was unanswerable.
     this.recentOtherCasts = new Map();
+    // Parallel to recentOtherCasts: lowercased spell name -> Date.now() when that other-cast was
+    // last seen. recentOtherCasts itself is deliberately unbounded (its bard-song caster-attribution
+    // consumer needs a whole-session memory - see its comment), but the burst-context ally-landing
+    // "that groupmate just self-cast it" skip needs a recency bound so a groupmate self-casting a
+    // spell HOURS after the player genuinely group-cast it doesn't retroactively suppress the
+    // player's own landing (Infusion of Spirit: player casts once at 13:18, a groupmate self-casts
+    // at 00:04 next day).
+    this.recentOtherCastAt = new Map();
     // lowercased spell name -> currently sitting in a gem slot (built from
     // "You forget X."/"You have finished memorizing X." lines - see
     // handleLine).
@@ -755,6 +771,7 @@ class BuffEngine extends EventEmitter {
         this._saveOtherAmbiguousResolutions();
       }
       if (this.recentOtherCasts.size > 0) this.recentOtherCasts.clear();
+      this.recentOtherCastAt.clear();
       // The player's own join/leave lines ("You have joined the group."/
       // "You have been removed from the group.") don't name anyone, and
       // could mean an entirely different group than before - safest to
@@ -823,6 +840,7 @@ class BuffEngine extends EventEmitter {
     const otherCast = matchOtherCastBegin(line);
     if (otherCast) {
       this.recentOtherCasts.set(otherCast.spellName.toLowerCase(), otherCast.casterName);
+      this.recentOtherCastAt.set(otherCast.spellName.toLowerCase(), Date.now());
       this._alertAllyCast(otherCast);
       this._checkForEndedBuffs(line);
       return;
@@ -990,11 +1008,18 @@ class BuffEngine extends EventEmitter {
             this._debugLog(
               `ALLY IGNORED "${one.name}" on "${allyName}" - burst context${this._burstOrigin()}, roster entry flagged noBurstAllyAttribution (proc-collider suffix)`
             );
-          } else if (this._recentOtherCaster(one.name) === allyName) {
-            // The recipient is the same person the log just showed casting it -
-            // it's their own self-buff landing, not something the player granted
-            // in the burst. (Legit group casts by the player still land: those
-            // set recentSelfCast, not recentOtherCasts.)
+          } else if (
+            this._recentOtherCaster(one.name) === allyName
+            && Date.now() - (this.recentOtherCastAt.get(one.name.toLowerCase()) || 0) < OTHER_SELF_CAST_WINDOW_MS
+          ) {
+            // The recipient is the same person the log just showed casting it,
+            // and recently - it's their own self-buff landing, not something the
+            // player granted in the burst. (Legit group casts by the player
+            // still land: those set recentSelfCast, not recentOtherCasts.) The
+            // recency bound matters because recentOtherCasts has no expiry:
+            // without it a groupmate self-casting Infusion of Spirit at 00:04
+            // would suppress the player's own genuine group-cast of it from
+            // 13:18 the previous day.
             this._debugLog(
               `ALLY IGNORED "${one.name}" on "${allyName}" - burst context${this._burstOrigin()}, "${allyName}" was just seen self-casting it`
             );
@@ -1047,6 +1072,7 @@ class BuffEngine extends EventEmitter {
       const otherSuffixMatches = this.buffStore.findAllByOthersLandingSuffix(unexplainedThirdPerson[2]);
       if (otherSuffixMatches.length === 1) {
         this.recentOtherCasts.set(otherSuffixMatches[0].name.toLowerCase(), unexplainedThirdPerson[1]);
+        this.recentOtherCastAt.set(otherSuffixMatches[0].name.toLowerCase(), Date.now());
       }
     }
 
