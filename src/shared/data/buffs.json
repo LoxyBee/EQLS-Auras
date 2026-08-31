@@ -5375,7 +5375,8 @@
   "castSec": 0.5,
   "reuseSec": 4,
   "targets": "Friendly",
-  "landingTextSharedBy": 3
+  "landingTextSharedBy": 3,
+  "noBurstAllyAttribution": true
  },
  {
   "name": "Flowering Heal",

@@ -685,5 +685,36 @@ test('a bard song landing during a burst does not extend the burst window', () =
   engine.handleLine(`[Wed Aug 19 21:14:04 2026] ${song.landingText}`);
   assert.equal(engine.burstUntil, sentinel, 'a song landing left burstUntil untouched');
 });
+
+// Fix 1+2 follow-up: "<name> simmers with fury." is a melee proc that reuses Fleeting Fury's
+// flavor text - the roster entry is flagged noBurstAllyAttribution so a proc firing inside a
+// genuinely-fresh Quick Buff burst is not logged as a buff she cast on that groupmate.
+test('a roster entry flagged noBurstAllyAttribution never ally-lands from a burst', () => {
+  const { engine, buffStore, log } = makeEngine();
+  const ff = buffStore.getByName('Fleeting Fury');
+  assert.ok(ff && ff.noBurstAllyAttribution, 'Fleeting Fury should carry the flag');
+  engine.handleLine('[Wed Aug 19 21:14:02 2026] You activate Quick Buff.');
+  engine.handleLine(`[Wed Aug 19 21:14:03 2026] Korv${ff.othersLandingSuffix}`);
+  assert.ok(!log.some((l) => l.startsWith('ALLY LANDED')), 'a flagged proc-collider must not ally-land');
+  assert.ok(log.some((l) => l.includes('noBurstAllyAttribution')));
+});
+
+// The same fresh burst, but for a spell a groupmate was just seen self-casting - their own
+// self-buff landing, not something the player granted. (Legit player group-casts set
+// recentSelfCast, not recentOtherCasts, so those still land.)
+test('a burst ally-landing is skipped when the recipient was just seen self-casting it', () => {
+  const { engine, buffStore, log } = makeEngine();
+  const pick = buffStore
+    .getAll()
+    .find((b) => b.othersLandingSuffix
+      && !b.noBurstAllyAttribution
+      && buffStore.findAllByOthersLandingSuffix(b.othersLandingSuffix).length === 1);
+  assert.ok(pick);
+  engine.handleLine(`[Wed Aug 19 21:14:00 2026] Rwek begins casting ${pick.name}.`);
+  engine.handleLine('[Wed Aug 19 21:14:02 2026] You activate Quick Buff.');
+  engine.handleLine(`[Wed Aug 19 21:14:03 2026] Rwek${pick.othersLandingSuffix}`);
+  assert.ok(!log.some((l) => l.startsWith('ALLY LANDED')), "the groupmate's own self-buff was credited to the player");
+  assert.ok(log.some((l) => l.includes('was just seen self-casting it')));
+});
 module.exports = () => report('detection');
 if (require.main === module) report('detection').then((n) => process.exit(n ? 1 : 0));

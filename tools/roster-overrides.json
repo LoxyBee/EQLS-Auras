@@ -50,6 +50,12 @@
       "infiniteDuration": true
     }
   },
+  "Fleeting Fury": {
+    "why": "eq-tracker-f8, 31 August 2026, from the log: 210 \"<name> simmers with fury.\" lines across two different people (Korv, Avenrae - one a melee, one a caster), ZERO \"begins casting Fleeting Fury\" anywhere, and Shara never casts it herself. On EQ Legends \"simmers with fury\" is a melee/weapon proc that reuses this shaman spell's flavor text - the roster's othersLandingSuffix maps to a spell nobody actually casts. noBurstAllyAttribution stops ONLY the burst-context ally path from crediting the proc to the player as a buff she cast on a groupmate; a genuine named cast still attributes normally.",
+    "set": {
+      "noBurstAllyAttribution": true
+    }
+  },
   "_CANDIDATES": [
     "NOT marked, because nobody has confirmed them - listed so the next person does not have to",
     "rediscover them. Frenzy shares Fury's exact ended text (\"Your frenzy fades.\") and is the same",

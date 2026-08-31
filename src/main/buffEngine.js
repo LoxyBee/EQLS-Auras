@@ -977,18 +977,41 @@ class BuffEngine extends EventEmitter {
             `ALLY AMBIGUOUS "${suffix}" on "${allyName}" - burst context${this._burstOrigin()}, ${matches.length} candidates: ${matches.map((c) => c.name).join(', ')}`
           );
         } else if (matches.length === 1) {
-          // Deliberately does NOT re-arm burstUntil. A burst is a fixed
-          // window off the player's own activate; the player's group buffs
-          // landing on other people are not evidence it should keep going,
-          // and that re-arm (together with auto-pulsing bard songs re-arming
-          // it at the self tiers) is what held the window open for minutes
-          // and let an enemy's melee proc land as an ally buff.
-          this._debugLog(
-            `ALLY LANDED "${matches[0].name}" on "${allyName}" - burst context${this._burstOrigin()}, unique third-person landing text`
-          );
-          this._landOnAlly(matches[0], allyName);
-          this._checkForEndedBuffs(line);
-          return;
+          const one = matches[0];
+          // Some roster entries carry a third-person suffix for a spell nobody
+          // actually casts on this server - "<name> simmers with fury." is a
+          // melee/weapon proc that reuses the shaman spell Fleeting Fury's
+          // flavor text (210 occurrences across two people, zero casts). A
+          // proc firing inside a fresh Quick Buff burst would otherwise be
+          // logged as a buff the player cast on that ally. noBurstAllyAttribution
+          // opts an entry out of THIS path only - a genuine named cast (the
+          // tier far above) still attributes it.
+          if (one.noBurstAllyAttribution) {
+            this._debugLog(
+              `ALLY IGNORED "${one.name}" on "${allyName}" - burst context${this._burstOrigin()}, roster entry flagged noBurstAllyAttribution (proc-collider suffix)`
+            );
+          } else if (this._recentOtherCaster(one.name) === allyName) {
+            // The recipient is the same person the log just showed casting it -
+            // it's their own self-buff landing, not something the player granted
+            // in the burst. (Legit group casts by the player still land: those
+            // set recentSelfCast, not recentOtherCasts.)
+            this._debugLog(
+              `ALLY IGNORED "${one.name}" on "${allyName}" - burst context${this._burstOrigin()}, "${allyName}" was just seen self-casting it`
+            );
+          } else {
+            // Deliberately does NOT re-arm burstUntil. A burst is a fixed
+            // window off the player's own activate; the player's group buffs
+            // landing on other people are not evidence it should keep going,
+            // and that re-arm (together with auto-pulsing bard songs re-arming
+            // it at the self tiers) is what held the window open for minutes
+            // and let an enemy's melee proc land as an ally buff.
+            this._debugLog(
+              `ALLY LANDED "${one.name}" on "${allyName}" - burst context${this._burstOrigin()}, unique third-person landing text`
+            );
+            this._landOnAlly(one, allyName);
+            this._checkForEndedBuffs(line);
+            return;
+          }
         }
       }
     }
