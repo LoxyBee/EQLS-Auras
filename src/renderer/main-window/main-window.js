@@ -3900,7 +3900,10 @@ function initWidgetsPanel() {
       id: 'bard-songs',
       name: 'Bard Songs',
       group: 'standalone',
-      description: 'Every bard song currently on you, no matter who cast it. Grouped by caster when that’s knowable (including your own casts) - everything else lands in an "Unknown" group instead of guessing.',
+      description:
+        'Every bard song currently on you, whoever cast it — grouped by caster when that’s knowable, ' +
+        '"Unknown" when it isn’t. Can also track the debuff songs you’ve put on enemies (off by default), ' +
+        'and split buffs and debuffs into their own sections.',
       create: (name) => window.eqTracker.createBardSongsWidget(name),
     },
     {
@@ -3908,9 +3911,9 @@ function initWidgetsPanel() {
       name: 'Raid named',
       group: 'standalone',
       description:
-        'A checklist of the named mobs in the raid zone you are in - all shown when you enter, ' +
-        'greyed out as they die, reset to a full list when you re-enter (a fresh instance). ' +
-        'Covers Plane of Sky / Hate / Fear, Nagafen and Vox for now; add more as you visit them.',
+        'A checklist of the named mobs for the zone you’re in - all shown when you enter, greyed ' +
+        'as they die. Instanced zones reset to a full list on re-entry; open-world zones show a ' +
+        'respawn countdown. Covers the Voidling raid zones plus a growing set of dungeons.',
       create: (name) => window.eqTracker.createRaidNamedWidget(name),
     },
     {
