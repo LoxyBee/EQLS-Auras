@@ -223,20 +223,21 @@ const spellbookService = new SpellbookService();
 // Drop-in custom-aura modules (feat/module-system). Additive and greenfield - the built-in aura
 // types are untouched. The host rides the same 'line' bus below as a pure observer; its entries
 // reach the overlay through one generic per-module channel. See moduleHost.js's header.
-const moduleHost = new ModuleHost(path.join(app.getPath('userData'), 'modules'));
+const moduleHost = new ModuleHost(path.join(app.getPath('userData'), 'modules'), { loadJson, saveJson });
 moduleHost.setCurrentZoneFn(() => widgetManager.getCurrentZone());
 moduleHost.setGroupMembersFn(() => [...buffEngine.groupMembers.values()]);
 moduleHost.setIconUrlForSpellFn((name) => {
   const known = buffStore.getByName(name);
   return known && known.iconId != null ? iconService.buildIconUrl(known.iconId) : null;
 });
-moduleHost.on('modulesChanged', () => broadcastModules());
+// A module is invisible plumbing: no status UI, no error panel, no folder link. A load failure
+// goes only to the debug log; the module simply doesn't appear.
+moduleHost.on('modulesChanged', (list) => broadcast('modules:changed', list));
 moduleHost.on('entriesChanged', (all) => broadcast('modules:entries', all));
+moduleHost.on('settingsChanged', (payload) => broadcast('modules:settingsChanged', payload));
 moduleHost.on('moduleError', ({ id, error }) => debugLog(`MODULE "${id}" - ${error}`));
-function broadcastModules() {
-  broadcast('modules:changed', { modules: moduleHost.getRegistered(), errors: moduleHost.getLoadErrors() });
-}
 moduleHost.loadModules();
+moduleHost.watchFolder();
 
 buffEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setSpellbookCheckFn((name) => spellbookService.has(name));
@@ -1975,14 +1976,12 @@ ipcMain.handle('debug:getRecentLogTail', (_event, maxChars = 4000) => {
     return '';
   }
 });
-// Custom modules (feat/module-system).
-ipcMain.handle('modules:list', () => ({ modules: moduleHost.getRegistered(), errors: moduleHost.getLoadErrors() }));
+// Custom modules (feat/module-system). No folder link, no reload button - dropping a file in
+// hot-reloads via moduleHost.watchFolder(); these reads feed the sidebar and the per-module pages.
+ipcMain.handle('modules:list', () => moduleHost.getRegistered());
 ipcMain.handle('modules:entries', () => moduleHost.getAllEntries());
-ipcMain.handle('modules:reload', () => {
-  moduleHost.loadModules();
-  return { modules: moduleHost.getRegistered(), errors: moduleHost.getLoadErrors() };
-});
-ipcMain.handle('modules:openFolder', () => shell.openPath(path.join(app.getPath('userData'), 'modules')));
+ipcMain.handle('modules:getSettings', (_event, id) => moduleHost.getSettings(id));
+ipcMain.handle('modules:setSetting', (_event, { id, key, value }) => moduleHost.setSetting(id, key, value));
 
 ipcMain.handle('debug:getEnabled', () => debugLogEnabled);
 ipcMain.handle('debug:setEnabled', (_event, enabled) => {

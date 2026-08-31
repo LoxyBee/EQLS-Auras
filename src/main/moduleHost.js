@@ -7,74 +7,92 @@ const { EventEmitter } = require('events');
 // Drop-in custom-aura modules.
 //
 // A module is a single `.js` file in `userData/modules/`. It exports one object describing a new
-// aura type and, optionally, a pure `onLine(line, ctx)` function that turns log lines into overlay
-// entries. The host scans that folder at startup, validates each file against the contract, and
-// registers the good ones; a malformed file is skipped with a recorded reason, never a crash.
+// aura type: an optional settings `page` (a declarative spec the app renders), an optional overlay
+// aura (`hasAura`), and a pure `onLine(line, ctx, settings)` that turns log lines into overlay
+// entries. The host scans that folder at startup AND watches it for changes, so dropping a file in
+// makes the module appear with no restart. A malformed file is skipped with a reason written to
+// the debug log - there is deliberately no user-facing module list, error panel or folder link.
+// The only visible sign of a module is its own settings page and its aura.
 //
-// This is deliberately NOT how the built-in aura types work - they stay hardcoded. This path is
-// additive and greenfield: a module rides the SAME log-line stream every built-in engine gets
-// (main.js fans `logService.watcher`'s 'line' event to `handleLine` here too), as a pure observer.
-// It can never consume a line away from the built-ins.
+// This is NOT how the built-in aura types work - they stay hardcoded. This path is additive: a
+// module rides the SAME log-line stream every built-in engine gets (main.js fans
+// `logService.watcher`'s 'line' event here too), as a pure observer - it can never consume a line
+// away from the built-ins.
 //
-// Trust model: the modules come from the owner or a known collaborator, so there is no sandbox. A
+// Trust model: modules come from the owner or a known collaborator, so there is no sandbox - a
 // module `require()`s into the main process with full Node access. The only guard is a per-call
-// time budget: a module that is repeatedly slow is disabled for the session so it cannot drag the
-// whole log bus down. A genuinely hung (infinite-loop) module would still freeze the app - true
-// isolation needs a Worker and is out of scope for v1; the recovery is "delete the file, restart".
+// time budget: a module repeatedly slower than SLOW_CALL_MS is disabled for the session so it
+// can't drag the whole log bus down. A genuinely hung (infinite-loop) module would still freeze
+// the app - true isolation needs a Worker and is out of scope for v1.
 //
 // Same DI shape as the other engines - no `electron` import, so it runs under plain-node tests.
-// The modules directory is passed in; `ctx` accessors are injected via setters.
+// The modules directory and a { loadJson, saveJson } store are passed in; `ctx` accessors are
+// injected via setters.
 
 const API_VERSION = 1;
 
-// A slow onLine call. Measured after the fact (JS can't preempt sync code); a module that busts
-// this SLOW_STRIKES times in a session is disabled.
 const SLOW_CALL_MS = 50;
 const SLOW_STRIKES = 20;
 
 const ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
-const SCHEMA_FIELD_TYPES = new Set(['slider', 'checkbox', 'select', 'text']);
+const FIELD_TYPES = new Set(['slider', 'checkbox', 'select', 'text']);
+
+const isPlainObject = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+
+/** A `page` entry is either a section heading or a control. */
+function validatePageEntry(entry) {
+  if (!isPlainObject(entry)) return 'every page entry must be an object';
+  if ('section' in entry) {
+    return typeof entry.section === 'string' && entry.section ? null : 'a section entry needs a non-empty string';
+  }
+  if (typeof entry.key !== 'string' || !entry.key) return 'a control has no key';
+  if (!FIELD_TYPES.has(entry.type)) return `control "${entry.key}": type must be one of ${[...FIELD_TYPES].join('/')}`;
+  if (entry.type === 'select' && !Array.isArray(entry.options)) return `control "${entry.key}": a select needs an options array`;
+  if (entry.type === 'slider' && !(typeof entry.min === 'number' && typeof entry.max === 'number')) {
+    return `control "${entry.key}": a slider needs numeric min and max`;
+  }
+  return null;
+}
+
+/** Default value for a control, from its own `default` or a type fallback. */
+function defaultFor(field) {
+  if ('default' in field) return field.default;
+  switch (field.type) {
+    case 'checkbox': return false;
+    case 'slider': return field.min;
+    case 'select': return field.options[0];
+    default: return '';
+  }
+}
 
 /**
- * Validate a raw module export against the v1 contract. Returns `{ ok: true, module }` with a
- * normalised copy, or `{ ok: false, error }` with a one-line human reason.
+ * Validate a raw module export against the v1 contract. Returns `{ ok: true, module }` (normalised)
+ * or `{ ok: false, error }` with a one-line human reason.
  */
 function validateModule(raw, { knownIds } = {}) {
-  if (!raw || typeof raw !== 'object') return { ok: false, error: 'module does not export an object' };
+  if (!isPlainObject(raw)) return { ok: false, error: 'module does not export an object' };
 
   const id = raw.id;
   if (typeof id !== 'string' || !ID_PATTERN.test(id)) {
     return { ok: false, error: `id "${id}" must be lowercase letters, digits and dashes` };
   }
   if (knownIds && knownIds.has(id)) return { ok: false, error: `id "${id}" is already used by another module` };
-
   if (raw.apiVersion !== API_VERSION) {
-    return {
-      ok: false,
-      error: `apiVersion ${raw.apiVersion} - this app speaks module apiVersion ${API_VERSION}`,
-    };
+    return { ok: false, error: `apiVersion ${raw.apiVersion} - this app speaks module apiVersion ${API_VERSION}` };
   }
   if (typeof raw.name !== 'string' || !raw.name.trim()) return { ok: false, error: 'name is required' };
-  if (typeof raw.onLine !== 'function') return { ok: false, error: 'onLine(line, ctx) is required' };
+  if (typeof raw.onLine !== 'function') return { ok: false, error: 'onLine(line, ctx, settings) is required' };
 
-  const hasAura = raw.hasAura === undefined ? false : !!raw.hasAura;
-  const defaultConfig =
-    raw.defaultConfig === undefined ? {} : raw.defaultConfig;
-  if (defaultConfig === null || typeof defaultConfig !== 'object' || Array.isArray(defaultConfig)) {
-    return { ok: false, error: 'defaultConfig must be an object' };
+  const page = raw.page === undefined ? [] : raw.page;
+  if (!Array.isArray(page)) return { ok: false, error: 'page must be an array' };
+  for (const entry of page) {
+    const err = validatePageEntry(entry);
+    if (err) return { ok: false, error: err };
   }
 
-  const schema = raw.settingsSchema === undefined ? [] : raw.settingsSchema;
-  if (!Array.isArray(schema)) return { ok: false, error: 'settingsSchema must be an array' };
-  for (const field of schema) {
-    if (!field || typeof field !== 'object') return { ok: false, error: 'every settingsSchema entry must be an object' };
-    if (typeof field.key !== 'string' || !field.key) return { ok: false, error: 'a settingsSchema entry has no key' };
-    if (!SCHEMA_FIELD_TYPES.has(field.type)) {
-      return { ok: false, error: `settingsSchema "${field.key}": type must be one of ${[...SCHEMA_FIELD_TYPES].join('/')}` };
-    }
-    if (field.type === 'select' && !Array.isArray(field.options)) {
-      return { ok: false, error: `settingsSchema "${field.key}": a select needs an options array` };
-    }
+  const defaults = {};
+  for (const entry of page) {
+    if ('key' in entry) defaults[entry.key] = defaultFor(entry);
   }
 
   return {
@@ -83,34 +101,31 @@ function validateModule(raw, { knownIds } = {}) {
       id,
       name: raw.name.trim(),
       apiVersion: API_VERSION,
-      group: typeof raw.group === 'string' ? raw.group : 'standalone',
       description: typeof raw.description === 'string' ? raw.description : '',
-      hasAura,
-      defaultConfig,
-      settingsSchema: schema,
+      hasAura: raw.hasAura === undefined ? false : !!raw.hasAura,
+      page,
+      defaults,
       onLine: raw.onLine,
     },
   };
 }
 
 class ModuleHost extends EventEmitter {
-  constructor(modulesDir) {
+  constructor(modulesDir, store) {
     super();
     this.modulesDir = modulesDir || null;
+    this.store = store || { loadJson: (_k, f) => f, saveJson: () => {} };
     // id -> { module, entries: Map<key, entry>, slowStrikes, disabled }
     this.registry = new Map();
-    // Load-time problems, surfaced in the UI so a broken file is visible rather than silent.
-    this.loadErrors = []; // { file, error }
-    this._ctx = {
-      currentZone: null,
-      groupMembers: [],
-      now: () => Date.now(),
-      iconUrlForSpell: () => null,
-    };
+    // Per-module persisted settings, keyed by module id. Absent keys fall back to page defaults.
+    this.settingsById = this.store.loadJson('moduleSettings', {}) || {};
+    this._ctx = { now: () => Date.now(), iconUrlForSpell: () => null };
+    this._watcher = null;
+    this._reloadTimer = null;
     this.tickTimer = setInterval(() => this._tick(), 1000);
   }
 
-  // --- ctx injection (same pattern as the other engines' setXxxFn) -------------------------------
+  // --- ctx injection (same pattern as the other engines' setXxxFn) -----------------------------
 
   setCurrentZoneFn(fn) { this._zoneFn = fn; }
   setGroupMembersFn(fn) { this._groupFn = fn; }
@@ -118,23 +133,22 @@ class ModuleHost extends EventEmitter {
 
   _buildCtx() {
     return {
-      currentZone: this._zoneFn ? this._zoneFn() : this._ctx.currentZone,
-      groupMembers: this._groupFn ? this._groupFn() : this._ctx.groupMembers,
+      currentZone: this._zoneFn ? this._zoneFn() : null,
+      groupMembers: this._groupFn ? this._groupFn() : [],
       now: Date.now(),
       iconUrlForSpell: this._ctx.iconUrlForSpell,
     };
   }
 
-  // --- loading ---------------------------------------------------------------------------------
+  // --- loading --------------------------------------------------------------------------------
 
   /**
-   * (Re)scan the modules folder. Clears the registry first, so this doubles as "reload modules".
-   * Never throws - a missing folder, an unreadable file or a bad export all become loadErrors.
+   * (Re)scan the modules folder - also serves as "reload". Never throws: a missing folder, an
+   * unreadable file or a bad export all become a debug-log line via the 'moduleError' event.
    */
   loadModules(dir = this.modulesDir) {
     this.modulesDir = dir;
     this.registry.clear();
-    this.loadErrors = [];
     if (!dir) return this.getRegistered();
 
     let files = [];
@@ -142,7 +156,7 @@ class ModuleHost extends EventEmitter {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       files = fs.readdirSync(dir).filter((f) => f.endsWith('.js') && !f.startsWith('.'));
     } catch (err) {
-      this.loadErrors.push({ file: dir, error: `could not read the modules folder: ${err.message}` });
+      this.emit('moduleError', { id: '(folder)', error: `could not read the modules folder: ${err.message}` });
       return this.getRegistered();
     }
 
@@ -153,12 +167,12 @@ class ModuleHost extends EventEmitter {
         delete require.cache[require.resolve(full)];
         raw = require(full);
       } catch (err) {
-        this.loadErrors.push({ file, error: `failed to load: ${err.message}` });
+        this.emit('moduleError', { id: file, error: `failed to load: ${err.message}` });
         continue;
       }
       const result = validateModule(raw, { knownIds: new Set(this.registry.keys()) });
       if (!result.ok) {
-        this.loadErrors.push({ file, error: result.error });
+        this.emit('moduleError', { id: file, error: result.error });
         continue;
       }
       this.registry.set(result.module.id, {
@@ -172,7 +186,38 @@ class ModuleHost extends EventEmitter {
     return this.getRegistered();
   }
 
-  // --- the log bus ----------------------------------------------------------------------------
+  /** Watch the folder so a dropped/removed file reloads everything, no restart. Debounced. */
+  watchFolder() {
+    if (this._watcher || !this.modulesDir) return;
+    try {
+      if (!fs.existsSync(this.modulesDir)) fs.mkdirSync(this.modulesDir, { recursive: true });
+      this._watcher = fs.watch(this.modulesDir, { persistent: false }, () => {
+        clearTimeout(this._reloadTimer);
+        this._reloadTimer = setTimeout(() => this.loadModules(), 300);
+      });
+    } catch {
+      // fs.watch is best-effort (some filesystems don't support it) - startup scan still works.
+    }
+  }
+
+  // --- settings ------------------------------------------------------------------------------
+
+  /** Current settings for a module: persisted values over page defaults. */
+  getSettings(id) {
+    const rec = this.registry.get(id);
+    const defaults = rec ? rec.module.defaults : {};
+    return { ...defaults, ...(this.settingsById[id] || {}) };
+  }
+
+  setSetting(id, key, value) {
+    if (!this.registry.has(id)) return this.getSettings(id);
+    this.settingsById[id] = { ...(this.settingsById[id] || {}), [key]: value };
+    this.store.saveJson('moduleSettings', this.settingsById);
+    this.emit('settingsChanged', { id, settings: this.getSettings(id) });
+    return this.getSettings(id);
+  }
+
+  // --- the log bus --------------------------------------------------------------------------
 
   handleLine(line) {
     if (!this.registry.size) return;
@@ -184,7 +229,7 @@ class ModuleHost extends EventEmitter {
       let out;
       const started = Date.now();
       try {
-        out = rec.module.onLine(line, ctx);
+        out = rec.module.onLine(line, ctx, this.getSettings(rec.module.id));
       } catch (err) {
         this.emit('moduleError', { id: rec.module.id, error: err.message });
         continue;
@@ -194,10 +239,7 @@ class ModuleHost extends EventEmitter {
         rec.disabled = true;
         rec.entries.clear();
         anyChanged = true;
-        this.emit('moduleError', {
-          id: rec.module.id,
-          error: `disabled - too slow (${SLOW_STRIKES}+ calls over ${SLOW_CALL_MS}ms)`,
-        });
+        this.emit('moduleError', { id: rec.module.id, error: `disabled - too slow (${SLOW_STRIKES}+ calls over ${SLOW_CALL_MS}ms)` });
         continue;
       }
       if (this._absorb(rec, out)) anyChanged = true;
@@ -213,24 +255,20 @@ class ModuleHost extends EventEmitter {
     let changed = false;
     const now = Date.now();
     for (const e of list) {
-      if (!e || typeof e !== 'object') continue;
+      if (!isPlainObject(e)) continue;
       const key = typeof e.key === 'string' && e.key ? e.key : String(e.name || '').toLowerCase();
       if (!key) continue;
       const durationSec = typeof e.durationSec === 'number' && e.durationSec > 0 ? e.durationSec : null;
-      const remainingSec =
-        typeof e.remainingSec === 'number' ? Math.max(0, e.remainingSec) : durationSec;
-      const entry = {
+      const remainingSec = typeof e.remainingSec === 'number' ? Math.max(0, e.remainingSec) : durationSec;
+      rec.entries.set(key, {
         key,
         name: String(e.name || key),
         durationSec,
-        // Absolute, like every built-in engine, so a restart/snapshot needs no arithmetic and the
-        // 1s sweep below can expire it.
         expiresAt: remainingSec != null ? now + remainingSec * 1000 : null,
         infinite: remainingSec == null,
         iconUrl: typeof e.iconUrl === 'string' ? e.iconUrl : null,
         moduleId: rec.module.id,
-      };
-      rec.entries.set(key, entry);
+      });
       changed = true;
     }
     return changed;
@@ -250,27 +288,21 @@ class ModuleHost extends EventEmitter {
     if (changed) this.emit('entriesChanged', this.getAllEntries());
   }
 
-  // --- reads for main.js / the renderers ------------------------------------------------------
+  // --- reads for main.js / the renderers ---------------------------------------------------
 
-  /** What the sidebar builds from: one row per registered module. */
+  /** One row per registered module - what the sidebar and the per-module pages build from. */
   getRegistered() {
     return [...this.registry.values()].map((rec) => ({
       id: rec.module.id,
       name: rec.module.name,
-      group: rec.module.group,
       description: rec.module.description,
       hasAura: rec.module.hasAura,
-      defaultConfig: rec.module.defaultConfig,
-      settingsSchema: rec.module.settingsSchema,
+      page: rec.module.page,
+      settings: this.getSettings(rec.module.id),
       disabled: rec.disabled,
     }));
   }
 
-  getLoadErrors() {
-    return this.loadErrors.slice();
-  }
-
-  /** Live entries for one module's aura, shaped like the built-in overlay feeds. */
   getEntries(moduleId) {
     const rec = this.registry.get(moduleId);
     if (!rec) return [];
@@ -293,7 +325,9 @@ class ModuleHost extends EventEmitter {
 
   stop() {
     clearInterval(this.tickTimer);
+    clearTimeout(this._reloadTimer);
+    if (this._watcher) this._watcher.close();
   }
 }
 
-module.exports = { ModuleHost, validateModule, API_VERSION, SLOW_CALL_MS, SLOW_STRIKES };
+module.exports = { ModuleHost, validateModule, defaultFor, API_VERSION, SLOW_CALL_MS, SLOW_STRIKES };
