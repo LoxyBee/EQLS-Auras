@@ -76,6 +76,7 @@ require.cache[electronId] = { id: electronId, filename: electronId, loaded: true
 
 const moveHud = require('../src/main/moveHudWindow');
 const wm = require('../src/main/widgetManager');
+const snap = require('../src/main/positionSnap');
 wm.setActiveProfileIdFn(() => 'default');
 
 // --- the panel stays on screen ---------------------------------------------------------------
@@ -145,43 +146,43 @@ test('a drag of the aura window also fires onWidgetMoved (so the HUD x/y keeps u
   assert.deepEqual(moves, [config.id]);
 });
 
-// --- snap to grid (phase 2) -----------------------------------------------------------------
+// --- snap to grid (shared positionSnap.js, auras + action bars) ------------------------------
 
-test('setSnapGrid clamps the size and getSnapGrid reads it back', () => {
-  assert.deepEqual(wm.setSnapGrid({ enabled: true, sizePx: 16 }), { enabled: true, sizePx: 16 });
-  assert.deepEqual(wm.getSnapGrid(), { enabled: true, sizePx: 16 });
-  assert.equal(wm.setSnapGrid({ enabled: true, sizePx: 1 }).sizePx, 2, 'floored');
-  assert.equal(wm.setSnapGrid({ enabled: true, sizePx: 0 }).sizePx, 8, 'a junk 0 falls back to the default');
-  assert.equal(wm.setSnapGrid({ enabled: true, sizePx: 9999 }).sizePx, 200, 'ceiled');
-  wm.setSnapGrid({ enabled: false, sizePx: 8 });
+test('positionSnap clamps the size and reads back', () => {
+  assert.deepEqual(snap.set({ enabled: true, sizePx: 16 }), { enabled: true, sizePx: 16 });
+  assert.deepEqual(snap.get(), { enabled: true, sizePx: 16 });
+  assert.equal(snap.set({ enabled: true, sizePx: 1 }).sizePx, 2, 'floored');
+  assert.equal(snap.set({ enabled: true, sizePx: 0 }).sizePx, 8, 'a junk 0 falls back to the default');
+  assert.equal(snap.set({ enabled: true, sizePx: 9999 }).sizePx, 200, 'ceiled');
+  assert.equal(snap.active('x'), false, 'nothing is active by default');
+  snap.set({ enabled: false, sizePx: 8 });
 });
 
-test('a nudge lands on the grid only for the aura in move mode, only when snap is on', () => {
+test('a nudge lands on the grid only for the aura that is active, only when snap is on', () => {
   const { config, win } = makeAura('Snapper');
   wm.setLocked(config.id, false);
   win.setPosition(103, 97);
 
-  wm.setSnapGrid({ enabled: true, sizePx: 8 });
-  wm.setSnapWidgetId(config.id);
+  snap.set({ enabled: true, sizePx: 8 });
+  snap.setActive(config.id);
   wm.nudgeWidget(config.id, 1, 1); // 104,98 -> nearest 8: 104, 96
   assert.deepEqual(win.getPosition(), [104, 96]);
 
-  // a different aura, not the one in move mode: no snap
   const other = makeAura('Free');
   wm.setLocked(other.config.id, false);
   other.win.setPosition(101, 101);
   wm.nudgeWidget(other.config.id, 1, 1);
-  assert.deepEqual(other.win.getPosition(), [102, 102], 'a non-move-mode aura is not snapped');
+  assert.deepEqual(other.win.getPosition(), [102, 102], 'a non-active aura is not snapped');
 
-  wm.setSnapGrid({ enabled: false, sizePx: 8 });
-  wm.setSnapWidgetId(null);
+  snap.set({ enabled: false, sizePx: 8 });
+  snap.setActive(null);
 });
 
-test('a drag drop of the move-mode aura snaps to the grid; others are left alone', () => {
+test('a drag drop of the active aura snaps to the grid; others are left alone', () => {
   const { config, win } = makeAura('DragSnap');
   wm.setLocked(config.id, false);
-  wm.setSnapGrid({ enabled: true, sizePx: 10 });
-  wm.setSnapWidgetId(config.id);
+  snap.set({ enabled: true, sizePx: 10 });
+  snap.setActive(config.id);
 
   win.x = 137; win.y = 62;
   win.emit('moved');
@@ -191,10 +192,37 @@ test('a drag drop of the move-mode aura snaps to the grid; others are left alone
   wm.setLocked(other.config.id, false);
   other.win.x = 137; other.win.y = 62;
   other.win.emit('moved');
-  assert.deepEqual(other.win.getPosition(), [137, 62], 'a non-move-mode aura is not snapped on drop');
+  assert.deepEqual(other.win.getPosition(), [137, 62], 'a non-active aura is not snapped on drop');
 
-  wm.setSnapGrid({ enabled: false, sizePx: 8 });
-  wm.setSnapWidgetId(null);
+  snap.set({ enabled: false, sizePx: 8 });
+  snap.setActive(null);
+});
+
+// --- action bars use the same HUD plumbing --------------------------------------------------
+
+test('actionBarManager.nudgePosition moves + snaps a bar the same way, and fires onMoved', () => {
+  const abm = require('../src/main/actionBarManager');
+  const before = created.length;
+  const bar = abm.createBar('HUD Bar');
+  abm.initActionBars();
+  const win = created.slice(before).find((w) => w.opts && w.opts.width); // the bar's window
+  assert.ok(win, 'the bar got a window');
+  win.setPosition(200, 300);
+
+  const moves = [];
+  abm.setOnMovedFn((id) => moves.push(id));
+
+  abm.nudgePosition(bar.id, 3, -2);
+  assert.deepEqual(win.getPosition(), [203, 298]);
+  assert.deepEqual(moves, [bar.id]);
+
+  snap.set({ enabled: true, sizePx: 10 });
+  snap.setActive(bar.id);
+  win.setPosition(207, 303);
+  abm.nudgePosition(bar.id, 1, 1); // 208,304 -> 210,300
+  assert.deepEqual(win.getPosition(), [210, 300]);
+  snap.set({ enabled: false, sizePx: 8 });
+  snap.setActive(null);
 });
 
 module.exports = () => report('move-hud');

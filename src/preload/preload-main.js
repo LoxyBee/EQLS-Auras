@@ -339,7 +339,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   toggleActionBarLock: (id) => ipcRenderer.invoke('actionBar:toggleLock', id),
   isActionBarLocked: (id) => ipcRenderer.invoke('actionBar:isLocked', id),
   resetActionBarPosition: (id) => ipcRenderer.invoke('actionBar:resetPosition', id),
-  nudgeActionBar: (id, dx, dy) => ipcRenderer.invoke('actionBar:nudge', { id, dx, dy }),
+  enterActionBarMoveMode: (id) => ipcRenderer.invoke('actionBar:enterMoveMode', id),
   setActionBarSlotIcon: (id, index, iconId) => ipcRenderer.invoke('actionBar:setSlotIcon', { id, index, iconId }),
   setActionBarOpacity: (id, opacity) => ipcRenderer.invoke('actionBar:setOpacity', { id, opacity }),
   setActionBarSlotName: (id, index, name) => ipcRenderer.invoke('actionBar:setSlotName', { id, index, name }),

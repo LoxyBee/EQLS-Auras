@@ -12,6 +12,7 @@ const {
 } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
+const positionSnap = require('./positionSnap');
 
 const widgetStore = new WidgetStore({ loadJson, saveJson });
 
@@ -50,12 +51,9 @@ const originXByWidget = new Map(); // id -> number
 // bug. Applied once, re-centred on the frozen box, when the aura is locked again. { contentWidth,
 // contentHeight, originX }.
 const pendingFitByWidget = new Map(); // id -> { contentWidth, contentHeight, originX }
-// Move HUD (moveHudWindow.js) - the one aura currently being positioned, and the grid-snap state
-// mirrored from main.js's persisted `overlaySnapGrid`. Snap only ever touches snapWidgetId, so a
-// bulk "Unlock all" drag is never snapped. movedGuard suppresses the extra 'moved' our own snap
-// setPosition fires.
-let snapGrid = { enabled: false, sizePx: 8 };
-let snapWidgetId = null;
+// Move HUD (moveHudWindow.js). Snap-to-grid state is shared with action bars via positionSnap.js
+// and only ever applies to the one thing being positioned. movedGuard suppresses the extra 'moved'
+// our own snap setPosition fires.
 const movedGuard = new Set();
 // Fired on every move of the aura's window (drag, nudge, Reset). main.js wires this so the move
 // HUD's x/y readout keeps up.
@@ -226,9 +224,9 @@ function createWidgetWindow(config) {
     let sy = y;
     // Snap the drop onto the grid, but only for the aura being positioned through the HUD - a
     // bulk "Unlock all" drag is left exactly where it lands.
-    if (snapGrid.enabled && config.id === snapWidgetId && (snapValue(x) !== x || snapValue(y) !== y)) {
-      sx = snapValue(x);
-      sy = snapValue(y);
+    if (positionSnap.active(config.id) && (positionSnap.snap(x) !== x || positionSnap.snap(y) !== y)) {
+      sx = positionSnap.snap(x);
+      sy = positionSnap.snap(y);
       movedGuard.add(config.id);
       win.setPosition(sx, sy);
       movedGuard.delete(config.id);
@@ -892,26 +890,6 @@ function getWidgetBounds(id) {
   return { x, y, width, height };
 }
 
-// Snap-to-grid for the move HUD (phase 2). Runtime state mirrored from main.js's persisted
-// `overlaySnapGrid` (declared with the other module state up top). Only applied to snapWidgetId.
-function setSnapGrid(cfg) {
-  snapGrid = {
-    enabled: !!(cfg && cfg.enabled),
-    sizePx: Math.max(2, Math.min(200, Math.round(Number(cfg && cfg.sizePx) || 8))),
-  };
-  return snapGrid;
-}
-function getSnapGrid() {
-  return { ...snapGrid };
-}
-function setSnapWidgetId(id) {
-  snapWidgetId = id || null;
-}
-function snapValue(v) {
-  const g = snapGrid.sizePx;
-  return Math.round(v / g) * g;
-}
-
 // Move an aura's window by (dx, dy) screen pixels and persist it. Used by the move HUD's nudge
 // arrows. A nudge is a deliberate placement, so it saves the same canonical anchor a real drag
 // does (see the 'moved' handler) - applyPendingFit re-centres on the LIVE window position on
@@ -922,9 +900,9 @@ function nudgeWidget(id, dx, dy) {
   const [x, y] = win.getPosition();
   let nx = x + Math.round(Number(dx) || 0);
   let ny = y + Math.round(Number(dy) || 0);
-  if (snapGrid.enabled && id === snapWidgetId) {
-    nx = snapValue(nx);
-    ny = snapValue(ny);
+  if (positionSnap.active(id)) {
+    nx = positionSnap.snap(nx);
+    ny = positionSnap.snap(ny);
   }
   win.setPosition(nx, ny);
   const originX = originXByWidget.get(id) || 0;
@@ -1482,9 +1460,6 @@ module.exports = {
   nudgeWidget,
   getWidgetBounds,
   setOnWidgetMovedFn,
-  setSnapGrid,
-  getSnapGrid,
-  setSnapWidgetId,
   setDisplayMode,
   setTimerFormat,
   setTextSize,

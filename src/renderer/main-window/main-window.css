@@ -1953,29 +1953,6 @@ label.disabled {
   color: var(--bg);
 }
 
-/* A compact 3x3 grid with only the 4 cardinal cells filled - a plus-shape pad for nudging the
-   Action Bar calibration overlay one pixel at a time (see initActionBarsPage). */
-.nudge-pad {
-  display: grid;
-  grid-template-columns: repeat(3, 28px);
-  grid-template-rows: repeat(3, 28px);
-  gap: 2px;
-}
-
-.nudge-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.nudge-up { grid-column: 2; grid-row: 1; }
-.nudge-left { grid-column: 1; grid-row: 2; }
-.nudge-down { grid-column: 2; grid-row: 3; }
-.nudge-right { grid-column: 3; grid-row: 2; }
-
 /* The 12 gem boxes - column count is set from JS (initActionBarsPage) to match the calibration
    bar's own "Icons per row" setting, so this mirrors the real overlay's layout instead of an
    unrelated fixed grid. --slot-cols defaults to 6 only for the instant before JS sets the real
