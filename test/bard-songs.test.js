@@ -74,29 +74,45 @@ test('#29 - a debuff bard song landing on an enemy shows on the aura, marked as 
   assert.equal(songs[0].spellCategory, 'debuff', 'so the aura draws the debuff-coloured border');
 });
 
-test('#29 - a no-duration DD debuff song (Denon\'s Desperate Dirge shape) still reaches the aura', () => {
-  // Reported live: the only debuff song cast was Denon's Desperate Dirge - a nuke-category song
-  // with NO duration - and it never showed. _trackBardSongOnTarget was only wired on _landOnAlly's
-  // finite-duration branch; a no-duration song fell through the instant branch and was dropped.
+test('#29 - a bard DAMAGE song (Denon\'s Desperate Dirge shape) never appears on the aura', () => {
+  // Reported live, correcting an earlier fix: DDD is a nuke-category song. It lands third-person on
+  // a mob but debuffs nothing - it must not show on the Bard Songs aura at all.
   const { engine, buffStore } = makeEngine();
   engine.setBardSongDebuffsWantedFn(() => true);
   buffStore.upsert('Test Desperate Dirge', 30, { othersLandingSuffix: ` staggers back a step.` });
   const e = buffStore.getByName('Test Desperate Dirge');
   e.kind = 'det';
   e.scaleCategory = 'nuke';
-  delete e.durationSec; // the real Denon's Desperate Dirge carries no duration field at all
+  delete e.durationSec;
   buffStore.markBardSong('Test Desperate Dirge');
 
   engine.handleLine(`${TS}You begin singing Test Desperate Dirge.`);
   engine.handleLine(`${TS}a dry bones skeleton staggers back a step.`);
+  assert.equal(engine.getActiveBardSongs().length, 0, 'a damage song is not a debuff song');
+});
+
+test('#29 - a maintained bard debuff song with NO cast-begin line (Largo\'s Melodic Binding) is still caught', () => {
+  // From the owner's real log: Largo's Melodic Binding re-lands every ~6s with no
+  // "You begin singing" line at all - so every cast-driven tier missed it. The third-person
+  // landing text is the only signal, matched directly against the roster's debuff-song suffixes.
+  const { engine, buffStore } = makeEngine();
+  engine.setBardSongDebuffsWantedFn(() => true);
+  buffStore.upsert('Test Melodic Binding', 12, { othersLandingSuffix: ` is bound by strands of test music.` });
+  const e = buffStore.getByName('Test Melodic Binding');
+  e.kind = 'det';
+  e.scaleCategory = 'debuff';
+  buffStore.markBardSong('Test Melodic Binding');
+
+  // no cast line - straight to the pulsing landing text
+  engine.handleLine(`${TS}a dry bones skeleton is bound by strands of test music.`);
   const songs = engine.getActiveBardSongs();
   assert.equal(songs.length, 1);
-  assert.equal(songs[0].name, 'Test Desperate Dirge');
+  assert.equal(songs[0].name, 'Test Melodic Binding');
   assert.equal(songs[0].isDebuff, true);
-  assert.equal(songs[0].instant, true, 'a no-duration song carries through as an instant, no fake countdown');
-  assert.equal(songs[0].remainingSec, null);
+  assert.equal(songs[0].allyName, 'a dry bones skeleton');
+  assert.ok(songs[0].remainingSec > 0, 'it has a real countdown');
 
-  // ...and when the target dies it goes, rather than lingering out its retention window
+  // clears when the target dies
   engine.handleLine(`${TS}a dry bones skeleton has been slain by Shara!`);
   assert.equal(engine.getActiveBardSongs().length, 0, 'the debuff song clears when its target dies');
 });
