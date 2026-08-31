@@ -5566,23 +5566,26 @@ function initWidgetsPanel() {
     // The direction choice only means anything while grouping is on, so it
     // appears and disappears with the toggle rather than sitting there inert.
     allyDirectionRow.style.display = groupAllyCheckbox.checked ? '' : 'none';
-    window.eqTracker.setWidgetGroupAllyBuffs(selectedId, groupAllyCheckbox.checked);
+    window.eqTracker.setWidgetGroupAllyBuffs(selectedId, groupAllyCheckbox.checked).then(updateLocalWidgetCache);
   });
   allyDirectionRadios.forEach((radio) => {
     radio.addEventListener('change', () => {
-      if (radio.checked) window.eqTracker.setWidgetGroupAllyDirection(selectedId, radio.value);
+      if (radio.checked) window.eqTracker.setWidgetGroupAllyDirection(selectedId, radio.value).then(updateLocalWidgetCache);
     });
   });
   hideAllyNameCheckbox.addEventListener('change', () => {
-    window.eqTracker.setWidgetHideAllyNameOnTile(selectedId, hideAllyNameCheckbox.checked);
+    window.eqTracker.setWidgetHideAllyNameOnTile(selectedId, hideAllyNameCheckbox.checked).then(updateLocalWidgetCache);
   });
-  // #29 - Bard Songs aura's hybrid buff/debuff options.
+  // #29 - Bard Songs aura's hybrid buff/debuff options. .then(updateLocalWidgetCache) keeps the
+  // renderer's own widget cache in step with the store so switching away and back re-reads the
+  // real value, not a stale pre-toggle snapshot (see updateLocalWidgetCache's comment - this is
+  // the gap it was written for, applied here after it was reported live on the debuff-songs toggle).
   showDebuffSongsCheckbox.addEventListener('change', () => {
     splitSongsRowEl.style.display = showDebuffSongsCheckbox.checked ? '' : 'none';
-    window.eqTracker.setWidgetShowDebuffSongs(selectedId, showDebuffSongsCheckbox.checked);
+    window.eqTracker.setWidgetShowDebuffSongs(selectedId, showDebuffSongsCheckbox.checked).then(updateLocalWidgetCache);
   });
   splitSongsCheckbox.addEventListener('change', () => {
-    window.eqTracker.setWidgetSplitSongsByType(selectedId, splitSongsCheckbox.checked);
+    window.eqTracker.setWidgetSplitSongsByType(selectedId, splitSongsCheckbox.checked).then(updateLocalWidgetCache);
   });
 
   timerTextColorPicker.addEventListener('input', () => {
