@@ -1776,6 +1776,31 @@ label.disabled {
   font-size: 12px;
 }
 
+/* Every native <select> in the app, so none of them fall back to the OS's default grey control.
+   The closed control is fully themed here; the drop-down list of <option>s is still drawn by the
+   OS on Windows and can't be recoloured - the searchable-dropdown widget (searchDropdown.js) is
+   what replaces that for the long lists. */
+select {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  padding: 3px 22px 3px 6px;
+  font-size: 12px;
+  font-family: var(--sans);
+  border-radius: 3px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M0 0l5 6 5-6z' fill='%23cf9a4a'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+}
+select:hover { border-color: var(--accent); }
+select:focus { outline: none; border-color: var(--accent); }
+select:disabled { opacity: 0.5; cursor: default; }
+/* The list is OS-drawn on Windows and mostly ignores this, but Chromium honours it where it can. */
+select option { background: var(--panel); color: var(--ink); }
+
 .known-buff-add {
   margin: 4px 0 10px;
 }
