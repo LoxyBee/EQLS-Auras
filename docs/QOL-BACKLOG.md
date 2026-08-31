@@ -8,11 +8,14 @@ supplying it); the retired `FEATURES.md` / `NOTES-STATUS.md` / `HANDOFF.md` are 
 45 items, organised by area. Items 1–32 are the original batch; 33–43 were added 30 Aug (Section
 C); 44–45 are enhancements that fell out of that work.
 
-**Done:** #1, #2, #3 (a/b/c), #4, #5, #7, #8, #9, #10, #12, #14, #17, #18, #22, #25, #28, #30, #31,
-#32, #39, #43, #44, #45, plus the lockout / log-tools batch (Section D). **#13** declined (offline
-app). **#15** superseded by #45. **#38** withdrawn (built, then pulled — recovery too short to
-render on a 1s overlay tick).
-**Still open:** #6, #11, #16, #19, #20, #21, #23, #24, #26, #27, #29, #33–37, #40, #41, #42.
+**Done:** #1, #2, #3 (a/b/c), #4, #5, #7, #8, #9, #10, #11, #12, #14, #16, #17, #18, #19, #20, #21,
+#22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #36, #39, #43, #44, #45, plus the
+lockout / log-tools batch (Section D). **#13** declined (offline app). **#15** superseded by #45.
+**#38** withdrawn (built, then pulled). **#34, #40, #41** dropped by the owner (31 Aug — #34 solved
+another way, #40 purpose unclear, #41 "old, not needed").
+**Still open:** #6 / #42 (profile-swap hotkey/command — parked, low priority), #35 (invis-drop
+body-pull tell — parked, low priority), #37 (pet-is-attacking tracker — built on an unmerged
+branch, not in this release).
 
 Each item keeps the original ask. Tags describe **what kind of work it is**, not a judgement:
 
@@ -101,8 +104,13 @@ without hiding any tiles.
 
 ## B. Smaller things
 
-### 11. Drag-to-move action bar gem-slot settings — NEW
+### 11. Drag-to-move action bar gem-slot settings — NEW — DONE
 Position the action-bar gem-slot settings by dragging.
+*Fixed:* drag one gem box onto another on an action bar's settings grid to **swap** the two slots
+(icon / name / border / cooldown / toggle trade places) — slots between them are untouched, it is
+not a list reorder. `ActionBarStore.swapSlots` → `actionBarManager.swapSlots` → `actionBar:swapSlots`
+IPC → `swapActionBarSlots` preload. (Wording was untraceable to an original note — the owner
+confirmed "swap, not reorder".)
 
 ### 12. Auras stop when you die — NEW — DONE
 When the player dies, active auras/timers should stop rather than keep counting.
@@ -133,8 +141,13 @@ alert sounds from one aura (across land/expire/warning). The motivating case (a 
 beeping on every refresh) is solved by capping the rate, not by adding a loop. Reopen only if a
 true metronome is still wanted for something.
 
-### 16. Remember stances & invocations between logouts — NEW
+### 16. Remember stances & invocations between logouts — NEW — DONE
 Persist the user's chosen stances / invocations across restarts. (Depends on #20 / #21 existing.)
+*Fixed:* the active stance / invocation is now persisted by toggle **name** (survives re-laying-out
+the bars, which a slot key wouldn't), restored at startup and resolved against the current bar
+layout. New store key `activeAbilityGroups`; `abilityGroups.js` gains `activeNameByGroup`,
+`setPersistFn()`, `restore()`. Same "a stance is a character state you're still in" reasoning as
+the startup zone recovery.
 
 ### 17. Song durations round to the nearest 6 seconds — CHANGE — DONE
 Song durations run in 6-second intervals. A mote-upgraded song duration must land on a 6s boundary.
@@ -148,15 +161,27 @@ at the top), `app:getChangelog` IPC, rendered on the About page under "What's ch
 (`initChangelog()` → `#changelog-body`, `textContent`). The Documentation session owns the
 content — it updates the top entry (new features first, then fixes) in the pre-PR doc pass.
 
-### 19. Indicator for whether an action-bar slot has a skill bound — NEW
+### 19. Indicator for whether an action-bar slot has a skill bound — NEW — DONE
 Show which action-bar slots currently have an active skill bound to them.
+*Fixed:* a small accent dot on any gem box that has anything configured (icon, name, cooldown,
+toggle, border, background, or disabled) — so a bar's real layout stands out from the empty
+padding slots. Settings-panel only. (Also an untraceable-wording judgement call — owner may want
+to confirm or redo.)
 
-### 20. Balanced / Defensive / Mage Hunter / Striker stances not selectable — DATA
+### 20. Balanced / Defensive / Mage Hunter / Striker stances not selectable — DATA — DONE
 None of these stances can be selected. They should be.
-*Needs:* exact in-game names + effect data to add them to the roster source.
+*Fixed:* `roster-overrides.json` can now **add** spells (not just edit existing ones), so 8 stances
+and 7 invocations were added to the roster by name. The `actionBar:getKnownAbilityGroups` picker
+is now built **from the roster** (category Stance / Invocation) unioned with the `KNOWN_` seed
+lists — a hardcoded 3 + 6 list was the actual reason the extra stances "couldn't be selected".
+6 of the 15 landing texts are log-confirmed; the other 9 are **derived** from the confirmed
+template (`"You assume a/an <x> stance."` / `"You begin reciting the <x> invocation."`) and marked
+`DERIVED — correct this line if wrong` in `roster-overrides.json` — they need one live in-game
+confirm each (TESTING.md).
 
-### 21. Spellblade and Empowering Invocations missing — DATA
-Add them to the roster source. *Needs:* in-game names + data.
+### 21. Spellblade and Empowering Invocations missing — DATA — DONE
+Add them to the roster source.
+*Fixed:* covered by the same change as #20 — see above.
 
 ### 22. Per-line centred justification for text-only auras — CHANGE — DONE 30 Aug
 Each line of a text-only aura should be centre-justified on its own, even when several lines are
@@ -167,16 +192,28 @@ cross-axis alignment shorter lines sit left even under centre/right); `applyConf
 leaving text-feed mode. Completes the already-wired `textJustify` setting (`test/text-justify.test.js`,
 8 cases, green). *(Change was authored ~27 Aug and sat uncommitted; committed 30 Aug.)*
 
-### 23. Scheduled automatic log split — NEW
+### 23. Scheduled automatic log split — NEW — DONE (reframed)
 Set a time of day to auto-split the log (useful for lockout tracking). A setting in Settings,
 mirrored into the tracker tab.
-*Today:* `logSplitter.js` does continuous per-day splitting; there's no scheduled manual split.
+*Fixed:* the original wording traced to nothing (not the owner's note 23, which was text-only
+auras). The owner's actual intent: set **when the per-day split file rolls over**. `logSplitter`'s
+`extractDateKey` now takes a `dayStartHour` (0–23, default 0 = calendar midnight); a non-zero value
+shifts each line's stamp back that many hours before bucketing, so a raid past midnight stays in
+one file dated for the night it started. Live log and real timestamps are untouched — it only
+decides which copy-file a line lands in, and does **not** affect weekly rotation or lockout
+tracking. New "New day starts at:" dropdown on the Log page; store key
+`splitSettings.splitDayStartHour`. (Same change removed the dead session-gap split option.) The
+"mirrored into the tracker tab" part was not done — the setting lives on the Log page only.
 
-### 24. Auto-archive logs / prompt on load when the log is big — NEW
+### 24. Auto-archive logs / prompt on load when the log is big — NEW — DONE
 On app load, if the log is large enough to benefit from archiving, either auto-archive or prompt
 the user. Must fire **even on first load**, in case the user has never archived.
-*Today:* `logService.js` has manual "Archive log" (copy + truncate); nothing checks size on
-startup.
+*Fixed:* on launch, if the live log has grown past 50 MB (on size alone — no calendar or rotation
+timing, so it fires for someone who has never archived), an in-app modal offers "Trim to this
+week". That routes through the lockout-safe `trimAtBoundary` (archive everything before this
+week's reset, keep the current lockout week in the live log) rather than a whole-log archive that
+would blank the Lockouts grid. A 7-day re-nudge cap (`logArchivePromptDismissedAt`); a successful
+trim clears the dismissal so a later regrowth re-nudges.
 
 ### 25. Line-aura images paint on top of their coloured border — FIX — DONE 30 Aug
 On line (list) auras the icon image sat above the coloured category border; the border should be
@@ -185,28 +222,37 @@ higher.
 child, instead of as an inset `box-shadow` the flex-sibling icon could cover. Icon tiles are
 unchanged (nothing paints over their box-shadow). `overlay.css` only.
 
-### 26. "You feel smaller" can only ever be Shrink, never Tiny Companion — CHANGE
+### 26. "You feel smaller" can only ever be Shrink, never Tiny Companion — CHANGE — DONE
 The disambiguation always resolves this landing text to Shrink.
-*Today verified:* **both** Shrink and Tiny Companion are in the roster, both with landing text
-`"You feel smaller."`, both with no duration set — so it's genuine shared/ambiguous text
-(gotcha #2) and resolution always picks the same one. Want Tiny Companion reachable. Both also
-need a real duration.
+*Fixed (the other way round):* Tiny Companion `targets` a **Pet**, so it can never land on the
+player — the bug was that the disambiguation was queuing a real Shrink-vs-Tiny-Companion prompt at
+all. `buffEngine` now drops candidates whose roster `targets` is Pet / Animal / Undead / Construct
+/ Corpse / Plant before the self-cast tiers (a denylist, so a custom entry with no `targets` is
+still considered). Shrink now resolves alone with no prompt. *(A real duration for either spell is
+a separate DATA item and still open.)*
 
-### 27. "No active on this aura" for bard songs — CLARIFY
+### 27. "No active on this aura" for bard songs — CLARIFY — DONE
 Original note: *"NO ACTIVE ON THIS AURA BUFFS FOR BARD SONGS."*
-I'm not sure which you mean:
-- (a) the Bard Songs aura should show a "no active buffs on this aura" empty state like other
-  auras, or
-- (b) bard songs aren't registering as active on the Bard Songs aura at all.
+*Fixed:* it was meaning (b) — the "Active on this aura" card in the Bard Songs premade's settings
+showed nothing. The settings window had no bard-songs feed (no preload bridge; it fell through to
+self buffs) and `filterActiveBuffsForWidget` applied the inherited `hideBardSongs: true` default
+which strips every row. Added the IPC / preload / renderer feed (`getActiveBardSongs` +
+`onActiveBardSongsChanged` + `removeActiveBardSong`, mirroring ally-buffs) and a `bardSongs` bypass
+in `filterActiveBuffsForWidget`.
 
 ### 28. Cassindra's Chant of Clarity set to 1 min — DATA — RESOLVED 30 Aug
 Showed a 1-minute duration in-app; wrong.
 *Fixed:* you confirmed the real duration is **12s**; applied in `tools/roster-overrides.json` +
 code (session eq-tracker-d3). Kept here for the record — drop from the active list.
 
-### 29. Debuff bard songs should be tracked — NEW
+### 29. Debuff bard songs should be tracked — NEW — DONE
 Debuff-type bard songs (mez / slow / snare / dot songs) should be tracked on the Bard Songs aura.
-*Today:* only `kind:'buff'` songs feed the Bard Songs aura; debuff songs are not tracked there.
+*Fixed:* the Bard Songs aura is now a hybrid buff/debuff feed. A bard song that lands third-person
+(a debuff song on an enemy) is mirrored into `bardSongs` keyed by target, with `isDebuff` +
+`spellCategory: 'debuff'` (so it gets the debuff-coloured border automatically). Two per-aura
+options, both **off by default**: `showDebuffSongs` (opt them into the feed) and `splitSongsByType`
+(group buff / debuff songs into their own sections). Settings block `#widget-bard-song-settings`,
+`SHAPE_FIELDS` key `bard-song-options`.
 
 ### 30. Community shorthand / nicknames for zones in `eqtm` — NEW — DONE
 Recognise community nicknames and shorthand for zones ("inny", etc.), and let the picker search
@@ -242,44 +288,47 @@ A raw note-dump (33–43), plus 44–45 which came out of building it. Same tag 
 Several need one more sentence from you before they can be scoped — flagged inline and repeated
 under "Where I still need input".
 
-### 33. Zone-named kill tracker — NEW
-A widget that counts mob kills and labels the count with the current zone — e.g.
-*"Plane of Fire — 47 kills"*. Segments on zone change.
-*Today:* `damageEngine.js` already reads death lines and derives friend/enemy direction
-(gotcha #20); `widgetManager` / `customTimerEngine` already track the current zone. This is a new
-counter widget stacked on both — no new log parsing, mostly a new widget kind + overlay render +
-a `SHAPE_FIELDS` entry.
-*Open:* per-zone running totals kept for the whole session, or just the current zone reset on
-entry? Call out named-boss kills separately?
+### 33. Zone-named kill tracker → per-zone named-kill board — NEW — DONE
+Original ask was a kill counter; the owner's actual scope was **per-zone named tracking** — enter
+a tracked zone and every named mob shows "up"; a slain line greys it; re-enter a fresh instance
+and the board resets.
+*Fixed:* new `raidNamed` buff source + `raid-named-builtin` aura kind + `SHAPE_FIELDS` entry;
+`src/shared/data/raidZoneNameds.js` (16 zones — the 6 Voidling raid zones + 8 surveyed dungeons:
+Mistmoore, Lower Guk, Crushbone, Befallen, Blackburrow instanced; Najena, Splitpaw, the Warrens
+open-world with per-named respawn countdowns) and `src/main/raidNamedTracker.js` (own engine +
+`changed` event). Boss / mini / lesser 3-tier sort. Apostrophes are matched as the backtick the
+EQL client emits. **Not covered** (a deliberate scope line): ~50 no-named overworld / city zones,
+and Temple of Cazic-Thule / Upper Guk / RunnyEye / Unrest (eqlwiki-only, not eqlsource-surveyed).
+An earlier build restricted the board to raid zones behind a "Voidling danger" gate — that was an
+over-narrowing and was discarded; **do not rebuild it**.
 
-### 34. Bard 6-second pulse timer tracker — NEW
-A metronome widget showing the bard song pulse cadence — a 6s repeating countdown so you can see
-when the next pulse tick lands (and whether a fading song gets one more tick).
-*Today:* the 6s pulse is confirmed (note 24 — 314,324 gaps measured at exactly 6s); nothing
-surfaces it. Needs an anchor line, then free-run every 6s, re-anchored on each observed pulse.
-*Open:* anchor off any song-pulse line, or off your own song specifically?
+### 34. Bard 6-second pulse timer tracker — NEW — DROPPED
+A metronome widget showing the bard song pulse cadence.
+*Dropped by the owner (31 Aug) — solved another way.*
 
-### 35. First-hit tracker: also flag invis dropping before the boss aggros — NEW
+### 35. First-hit tracker: also flag invis dropping before the boss aggros — NEW — PARKED
 An invis / IVU wearing off *before* a mob aggros is itself a body-pull tell, same as a first
 melee/spell hit. The first-hit tracker should treat "invis faded → then aggro" as a body pull.
-*Today:* the first-aggro premade is note #2, which you're bringing yourself — this hangs off that.
-`buffParser.js` would need the invis-fade wordings.
-*Needs:* the exact invis-fade lines from your log; and what "before the boss aggros" is measured
+*Parked (low priority, 31 Aug)* — hangs off the owner's own first-aggro premade (note #2).
+*Needs:* the exact invis-fade lines from the log; and what "before the boss aggros" is measured
 against (an aggro line vs. first damage).
 
-### 36. Loss-of-control widget — fear / charm / mez on you — NEW
-One widget that lights up when the player is feared, charmed, or mezzed (i.e. can't act), with a
-countdown when the duration is knowable and just a state flag when it isn't.
-*Today:* the app tracks buffs/debuffs but has no "you are CC'd" concept. The self-fear / self-mez /
-self-charm landing+fade lines are in the logs (notes 11/16/17 — 251 mez landings, 129 charms);
-the roster carries `scaleCategory:'charm'`/`'mez'`/fear entries to watch.
-*Open:* countdown or on/off alert only? Include root / snare / stun, or strictly the three named?
+### 36. Loss-of-control widget — fear / charm / mez on you — NEW — DONE
+One widget that lights up when the player is feared, charmed, or mezzed (i.e. can't act).
+*Fixed:* a text-alert premade (Event alerts group) showing STUNNED / MESMERIZED / CHARMED / AFRAID
+/ ROOTED / SNARED, cleared by the fade line — 15 exact trigger/ended pairs (`LOSS_OF_CONTROL` in
+`widgetStore.js`), same "watch a wording set under one tile" pattern as Charm Broke. It also
+catches the game's **generic** `"You lose control of yourself!"` (cleared by `"You have control of
+yourself again."`, labelled CONTROLLED, 45s safety net) — the game writes that when a charm lands
+on the player with no spell-specific line. `widgets.json` schema migration adds the CONTROLLED
+trigger to any existing Loss of control aura that lacks it.
 
-### 37. Pet-is-attacking tracker — NEW
+### 37. Pet-is-attacking tracker — NEW — BUILT (not in this release)
 An indicator for whether your pet is currently engaged — pet-attack / pet-target lines vs.
 pet-returning / pet-dead lines.
-*Needs:* the pet combat wordings from your log (pet hit, pet taunt / "My leader is…", pet death,
-`/pet back off` and `/pet get lost` acknowledgements).
+*Built on an unmerged branch* (`TEXT_AURA_PRESETS.petStatus`: PET ENGAGED / IDLE / GONE off the
+pet's own speech lines, Event alerts group) — not part of the pre-PR `integration` batch, so not
+shipping yet. Fold into the next batch.
 
 ### 38. GCD tracker — NEW — WITHDRAWN
 A "Global recovery (GCD)" premade — a short countdown of the recovery time between casts.
@@ -300,18 +349,13 @@ overwrites a file already there, never touches user files). `defaultPickerDir()`
 install `sounds/` folder is purely the seed source now. One folder family with auras / profiles →
 one backup location (#3a/#3b), survives uninstall, nothing written to Downloads.
 
-### 40. Memmed-spell set checker — "if these spells are memmed, show the set" — NEW
-Define named gem sets ("Raid heals", "Burn", "Utility"…). When the currently-memorised spells
-match a defined set, show that set's name.
-*Today:* `currentlyMemorized` is tracked and persisted per profile (gotchas #16, #9) and shown as
-"Currently memorized"; there's no concept of a named set or of matching against one.
-*Open:* exact match on all 14 gems, or "contains these key spells"? Shows where — main window, or
-an overlay aura?
+### 40. Memmed-spell set checker — "if these spells are memmed, show the set" — NEW — DROPPED
+Define named gem sets; show the set's name when the memorised spells match.
+*Dropped by the owner (31 Aug): "i don't know what this was for."*
 
-### 41. New mez premade — NEW
+### 41. New mez premade — NEW — DROPPED
 A second mez premade, distinct from the Mesmerize worked example (#17).
-*Needs:* what it does differently — a different spell, group / AoE mez, a break alert rather than
-a timer, per-mob vs. one-tile (note #12)?
+*Dropped by the owner (31 Aug): "old, not needed."*
 
 ### 42. Chat-read command and/or hotkey for macro-driven profile swap — folds into #6
 Your open question ("chat read for macro profile swap? hotkey?") *is* backlog item **#6**
@@ -369,13 +413,10 @@ parser provenance is `docs/EVIDENCE.md`.
   names.
 
 **Related numbered items:**
-- **#23** (scheduled *time-of-day* auto-split, mirrored into the tracker tab) — **still open.**
-  This batch added a *manual* trim and an automatic *weekly* rotation at the reset boundary,
-  which is related but not a user-set daily schedule. May be lower-value now — the owner's call.
-- **#24** (auto-archive / prompt on load when the log is big, even on first load) — **partly.**
-  Weekly rotation is on by default, so last week auto-archives on load once the reset has passed,
-  and "Trim log to this week" is a prompt surface when the log spans a prior week. Not done: a
-  *size-threshold* check on first load regardless of reset timing.
+- **#23** — **DONE** in a later batch as a user-set per-day split rollover hour (not a scheduled
+  archive). See #23 above.
+- **#24** — **DONE** in a later batch: a 50 MB size check on launch that offers a week-safe trim.
+  See #24 above.
 
 ---
 
@@ -384,58 +425,35 @@ parser provenance is `docs/EVIDENCE.md`.
 - Several Claude sessions edit this tree in parallel — check `ListAgents` before touching a hot
   file (`index.html`, `main-window.js`, `overlay.js`, `buffEngine.js` are the usual ones), and
   route doc/backlog edits through the **Documentation** session (see `CLAUDE.md`).
-- `#20` / `#21` need new roster entries — `tools/roster-overrides.json` only *edits* existing
-  spells, it can't add them, so those wait on a spreadsheet change.
+- The roster spreadsheet is retired (31 Aug). `src/shared/data/buffs.json` is the roster of
+  record; `tools/roster-overrides.json` is the one place it's edited and can now both `set`
+  (correct an existing entry) and `add` (a brand-new spell). Rebuild with
+  `node tools/build-roster.js --write`.
 
 ---
 
 ## Implementation order
 
-The cheap-wins and quick-wins phases are **done** (see the "Done" list at the top). What's left,
-roughly cheapest first:
+Almost everything is **done** (see the "Done" list at the top). What genuinely remains:
 
-### Profile & app chrome
-- **#6 + #42** profile-cycle hotkey and/or `/tell` command word for macro profile swap
-  *(need your call: hotkey, chat command, or both)*
+### Parked — low priority, the owner's call to revive
+- **#6 / #42** — profile-cycle hotkey and/or a `/tell` command word for macro profile swap.
+  Still needs the owner's call: hotkey, chat command, or both.
+- **#35** — invis-drop-before-aggro body-pull tell → hangs off the owner's own first-hit tracker
+  (note #2). Needs the exact invis-fade log wordings and what "before aggro" is measured against.
 
-### New tracker widgets  *(build the shared "counter / state" widget kind + overlay render +
-`SHAPE_FIELDS` entry once, then the rest stack on it, cheapest first)*
-- **#34** bard 6s pulse tracker — pulse cadence is already confirmed, just needs surfacing
-- **#36** loss-of-control widget (fear / charm / mez on you)
-- **#37** pet-is-attacking tracker  *(need: pet combat wordings from your log)*
-- **#33** zone-named kill tracker — reuses `damageEngine` death lines + zone tracking
-- **#40** memmed-spell set checker — reuses `currentlyMemorized`
-- **#41** second mez premade *(need the spec — what's different from #17's worked example)*
+### Built but not in this release
+- **#37** — pet-is-attacking tracker. Built on an unmerged branch; not part of the pre-PR
+  `integration` batch.
 
-### Blocked on your input
-- **#20 / #21** stances & invocations — need in-game names + effect data (spreadsheet change,
-  `roster-overrides.json` can't add new spells)
-- **#26** Shrink / Tiny Companion — real durations + making Tiny Companion reachable (detection)
-- **#27** bard-song "no active" — which of the two meanings?
-- **#29** debuff bard songs tracked on the Bard Songs aura — need a sample log line
-- **#35** invis-drop-before-aggro body-pull tell → your own first-hit tracker; need the
-  invis-fade wordings
-- **#41** new mez premade — need the spec (what's different from #17)
-
-### Bigger, each mostly self-contained
-- **#24 + #23** log management: size-check-on-load auto-archive + scheduled time-of-day split
-  (the lockout batch did a manual trim + automatic weekly rotation — see Section D)
-- **#11 + #19** action-bar gem-slot drag positioning + bound-skill indicator
-- **#16** persist stances / invocations across restarts  → #20 / #21
+### Data follow-up (not doc work — a live-play task)
+- 9 of the 15 stance / invocation landing texts (#20 / #21) are **derived**, not log-confirmed.
+  Each needs one in-game use to confirm the wording; a wrong one gets its `roster-overrides.json`
+  `why` line corrected. Listed in `docs/TESTING.md`.
 
 ---
 
 ## Where I still need input
 
-- **#27** — which of the two meanings above?
-- **#20 / #21** — in-game names and effect data for the missing stances / invocations.
-- **#26** — the correct duration for Shrink / Tiny Companion, if you know it.
-- **#29** — a log line or two showing a debuff song you want caught.
 - **#6 / #42** — profile swap: hotkey, in-game `/tell` command word, or both?
-- **#33** — per-zone running totals for the session, or just the current zone reset on entry?
-- **#34** — anchor the 6s pulse off any song-pulse line, or off your own song only?
 - **#35** — the exact invis-fade log wordings; and "before aggro" measured against what line?
-- **#36** — countdown or on/off only; and do root / snare / stun count as loss of control?
-- **#37** — the pet combat log wordings (attack, taunt, death, back-off ack).
-- **#40** — match on all 14 gems or on key spells; show in the main window or an aura?
-- **#41** — what does the new mez premade do that the Mesmerize worked example (#17) doesn't?
