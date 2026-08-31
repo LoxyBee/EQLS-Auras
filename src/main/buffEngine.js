@@ -175,6 +175,13 @@ const MEZ_LANDING_SUFFIX = ' has been mesmerized.';
 // ordinary spell already uses, and because the pulse interval itself is wanted elsewhere.
 const SONG_PULSE_SEC = 6;
 const SONG_PULSE_TOLERANCE_SEC = 1;
+// Standalone pulse detector (layer 2 of the 31 Aug "Psalm not on the song list" report). An
+// ambiguous SELF landing that would otherwise be IGNORED - no spellbook narrowing, no burst - is
+// watched: if the same text re-lands on the 6s song cadence this many times in a row and exactly
+// one of its candidates is a bard song, that song is the only thing that could have re-landed on
+// its own, so land it. Independent of the spellbook signal, which is what makes it the belt to
+// that signal's braces.
+const SONG_PULSE_CONFIRM_HITS = 3;
 
 // A character has fourteen spell gems, so at most fourteen spells can be memorized at once.
 //
@@ -277,6 +284,9 @@ class BuffEngine extends EventEmitter {
     this.activeBuffs = new Map(); // lowercased name -> { name, durationSec, expiresAt, endedText }
     this.unknownBuffs = new Map(); // lowercased name -> { name, lastSeenAt, dismissed }
     this.ambiguousCasts = new Map(); // landingText -> { text, candidateNames, lastSeenAt }
+    // Standalone song-pulse watch - see SONG_PULSE_CONFIRM_HITS. landingText -> { name, lastAt, hits }.
+    // Not persisted: it is a few seconds of live cadence, meaningless across a restart.
+    this._songPulseWatch = new Map();
     // landingText -> buffName. Persisted (unlike recentOtherCasts, which is
     // live group-membership state and correctly resets every launch) since
     // these are the user's own deliberate answers to "which buff was this"
@@ -1578,7 +1588,18 @@ class BuffEngine extends EventEmitter {
           }
         }
       } else {
-        this._debugLog(`IGNORED "${stripped}" - ambiguous, not your spellbook, track others OFF`);
+        // Before giving up: is this a maintained bard song pulsing on its 6s cadence? That is the
+        // one thing that re-lands on its own, and it needs no spellbook to recognise (layer 2).
+        const pulsedSong = this._pulsedAmbiguousSong(stripped, selfPlausible);
+        if (pulsedSong) {
+          this._debugLog(
+            `LANDED "${pulsedSong.name}" - ambiguous text "${stripped}" re-landed on the 6s song cadence ` +
+              `${SONG_PULSE_CONFIRM_HITS}x; a bard song is the only thing that does that on its own`
+          );
+          this._land(pulsedSong);
+        } else {
+          this._debugLog(`IGNORED "${stripped}" - ambiguous, not your spellbook, track others OFF`);
+        }
       }
       this._checkForEndedBuffs(line);
       return;
@@ -1665,6 +1686,8 @@ class BuffEngine extends EventEmitter {
       if (this.pendingCast.timer) clearTimeout(this.pendingCast.timer);
       this.pendingCast = null;
     }
+    // Any in-flight song-pulse cadence is broken by dying and re-getting buffed.
+    this._songPulseWatch.clear();
     return changed;
   }
 
@@ -2563,6 +2586,35 @@ class BuffEngine extends EventEmitter {
     if (songs.length !== 1) return null;
     if (songs.length === candidates.length) return null;
     return songs[0];
+  }
+
+  // Layer 2 of the 31 Aug report. Watches an ambiguous self landing that is about to be IGNORED:
+  // returns the bard song to land once the same text has re-landed on the 6s cadence
+  // SONG_PULSE_CONFIRM_HITS times and exactly one candidate is a song (nothing else re-lands on
+  // its own). Independent of the spellbook and burst - it exists to catch a maintained bard song
+  // even when the spellbook signal is down. Any break in the cadence, or a different song
+  // suddenly matching the text, resets the count.
+  _pulsedAmbiguousSong(text, candidates) {
+    const song = this._songAmongSplitCandidates(candidates);
+    if (!song) {
+      this._songPulseWatch.delete(text);
+      return null;
+    }
+    const now = Date.now();
+    const w = this._songPulseWatch.get(text);
+    const onCadence =
+      w && w.name === song.name && Math.abs((now - w.lastAt) / 1000 - SONG_PULSE_SEC) <= SONG_PULSE_TOLERANCE_SEC;
+    if (!onCadence) {
+      this._songPulseWatch.set(text, { name: song.name, lastAt: now, hits: 1 });
+      return null;
+    }
+    w.lastAt = now;
+    w.hits += 1;
+    if (w.hits >= SONG_PULSE_CONFIRM_HITS) {
+      this._songPulseWatch.delete(text);
+      return song;
+    }
+    return null;
   }
 
   // attributedTo (P0b): who likely caused this, when known - e.g. the ally whose burst opened the
