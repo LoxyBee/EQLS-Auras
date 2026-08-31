@@ -785,6 +785,8 @@ function updateRef(ref, buff, isIcon) {
   const low = !isZeroDurationPing && !buff.infinite && threshold > 0 && buff.remainingSec <= threshold;
   ref.root.classList.toggle('low', low);
 
+  const rampAmber = rampColorFor(buff, low, isZeroDurationPing, threshold);
+
   // Note 10: "if the tile doesn't visibly say which phase it is in, the number on screen is
   // actively misleading". A cooldown counts down to when you CAN use something; a duration counts
   // down to when you can no longer rely on it. Same tile, same digits, opposite meanings - so the
@@ -811,7 +813,7 @@ function updateRef(ref, buff, isIcon) {
   if (isIcon) {
     updateTileIcon(ref, buff);
     updateTileShade(ref, buff);
-    applyTilePositionedTextStyle(ref.timeEl, low, currentConfig.contentAnchor || 'bottom-center', currentConfig.textSize || 10, false, currentConfig.timerTextColor);
+    applyTilePositionedTextStyle(ref.timeEl, low, currentConfig.contentAnchor || 'bottom-center', currentConfig.textSize || 10, false, rampAmber || currentConfig.timerTextColor);
     if (ref.labelEl) {
       applyTilePositionedTextStyle(
         ref.labelEl,
@@ -835,8 +837,22 @@ function updateRef(ref, buff, isIcon) {
             ? Math.max(0, Math.min(100, (buff.remainingSec / buff.durationSec) * 100))
             : 0;
     ref.barEl.style.width = `${pct}%`;
+    // QOL #47 - list mode. Empty string clears the override so the row falls back to its CSS
+    // colour (--timer-text-color, or the red .buff-row.low .time rule when low).
+    ref.timeEl.style.color = rampAmber || '';
     updateRowIcon(ref, buff);
   }
+}
+
+// QOL #47 - the amber heads-up tier for the timer text. Between the expiring-soon flash threshold
+// and twice it, fade the text to amber so how-close-to-expiry reads at a glance, not only at the
+// red flash right at the end. Same guards as `low` (an infinite buff has a null remainingSec, a
+// zero-duration ping is always "at" 0, a damage row carries valueText not a countdown); never
+// drawn over the red - `.low` wins - and only when the aura opted in.
+function rampColorFor(buff, low, isZeroDurationPing, threshold) {
+  if (!currentConfig.timerColorRamp || low || isZeroDurationPing || buff.infinite) return null;
+  if (buff.valueText != null || !(threshold > 0) || typeof buff.remainingSec !== 'number') return null;
+  return buff.remainingSec <= threshold * 2 ? '#ffbe4d' : null;
 }
 
 // 'default' leaves the array in whatever order it arrived in (cast order,

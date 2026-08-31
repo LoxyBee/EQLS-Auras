@@ -1488,6 +1488,7 @@ function initWidgetsPanel() {
   const lowThresholdValueEl = document.getElementById('widget-low-threshold-value');
   const landingGlowCheckbox = document.getElementById('widget-landing-glow-checkbox');
   const landingGlowLabelEl = document.getElementById('widget-landing-glow-label');
+  const timerColorRampCheckbox = document.getElementById('widget-timer-color-ramp-checkbox');
   const soundLandCheckbox = document.getElementById('widget-sound-land-checkbox');
   const soundLandLabelEl = document.getElementById('widget-sound-land-label');
   const soundExpireCheckbox = document.getElementById('widget-sound-expire-checkbox');
@@ -2843,6 +2844,7 @@ function initWidgetsPanel() {
     lowThresholdSlider.value = lowThreshold;
     lowThresholdValueEl.textContent = lowThreshold === 0 ? 'off' : `${lowThreshold}s`;
     landingGlowCheckbox.checked = widget.landingGlowEnabled !== false;
+    if (timerColorRampCheckbox) timerColorRampCheckbox.checked = !!widget.timerColorRamp;
     mergeCheckbox.checked = !!widget.mergeSameDuration;
     categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
     const borderWidth = typeof widget.categoryBorderWidthPx === 'number' ? widget.categoryBorderWidthPx : 1;
@@ -4449,6 +4451,11 @@ function initWidgetsPanel() {
   landingGlowCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetLandingGlowEnabled(selectedId, landingGlowCheckbox.checked);
   });
+  if (timerColorRampCheckbox) {
+    timerColorRampCheckbox.addEventListener('change', () => {
+      window.eqTracker.setWidgetTimerColorRamp(selectedId, timerColorRampCheckbox.checked);
+    });
+  }
   // Reported live 24 Aug: "the say text field doesn't update all the time when i try to edit it,
   // it should be freely editable and stay with whatever has been put in it." 'change' only fires
   // on blur/Enter, so anything typed and then left alone (cursor still in the box, no click

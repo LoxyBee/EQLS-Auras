@@ -683,6 +683,7 @@ const SHAREABLE_FIELDS = [
   'iconLabelSize',
   'iconLabelAnchor',
   'iconDepletionShade',
+  'timerColorRamp',
   'wrapText',
   'iconJustify',
   'textJustify',
@@ -830,6 +831,9 @@ function normalizeWidget(widget) {
     // buff's duration is left, reusing the action bars' cooldown-shade look. 'none' by default so
     // existing icon auras are unchanged. 'wipe' = a top-down clip; 'radial' = a conic clock sweep.
     iconDepletionShade: ['wipe', 'radial'].includes(widget.iconDepletionShade) ? widget.iconDepletionShade : 'none',
+    // QOL #47 - fade the timer text from its normal colour through amber as the buff runs down,
+    // a readable heads-up before the red expiring-soon flash. Off by default.
+    timerColorRamp: !!widget.timerColorRamp,
     // Existing widgets saved before this field existed default to on for
     // the two "show everything" builtins (matches defaultSelfBuffsWidget/
     // defaultAllyBuffsWidget's own defaults for a fresh one) and off for

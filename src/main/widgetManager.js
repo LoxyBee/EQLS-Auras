@@ -1170,6 +1170,12 @@ function setIconDepletionShade(id, value) {
   return config;
 }
 
+function setTimerColorRamp(id, enabled) {
+  const config = widgetStore.update(id, { timerColorRamp: enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
 // Profile membership IS this widget's on/off control (see
 // isVisibleForActiveProfile) - ticking/unticking the currently active
 // profile here has to show/hide it immediately, which is the whole point of
@@ -1515,6 +1521,7 @@ module.exports = {
   setMirrorRowDirection,
   setShowIconLabel,
   setIconDepletionShade,
+  setTimerColorRamp,
   setActiveProfileIds,
   removeProfileFromAllWidgets,
   setGroupAllyBuffs,
