@@ -1,4 +1,4 @@
-/* PANEL_W (384) / PANEL_H (176) are set in moveHudWindow.js - keep the panel inside them. */
+/* PANEL_W (384) / PANEL_H (150) are set in moveHudWindow.js - keep the panel inside them. */
 :root {
   --accent: #f0a54a;
   --panel: rgba(18, 22, 34, 0.94);
@@ -91,14 +91,15 @@ button, select, input, .snap {
   color: #1b1205;
   border-color: rgba(0, 0, 0, 0.35);
 }
-.foot { margin-top: 4px; }
+/* Footer: Done bottom-left, Reset position bottom-right. */
+.foot { margin-top: 8px; }
+#reset-pos { margin-left: auto; }
 #panel button.primary {
-  width: 100%;
   background: var(--accent);
   color: #1b1205;
   border-color: rgba(0, 0, 0, 0.35);
   font-weight: 700;
-  padding: 4px 8px;
+  padding: 4px 12px;
 }
 
 .snap { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
