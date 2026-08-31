@@ -1451,7 +1451,7 @@ check will be needed later", and this is me saying it is ready and waiting.
 ## Global recovery time (note 25) — WITHDRAWN
 
 Built 30 Aug as a "Global recovery (GCD)" premade, then withdrawn the same day — the ~1.5s recovery
-only flashed on a whole-second overlay. See `docs/QOL-BACKLOG.md` #38. Nothing to test.
+only flashed on a whole-second overlay. `widgets.json` v3→v4 dropped any GCD auras. Nothing to test.
 
 ---
 

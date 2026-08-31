@@ -1,7 +1,7 @@
 # eqtm search aliases — zone nicknames & raid-boss shorthand
 
-Research for QOL-BACKLOG **#30** ("community shorthand / nicknames for zones in `eqtm`, and
-search by boss name"). Nothing here is wired in yet — this is the data.
+Research behind the `eqtm` zone search aliases — community shorthand / nicknames for zones, and
+searching by raid-boss name. This is the source data; `src/shared/data/zoneAliases.js` is what ships.
 
 ## What this is for
 
