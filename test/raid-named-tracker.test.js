@@ -1,12 +1,17 @@
 'use strict';
 /**
- * RaidNamedTracker (backlog #33) - a per-zone named-kill board. Enter a raid zone, every named is
- * "up"; a "<name> has been slain by ..." line greys it out; re-entering (a fresh instance) rebuilds
- * the board. A zone flagged `respawns` shows a countdown on a greyed named and brings it back.
+ * RaidNamedTracker (backlog #33) - a per-zone named-kill board.
  *
- * Owner's spec: "you go into a raid zone, all named are active. it's not a loot tracker, it's just
- * a named kill tracker. it can show a timer if it has one and the zone is respawning (raids and
- * plane instances are not)."
+ * TWO kinds of tracked zone (see raidZoneNameds.js):
+ *   - a DUNGEON entry (no `raid` flag): the board lights up on a plain "You have entered X." line,
+ *     the way #33 originally asked for - "every tracked zone, not just raids".
+ *   - a RAID entry (`raid: true` - the Planes, and the classic raid-boss lists): the board lights
+ *     up ONLY after the player's own "You say, 'danger'" to the Voidling, then a zone change. The
+ *     "- Group" / difficulty-suffix grammar does NOT tell a raid instance from a group one
+ *     (measured: the owner's real Plane of Fear raid entered as "... - Group 4 (Refined)"), so the
+ *     dialogue is the only gate - the same signal lockoutCore keys its weekly-attempt event on.
+ *
+ * A "<name> has been slain by ..." line greys a named; re-entering rebuilds the board.
  */
 
 const assert = require('node:assert/strict');
@@ -15,8 +20,12 @@ const { RaidNamedTracker, stripInstanceSuffix, bareName } = require('../src/main
 const { RAID_ZONE_NAMEDS } = require('../src/shared/data/raidZoneNameds');
 
 const TS = '[Wed Aug 19 19:23:03 2026] ';
-const enter = (t, z) => t.handleLine(`${TS}You have entered ${z}.`);
-const slay = (t, n) => t.handleLine(`${TS}${n} has been slain by Baxa!`);
+const sayDanger = (t) => t.handleLine(`${TS}You say, 'danger'`);
+// A RAID entry: the player's own "danger" to the Voidling, then the zone change.
+const enter = (t, z) => { sayDanger(t); t.handleLine(`${TS}You have entered ${z}.`); };
+// A DUNGEON / open / untracked entry: a plain zone line, no Voidling dialogue.
+const enterOpen = (t, z) => t.handleLine(`${TS}You have entered ${z}.`);
+const slay = (t, n) => t.handleLine(`${TS}${n} has been slain by Avenrae!`);
 
 function make() {
   const t = new RaidNamedTracker();
@@ -47,7 +56,7 @@ test('bareName drops a leading article, case-insensitively', () => {
 // the board
 // ---------------------------------------------------------------------------
 
-test('entering a raid zone puts every named up', () => {
+test('a Voidling raid entry puts every named up', () => {
   const { t } = make();
   enter(t, 'The Plane of Fear');
   const rows = t.getActive();
@@ -59,8 +68,7 @@ test('entering a raid zone puts every named up', () => {
 test('the two Voidling raid zones added 31 Aug have working boards', () => {
   const { t } = make();
   enter(t, 'The Ruins of Old Paineel');
-  let rows = t.getActive();
-  assert.ok(rows.some((r) => r.name === 'Master Yael'));
+  assert.ok(t.getActive().some((r) => r.name === 'Master Yael'));
   slay(t, 'Master Yael');
   assert.equal(t.getActive().filter((r) => r.killed).length, 1);
 
@@ -69,26 +77,35 @@ test('the two Voidling raid zones added 31 Aug have working boards', () => {
   assert.ok(t.getActive().some((r) => r.name === 'Phinigel Autropos' && r.killed === false));
 });
 
-// #33's actual scope: every tracked zone, not just raids. Dungeons too.
-test('a dungeon zone board works, and open-world nameds respawn on their timer', () => {
+// #33's actual scope: every tracked zone, not just raids. A dungeon board needs no "danger" line.
+test('a dungeon board lights up on a plain zone line, no Voidling dialogue', () => {
   const { t } = make();
-  enter(t, 'The Castle of Mistmoore'); // instanced -> respawns:false
+  enterOpen(t, 'The Castle of Mistmoore'); // instanced -> respawns:false
   assert.ok(t.getActive().some((r) => r.name === 'Xicotl' && r.tier === 'boss'));
   slay(t, 'Xicotl');
   const x = t.getActive().find((r) => r.name === 'Xicotl');
   assert.equal(x.killed, true);
   assert.equal(x.respawnRemainingSec, null, 'an instanced zone kill stays down until re-entry');
 
-  enter(t, 'Najena'); // open-world -> respawns:true
+  enterOpen(t, 'Najena'); // open-world -> respawns:true
   slay(t, 'Rathyl'); // respawnMinutes 19
   const r = t.getActive().find((row) => row.name === 'Rathyl');
   assert.equal(r.killed, true);
   assert.ok(r.respawnRemainingSec > 19 * 60 - 5 && r.respawnRemainingSec <= 19 * 60);
 });
 
+test("Nagafen's Lair is the group dungeon (no danger needed), not the moved-out Lord Nagafen raid", () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair 4 (Refined)"); // a group instance - invited in, no Voidling entry
+  const names = t.getActive().map((r) => r.name);
+  assert.equal(t.getCurrentZone(), "Nagafen's Lair");
+  assert.ok(names.includes('Efreeti Lord Djarn'), 'the real dungeon boss is on the board');
+  assert.ok(!names.includes('Lord Nagafen'), 'the raid boss lives in his own Voidling instance now');
+});
+
 test('the board sorts boss, then mini, then lesser', () => {
   const { t } = make();
-  enter(t, 'Najena');
+  enterOpen(t, 'Najena');
   const tiers = t.getActive().map((r) => r.tier);
   const firstMini = tiers.indexOf('mini');
   const firstLesser = tiers.indexOf('lesser');
@@ -97,11 +114,66 @@ test('the board sorts boss, then mini, then lesser', () => {
   assert.ok(tiers.slice(0, firstLesser).every((x) => x !== 'lesser'));
 });
 
-test('an instance difficulty resolves to the same board', () => {
+test('the "- Group" difficulty grammar still resolves a raid to the base-zone board', () => {
+  // Measured: the owner's real Plane of Hate RAID entered as "... - Group 4 (Refined)". The
+  // "- Group" / no-"- Group" split does not tell raid from group instance, which is why the gate
+  // is the "You say, 'danger'" line and not the zone name.
   const { t } = make();
-  enter(t, 'The Plane of Hate - Group 4 (Refined)');
+  sayDanger(t);
+  t.handleLine(`${TS}You have entered The Plane of Hate - Group 4 (Refined).`);
   assert.equal(t.getCurrentZone(), 'The Plane of Hate');
   assert.ok(t.getActive().length > 0);
+});
+
+test('a RAID zone entered WITHOUT saying "danger" does not light up the board', () => {
+  const { t } = make();
+  // the plane, same difficulty suffix a raid uses - but no Voidling dialogue
+  t.handleLine(`${TS}You have entered The Plane of Fear 4 (Refined).`);
+  assert.equal(t.getCurrentZone(), null, 'the suffix alone is not the raid');
+  assert.deepEqual(t.getActive(), []);
+});
+
+test('a groupmate saying "danger" does not arm the board', () => {
+  const { t } = make();
+  t.handleLine(`${TS}Avenrae says, 'danger'`); // not "You say," - a different player
+  t.handleLine(`${TS}You have entered The Plane of Fear 1 (Awakened).`);
+  assert.equal(t.getCurrentZone(), null, "someone else's line is not proof the player raided");
+});
+
+test('the raid entry is consumed by the zone change - a later zone does not inherit it', () => {
+  const { t } = make();
+  enter(t, 'The Plane of Fear'); // danger + zone -> board up
+  assert.ok(t.getActive().length > 0);
+  enterOpen(t, 'The Plane of Fear'); // no fresh danger -> not a raid entry any more
+  assert.equal(t.getCurrentZone(), null);
+});
+
+test('entering the open version while a raid board is up clears it', () => {
+  const { t } = make();
+  enter(t, 'The Plane of Fear');
+  assert.ok(t.getActive().length > 0);
+  enterOpen(t, 'The Plane of Fear'); // walked into the non-instanced version
+  assert.deepEqual(t.getActive(), []);
+  assert.equal(t.getCurrentZone(), null);
+});
+
+test('a zone-line echo of the same raid instance (reconnect) keeps the board and its kills', () => {
+  const { t } = make();
+  enter(t, 'The Plane of Fear 1 (Awakened)');
+  slay(t, 'Terror');
+  // client reload re-emits the entry line, no fresh hail/danger
+  t.handleLine(`${TS}You have entered The Plane of Fear 1 (Awakened).`);
+  assert.equal(t.getCurrentZone(), 'The Plane of Fear', 'the board was wiped by an echo');
+  assert.equal(t.getActive().find((r) => r.name === 'Terror').killed, true, 'the kill was lost');
+});
+
+test('re-entering a raid through the Voidling is a fresh instance - the board resets', () => {
+  const { t } = make();
+  enter(t, 'The Plane of Fear');
+  slay(t, 'Terror');
+  assert.equal(t.getActive().find((r) => r.name === 'Terror').killed, true);
+  enter(t, 'The Plane of Fear 2 (Adaptive)');
+  assert.equal(t.getActive().find((r) => r.name === 'Terror').killed, false, 'a fresh instance kept the kill');
 });
 
 test('a kill greys exactly that named, article-tolerant', () => {
@@ -122,49 +194,32 @@ test('bosses sort ahead of minis', () => {
   assert.ok(lastBoss < firstMini, 'a mini appeared before a boss');
 });
 
-test("Nagafen's Lair is the group dungeon, not the moved-out Lord Nagafen raid", () => {
-  const { t } = make();
-  enter(t, "Nagafen's Lair 4 (Refined)");
-  const names = t.getActive().map((r) => r.name);
-  assert.ok(names.includes('Efreeti Lord Djarn'), 'the real dungeon boss is on the board');
-  assert.ok(!names.includes('Lord Nagafen'), 'the raid boss lives in his own Voidling instance now');
-});
-
 test('a kill in a zone the board does not know is ignored', () => {
   const { t } = make();
-  enter(t, "Nagafen's Lair");
+  enterOpen(t, "Nagafen's Lair");
   slay(t, 'Cazic-Thule'); // wrong zone
   assert.equal(t.getActive().filter((r) => r.killed).length, 0);
 });
 
 test('a trash mob death does not grey anything', () => {
   const { t } = make();
-  enter(t, "Nagafen's Lair");
+  enterOpen(t, "Nagafen's Lair");
   slay(t, 'a greater kobold');
   slay(t, 'a lava beetle');
   assert.equal(t.getActive().filter((r) => r.killed).length, 0);
 });
 
-test('re-entering the zone is a fresh instance - the board resets', () => {
-  const { t } = make();
-  enter(t, "Nagafen's Lair");
-  slay(t, 'Efreeti Lord Djarn');
-  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, true);
-  enter(t, "Nagafen's Lair 2 (Adaptive)");
-  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, false, 'a fresh instance kept the kill');
-});
-
 test('leaving for an untracked zone clears the board', () => {
   const { t } = make();
   enter(t, 'The Plane of Fear');
-  enter(t, 'East Freeport');
+  enterOpen(t, 'East Freeport');
   assert.deepEqual(t.getActive(), []);
   assert.equal(t.getCurrentZone(), null);
 });
 
 test('killing the same named twice does not double-fire', () => {
   const { t, log } = make();
-  enter(t, "Nagafen's Lair");
+  enterOpen(t, "Nagafen's Lair");
   slay(t, 'Efreeti Lord Djarn');
   const changes = log.filter((m) => m.includes('killed')).length;
   slay(t, 'Efreeti Lord Djarn'); // an echo, or the corpse re-reported
@@ -189,7 +244,7 @@ test('a respawning zone shows a countdown and brings the named back', () => {
     nameds: [{ name: 'Testboss', tier: 'boss', respawnMinutes: 1 }],
   };
   try {
-    enter(t, '__TEST_ZONE__');
+    enterOpen(t, '__TEST_ZONE__');
     slay(t, 'Testboss');
     const row = t.getActive()[0];
     assert.equal(row.killed, true);
@@ -205,7 +260,7 @@ test('a respawning zone shows a countdown and brings the named back', () => {
 
 test('a non-respawning zone leaves the kill greyed with no countdown', () => {
   const { t } = make();
-  enter(t, "Nagafen's Lair");
+  enterOpen(t, "Nagafen's Lair");
   slay(t, 'Efreeti Lord Djarn');
   const row = t.getActive().find((r) => r.name === 'Efreeti Lord Djarn');
   assert.equal(row.killed, true);
