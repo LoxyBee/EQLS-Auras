@@ -122,6 +122,22 @@ Every control needs a `key` and should have a `label`. Changes are saved (`modul
 keyed by module `id`) and survive a restart. The page appears as a plain nav button at the bottom
 of the sidebar — it reads as an ordinary built-in page; there is no "Modules" heading.
 
+## Your module's aura
+
+Set `hasAura: true` and the module shows up in **Add Aura → Standalone tools**, folded in from
+the loaded modules — a dropped-in module appears there within ~1s, no restart. Adding it creates
+an ordinary aura: it sits in the aura sidebar like any built-in, and its position / size /
+opacity / display style / alerts are set on the normal aura settings panel. That panel has **no
+buff picker and no "watching" source** — the module *is* the source.
+
+The aura's tiles are whatever `onLine` returns, drawn through one shared channel keyed by the
+module's `id` (internally a `kind: 'module-aura'` aura with `buffSource: 'module'`). Deleting the
+module file removes it from the Add-Aura list and its aura goes blank — the aura itself stays
+until you delete it.
+
+The module's **own** settings (`page`) are separate — they live on the module's nav page, not on
+this aura panel.
+
 ## When a module doesn't appear
 
 There is **no error panel, reload button, or folder link** in the app — a deliberate choice. If a
@@ -190,3 +206,19 @@ module.exports = {
   },
 };
 ```
+
+## Trying it out
+
+The example module doubles as a smoke test. With the app running:
+
+- [ ] Drop `docs/modules/pull-timer.js` into `%APPDATA%\EQ Buff Tracker\modules\` → a **Pull
+      Timer** nav button and settings page appear within ~1s, no restart.
+- [ ] **Add Aura → Standalone tools** lists **Pull Timer**; adding it creates an overlay aura.
+- [ ] A group / guild / say chat line containing `pulling` starts a countdown tile on that aura;
+      a line containing `hold` clears it.
+- [ ] Edit the file — change the pull-length `default` from `10` to `20`, save → the module
+      reloads and the next pull runs 20s.
+- [ ] Delete the file → the nav button and the Add-Aura entry disappear; an aura you already
+      created stays but shows nothing.
+- [ ] Break the file (introduce a syntax error) → nothing crashes. With **Diagnostics →
+      detection log** on, the log shows `MODULE "pull-timer.js" - failed to load: ...`.
