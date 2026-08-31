@@ -43,10 +43,18 @@ const ROWS = [
   '1445^Armor of Protection^0^^100^0^0^0^3500^1500^1500^50^0^0^110^-1^-1^-1^-1^1^1^1^1^-1^-1^-1^-1^0^1^0^6^20^4^0^0^0^255^34^255^255^255^255^255^255^255^255^255^255^255^255^255^255^42^27^0^2^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^100^132^313^0^0^0^0^0^0^0^0^1445^45^87^0^0^0^0^0^100^0^0^0^0^0^0^0^0^0^0^5^101^47^3^1440^0^0^0^0^3^184^0^0^0^0^0^0^0^0^0^0^1^1^0^0^0^0^0^-1^0^0^0^1^0^0^1^1^1^0^0^0^0^1^32^-1^0^1^0^0^1^0^1^0^0^0^0^0^0^0^0^0^4026^0^-1^-1^-1^-1^0^1|69|100|0|104|225$2|1|50|0|100|50$3|79|100|0|104|225',
   '6906^Spirit of the Puma^0^^100^0^0^0^3000^1500^1500^3^0^0^212^-1^-1^-1^-1^1^1^1^1^-1^-1^-1^-1^0^1^0^51^0^5^0^0^0^255^255^255^255^255^255^255^255^255^255^255^255^255^255^255^255^43^0^0^7^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^100^9^303^0^0^0^1^0^0^0^0^6906^95^2^0^0^0^0^0^100^0^0^0^0^0^0^0^0^0^0^1^1^0^0^0^0^0^-1^0^0^0^1^0^0^1^1^1^-1^0^0^0^1^52^-1^0^1^0^0^1^0^1^0^0^0^0^0^0^0^0^0^0^0^-1^-1^-1^-1^0^1|10|0|0|100|0$2|10|0|0|100|0$3|10|0|0|100|0$4|10|0|0|100|0$5|85|6908|400|100|0',
   '174^Clarity^0^^200^0^0^0^3100^1500^1500^3^270^0^75^-1^-1^-1^-1^1^1^1^1^-1^-1^-1^-1^0^1^0^51^25^5^0^0^0^255^255^255^255^255^255^255^255^255^255^255^255^255^26^255^255^44^0^0^6^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^100^21^256^0^0^0^1^0^0^0^0^174^79^59^0^0^0^0^0^100^0^0^0^0^0^0^0^0^0^0^5^101^24^3^270^0^0^0^0^0^50^0^0^0^0^0^0^0^0^0^0^1^1^0^0^0^0^0^-1^0^0^0^1^0^0^1^1^1^-1^0^0^0^1^36^64892^0^1^0^0^1^0^1^0^0^0^0^0^0^0^0^0^100140100^0^-1^-1^-1^-1^0^1|10|0|0|100|0$2|15|1|0|109|9',
+  // Fix 3 (bard-song stacking): the exact SPA-1 (AC) collision from the owner's 30 Aug log -
+  // Elemental Rhythms (a bard resist song, slot 4 AC base 5) and Shield of Words (a cleric AC line,
+  // slot 4 AC base 105). Copied verbatim from her real spells_us.txt. The slot-by-slot heuristic
+  // says Shield of Words overwrites Elemental Rhythms (105 > 5); the engine must NOT act on that,
+  // because on EQL the song and the AC spell coexist (see docs/research/bard-song-stacking.md).
+  '710^Elemental Rhythms^0^^0^50^0^0^3000^0^0^5^2^0^0^-1^-1^-1^-1^1^1^1^1^-1^-1^-1^-1^0^1^0^41^15^70^0^0^0^255^255^255^255^255^255^255^9^255^255^255^255^255^255^255^255^39^0^0^6^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^148^336^0^0^0^1^0^0^0^1^710^95^80^0^0^0^0^0^100^0^0^0^0^0^0^0^0^0^0^5^101^14^5^3^0^0^1^0^0^50^0^0^0^0^0^0^0^0^0^0^0^1^0^320^0^0^0^-1^0^0^0^1^0^0^1^1^1^-1^0^0^0^1^1^-1^0^1^0^0^1^0^1^0^0^0^0^0^0^0^0^0^70^0^-1^-1^-1^-1^0^1|50|5|0|101|50$2|47|5|0|101|50$3|46|5|0|101|50$4|1|5|0|109|0',
+  '20^Shield of Words^0^^100^0^0^0^8000^1500^1500^3^720^0^300^-1^-1^-1^-1^1^1^1^1^-1^-1^-1^-1^0^1^0^51^0^4^0^0^0^255^45^60^255^255^255^255^255^255^255^255^255^255^255^255^255^42^0^0^2^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^0^100^151^313^0^0^0^1^0^0^0^0^20^95^6^0^0^0^0^0^100^0^0^0^0^0^0^0^0^0^0^-42^133^-57^3^720^0^0^0^0^0^50^0^0^0^0^0^0^0^0^0^0^1^1^0^0^0^0^0^-1^0^0^0^1^0^0^1^1^1^-1^0^0^0^1^1^-1^0^1^0^0^1^0^1^0^0^0^0^0^0^0^0^0^100020040^0^-1^-1^-1^-1^0^1|10|0|0|100|0$2|10|0|0|100|0$3|10|0|0|100|0$4|1|105|0|100|0',
 ];
 
 const NIMBLE = 160, AGILITY = 154, HARNESSING = 2525, DEXTERITY = 157, STRENGTH = 159;
 const INFUSION = 3454, TALISMAN = 168, ARMOR = 1445, PUMA = 6906, CLARITY = 174;
+const ELEMENTAL_RHYTHMS = 710, SHIELD_OF_WORDS = 20;
 
 let installRoot;
 function setup() {
@@ -164,12 +172,94 @@ test('toggle on: the reverse does NOT happen - casting Nimble while Agility is u
   assert.deepEqual(names(engine), ['Agility', 'Nimble'], 'Nimble is weaker and should not overwrite the active Agility');
 });
 
+// Fix 3 (docs/research/bard-song-stacking.md): the effect-slot heuristic must never rule across
+// the bard-song boundary. On EQL a bard resist/AC song and a caster resist/AC spell coexist - every
+// cross-boundary "overwrite" the heuristic logged (26-31 Aug) was a song being wrongly killed, and
+// its ~6s re-pulse then re-killed it every cycle (the "pops up then vanishes" the owner reported).
+// The real song exclusions (bard haste vs Alacrity, Selo's vs SoW) are decided by the heading model
+// before the heuristic and never reach it.
+test('toggle on: a bard song is never removed by the effect-slot heuristic', () => {
+  const { engine, buffStore, log } = makeEngine();
+  engine.setUseStackingModel(true);
+  buffStore.setBardSong('Nimble', true); // stand-in: the heuristic WOULD say Agility overwrites it
+  engine.handleLine('You feel nimble.');
+  engine.handleLine('You feel agile.');
+  assert.deepEqual(names(engine), ['Agility', 'Nimble'], 'the song was killed across the boundary');
+  assert.ok(!log.some((m) => m.includes('ENDED "Nimble"')), 'no ENDED line should have fired for the song');
+});
+
+test('toggle on: a spell is not removed by the heuristic when the INCOMING buff is a bard song', () => {
+  const { engine, buffStore } = makeEngine();
+  engine.setUseStackingModel(true);
+  buffStore.setBardSong('Agility', true); // the stronger buff, now a song
+  engine.handleLine('You feel nimble.');
+  engine.handleLine('You feel agile.');
+  assert.deepEqual(names(engine), ['Agility', 'Nimble'], 'the spell was killed by an incoming song');
+});
+
 test('toggle on: recasting the SAME buff is unaffected - no self-removal', () => {
   const { engine } = makeEngine();
   engine.setUseStackingModel(true);
   engine.handleLine('You feel agile.');
   engine.handleLine('You feel agile.');
   assert.deepEqual(names(engine), ['Agility']);
+});
+
+test('Fixture B: the heuristic WOULD kill Elemental Rhythms with Shield of Words (slot 4 SPA 1, 105 vs 5)', () => {
+  // The precise collision from the owner's real log. This asserts the heuristic's raw verdict -
+  // the point of the engine test below is that the bard-song guard stops the engine acting on it.
+  const v = checkOverwrite(installRoot, ELEMENTAL_RHYTHMS, SHIELD_OF_WORDS);
+  assert.ok(v && v.overwrites, 'expected the slot-by-slot heuristic to claim an overwrite here');
+  assert.match(v.why, /SPA 1/);
+});
+
+test('Fixture B: the engine does NOT drop Elemental Rhythms when Shield of Words lands (real rows)', () => {
+  const { engine, buffStore, log } = makeEngine();
+  engine.setUseStackingModel(true);
+  const er = buffStore.getByName('Elemental Rhythms');
+  const sow = buffStore.getByName('Shield of Words');
+  assert.ok(er && er.spellId === ELEMENTAL_RHYTHMS && sow && sow.spellId === SHIELD_OF_WORDS,
+    'roster spellIds drifted from the fixture - update the fixture rows');
+  buffStore.setBardSong('Elemental Rhythms', true);
+  engine._land(er);
+  engine._land(sow);
+  const active = new Set(engine.getActiveBuffs().map((b) => b.name));
+  assert.ok(active.has('Elemental Rhythms'), 'the song was killed across the boundary by the real SPA-1 collision');
+  assert.ok(active.has('Shield of Words'));
+  assert.ok(!log.some((m) => m.includes('ENDED "Elemental Rhythms"')));
+});
+
+// The real symptom, real names: the owner's 30 Aug 18:48-18:51 window where Elemental Rhythms,
+// Guardian Rhythms, all four Psalms and the caster resist spells pulsed together for three minutes
+// with nothing ending anything. Driven through _land() with the real roster and the real heading
+// model wired (buffLines.stackDecision), plus a stackVerdictFn that says "overwrites" to
+// EVERYTHING - the worst case the heuristic could produce. Every buff must still be standing.
+test('the 18:48 window: bard resist songs + caster resist spells all coexist, nothing drops', () => {
+  const buffLines = require('../src/shared/buffLines');
+  const { engine, buffStore, log } = makeEngine();
+  engine.setUseStackingModel(true);
+  engine.setLineStackFn((incoming, active) => buffLines.stackDecision(incoming, active));
+  engine.setStackVerdictFn(() => ({ overwrites: true, why: 'test: worst case' }));
+
+  const songs = ['Elemental Rhythms', 'Guardian Rhythms', 'Psalm of Warmth', 'Psalm of Cooling',
+    'Psalm of Purity', 'Psalm of Vitality'];
+  for (const s of songs) buffStore.setBardSong(s, true);
+
+  // One resist spell only - Endure Magic and Resist Magic are the same resist LINE (a real
+  // upgrade), so casting both would legitimately drop the weaker. The point here is song vs spell.
+  const cast = [...songs, 'Endure Magic', 'Resolution', 'Shield of Words'];
+  for (const name of cast) {
+    const entry = buffStore.getByName(name);
+    if (entry) engine._land(entry);
+  }
+  const active = new Set(engine.getActiveBuffs().map((b) => b.name));
+  for (const name of cast) {
+    if (buffStore.getByName(name)) assert.ok(active.has(name), `"${name}" was wrongly dropped`);
+  }
+  assert.ok(
+    !log.some((m) => /ENDED "(Elemental Rhythms|Guardian Rhythms|Psalm of)/.test(m)),
+    'a bard resist song was ended by the stacking logic'
+  );
 });
 
 module.exports = () => report('spell-stacking');
