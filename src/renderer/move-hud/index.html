@@ -6,37 +6,43 @@
   <link rel="stylesheet" href="move-hud.css" />
 </head>
 <body>
-  <!-- The centre of #frame is a hole the aura shows through; the arrows sit in the margin around
-       it and the strip sits below. Every clickable thing carries .hud-interactive so move-hud.js
-       can flip the window interactive only while the pointer is over one. -->
-  <div id="frame">
-    <button type="button" id="nudge-up" class="arrow hud-interactive" title="Move up">&#9650;</button>
-    <button type="button" id="nudge-left" class="arrow hud-interactive" title="Move left">&#9664;</button>
-    <button type="button" id="nudge-right" class="arrow hud-interactive" title="Move right">&#9654;</button>
-    <button type="button" id="nudge-down" class="arrow hud-interactive" title="Move down">&#9660;</button>
-    <div id="hole"></div>
-  </div>
-
-  <div id="strip">
-    <div class="strip-row">
+  <!-- A detached, draggable panel. The body is -webkit-app-region:drag so you grab it anywhere
+       empty; every control is no-drag. It never leaves the screen (clamped in moveHudWindow.js),
+       so the Done button can't be lost. -->
+  <div id="panel">
+    <div class="row head">
       <span id="aura-name">Aura</span>
       <span id="coords">x: 0  y: 0</span>
     </div>
-    <div class="strip-row">
-      <span class="strip-label">Step</span>
-      <button type="button" id="step-1" class="step hud-interactive is-on">1&nbsp;px</button>
-      <button type="button" id="step-10" class="step hud-interactive">10&nbsp;px</button>
-      <label class="snap hud-interactive"><input type="checkbox" id="snap-on" class="hud-interactive" /> Snap</label>
-      <select id="snap-size" class="hud-interactive">
-        <option value="4">4</option>
-        <option value="8" selected>8</option>
-        <option value="16">16</option>
-        <option value="32">32</option>
-      </select>
+
+    <div class="row">
+      <div id="nudge-pad">
+        <button type="button" id="nudge-up" class="nudge" title="Move up">&#9650;</button>
+        <button type="button" id="nudge-left" class="nudge" title="Move left">&#9664;</button>
+        <button type="button" id="nudge-right" class="nudge" title="Move right">&#9654;</button>
+        <button type="button" id="nudge-down" class="nudge" title="Move down">&#9660;</button>
+      </div>
+      <div class="controls">
+        <div class="row">
+          <span class="label">Step</span>
+          <button type="button" id="step-1" class="step is-on">1&nbsp;px</button>
+          <button type="button" id="step-10" class="step">10&nbsp;px</button>
+        </div>
+        <div class="row">
+          <label class="snap"><input type="checkbox" id="snap-on" /> Snap</label>
+          <select id="snap-size">
+            <option value="4">4</option>
+            <option value="8" selected>8</option>
+            <option value="16">16</option>
+            <option value="32">32</option>
+          </select>
+        </div>
+      </div>
     </div>
-    <div class="strip-row">
-      <button type="button" id="reset-pos" class="hud-interactive">Reset position</button>
-      <button type="button" id="done" class="primary hud-interactive">Done</button>
+
+    <div class="row foot">
+      <button type="button" id="reset-pos">Reset position</button>
+      <button type="button" id="done" class="primary">Done</button>
     </div>
   </div>
 

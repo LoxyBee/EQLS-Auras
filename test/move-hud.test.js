@@ -3,8 +3,9 @@
  * The aura move HUD (moveHudWindow.js) + widgetManager's nudge/bounds plumbing behind it.
  *
  * The HUD window and its renderer can only really be judged with the app running (docs/TESTING.md
- * covers that). What IS checkable here: the frame geometry maths, and that a nudge actually moves
- * the aura window, persists the canonical anchor, and tells whoever is listening.
+ * covers that). What IS checkable here: the panel clamps itself back on screen, and a nudge
+ * actually moves the aura window, persists the canonical anchor, snaps to the grid, and tells
+ * whoever is listening.
  */
 
 const assert = require('node:assert/strict');
@@ -62,9 +63,10 @@ class FakeWindow {
 }
 
 const created = [];
+const DISPLAY = { workArea: { x: 0, y: 0, width: 1920, height: 1080 } };
 const fakeElectron = {
   app: { getPath: () => USER_DATA },
-  screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
+  screen: { getPrimaryDisplay: () => DISPLAY, getDisplayMatching: () => DISPLAY },
   BrowserWindow: class {
     constructor(opts) { const w = new FakeWindow(opts); created.push(w); return w; }
   },
@@ -76,14 +78,22 @@ const moveHud = require('../src/main/moveHudWindow');
 const wm = require('../src/main/widgetManager');
 wm.setActiveProfileIdFn(() => 'default');
 
-// --- frame geometry ---------------------------------------------------------------------------
+// --- the panel stays on screen ---------------------------------------------------------------
 
-test('frameBounds surrounds the aura with the margin, plus the strip below', () => {
-  const b = moveHud.frameBounds({ x: 1000, y: 600, width: 160, height: 80 });
-  assert.equal(b.x, 1000 - moveHud.MARGIN);
-  assert.equal(b.y, 600 - moveHud.MARGIN);
-  assert.equal(b.width, 160 + moveHud.MARGIN * 2);
-  assert.equal(b.height, 80 + moveHud.MARGIN * 2 + moveHud.STRIP_H);
+test('clampToScreen pulls a panel fully back onto the work area - Done is never lost', () => {
+  const W = moveHud.PANEL_W;
+  const H = moveHud.PANEL_H;
+  // dragged off the right and bottom
+  const c = moveHud.clampToScreen({ x: 1900, y: 1050, width: W, height: H });
+  assert.equal(c.x, 1920 - W);
+  assert.equal(c.y, 1080 - H);
+  // dragged off the top-left
+  const c2 = moveHud.clampToScreen({ x: -80, y: -40, width: W, height: H });
+  assert.equal(c2.x, 0);
+  assert.equal(c2.y, 0);
+  // fully on screen - unchanged
+  const c3 = moveHud.clampToScreen({ x: 500, y: 400, width: W, height: H });
+  assert.deepEqual(c3, { x: 500, y: 400, width: W, height: H });
 });
 
 // --- nudge / bounds --------------------------------------------------------------------------
@@ -124,7 +134,7 @@ test('getWidgetBounds reports the live window rect; onWidgetMoved fires on a nud
   assert.deepEqual(wm.getWidgetBounds(config.id), win.getBounds());
 });
 
-test('a drag of the aura window also fires onWidgetMoved (so the HUD reframes)', () => {
+test('a drag of the aura window also fires onWidgetMoved (so the HUD x/y keeps up)', () => {
   const { config, win } = makeAura('Dragged');
   wm.setLocked(config.id, false);
   const moves = [];

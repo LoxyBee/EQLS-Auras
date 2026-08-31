@@ -1939,7 +1939,6 @@ function hudMeta(id) {
   const grid = widgetManager.getSnapGrid();
   return {
     name: config ? config.name : '',
-    marginPx: moveHudWindow.MARGIN,
     stepPx: moveStepPx,
     snapEnabled: grid.enabled,
     snapSizePx: grid.sizePx,
@@ -1948,7 +1947,7 @@ function hudMeta(id) {
 
 widgetManager.setOnWidgetMovedFn((id, bounds) => {
   if (id === moveModeWidgetId && bounds) {
-    moveHudWindow.reframe(bounds, hudMeta(id));
+    moveHudWindow.update(bounds, hudMeta(id));
   }
 });
 
@@ -1977,7 +1976,6 @@ function exitMoveMode() {
 }
 
 ipcMain.handle('widget:enterMoveMode', (_event, id) => enterMoveMode(id));
-ipcMain.on('moveHud:setInteractive', (_event, on) => moveHudWindow.setInteractive(on));
 ipcMain.handle('moveHud:nudge', (_event, { dx, dy }) => {
   if (!moveModeWidgetId) return null;
   return widgetManager.nudgeWidget(moveModeWidgetId, dx, dy);

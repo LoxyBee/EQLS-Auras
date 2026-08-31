@@ -1,41 +1,49 @@
 const path = require('path');
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, screen } = require('electron');
+const { loadJson, saveJson } = require('./store');
 
-// The move HUD - a transparent frame that surrounds ONE aura while it is being positioned, with
-// nudge arrows on its four edges and a control strip below (step size, snap to grid, live x/y,
-// Reset, Done). Same "small always-on-top helper window" idea as ambiguousPopup.js /
-// zonePromptPopup.js, but two things are different:
+// The move HUD - a small DETACHED control panel shown while one aura is being positioned. Nudge
+// arrows, step size, snap-to-grid, the live x/y readout, Reset position and Done. It does NOT wrap
+// or follow the aura: it opens centred, the user drags it wherever, and it is CLAMPED so it can
+// never sit even partly off-screen - so the Done button is never lost (owner's requirement).
 //
-//  - it has a HOLE. The aura's own window sits inside the frame and its blue drag box has to stay
-//    grabbable, so the HUD starts click-through (setIgnoreMouseEvents(true, { forward: true })) and
-//    the renderer flips it interactive only while the pointer is actually over one of the arrows
-//    or strip buttons (see move-hud.js). forward:true is what still delivers mousemove to the
-//    renderer while click-through, which is how it knows.
-//  - it FOLLOWS the aura. widgetManager broadcasts every move of the aura window (drag, nudge,
-//    Reset) and main.js calls reframe() so the frame tracks it.
-//
-// MARGIN is the room each edge leaves for a ~40px arrow; STRIP_H is the control strip under the
-// aura. Both are also hard-coded in move-hud.css - keep them in step.
-const MARGIN = 46;
-const STRIP_H = 132;
+// Same "small always-on-top helper window" idea as zonePromptPopup.js. Fully interactive (drag it
+// by its background, -webkit-app-region:drag; controls are no-drag), so none of the click-through
+// juggling the earlier wrapping-frame version needed.
+const PANEL_W = 384;
+const PANEL_H = 150;
 
 let win = null;
 
-function frameBounds(auraBounds) {
+function clampToScreen(bounds) {
+  const display = screen.getDisplayMatching(bounds) || screen.getPrimaryDisplay();
+  const wa = display.workArea;
   return {
-    x: Math.round(auraBounds.x - MARGIN),
-    y: Math.round(auraBounds.y - MARGIN),
-    width: Math.round(auraBounds.width + MARGIN * 2),
-    height: Math.round(auraBounds.height + MARGIN * 2 + STRIP_H),
+    x: Math.max(wa.x, Math.min(bounds.x, wa.x + wa.width - bounds.width)),
+    y: Math.max(wa.y, Math.min(bounds.y, wa.y + wa.height - bounds.height)),
+    width: bounds.width,
+    height: bounds.height,
   };
 }
 
-function createWindow(auraBounds) {
+function centred() {
+  const { workArea } = screen.getPrimaryDisplay();
+  return {
+    x: Math.round(workArea.x + (workArea.width - PANEL_W) / 2),
+    y: Math.round(workArea.y + (workArea.height - PANEL_H) / 2),
+  };
+}
+
+function createWindow() {
   if (win) return win;
-  const b = frameBounds(auraBounds);
+  const saved = loadJson('moveHudPosition', null);
+  const pos = saved && typeof saved.x === 'number' ? saved : centred();
 
   win = new BrowserWindow({
-    ...b,
+    x: pos.x,
+    y: pos.y,
+    width: PANEL_W,
+    height: PANEL_H,
     frame: false,
     transparent: true,
     hasShadow: false,
@@ -53,36 +61,40 @@ function createWindow(auraBounds) {
   });
 
   win.setAlwaysOnTop(true, 'screen-saver');
-  win.setIgnoreMouseEvents(true, { forward: true }); // click-through until the renderer says otherwise
   win.on('system-context-menu', (event) => event.preventDefault());
   win.loadFile(path.join(__dirname, '..', 'renderer', 'move-hud', 'index.html'));
+
+  // Clamp back on screen after every move, then remember where it ended up.
+  win.on('moved', () => {
+    const b = win.getBounds();
+    const c = clampToScreen(b);
+    if (c.x !== b.x || c.y !== b.y) win.setBounds(c);
+    saveJson('moveHudPosition', { x: c.x, y: c.y });
+  });
+
   win.on('closed', () => { win = null; });
   return win;
 }
 
-// auraBounds: { x, y, width, height } of the aura window being positioned.
+// meta: { name, stepPx, snapEnabled, snapSizePx }. auraBounds carries the live x/y.
 function open(auraBounds, meta) {
-  if (!auraBounds) return;
-  const w = createWindow(auraBounds);
+  const w = createWindow();
+  // Re-clamp on open too - a monitor may have been unplugged since it was last saved.
+  w.setBounds(clampToScreen(w.getBounds()));
   const send = () => {
     if (w.isDestroyed()) return;
-    w.setBounds(frameBounds(auraBounds));
-    w.webContents.send('moveHud:frame', { aura: auraBounds, ...meta });
+    w.webContents.send('moveHud:frame', { aura: auraBounds || {}, ...meta });
     w.showInactive();
   };
   if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send);
   else send();
 }
 
-function reframe(auraBounds, meta) {
-  if (!win || win.isDestroyed() || !auraBounds) return;
-  win.setBounds(frameBounds(auraBounds));
-  win.webContents.send('moveHud:frame', { aura: auraBounds, ...meta });
-}
-
-function setInteractive(interactive) {
-  if (!win || win.isDestroyed()) return;
-  win.setIgnoreMouseEvents(!interactive, { forward: true });
+// The aura moved (drag / nudge / Reset) - just push its new position for the x/y readout. The
+// panel itself does not move.
+function update(auraBounds, meta) {
+  if (!win || win.isDestroyed() || !win.isVisible()) return;
+  win.webContents.send('moveHud:frame', { aura: auraBounds || {}, ...meta });
 }
 
 function close() {
@@ -93,4 +105,4 @@ function isOpen() {
   return !!(win && !win.isDestroyed() && win.isVisible());
 }
 
-module.exports = { open, reframe, setInteractive, close, isOpen, frameBounds, MARGIN, STRIP_H };
+module.exports = { open, update, close, isOpen, clampToScreen, PANEL_W, PANEL_H };

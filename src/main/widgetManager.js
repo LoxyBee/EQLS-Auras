@@ -57,8 +57,8 @@ const pendingFitByWidget = new Map(); // id -> { contentWidth, contentHeight, or
 let snapGrid = { enabled: false, sizePx: 8 };
 let snapWidgetId = null;
 const movedGuard = new Set();
-// The HUD reframes around the aura on every move of the aura's window (drag, nudge, Reset). main.js
-// wires this to moveHudWindow.reframe.
+// Fired on every move of the aura's window (drag, nudge, Reset). main.js wires this so the move
+// HUD's x/y readout keeps up.
 let onWidgetMoved = () => {};
 // Runtime-only, never persisted - true when the auto-hide-when-EQ-unfocused
 // feature (see foregroundWatcher.js) currently has widgets hidden. Kept
