@@ -14,6 +14,9 @@ async function init() {
     statusEl.textContent = 'Something is wrong: ' + err.message;
   }
 
+  const appSettingsBlock = document.getElementById('app-settings-block');
+  if (appSettingsBlock) appSettingsBlock.addEventListener('change', refreshAppSettingsSummaries);
+
   initTitleBar();
   initNavigation();
   initTopicToggles();
@@ -38,6 +41,35 @@ async function init() {
   initBuffPlanner();
   initLoggingWatch();
   initChangelog();
+  refreshAppSettingsSummaries();
+}
+
+// Workstream B/C follow-up: the collapsed topic rows on the Setup page's "App settings" block
+// each carry a summary span showing their current value, so you can see what a row is set to
+// without opening it. Called after each control's async load settles, on any change inside the
+// block, and once at the end of init(). Module scope so the per-control init functions can call
+// it without a closure. Idempotent - reads the live DOM, writes the spans, nothing else.
+function refreshAppSettingsSummaries() {
+  const selText = (id) => {
+    const el = document.getElementById(id);
+    return el && el.selectedIndex >= 0
+      ? el.options[el.selectedIndex].text.replace(/\s*\(default\)$/, '')
+      : '';
+  };
+  const radioLabel = (name) => {
+    const hit = document.querySelector(`input[name="${name}"]:checked`);
+    return hit && hit.closest('label') ? hit.closest('label').textContent.trim() : '';
+  };
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text || '';
+  };
+  set('topic-icon-set-summary', selText('icon-set-select'));
+  set('topic-merge-rule-summary', radioLabel('merge-rule'));
+  set('topic-ui-scale-summary', selText('ui-scale-select'));
+  set('topic-hide-hotkey-summary', selText('hide-hotkey-select'));
+  const ver = document.querySelector('#version-info dd');
+  set('topic-app-info-summary', ver ? `v${ver.textContent}` : '');
 }
 
 // Backlog #18 - the "What's changed" list on the About page, from src/shared/data/changelog.js
@@ -1398,6 +1430,13 @@ function initWidgetsPanel() {
 
   const pageOverlayTitleEl = document.getElementById('page-overlay-title');
   const settingsPanel = document.getElementById('widget-settings-panel');
+  // Keep the collapsed-topic value previews current as the panel's own controls are dragged or
+  // toggled, not only when the panel is first opened for an aura. refreshPanelTopicSummaries is
+  // cheap (a handful of DOM reads) and defined further down in this scope.
+  if (settingsPanel) {
+    settingsPanel.addEventListener('input', () => refreshPanelTopicSummaries());
+    settingsPanel.addEventListener('change', () => refreshPanelTopicSummaries());
+  }
   const settingsTitle = document.getElementById('widget-settings-title');
   const nameInput = document.getElementById('widget-name-input');
   const lockBtn = document.getElementById('widget-lock-btn');
@@ -1535,6 +1574,41 @@ function initWidgetsPanel() {
       // rule) is never sprung. See the CSS comment on .topic-empty.
       topic.classList.toggle('topic-empty', !anyVisible);
     }
+  }
+  // Workstream B follow-up: a value preview in each collapsed "Display & size" topic header, so a
+  // topic's current setting is readable without opening it. Reads the panel's own controls, which
+  // selectWidget has populated from the widget by the time this runs (end of
+  // applySettingsPanelShape). "This aura" varies too much across aura kinds to summarise, so it is
+  // left blank.
+  function panelRadioLabel(name) {
+    const hit = document.querySelector(`input[name="${name}"]:checked`);
+    return hit && hit.closest('label') ? hit.closest('label').textContent.trim() : '';
+  }
+  function refreshPanelTopicSummaries() {
+    const setText = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text || '';
+    };
+    const pct = Math.round(parseFloat(opacitySlider.value || '1') * 100);
+    setText('topic-panel-position-summary', Number.isFinite(pct) ? `${pct}% opacity` : '');
+
+    // Which sizing group is actually on screen, not which display-mode radio is checked - a
+    // list-format shape (Travel guide, Raid named) shows the list sliders with no radio checked
+    // at all, so keying off the radio mislabelled it "Npx tiles".
+    const listSized = listOnlySettings && listOnlySettings.style.display !== 'none';
+    setText(
+      'topic-panel-size-summary',
+      listSized ? `${listWidthSlider.value}px wide` : `${iconSizeSlider.value}px tiles`
+    );
+
+    setText(
+      'topic-panel-text-summary',
+      [`${textAuraSizeSlider.value}px`, panelRadioLabel('widget-text-justify')].filter(Boolean).join(' · ')
+    );
+
+    const layout = [panelRadioLabel('widget-display-mode'), panelRadioLabel('widget-sort-order')];
+    if (mergeCheckbox.checked) layout.push('merged');
+    setText('topic-panel-layout-summary', layout.filter(Boolean).join(' · '));
   }
   const iconLabelSectionEl = document.getElementById('widget-icon-label-section');
   const showIconLabelCheckbox = document.getElementById('widget-show-icon-label-checkbox');
@@ -1957,6 +2031,7 @@ function initWidgetsPanel() {
   window.eqTracker.getHideHotkeyChoice().then((choice) => {
     hideHotkeySelect.value = choice || 'ScrollLock';
     refreshHideHotkeyHelp(hideHotkeySelect.value);
+    refreshAppSettingsSummaries();
   });
   hideHotkeySelect.addEventListener('change', () => {
     window.eqTracker.setHideHotkeyChoice(hideHotkeySelect.value).then(() => {
@@ -2676,8 +2751,10 @@ function initWidgetsPanel() {
     trackOthersRowEl.style.display = has('track-others') ? '' : 'none';
 
     // Workstream B - after every individual row's display is set, collapse away any Display & size
-    // topic that ended up with nothing in it for this shape.
+    // topic that ended up with nothing in it for this shape, then refresh the per-topic value
+    // previews in the (possibly collapsed) headers.
     hideEmptyPanelTopics();
+    refreshPanelTopicSummaries();
 
     return fields;
   }
@@ -5575,6 +5652,7 @@ function initWidgetsPanel() {
       opt.selected = set === current;
       iconSetSelect.appendChild(opt);
     }
+    refreshAppSettingsSummaries();
   });
   iconSetSelect.addEventListener('change', () => {
     window.eqTracker.setIconSet(iconSetSelect.value);
@@ -6105,7 +6183,10 @@ function initUiScale() {
     select.value = String(nearest);
   }
 
-  window.eqTracker.getUiScale().then((pct) => show(pct || 100));
+  window.eqTracker.getUiScale().then((pct) => {
+    show(pct || 100);
+    refreshAppSettingsSummaries();
+  });
 
   select.addEventListener('change', () => {
     // The main process clamps and persists, and returns what it actually used.
@@ -6236,6 +6317,7 @@ function initMergeRule() {
     radios.forEach((radio) => {
       radio.checked = radio.value === rule;
     });
+    refreshAppSettingsSummaries();
   });
   radios.forEach((radio) => {
     radio.addEventListener('change', () => {
