@@ -884,6 +884,13 @@ const CHARM_SPELL_NAMES = [
 // `secs` is only a safety net for a missed fade line. Not exhaustive - mob-specific positional
 // stuns and unusual roots won't all be here - but the trigger list is editable like any aura's.
 const LOSS_OF_CONTROL = [
+  // The generic catch-all. The game writes "You lose control of yourself!" for a charm landing on
+  // the player when no spell-specific land line is emitted - confirmed in the owner's log (8x on
+  // 30 Aug, always paired with "You have control of yourself again." 6-35s later). Without this the
+  // per-spell CHARMED entries below missed every charm that only produced the generic line. Listed
+  // first so it is the fallback the others refine. 45s safety net matches the CHARMED entries (one
+  // observed instance ran 35s); the end substring is what actually clears it.
+  { label: 'CONTROLLED', land: 'You lose control of yourself!', end: 'You have control of yourself again.', secs: 45 },
   { label: 'STUNNED', land: 'You are stunned!', end: 'You are no longer stunned.', secs: 10 },
   { label: 'STUNNED', land: 'You are stunned by a gust of air.', end: 'You are no longer stunned.', secs: 10 },
   { label: 'STUNNED', land: 'You are struck by a sudden force.', end: 'You are no longer stunned.', secs: 10 },
@@ -1174,6 +1181,32 @@ class WidgetStore {
         }
         data.version = 4;
       }
+      // v4 -> v5: the "Loss of control" premade gained a generic catch-all trigger,
+      // "You lose control of yourself!" (label CONTROLLED) - the game writes that for a charm
+      // landing on the player with no spell-specific line, so an existing aura built before this
+      // missed those entirely. Add it to any Loss of control aura that doesn't already carry it.
+      // Version-gated: a user who deletes the CONTROLLED trigger by hand keeps it deleted.
+      if (data.version < 5) {
+        for (const widget of data.widgets) {
+          const isLossOfControl =
+            widget.premadeOrigin &&
+            widget.premadeOrigin.kind === 'textAura' &&
+            widget.premadeOrigin.preset === 'lossOfControl';
+          if (!isLossOfControl || !Array.isArray(widget.customTimers)) continue;
+          const already = widget.customTimers.some(
+            (t) => t.triggerText === 'You lose control of yourself!'
+          );
+          if (already) continue;
+          widget.customTimers.unshift({
+            id: crypto.randomUUID(),
+            name: 'CONTROLLED',
+            durationSec: 45,
+            triggerText: 'You lose control of yourself!',
+            endedText: 'You have control of yourself again.',
+          });
+        }
+        data.version = 5;
+      }
       this.store.saveJson('widgets', data);
       return data;
     }
@@ -1194,7 +1227,7 @@ class WidgetStore {
 
     const selfBuffs = defaultSelfBuffsWidget(overrides);
 
-    const data = { version: 4, widgets: [selfBuffs] };
+    const data = { version: 5, widgets: [selfBuffs] };
     this.store.saveJson('widgets', data);
     return data;
   }
