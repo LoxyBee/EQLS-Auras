@@ -121,7 +121,7 @@ test('legacy (toggle off): an ally-burst unique landing still blind-lands as bef
   const puma = buffStore.getByName('Spirit of the Puma');
 
   engine.setTrackOthersEnabled(true);
-  engine.handleLine("Dovairous activates Quick Buff.");
+  engine.handleLine("Cade activates Quick Buff.");
   engine.handleLine(puma.landingText);
 
   assert.deepEqual(names(engine), [puma.name], 'legacy behaviour changed - this pins the OLD outcome');
@@ -129,12 +129,12 @@ test('legacy (toggle off): an ally-burst unique landing still blind-lands as bef
 });
 
 test('evidence model on, track others OFF: an ally-burst landing stays a silent IGNORE, never a prompt', () => {
-  // Shara, 25 Aug: "track who likely did it, but it shouldn't hit self buffs unless toggled on."
+  // Vaela, 25 Aug: "track who likely did it, but it shouldn't hit self buffs unless toggled on."
   const { engine, buffStore, log } = makeEngine();
   const puma = buffStore.getByName('Spirit of the Puma');
 
   engine.setUseEvidenceModel(true);
-  engine.handleLine("Dovairous activates Quick Buff.");
+  engine.handleLine("Cade activates Quick Buff.");
   engine.handleLine(puma.landingText);
 
   assert.deepEqual(names(engine), []);
@@ -152,12 +152,12 @@ test('evidence model on, track others ON: an ally-burst landing lands directly, 
 
   engine.setUseEvidenceModel(true);
   engine.setTrackOthersEnabled(true);
-  engine.handleLine("Dovairous activates Quick Buff.");
+  engine.handleLine("Cade activates Quick Buff.");
   engine.handleLine(puma.landingText);
 
   assert.deepEqual(names(engine), [puma.name]);
   assert.equal(engine.getAmbiguousCasts().length, 0, 'a single candidate must never produce a prompt');
-  assert.ok(log.some((m) => m.includes('LANDED') && m.includes('only one candidate') && m.includes('likely "Dovairous"')));
+  assert.ok(log.some((m) => m.includes('LANDED') && m.includes('only one candidate') && m.includes('likely "Cade"')));
 });
 
 test('a stale-gem case (no ally burst involved) is unaffected by trackOthersEnabled - it is about the player, not an ally', () => {

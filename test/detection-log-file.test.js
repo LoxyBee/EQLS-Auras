@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Where the detection log lives - Shara, 23 August.
+ * Where the detection log lives - Vaela, 23 August.
  *
  * She said: "I cannot provide this currently as that log file doesn't exist. it should probably be
  * created as an actual file in it's own folder, that updates and is split per day."
@@ -107,7 +107,7 @@ test('a write failure still cannot break detection', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The manual enable toggle - Shara, 25 August
+// The manual enable toggle - Vaela, 25 August
 // ---------------------------------------------------------------------------
 //
 // "should there be a debug log of every aura that is fired/loaded/ended?... add it to the log,

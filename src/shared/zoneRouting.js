@@ -205,7 +205,7 @@ function describeLeg(leg) {
 }
 
 /**
- * Note 20, as Shara specified it on 23 August: the destination is set by typing "/tell qeynos" in
+ * Note 20, as the owner specified it on 23 August: the destination is set by typing "/tell qeynos" in
  * game, which the server answers with "Qeynos is not online at this time." - and that reply is the
  * command. It is a neat trick, because a /tell name is one word with no spaces and the game echoes
  * it back reliably, so nothing has to be typed into the app at all while playing.

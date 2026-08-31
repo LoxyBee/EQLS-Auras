@@ -69,8 +69,8 @@ const MOTE_DURATION_RATES = {
   dot: 0.05, // sheet only
 };
 
-// Whether the AA and Exaltation duration bonus applies to a spell. Shara, 23 August: "the AA
-// should only apply to things marked as a BUFF. not just any beneficial." Shara, 24 August,
+// Whether the AA and Exaltation duration bonus applies to a spell. the owner, 23 August: "the AA
+// should only apply to things marked as a BUFF. not just any beneficial." the owner, 24 August,
 // correcting a second mistake: "ALL buffs are supposed to be subject to these increases. i have
 // stressed this since the beginning." So the actual rule is simpler than the code ever made it -
 // every spell the spreadsheet's own `kind` column marks 'buff' gets the bonus, full stop.
@@ -111,7 +111,7 @@ const MEZ_LANDING_SUFFIX = ' has been mesmerized.';
 //
 // SIX SECONDS, measured rather than assumed: across the owner's 1,521,971 log lines, the gap
 // between consecutive repeats of an identical line is 6s on 314,324 occasions - four times the
-// next most common gap, and every one of the ten most repeated lines pulses at 6s. Shara said it
+// next most common gap, and every one of the ten most repeated lines pulses at 6s. the owner said it
 // was 6 and it is.
 //
 // The tolerance exists because the log's resolution is one second and a pulse can be reported a
@@ -201,7 +201,7 @@ class BuffEngine extends EventEmitter {
     this.store = store;
     this.pendingCast = null; // { name, timer, landingText }
     this.burstUntil = 0; // Date.now() timestamp - see matchActivate handling below
-    // Same idea as burstUntil, but opened by an ALLY's own activation line ("Dovairous activates
+    // Same idea as burstUntil, but opened by an ALLY's own activation line ("Cade activates
     // Quick Buff.") rather than the player's. Reported live and confirmed straight from the log:
     // an ally's Quick-Buff-equivalent instant grant hit the whole group, including the player, with
     // no per-spell cast line for any of it - the exact shape gotchas #12/#18 document for the
@@ -331,7 +331,7 @@ class BuffEngine extends EventEmitter {
     // bug: membership can only be learned from join/leave lines seen live, so
     // grouping up before launching the app - or any restart mid-session -
     // left it empty and silently disabled ally tracking completely (confirmed
-    // from a real log: a Shield of Flame cast whose "Avenrae is enveloped by
+    // from a real log: a Shield of Flame cast whose "Baxa is enveloped by
     // flame." landed 3s later was ignored purely because the group had formed
     // hours before startup). Both ally paths in handleLine now take the
     // recipient's name from the landing line itself instead. Kept up to date
@@ -418,7 +418,7 @@ class BuffEngine extends EventEmitter {
   // separate set rather than a flag on the existing one, because the two
   // modes gate different code paths below - self mode still needs
   // recentSelfCast/the burst window, ally mode skips that gate entirely.
-  // Shara's own words: "the name doesn't matter for now, just have it
+  // the owner's own words: "the name doesn't matter for now, just have it
   // tracked that a debuff happened from someone" - so unlike allyBuffs'
   // named-cast path this never records who cast it, only that the debuff
   // landed.
@@ -427,7 +427,7 @@ class BuffEngine extends EventEmitter {
   }
 
   // fn() => Set of lowercased spell names some TEXT aura has asked to be warned about when
-  // somebody else casts them. Shara's design, and it is a better one than either option I put to
+  // somebody else casts them. the owner's design, and it is a better one than either option I put to
   // her: not a timer on somebody else's debuff, which could only ever be guessed, but a warning
   // that one has been cast - "be careful", not "here is a countdown".
   //
@@ -636,7 +636,7 @@ class BuffEngine extends EventEmitter {
       return;
     }
 
-    // Confirmed straight from the log after the fix below: "Dovairous activates Quick Buff." -
+    // Confirmed straight from the log after the fix below: "Cade activates Quick Buff." -
     // an ally triggering the same instant multi-grant ability matchActivate exists for, just from
     // someone else. Opens allyBurstUntil (see the constructor comment) so the unique-landing-text
     // tier gets MORE cautious for the next few seconds, not less - every buff a burst like this
@@ -679,7 +679,7 @@ class BuffEngine extends EventEmitter {
     // leaving the user to answer a prompt this line already answered.
     // Real example that motivated this: "You feel tough." queued 3
     // candidates (Harnessing of Spirit, Talisman of Altuna, Talisman of
-    // Tnarg); the very next line, "You healed Shara for 255 hit points by
+    // Tnarg); the very next line, "You healed Vaela for 255 hit points by
     // Talisman of Altuna.", named the exact answer. Resolved the same way
     // a manual pick is (resolveAmbiguousCast persists it too) - reusing
     // that path rather than a one-off "land but don't remember" special
@@ -718,7 +718,7 @@ class BuffEngine extends EventEmitter {
         // lines seen live, so grouping up before launching the app (or any
         // restart mid-session) left it empty and silently disabled ally
         // detection entirely - confirmed from a real log, a Shield of Flame
-        // cast whose "Avenrae is enveloped by flame." landed 3s later and was
+        // cast whose "Baxa is enveloped by flame." landed 3s later and was
         // ignored purely because the group had formed hours before startup.
         //
         // Dropping that requirement costs almost nothing in certainty: we
@@ -787,7 +787,7 @@ class BuffEngine extends EventEmitter {
     // instant multi-grant burst (see the ALLY ACTIVATE handling above and gotchas #12/#18) that
     // produced no per-spell cast line at all. What DID appear in the log for it was several other
     // people's third-person landing suffix for the exact same spell - "Kibobab's mind sharpens.",
-    // "Avenrae's mind sharpens." - in the same second as "Your mind sharpens." on the player. The
+    // "Baxa's mind sharpens." - in the same second as "Your mind sharpens." on the player. The
     // two tiers just above already know how to read this shape of line; this reads it too, for
     // its own sake, when NEITHER of them already claimed it.
     //
@@ -822,7 +822,7 @@ class BuffEngine extends EventEmitter {
     // caster. No recentSelfCast/burst gate at all, on purpose: the whole
     // point of this mode is that the player is not the one casting it, so
     // gating on evidence of her own cast would defeat it. Caster identity is
-    // not captured - Shara asked only that the debuff be tracked, not who
+    // not captured - the owner asked only that the debuff be tracked, not who
     // cast it - so this can't be folded into the ally-buff tiers above,
     // which exist specifically to attribute a landing to a groupmate.
     if (this.allyEnemyDebuffNamesFn) {
@@ -944,7 +944,7 @@ class BuffEngine extends EventEmitter {
       // another class's spell" from the log alone. If a clicky starts getting silently dropped,
       // that is the tradeoff showing up and needs its own signal, not a reason to revert this.
       const neverScribed = !!this.spellbookCheckFn && !isMemorizableSpell;
-      // Confirmed straight from the log: "Dovairous activates Quick Buff." granted the whole group
+      // Confirmed straight from the log: "Cade activates Quick Buff." granted the whole group
       // a stack of buffs, Insight among them, with no per-spell cast line for any of it - see
       // allyBurstUntil's constructor comment. Unlike the player's OWN burst (inBurst, exempted via
       // !inBurst below), an ally's burst is the opposite kind of evidence: MORE reason for caution,
@@ -1221,7 +1221,7 @@ class BuffEngine extends EventEmitter {
       if (known && matchSingingBegin(line)) this.buffStore.markBardSong(known.name);
       // Group/targeted spells can land on whoever you had targeted instead
       // of yourself - in that case you only ever see the third-person
-      // message about them ("Valbladz looks powerful."), never your own
+      // message about them ("Fenn looks powerful."), never your own
       // first-person line. When we know the exact text to expect, timing
       // out means it did NOT land on us, so the timer only clears the
       // pending state rather than confirming - blind-confirming here
@@ -1529,7 +1529,7 @@ class BuffEngine extends EventEmitter {
    *
    * BASE, from the roster.
    *
-   * MOTE TIER, the Roman numeral outside the name field. Shara: "duration should be base duration
+   * MOTE TIER, the Roman numeral outside the name field. the owner: "duration should be base duration
    * from the roster, multiplied by the AA's, exaltations, and rank of the spell, which is listed
    * in the chat log when the player (not an ally) cast's a spell." The rates come from the
    * spreadsheet's "Spell Upgrades (motes)" sheet and are LINEAR against base, not compounding -
@@ -1551,7 +1551,7 @@ class BuffEngine extends EventEmitter {
    * set. Curse (base 30, a dot) measured 31-36 seconds across 31 castings on days when her buffs
    * measured x1.53; the multiplier would make it 45, and it never comes near.
    *
-   * The narrowing from "beneficial" to "buff" is Shara's correction of 23 August, and the
+   * The narrowing from "beneficial" to "buff" is the owner's correction of 23 August, and the
    * measurement that made me get it wrong is worth recording. Celestial Healing IV, a hot with a
    * base of 24, measures 48 to 78 seconds - far more than the 29 the mote tier alone predicts -
    * and I read that as the AA bonus reaching heals over time.
@@ -1640,7 +1640,7 @@ class BuffEngine extends EventEmitter {
     // AN INSTANT. The roster has no duration for it and it is not marked as lasting forever, so it
     // is something that happens rather than something that runs - a nuke, a heal, a gate.
     //
-    // Shara's rule: "genuine no duration spells should not be tracked for duration based auras...
+    // the owner's rule: "genuine no duration spells should not be tracked for duration based auras...
     // but can be added to instance based tracking such as sounds, and text only." So it still
     // LANDS, because that is how a sound or text aura hears about it at all, and the overlay is
     // what refuses to draw it as a countdown tile.

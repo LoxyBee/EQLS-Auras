@@ -34,7 +34,7 @@ function tempLogs(files) {
 
 // The app feeds backfill the SINGLE live log the tailer is on, not a folder. This writes one file
 // and returns its path, for pointing setCurrentFileFn at.
-function liveLog(lines, name = 'eqlog_Avenrae_rivervale.txt', eol = '\r\n') {
+function liveLog(lines, name = 'eqlog_Baxa_rivervale.txt', eol = '\r\n') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-lockouts-'));
   const file = path.join(dir, name);
   fs.writeFileSync(file, lines.join(eol) + eol, 'utf8');
@@ -68,17 +68,17 @@ test('the vendored core stays pure — no requires, no clock, no filesystem', ()
 // player alt-tabs between characters.
 test('two characters never share state', () => {
   const s = new LockoutService();
-  let file = 'C:/eq/Logs/eqlog_Avenrae_rivervale.txt';
+  let file = 'C:/eq/Logs/eqlog_Baxa_rivervale.txt';
   s.setCurrentFileFn(() => file);
   s.handleLine(ASSIGN('Lord Nagafen'));
-  file = 'C:/eq/Logs/eqlog_Shara_rivervale.txt';
+  file = 'C:/eq/Logs/eqlog_Vaela_rivervale.txt';
   s.handleLine(ASSIGN('Lady Vox'));
-  assert.deepEqual([...s.states.keys()].sort(), ['Avenrae', 'Shara']);
+  assert.deepEqual([...s.states.keys()].sort(), ['Baxa', 'Vaela']);
   const p = s.getProjection(civilNow(new Date(2026, 7, 12, 12, 0, 0)));
-  const av = p.characters.find((c) => c.character === 'Avenrae');
-  const sh = p.characters.find((c) => c.character === 'Shara');
+  const av = p.characters.find((c) => c.character === 'Baxa');
+  const sh = p.characters.find((c) => c.character === 'Vaela');
   assert.ok(av.projection.bosses.some((b) => b.boss === 'Lord Nagafen'));
-  assert.ok(!av.projection.bosses.some((b) => b.boss === 'Lady Vox'), "Avenrae must not carry Shara's task");
+  assert.ok(!av.projection.bosses.some((b) => b.boss === 'Lady Vox'), "Baxa must not carry Vaela's task");
   assert.ok(sh.projection.bosses.some((b) => b.boss === 'Lady Vox'));
 });
 
@@ -95,9 +95,9 @@ test('a live line with no known file is dropped, not guessed at', () => {
 
 test('a live line is routed by the file the tailer is currently on', () => {
   const s = new LockoutService();
-  s.setCurrentFileFn(() => 'C:/eq/Logs/eqlog_Avenrae_rivervale.txt');
+  s.setCurrentFileFn(() => 'C:/eq/Logs/eqlog_Baxa_rivervale.txt');
   s.handleLine(ASSIGN('Lord Nagafen'));
-  assert.deepEqual([...s.states.keys()], ['Avenrae']);
+  assert.deepEqual([...s.states.keys()], ['Baxa']);
 });
 
 // ---------------------------------------------------------------------------
@@ -110,7 +110,7 @@ test('a live line is routed by the file the tailer is currently on', () => {
 // acceptable.
 test('handleLine never throws, whatever it is given', () => {
   const s = new LockoutService();
-  s.setCurrentFileFn(() => 'eqlog_Avenrae_rivervale.txt');
+  s.setCurrentFileFn(() => 'eqlog_Baxa_rivervale.txt');
   for (const bad of [null, undefined, 42, '', '\u0000', 'x'.repeat(200000), {}, []]) {
     assert.doesNotThrow(() => s.handleLine(bad), `threw on ${typeof bad}`);
   }
@@ -141,12 +141,12 @@ test('no live log file fails cleanly and says so', async () => {
 // file the tailer is on is the whole input.
 test('only the live log is read, not the rest of the folder', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-lockouts-'));
-  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   fs.writeFileSync(live, ASSIGN('Lord Nagafen') + '\r\n', 'utf8');
   // A dated file (as logSplitter.js would write) sitting right beside it, and a Split/ subfolder.
-  fs.writeFileSync(path.join(dir, 'eqlog_Avenrae_rivervale_2026-08-15.txt'), ASSIGN('Lady Vox') + '\r\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'eqlog_Baxa_rivervale_2026-08-15.txt'), ASSIGN('Lady Vox') + '\r\n', 'utf8');
   fs.mkdirSync(path.join(dir, 'Split'));
-  fs.writeFileSync(path.join(dir, 'Split', 'eqlog_Avenrae_rivervale_2026-08-16.txt'), ASSIGN('Master Yael') + '\r\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'Split', 'eqlog_Baxa_rivervale_2026-08-16.txt'), ASSIGN('Master Yael') + '\r\n', 'utf8');
 
   const s = new LockoutService();
   s.setLogsFolderFn(() => dir);
@@ -227,8 +227,8 @@ test('CRLF and LF live logs both parse', async () => {
  */
 test('change detection still fires after the event cap is reached', () => {
   const s = new LockoutService();
-  s.setCurrentFileFn(() => 'eqlog_Avenrae_rivervale.txt');
-  const st = s._stateFor('Avenrae');
+  s.setCurrentFileFn(() => 'eqlog_Baxa_rivervale.txt');
+  const st = s._stateFor('Baxa');
   // Saturate the cap directly - this is about what happens AT the cap, not about how it got there.
   st.events = new Array(5000).fill({ key: 'x', kind: 'noop', civil: 0, at: '' });
   assert.equal(st.events.length, 5000);
@@ -242,11 +242,11 @@ test('change detection still fires after the event cap is reached', () => {
 
 test('irrelevant lines do not fire a redraw', () => {
   const s = new LockoutService();
-  s.setCurrentFileFn(() => 'eqlog_Avenrae_rivervale.txt');
-  s._stateFor('Avenrae');
+  s.setCurrentFileFn(() => 'eqlog_Baxa_rivervale.txt');
+  s._stateFor('Baxa');
   let fired = 0;
   s.on('changed', () => { fired += 1; });
-  s.handleLine('[Mon Aug 31 09:26:00 2026] Avenrae tells the guild, hello');
+  s.handleLine('[Mon Aug 31 09:26:00 2026] Baxa tells the guild, hello');
   assert.equal(fired, 0);
 });
 
@@ -439,8 +439,8 @@ test('setLogTarget points backfill at a different file', async () => {
 
 test('addLogs feeds extra files into the grid without a full rebuild', async () => {
   const live = liveLog([ASSIGN('Lord Nagafen')]);
-  const extra1 = liveLog([ASSIGN('Lady Vox')], 'eqlog_Avenrae_rivervale_2026-08-15.txt');
-  const extra2 = liveLog([ASSIGN('Master Yael')], 'eqlog_Avenrae_rivervale_2026-08-16.txt');
+  const extra1 = liveLog([ASSIGN('Lady Vox')], 'eqlog_Baxa_rivervale_2026-08-15.txt');
+  const extra2 = liveLog([ASSIGN('Master Yael')], 'eqlog_Baxa_rivervale_2026-08-16.txt');
   const s = new LockoutService();
   s.setCurrentFileFn(() => live);
   await s.backfill();
@@ -456,7 +456,7 @@ test('addLogs feeds extra files into the grid without a full rebuild', async () 
 
 test('addLogs marks the view as multi-file, and a rebuild clears that', async () => {
   const live = liveLog([ASSIGN('Lord Nagafen')]);
-  const extra = liveLog([ASSIGN('Lady Vox')], 'eqlog_Avenrae_rivervale_2026-08-15.txt');
+  const extra = liveLog([ASSIGN('Lady Vox')], 'eqlog_Baxa_rivervale_2026-08-15.txt');
   const s = new LockoutService();
   s.setCurrentFileFn(() => live);
   await s.backfill();
@@ -523,7 +523,7 @@ test('rebuild() is single-flight - two concurrent calls do not interleave', asyn
   const [a, b] = await Promise.all([s.rebuild(), s.rebuild()]);
   // Both resolve, and the state is exactly one clean read - not a doubled or half-cleared one.
   assert.equal(a.ok || b.ok, true);
-  assert.deepEqual([...s.states.keys()], ['Avenrae']);
+  assert.deepEqual([...s.states.keys()], ['Baxa']);
   const bosses = s.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0))).characters[0].projection.bosses;
   assert.equal(bosses.length, 1, 'the task was recorded exactly once');
 });
@@ -536,7 +536,7 @@ test('a missing log target is dropped, and backfill falls back to the live log',
   const r = await s.backfill();
   assert.equal(r.targetCleared, true, 'backfill reports the dead target was dropped');
   assert.equal(s.getStatus().logTarget, null);
-  assert.deepEqual([...s.states.keys()], ['Avenrae'], 'it read the live log instead');
+  assert.deepEqual([...s.states.keys()], ['Baxa'], 'it read the live log instead');
 });
 
 module.exports = () => report('lockouts');

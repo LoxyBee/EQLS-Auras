@@ -37,7 +37,7 @@ const store = () => {
 
 function tempLog(body) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-split-'));
-  const file = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const file = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   fs.writeFileSync(file, body, 'utf8');
   return { dir, file };
 }
@@ -54,6 +54,7 @@ async function split(body, opts = {}) {
   const { dir, file } = tempLog(body);
   const s = new LogSplitter(store());
   if (opts.onAlarm) s.setOnFormatAlarm(opts.onAlarm);
+  if (opts.dayStartHour != null) s.setDayStartHour(opts.dayStartHour);
   s.attachToFile(file);
   await settle(s);
   s.stop();
@@ -102,13 +103,13 @@ test('the first of the month is filed under the first of the month', async () =>
     '[Wed Sep 02 09:00:00 2026] You have slain Cazic Thule!\n'
   );
   assert.deepEqual(files, [
-    'eqlog_Avenrae_rivervale_2026-08-31.txt',
-    'eqlog_Avenrae_rivervale_2026-09-01.txt',
-    'eqlog_Avenrae_rivervale_2026-09-02.txt',
+    'eqlog_Baxa_rivervale_2026-08-31.txt',
+    'eqlog_Baxa_rivervale_2026-09-01.txt',
+    'eqlog_Baxa_rivervale_2026-09-02.txt',
   ], 'SEPTEMBER WAS FILED UNDER AUGUST');
-  assert.ok(read('eqlog_Avenrae_rivervale_2026-09-01.txt').includes('Nagafen'));
-  assert.ok(read('eqlog_Avenrae_rivervale_2026-09-01.txt').includes('Yael'));
-  assert.ok(!read('eqlog_Avenrae_rivervale_2026-08-31.txt').includes('Nagafen'));
+  assert.ok(read('eqlog_Baxa_rivervale_2026-09-01.txt').includes('Nagafen'));
+  assert.ok(read('eqlog_Baxa_rivervale_2026-09-01.txt').includes('Yael'));
+  assert.ok(!read('eqlog_Baxa_rivervale_2026-08-31.txt').includes('Nagafen'));
 });
 
 test('every day of the first nine gets its own file', async () => {
@@ -141,7 +142,7 @@ test('a wrapped broadcast stays with the line it belongs to', async () => {
     'Downtime will be approximately one hour.\n' +
     '[Tue Sep 15 09:00:05 2026] You have slain Lady Vox!\n'
   );
-  assert.deepEqual(files, ['eqlog_Avenrae_rivervale_2026-09-15.txt']);
+  assert.deepEqual(files, ['eqlog_Baxa_rivervale_2026-09-15.txt']);
   const out = read(files[0]);
   assert.ok(out.includes('We apologize'), 'the continuation line was dropped');
   assert.ok(out.includes('approximately one hour'), 'the continuation line was dropped');
@@ -414,6 +415,53 @@ test('a re-split still appends genuinely new lines past the day file tail', asyn
   const out = fs.readFileSync(path.join(outDir, dayFile), 'utf8');
   assert.equal(out.match(/Lady Vox/g).length, 1);
   assert.equal(out.match(/Cazic-Thule/g).length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// QOL #23 - user-set hour for the per-day file rollover
+// ---------------------------------------------------------------------------
+
+test('with the default (midnight) the boundary is unchanged - byte-identical filing', async () => {
+  const { files } = await split(
+    '[Sun Aug 30 23:30:00 2026] You have slain Lord Nagafen!\n' +
+    '[Mon Aug 31 00:30:00 2026] You have slain Lady Vox!\n'
+  );
+  assert.deepEqual(files, [
+    'eqlog_Baxa_rivervale_2026-08-30.txt',
+    'eqlog_Baxa_rivervale_2026-08-31.txt',
+  ]);
+});
+
+test('a 6 AM rollover keeps a past-midnight raid in one file, dated for the night it started', async () => {
+  const { files, read } = await split(
+    '[Sun Aug 30 20:00:00 2026] You have slain Lord Nagafen!\n' +
+    '[Sun Aug 30 23:59:00 2026] You have slain Master Yael!\n' +
+    '[Mon Aug 31 01:30:00 2026] You have slain Lady Vox!\n' +      // still "Sunday night"
+    '[Mon Aug 31 05:59:00 2026] You have slain Cazic-Thule!\n' +   // still "Sunday night"
+    '[Mon Aug 31 08:00:00 2026] You have slain Phinigel Autropos!\n', // now Monday
+    { dayStartHour: 6 }
+  );
+  assert.deepEqual(files, [
+    'eqlog_Baxa_rivervale_2026-08-30.txt',
+    'eqlog_Baxa_rivervale_2026-08-31.txt',
+  ]);
+  const night = read('eqlog_Baxa_rivervale_2026-08-30.txt');
+  assert.ok(night.includes('Nagafen') && night.includes('Yael') && night.includes('Vox') && night.includes('Cazic-Thule'));
+  assert.ok(!night.includes('Phinigel'), 'the 8 AM kill belongs to the next day');
+  assert.ok(read('eqlog_Baxa_rivervale_2026-08-31.txt').includes('Phinigel'));
+});
+
+test('the hour setting is clamped to 0..23 and persisted', () => {
+  const saved = {};
+  const st = { loadJson: (k, d) => (k in saved ? saved[k] : d), saveJson: (k, v) => { saved[k] = v; } };
+  const s = new LogSplitter(st);
+  assert.equal(s.setDayStartHour(6), 6);
+  assert.equal(saved.splitSettings.splitDayStartHour, 6);
+  assert.equal(s.setDayStartHour(99), 0, 'out of range falls back to midnight');
+  assert.equal(s.setDayStartHour('nonsense'), 0);
+  // reloads from settings
+  saved.splitSettings.splitDayStartHour = 4;
+  assert.equal(new LogSplitter(st).dayStartHour, 4);
 });
 
 module.exports = () => report('log-splitter');

@@ -14,6 +14,9 @@ async function init() {
     statusEl.textContent = 'Something is wrong: ' + err.message;
   }
 
+  const appSettingsBlock = document.getElementById('app-settings-block');
+  if (appSettingsBlock) appSettingsBlock.addEventListener('change', refreshAppSettingsSummaries);
+
   initTitleBar();
   initNavigation();
   initTopicToggles();
@@ -38,6 +41,35 @@ async function init() {
   initBuffPlanner();
   initLoggingWatch();
   initChangelog();
+  refreshAppSettingsSummaries();
+}
+
+// Workstream B/C follow-up: the collapsed topic rows on the Setup page's "App settings" block
+// each carry a summary span showing their current value, so you can see what a row is set to
+// without opening it. Called after each control's async load settles, on any change inside the
+// block, and once at the end of init(). Module scope so the per-control init functions can call
+// it without a closure. Idempotent - reads the live DOM, writes the spans, nothing else.
+function refreshAppSettingsSummaries() {
+  const selText = (id) => {
+    const el = document.getElementById(id);
+    return el && el.selectedIndex >= 0
+      ? el.options[el.selectedIndex].text.replace(/\s*\(default\)$/, '')
+      : '';
+  };
+  const radioLabel = (name) => {
+    const hit = document.querySelector(`input[name="${name}"]:checked`);
+    return hit && hit.closest('label') ? hit.closest('label').textContent.trim() : '';
+  };
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text || '';
+  };
+  set('topic-icon-set-summary', selText('icon-set-select'));
+  set('topic-merge-rule-summary', radioLabel('merge-rule'));
+  set('topic-ui-scale-summary', selText('ui-scale-select'));
+  set('topic-hide-hotkey-summary', selText('hide-hotkey-select'));
+  const ver = document.querySelector('#version-info dd');
+  set('topic-app-info-summary', ver ? `v${ver.textContent}` : '');
 }
 
 // Backlog #18 - the "What's changed" list on the About page, from src/shared/data/changelog.js
@@ -429,7 +461,18 @@ function initDetectionSettingsPanel() {
   }
 
   function renderSpellbookState(state) {
-    renderSpellbookFilePicker(state);
+    // A pinned file that has since moved or been deleted: getFilePath() is null, so without this
+    // the generic "not found, run /outputfile spellbook" block below would show - wrong advice,
+    // since the fix is to pick another file or go back to auto, not to regenerate anything.
+    if (state.mode === 'file' && !state.filePath) {
+      spellbookStatusEl.textContent = 'The pinned spellbook file is missing - pick another below, or go back to auto.';
+      spellbookStatusEl.classList.add('warn');
+      spellbookMissingHintEl.style.display = 'none';
+      if (spellbookCharHintEl) {
+        spellbookCharHintEl.textContent = 'The file you picked is no longer where it was.';
+      }
+      return;
+    }
     if (state.filePath) {
       const classes = loadedClasses(state);
       const cls = classes.length ? ` [${classes.join(', ')}]` : '';
@@ -469,6 +512,15 @@ function initDetectionSettingsPanel() {
     }
   }
 
+  // Status text + hints, and (only when the file pin might have changed) the picker below. The
+  // picker rebuild does a full-folder readdir + parse of every spellbook file in the main process,
+  // so it must NOT ride along on renderSpellbookState - that fires on every debounced keystroke in
+  // the Character fields, which turned typing a name into a disk scan per keypress.
+  function renderSpellbook(state) {
+    renderSpellbookState(state);
+    renderSpellbookFilePicker(state);
+  }
+
   // The "Change spellbook file..." safety valve (P3). Shown whenever the install folder has at
   // least one *-Spellbook.txt at all - a single-character machine never needs it but seeing the
   // one file listed is reassuring rather than noisy. Hidden entirely when there are none (the
@@ -498,7 +550,7 @@ function initDetectionSettingsPanel() {
     });
   }
 
-  window.eqTracker.getSpellbookState().then(renderSpellbookState);
+  window.eqTracker.getSpellbookState().then(renderSpellbook);
   if (spellbookCharNameEl && spellbookCharServerEl) {
     window.eqTracker.getSpellbookCharacter().then((c) => {
       spellbookCharNameEl.value = c.name || '';
@@ -518,11 +570,12 @@ function initDetectionSettingsPanel() {
   }
 
   if (spellbookFileSelectEl) {
+    // The pin changed here, so the picker's own selection/reset-button state must refresh too.
     spellbookFileSelectEl.addEventListener('change', () => {
-      window.eqTracker.setSpellbookFileOverride(spellbookFileSelectEl.value).then(renderSpellbookState);
+      window.eqTracker.setSpellbookFileOverride(spellbookFileSelectEl.value).then(renderSpellbook);
     });
     spellbookFileResetEl.addEventListener('click', () => {
-      window.eqTracker.setSpellbookFileOverride('').then(renderSpellbookState);
+      window.eqTracker.setSpellbookFileOverride('').then(renderSpellbook);
     });
   }
 
@@ -686,7 +739,7 @@ function initDetectionSettingsPanel() {
   const loadoutLabelUnlockBtn = document.getElementById('loadout-label-unlock-btn');
   const loadoutLabelResetPositionBtn = document.getElementById('loadout-label-reset-position-btn');
 
-  // The label is deliberately never in the sidebar aura list or Add Aura (Shara: "it should be a
+  // The label is deliberately never in the sidebar aura list or Add Aura (the owner: "it should be a
   // permanent option that is not tied to creating an aura") - but it's still a real widget with a
   // real draggable position underneath, and with nowhere else showing it, "drag it wherever you
   // want it" had no button to start from. Reported live: "this label cannot be moved." These two
@@ -811,6 +864,13 @@ function initLogPanel() {
   const splitChooseFolderBtn = document.getElementById('split-choose-folder-btn');
   const splitResetFolderBtn = document.getElementById('split-reset-folder-btn');
   const splitSubOptionsEl = document.getElementById('split-sub-options');
+  const splitDayStartHourSelect = document.getElementById('split-day-start-hour-select');
+  if (splitDayStartHourSelect && !splitDayStartHourSelect.options.length) {
+    for (let h = 0; h < 24; h++) {
+      const label = h === 0 ? 'Midnight' : h < 12 ? `${h} AM` : h === 12 ? 'Noon' : `${h - 12} PM`;
+      splitDayStartHourSelect.add(new Option(label, String(h)));
+    }
+  }
 
   const fileSizeEl = document.getElementById('log-file-size');
   const archivePromptEl = document.getElementById('archive-prompt');
@@ -842,6 +902,9 @@ function initLogPanel() {
       }
       splitEnabledCheckbox.checked = state.split.enabled;
       splitOutputFolderEl.textContent = state.split.outputDir || '-';
+      if (splitDayStartHourSelect && document.activeElement !== splitDayStartHourSelect) {
+        splitDayStartHourSelect.value = String(state.split.dayStartHour ?? 0);
+      }
       splitSubOptionsEl.style.display = state.split.enabled ? '' : 'none';
     }
 
@@ -895,6 +958,38 @@ function initLogPanel() {
   // log:status update on its own - poll it periodically instead.
   setInterval(() => window.eqTracker.getLogState().then(renderState), 5000);
 
+  // QOL #24 - a once-on-launch nudge when the live log has grown past 50 MB, even for someone who
+  // has never archived. Steers toward "Trim to this week" (keeps the current lockout week in the
+  // live log) rather than a whole-log archive that would blank the Lockouts grid. Deferred so it
+  // does not race the window's first paint; re-nudge cadence is capped in the main process.
+  setTimeout(async () => {
+    let check;
+    try { check = await window.eqTracker.launchArchiveCheck(); } catch { return; }
+    if (!check || !check.prompt) return;
+    const mb = (check.sizeBytes / 1048576).toFixed(0);
+    const go = await appConfirm({
+      title: 'Your EQ log is getting large',
+      message: `The log is about ${mb} MB. Trimming it to just the current raid-lockout week keeps the app fast and the Lockouts tab accurate.`,
+      detail: check.holdsCurrentWeek
+        ? 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first); the current week stays in the live log. EverQuest can stay running.'
+        : 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first), then the live log is rewritten to just the current week.',
+      okLabel: 'Trim to this week',
+      cancelLabel: 'Not now',
+    });
+    if (!go) {
+      window.eqTracker.dismissArchivePrompt();
+      return;
+    }
+    const r = await window.eqTracker.trimLockoutLog();
+    const rep = (r && r.report) || {};
+    await appConfirm(
+      rep.ok
+        ? { title: 'Trimmed', message: `Archived ${(rep.archivedBytes / 1048576).toFixed(1)} MB.`, detail: rep.archivedTo, okLabel: 'OK', hideCancel: true }
+        : { title: 'Not trimmed', message: rep.reason || 'The log could not be trimmed right now - try the Lockouts tab in a moment.', okLabel: 'OK', hideCancel: true }
+    );
+    window.eqTracker.getLogState().then(renderState);
+  }, 3500);
+
   browseBtn.addEventListener('click', async () => {
     const state = await window.eqTracker.chooseLogFolder();
     renderState(state);
@@ -905,6 +1000,11 @@ function initLogPanel() {
   splitEnabledCheckbox.addEventListener('change', async () => {
     renderState(await window.eqTracker.setSplitEnabled(splitEnabledCheckbox.checked));
   });
+  if (splitDayStartHourSelect) {
+    splitDayStartHourSelect.addEventListener('change', async () => {
+      renderState(await window.eqTracker.setSplitDayStartHour(Number(splitDayStartHourSelect.value)));
+    });
+  }
   splitChooseFolderBtn.addEventListener('click', async () => {
     renderState(await window.eqTracker.chooseSplitFolder());
   });
@@ -1351,6 +1451,13 @@ function initWidgetsPanel() {
 
   const pageOverlayTitleEl = document.getElementById('page-overlay-title');
   const settingsPanel = document.getElementById('widget-settings-panel');
+  // Keep the collapsed-topic value previews current as the panel's own controls are dragged or
+  // toggled, not only when the panel is first opened for an aura. refreshPanelTopicSummaries is
+  // cheap (a handful of DOM reads) and defined further down in this scope.
+  if (settingsPanel) {
+    settingsPanel.addEventListener('input', () => refreshPanelTopicSummaries());
+    settingsPanel.addEventListener('change', () => refreshPanelTopicSummaries());
+  }
   const settingsTitle = document.getElementById('widget-settings-title');
   const nameInput = document.getElementById('widget-name-input');
   const lockBtn = document.getElementById('widget-lock-btn');
@@ -1489,6 +1596,41 @@ function initWidgetsPanel() {
       topic.classList.toggle('topic-empty', !anyVisible);
     }
   }
+  // Workstream B follow-up: a value preview in each collapsed "Display & size" topic header, so a
+  // topic's current setting is readable without opening it. Reads the panel's own controls, which
+  // selectWidget has populated from the widget by the time this runs (end of
+  // applySettingsPanelShape). "This aura" varies too much across aura kinds to summarise, so it is
+  // left blank.
+  function panelRadioLabel(name) {
+    const hit = document.querySelector(`input[name="${name}"]:checked`);
+    return hit && hit.closest('label') ? hit.closest('label').textContent.trim() : '';
+  }
+  function refreshPanelTopicSummaries() {
+    const setText = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text || '';
+    };
+    const pct = Math.round(parseFloat(opacitySlider.value || '1') * 100);
+    setText('topic-panel-position-summary', Number.isFinite(pct) ? `${pct}% opacity` : '');
+
+    // Which sizing group is actually on screen, not which display-mode radio is checked - a
+    // list-format shape (Travel guide, Raid named) shows the list sliders with no radio checked
+    // at all, so keying off the radio mislabelled it "Npx tiles".
+    const listSized = listOnlySettings && listOnlySettings.style.display !== 'none';
+    setText(
+      'topic-panel-size-summary',
+      listSized ? `${listWidthSlider.value}px wide` : `${iconSizeSlider.value}px tiles`
+    );
+
+    setText(
+      'topic-panel-text-summary',
+      [`${textAuraSizeSlider.value}px`, panelRadioLabel('widget-text-justify')].filter(Boolean).join(' · ')
+    );
+
+    const layout = [panelRadioLabel('widget-display-mode'), panelRadioLabel('widget-sort-order')];
+    if (mergeCheckbox.checked) layout.push('merged');
+    setText('topic-panel-layout-summary', layout.filter(Boolean).join(' · '));
+  }
   const iconLabelSectionEl = document.getElementById('widget-icon-label-section');
   const showIconLabelCheckbox = document.getElementById('widget-show-icon-label-checkbox');
   const iconLabelOptionsEl = document.getElementById('widget-icon-label-options');
@@ -1498,6 +1640,10 @@ function initWidgetsPanel() {
   const marginWidthSlider = document.getElementById('widget-margin-width-slider');
   const allyGroupingSettingsEl = document.getElementById('widget-ally-grouping-settings');
   const groupAllyCheckbox = document.getElementById('widget-group-ally-checkbox');
+  const bardSongSettingsEl = document.getElementById('widget-bard-song-settings');
+  const showDebuffSongsCheckbox = document.getElementById('widget-show-debuff-songs-checkbox');
+  const splitSongsCheckbox = document.getElementById('widget-split-songs-checkbox');
+  const splitSongsRowEl = document.getElementById('widget-split-songs-row');
   const allyDirectionRadios = document.querySelectorAll('input[name="widget-ally-direction"]');
   const allyDirectionRow = document.getElementById('widget-ally-direction-row');
   const hideAllyNameCheckbox = document.getElementById('widget-hide-ally-name-checkbox');
@@ -1659,6 +1805,7 @@ function initWidgetsPanel() {
   // broadcast.
   let latestSelfBuffs = [];
   let latestAllyBuffs = [];
+  let latestBardSongs = [];
   let latestActiveCustomTimers = [];
 
   function findWidget(id) {
@@ -1688,6 +1835,7 @@ function initWidgetsPanel() {
 
   function activeSourceForWidget(widget) {
     if (widget.buffSource === 'ally') return latestAllyBuffs;
+    if (widget.buffSource === 'bardSongs') return latestBardSongs;
     if (widget.buffSource === 'customTimer') return latestActiveCustomTimers;
     return latestSelfBuffs;
   }
@@ -1699,6 +1847,14 @@ function initWidgetsPanel() {
   // drift out of sync with it.
   function filterActiveBuffsForWidget(widget) {
     const source = activeSourceForWidget(widget);
+    // Backlog #15, mirroring overlay.js's visibleBuffs(): the Bard Songs aura IS every bard song on
+    // the player by construction, so the hideBardSongs / maxDuration / name-list filters below
+    // don't apply - and hideBardSongs (true on the inherited custom-widget default) would strip
+    // every row, which is exactly why "Active on this aura" showed nothing on this premade.
+    if (widget.buffSource === 'bardSongs') {
+      // #29 - debuff songs are opt-in on this aura, same as overlay.js's visibleBuffs.
+      return source.filter((b) => b.showOnOverlay !== false && (widget.showDebuffSongs || !b.isDebuff));
+    }
     if (widget.buffFilterMode === 'all') {
       let filtered = source.filter((b) => b.showOnOverlay !== false);
       if (widget.hideBardSongs) filtered = filtered.filter((b) => !b.isBardSong);
@@ -1742,6 +1898,7 @@ function initWidgetsPanel() {
       removeBtn.textContent = 'Remove';
       removeBtn.addEventListener('click', () => {
         if (widget.buffSource === 'ally') window.eqTracker.removeActiveAllyBuff(buff.allyName, buff.name);
+        else if (widget.buffSource === 'bardSongs') window.eqTracker.removeActiveBardSong(buff.allyName, buff.name);
         else if (widget.buffSource === 'customTimer') window.eqTracker.removeActiveCustomTimer(buff.id);
         else window.eqTracker.removeActiveBuff(buff.name);
       });
@@ -1895,6 +2052,7 @@ function initWidgetsPanel() {
   window.eqTracker.getHideHotkeyChoice().then((choice) => {
     hideHotkeySelect.value = choice || 'ScrollLock';
     refreshHideHotkeyHelp(hideHotkeySelect.value);
+    refreshAppSettingsSummaries();
   });
   hideHotkeySelect.addEventListener('change', () => {
     window.eqTracker.setHideHotkeyChoice(hideHotkeySelect.value).then(() => {
@@ -2436,7 +2594,7 @@ function initWidgetsPanel() {
     // and no 'track-others' (that toggle is global engine state, not per-widget, and already has a
     // home on Self Buffs' own panel) - see widgetStore.js's defaultBardSongsWidget for the same
     // reasoning on the data side.
-    'bard-songs': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'ally-grouping'],
+    'bard-songs': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'ally-grouping', 'bard-song-options'],
     // Backlog #33. No picker or source (content is the current zone's named list), no 'sort' (the
     // board is fixed boss-then-mini order, like the travel route), no 'merge'/'borders' (no
     // duration, no spell category). Just how it looks and where it sits, plus the list sizing
@@ -2607,14 +2765,17 @@ function initWidgetsPanel() {
     // offering a setting that could never do anything. A text aura draws no per-person tiles at
     // all, hence excluded from every text shape above.
     allyGroupingSettingsEl.style.display = has('ally-grouping') ? '' : 'none';
+    bardSongSettingsEl.style.display = has('bard-song-options') ? '' : 'none';
     // Only self-buffs-builtin, not ally - "track buffs cast on me by others" is about buffs
     // landing on the player, unrelated to the Ally Buffs widget's own concern (buffs the player
     // casts on others).
     trackOthersRowEl.style.display = has('track-others') ? '' : 'none';
 
     // Workstream B - after every individual row's display is set, collapse away any Display & size
-    // topic that ended up with nothing in it for this shape.
+    // topic that ended up with nothing in it for this shape, then refresh the per-topic value
+    // previews in the (possibly collapsed) headers.
     hideEmptyPanelTopics();
+    refreshPanelTopicSummaries();
 
     return fields;
   }
@@ -2709,7 +2870,6 @@ function initWidgetsPanel() {
     // over whatever was actively being typed. Skipped while the box has focus - if you're in it,
     // what you typed wins over what selectWidget thinks is there, full stop.
     if (document.activeElement !== textMessageInput) textMessageInput.value = widget.textAuraMessage || '';
-    renderTextMessagePreview();
     const textAuraSize = widget.textAuraSize || 32;
     textAuraSizeSlider.value = String(textAuraSize);
     textAuraSizeValueEl.textContent = `${textAuraSize}px`;
@@ -2751,6 +2911,9 @@ function initWidgetsPanel() {
     wrapTextCheckbox.checked = !!widget.wrapText;
     showIconLabelCheckbox.checked = !!widget.showIconLabel;
     groupAllyCheckbox.checked = !!widget.groupAllyBuffs;
+    showDebuffSongsCheckbox.checked = !!widget.showDebuffSongs;
+    splitSongsCheckbox.checked = !!widget.splitSongsByType;
+    splitSongsRowEl.style.display = widget.showDebuffSongs ? '' : 'none';
     allyDirectionRadios.forEach((r) => (r.checked = r.value === (widget.groupAllyDirection || 'vertical')));
     hideAllyNameCheckbox.checked = !!widget.hideAllyNameOnTile;
     allyDirectionRow.style.display = widget.groupAllyBuffs ? '' : 'none';
@@ -2771,7 +2934,7 @@ function initWidgetsPanel() {
     duplicateWidgetBtn.style.display = widget.kind === 'self-buffs-builtin' ? 'none' : '';
 
     window.eqTracker.isWidgetLocked(id).then((locked) => {
-      lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
+      lockBtn.textContent = locked ? 'Move…' : 'Lock aura';
       lockBtn.classList.toggle('unlocked', !locked);
     });
 
@@ -4176,12 +4339,18 @@ function initWidgetsPanel() {
     window.eqTracker.setWidgetName(selectedId, nameInput.value.trim() || 'Aura').then(refreshWidgets);
   });
   lockBtn.addEventListener('click', async () => {
-    const locked = await window.eqTracker.toggleWidgetLock(selectedId);
-    // Unlocking one aura can complete (or break) "all unlocked", so the
-    // master toggle has to re-read rather than drift out of sync.
+    const wasLocked = await window.eqTracker.isWidgetLocked(selectedId);
+    if (wasLocked) {
+      // Enter move mode: the main window hides and a nudge HUD opens around the aura. The HUD's
+      // Done button brings the window back and re-locks - see moveHudWindow.js / main.js.
+      await window.eqTracker.enterWidgetMoveMode(selectedId);
+      return;
+    }
+    // Already unlocked (e.g. via "Unlock all auras") - just re-lock it.
+    await window.eqTracker.toggleWidgetLock(selectedId);
     refreshMasterButtons();
-    lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
-    lockBtn.classList.toggle('unlocked', !locked);
+    lockBtn.textContent = 'Move…';
+    lockBtn.classList.remove('unlocked');
   });
   resetPositionBtn.addEventListener('click', () => {
     window.eqTracker.resetWidgetPosition(selectedId);
@@ -4287,42 +4456,8 @@ function initWidgetsPanel() {
   // every keystroke instead, debounced so normal typing speed doesn't fire an IPC round-trip
   // per character - the box itself is always the source of truth for what's ON SCREEN either way,
   // this only controls how quickly the STORED copy catches up to it.
-  // QOL #8 - live preview of the {spell}/{caster}/{mob}/{profile} tokens, so you see the resolved
-  // line as you type instead of finding out in game. Sample values for the cast-time tokens;
-  // {profile} uses the real active loadout name.
-  const textMessagePreviewEl = document.getElementById('widget-text-message-preview');
-  let previewProfileName = 'Default';
-  function loadPreviewProfileName() {
-    Promise.all([window.eqTracker.getProfiles(), window.eqTracker.getActiveProfileId()])
-      .then(([list, id]) => {
-        previewProfileName = (list.find((p) => p.id === id) || {}).name || 'Default';
-        renderTextMessagePreview();
-      })
-      .catch(() => {});
-  }
-  function renderTextMessagePreview() {
-    if (!textMessagePreviewEl) return;
-    const raw = textMessageInput.value || '';
-    if (!raw.trim() || !/\{(spell|caster|mob|profile)\}/.test(raw)) {
-      textMessagePreviewEl.style.display = 'none';
-      return;
-    }
-    const resolved = raw
-      .replace(/\{spell\}/g, 'Spirit of Wolf')
-      .replace(/\{caster\}/g, 'Graznthok')
-      .replace(/\{mob\}/g, 'Graznthok')
-      .replace(/\{profile\}/g, previewProfileName || 'Default')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-    textMessagePreviewEl.textContent = `Shows as:  ${resolved}`;
-    textMessagePreviewEl.style.display = '';
-  }
-  loadPreviewProfileName();
-  window.eqTracker.onActiveProfileChanged(() => loadPreviewProfileName());
-
   let textMessageSaveTimer = null;
   textMessageInput.addEventListener('input', () => {
-    renderTextMessagePreview();
     clearTimeout(textMessageSaveTimer);
     textMessageSaveTimer = setTimeout(() => {
       window.eqTracker.setWidgetTextAuraMessage(selectedId, textMessageInput.value).then(updateLocalWidgetCache);
@@ -5206,7 +5341,7 @@ function initWidgetsPanel() {
         // re-read rather than left showing a stale label.
         if (selectedId) {
           window.eqTracker.isWidgetLocked(selectedId).then((locked) => {
-            lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
+            lockBtn.textContent = locked ? 'Move…' : 'Lock aura';
             lockBtn.classList.toggle('unlocked', !locked);
           });
         }
@@ -5302,6 +5437,14 @@ function initWidgetsPanel() {
   });
   hideAllyNameCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetHideAllyNameOnTile(selectedId, hideAllyNameCheckbox.checked);
+  });
+  // #29 - Bard Songs aura's hybrid buff/debuff options.
+  showDebuffSongsCheckbox.addEventListener('change', () => {
+    splitSongsRowEl.style.display = showDebuffSongsCheckbox.checked ? '' : 'none';
+    window.eqTracker.setWidgetShowDebuffSongs(selectedId, showDebuffSongsCheckbox.checked);
+  });
+  splitSongsCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetSplitSongsByType(selectedId, splitSongsCheckbox.checked);
   });
 
   timerTextColorPicker.addEventListener('input', () => {
@@ -5466,6 +5609,14 @@ function initWidgetsPanel() {
     latestAllyBuffs = buffs;
     refreshActiveBuffsCardIfSelected();
   });
+  window.eqTracker.getActiveBardSongs().then((songs) => {
+    latestBardSongs = songs;
+    refreshActiveBuffsCardIfSelected();
+  });
+  window.eqTracker.onActiveBardSongsChanged((songs) => {
+    latestBardSongs = songs;
+    refreshActiveBuffsCardIfSelected();
+  });
   window.eqTracker.getActiveCustomTimers().then((timers) => {
     latestActiveCustomTimers = timers;
     refreshActiveBuffsCardIfSelected();
@@ -5487,6 +5638,7 @@ function initWidgetsPanel() {
       opt.selected = set === current;
       iconSetSelect.appendChild(opt);
     }
+    refreshAppSettingsSummaries();
   });
   iconSetSelect.addEventListener('change', () => {
     window.eqTracker.setIconSet(iconSetSelect.value);
@@ -5991,7 +6143,12 @@ function setupModalToggle(backdropId, openBtnId, closeBtnId, onOpen) {
   });
 }
 
-init();
+init().finally(() => {
+  // Theme every native <select> and give the long ones a filter box. Runs after init so the
+  // populate blocks have already appended their <option>s; the component's own MutationObserver
+  // keeps up with any later repopulation.
+  if (window.SearchDropdown) window.SearchDropdown.enhanceAll(document);
+});
 
 // App text size for THIS window. Backed by Electron's zoom factor in main.js - see the note
 // there for why that rather than rewriting 316 hardcoded px values as rem.
@@ -6017,7 +6174,10 @@ function initUiScale() {
     select.value = String(nearest);
   }
 
-  window.eqTracker.getUiScale().then((pct) => show(pct || 100));
+  window.eqTracker.getUiScale().then((pct) => {
+    show(pct || 100);
+    refreshAppSettingsSummaries();
+  });
 
   select.addEventListener('change', () => {
     // The main process clamps and persists, and returns what it actually used.
@@ -6148,6 +6308,7 @@ function initMergeRule() {
     radios.forEach((radio) => {
       radio.checked = radio.value === rule;
     });
+    refreshAppSettingsSummaries();
   });
   radios.forEach((radio) => {
     radio.addEventListener('change', () => {
@@ -6662,7 +6823,7 @@ function initActionBarsPage() {
     });
     window.eqTracker.isActionBarLocked(id).then((locked) => {
       if (selectedActionBarId !== id) return;
-      unlockBtn.textContent = locked ? 'Unlock to move' : 'Lock bar';
+      unlockBtn.textContent = locked ? 'Move…' : 'Lock bar';
       unlockBtn.classList.toggle('unlocked', !locked);
     });
   }
@@ -6738,10 +6899,6 @@ function initActionBarsPage() {
   const marginValue = document.getElementById('action-bar-margin-value');
   const unlockBtn = document.getElementById('action-bar-unlock-btn');
   const resetBtn = document.getElementById('action-bar-reset-btn');
-  const nudgeUpBtn = document.getElementById('action-bar-nudge-up');
-  const nudgeDownBtn = document.getElementById('action-bar-nudge-down');
-  const nudgeLeftBtn = document.getElementById('action-bar-nudge-left');
-  const nudgeRightBtn = document.getElementById('action-bar-nudge-right');
   const slotsGridEl = document.getElementById('action-bar-slots-grid');
   const iconModalBackdrop = document.getElementById('action-bar-icon-modal-backdrop');
   const iconModalTitle = document.getElementById('action-bar-icon-modal-title');
@@ -6857,9 +7014,25 @@ function initActionBarsPage() {
     slotsGridEl.style.setProperty('--slot-cols', perRow);
   }
 
-  // Updates one gem's box on the settings-page grid - icon, disabled dimming, and a hover tooltip
-  // naming it. The overlay itself (not this settings grid) is what actually renders the name text
-  // and cooldown visuals - this box is just the picker/summary.
+  // QOL #19 - "has anything been set up in this slot" for the at-a-glance grid marker. Anything
+  // that would show on the overlay or change its behaviour counts; a bare empty slot does not.
+  function slotIsConfigured(s) {
+    return !!(
+      s &&
+      (s.iconId != null ||
+        s.secondIconId != null ||
+        s.name ||
+        s.cooldown ||
+        s.toggleGroup ||
+        s.borderEnabled ||
+        s.bgColor ||
+        s.disabled)
+    );
+  }
+
+  // Updates one gem's box on the settings-page grid - icon, disabled dimming, a "configured"
+  // marker (#19), and a hover tooltip naming it. The overlay itself (not this settings grid) is
+  // what actually renders the name text and cooldown visuals - this box is just the picker/summary.
   function refreshGemBox(index) {
     const g = gemBoxes[index];
     const s = currentSlots[index];
@@ -6898,6 +7071,7 @@ function initActionBarsPage() {
       g.box.style.outlineOffset = '';
     }
     g.box.classList.toggle('disabled', !!s.disabled);
+    g.box.classList.toggle('configured', slotIsConfigured(s));
     g.box.title = s.name ? `${s.name} (Slot ${index + 1})` : `Slot ${index + 1}`;
   }
 
@@ -7153,11 +7327,47 @@ function initActionBarsPage() {
   // A plain grid, same "Icons per row" wrap as the real overlay - each box just opens the one
   // Edit gem modal above. No per-box controls live on the page itself.
 
+  // QOL #11 - drag one gem box onto another to SWAP the two whole slots (icon, name, border,
+  // cooldown, toggle). Only those two trade places; every other slot stays exactly where it was.
+  // The grid re-renders from the returned config, so nothing is tracked here beyond which box the
+  // drag started on.
+  let dragFromSlot = null;
+  function onGemDragStart(e) {
+    dragFromSlot = Number(this.dataset.slotIndex);
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(dragFromSlot)); // Firefox needs some data set
+  }
+  function onGemDragOver(e) {
+    if (dragFromSlot == null || Number(this.dataset.slotIndex) === dragFromSlot) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    this.classList.add('drag-over');
+  }
+  function onGemDragLeave() {
+    this.classList.remove('drag-over');
+  }
+  function onGemDrop(e) {
+    e.preventDefault();
+    this.classList.remove('drag-over');
+    const b = Number(this.dataset.slotIndex);
+    if (dragFromSlot == null || b === dragFromSlot || !selectedActionBarId) return;
+    const a = dragFromSlot;
+    window.eqTracker.swapActionBarSlots(selectedActionBarId, a, b).then(() => selectActionBar(selectedActionBarId));
+  }
+  function onGemDragEnd() {
+    this.classList.remove('dragging');
+    gemBoxes.forEach((g) => g.box.classList.remove('drag-over'));
+    dragFromSlot = null;
+  }
+
   for (let i = 0; i < 12; i++) {
     const box = document.createElement('button');
     box.type = 'button';
     box.className = 'icon-picker-box';
     box.title = `Slot ${i + 1}`;
+    box.dataset.slotIndex = String(i);
+    box.draggable = true;
     const img = document.createElement('img');
     img.alt = '';
     img.style.display = 'none';
@@ -7170,6 +7380,11 @@ function initActionBarsPage() {
     placeholder.textContent = String(i + 1);
     box.append(img, secondImg, placeholder);
     box.addEventListener('click', () => openGemModal(i));
+    box.addEventListener('dragstart', onGemDragStart);
+    box.addEventListener('dragover', onGemDragOver);
+    box.addEventListener('dragleave', onGemDragLeave);
+    box.addEventListener('drop', onGemDrop);
+    box.addEventListener('dragend', onGemDragEnd);
     slotsGridEl.appendChild(box);
     gemBoxes.push({ box, img, secondImg, placeholder });
   }
@@ -7530,18 +7745,21 @@ function initActionBarsPage() {
   });
   unlockBtn.addEventListener('click', async () => {
     if (!selectedActionBarId) return;
-    const locked = await window.eqTracker.toggleActionBarLock(selectedActionBarId);
-    unlockBtn.textContent = locked ? 'Unlock to move' : 'Lock bar';
-    unlockBtn.classList.toggle('unlocked', !locked);
+    const wasLocked = await window.eqTracker.isActionBarLocked(selectedActionBarId);
+    if (wasLocked) {
+      // Enter move mode: main window hides, the move HUD opens for this bar (nudge arrows, snap,
+      // Done). See moveHudWindow.js / main.js.
+      await window.eqTracker.enterActionBarMoveMode(selectedActionBarId);
+      return;
+    }
+    await window.eqTracker.toggleActionBarLock(selectedActionBarId); // was unlocked (Unlock all) - re-lock
+    unlockBtn.textContent = 'Move…';
+    unlockBtn.classList.remove('unlocked');
   });
   resetBtn.addEventListener('click', () => {
     if (!selectedActionBarId) return;
     window.eqTracker.resetActionBarPosition(selectedActionBarId);
   });
-  nudgeUpBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, 0, -1));
-  nudgeDownBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, 0, 1));
-  nudgeLeftBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, -1, 0));
-  nudgeRightBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, 1, 0));
 
   // Same reasoning as initWidgetsPanel's identical listeners: a profile rename/create needs the
   // tooltip's name list refreshed, and switching the active profile needs the dot's colour

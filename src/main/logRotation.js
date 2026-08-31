@@ -40,7 +40,7 @@
 const fs = require('fs');
 const path = require('path');
 const { extractTimestampMs } = require('./logSplitter');
-const { easternResetBefore } = require('../shared/easternReset');
+const { easternResetBefore, easternResetAfter, easternParts } = require('../shared/easternReset');
 
 // 0 = Sunday, so 2 = Tuesday. The owner's Alt+Z reading, not a measurement (see the header);
 // overridable by the user, who sets the same value the Lockouts grid uses - the two must never
@@ -82,13 +82,36 @@ function rotationCutBefore(now = new Date(), rule = DEFAULT_RESET) {
   return resetBoundaryBefore(now, rule);
 }
 
-/** `2026-09-01`, the local date of a boundary. Used to name archives and to recognise them again. */
-function boundaryKey(boundary) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${boundary.getFullYear()}-${p(boundary.getMonth() + 1)}-${p(boundary.getDate())}`;
+/**
+ * `2026-09-01`, the EASTERN calendar date of a boundary instant - the day the lockout week actually
+ * turns over on the server. Used to name archives and to recognise them again, so the name is the
+ * same for every player regardless of the zone their own machine is on. (Reading the boundary's
+ * LOCAL fields here - as this did until 31 Aug 2026 - named the wrong day for anyone not on Eastern,
+ * which is also why 8 tests only passed in that one zone.)
+ */
+// A boundary may arrive as a Date, an epoch-ms number, or an ISO string (report.boundary).
+function boundaryMs(boundary) {
+  if (boundary instanceof Date) return boundary.getTime();
+  if (typeof boundary === 'number') return boundary;
+  return new Date(boundary).getTime();
 }
 
-// `eqlog_Avenrae_rivervale.txt` -> `eqlog_Avenrae_rivervale_week_2026-09-01.txt`
+function boundaryKey(boundary) {
+  const p = (n) => String(n).padStart(2, '0');
+  const e = easternParts(boundaryMs(boundary));
+  return `${e.year}-${p(e.month)}-${p(e.day)}`;
+}
+
+/** The Eastern wall-clock hour of a boundary instant - 11 for the default reset, in any machine zone. */
+function boundaryHour(boundary) {
+  const ms = boundaryMs(boundary);
+  return Number(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date(ms)).find((x) => x.type === 'hour').value
+  );
+}
+
+// `eqlog_Baxa_rivervale.txt` -> `eqlog_Baxa_rivervale_week_2026-09-01.txt`
 function archiveNameFor(logFileName, boundary) {
   const base = path.basename(logFileName, path.extname(logFileName));
   return `${base}_week_${boundaryKey(boundary)}.txt`;
@@ -312,7 +335,7 @@ class LogRotationService {
   /**
    * Is the game idle enough to touch the log right now?
    *
-   * SHARA'S OWN WARNING, on the Archive log card in Setup: "if EQ is actively writing to the log at
+   * THE OWNER'S OWN WARNING, on the Archive log card in Setup: "if EQ is actively writing to the log at
    * the exact moment it's cleared, there's a small chance of a lost line or a game hiccup. Safest
    * to do it right after logging out." That advice was written for a button a person presses. This
    * rotation fires on a schedule, while they are playing, which is exactly the case she warned
@@ -742,10 +765,11 @@ class LogRotationService {
       lastRun: this.lastRun,
       lastCheck: this.lastCheck,
       nextBoundaryAfterNow: (() => {
-        const b = resetBoundaryBefore(new Date(), this.resetRule);
-        const next = new Date(b.getTime());
-        next.setDate(next.getDate() + 7);
-        return next.toISOString();
+        const weekday = Number.isInteger(this.resetRule.weekday) ? this.resetRule.weekday : DEFAULT_RESET.weekday;
+        const hour = Number.isInteger(this.resetRule.hour) ? this.resetRule.hour : DEFAULT_RESET.hour;
+        // Resolved through the Eastern zone (not a local +7 days), so a DST change inside the week
+        // keeps it at 11:00 Eastern rather than drifting an hour.
+        return new Date(easternResetAfter(new Date(), weekday, hour)).toISOString();
       })(),
       errors: this.errors,
       lastError: this.lastError,
@@ -758,6 +782,7 @@ module.exports = {
   resetBoundaryBefore,
   rotationCutBefore,
   boundaryKey,
+  boundaryHour,
   archiveNameFor,
   DEFAULT_RESET,
 };

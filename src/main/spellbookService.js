@@ -6,7 +6,7 @@ const RELOAD_INTERVAL_MS = 30000;
 const SPELLBOOK_RE = /^(.+)-(.+)-Spellbook\.txt$/i;
 
 // The EQ client writes a per-character spellbook file in the install root,
-// e.g. "Shara_rivervale-SHM-Spellbook.txt" (one "<slot><TAB><Spell Name>"
+// e.g. "Vaela_rivervale-SHM-Spellbook.txt" (one "<slot><TAB><Spell Name>"
 // line per scribed spell). Correlating that to the active eqlog file's
 // character name lets us know exactly which spells THIS character actually
 // knows - the single best signal for resolving an ambiguous landing

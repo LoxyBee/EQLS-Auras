@@ -16,9 +16,9 @@
  *
  * The log does better than shape. Two of the four damage wordings name the attacker outright:
  *
- *   "A pledge familiar has taken 32 damage from Denon's Disruptive Discord V by Avenrae."
+ *   "A pledge familiar has taken 32 damage from Denon's Disruptive Discord V by Baxa."
  *                                                                            ^^^^^^^^^^
- *   "Avenrae is pierced by Korven Nisere's thorns for 17 points of non-melee damage."
+ *   "Baxa is pierced by Korven Nisere's thorns for 17 points of non-melee damage."
  *                          ^^^^^^^^^^^^^
  *
  * so for those there is nothing to infer. Note the first one carefully: the apostrophe-s belongs
@@ -36,7 +36,7 @@
 const YOUR_MELEE =
   /^You [a-z]+ (.+?) for ([0-9]+) points? of damage\.$/;
 
-// "Avenrae slashes a zol ghoul knight for 47 points of damage." - 242,600 lines, the single
+// "Baxa slashes a zol ghoul knight for 47 points of damage." - 242,600 lines, the single
 // largest damage wording in the logs. Names neither side as friend or foe; the engine settles
 // that by direction rather than by reading the names.
 const OTHER_MELEE =
@@ -47,13 +47,13 @@ const OTHER_MELEE =
 const YOUR_SPELL =
   /^(.+?) has taken ([0-9]+) damage from your (.+)\.$/;
 
-// "A zol ghoul knight has taken 32 damage from Chords of Dissonance V by Avenrae." - 103,584
+// "A zol ghoul knight has taken 32 damage from Chords of Dissonance V by Baxa." - 103,584
 // lines. The "by" suffix is the attacker, free of charge. Non-greedy on the spell so a spell name
 // containing the word "by" cannot swallow the attacker.
 const OTHER_SPELL =
   /^(.+?) has taken ([0-9]+) damage from (.+?) by (.+)\.$/;
 
-// "A zol ghoul knight is pierced by Avenrae's thorns for 8 points of non-melee damage." - 125,900
+// "A zol ghoul knight is pierced by Baxa's thorns for 8 points of non-melee damage." - 125,900
 // lines, and the reason damage shields cannot be waved away as a rounding error. Here the
 // possessive IS the attacker, the opposite of OTHER_SPELL - which is exactly why both were
 // measured rather than assumed to share a shape.

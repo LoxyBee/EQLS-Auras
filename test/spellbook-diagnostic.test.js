@@ -40,10 +40,10 @@ test('the service can say where it looked and what for', () => {
   assert.equal(blank.fileNamePattern, null);
 
   svc.installRoot = 'C:/Games/EQ';
-  svc.characterBaseName = 'Shara_rivervale';
+  svc.characterBaseName = 'Vaela_rivervale';
   const known = svc.getExpectation();
   assert.equal(known.folder, 'C:/Games/EQ');
-  assert.match(known.fileNamePattern, /^Shara_rivervale-.*Spellbook\.txt$/,
+  assert.match(known.fileNamePattern, /^Vaela_rivervale-.*Spellbook\.txt$/,
     'the pattern has to be recognisable as a real filename, or it helps nobody');
 });
 
@@ -105,7 +105,7 @@ test('the missing state says what to do about it, and what it costs', () => {
   // The action, or knowing the cost is just bad news.
   assert.match(block[0], /does not write this file on its own/i, 'it does not say the file is manual');
   // The command itself, named exactly, because "your client's output-file command" is the sort of
-  // phrase that leaves someone still guessing. Shara supplied it.
+  // phrase that leaves someone still guessing. Vaela supplied it.
   assert.match(html, /<code id="spellbook-command">\/outputfile spellbook<\/code>/,
     'the exact command is not shown');
   assert.match(rendererSrc, /copySpellbookCommandBtn\.addEventListener/, 'there is no copy button');
@@ -128,7 +128,11 @@ test('the explanation is shown ONLY when the file is missing', () => {
     fn[1].indexOf('state.filePath') < fn[1].indexOf('Not found'),
     'the found case must be handled first, or the warning shows even when all is well'
   );
-  assert.match(rendererSrc, /getSpellbookState\(\)\.then\(renderSpellbookState\)/);
+  // renderSpellbook = renderSpellbookState (status/hints) + renderSpellbookFilePicker (the P3
+  // picker). The picker rebuild reads every spellbook file off disk, so it is deliberately NOT on
+  // renderSpellbookState, which fires on each debounced keystroke in the Character fields.
+  assert.match(rendererSrc, /getSpellbookState\(\)\.then\(renderSpellbook\)/);
+  assert.match(rendererSrc, /setSpellbookCharacter\([^)]*\)\s*\.then\(renderSpellbookState\)/, 'typing a character name must not trigger the disk-scanning picker rebuild');
 });
 
 test('the status reads as a warning rather than as an error or as nothing', () => {

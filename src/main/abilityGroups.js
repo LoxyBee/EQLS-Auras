@@ -66,6 +66,16 @@ class AbilityGroupTracker {
     // group -> slotKey | null - the one gem in the group that gets the green "active" border.
     // Persists indefinitely, independent of cooldownByGroup's own expiry - see the header comment.
     this.activeSlotByGroup = { stance: null, invocation: null };
+    // group -> display name ('Evasive Stance') | null - the SAME fact as activeSlotByGroup, but by
+    // name rather than by `${barId}:${slotIndex}` key. This is what gets persisted (QOL #16): a
+    // stance/invocation is a character state the player is still in after an app restart, exactly
+    // like the current zone (see logZonePeek.js) - not a timed buff that may have lapsed. The name
+    // survives the user re-laying-out their action bars where a slot key would not, and restore()
+    // resolves it back to whatever slot now holds that toggle. Stale only if the player swapped
+    // while the app was closed, which the next stance/invocation line corrects - and unlike a buff,
+    // a stance never silently drops on death/zone/camp.
+    this.activeNameByGroup = { stance: null, invocation: null };
+    this.persistFn = () => {};
     // (barId, group) => [{index, toggleName, toggleDurationSec}] - injected rather than reading
     // actionBarStore directly, same DI reasoning as every other cross-module boundary in this
     // codebase (widgetManager's getActiveProfileIdFn, customTimerEngine's getWidgetsFn, etc.).
@@ -79,6 +89,41 @@ class AbilityGroupTracker {
 
   setOnChangeFn(fn) {
     this.onChangeFn = fn;
+  }
+
+  // fn({ stance, invocation }) - persists the current active picks by name. Called on every change.
+  setPersistFn(fn) {
+    this.persistFn = fn;
+  }
+
+  // Reload the persisted picks (QOL #16), resolving each name against the CURRENT action-bar
+  // layout. Call once at startup, AFTER setGetGroupSlotsFn is wired. A name with no matching gem
+  // configured is remembered but lights nothing until one is - same "we can't honestly show a
+  // border for a gem that doesn't exist" rule as _activate.
+  restore(saved) {
+    if (!saved || typeof saved !== 'object') return;
+    let changed = false;
+    for (const group of ['stance', 'invocation']) {
+      const name = saved[group];
+      if (!name || typeof name !== 'string') continue;
+      this.activeNameByGroup[group] = name;
+      const lower = name.toLowerCase();
+      const slot = this.getGroupSlotsFn(group).find(
+        (s) => s.toggleName && s.toggleName.toLowerCase() === lower
+      );
+      if (slot) {
+        this.activeSlotByGroup[group] = `${slot.barId}:${slot.index}`;
+        changed = true;
+      }
+    }
+    if (changed) this.onChangeFn();
+  }
+
+  _persist() {
+    this.persistFn({
+      stance: this.activeNameByGroup.stance,
+      invocation: this.activeNameByGroup.invocation,
+    });
   }
 
   handleLine(rawLine) {
@@ -119,6 +164,10 @@ class AbilityGroupTracker {
     // - the game only lets one be active, so an unmatched activation still means every OTHER one
     // just stopped being ready) - only the specific one that was actually named gets the border.
     this.activeSlotByGroup[group] = matchedKey;
+    // The name is the persisted fact (QOL #16). Cleared when the pick matched no configured gem -
+    // consistent with activeSlotByGroup going null there: nothing can honestly be shown as active.
+    this.activeNameByGroup[group] = matchedKey ? name : null;
+    this._persist();
     this.onChangeFn();
   }
 

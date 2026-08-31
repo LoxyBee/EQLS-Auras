@@ -46,34 +46,34 @@ test('every chat wording the game actually uses is recognised', () => {
     'tells you',
     'tells general1:1',
   ]) {
-    const found = matchShareCodeInChat(chat('Avenrae', how, `${SHARE_CODE_PREFIX}abc123`));
+    const found = matchShareCodeInChat(chat('Baxa', how, `${SHARE_CODE_PREFIX}abc123`));
     assert.ok(found, `not recognised: ${how}`);
-    assert.equal(found.sender, 'Avenrae');
+    assert.equal(found.sender, 'Baxa');
     assert.equal(found.channel, how);
   }
 });
 
 test('the code is picked out of a message with words around it', () => {
-  const found = matchShareCodeInChat(chat('Avenrae', 'says', `try this ${SHARE_CODE_PREFIX}abc123 and tell me`));
+  const found = matchShareCodeInChat(chat('Baxa', 'says', `try this ${SHARE_CODE_PREFIX}abc123 and tell me`));
   assert.equal(found.code, `${SHARE_CODE_PREFIX}abc123`);
 });
 
 // The reason the pattern is a base64 character class and not a lazy match: a looser one swallows
 // the words after the code and turns a valid code into an invalid one.
 test('trailing words are not swallowed into the code', () => {
-  const found = matchShareCodeInChat(chat('Avenrae', 'says', `${SHARE_CODE_PREFIX}abc123 hello there`));
+  const found = matchShareCodeInChat(chat('Baxa', 'says', `${SHARE_CODE_PREFIX}abc123 hello there`));
   assert.equal(found.code, `${SHARE_CODE_PREFIX}abc123`);
   assert.ok(!found.code.includes('hello'));
 });
 
-// Base64's full alphabet, which is the half of the blocker Shara answered directly.
+// Base64's full alphabet, which is the half of the blocker Vaela answered directly.
 test('a code containing + / and = comes through whole', () => {
   const code = `${SHARE_CODE_PREFIX}ab+cd/ef==`;
-  assert.equal(matchShareCodeInChat(chat('Avenrae', 'says', code)).code, code);
+  assert.equal(matchShareCodeInChat(chat('Baxa', 'says', code)).code, code);
 });
 
 test('a chat line with no code in it is nothing', () => {
-  assert.equal(matchShareCodeInChat(chat('Avenrae', 'says', 'no code here')), null);
+  assert.equal(matchShareCodeInChat(chat('Baxa', 'says', 'no code here')), null);
 });
 
 // A line the GAME wrote is not somebody speaking, even if the prefix appears in it.

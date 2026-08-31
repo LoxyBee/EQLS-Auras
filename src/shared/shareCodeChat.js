@@ -5,7 +5,7 @@
  * The note was blocked on two questions and both are now answered from the owner's own logs
  * rather than guessed at.
  *
- * DO + AND = SURVIVE A CHAT LINE? Yes. Shara said so on 23 August ("+= survive fine in a chat
+ * DO + AND = SURVIVE A CHAT LINE? Yes. the owner said so on 23 August ("+= survive fine in a chat
  * line") and the logs agree: across 1,521,971 lines, 1,393 chat messages contain a +, 135 contain
  * an =, and 921 contain a /. Base64's whole alphabet passes through intact.
  *

@@ -4,7 +4,7 @@
  *
  * Three things multiply: the roster's base duration, the mote tier (the Roman numeral outside the
  * name field), and the AA/Exaltation bonus. Every number asserted here was measured from the
- * owner's own logs rather than taken from the spreadsheet, because two of the spreadsheet's rates
+ * owner's own logs rather than the roster's imported values, because two of those rates
  * were marked unverified and one thing the code already did was measurably wrong.
  *
  * The measurements have a known bias worth stating: the wear-off line lags true expiry by up to
@@ -108,14 +108,14 @@ test('heal over time takes both its tier and the AA bonus - it is still a buff',
  * tier ALONE predicts 29. I took that whole gap as evidence the AA bonus reached hots, with
  * nothing else in the picture.
  *
- * Shara, 23 August: "the celestial healing timer duration being different is due to refreshed
+ * Vaela, 23 August: "the celestial healing timer duration being different is due to refreshed
  * casting." That explains the SPREAD - she re-casts the heal before the old one lapses, so the
  * landing-to-wear-off gap spans several casts rather than one, which is why it runs across 30
  * seconds where a fixed-duration buff sits inside 14. It does not by itself say whether AA
  * reaches hots at all, and the suite spent a day treating "recasting explains the spread" as
  * "therefore no AA" - two different claims that got merged into one.
  *
- * Shara, 24 August, on the actual rule: "ALL buffs are supposed to be subject to these increases.
+ * Vaela, 24 August, on the actual rule: "ALL buffs are supposed to be subject to these increases.
  * i have stressed this since the beginning" - and a hot IS a buff on the roster's own kind column
  * (checked directly: all 16 of the roster's scaleCategory:'hot' entries are kind:'buff'). With AA
  * correctly included, the single-cast prediction is 48 - not 29, and not merely "less than 48"
@@ -245,8 +245,8 @@ test('nor a debuff, nor a charm', () => {
   assert.equal(e._scaledDuration(spell('Mesmerize', 24, 'charm')), 24);
 });
 
-// Shara, 23 August: "the AA should only apply to things marked as a BUFF. not just any
-// beneficial." Shara, 24 August, correcting a second mistake in how that got read: "ALL buffs
+// Vaela, 23 August: "the AA should only apply to things marked as a BUFF. not just any
+// beneficial." Vaela, 24 August, correcting a second mistake in how that got read: "ALL buffs
 // are supposed to be subject to these increases. i have stressed this since the beginning" -
 // meaning every spell the roster's own kind column marks 'buff', not this file's narrower
 // scaleCategory:'buff' bucket. A hot IS kind 'buff' on the roster (Celestial Healing among
@@ -341,7 +341,7 @@ test('a tier X cast is handled, since one appears in the logs', () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Shara, 23 August: "the celestial healing timer duration being different is due to refreshed
+ * Vaela, 23 August: "the celestial healing timer duration being different is due to refreshed
  * casting. use the calculation and reapply it again on skill cast."
  *
  * It already worked that way, and this is the test that says so rather than a comment claiming it.
@@ -390,7 +390,7 @@ test('a renewal goes through the same landing path, so it rescales too', () => {
 // Bard songs snap to the nearest 6-second tick (#17)
 // ---------------------------------------------------------------------------
 
-// Shara: song durations run in 6-second intervals, so a mote-scaled result has to land on a
+// Vaela: song durations run in 6-second intervals, so a mote-scaled result has to land on a
 // multiple of 6. Applied last, over the already-combined multiplier.
 test('a mote-scaled bard song rounds to the nearest 6s', () => {
   const e = afterCasting(makeEngine(1), 'Chorus of Marr V');

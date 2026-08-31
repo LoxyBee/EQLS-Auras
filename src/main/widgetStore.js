@@ -154,11 +154,11 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // only lands here while there's evidence the player herself cast it.
     // 'ally' drops that requirement: the same debuff on the same enemy, but
     // tracked the moment its third-person landing text appears, regardless
-    // of who cast it. Shara's words: "just have it tracked that a debuff
+    // of who cast it. the owner's words: "just have it tracked that a debuff
     // happened from someone, it doesn't need a name" - so 'ally' mode never
     // records a caster, only that the debuff landed.
     debuffCastBy: 'self',
-    // Note 16, answered by Shara on 21 August. A TEXT aura can warn that somebody else has cast
+    // Note 16, answered by the owner on 21 August. A TEXT aura can warn that somebody else has cast
     // one of the spells it watches - "be careful", rather than a countdown on a debuff that is
     // not yours. She ruled out the timer herself: an ally's debuff has no ending line in the log,
     // so any duration shown for it would be invented, and "a text alert to be careful, and not a
@@ -199,8 +199,8 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // positive is visible and self-corrects the moment you zone, a false negative is invisible and
     // lasts a session.
     //
-    // Zone strings are stored exactly as the game prints them, with no collapsing - Shara, 22
-    // August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
+    // Zone strings are stored exactly as the game prints them, with no collapsing - the owner,
+    // 22 August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
     // "The Plane of Fear" and "The Plane of Fear - Group".
     visibleInZones: [],
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
@@ -417,11 +417,11 @@ function defaultCustomWidget(name) {
     // only lands here while there's evidence the player herself cast it.
     // 'ally' drops that requirement: the same debuff on the same enemy, but
     // tracked the moment its third-person landing text appears, regardless
-    // of who cast it. Shara's words: "just have it tracked that a debuff
+    // of who cast it. the owner's words: "just have it tracked that a debuff
     // happened from someone, it doesn't need a name" - so 'ally' mode never
     // records a caster, only that the debuff landed.
     debuffCastBy: 'self',
-    // Note 16, answered by Shara on 21 August. A TEXT aura can warn that somebody else has cast
+    // Note 16, answered by the owner on 21 August. A TEXT aura can warn that somebody else has cast
     // one of the spells it watches - "be careful", rather than a countdown on a debuff that is
     // not yours. She ruled out the timer herself: an ally's debuff has no ending line in the log,
     // so any duration shown for it would be invented, and "a text alert to be careful, and not a
@@ -462,8 +462,8 @@ function defaultCustomWidget(name) {
     // positive is visible and self-corrects the moment you zone, a false negative is invisible and
     // lasts a session.
     //
-    // Zone strings are stored exactly as the game prints them, with no collapsing - Shara, 22
-    // August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
+    // Zone strings are stored exactly as the game prints them, with no collapsing - the owner,
+    // 22 August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
     // "The Plane of Fear" and "The Plane of Fear - Group".
     visibleInZones: [],
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
@@ -605,6 +605,12 @@ function defaultBardSongsWidget(name) {
     wrapText: true,
     iconsPerRow: 5,
     categoryBorderWidthPx: 2,
+    // #29 - the Bard Songs aura is a hybrid buff/debuff feed. Debuff songs (Largo's Melodic Binding
+    // and the like, on an enemy) are OFF by default; showDebuffSongs opts them in, and
+    // splitSongsByType then groups buff songs and debuff songs into separate sections. Both off by
+    // default (owner's call, 31 Aug).
+    showDebuffSongs: false,
+    splitSongsByType: false,
   };
 }
 
@@ -662,6 +668,8 @@ const SHAREABLE_FIELDS = [
   'soundCooldownSec',
   'alertVolume',
   'hideBardSongs',
+  'showDebuffSongs',
+  'splitSongsByType',
   'timerTextColor',
   'groupAllyBuffs',
   'groupAllyDirection',
@@ -794,6 +802,8 @@ function normalizeWidget(widget) {
     stackTextLines: !!widget.stackTextLines,
     maxStackTextLines: clampStackTextLines(widget.maxStackTextLines),
     hideBardSongs: !!widget.hideBardSongs,
+    showDebuffSongs: !!widget.showDebuffSongs,
+    splitSongsByType: !!widget.splitSongsByType,
     timerTextColor: typeof widget.timerTextColor === 'string' ? widget.timerTextColor : '#f0f1f5',
     groupAllyBuffs: !!widget.groupAllyBuffs,
     groupAllyDirection: widget.groupAllyDirection === 'horizontal' ? 'horizontal' : 'vertical',
@@ -884,6 +894,13 @@ const CHARM_SPELL_NAMES = [
 // `secs` is only a safety net for a missed fade line. Not exhaustive - mob-specific positional
 // stuns and unusual roots won't all be here - but the trigger list is editable like any aura's.
 const LOSS_OF_CONTROL = [
+  // The generic catch-all. The game writes "You lose control of yourself!" for a charm landing on
+  // the player when no spell-specific land line is emitted - confirmed in the owner's log (8x on
+  // 30 Aug, always paired with "You have control of yourself again." 6-35s later). Without this the
+  // per-spell CHARMED entries below missed every charm that only produced the generic line. Listed
+  // first so it is the fallback the others refine. 45s safety net matches the CHARMED entries (one
+  // observed instance ran 35s); the end substring is what actually clears it.
+  { label: 'CONTROLLED', land: 'You lose control of yourself!', end: 'You have control of yourself again.', secs: 45 },
   { label: 'STUNNED', land: 'You are stunned!', end: 'You are no longer stunned.', secs: 10 },
   { label: 'STUNNED', land: 'You are stunned by a gust of air.', end: 'You are no longer stunned.', secs: 10 },
   { label: 'STUNNED', land: 'You are struck by a sudden force.', end: 'You are no longer stunned.', secs: 10 },
@@ -950,7 +967,7 @@ const TEXT_AURA_PRESETS = {
       },
     ],
   }),
-  // Note 16 as Shara specified it on 21 August: a warning that somebody else has cast a debuff,
+  // Note 16 as the owner specified it on 21 August: a warning that somebody else has cast a debuff,
   // not a timer on one. It ships watching the mez and charm family because that is the case she
   // described - do not break a groupmate's mez - and the buff list is editable like any other
   // aura's, so adding slows or snares is a tick each.
@@ -1072,13 +1089,13 @@ const TEXT_AURA_PRESETS = {
   }),
 };
 
-// Note 21, as Shara redirected it on 21 August: the loadout label is a global option, not
+// Note 21, as the owner redirected it on 21 August: the loadout label is a global option, not
 // something you build in Add Aura. "It should be a permanent option that is not tied to creating
 // an aura."
 //
 // It is still a widget underneath, and that is deliberate rather than lazy: everything it needs -
 // a position you can drag, locking, opacity, sizing, surviving a restart - already exists for
-// widgets and would otherwise have to be written again for one label. What Shara asked for is
+// widgets and would otherwise have to be written again for one label. What the owner asked for is
 // where the SWITCH lives and that it is permanent, and both of those are true here. It never
 // appears in Add Aura, it is created once the first time it is switched on, and switching it off
 // hides it rather than deleting it, so its position is still there when it comes back.
@@ -1174,6 +1191,32 @@ class WidgetStore {
         }
         data.version = 4;
       }
+      // v4 -> v5: the "Loss of control" premade gained a generic catch-all trigger,
+      // "You lose control of yourself!" (label CONTROLLED) - the game writes that for a charm
+      // landing on the player with no spell-specific line, so an existing aura built before this
+      // missed those entirely. Add it to any Loss of control aura that doesn't already carry it.
+      // Version-gated: a user who deletes the CONTROLLED trigger by hand keeps it deleted.
+      if (data.version < 5) {
+        for (const widget of data.widgets) {
+          const isLossOfControl =
+            widget.premadeOrigin &&
+            widget.premadeOrigin.kind === 'textAura' &&
+            widget.premadeOrigin.preset === 'lossOfControl';
+          if (!isLossOfControl || !Array.isArray(widget.customTimers)) continue;
+          const already = widget.customTimers.some(
+            (t) => t.triggerText === 'You lose control of yourself!'
+          );
+          if (already) continue;
+          widget.customTimers.unshift({
+            id: crypto.randomUUID(),
+            name: 'CONTROLLED',
+            durationSec: 45,
+            triggerText: 'You lose control of yourself!',
+            endedText: 'You have control of yourself again.',
+          });
+        }
+        data.version = 5;
+      }
       this.store.saveJson('widgets', data);
       return data;
     }
@@ -1194,7 +1237,7 @@ class WidgetStore {
 
     const selfBuffs = defaultSelfBuffsWidget(overrides);
 
-    const data = { version: 4, widgets: [selfBuffs] };
+    const data = { version: 5, widgets: [selfBuffs] };
     this.store.saveJson('widgets', data);
     return data;
   }
@@ -1427,7 +1470,7 @@ class WidgetStore {
     return widget;
   }
 
-  // Note 34's second half. Shara, 23 August: "buff AND debuff need their own custom templates.
+  // Note 34's second half. the owner, 23 August: "buff AND debuff need their own custom templates.
   // add a debuff template."
   //
   // It is an ally-source aura with enemy watching already on, which is the combination nobody
@@ -1786,7 +1829,7 @@ class WidgetStore {
   }
 
   // Note 30. What a code IS, without doing anything with it. A code arriving from chat is text
-  // another player typed, so the app needs to be able to say "Avenrae sent a Resist flash aura"
+  // another player typed, so the app needs to be able to say "Baxa sent a Resist flash aura"
   // before anyone decides anything - and reading is the only part of that which is safe to do
   // without being asked.
   peekCode(code) {

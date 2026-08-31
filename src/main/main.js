@@ -36,6 +36,7 @@ const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
 const { RaidNamedTracker } = require('./raidNamedTracker');
+const { readLastZoneEntry } = require('./logZonePeek');
 const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
 const { matchShareCodeInChat, splitReason } = require('../shared/shareCodeChat');
@@ -60,6 +61,9 @@ const actionBarManager = require('./actionBarManager');
 const { AbilityGroupTracker, KNOWN_STANCES, KNOWN_INVOCATIONS } = require('./abilityGroups');
 const ambiguousPopup = require('./ambiguousPopup');
 const zonePromptPopup = require('./zonePromptPopup');
+const moveHudWindow = require('./moveHudWindow');
+const gridGuideWindow = require('./gridGuideWindow');
+const positionSnap = require('./positionSnap');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
 const soundService = require('./soundService');
@@ -201,6 +205,10 @@ abilityGroupTracker.setGetGroupSlotsFn((group) => {
   return out;
 });
 abilityGroupTracker.setOnChangeFn(() => broadcast('actionBar:abilityGroupChanged', abilityGroupTracker.getAllActiveStates()));
+// QOL #16 - the active stance/invocation is a character state the player is still in after a
+// restart (like the current zone), so persist it by name and restore it once the bars are known.
+abilityGroupTracker.setPersistFn((state) => saveJson('activeAbilityGroups', state));
+abilityGroupTracker.restore(loadJson('activeAbilityGroups', { stance: null, invocation: null }));
 // See customTimerEngine._resolveCastName. getByName tries the exact name first and only then the
 // rank-stripped one, which is what tells a mote rank ("Cannibalize V" -> Cannibalize) apart from a
 // spell whose name merely ends in a numeral ("Yaulp III" -> itself).
@@ -235,6 +243,10 @@ buffEngine.setAllyDebuffAlertNamesFn(() => widgetManager.getAllyDebuffAlertNames
 // starts the prompts again immediately.
 buffEngine.setBardSongsVisibleFn(() =>
   widgetManager.getAllWidgetConfigs().some((w) => w.hideBardSongs === false)
+);
+// #29 - a debuff bard song landing on an enemy is only tracked when a Bard Songs aura wants it.
+buffEngine.setBardSongDebuffsWantedFn(() =>
+  widgetManager.getAllWidgetConfigs().some((w) => w.buffSource === 'bardSongs' && w.showDebuffSongs)
 );
 customTimerEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setTrackOthersEnabled(loadJson('trackOthersEnabled', false));
@@ -306,7 +318,7 @@ if (autoHideOverlayEnabled) foregroundWatcher.start();
 // needing to manually trace the raw EQ log. Capped by truncating on
 // startup rather than mid-session, so a single write is never slowed down
 // by a size check.
-// ITS OWN FOLDER, ONE FILE PER DAY. Shara, 23 August: "I cannot provide this currently as that log
+// ITS OWN FOLDER, ONE FILE PER DAY. the owner, 23 August: "I cannot provide this currently as that log
 // file doesn't exist. it should probably be created as an actual file in it's own folder, that
 // updates and is split per day."
 //
@@ -786,19 +798,19 @@ function applyInstallRoot(eqFolder) {
   // file on "duration > 0", which threw away 386 real bard songs that carry 0 there, so backfill
   // re-read spells_us.txt on every launch and put them back.
   //
-  // The roster is no longer mined, so there is nothing to undo. It is built from the curated
-  // EQ Legends spreadsheet - the definitive list of what this server actually has - and songs sit
-  // in it on the same footing as everything else. Running backfill against that re-reads the
-  // client's file, which carries the spells of EVERY EverQuest version, and pushes back in
-  // everything this server does not have. Measured on this install: +1,499 entries, taking the
-  // roster from 1,052 to about 2,551.
+  // The roster is no longer mined, so there is nothing to undo. It is the ~1,000 spells EQ Legends
+  // actually has, and songs sit in it on the same footing as everything else. Running backfill
+  // against that re-reads the client's file, which carries the spells of EVERY EverQuest version,
+  // and pushes back in everything this server does not have. Measured on this install: +1,499
+  // entries, taking the roster from 1,052 to about 2,551.
   //
   // Size is not the real cost. "Is this landing line unique?" is judged by counting roster
   // entries, so every re-added spell votes on ambiguity it has no business voting on - which is
   // precisely what the rebuild set out to remove. See the note at the top of tools/build-roster.js.
   //
-  // If a bard song really is missing, it belongs in the spreadsheet: one rebuild then fixes it
-  // for everyone, instead of each install quietly healing itself into a different roster.
+  // If a bard song really is missing, add it via an `add` block in tools/roster-overrides.json:
+  // one rebuild then fixes it for everyone, instead of each install quietly healing itself into a
+  // different roster.
   const tagged = tagBardSongs(currentInstallRoot, buffStore);
   if (tagged) debugLog(`Tagged ${tagged} existing roster entries as bard songs`);
 }
@@ -855,7 +867,7 @@ function raidNamedTile(row) {
 }
 
 /**
- * Note 20's destination command, redesigned 26 Aug. The original version (Shara's own design, 23
+ * Note 20's destination command, redesigned 26 Aug. The original version (the owner's own design, 23
  * August) read the exact word typed as a possible zone name - "/tell qeynos" - which needed
  * knowing the game's own short name for the place and, worse, meant an ORDINARY /tell to an
  * offline GUILDMATE could look like a travel command. Confirmed directly: "Freeport" is also a
@@ -1159,6 +1171,23 @@ app.whenReady().then(() => {
     debugLog(`Did not restore timers: ${reason}`);
   }
 
+  // Recover the current zone from the log tail. logWatcher started at EOF and will never see the
+  // "You have entered X." line if the player zoned while the app was down, which otherwise leaves
+  // the raid-named board, zone-gated aura visibility and the travel guide's current zone all blind
+  // until the next zone change. A zone line is unambiguous, so unlike a buff it is safe to read
+  // back. Deferred off the ready handler so a large log's tail scan never delays startup.
+  setImmediate(() => {
+    const logPath = logService.watcher.getStatus().currentFilePath;
+    if (!logPath) return;
+    const zone = readLastZoneEntry(logPath);
+    if (!zone) return;
+    applyZoneChangeAndNotify(zone);
+    raidNamedTracker.setZone(zone);
+    customTimerEngine.seedZone(zone);
+    pushTravelRoutes();
+    debugLog(`ZONE recovered on startup: "${zone}" (from the log tail)`);
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createMainWindow();
@@ -1270,6 +1299,8 @@ ipcMain.handle('lockouts:trim', async () => {
     logService.watcher.resyncOffset(watched, report.keptBytes);
     logService.splitter.resyncOffset(watched, report.keptBytes);
     await lockoutService.rebuild();
+    // The log just shrank - a later regrowth past the threshold is a fresh event worth nudging on.
+    saveJson('logArchivePromptDismissedAt', 0);
   }
   return { report, projection: lockoutService.getProjection() };
 });
@@ -1298,7 +1329,7 @@ ipcMain.handle('log:chooseFolder', async () => {
   return state;
 });
 ipcMain.handle('log:setSplitEnabled', (_event, enabled) => logService.setSplitEnabled(enabled));
-ipcMain.handle('log:setSplitOnGap', (_event, splitOnGap) => logService.setSplitOnGap(splitOnGap));
+ipcMain.handle('log:setSplitDayStartHour', (_event, hour) => logService.setSplitDayStartHour(hour));
 ipcMain.handle('log:chooseSplitFolder', () => logService.chooseSplitFolder());
 ipcMain.handle('log:resetSplitFolder', () => logService.resetSplitFolder());
 ipcMain.handle('log:openFolder', () => logService.openLogFolder());
@@ -1307,6 +1338,28 @@ ipcMain.handle('log:openFolder', () => logService.openLogFolder());
 ipcMain.handle('log:archiveHoldsCurrentWeek', () =>
   logRotationService.logHoldsCurrentWeek(logService.watcher.getStatus().currentFilePath));
 
+// QOL #24 - a once-on-launch nudge when the live log has grown past the archive threshold (50 MB,
+// logService.ARCHIVE_PROMPT_THRESHOLD_BYTES). It must fire even for someone who has never archived,
+// so it keys purely off current size, not on any calendar or rotation timing. The renderer's modal
+// steers toward "Trim to this week" (lockout-safe) rather than a whole-log archive. Re-nudged at
+// most once a week so it is not every-launch nagging.
+const LAUNCH_ARCHIVE_RENUDGE_MS = 7 * 24 * 60 * 60 * 1000;
+ipcMain.handle('log:launchArchiveCheck', () => {
+  const state = logService.getState();
+  if (!state.shouldPromptArchive) return { prompt: false };
+  const dismissedAt = Number(loadJson('logArchivePromptDismissedAt', 0)) || 0;
+  if (dismissedAt && Date.now() - dismissedAt < LAUNCH_ARCHIVE_RENUDGE_MS) return { prompt: false };
+  return {
+    prompt: true,
+    sizeBytes: state.fileSizeBytes,
+    holdsCurrentWeek: logRotationService.logHoldsCurrentWeek(state.currentFilePath),
+  };
+});
+ipcMain.handle('log:dismissArchivePrompt', () => {
+  saveJson('logArchivePromptDismissedAt', Date.now());
+  return { ok: true };
+});
+
 ipcMain.handle('log:archiveNow', async () => {
   // The renderer has already confirmed in an in-app modal (and warned if this holds the lockout
   // week). The archive empties the same log the lockout grid is built from, so the grid is rebuilt
@@ -1314,6 +1367,7 @@ ipcMain.handle('log:archiveNow', async () => {
   const result = logService.archiveNow();
   await lockoutService.rebuild();
   broadcast('lockouts:changed', lockoutService.getStatus());
+  if (result && result.ok) saveJson('logArchivePromptDismissedAt', 0); // see QOL #24
   return result;
 });
 ipcMain.handle('log:openArchiveFolder', () => logService.openArchiveFolder());
@@ -1321,6 +1375,7 @@ ipcMain.handle('log:openArchiveFolder', () => logService.openArchiveFolder());
 ipcMain.handle('buffs:getActive', () => buffEngine.getActiveBuffs());
 ipcMain.handle('buffs:getActiveAllies', () => buffEngine.getActiveAllyBuffs());
 ipcMain.handle('buffs:getActiveBardSongs', () => buffEngine.getActiveBardSongs());
+ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffEngine.removeActiveBardSong(castBy, name));
 
 ipcMain.handle('damage:getActive', () => damageEngine.getActive());
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
@@ -1924,6 +1979,97 @@ ipcMain.handle('widget:toggleLock', (_event, id) => widgetManager.toggleLock(id)
 ipcMain.handle('widget:resetPosition', (_event, id) => widgetManager.resetPosition(id));
 ipcMain.handle('widget:isLocked', (_event, id) => widgetManager.isLocked(id));
 
+// The move HUD (moveHudWindow.js) - precise positioning for one aura OR one action bar. Entering
+// move mode unlocks the target, hides the main config window (it just covers where you want the
+// target), and opens the detached HUD panel. Done reverses all three. One panel, one code path -
+// `moveTarget.kind` picks which manager the nudge / reset / bounds calls go to.
+let moveTarget = null; // { kind: 'widget' | 'actionBar', id } | null
+let moveStepPx = 1;
+
+positionSnap.set(loadJson('overlaySnapGrid', { enabled: false, sizePx: 8 }));
+
+const targetManager = (kind) => (kind === 'actionBar' ? actionBarManager : widgetManager);
+
+function targetName(kind, id) {
+  const cfg = kind === 'actionBar' ? actionBarManager.getConfig(id) : widgetManager.getWidgetConfig(id);
+  return cfg ? cfg.name : '';
+}
+function targetBounds(kind, id) {
+  return kind === 'actionBar' ? actionBarManager.getBounds(id) : widgetManager.getWidgetBounds(id);
+}
+function targetLocked(kind, id) {
+  return kind === 'actionBar' ? actionBarManager.isLocked(id) : widgetManager.isLocked(id);
+}
+function targetSetLocked(kind, id, locked) {
+  return kind === 'actionBar' ? actionBarManager.setLocked(id, locked) : widgetManager.setLocked(id, locked);
+}
+
+function hudMeta() {
+  const grid = positionSnap.get();
+  return {
+    name: moveTarget ? targetName(moveTarget.kind, moveTarget.id) : '',
+    stepPx: moveStepPx,
+    snapEnabled: grid.enabled,
+    snapSizePx: grid.sizePx,
+  };
+}
+
+function onMoveTargetMoved(id, bounds) {
+  if (moveTarget && id === moveTarget.id && bounds) moveHudWindow.update(bounds, hudMeta());
+}
+widgetManager.setOnWidgetMovedFn(onMoveTargetMoved);
+actionBarManager.setOnMovedFn(onMoveTargetMoved);
+
+function enterMoveMode(kind, id) {
+  if (!targetName(kind, id) && !targetBounds(kind, id)) return { ok: false };
+  moveTarget = { kind, id };
+  positionSnap.setActive(id);
+  if (targetLocked(kind, id)) targetSetLocked(kind, id, false);
+  const b = targetBounds(kind, id); // exists now that it is unlocked
+  getMainWindow()?.hide();
+  moveHudWindow.open(b || { x: 200, y: 200, width: 160, height: 80 }, hudMeta());
+  if (positionSnap.get().enabled) gridGuideWindow.show(positionSnap.get().sizePx);
+  return { ok: true };
+}
+
+function exitMoveMode() {
+  const t = moveTarget;
+  moveTarget = null;
+  positionSnap.setActive(null);
+  moveHudWindow.close();
+  gridGuideWindow.hide();
+  if (t) targetSetLocked(t.kind, t.id, true);
+  const win = getMainWindow();
+  if (win) { win.show(); win.focus(); }
+  else createMainWindow();
+}
+
+ipcMain.handle('widget:enterMoveMode', (_event, id) => enterMoveMode('widget', id));
+ipcMain.handle('actionBar:enterMoveMode', (_event, id) => enterMoveMode('actionBar', id));
+ipcMain.handle('moveHud:nudge', (_event, { dx, dy }) => {
+  if (!moveTarget) return null;
+  return moveTarget.kind === 'actionBar'
+    ? actionBarManager.nudgePosition(moveTarget.id, dx, dy)
+    : widgetManager.nudgeWidget(moveTarget.id, dx, dy);
+});
+ipcMain.handle('moveHud:setStep', (_event, px) => {
+  moveStepPx = px === 10 ? 10 : 1;
+  return moveStepPx;
+});
+ipcMain.handle('moveHud:setSnap', (_event, { enabled, sizePx }) => {
+  const grid = positionSnap.set({ enabled, sizePx });
+  saveJson('overlaySnapGrid', grid);
+  if (moveTarget) {
+    if (grid.enabled) gridGuideWindow.show(grid.sizePx);
+    else gridGuideWindow.hide();
+  }
+  return grid;
+});
+ipcMain.handle('moveHud:resetPosition', () => {
+  if (moveTarget) targetManager(moveTarget.kind).resetPosition(moveTarget.id);
+});
+ipcMain.handle('moveHud:done', () => exitMoveMode());
+
 // The Action Bar overlay - see actionBarManager.js's own header comment. Multiple bars, same
 // {id, ...} shape every widget:* handler already uses.
 ipcMain.handle('actionBar:list', () => actionBarManager.getAllBars());
@@ -1939,7 +2085,7 @@ ipcMain.handle('actionBar:setShowWhenAppFocused', (_event, { id, enabled }) => a
 ipcMain.handle('actionBar:toggleLock', (_event, id) => actionBarManager.toggleLock(id));
 ipcMain.handle('actionBar:isLocked', (_event, id) => actionBarManager.isLocked(id));
 ipcMain.handle('actionBar:resetPosition', (_event, id) => actionBarManager.resetPosition(id));
-ipcMain.handle('actionBar:nudge', (_event, { id, dx, dy }) => actionBarManager.nudgePosition(id, dx, dy));
+ipcMain.handle('actionBar:swapSlots', (_event, { id, a, b }) => actionBarManager.swapSlots(id, a, b));
 ipcMain.handle('actionBar:setSlotIcon', (_event, { id, index, iconId }) => actionBarManager.setSlotIcon(id, index, iconId));
 ipcMain.handle('actionBar:setOpacity', (_event, { id, opacity }) => actionBarManager.setOpacity(id, opacity));
 ipcMain.handle('actionBar:setSlotName', (_event, { id, index, name }) => actionBarManager.setSlotName(id, index, name));
@@ -1966,10 +2112,18 @@ ipcMain.handle('actionBar:setSlotInsetPx', (_event, { id, index, px }) => action
 ipcMain.handle('actionBar:setSlotToggleGroup', (_event, { id, index, group }) => actionBarManager.setSlotToggleGroup(id, index, group));
 ipcMain.handle('actionBar:setSlotToggleName', (_event, { id, index, name }) => actionBarManager.setSlotToggleName(id, index, name));
 ipcMain.handle('actionBar:setSlotToggleDurationSec', (_event, { id, index, sec }) => actionBarManager.setSlotToggleDurationSec(id, index, sec));
-ipcMain.handle('actionBar:getKnownAbilityGroups', () => ({
-  stances: KNOWN_STANCES,
-  invocations: KNOWN_INVOCATIONS,
-}));
+ipcMain.handle('actionBar:getKnownAbilityGroups', () => {
+  // The roster is the source of truth now (#20/#21 added every stance/invocation the owner named
+  // as a category:'Stance'/'Invocation' entry). Union with the hand-seeded KNOWN_ lists so a name
+  // that was only ever observed live - and never made it into the roster - still stays pickable.
+  const roster = buffStore.getAll();
+  const named = (category) => roster.filter((b) => b.category === category).map((b) => b.name);
+  const union = (fromRoster, seed) => [...new Set([...fromRoster, ...seed])].sort();
+  return {
+    stances: union(named('Stance'), KNOWN_STANCES),
+    invocations: union(named('Invocation'), KNOWN_INVOCATIONS),
+  };
+});
 ipcMain.handle('actionBar:getAbilityGroupState', () => abilityGroupTracker.getAllActiveStates());
 ipcMain.handle('actionBar:setSlotMultiIcon', (_event, { id, index, enabled }) => actionBarManager.setSlotMultiIcon(id, index, enabled));
 ipcMain.handle('actionBar:setSlotSecondIcon', (_event, { id, index, iconId }) => actionBarManager.setSlotSecondIcon(id, index, iconId));
@@ -1998,6 +2152,8 @@ ipcMain.handle('widget:setShowIconLabel', (_event, { id, enabled }) => widgetMan
 ipcMain.handle('widget:setIconLabelSize', (_event, { id, value }) => widgetManager.setIconLabelSize(id, value));
 ipcMain.handle('widget:setTimerTextColor', (_event, { id, value }) => widgetManager.setTimerTextColor(id, value));
 ipcMain.handle('widget:setGroupAllyBuffs', (_event, { id, value }) => widgetManager.setGroupAllyBuffs(id, value));
+ipcMain.handle('widget:setShowDebuffSongs', (_event, { id, value }) => widgetManager.setShowDebuffSongs(id, value));
+ipcMain.handle('widget:setSplitSongsByType', (_event, { id, value }) => widgetManager.setSplitSongsByType(id, value));
 ipcMain.handle('widget:setGroupAllyDirection', (_event, { id, value }) => widgetManager.setGroupAllyDirection(id, value));
 ipcMain.handle('widget:setHideAllyNameOnTile', (_event, { id, value }) => widgetManager.setHideAllyNameOnTile(id, value));
 ipcMain.handle('widget:setLabelTextColor', (_event, { id, value }) => widgetManager.setLabelTextColor(id, value));

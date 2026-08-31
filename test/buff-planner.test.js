@@ -2,7 +2,7 @@
 /**
  * The buff optimiser - src/main/buffPlanner.js.
  *
- * Shara, 26-27 Aug. The model, after a wrong first pass she caught with a real 14-buff loadout
+ * Vaela, 26-27 Aug. The model, after a wrong first pass she caught with a real 14-buff loadout
  * (cleric/shaman/bard, all stacking): the roster's `category` column is a STAT LABEL, not a
  * stacking line - Strength AND Infusion of Spirit AND Talisman of Altuna all stack and all belong.
  * So the planner does NOT collapse by category. It keeps every stat/combat buff the classes can
@@ -133,7 +133,7 @@ test('heals and pure-utility categories are dropped; Spell Focus is NOT (it is a
 });
 
 test('two different buffs in the same category BOTH stay - category is a stat label, not a line', () => {
-  // Shara's reference loadout: Strength and Infusion of Spirit, both category "Strength".
+  // Vaela's reference loadout: Strength and Infusion of Spirit, both category "Strength".
   const roster = [
     buff({ name: 'Strength', spellId: 1, category: 'Strength', classes: 'SHM 46', level: 46 }),
     buff({ name: 'Infusion of Spirit', spellId: 2, category: 'Strength', classes: 'SHM 49', level: 49 }),
@@ -363,7 +363,7 @@ test('permanent buffs are an uncapped pool of their own, kept even when a temp b
 });
 
 // ---------------------------------------------------------------------------
-// against the real roster + Shara's reference loadout
+// against the real roster + Vaela's reference loadout
 // ---------------------------------------------------------------------------
 
 test('the real roster: cleric/shaman/bard has every buff from the reference loadout as a candidate', () => {

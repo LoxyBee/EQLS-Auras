@@ -44,12 +44,14 @@ contextBridge.exposeInMainWorld('eqTracker', {
     ipcRenderer.on('memorized:line', (_event, line) => callback(line));
   },
   setSplitEnabled: (enabled) => ipcRenderer.invoke('log:setSplitEnabled', enabled),
-  setSplitOnGap: (splitOnGap) => ipcRenderer.invoke('log:setSplitOnGap', splitOnGap),
+  setSplitDayStartHour: (hour) => ipcRenderer.invoke('log:setSplitDayStartHour', hour),
   chooseSplitFolder: () => ipcRenderer.invoke('log:chooseSplitFolder'),
   resetSplitFolder: () => ipcRenderer.invoke('log:resetSplitFolder'),
   openLogFolder: () => ipcRenderer.invoke('log:openFolder'),
   archiveLogNow: () => ipcRenderer.invoke('log:archiveNow'),
   openArchiveFolder: () => ipcRenderer.invoke('log:openArchiveFolder'),
+  launchArchiveCheck: () => ipcRenderer.invoke('log:launchArchiveCheck'),
+  dismissArchivePrompt: () => ipcRenderer.invoke('log:dismissArchivePrompt'),
 
   getActiveBuffs: () => ipcRenderer.invoke('buffs:getActive'),
   getUnknownBuffs: () => ipcRenderer.invoke('buffs:getUnknown'),
@@ -68,6 +70,12 @@ contextBridge.exposeInMainWorld('eqTracker', {
   removeActiveCustomTimer: (id) => ipcRenderer.invoke('customTimers:removeActive', id),
   onActiveCustomTimersChanged: (callback) => {
     ipcRenderer.on('customTimers:active', (_event, timers) => callback(timers));
+  },
+
+  getActiveBardSongs: () => ipcRenderer.invoke('buffs:getActiveBardSongs'),
+  removeActiveBardSong: (castBy, name) => ipcRenderer.invoke('buffs:removeActiveBardSong', { castBy, name }),
+  onActiveBardSongsChanged: (callback) => {
+    ipcRenderer.on('buffs:activeBardSongs', (_event, songs) => callback(songs));
   },
   getBlockedBuffs: () => ipcRenderer.invoke('buffs:getBlocked'),
   blockBuff: (name) => ipcRenderer.invoke('buffs:blockBuff', name),
@@ -235,6 +243,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   toggleWidgetLock: (id) => ipcRenderer.invoke('widget:toggleLock', id),
   resetWidgetPosition: (id) => ipcRenderer.invoke('widget:resetPosition', id),
   isWidgetLocked: (id) => ipcRenderer.invoke('widget:isLocked', id),
+  enterWidgetMoveMode: (id) => ipcRenderer.invoke('widget:enterMoveMode', id),
   setWidgetDisplayMode: (id, mode) => ipcRenderer.invoke('widget:setDisplayMode', { id, mode }),
   setWidgetTimerFormat: (id, format) => ipcRenderer.invoke('widget:setTimerFormat', { id, value: format }),
   setWidgetTextSize: (id, size) => ipcRenderer.invoke('widget:setTextSize', { id, value: size }),
@@ -253,6 +262,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetIconLabelAnchor: (id, anchor) => ipcRenderer.invoke('widget:setIconLabelAnchor', { id, value: anchor }),
   setWidgetTimerTextColor: (id, value) => ipcRenderer.invoke('widget:setTimerTextColor', { id, value }),
   setWidgetGroupAllyBuffs: (id, value) => ipcRenderer.invoke('widget:setGroupAllyBuffs', { id, value }),
+  setWidgetShowDebuffSongs: (id, value) => ipcRenderer.invoke('widget:setShowDebuffSongs', { id, value }),
+  setWidgetSplitSongsByType: (id, value) => ipcRenderer.invoke('widget:setSplitSongsByType', { id, value }),
   setWidgetGroupAllyDirection: (id, value) => ipcRenderer.invoke('widget:setGroupAllyDirection', { id, value }),
   setWidgetHideAllyNameOnTile: (id, value) => ipcRenderer.invoke('widget:setHideAllyNameOnTile', { id, value }),
   setWidgetLabelTextColor: (id, value) => ipcRenderer.invoke('widget:setLabelTextColor', { id, value }),
@@ -338,7 +349,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   toggleActionBarLock: (id) => ipcRenderer.invoke('actionBar:toggleLock', id),
   isActionBarLocked: (id) => ipcRenderer.invoke('actionBar:isLocked', id),
   resetActionBarPosition: (id) => ipcRenderer.invoke('actionBar:resetPosition', id),
-  nudgeActionBar: (id, dx, dy) => ipcRenderer.invoke('actionBar:nudge', { id, dx, dy }),
+  swapActionBarSlots: (id, a, b) => ipcRenderer.invoke('actionBar:swapSlots', { id, a, b }),
+  enterActionBarMoveMode: (id) => ipcRenderer.invoke('actionBar:enterMoveMode', id),
   setActionBarSlotIcon: (id, index, iconId) => ipcRenderer.invoke('actionBar:setSlotIcon', { id, index, iconId }),
   setActionBarOpacity: (id, opacity) => ipcRenderer.invoke('actionBar:setOpacity', { id, opacity }),
   setActionBarSlotName: (id, index, name) => ipcRenderer.invoke('actionBar:setSlotName', { id, index, name }),

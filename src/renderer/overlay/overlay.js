@@ -60,6 +60,8 @@ let currentConfig = {
   groupAllyBuffs: false,
   groupAllyDirection: 'vertical',
   hideAllyNameOnTile: false,
+  showDebuffSongs: false,
+  splitSongsByType: false,
   timerTextColor: '#f0f1f5',
   labelTextColor: '#f0f1f5',
   iconMarginPx: 5,
@@ -318,7 +320,7 @@ function initials(name) {
 //
 // The name prefix is dropped when the tile already sits under a heading
 // naming that ally (grouping on), or when the user has turned it off
-// outright - repeating "Avenrae:" on every tile in Avenrae's own group is
+// outright - repeating "Baxa:" on every tile in Baxa's own group is
 // just noise eating tile width.
 function displayName(buff) {
   if (!buff.allyName) return buff.name;
@@ -356,6 +358,24 @@ function shouldGroupByAlly(visible) {
   return !!currentConfig.groupAllyBuffs && visible.some((b) => b.allyName);
 }
 
+// #29 - the Bard Songs aura only, and only once a debuff song is actually showing (nothing to
+// split otherwise). The heading text reuses the same allyName field the group renderer already
+// draws, so no rendering change is needed.
+function shouldSplitSongs(visible) {
+  return currentConfig.buffSource === 'bardSongs'
+    && !!currentConfig.splitSongsByType
+    && visible.some((b) => b.isDebuff);
+}
+
+function groupBySongType(buffs) {
+  const buffSongs = buffs.filter((b) => !b.isDebuff);
+  const debuffSongs = buffs.filter((b) => b.isDebuff);
+  const out = [];
+  if (buffSongs.length) out.push({ allyName: 'Buff songs', buffs: buffSongs });
+  if (debuffSongs.length) out.push({ allyName: 'Debuff songs', buffs: debuffSongs });
+  return out;
+}
+
 // Note 8's count, and deliberately ONE builder rather than two. Note 12 wants the identical badge
 // on a different kind of merged tile, and two copies of a thing described as "the same badge" is
 // how they end up not being the same badge.
@@ -374,7 +394,7 @@ function buildCountBadge(count, why) {
 // refreshing the one target you already have - it's one tile now, duration refreshed on a new
 // cast, same as a buff on a groupmate always was.
 //
-// Shara, 23 August: "a count of x1 should not be displayed, only display count when multiple
+// the owner, 23 August: "a count of x1 should not be displayed, only display count when multiple
 // exist." Returning null in the ordinary case is what enforces it, once, rather than at each call
 // site.
 function countFor(buff) {
@@ -402,7 +422,7 @@ function buildTextTile(buff) {
 // What a text aura actually says.
 //
 // {caster} and {spell} are substituted so one aura can cover a whole list of spells and still say
-// which one just happened, and who by. Shara's example wording was "Party member has cast
+// which one just happened, and who by. the owner's example wording was "Party member has cast
 // Mesmerize on a creature"; the tokens are what let her write that for real, with the actual name
 // in it, instead of a fixed line that is only right for one spell.
 //
@@ -967,7 +987,8 @@ function visibleBuffs(buffs, opts = {}) {
   // allyCast/onEnemy filters below would either do nothing or, in hideBardSongs' case, strip
   // every single tile this aura has (every entry here has isBardSong true by construction).
   if (currentConfig.buffSource === 'bardSongs') {
-    return buffs.filter((b) => b.showOnOverlay !== false);
+    // #29 - debuff songs (on an enemy) ride the same feed but are opt-in.
+    return buffs.filter((b) => b.showOnOverlay !== false && (currentConfig.showDebuffSongs || !b.isDebuff));
   }
 
   let filtered;
@@ -1021,7 +1042,7 @@ function visibleBuffs(buffs, opts = {}) {
 
   // INSTANTS - nukes, heals, gates - only belong on an aura that is not drawing a countdown.
   //
-  // Shara's rule: they "should not be added to selection lists that have a duration based tile"
+  // the owner's rule: they "should not be added to selection lists that have a duration based tile"
   // but "can be added to... text only custom auras... just in case someone wants feedback when a
   // cast is successful or resisted". So a list or icon aura filters them out here, and a text
   // aura keeps them.
@@ -1464,8 +1485,11 @@ function render(buffs) {
 
   // A text aura is a single tile, so there is nothing to group and no heading that would make
   // sense above one line of words.
-  const grouped = !isText && shouldGroupByAlly(visible);
-  const groups = grouped ? groupByAlly(visible) : null;
+  // #29 - the Bard Songs aura's "Split buffs / debuffs" toggle groups by song type instead of by
+  // caster; it wins over caster-grouping when both are on.
+  const splitSongs = !isText && shouldSplitSongs(visible);
+  const grouped = !isText && (splitSongs || shouldGroupByAlly(visible));
+  const groups = grouped ? (splitSongs ? groupBySongType(visible) : groupByAlly(visible)) : null;
   const groupKey = grouped
     ? `${currentConfig.groupAllyDirection || 'vertical'}|${groups.map((g) => `${g.allyName}:${g.buffs.length}`).join(',')}`
     : '';

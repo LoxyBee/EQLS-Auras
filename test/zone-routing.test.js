@@ -3,7 +3,7 @@
  * Note 20 - the travel guide's routing.
  *
  * The note was blocked on data that did not exist anywhere in the app, in buffs.json, or in the
- * spreadsheet. It exists now, sourced and cross-checked, and these tests are about the two things
+ * roster. It exists now, sourced and cross-checked, and these tests are about the two things
  * that could quietly go wrong with it: a graph that looks complete and is not, and a route that
  * looks shortest and is not.
  *
@@ -298,7 +298,7 @@ test('inferred zone names are kept and flagged rather than dropped', () => {
 // Note 20's destination command - "/tell qeynos"
 // ---------------------------------------------------------------------------
 
-// Shara, 23 August: "the user would type '/tell qeynos' which would then print 'qeynos is not
+// Vaela, 23 August: "the user would type '/tell qeynos' which would then print 'qeynos is not
 // online at this time', when this is seen, the widget would read qeynos as the destination."
 //
 // Both of these lines are already in her logs, so the wording is measured rather than assumed.
@@ -314,7 +314,7 @@ test('a failed tell is read as a destination command', () => {
 test('the same words inside a chat message are ignored', () => {
   const { matchOfflineTell } = require('../src/shared/travelCommand');
   const T = '[Wed Aug 19 21:14:02 2026] ';
-  assert.equal(matchOfflineTell(`${T}Avenrae tells you, 'Qeynos is not online at this time.'`), null);
+  assert.equal(matchOfflineTell(`${T}Baxa tells you, 'Qeynos is not online at this time.'`), null);
   assert.equal(matchOfflineTell(`${T}You have entered Rivervale.`), null);
   // No timestamp means it did not come from the log at all.
   assert.equal(matchOfflineTell('Qeynos is not online at this time.'), null);

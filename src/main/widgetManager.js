@@ -12,6 +12,7 @@ const {
 } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
+const positionSnap = require('./positionSnap');
 
 const widgetStore = new WidgetStore({ loadJson, saveJson });
 
@@ -45,6 +46,18 @@ const runtimeLock = new Map(); // id -> boolean
 // comment. Always 0 for anything that isn't an icon-mode widget with a
 // label currently reserving overflow margin.
 const originXByWidget = new Map(); // id -> number
+// The last content size fitToContent was asked for while the aura was UNLOCKED, held back rather
+// than applied - resizing the window under the user's cursor mid-drag is the "the move box jumps"
+// bug. Applied once, re-centred on the frozen box, when the aura is locked again. { contentWidth,
+// contentHeight, originX }.
+const pendingFitByWidget = new Map(); // id -> { contentWidth, contentHeight, originX }
+// Move HUD (moveHudWindow.js). Snap-to-grid state is shared with action bars via positionSnap.js
+// and only ever applies to the one thing being positioned. movedGuard suppresses the extra 'moved'
+// our own snap setPosition fires.
+const movedGuard = new Set();
+// Fired on every move of the aura's window (drag, nudge, Reset). main.js wires this so the move
+// HUD's x/y readout keeps up.
+let onWidgetMoved = () => {};
 // Runtime-only, never persisted - true when the auto-hide-when-EQ-unfocused
 // feature (see foregroundWatcher.js) currently has widgets hidden. Kept
 // separate from profile-based visibility (below) so toggling focus never
@@ -205,14 +218,26 @@ function createWidgetWindow(config) {
   });
 
   win.on('moved', () => {
+    if (movedGuard.has(config.id)) return; // re-fired by our own snap setPosition just below
     const [x, y] = win.getPosition();
-    // The stored position is the grid's own intended screen position, not
-    // necessarily the window's raw x - see fitToContent's originX handling.
-    // Whatever origin offset is currently applied has to be added back so a
-    // real user drag (which always reports the window's true x) still saves
-    // the same canonical anchor fitToContent already knows how to restore.
+    let sx = x;
+    let sy = y;
+    // Snap the drop onto the grid, but only for the aura being positioned through the HUD - a
+    // bulk "Unlock all" drag is left exactly where it lands.
+    if (positionSnap.active(config.id) && (positionSnap.snap(x) !== x || positionSnap.snap(y) !== y)) {
+      sx = positionSnap.snap(x);
+      sy = positionSnap.snap(y);
+      movedGuard.add(config.id);
+      win.setPosition(sx, sy);
+      movedGuard.delete(config.id);
+    }
+    // The stored position is the grid's own intended screen position, not necessarily the
+    // window's raw x - see fitToContent's originX handling. Whatever origin offset is currently
+    // applied has to be added back so a real user drag (which always reports the window's true x)
+    // still saves the same canonical anchor fitToContent already knows how to restore.
     const originX = originXByWidget.get(config.id) || 0;
-    widgetStore.savePosition(config.id, { x: x + originX, y });
+    widgetStore.savePosition(config.id, { x: sx + originX, y: sy });
+    onWidgetMoved(config.id, getWidgetBounds(config.id));
   });
 
   win.on('resized', () => {
@@ -496,6 +521,15 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
   const config = widgetStore.getById(id);
   const win = windows.get(id);
   if (!config || !win) return;
+
+  // Freeze the window's size while the aura is unlocked for moving. Content comes and goes as
+  // buffs land and expire, and every resize shifts the blue drag box out from under the cursor
+  // mid-drag. Remember the latest request; applyPendingFit re-applies it, re-centred, on re-lock.
+  if (isUnlocked(id)) {
+    pendingFitByWidget.set(id, { contentWidth, contentHeight, originX });
+    return;
+  }
+
   const minHeight = minHeightFor(config);
   const width = Math.max(40, minWidthFor(config), Math.round(contentWidth) + WINDOW_CONTENT_PADDING_PX);
   const height = Math.max(minHeight + WINDOW_CONTENT_PADDING_PX, Math.round(contentHeight) + WINDOW_CONTENT_PADDING_PX);
@@ -525,6 +559,40 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
   widgetStore.update(id, { width, height });
 }
 
+// Apply the content size that came in while the aura was unlocked (fitToContent held it back), now
+// that it is locked again. The frozen box's CENTRE stays put - the owner's choice, 31 Aug: a buff
+// landing or expiring while you were positioning the aura should grow it symmetrically from where
+// you left it, not shove one edge. Also rewrites the stored anchor so later (locked) fitToContent
+// calls grow from this new position rather than snapping back.
+function applyPendingFit(id) {
+  const pending = pendingFitByWidget.get(id);
+  pendingFitByWidget.delete(id);
+  if (!pending) return;
+  const config = widgetStore.getById(id);
+  const win = windows.get(id);
+  if (!config || !win) return;
+
+  const minHeight = minHeightFor(config);
+  const width = Math.max(40, minWidthFor(config), Math.round(pending.contentWidth) + WINDOW_CONTENT_PADDING_PX);
+  const height = Math.max(minHeight + WINDOW_CONTENT_PADDING_PX, Math.round(pending.contentHeight) + WINDOW_CONTENT_PADDING_PX);
+  const [currentWidth, currentHeight] = win.getSize();
+  const [currentX, currentY] = win.getPosition();
+  if (width === currentWidth && height === currentHeight) return;
+
+  const centreX = currentX + currentWidth / 2;
+  const centreY = currentY + currentHeight / 2;
+  const targetX = Math.round(centreX - width / 2);
+  const targetY = Math.round(centreY - height / 2);
+
+  const roundedOriginX = Math.round(pending.originX || 0);
+  originXByWidget.set(id, roundedOriginX);
+  win.setBounds({ x: targetX, y: targetY, width, height });
+  // The canonical anchor is the left edge with the origin offset folded back in - the same shape
+  // config.position carries and fitToContent reads.
+  widgetStore.update(id, { width, height });
+  widgetStore.savePosition(id, { x: targetX + roundedOriginX, y: targetY });
+}
+
 // Brings one widget's window in line with what isVisibleForActiveProfile
 // currently says - creating the window on demand the first time a widget
 // becomes visible (a widget that's never been visible this session has no
@@ -546,7 +614,7 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
 //
 // The order below IS the behaviour. Each clause has a reason it sits where it does.
 // Note 21. The global switch, off until someone turns it on. Held here rather than on the widget
-// because it is app-wide config, which is what Shara asked for - the label is a permanent option,
+// because it is app-wide config, which is what the owner asked for - the label is a permanent option,
 // not something you build and then have to remember you built.
 let loadoutLabelEnabled = false;
 function setLoadoutLabelEnabledState(enabled) {
@@ -702,6 +770,11 @@ function setLocked(id, locked, { force = true } = {}) {
     win.setIgnoreMouseEvents(shouldIgnoreMouse(config), { forward: true });
     win.webContents.send('widget:lockChanged', locked);
   }
+  // Re-locking: apply whatever size the content settled on while it was frozen, re-centred on the
+  // box the user just positioned (see applyPendingFit). Unlocking: nothing to do - fitToContent
+  // starts holding sizes back from here on.
+  if (locked) applyPendingFit(id);
+  else pendingFitByWidget.delete(id);
   return locked;
 }
 
@@ -801,7 +874,41 @@ function resetPosition(id) {
   originXByWidget.set(id, 0);
   win.setPosition(pos.x, pos.y);
   widgetStore.savePosition(id, pos);
+  onWidgetMoved(id, getWidgetBounds(id));
   return widgetStore.getById(id);
+}
+
+function setOnWidgetMovedFn(fn) {
+  if (typeof fn === 'function') onWidgetMoved = fn;
+}
+
+function getWidgetBounds(id) {
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) return null;
+  const [x, y] = win.getPosition();
+  const [width, height] = win.getSize();
+  return { x, y, width, height };
+}
+
+// Move an aura's window by (dx, dy) screen pixels and persist it. Used by the move HUD's nudge
+// arrows. A nudge is a deliberate placement, so it saves the same canonical anchor a real drag
+// does (see the 'moved' handler) - applyPendingFit re-centres on the LIVE window position on
+// re-lock, so the nudged spot is kept without any extra bookkeeping here.
+function nudgeWidget(id, dx, dy) {
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) return null;
+  const [x, y] = win.getPosition();
+  let nx = x + Math.round(Number(dx) || 0);
+  let ny = y + Math.round(Number(dy) || 0);
+  if (positionSnap.active(id)) {
+    nx = positionSnap.snap(nx);
+    ny = positionSnap.snap(ny);
+  }
+  win.setPosition(nx, ny);
+  const originX = originXByWidget.get(id) || 0;
+  widgetStore.savePosition(id, { x: nx + originX, y: ny });
+  onWidgetMoved(id, getWidgetBounds(id));
+  return getWidgetBounds(id);
 }
 
 function toggleLock(id) {
@@ -1092,6 +1199,18 @@ function setGroupAllyDirection(id, value) {
   return config;
 }
 
+function setShowDebuffSongs(id, value) {
+  const config = widgetStore.update(id, { showDebuffSongs: value });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setSplitSongsByType(id, value) {
+  const config = widgetStore.update(id, { splitSongsByType: value });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setHideAllyNameOnTile(id, value) {
   const config = widgetStore.update(id, { hideAllyNameOnTile: value });
   pushConfigChanged(id);
@@ -1349,6 +1468,10 @@ module.exports = {
   toggleLock,
   resetPosition,
   isLocked,
+  isUnlocked,
+  nudgeWidget,
+  getWidgetBounds,
+  setOnWidgetMovedFn,
   setDisplayMode,
   setTimerFormat,
   setTextSize,
@@ -1388,6 +1511,8 @@ module.exports = {
   setActiveProfileIds,
   removeProfileFromAllWidgets,
   setGroupAllyBuffs,
+  setShowDebuffSongs,
+  setSplitSongsByType,
   setGroupAllyDirection,
   setHideAllyNameOnTile,
   setTimerTextColor,

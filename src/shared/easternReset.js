@@ -91,4 +91,4 @@ function easternResetAfter(now, weekday, hour) {
   return easternWallToInstant(civNext.getUTCFullYear(), civNext.getUTCMonth() + 1, civNext.getUTCDate(), h);
 }
 
-module.exports = { easternResetBefore, easternResetAfter, easternOffsetMs, EASTERN };
+module.exports = { easternResetBefore, easternResetAfter, easternParts, easternOffsetMs, EASTERN };

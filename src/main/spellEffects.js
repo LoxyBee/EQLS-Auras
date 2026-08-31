@@ -1,7 +1,7 @@
 'use strict';
 
 // The actual character-stat numbers a buff grants - for the buff optimiser (buffPlanner.js).
-// Shara, 27 Aug: "rank them by best, that means numerical" / "actual character stats only".
+// the owner, 27 Aug: "rank them by best, that means numerical" / "actual character stats only".
 //
 // The game's spells_us.txt stores each spell's effects as numbered slots; spellStacking.js already
 // parses them (denseEffects / effectValue). This module reads those slots and keeps ONLY the ones
@@ -29,7 +29,7 @@ const STATS = [
   { name: 'INT', effect: 10 },
   { name: 'CHA', effect: 8 },
   { name: 'haste', effect: 11 }, // stored 100-based: 141 = +41%
-  { name: 'cast speed', effect: 127 }, // reduces cast time. Shara, 27 Aug: same priority as haste.
+  { name: 'cast speed', effect: 127 }, // reduces cast time. the owner, 27 Aug: same priority as haste.
   { name: 'HP regen', effect: 0 }, // per-tick on a duration buff (heals/HoTs are filtered out before this)
   { name: 'mana regen', effect: 15 }, // per-tick mana on a duration buff (Clarity etc.), not a max-mana raise
   { name: 'endurance regen', effect: 189 },
@@ -50,13 +50,13 @@ const MULTIPLIER_STATS = new Set(['haste', 'cast speed']); // 100-based, a bonus
 
 // How much a point of each stat is worth when ranking buffs of DIFFERENT stats for the default
 // slot order (the user drags to override). Attributes / AC / ATK count 1:1. Resists are weighted
-// down - "situational and lower priority" (Shara, 27 Aug) - so a resist buff doesn't outrank a
+// down - "situational and lower priority" (the owner, 27 Aug) - so a resist buff doesn't outrank a
 // real stat buff for a slot. HP/mana totals are scaled so a 500 HP buff doesn't dwarf a 50 STR
 // one. Rough on purpose.
 const RESIST_STATS = new Set(['fire resist', 'cold resist', 'poison resist', 'disease resist', 'magic resist', 'all resists']);
 const STAT_WEIGHT = {
   'max HP': 0.02, 'max mana': 0.02, rune: 0.05, 'spell rune': 0.05, 'damage shield': 0.5,
-  // Regen is a top priority (Shara, 27 Aug: "mana and endurance regen should be a high priority").
+  // Regen is a top priority (the owner, 27 Aug: "mana and endurance regen should be a high priority").
   // A per-tick value is small (~10-15), so it needs a big multiplier to rank alongside a +40 stat.
   'HP regen': 4, 'mana regen': 4, 'endurance regen': 4,
   // Resists are "situational and lower priority" - dropped well below a real stat so 4-5 single-

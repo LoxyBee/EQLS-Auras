@@ -63,7 +63,7 @@ test('stackDecision - same line', () => {
   assert.equal(bl.stackDecision('Strength', 'Strength'), 'overwrites'); // recast
 });
 
-test('stackDecision - Frenzy line stacks with the Strength line (the bug Shara caught)', () => {
+test('stackDecision - Frenzy line stacks with the Strength line (the bug Vaela caught)', () => {
   bl.loadData();
   assert.equal(bl.stackDecision('Fury', 'Strength'), 'coexist');
   assert.equal(bl.stackDecision('Strength', 'Fury'), 'coexist');

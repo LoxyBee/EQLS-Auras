@@ -24,7 +24,7 @@ const MAX_TRACKABLE_DURATION_SEC = 5 * 3600;
 // safe and was not: Alacrity's duration was fixed in the bundled roster on 24 Aug, and it changed
 // nothing for an already-seeded install, because a normal roster entry ships WITH
 // landingText/endedText/iconId from day one, so it never looked "untouched" to that design's
-// refresh heuristic and sat wrong forever. Shara: "it should be seeded from the install not the
+// refresh heuristic and sat wrong forever. the owner: "it should be seeded from the install not the
 // person's saved files because it interrupts old installs and doesn't allow live updates."
 //
 // What's still genuinely userData's alone, because the install has no copy of it at all:

@@ -6,7 +6,7 @@
  * no idea what type any spell was, and finding out meant re-mining the game's binary spell files,
  * field position by field position, on a custom server where every position had to be verified by
  * hand. The roster rebuild made that unnecessary - every entry now carries the category the
- * spreadsheet supplied - so what is left is choosing colours and drawing a border.
+ * roster supplied - so what is left is choosing colours and drawing a border.
  *
  * The failure this suite mostly exists to prevent is a QUIET one. The colours live in CSS keyed
  * by category name; the categories come from the roster. If those two lists ever drift apart, the
@@ -168,10 +168,17 @@ test('turning it off really turns it off', () => {
 
 test('the engine sends the category on every buff source', () => {
   // Self buffs, ally buffs, and bard songs are built by three separate functions that have
-  // drifted before.
-  assert.equal(
-    (engineSrc.match(/spellCategory: known\?\.scaleCategory \|\| null/g) || []).length, 3,
-    'one of getActiveBuffs / getActiveAllyBuffs / getActiveBardSongs is not sending the category'
+  // drifted before. Each must put a spellCategory on the tile it emits.
+  for (const fn of ['getActiveBuffs', 'getActiveAllyBuffs', 'getActiveBardSongs']) {
+    const at = engineSrc.indexOf(`\n  ${fn}() {`);
+    assert.ok(at > -1, `${fn} definition not found`);
+    const body = engineSrc.slice(at, at + 3000);
+    assert.match(body, /spellCategory:/, `${fn} is not sending spellCategory`);
+  }
+  // and the ordinary (non-debuff) path is still the scaleCategory pass-through in each
+  assert.ok(
+    (engineSrc.match(/spellCategory:[^,\n]*known\?\.scaleCategory \|\| null/g) || []).length >= 3,
+    'a buff source stopped deriving spellCategory from the roster'
   );
 });
 

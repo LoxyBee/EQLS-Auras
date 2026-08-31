@@ -46,6 +46,51 @@ function makeSong(buffStore, name = SONG) {
   buffStore.markBardSong(name);
 }
 
+// A fictional DEBUFF bard song - lands on an enemy, so it has a third-person suffix and a
+// debuff scaleCategory. #29: these show on the Bard Songs aura when "Also show debuff songs" is on.
+function makeDebuffSong(buffStore, name = 'Test Snare of Snaring') {
+  buffStore.upsert(name, 30, {
+    othersLandingSuffix: ` is bound by strands of test music.`,
+    endedText: `${name} fades.`,
+  });
+  const e = buffStore.getByName(name);
+  e.kind = 'det';
+  e.scaleCategory = 'debuff';
+  buffStore.markBardSong(name);
+  return name;
+}
+
+test('#29 - a debuff bard song landing on an enemy shows on the aura, marked as a debuff', () => {
+  const { engine, buffStore } = makeEngine();
+  engine.setBardSongDebuffsWantedFn(() => true); // a Bard Songs aura has "Also show debuff songs" on
+  const song = makeDebuffSong(buffStore);
+  engine.handleLine(`${TS}You begin singing ${song}.`);
+  engine.handleLine(`${TS}a dry bones skeleton is bound by strands of test music.`);
+  const songs = engine.getActiveBardSongs();
+  assert.equal(songs.length, 1);
+  assert.equal(songs[0].name, song);
+  assert.equal(songs[0].isDebuff, true);
+  assert.equal(songs[0].allyName, 'a dry bones skeleton', 'the enemy it landed on');
+  assert.equal(songs[0].spellCategory, 'debuff', 'so the aura draws the debuff-coloured border');
+});
+
+test('#29 - a debuff bard song is NOT tracked when no aura has asked to see debuff songs', () => {
+  const { engine, buffStore } = makeEngine();
+  // bardSongDebuffsWantedFn defaults to false - the "Also show debuff songs" option is off
+  const song = makeDebuffSong(buffStore);
+  engine.handleLine(`${TS}You begin singing ${song}.`);
+  engine.handleLine(`${TS}a dry bones skeleton is bound by strands of test music.`);
+  assert.equal(engine.getActiveBardSongs().length, 0, 'a multi-word mob recipient is not valid unless wanted');
+});
+
+test('#29 - a buff song on the player is not marked as a debuff', () => {
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  engine.handleLine(`${TS}You begin singing ${SONG}.`);
+  engine.handleLine(`${TS}${SONG} takes hold.`);
+  assert.equal(engine.getActiveBardSongs()[0].isDebuff, false);
+});
+
 // Amplification/Jonthan's Whistling Warsong/Jonthan's Provocation are all real roster entries
 // with targets:'Self' - mechanically impossible for anyone but the player to have cast in a way
 // that lands on the player. Mirrors makeSong exactly, plus the one extra field.
@@ -86,7 +131,7 @@ test('a self-only-targeted song overrides even a stale other-caster hit - it is 
   // A same-named mob/ally ability observed casting earlier - would normally win via
   // _recentOtherCaster (see the RANKED-self-cast gotcha this file already pins), but targets:'Self'
   // rules that out categorically for a spell that cannot exist as a targeted/group version.
-  engine.handleLine(`${TS}Imperius begins singing ${SONG}.`);
+  engine.handleLine(`${TS}Enro begins singing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
   const songs = engine.getActiveBardSongs();
   assert.equal(songs.length, 1);
@@ -113,9 +158,9 @@ test('memorizing a spell reclaims it from a real ally caster too, not just "Unkn
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.setTrackOthersEnabled(true);
-  engine.handleLine(`${TS}Avenrae begins singing ${SONG}.`);
+  engine.handleLine(`${TS}Baxa begins singing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
-  assert.equal(engine.getActiveBardSongs()[0].allyName, 'Avenrae');
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'Baxa');
 
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
   const songs = engine.getActiveBardSongs();
@@ -132,7 +177,7 @@ test('attribution is traceable in the debug log, not just the returned data', ()
 });
 
 test('an ally-cast bard song lands and is attributed, even with "Track others" OFF (the default)', () => {
-  // Shara, 25 Aug, after watching a real bard song get vetoed live with the global toggle off:
+  // Vaela, 25 Aug, after watching a real bard song get vetoed live with the global toggle off:
   // "bard songs should have this enabled by default as you cannot separate them." Bard songs get
   // every trackOthersEnabled-gated veto in the unique-landing-text tier waived unconditionally -
   // see buffEngine.js's own comment on trackOthersForThis. This is what makes attribution actually
@@ -141,18 +186,18 @@ test('an ally-cast bard song lands and is attributed, even with "Track others" O
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   assert.equal(engine.trackOthersEnabled, false, 'sanity: this is testing the default, not an opt-in');
-  engine.handleLine(`${TS}Avenrae begins singing ${SONG}.`);
+  engine.handleLine(`${TS}Baxa begins singing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
   const songs = engine.getActiveBardSongs();
   assert.equal(songs.length, 1);
-  assert.equal(songs[0].allyName, 'Avenrae');
+  assert.equal(songs[0].allyName, 'Baxa');
 });
 
 test('the veto waiver is scoped to bard songs only - an ordinary ally-cast spell is still IGNORED with "Track others" OFF', () => {
   const { engine, buffStore, log } = makeEngine();
   buffStore.upsert('Not A Song', 30, { landingText: 'This is definitely not a song.' });
   // Deliberately NOT calling markBardSong - this must behave exactly as it always has.
-  engine.handleLine(`${TS}Avenrae begins casting Not A Song.`);
+  engine.handleLine(`${TS}Baxa begins casting Not A Song.`);
   engine.handleLine(`${TS}This is definitely not a song.`);
   assert.equal(engine.getActiveBuffs().length, 0, 'an ordinary spell must still be vetoed with track others off');
   assert.ok(log.some((l) => l.includes('IGNORED') && l.includes('track others OFF')));
@@ -246,11 +291,11 @@ test('real ally cast-begin evidence still wins over a coincidental recent self-m
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
-  engine.handleLine(`${TS}Avenrae begins singing ${SONG}.`);
+  engine.handleLine(`${TS}Baxa begins singing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
   const songs = engine.getActiveBardSongs();
   assert.equal(songs.length, 1);
-  assert.equal(songs[0].allyName, 'Avenrae');
+  assert.equal(songs[0].allyName, 'Baxa');
 });
 
 test('a re-land with no fresh evidence at all reuses the song\'s existing active attribution instead of creating an "Unknown" duplicate', () => {
@@ -303,7 +348,7 @@ test('two different casters maintaining the same song are two separate entries',
   const other = 'Other Song of Otherness';
   makeSong(buffStore, other);
   engine.setTrackOthersEnabled(true);
-  engine.handleLine(`${TS}Avenrae begins singing ${other}.`);
+  engine.handleLine(`${TS}Baxa begins singing ${other}.`);
   engine.handleLine(`${TS}${other} takes hold.`);
 
   const songs = engine.getActiveBardSongs().sort((a, b) => a.name.localeCompare(b.name));
@@ -311,7 +356,7 @@ test('two different casters maintaining the same song are two separate entries',
   const mine = songs.find((s) => s.name === SONG);
   const theirs = songs.find((s) => s.name === other);
   assert.equal(mine.allyName, 'You');
-  assert.equal(theirs.allyName, 'Avenrae');
+  assert.equal(theirs.allyName, 'Baxa');
 });
 
 test('ended text removes the right caster\'s entry without touching another caster\'s copy of the same song', () => {
@@ -326,7 +371,7 @@ test('ended text removes the right caster\'s entry without touching another cast
   // landing THIS close together) would attribute both landings to "You", collapsing them into one
   // entry - correct behaviour there, but not what this test is isolating.
   engine.recentSelfCast = null;
-  engine.handleLine(`${TS}Avenrae begins singing ${SONG}.`);
+  engine.handleLine(`${TS}Baxa begins singing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
   assert.equal(engine.getActiveBardSongs().length, 2, 'sanity: both casters landed');
 
@@ -341,7 +386,7 @@ test('ended text removes the right caster\'s entry without touching another cast
 
 test('a RANKED self-cast is still attributed to "You", not a stale other-caster from earlier', () => {
   // Reported live: "Selo's Accelerating Chorus VI" (self-cast, ranked) was attributed to
-  // "Imperius" - not a groupmate at all, but a MOB that happened to have an identically-named
+  // "Enro" - not a groupmate at all, but a MOB that happened to have an identically-named
   // ability, seen singing it ~20 minutes earlier the same session. Root cause: recentSelfCast.name
   // carries the log's own rank suffix, and _attributeBardSongCaster used to compare that directly
   // against the roster's bare name with no stripRankSuffix() - so the self-check silently failed
@@ -354,7 +399,7 @@ test('a RANKED self-cast is still attributed to "You", not a stale other-caster 
   // The stale evidence: someone (or something) else was seen "casting" this exact song a while
   // ago. No expiry on this map is deliberate elsewhere in the app, so the fix has to be on the
   // self-check side, not by aging this out.
-  engine.handleLine(`${TS}Imperius begins singing ${SONG}.`);
+  engine.handleLine(`${TS}Enro begins singing ${SONG}.`);
   // The player's own ranked cast and its landing - note the numeral on the cast line only, never
   // on the landing text, exactly like a real EQ bard song.
   engine.handleLine(`${TS}You begin singing ${SONG} VI.`);
@@ -370,7 +415,7 @@ test('an UNRANKED self-cast still worked before the fix, and still works after i
   // hit it. stripRankSuffix on a name with nothing to strip must return the name unchanged.
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
-  engine.handleLine(`${TS}Imperius begins singing ${SONG}.`);
+  engine.handleLine(`${TS}Enro begins singing ${SONG}.`);
   engine.handleLine(`${TS}You begin singing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
   assert.equal(engine.getActiveBardSongs()[0].allyName, 'You');
@@ -466,6 +511,73 @@ test('a non-bard-song buff never appears in the bard songs list', () => {
   engine.handleLine(`${TS}This is definitely not a song.`);
   assert.equal(engine.getActiveBuffs().length, 1, 'sanity: it landed as an ordinary self buff');
   assert.equal(engine.getActiveBardSongs().length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// #27 - the "Active on this aura" card is fed on the Bard Songs premade
+// ---------------------------------------------------------------------------
+//
+// Reported live: the "active effects on this aura" card, which works like Self Buffs', showed
+// nothing on the Bard Songs premade. Two causes: the settings window had no bard-songs data feed
+// at all (no preload bridge, activeSourceForWidget fell through to self buffs), and
+// filterActiveBuffsForWidget applied the inherited `hideBardSongs: true` default, which strips
+// every row since they are all isBardSong by construction.
+const fs = require('node:fs');
+const path = require('node:path');
+const readSrc = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+
+test('#27 - the bard-songs feed is wired IPC -> preload -> settings window', () => {
+  const main = readSrc('src', 'main', 'main.js');
+  const preload = readSrc('src', 'preload', 'preload-main.js');
+  const renderer = readSrc('src', 'renderer', 'main-window', 'main-window.js');
+
+  assert.match(main, /ipcMain\.handle\('buffs:getActiveBardSongs'/);
+  assert.match(main, /ipcMain\.handle\('buffs:removeActiveBardSong'/);
+  assert.match(main, /broadcast\('buffs:activeBardSongs'/);
+
+  assert.match(preload, /getActiveBardSongs:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('buffs:getActiveBardSongs'\)/);
+  assert.match(preload, /onActiveBardSongsChanged:/);
+  assert.match(preload, /removeActiveBardSong:/);
+
+  assert.match(renderer, /let latestBardSongs = \[\]/);
+  assert.match(renderer, /onActiveBardSongsChanged\(\(songs\) => \{\s*latestBardSongs = songs/);
+  assert.match(renderer, /widget\.buffSource === 'bardSongs'\) return latestBardSongs/);
+});
+
+test('#29 - the show-debuff-songs / split-by-type options are wired end to end', () => {
+  const store = readSrc('src', 'main', 'widgetStore.js');
+  const mgr = readSrc('src', 'main', 'widgetManager.js');
+  const main = readSrc('src', 'main', 'main.js');
+  const preload = readSrc('src', 'preload', 'preload-main.js');
+  const overlay = readSrc('src', 'renderer', 'overlay', 'overlay.js');
+  const renderer = readSrc('src', 'renderer', 'main-window', 'main-window.js');
+
+  // defaults: both off, both persisted and shareable
+  assert.match(store, /showDebuffSongs: false/);
+  assert.match(store, /splitSongsByType: false/);
+  assert.match(store, /showDebuffSongs: !!widget\.showDebuffSongs/);
+  assert.match(store, /'showDebuffSongs',\s*\n\s*'splitSongsByType',/);
+  // manager -> IPC -> preload
+  assert.match(mgr, /function setShowDebuffSongs/);
+  assert.match(main, /ipcMain\.handle\('widget:setShowDebuffSongs'/);
+  assert.match(preload, /setWidgetShowDebuffSongs:/);
+  // overlay honours both
+  assert.match(overlay, /currentConfig\.showDebuffSongs \|\| !b\.isDebuff/);
+  assert.match(overlay, /function groupBySongType/);
+  assert.match(overlay, /function shouldSplitSongs/);
+  // the "Active on this aura" card in the settings window honours showDebuffSongs too
+  assert.match(renderer, /widget\.showDebuffSongs \|\| !b\.isDebuff/);
+});
+
+test('#27 - filterActiveBuffsForWidget does not strip a bard-songs aura with hideBardSongs inherited true', () => {
+  const renderer = readSrc('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function filterActiveBuffsForWidget\(widget\) \{[\s\S]*?\n  \}/)[0];
+  // the bardSongs bypass must come BEFORE the buffFilterMode / hideBardSongs block
+  assert.ok(
+    fn.indexOf("widget.buffSource === 'bardSongs'") < fn.indexOf('if (widget.hideBardSongs)'),
+    'the hideBardSongs filter would run first and strip every row'
+  );
+  assert.match(fn, /buffSource === 'bardSongs'\) \{[\s\S]{0,220}return source\.filter/);
 });
 
 module.exports = () => report('bard-songs');

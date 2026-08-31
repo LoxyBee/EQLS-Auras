@@ -1,0 +1,118 @@
+'use strict';
+/**
+ * logZonePeek.readLastZoneEntry - startup zone recovery.
+ *
+ * logWatcher starts at EOF and never replays history, so a restart mid-session leaves the
+ * raid-named board, zone-gated aura visibility and the travel guide's current zone all blind until
+ * the next zone line. This reads UPWARD from the end of the live log for the most recent
+ * "You have entered X." - the one fact it is safe to recover, because a zone line is unambiguous
+ * and the player is almost certainly still there.
+ */
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { test, report } = require('./harness');
+const { readLastZoneEntry } = require('../src/main/logZonePeek');
+const { RaidNamedTracker } = require('../src/main/raidNamedTracker');
+const { CustomTimerEngine } = require('../src/main/customTimerEngine');
+
+function tmpLog(lines, eol = '\r\n') {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zpeek-'));
+  const p = path.join(dir, 'eqlog_Test.txt');
+  fs.writeFileSync(p, lines.join(eol) + eol);
+  return { p, dir };
+}
+
+test('finds the most recent zone entry, not the first', () => {
+  const { p, dir } = tmpLog([
+    '[Sun Aug 30 10:00:00 2026] You have entered West Freeport.',
+    '[Sun Aug 30 10:00:01 2026] a rat hits you for 3 points of damage.',
+    "[Sun Aug 30 21:14:15 2026] You have entered Nagafen's Lair 4 (Refined).",
+    '[Sun Aug 30 21:14:20 2026] Amplification hums.',
+  ]);
+  try {
+    assert.equal(readLastZoneEntry(p), "Nagafen's Lair 4 (Refined)");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('scans across many 64 KB chunks to reach a zone line buried under an evening of spam', () => {
+  const lines = ["[Sun Aug 30 21:14:15 2026] You have entered Nagafen's Lair."];
+  for (let i = 0; i < 60000; i++) lines.push(`[Sun Aug 30 21:30:00 2026] a lava beetle hits you for ${i}.`);
+  const { p, dir } = tmpLog(lines);
+  try {
+    assert.ok(fs.statSync(p).size > 64 * 1024, 'fixture must exceed one chunk to be meaningful');
+    assert.equal(readLastZoneEntry(p), "Nagafen's Lair");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('handles LF-only logs as well as CRLF', () => {
+  const { p, dir } = tmpLog(['[Sun Aug 30 10:00:00 2026] You have entered The Bazaar.'], '\n');
+  try {
+    assert.equal(readLastZoneEntry(p), 'The Bazaar');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('returns null when the log has no zone line at all', () => {
+  const { p, dir } = tmpLog(['nothing here', 'or here']);
+  try {
+    assert.equal(readLastZoneEntry(p), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('returns null for a missing file rather than throwing', () => {
+  assert.equal(readLastZoneEntry(path.join(os.tmpdir(), 'does-not-exist-zpeek.txt')), null);
+});
+
+test('respects maxBytes - a zone line older than the cap is not found', () => {
+  const lines = ['[Sun Aug 30 10:00:00 2026] You have entered The Overthere.'];
+  for (let i = 0; i < 5000; i++) lines.push(`[Sun Aug 30 21:00:00 2026] filler line ${i} with some length to it.`);
+  const { p, dir } = tmpLog(lines);
+  try {
+    assert.equal(readLastZoneEntry(p, 2000), null, 'the cap should stop the scan before the old zone line');
+    assert.equal(readLastZoneEntry(p), 'The Overthere', 'and an uncapped scan still finds it');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('RaidNamedTracker.setZone rebuilds the board for a tracked zone', () => {
+  const t = new RaidNamedTracker();
+  try {
+    t.setZone("Nagafen's Lair 4 (Refined)");
+    assert.equal(t.getCurrentZone(), "Nagafen's Lair");
+    assert.ok(t.getActive().length > 0, 'the named list should be up');
+  } finally { t.stop(); }
+});
+
+test('RaidNamedTracker.setZone is a no-op for an untracked zone', () => {
+  const t = new RaidNamedTracker();
+  try {
+    t.setZone('The Bazaar');
+    assert.equal(t.getCurrentZone(), null);
+    assert.deepEqual(t.getActive(), []);
+  } finally { t.stop(); }
+});
+
+test('CustomTimerEngine.seedZone sets the zone without firing a zoneEnter trigger', () => {
+  const eng = new CustomTimerEngine();
+  try {
+    const timer = { id: 't1', name: 'z', triggerMatch: 'zoneEnter', triggerText: "Nagafen's Lair 4 (Refined)", triggerDurationSec: 30 };
+    eng.setGetWidgetsFn(() => [{ id: 'w1', timers: [timer], triggerCombineMode: 'independent' }]);
+    eng.seedZone("Nagafen's Lair 4 (Refined)");
+    assert.equal(eng.getActive().length, 0, 'seeding must not fire the zoneEnter trigger');
+    assert.equal(eng.currentZone, "Nagafen's Lair 4 (Refined)", 'but it does establish the current zone');
+  } finally { eng.stop(); }
+});
+
+test('seedZone only takes effect before any real zone line', () => {
+  const eng = new CustomTimerEngine();
+  try {
+    eng.setGetWidgetsFn(() => []);
+    eng.handleLine('[Sun Aug 30 20:00:00 2026] You have entered The Feerrott.');
+    eng.seedZone("Nagafen's Lair");
+    assert.equal(eng.currentZone, 'The Feerrott', 'seedZone must not override a zone already seen live');
+  } finally { eng.stop(); }
+});
+
+module.exports = () => report('log-zone-peek');
+if (require.main === module) report('log-zone-peek').then((n) => process.exit(n ? 1 : 0));

@@ -17,8 +17,8 @@ const { SpellbookService } = require('../src/main/spellbookService');
 
 function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eq-sb-'));
-  fs.writeFileSync(path.join(dir, 'Shara_rivervale-SHM-Spellbook.txt'), '1\tTorpor\n2\tSpirit of Wolf\n3\tRegrowth');
-  fs.writeFileSync(path.join(dir, 'Shara_rivervale-CLR-Spellbook.txt'), '1\tComplete Heal\n2\tAegolism\n3\tTorpor');
+  fs.writeFileSync(path.join(dir, 'Vaela_rivervale-SHM-Spellbook.txt'), '1\tTorpor\n2\tSpirit of Wolf\n3\tRegrowth');
+  fs.writeFileSync(path.join(dir, 'Vaela_rivervale-CLR-Spellbook.txt'), '1\tComplete Heal\n2\tAegolism\n3\tTorpor');
   fs.writeFileSync(path.join(dir, 'Someone_else-WIZ-Spellbook.txt'), '1\tLure of Ice');
   return dir;
 }
@@ -28,7 +28,7 @@ test('a name match reads EVERY <base>-*-Spellbook.txt and unions the spell lists
   try {
     const s = new SpellbookService();
     s.setInstallRoot(dir);
-    s.setCharacterBaseName('Shara_rivervale');
+    s.setCharacterBaseName('Vaela_rivervale');
     // 3 SHM + 3 CLR, Torpor shared -> 5 unique
     assert.equal(s.getCount(), 5);
     assert.ok(s.has('Torpor') && s.has('Complete Heal') && s.has('Spirit of Wolf'));
@@ -43,12 +43,12 @@ test('getExpectation reports mode and the loaded files, and drops the class from
   try {
     const s = new SpellbookService();
     s.setInstallRoot(dir);
-    s.setCharacterBaseName('Shara_rivervale');
+    s.setCharacterBaseName('Vaela_rivervale');
     const e = s.getExpectation();
     assert.equal(e.mode, 'auto');
     assert.equal(e.files.length, 2);
     assert.doesNotMatch(e.fileNamePattern, /<CLASS>/, 'the uppercase <CLASS> token that reads as "you must know your class" is gone');
-    assert.match(e.fileNamePattern, /^Shara_rivervale-.*-Spellbook\.txt$/);
+    assert.match(e.fileNamePattern, /^Vaela_rivervale-.*-Spellbook\.txt$/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -57,14 +57,14 @@ test('a file override beats the typed name which beats the log-derived name', ()
   try {
     const s = new SpellbookService();
     s.setInstallRoot(dir);
-    s.setCharacterBaseName('Shara_rivervale');   // auto
+    s.setCharacterBaseName('Vaela_rivervale');   // auto
     assert.equal(s.getExpectation().mode, 'auto');
 
     s.setCharacterOverride('Someone_else');       // manual beats auto
     assert.equal(s.getExpectation().mode, 'manual');
     assert.ok(s.has('Lure of Ice') && !s.has('Torpor'));
 
-    const clrOnly = path.join(dir, 'Shara_rivervale-CLR-Spellbook.txt');
+    const clrOnly = path.join(dir, 'Vaela_rivervale-CLR-Spellbook.txt');
     s.setFileOverride(clrOnly);                    // file beats both
     assert.equal(s.getExpectation().mode, 'file');
     assert.equal(s.getLoadedFiles().length, 1);
@@ -81,7 +81,7 @@ test('a file override pointing at a missing file loads nothing rather than silen
   try {
     const s = new SpellbookService();
     s.setInstallRoot(dir);
-    s.setCharacterBaseName('Shara_rivervale');
+    s.setCharacterBaseName('Vaela_rivervale');
     s.setFileOverride(path.join(dir, 'gone.txt'));
     assert.equal(s.getCount(), 0);
     assert.equal(s.getExpectation().mode, 'file');
@@ -96,7 +96,7 @@ test('listCandidates enumerates every *-Spellbook.txt in the root with character
     const c = s.listCandidates();
     assert.equal(c.length, 3);
     const shm = c.find((x) => x.className === 'SHM');
-    assert.equal(shm.character, 'Shara_rivervale');
+    assert.equal(shm.character, 'Vaela_rivervale');
     assert.equal(shm.count, 3);
     assert.ok(c.some((x) => x.character === 'Someone_else' && x.className === 'WIZ'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -123,6 +123,18 @@ test('P3 - the Setup card has an always-available file picker wired to the overr
   assert.match(js, /setSpellbookFileOverride\(''\)/);
   // hidden only when there are genuinely no spellbook files at all
   assert.match(js, /if \(!candidates\.length\) \{[\s\S]{0,80}spellbookFileRowEl\.style\.display = 'none'/);
+});
+
+test('a pinned file that has gone missing is called out, not routed to the /outputfile hint', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const fn = js.match(/function renderSpellbookState\(state\) \{[\s\S]*?\n  \}/)[0];
+  // the missing-pin branch fires on mode 'file' with no resolved filePath, and returns before the
+  // generic "Not found - run /outputfile spellbook" block
+  assert.match(fn, /state\.mode === 'file' && !state\.filePath/);
+  const branchAt = fn.indexOf("state.mode === 'file' && !state.filePath");
+  assert.ok(branchAt < fn.indexOf('Not found'), 'the missing-pin check must come before the generic not-found path');
+  assert.ok(fn.slice(branchAt, fn.indexOf('Not found')).includes('return'), 'it must return, not fall through to the /outputfile hint');
+  assert.match(fn, /pinned spellbook file is missing/i);
 });
 
 test('P1 - the hint never shows a bare "<class>" placeholder the user cannot fill in', () => {

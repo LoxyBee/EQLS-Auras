@@ -8,6 +8,8 @@
  */
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { test, report } = require('./harness');
 const { ActionBarStore } = require('../src/main/actionBarStore');
 
@@ -65,6 +67,56 @@ test('an existing saved bar still loads normally - the no-default-bar change is 
   const multi = makeStore({ bars: [{ id: 'a', name: 'My Bar', visible: true, slots: [] }] });
   assert.equal(multi.getAll().length, 1);
   assert.equal(multi.getById('a').name, 'My Bar');
+});
+
+// QOL #11 - drag one gem onto another to SWAP them; nothing else moves.
+test('swapSlots exchanges exactly the two slots, leaves every other slot alone', () => {
+  const store = makeStore(null);
+  const bar = store.create('Bar');
+  const slots = store.getById(bar.id).slots;
+  slots[1].name = 'B';
+  slots[1].iconId = 10;
+  slots[6].name = 'G';
+  slots[4].name = 'E'; // an untouched slot between them
+  store.update(bar.id, { slots });
+
+  store.swapSlots(bar.id, 1, 6); // drag 2 onto 7
+  let s = store.getById(bar.id).slots;
+  assert.equal(s[1].name, 'G', 'slot 2 now holds what was in slot 7');
+  assert.equal(s[6].name, 'B', 'slot 7 now holds what was in slot 2');
+  assert.equal(s[6].iconId, 10, 'the whole slot object swapped, not just the name');
+  assert.equal(s[4].name, 'E', 'the slot between them is untouched');
+  assert.equal(s.length, 12);
+
+  store.swapSlots(bar.id, 6, 1); // swap back
+  assert.equal(store.getById(bar.id).slots[1].name, 'B');
+  assert.equal(store.getById(bar.id).slots[6].name, 'G');
+
+  const before = JSON.stringify(store.getById(bar.id).slots);
+  store.swapSlots(bar.id, 3, 3);     // equal index -> no-op
+  store.swapSlots(bar.id, 'x', 'y'); // garbage -> clamps to 0,0 -> no-op
+  assert.equal(JSON.stringify(store.getById(bar.id).slots), before, 'a no-op swap changed nothing');
+  assert.equal(store.swapSlots('nope', 0, 1), null, 'unknown bar id returns null');
+});
+
+// QOL #11 + #19 - the gem grid is drag-to-reorder and marks configured slots.
+test('the gem grid is wired for drag-to-reorder and the configured marker', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8'
+  );
+  assert.match(src, /box\.draggable = true/, '#11 - gem boxes must be draggable');
+  assert.match(src, /swapActionBarSlots\(selectedActionBarId, a, b\)/, '#11 - drop must call the swap IPC');
+  assert.match(src, /function slotIsConfigured\(s\)/, '#19 - the configured test helper');
+  assert.match(src, /classList\.toggle\('configured', slotIsConfigured\(s\)\)/, '#19 - marker applied per box');
+
+  const preload = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'preload', 'preload-main.js'), 'utf8'
+  );
+  assert.match(preload, /swapActionBarSlots:.*actionBar:swapSlots/, 'the preload bridge exists');
+  const css = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.css'), 'utf8'
+  );
+  assert.match(css, /\.icon-picker-box\.configured::after/, '#19 - the marker has a style');
 });
 
 module.exports = () => report('action-bar-cooldown-style');

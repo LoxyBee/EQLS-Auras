@@ -1,0 +1,125 @@
+/* PANEL_W (384) / PANEL_H (150) are set in moveHudWindow.js - keep the panel inside them. */
+:root {
+  --accent: #f0a54a;
+  --panel: rgba(18, 22, 34, 0.94);
+  --line: rgba(255, 255, 255, 0.45);
+  --ink: #eef1f8;
+  --dim: #b9c0d4;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: Consolas, "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  user-select: none;
+}
+
+#panel {
+  position: absolute;
+  inset: 4px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.6);
+  -webkit-app-region: drag; /* grab any empty part of the panel to move it */
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  font-size: 12px;
+}
+.head { font-weight: 700; }
+#coords { margin-left: auto; color: var(--dim); font-weight: 400; font-variant-numeric: tabular-nums; }
+#aura-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.label { color: var(--dim); }
+
+#nudge-pad {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  flex: 0 0 auto;
+}
+.controls { flex: 1; }
+
+button, select, input, .snap {
+  -webkit-app-region: no-drag; /* controls are clickable, not drag handles */
+}
+
+.nudge {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: #1b1205;
+  background: var(--accent);
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.nudge:active { transform: translateY(1px); }
+#nudge-up    { top: 0;    left: 26px; }
+#nudge-down  { bottom: 0; left: 26px; }
+#nudge-left  { left: 0;   top: 26px; }
+#nudge-right { right: 0;  top: 26px; }
+
+#panel button {
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  cursor: pointer;
+}
+#panel button:hover { background: rgba(255, 255, 255, 0.16); }
+#panel .nudge:hover { background: #f4b466; }
+#panel button.is-on {
+  background: var(--accent);
+  color: #1b1205;
+  border-color: rgba(0, 0, 0, 0.35);
+}
+/* Footer: Done bottom-left, Reset position bottom-right. */
+.foot { margin-top: 8px; }
+#reset-pos { margin-left: auto; }
+#panel button.primary {
+  background: var(--accent);
+  color: #1b1205;
+  border-color: rgba(0, 0, 0, 0.35);
+  font-weight: 700;
+  padding: 4px 12px;
+}
+
+.snap { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+.snap input { margin: 0; }
+#snap-size {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  /* Opaque, dark - the dropdown list is Chromium-drawn and inherits these onto the <option>s.
+     A translucent-white background left the list white-on-near-white and unreadable. */
+  background: #1b2133;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 2px 4px;
+}
+#snap-size option {
+  background: #1b2133;
+  color: var(--ink);
+}
+#snap-size option:checked {
+  background: var(--accent);
+  color: #1b1205;
+}
