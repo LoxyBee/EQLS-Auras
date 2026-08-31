@@ -68,7 +68,19 @@ const FALLBACK_CONFIRM_WINDOW_MS = 12000;
 
 // How long after an "activate" line to keep accepting buffs whose landing
 // text is ambiguous (shared by multiple spells) - see buffEngine.js.
-const BURST_WINDOW_MS = 8000;
+// 5s, not 8: Quick Buff's own grants all land within ~3s, and the window
+// must NOT be generous enough for an unrelated event seconds later (an
+// enemy's periodic melee proc, an ally's own self-buff refresh) to fall
+// inside it and be credited to the player. It used to be re-armed at every
+// landing tier, so auto-pulsing bard songs held it open for 11+ minutes -
+// the guards in buffEngine.js stop that now, and BURST_HARD_CAP_MS is the
+// absolute ceiling regardless.
+const BURST_WINDOW_MS = 5000;
+
+// A burst can never be treated as live past this many ms from when it
+// opened, however the window looks. Backstop against anything that would
+// otherwise widen BURST_WINDOW_MS downstream.
+const BURST_HARD_CAP_MS = 30000;
 
 // Party composition changing invalidates any "we guessed this ambiguous
 // text means buff X because of who's in the group" memory (see
@@ -456,4 +468,5 @@ module.exports = {
   rankValue,
   FALLBACK_CONFIRM_WINDOW_MS,
   BURST_WINDOW_MS,
+  BURST_HARD_CAP_MS,
 };

@@ -653,5 +653,37 @@ test('a landing with no burst behind it says so rather than inventing one', () =
   assert.equal(engine.burstOpenedBy, null);
   assert.match(engine._burstOrigin(), /burst origin unknown/);
 });
+
+// Fix 1+2: an enemy's periodic melee proc shares the same third-person-landing shape as a group
+// buff, so a burst that stayed open too long let those procs land as buffs she cast on a
+// groupmate. The 30s hard cap is the backstop - a burst older than that can never produce an
+// ALLY LANDED however the window itself looks.
+test('a burst older than the hard cap cannot produce an ally landing', () => {
+  const { engine, buffStore, log } = makeEngine();
+  const pick = buffStore
+    .getAll()
+    .find((b) => b.othersLandingSuffix && buffStore.findAllByOthersLandingSuffix(b.othersLandingSuffix).length === 1);
+  assert.ok(pick);
+  engine.handleLine('[Wed Aug 19 21:14:02 2026] You activate Cannibalize.');
+  engine.burstUntil = Date.now() + 999999;   // pretend something kept the window open
+  engine.burstOpenedBy.at -= 45000;          // ...but the burst itself opened 45s ago
+  engine.handleLine(`[Wed Aug 19 21:14:47 2026] Korv${pick.othersLandingSuffix}`);
+  assert.ok(!log.some((l) => l.startsWith('ALLY LANDED')), 'a stale burst must not credit a proc to the player');
+});
+
+// A bard song landing must never re-arm the burst window - they auto-pulse every ~6s forever, so
+// letting them extend it is what held the window open for minutes (Fix 1+2).
+test('a bard song landing during a burst does not extend the burst window', () => {
+  const { engine, buffStore } = makeEngine();
+  const song = buffStore.getAll().find((b) => b.landingText
+    && buffStore.findAllByLandingText(b.landingText).length === 1);
+  assert.ok(song, 'need a spell with unique landing text');
+  buffStore.setBardSong(song.name, true); // the tagger runs at startup, not in this fixture
+  engine.handleLine('[Wed Aug 19 21:14:02 2026] You activate Quick Buff.');
+  const sentinel = Date.now() + 999999;   // a value only a re-arm would overwrite
+  engine.burstUntil = sentinel;
+  engine.handleLine(`[Wed Aug 19 21:14:04 2026] ${song.landingText}`);
+  assert.equal(engine.burstUntil, sentinel, 'a song landing left burstUntil untouched');
+});
 module.exports = () => report('detection');
 if (require.main === module) report('detection').then((n) => process.exit(n ? 1 : 0));

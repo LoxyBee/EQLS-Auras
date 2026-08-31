@@ -25,6 +25,7 @@ const {
   rankValue,
   FALLBACK_CONFIRM_WINDOW_MS,
   BURST_WINDOW_MS,
+  BURST_HARD_CAP_MS,
 } = require('./buffParser');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
 
@@ -948,7 +949,18 @@ class BuffEngine extends EventEmitter {
     // a shared one is left alone rather than resolved to whichever came
     // first. Attribution to the player rests on the burst window, the same
     // evidence the self-buff burst tier already relies on.
-    if (Date.now() < this.burstUntil) {
+    //
+    // Only while the burst is genuinely fresh. burstOpenedBy.at is the hard
+    // cap: a burst must never be old enough for an enemy's periodic melee
+    // proc ("Korv simmers with fury." = Fleeting Fury) or an ally's own
+    // self-buff refresh to fall inside it and be logged as a buff the player
+    // cast on that ally. Reported live twice - a window held open 641s by
+    // auto-pulsing bard songs did exactly that.
+    if (
+      Date.now() < this.burstUntil
+      && this.burstOpenedBy
+      && Date.now() - this.burstOpenedBy.at < BURST_HARD_CAP_MS
+    ) {
       // Split the line into "<Name>" + "<everything after it>" and look the
       // remainder up as a third-person landing suffix. EQ character names are
       // a single alphabetic word, so this is unambiguous to parse, and it
@@ -965,10 +977,12 @@ class BuffEngine extends EventEmitter {
             `ALLY AMBIGUOUS "${suffix}" on "${allyName}" - burst context${this._burstOrigin()}, ${matches.length} candidates: ${matches.map((c) => c.name).join(', ')}`
           );
         } else if (matches.length === 1) {
-          // Keep the burst alive the same way the self tiers do - a long
-          // multi-buff burst shouldn't time out partway through just because
-          // several of its landings went to other people.
-          this.burstUntil = Date.now() + BURST_WINDOW_MS;
+          // Deliberately does NOT re-arm burstUntil. A burst is a fixed
+          // window off the player's own activate; the player's group buffs
+          // landing on other people are not evidence it should keep going,
+          // and that re-arm (together with auto-pulsing bard songs re-arming
+          // it at the self tiers) is what held the window open for minutes
+          // and let an enemy's melee proc land as an ally buff.
           this._debugLog(
             `ALLY LANDED "${matches[0].name}" on "${allyName}" - burst context${this._burstOrigin()}, unique third-person landing text`
           );
@@ -1251,7 +1265,9 @@ class BuffEngine extends EventEmitter {
         this._checkForEndedBuffs(line);
         return;
       }
-      if (inBurst) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+      // A bard song NEVER extends the burst - they auto-pulse every ~6s forever, and letting them
+      // re-arm the window is exactly what held it open for 11+ minutes (#burst-window fix).
+      if (inBurst && !uniqueMatch.isBardSong) this.burstUntil = Date.now() + BURST_WINDOW_MS;
       this._debugLog(
         inBurst && isMemorizableSpell && !alreadyActive && this.currentlyMemorized.size > 0 && !this.currentlyMemorized.has(uniqueMatch.name.toLowerCase())
           ? `LANDED "${uniqueMatch.name}" - unique landing text, not currently memorized but assumed yours (burst context)`
@@ -1340,7 +1356,7 @@ class BuffEngine extends EventEmitter {
         // no sign anyone else just cast any of the candidates either - safe
         // to treat as my own cast even with no cast-begin/activate line at
         // all.
-        if (inBurst) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+        if (inBurst && !selfCandidates[0].isBardSong) this.burstUntil = Date.now() + BURST_WINDOW_MS;
         this._debugLog(`LANDED "${selfCandidates[0].name}" - ambiguous text "${stripped}" narrowed to 1 by spellbook`);
         this._land(selfCandidates[0]);
         this._checkForEndedBuffs(line);
@@ -1352,7 +1368,7 @@ class BuffEngine extends EventEmitter {
       // trusted OVER the spellbook when the two disagree.
       const memorizedCandidates = selfPlausible.filter((c) => this.currentlyMemorized.has(c.name.toLowerCase()));
       if (!otherCastMatch && memorizedCandidates.length === 1) {
-        if (inBurst) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+        if (inBurst && !memorizedCandidates[0].isBardSong) this.burstUntil = Date.now() + BURST_WINDOW_MS;
         this._debugLog(
           `LANDED "${memorizedCandidates[0].name}" - ambiguous text "${stripped}" narrowed to 1 by currently-memorized gem`
         );
@@ -1374,7 +1390,7 @@ class BuffEngine extends EventEmitter {
         // since that's a previously-confirmed answer, not a guess;
         // otherwise this always queues for the user to resolve, the same
         // way the "someone else's buff" ambiguous path already does.
-        if (inBurst) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+        if (inBurst && !selfCandidates.every((c) => c.isBardSong)) this.burstUntil = Date.now() + BURST_WINDOW_MS;
         const remembered = this.selfAmbiguousResolutions.get(stripped);
         const rememberedBuff = remembered ? this.buffStore.getByName(remembered) : null;
         if (rememberedBuff) {
@@ -1401,7 +1417,7 @@ class BuffEngine extends EventEmitter {
         // evidence the PLAYER just triggered something, which still cannot
         // make an enemy-only category (a debuff/dot/charm/nuke) a plausible
         // answer for a line where the effect landed on them.
-        this.burstUntil = Date.now() + BURST_WINDOW_MS;
+        if (!selfPlausible.every((c) => c.isBardSong)) this.burstUntil = Date.now() + BURST_WINDOW_MS;
         const remembered = this.selfAmbiguousResolutions.get(stripped);
         const rememberedBuff = remembered ? this.buffStore.getByName(remembered) : null;
         if (rememberedBuff) {
