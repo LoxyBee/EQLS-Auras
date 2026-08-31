@@ -1,138 +1,152 @@
 # EQLS Auras — Feature Highlights
 
-A plain-English rundown of what the app actually does today, written as headline + one-liner
-pairs — the kind of list you'd use to show someone else the app, not a backlog. Everything here
-is *built and shipped*, not planned. For what's still coming, see `docs/QOL-BACKLOG.md`; for the
-reasoning and history behind any of these, see `CLAUDE.md`.
+A plain-English rundown of what the app does today, plus a short pitch and the shot-list
+for promo material. Everything here is *built and shipped*, not planned. For what's still
+coming, see `docs/QOL-BACKLOG.md`; for the reasoning and history behind any of it, see
+`CLAUDE.md`.
+
+---
+
+## The pitch
+
+**One line.** Stop alt-tabbing to check your buffs. EQLS Auras reads your EverQuest
+Legends log live and shows a clean countdown overlay on top of the game.
+
+**Thirty seconds.** You never have to wonder what's about to drop again. EQLS Auras
+watches your log file as you play and puts a transparent, click-through overlay on your
+screen with a timer for every buff you have running. Build as many overlays as you want,
+put them wherever you like, make them flash or play a sound, and fire an aura off any line
+in your log — not just the buffs the app already knows. It hides itself when you tab out
+of EQ and snaps back when you return, and it even tracks your weekly raid lockouts, which
+EverQuest never prints. No account, no cloud, no subscription.
 
 ---
 
 ## Core tracking
 
-**Never lose track of your own buffs again.** A transparent, click-through overlay sits on top of
-EverQuest and counts down every buff you have running, read straight from your live log file — no
-alt-tabbing to a spellbook or guessing when something's about to drop.
-
-**Built for a private server, not just live EQ.** Detection is tuned specifically for EverQuest
-Legends' text and timings, not assumed from standard EQ data.
-
-**Exact-text detection, not guesswork.** Every buff is recognized by its real in-game landing
-text, mined from the game's own files — so what shows up on screen is what the game actually said
-happened, not a pattern match that might be wrong.
-
-**A restart doesn't wipe your timers.** Close the app or your PC hiccups mid-session, and running
-buffs, ally buffs, and custom timers pick back up right where they left off (within a 5-minute
-grace window, so nothing stale lingers).
+**Never lose track of your own buffs again.** A transparent, click-through overlay sits on
+top of EverQuest and counts down every buff you have running, read straight from your live
+log file — no alt-tabbing to a spellbook or guessing when something's about to drop.
 
 ## Multi-window overlay system
 
-**As many independent auras as you want, each its own window.** Position, size, opacity, colors,
-icon vs. list vs. text display — every aura is configured separately and remembered.
+**As many independent auras as you want, each its own window.** Position, size, opacity,
+colors and text options — configured separately and remembered per aura.
 
-**Two ways to read your buffs at a glance.** Switch any aura between a compact icon grid and a
-detailed list view.
+**Two ways to read your buffs at a glance.** Switch any aura between a compact icon grid
+and a detailed list view.
 
-**The overlay gets out of your way automatically.** Auras auto-hide when EverQuest isn't the
-focused window, and come back the instant it is — no manual toggling.
-
-**Drag, drop, done.** Unlock any aura to reposition it live over the game, with a visible
-grab-box; lock it back down and it stays put.
-
-## Loadout-aware for multiclassers
-
-**Swapping loadouts doesn't confuse the tracker.** EQ Legends' multiclass loadout system can
-change your castable spells without touching your spellbook — named profiles let you tell the app
-"I just swapped," so buff detection re-learns the ambiguous cases per loadout instead of getting
-them wrong.
-
-**A profile bar right in the main window.** Switch active loadout with one click; everything the
-app is currently watching for updates instantly.
+**The overlay stays out of your way.** Click-through, so it never eats a mouse click — and
+it hides itself when EverQuest isn't your focused window, then comes straight back.
 
 ## Beyond your own buffs
 
-**Track what you're casting on your group, not just yourself.** Ally-buff tracking shows what
-you've landed on each groupmate, grouped by name.
-
-**Bard songs get their own aura, because they have to.** Self-cast vs. an ally's cast is
-genuinely unrecoverable from the log for songs specifically — this dedicated aura tracks every
-song active on you regardless of caster, attributing to a name whenever it honestly can and
-labeling "Unknown" rather than guessing.
-
-**A real damage meter.** Reads combat lines and works out attacker/target/direction from the
-log's own grammar (no assuming "friendly-sounding name = ally"), giving you one row per attacker
-for the current fight.
+**Track what you're casting on your group, not just yourself.** Ally-buff tracking shows
+what you've landed on each groupmate, grouped by name.
 
 ## Custom & premade auras
 
-**One-click premades for the common stuff.** Buff timers, cooldown timers, resist flashes, "you
-got dispelled," and a dedicated "your charm broke" alert are all ready to drop in with a couple of
-clicks — no configuration from scratch.
+**One-click premades for the common stuff.** Buff timers, cooldown timers, resist flashes,
+"you got dispelled," and a dedicated "your charm broke" alert are all ready to drop in with
+a couple of clicks — no configuration from scratch.
 
 **A cooldown timer that also tracks the buff itself.** One tile can count the buff's active
 duration first, then roll straight into "ready again in X" with no reset in between.
 
-**Build your own trigger from any log line.** Custom timers watch for arbitrary text you specify,
-not just buffs the app already knows about — cast-based, zone-entry/exit, or a raw string.
+**Build your own trigger from any log line.** Custom timers watch for arbitrary text you
+specify, not just buffs the app already knows about — cast-based, zone-entry/exit, or a raw
+string.
 
-**Triggers can require multiple conditions, or flip inside out.** Combine several triggers with
-AND/OR logic on one aura, or invert any aura to show "not yet happened" instead of "currently
-active" — handy for "this is up, go use it" reminders.
+**Triggers can require multiple conditions, or flip inside out.** Combine several triggers
+with AND/OR logic on one aura, or invert any aura to show "not yet happened" instead of
+"currently active" — handy for "this is up, go use it" reminders.
 
 **Static text auras for anything that isn't a countdown.** Show a fixed label the instant a
-trigger fires, no timer attached — for alerts where a number would be noise.
+trigger fires, no timer attached.
 
 **Share your setup with a code.** Export any aura's full configuration to a compact code a
 friend can paste in to recreate it exactly.
 
 ## Sound & visual alerts
 
-**Every aura can talk, not just flash.** Independent sounds for "landed," "about to expire," and
-"expired," per aura.
+**Every aura can talk, not just flash.** Independent sounds for "landed," "about to
+expire," and "expired," per aura.
 
-**Bring your own sounds.** Pick any audio file on your PC as a custom alert; a small folder of
-starter sounds ships with the app so there's always something to choose from immediately.
+**Bring your own sounds.** Pick any audio file on your PC as a custom alert; a small folder
+of starter sounds ships with the app so there's always something to choose from
+immediately.
 
-**Real spell icon art, pulled from your own game install.** Icons are read directly out of your
-EverQuest Legends texture files — genuine in-game art, not placeholder graphics — with a choice of
-the game's alternate icon sets.
+**Real in-game spell icons, your choice of art set.**
 
 ## Raid lockouts, without the guesswork
 
-**Know when your lockouts actually reset.** EverQuest Legends never prints a lockout line, so the
-app reads the weekly-task messages the game *does* print on a raid kill and tracks each lockout
-from those.
+**Know when your lockouts actually reset.** EverQuest Legends never prints a lockout line,
+so the app reads the weekly-task messages the game *does* print on a raid kill and tracks
+each lockout from those.
 
-**It reports what it's seen, not a hardcoded reset day.** Other tools bake in a reset day and
-hope it's right. This one shows the reset as the window your own kill history actually supports,
-and says so plainly until it's seen enough to be sure.
+## Getting around
 
-**Timezone-correct wherever you play.** The reset is a wall-clock time in US Eastern that shifts
-with daylight saving — the app converts it to a real instant so it lines up whether your PC is on
-Pacific, Eastern, or London time.
+**Zone-by-zone travel routes.** Pick where you're headed and get the route across the
+game's 100+ zones, with the travel spells to use at each step.
 
 ## Quality of life
 
-**Finds your game automatically.** Point it at nothing — the app locates your EverQuest Legends
-install and log folder on its own.
-
-**Trade pings.** An optional alert sound the moment someone sends you a trade request in-game.
+**Trade pings.** An optional alert sound the moment someone sends you a trade request
+in-game.
 
 **The log gets organized for you.** Continuous per-day (and per-session) log splitting, an
-automatic archive at each raid reset, plus a manual archive-and-truncate option — so your raw log
-folder doesn't grow forever unmanaged.
+automatic archive at each raid reset, plus a manual archive-and-truncate option — so your
+raw log folder doesn't grow forever unmanaged.
 
-**A Known Buffs library you can correct by hand.** Browse every spell the app knows about, fix
-one that's wrong, or add something fully custom — your correction sticks even when the built-in
-spell data updates.
+**A Known Buffs library you can correct by hand.** Browse every spell the app knows about,
+fix one that's wrong, or add something fully custom — your correction sticks even when the
+built-in spell data updates.
 
 **Move your whole setup to another PC.** Export every aura, profile, sound and setting to a
 folder, import it on the other machine — offline, no account, no cloud.
 
-**Preview an aura without alt-tabbing.** One button flashes a sample tile on the overlay so you
-can size, position and colour it against the real game window.
+---
 
-**Mute everything with one click.** A top-bar toggle silences every alert sound for streaming or
-a call, without touching your per-aura settings.
+## Writing copy: tone rules
 
-**Ships as a real Windows installer.** `npm run dist` produces an installer anyone can hand to a
-friend — no dev environment required to run it.
+For anyone writing marketing copy from this file.
+
+- Say what it does **for the player**, never the mechanism. "Real in-game icons," not
+  "reads field 75 of `spells_us.txt`."
+- Short sentences. Second person. "You never touch it," not "the system operates
+  autonomously."
+- Every line answers **"so what?"** — the benefit.
+- No internal jargon: no "IPC," "detection engine," "roster," "burst window."
+
+---
+
+## Screenshot shot-list
+
+Shots 1–5 carry most of the weight.
+
+1. **Hero.** EQ running, 2–3 auras overlaid (icon grid + a list), buffs mid-countdown.
+   Top of everything.
+2. **Icon-grid aura close-up.** Real spell art, timers visible — shows it looks good, not
+   like a debug tool.
+3. **List-view aura close-up.** The other display style.
+4. **Aura settings panel open.** Lots of control without looking overwhelming.
+5. **"+ Add aura" premade list.** Makes the "couple of clicks" claim visible.
+6. **Custom trigger being set up** — the "fire off any log line" story.
+7. **Share code dialog.** The viral feature.
+8. **Travel guide** with a route displayed — distinctive, nothing else does this.
+9. **Raid lockout page** — for the raiding audience.
+10. **Sound picker / alert settings** — "bring your own sounds."
+
+## Video shot-list
+
+Video 1 plus screenshots 1–5 carry about 90%.
+
+1. **Trailer / overview (45–60s).** A log line appears in game → a buff pops onto the
+   overlay → counts down → flashes and beeps near expiry. Then a fast montage: adding an
+   aura, dragging it, switching display mode, muting. End on the hero shot.
+2. **Make an aura from scratch (20–30s).** Add aura → pick premade → pick spell → it's
+   live. Real time, no cuts.
+3. **A custom trigger (15–20s).** Point an aura at a line of chat text, show it firing in
+   game.
+4. **Share a setup (15s).** Copy a code on one PC, paste on another, the identical aura
+   appears.
