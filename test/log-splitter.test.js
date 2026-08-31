@@ -427,8 +427,8 @@ test('with the default (midnight) the boundary is unchanged - byte-identical fil
     '[Mon Aug 31 00:30:00 2026] You have slain Lady Vox!\n'
   );
   assert.deepEqual(files, [
-    'eqlog_Avenrae_rivervale_2026-08-30.txt',
-    'eqlog_Avenrae_rivervale_2026-08-31.txt',
+    'eqlog_Baxa_rivervale_2026-08-30.txt',
+    'eqlog_Baxa_rivervale_2026-08-31.txt',
   ]);
 });
 
@@ -442,13 +442,13 @@ test('a 6 AM rollover keeps a past-midnight raid in one file, dated for the nigh
     { dayStartHour: 6 }
   );
   assert.deepEqual(files, [
-    'eqlog_Avenrae_rivervale_2026-08-30.txt',
-    'eqlog_Avenrae_rivervale_2026-08-31.txt',
+    'eqlog_Baxa_rivervale_2026-08-30.txt',
+    'eqlog_Baxa_rivervale_2026-08-31.txt',
   ]);
-  const night = read('eqlog_Avenrae_rivervale_2026-08-30.txt');
+  const night = read('eqlog_Baxa_rivervale_2026-08-30.txt');
   assert.ok(night.includes('Nagafen') && night.includes('Yael') && night.includes('Vox') && night.includes('Cazic-Thule'));
   assert.ok(!night.includes('Phinigel'), 'the 8 AM kill belongs to the next day');
-  assert.ok(read('eqlog_Avenrae_rivervale_2026-08-31.txt').includes('Phinigel'));
+  assert.ok(read('eqlog_Baxa_rivervale_2026-08-31.txt').includes('Phinigel'));
 });
 
 test('the hour setting is clamped to 0..23 and persisted', () => {
