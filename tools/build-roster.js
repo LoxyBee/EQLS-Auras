@@ -113,6 +113,46 @@ function scaleCategory(category, kind) {
   return 'none';
 }
 
+/**
+ * Entries for spells the curated spreadsheet does not list. `roster-overrides.json` grew a first-
+ * class "add" block for exactly this - the owner's instruction, 30 Aug 2026: "the roster should be
+ * directly editable for additions. if the roster cannot add new spells this is a problem that needs
+ * fixing as that is basic functionality for lists." A `set` block still only edits an entry the
+ * sheet already produced; an `add` block builds a brand-new one.
+ *
+ * The game files still supply TEXT/icon/cast when the spell exists in spells_us.txt (it usually
+ * does - it just isn't in the curated list), so a bard-only stance or a missing invocation needs
+ * only its sheet-equivalent columns (kind, durationSec, category, classes, targets, level) in the
+ * override. Anything in `add` overrides the game-derived value, so a spell absent from the client
+ * data entirely can still be fully specified by hand.
+ *
+ * `spellByName` / `strById` are the same lookups main() builds from the game data; passed in so
+ * this stays a pure function a test can exercise with fixtures.
+ */
+function buildAddedEntries(overrides, { spellByName, strById }, existingNames = new Set()) {
+  const added = [];
+  for (const [name, ov] of Object.entries(overrides)) {
+    if (name === '_README' || !ov || !ov.add) continue;
+    if (existingNames.has(name.toLowerCase())) continue; // the sheet already produced it - `set` covers that
+    const g = spellByName.get(name.toLowerCase());
+    const s = g ? strById.get(g[F_ID]) || [] : [];
+    const entry = {
+      name,
+      spellId: g ? Number(g[F_ID]) : null,
+      landingText: (s[S_LANDED_ME] || '').trim() || null,
+      othersLandingSuffix: s[S_LANDED_OTHER] || null, // leading space is significant
+      endedText: (s[S_WORE_OFF] || '').trim() || null,
+      iconId: g ? Number(g[F_ICON]) || null : null,
+      castSec: g ? Number(g[F_CAST_MS] || 0) / 1000 || null : null,
+      reuseSec: g ? Number(g[F_RECAST_MS] || 0) / 1000 || null : null,
+      ...ov.add,
+    };
+    for (const k of Object.keys(entry)) if (entry[k] == null) delete entry[k];
+    added.push(entry);
+  }
+  return added;
+}
+
 function main() {
   const write = process.argv.includes('--write');
   const eq = findEqInstall();
@@ -249,6 +289,11 @@ function main() {
     roster.push(entry);
   }
 
+  // Additions from roster-overrides.json (`add` blocks) - spells the curated spreadsheet omits.
+  const added = buildAddedEntries(overrides, { spellByName, strById }, new Set(roster.map((e) => e.name.toLowerCase())));
+  for (const e of added) roster.push(e);
+  if (added.length) console.log(`\nadded from roster-overrides.json (${added.length}): ${added.map((e) => e.name).join(', ')}`);
+
   roster.sort((a, b) => a.name.localeCompare(b.name));
 
   // ---- report
@@ -318,4 +363,6 @@ function main() {
   console.log('what changed. Read it, then accept it with: node test/roster.test.js --update');
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { buildAddedEntries, parseDuration, scaleCategory };
