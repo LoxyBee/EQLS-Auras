@@ -654,8 +654,9 @@ test('a landing with no burst behind it says so rather than inventing one', () =
   assert.match(engine._burstOrigin(), /burst origin unknown/);
 });
 
-// Fix 1+2: an enemy's periodic melee proc shares the same third-person-landing shape as a group
-// buff, so a burst that stayed open too long let those procs land as buffs she cast on a
+// Fix 1+2: a groupmate's own melee-proc self-buff ("Korv simmers with fury." - Korv is an ally,
+// this is his Fleeting Fury proc from meleeing) shares the same third-person-landing shape as a
+// group buff, so a burst that stayed open too long let those procs land as buffs she cast on that
 // groupmate. The 30s hard cap is the backstop - a burst older than that can never produce an
 // ALLY LANDED however the window itself looks.
 test('a burst older than the hard cap cannot produce an ally landing', () => {

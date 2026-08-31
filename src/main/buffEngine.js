@@ -969,11 +969,12 @@ class BuffEngine extends EventEmitter {
     // evidence the self-buff burst tier already relies on.
     //
     // Only while the burst is genuinely fresh. burstOpenedBy.at is the hard
-    // cap: a burst must never be old enough for an enemy's periodic melee
-    // proc ("Korv simmers with fury." = Fleeting Fury) or an ally's own
-    // self-buff refresh to fall inside it and be logged as a buff the player
-    // cast on that ally. Reported live twice - a window held open 641s by
-    // auto-pulsing bard songs did exactly that.
+    // cap: a burst must never be old enough for a groupmate's own melee-proc
+    // self-buff ("Korv simmers with fury." - Korv is an ALLY, and this is his
+    // own Fleeting Fury proc from meleeing, not something cast on him) or an
+    // ally's own self-buff refresh to fall inside it and be logged as a buff
+    // the player cast on that ally. Reported live twice - a window held open
+    // 641s by auto-pulsing bard songs did exactly that.
     if (
       Date.now() < this.burstUntil
       && this.burstOpenedBy
@@ -1029,7 +1030,7 @@ class BuffEngine extends EventEmitter {
             // landing on other people are not evidence it should keep going,
             // and that re-arm (together with auto-pulsing bard songs re-arming
             // it at the self tiers) is what held the window open for minutes
-            // and let an enemy's melee proc land as an ally buff.
+            // and let a groupmate's own melee-proc self-buff land as an ally buff.
             this._debugLog(
               `ALLY LANDED "${one.name}" on "${allyName}" - burst context${this._burstOrigin()}, unique third-person landing text`
             );

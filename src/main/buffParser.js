@@ -69,9 +69,10 @@ const FALLBACK_CONFIRM_WINDOW_MS = 12000;
 // How long after an "activate" line to keep accepting buffs whose landing
 // text is ambiguous (shared by multiple spells) - see buffEngine.js.
 // 5s, not 8: Quick Buff's own grants all land within ~3s, and the window
-// must NOT be generous enough for an unrelated event seconds later (an
-// enemy's periodic melee proc, an ally's own self-buff refresh) to fall
-// inside it and be credited to the player. It used to be re-armed at every
+// must NOT be generous enough for an unrelated event seconds later (a
+// groupmate's own melee-proc self-buff whose flavor text collides with a
+// spell name, an ally's own self-buff refresh) to fall inside it and be
+// credited to the player. It used to be re-armed at every
 // landing tier, so auto-pulsing bard songs held it open for 11+ minutes -
 // the guards in buffEngine.js stop that now, and BURST_HARD_CAP_MS is the
 // absolute ceiling regardless.
