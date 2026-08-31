@@ -14,6 +14,11 @@ const CHANGELOG = [
     version: 'Unreleased',
     date: null,
     new: [
+      'A depletion shade on icon-mode aura tiles - a shrinking dark overlay that shows how much time is left, since icon tiles have no countdown bar (per aura, off by default)',
+      'Timer text can fade from amber down to the expiring-soon red as a buff runs out, instead of only flashing at the threshold (per aura, off by default)',
+      'Icon-mode auras can hold an expired tile greyed-out for a few seconds before it clears (per aura, off by default)',
+      'A "Duration looks wrong" button on each row of "Active on this aura" - copies a ready-to-send report with the spell, its timing, and the recent detection-log lines',
+      'A dismissible setup checklist on the Buff Tracker page that points you at anything still unconfigured - EQ folder, spellbook file, AA, auras',
       'Precise aura positioning: a move HUD with nudge arrows and optional snap-to-grid, for auras and action bars alike',
       'The named-kill board now covers dungeons too - Mistmoore, Guk, Crushbone, Befallen, Blackburrow, Najena, Splitpaw, the Warrens - not just raid zones',
       'The Bard Songs aura is now a buff/debuff feed: turn on debuff songs (off by default), and optionally split them into their own section',
