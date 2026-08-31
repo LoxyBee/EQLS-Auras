@@ -101,6 +101,14 @@ class CustomTimerEngine extends EventEmitter {
     this.getWidgetsFn = fn;
   }
 
+  // Startup zone recovery (see logZonePeek.js): establish the current zone WITHOUT firing any
+  // zoneEnter trigger - the player entered it before the app was watching, so treating it as a
+  // fresh entry now would be a false trigger. It only seeds currentZone so the first real zoneLeave
+  // after a restart knows what was left. No-op once a zone line has already been seen.
+  seedZone(zone) {
+    if (zone && this.currentZone === null) this.currentZone = zone;
+  }
+
   // Same DI shape as BuffEngine.setDebugLogFn - optional, so every existing test that never wires
   // one keeps working with _debugLog as a silent no-op. Reported live 25 Aug: "should there be a
   // debug log of every aura that is fired/loaded/ended... so that there actually exists a way for

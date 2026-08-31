@@ -36,6 +36,7 @@ const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
 const { RaidNamedTracker } = require('./raidNamedTracker');
+const { readLastZoneEntry } = require('./logZonePeek');
 const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
 const { matchShareCodeInChat, splitReason } = require('../shared/shareCodeChat');
@@ -1169,6 +1170,23 @@ app.whenReady().then(() => {
   } else if (reason && reason !== 'no snapshot') {
     debugLog(`Did not restore timers: ${reason}`);
   }
+
+  // Recover the current zone from the log tail. logWatcher started at EOF and will never see the
+  // "You have entered X." line if the player zoned while the app was down, which otherwise leaves
+  // the raid-named board, zone-gated aura visibility and the travel guide's current zone all blind
+  // until the next zone change. A zone line is unambiguous, so unlike a buff it is safe to read
+  // back. Deferred off the ready handler so a large log's tail scan never delays startup.
+  setImmediate(() => {
+    const logPath = logService.watcher.getStatus().currentFilePath;
+    if (!logPath) return;
+    const zone = readLastZoneEntry(logPath);
+    if (!zone) return;
+    applyZoneChangeAndNotify(zone);
+    raidNamedTracker.setZone(zone);
+    customTimerEngine.seedZone(zone);
+    pushTravelRoutes();
+    debugLog(`ZONE recovered on startup: "${zone}" (from the log tail)`);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

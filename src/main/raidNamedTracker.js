@@ -64,6 +64,12 @@ class RaidNamedTracker extends EventEmitter {
     if (slain) this._recordKill(slain);
   }
 
+  // Startup zone recovery (see logZonePeek.js). The player entered this zone before the app was
+  // watching, so the board is rebuilt full - nothing has been killed as far as the app can know.
+  setZone(zone) {
+    if (zone) this._enterZone(stripInstanceSuffix(zone));
+  }
+
   _enterZone(baseZone) {
     // Re-entering the same base zone is a fresh instance - rebuild the board either way.
     const data = RAID_ZONE_NAMEDS[baseZone];
