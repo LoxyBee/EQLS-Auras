@@ -108,6 +108,17 @@
       <section id="page-tracker" class="page active">
         <h2 class="page-title">Buff Tracker</h2>
 
+        <!-- QOL #50 - a dismissible "still to set up" checklist. Hidden unless something is
+             genuinely unfinished (no spellbook file, AA all at zero, no auras) and the user
+             hasn't dismissed it. Populated by initSetupNudge(). -->
+        <div class="card" id="setup-nudge-card" hidden>
+          <div class="row">
+            <h3 id="setup-nudge-title">A few things left to set up</h3>
+            <button type="button" id="setup-nudge-dismiss" class="modal-close" style="margin-left:auto" title="Hide this for good">✕</button>
+          </div>
+          <ul id="setup-nudge-list" class="buff-list"></ul>
+        </div>
+
         <h3 class="settings-page-section-title">Detection status</h3>
 
         <!-- QOL #5 - the one-line "is the app actually reading my log right now?" answer. Until

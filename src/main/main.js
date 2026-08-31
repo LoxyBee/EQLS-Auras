@@ -1571,6 +1571,14 @@ ipcMain.handle('ui:setMergeRule', (_event, rule) => {
 // Defaults ON, at the owner's request. Only the DEFAULT changed - anyone who has deliberately
 // switched it off has `false` stored and keeps it, because the stored value is read first and
 // this fallback is reached only when the setting has never been touched.
+// QOL #50 - the Buff Tracker "finish setting up" checklist, dismissed for good once the user
+// clicks it away (a per-machine nag, not something to carry between installs).
+ipcMain.handle('ui:getSetupNudgeDismissed', () => loadJson('setupNudgeDismissed', false) === true);
+ipcMain.handle('ui:dismissSetupNudge', () => {
+  saveJson('setupNudgeDismissed', true);
+  return true;
+});
+
 ipcMain.handle('ui:getTradePing', () => loadJson('tradePingEnabled', true) === true);
 ipcMain.handle('ui:setTradePing', (_event, enabled) => {
   const on = enabled === true;

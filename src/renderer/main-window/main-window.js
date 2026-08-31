@@ -23,6 +23,7 @@ async function init() {
   initProfileBar();
   initLogPanel();
   initFirstRunLanding();
+  initSetupNudge();
   initDetectionSettingsPanel();
   initBuffPanels();
   initTrackerBadge();
@@ -223,6 +224,90 @@ function initFirstRunLanding() {
   window.eqTracker.onLogStatus((state) => {
     if (hasLandedOnce && state.eqFolder) setPromoted(false);
   });
+}
+
+// QOL #50 - which setup steps are still unfinished, in the order the user should tackle them.
+// Pure, so it can be tested without the DOM. The EQ folder gates the spellbook row (no folder =
+// no file to find); AA counts as "set" if ANY of the three levels is non-zero; the aura row keys
+// off there being literally no auras at all.
+function setupNudgeGaps({ log, spellbook, character, widgets }) {
+  const items = [];
+  if (!log || !log.eqFolder) {
+    items.push({ text: 'Point the app at your EverQuest folder', page: 'page-settings' });
+  } else if (!spellbook || !spellbook.filePath) {
+    items.push({ text: 'Set your spellbook file — it resolves buffs that share a message', page: 'page-settings' });
+  }
+  const c = character || {};
+  if (!c.aaLevel && !c.exaltationLevel && !c.deftnessLevel) {
+    items.push({ text: 'Set your AA levels so buff durations come out right', page: 'page-settings' });
+  }
+  if (Array.isArray(widgets) && widgets.length === 0) {
+    items.push({ text: 'Add an aura to show on the overlay', page: 'page-overlay' });
+  }
+  return items;
+}
+
+// QOL #50 - a dismissible "still to set up" checklist on the Buff Tracker page. The first-run
+// flow only ever promotes the EQ-folder card; nothing otherwise points out a missing spellbook
+// file, AA left at zero, or no auras yet. Hidden once there is nothing to flag, or once dismissed.
+function initSetupNudge() {
+  const card = document.getElementById('setup-nudge-card');
+  const list = document.getElementById('setup-nudge-list');
+  const title = document.getElementById('setup-nudge-title');
+  const dismissBtn = document.getElementById('setup-nudge-dismiss');
+  if (!card) return;
+  let dismissed = false;
+
+  dismissBtn.addEventListener('click', () => {
+    dismissed = true;
+    card.hidden = true;
+    window.eqTracker.dismissSetupNudge();
+  });
+
+  function goTo(page) {
+    const btn = document.querySelector(`.nav-btn[data-page="${page}"]`);
+    if (btn) activateNavButton(btn);
+  }
+
+  async function refresh() {
+    if (dismissed) return;
+    const [log, spellbook, character, widgets] = await Promise.all([
+      window.eqTracker.getLogState().catch(() => ({})),
+      window.eqTracker.getSpellbookState().catch(() => ({})),
+      window.eqTracker.getCharacterSettings().catch(() => ({})),
+      window.eqTracker.listWidgets().catch(() => []),
+    ]);
+
+    const items = setupNudgeGaps({ log, spellbook, character, widgets });
+
+    if (!items.length) {
+      card.hidden = true;
+      return;
+    }
+    title.textContent = items.length === 1 ? '1 thing left to set up' : `${items.length} things left to set up`;
+    list.innerHTML = '';
+    for (const item of items) {
+      const li = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = '#';
+      link.textContent = item.text;
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        goTo(item.page);
+      });
+      li.appendChild(link);
+      list.appendChild(li);
+    }
+    card.hidden = false;
+  }
+
+  window.eqTracker.getSetupNudgeDismissed().then((wasDismissed) => {
+    dismissed = !!wasDismissed;
+    if (!dismissed) refresh();
+  });
+  // Re-check when the log connection changes (the EQ folder just got set, a spellbook file
+  // appeared) - cheap, and it lets the card clear itself the moment a gap is filled.
+  window.eqTracker.onLogStatus(() => refresh());
 }
 
 // Persistent chip bar living above the sidebar/page-container split (see

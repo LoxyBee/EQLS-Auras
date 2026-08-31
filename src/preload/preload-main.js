@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setSidebarWidth: (px) => ipcRenderer.invoke('ui:setSidebarWidth', px),
   getMergeRule: () => ipcRenderer.invoke('ui:getMergeRule'),
   setMergeRule: (rule) => ipcRenderer.invoke('ui:setMergeRule', rule),
+  getSetupNudgeDismissed: () => ipcRenderer.invoke('ui:getSetupNudgeDismissed'),
+  dismissSetupNudge: () => ipcRenderer.invoke('ui:dismissSetupNudge'),
   getTradePing: () => ipcRenderer.invoke('ui:getTradePing'),
   setTradePing: (enabled) => ipcRenderer.invoke('ui:setTradePing', enabled),
   getTellPing: () => ipcRenderer.invoke('ui:getTellPing'),
