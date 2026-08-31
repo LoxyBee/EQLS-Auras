@@ -1,15 +1,13 @@
 'use strict';
 /**
- * roster-overrides.json's `add` block - the way to put a spell into the roster that the curated
- * spreadsheet does not list.
+ * roster-overrides.json's `add` block - the way to put a new spell into the roster.
  *
  * The owner, 30 Aug 2026: "the roster should be directly editable for additions. if the roster
  * cannot add new spells this is a problem that needs fixing as that is basic functionality for
- * lists." Backlog #20 (missing stances) and #21 (Spellblade, Empowering Invocations) both wait on
- * this - they are real EQL spells absent from the sheet.
+ * lists." buffs.json is the roster of record and roster-overrides.json is where it is edited - a
+ * `set` block overwrites fields on an existing entry, an `add` block builds a brand-new one.
  *
- * buildAddedEntries is pure (game-data lookups passed in), so this exercises it with fixtures
- * rather than needing the real xlsx + client files, which are not in the repo.
+ * buildAddedEntries is pure (client-data lookups passed in), so this exercises it with fixtures.
  */
 
 const assert = require('node:assert/strict');
@@ -77,7 +75,7 @@ test('`add` fields win over the game-derived values', () => {
   assert.equal(buildAddedEntries(overrides, game)[0].landingText, 'Overridden.');
 });
 
-test('a name the spreadsheet already produced is left to its `set` block, not duplicated', () => {
+test('a name already in the roster is left to its `set` block, not duplicated', () => {
   const overrides = { 'Existing': { why: 't', add: { kind: 'buff' } } };
   const added = buildAddedEntries(overrides, fakeGame([]), new Set(['existing']));
   assert.deepEqual(added, []);
@@ -105,21 +103,26 @@ test('an added entry always gets a scaleCategory (default "none")', () => {
   assert.equal(buildAddedEntries(overrides, fakeGame([]))[0].scaleCategory, 'none');
 });
 
-test('build-roster.js falls back to overrides-only when the spreadsheet is absent', () => {
+test('build-roster.js has no spreadsheet / xlsx anywhere in it', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'tools', 'build-roster.js'), 'utf8');
-  assert.match(src, /overridesOnly = process\.argv\.includes\('--overrides-only'\) \|\| !fs\.existsSync\(SHEET\)/);
-  // it rebuilds from the current buffs.json + applies set/add
-  assert.match(src, /if \(overridesOnly\) \{[\s\S]*?JSON\.parse\(fs\.readFileSync\(OUT/);
-  assert.match(src, /Object\.assign\(e, ov\.set \|\| \{\}, ov\.add \|\| \{\}\)/);
+  assert.doesNotMatch(src, /spreadsheet|xlsx|readWorkbook|\.xlsx|new spell roster/i,
+    'the spreadsheet is retired - it must not be referenced by the build script');
+  assert.ok(!fs.existsSync(path.join(__dirname, '..', 'tools', 'lib', 'xlsx.js')), 'tools/lib/xlsx.js should be gone');
 });
 
-test('build-roster.js wires buildAddedEntries into the roster before the sort, and the README documents it', () => {
+test('build-roster.js rebuilds from the current buffs.json + roster-overrides.json', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'tools', 'build-roster.js'), 'utf8');
+  // reads the current roster as the base
+  assert.match(src, /JSON\.parse\(fs\.readFileSync\(OUT/);
+  // re-applies both set and add fields to an existing entry
+  assert.match(src, /Object\.assign\(e, ov\.set \|\| \{\}, ov\.add \?/);
+  // additions pushed before the name-sort
   const call = src.indexOf('buildAddedEntries(overrides');
   const sort = src.indexOf('roster.sort(');
   assert.ok(call > -1 && sort > -1 && call < sort, 'additions must be pushed before the name-sort');
   const readme = fs.readFileSync(path.join(__dirname, '..', 'tools', 'roster-overrides.json'), 'utf8');
-  assert.match(readme, /use an 'add' block/);
+  assert.match(readme, /TO ADD A NEW SPELL/);
+  assert.doesNotMatch(readme, /spreadsheet|xlsx|curated/i, 'the overrides file must not reference the retired spreadsheet');
 });
 
 module.exports = () => report('roster-additions');

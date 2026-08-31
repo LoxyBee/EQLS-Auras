@@ -7,7 +7,7 @@
  * make it easy to find and add more."
  *
  * The distinction that makes this worth building rather than defaulting: a spell can have no
- * duration in the spreadsheet for two completely different reasons. A nuke or a heal has none
+ * no duration for two completely different reasons. A nuke or a heal has none
  * because it does not last at all. Yaulp and Fury have none because they last until something
  * takes them away. Treating those two the same is what produced a tile counting down from NaN.
  *

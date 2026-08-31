@@ -1,56 +1,44 @@
 'use strict';
 /**
- * Rebuilds src/shared/data/buffs.json from the curated EQL spreadsheet plus the game's own
- * data files.
+ * Rebuilds src/shared/data/buffs.json from the current roster plus tools/roster-overrides.json,
+ * with text/icon/timing enrichment and the game-wide shared-landing-text count taken from the
+ * client's own spell files.
  *
  *   node tools/build-roster.js            # report only, writes nothing
- *   node tools/build-roster.js --write    # archive the old roster, then write the new one
+ *   node tools/build-roster.js --write    # write the new roster
  *
- * WHY THE ROSTER IS BEING REPLACED RATHER THAN EXTENDED
- * -----------------------------------------------------
- * The old roster held 11,337 entries mined from the generic EverQuest client. EQ Legends has
- * about a tenth of that, so most of it was spells the server does not have. That is not merely
- * wasteful: detection decides "is this landing text unique?" by counting how many roster entries
- * claim it, so every spell that does not exist on this server still votes. Text that is unique in
- * practice looked ambiguous, and the app asked the user to disambiguate things that had only one
- * possible answer. Shrinking the roster to what the server actually has is a detection fix, not
- * housekeeping.
+ * buffs.json IS the roster of record. roster-overrides.json is the one place it is edited:
  *
- * WHERE EACH FIELD COMES FROM
- * ---------------------------
- * The spreadsheet is authoritative for what EXISTS and for durations - it is curated against the
- * live server. The game files are authoritative for TEXT, because detection is exact-string
- * matching and the strings must be byte-identical to what the client prints.
+ *   "<exact spell name>": { "why": "...", "set": { <fields to overwrite on an existing entry> } }
+ *   "<exact spell name>": { "why": "...", "add": { <a brand-new entry> } }
  *
- *   name                 spreadsheet, run[0] of the Name cell (run[1] is a category tag)
- *   durationSec          spreadsheet Duration column; game ticks x 6 only as a fallback
- *   landingText          spells_us_str.txt CASTEDMETXT   (field 3)
+ * A rebuild re-applies every `set` and `add`, and re-derives `landingTextSharedBy` from the client
+ * data. It never invents entries and never drops one that is not being replaced, so running it is
+ * safe; the report (no --write) shows what a write would change.
+ *
+ * WHY THE ROSTER IS SMALL ON PURPOSE. Detection decides "is this landing text unique?" by counting
+ * roster entries that claim it, so a spell the server does not have would still vote on ambiguity.
+ * The roster is only the ~1,000 spells EQ Legends actually has. When a real one is missing, add it
+ * via an `add` block - do not widen the roster with client data the server does not use.
+ *
+ * FIELD SOURCES (client data, indexed by spell name / id):
+ *   landingText          spells_us_str.txt CASTEDMETXT    (field 3)
  *   othersLandingSuffix  spells_us_str.txt CASTEDOTHERTXT (field 4)
  *   endedText            spells_us_str.txt SPELLGONE      (field 5)
  *   iconId               spells_us.txt field 75
  *   castSec / reuseSec   spells_us.txt fields 8 and 10, milliseconds
- *   kind/category/...    spreadsheet
- *
- * Those three string-field positions were confirmed against a spell the old roster already had:
- * Spirit of the Puma matched byte-for-byte on all three. The file also carries a header row
- * naming its own columns, so this is not guesswork.
- *
- * ANYTHING THE SPREADSHEET AND THE GAME DISAGREE ABOUT IS REPORTED, NEVER SILENTLY PICKED.
+ * Positions established empirically against the real file (Spirit of the Puma matched byte-for-byte
+ * on all three string fields), per this project's rule never to trust an EQEmu schema doc for a
+ * custom server.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { readWorkbook } = require('./lib/xlsx');
 // Reuse the app's own rank-suffix rule so the roster and the engine agree on what a base name is.
 const { stripRankSuffix } = require('../src/main/buffParser');
 
 const ROOT = path.join(__dirname, '..');
-const SHEET = path.join(ROOT, 'new spell roster to be added.xlsx');
 const OUT = path.join(ROOT, 'src', 'shared', 'data', 'buffs.json');
-// Deliberately OUTSIDE src/. package.json's build.files is ["src/**/*", "package.json"], so
-// anything under src/ ships inside the installer - a 2.5 MB retired roster would have been
-// handed to every user for no reason. See archive/README.md.
-const ARCHIVE_DIR = path.join(ROOT, 'archive');
 const OVERRIDES = path.join(__dirname, 'roster-overrides.json');
 
 const EQ_CANDIDATES = [
@@ -59,21 +47,26 @@ const EQ_CANDIDATES = [
   'C:/Users/Public/Sony Online Entertainment/Installed Games/EverQuest Legends',
 ];
 
-// spells_us.txt field positions. Established empirically against the real file, per this
-// project's standing rule never to trust an EQEmu schema doc for a custom server.
+// spells_us.txt field positions.
 const F_ID = 0;
 const F_NAME = 1;
 const F_CAST_MS = 8;
 const F_RECAST_MS = 10;
-const F_DURATION_TICKS = 12;
 const F_ICON = 75;
-const SECONDS_PER_TICK = 6;
 
 // spells_us_str.txt - the file names these itself in its header row.
 const S_ID = 0;
 const S_LANDED_ME = 3;
 const S_LANDED_OTHER = 4;
 const S_WORE_OFF = 5;
+
+// Keys that are build directives inside an `add` block, not roster data.
+const ADD_DIRECTIVES = new Set(['noGameLookup']);
+const rosterFields = (obj) => {
+  const out = {};
+  for (const k of Object.keys(obj)) if (!ADD_DIRECTIVES.has(k)) out[k] = obj[k];
+  return out;
+};
 
 function findEqInstall() {
   const fromEnv = process.env.EQ_INSTALL;
@@ -84,24 +77,11 @@ function findEqInstall() {
   return null;
 }
 
-/** "12s" / "6m" / "3m54s" / "—" -> seconds or null. */
-function parseDuration(v) {
-  if (!v) return null;
-  const s = String(v).trim();
-  if (!s || s === '—' || s === '-') return null;
-  const m = /^(?:(\d+)m)?(?:(\d+)s)?$/.exec(s);
-  if (!m || (!m[1] && !m[2])) return null;
-  return Number(m[1] || 0) * 60 + Number(m[2] || 0);
-}
-
-/**
- * Map the spreadsheet's 109 fine-grained categories onto the eight scaling categories its own
- * second sheet defines. Only used to record how a spell's duration behaves per upgrade tier;
- * it deliberately does not change any runtime behaviour yet.
- */
+// Scaling category for a hand-added entry that carries no per-tier duration behaviour of its own.
+// "none" means no per-mote / AA duration scaling - the safe default for anything added by hand.
 function scaleCategory(category, kind) {
   const c = String(category || '').toLowerCase();
-  if (c === 'delayed') return 'none';           // a fuse before a heal fires, not a buff duration
+  if (c === 'delayed') return 'none';
   if (c.includes('dot')) return 'dot';
   if (c.includes('duration heal') || c.includes('regen')) return 'hot';
   if (c === 'heals') return 'heal';
@@ -114,30 +94,19 @@ function scaleCategory(category, kind) {
 }
 
 /**
- * Entries for spells the curated spreadsheet does not list. `roster-overrides.json` grew a first-
- * class "add" block for exactly this - the owner's instruction, 30 Aug 2026: "the roster should be
- * directly editable for additions. if the roster cannot add new spells this is a problem that needs
- * fixing as that is basic functionality for lists." A `set` block still only edits an entry the
- * sheet already produced; an `add` block builds a brand-new one.
+ * Brand-new entries from roster-overrides.json `add` blocks - real EQ Legends spells not yet in
+ * the roster. The client spell files supply landingText / endedText / iconId / castSec when the
+ * spell exists there (it usually does); anything in `add` overrides that, so a spell absent from
+ * the client data entirely can still be fully hand-specified. `noGameLookup: true` skips the
+ * client match for a name that coincidentally collides with an unrelated spell.
  *
- * The game files still supply TEXT/icon/cast when the spell exists in spells_us.txt (it usually
- * does - it just isn't in the curated list), so a bard-only stance or a missing invocation needs
- * only its sheet-equivalent columns (kind, durationSec, category, classes, targets, level) in the
- * override. Anything in `add` overrides the game-derived value, so a spell absent from the client
- * data entirely can still be fully specified by hand.
- *
- * `spellByName` / `strById` are the same lookups main() builds from the game data; passed in so
- * this stays a pure function a test can exercise with fixtures.
+ * Pure - the client lookups are passed in, so a test can exercise this with fixtures.
  */
 function buildAddedEntries(overrides, { spellByName, strById }, existingNames = new Set()) {
   const added = [];
   for (const [name, ov] of Object.entries(overrides)) {
-    if (name === '_README' || !ov || !ov.add) continue;
-    if (existingNames.has(name.toLowerCase())) continue; // the sheet already produced it - `set` covers that
-    // `noGameLookup: true` in the add block skips the client-spell-data match. Use it when the
-    // name coincidentally matches an unrelated spell in spells_us.txt (the EQL stance / invocation
-    // system is not the classic-EQ spells that share those names), so the entry is exactly what the
-    // add block says and nothing else.
+    if (name.startsWith('_') || !ov || !ov.add) continue;
+    if (existingNames.has(name.toLowerCase())) continue; // already an entry - `set` covers that
     const g = ov.add.noGameLookup ? null : spellByName.get(name.toLowerCase());
     const s = g ? strById.get(g[F_ID]) || [] : [];
     const entry = {
@@ -149,13 +118,10 @@ function buildAddedEntries(overrides, { spellByName, strById }, existingNames = 
       iconId: g ? Number(g[F_ICON]) || null : null,
       castSec: g ? Number(g[F_CAST_MS] || 0) / 1000 || null : null,
       reuseSec: g ? Number(g[F_RECAST_MS] || 0) / 1000 || null : null,
-      // A hand-added entry has no spreadsheet category to derive from; default to the safe "none"
-      // (no per-tier / AA duration scaling) unless the `add` block says otherwise.
       scaleCategory: 'none',
-      ...ov.add,
+      ...rosterFields(ov.add),
     };
     if (!entry.scaleCategory) entry.scaleCategory = scaleCategory(entry.category, entry.kind);
-    delete entry.noGameLookup; // a build directive, not roster data
     for (const k of Object.keys(entry)) if (entry[k] == null) delete entry[k];
     added.push(entry);
   }
@@ -170,12 +136,9 @@ function main() {
     console.error('spells_us_str.txt. Set EQ_INSTALL to the install folder and re-run.');
     process.exit(2);
   }
-  console.log(`game data : ${eq}`);
+  console.log(`client data : ${eq}`);
 
-  // ---- game data, indexed by lowercase name
-  // nameById must be built from EVERY row, not from spellByName: that map keeps only the first
-  // row per name, so using it here would leave most spell ids unnamed and silently undercount
-  // how many spells share a landing line - which is the whole point of the count below.
+  // ---- client data, indexed by lowercase name and by id
   const spellByName = new Map();
   const nameById = new Map();
   for (const line of fs.readFileSync(path.join(eq, 'spells_us.txt'), 'utf8').split(/\r?\n/)) {
@@ -188,30 +151,12 @@ function main() {
     if (!spellByName.has(n.toLowerCase())) spellByName.set(n.toLowerCase(), f);
   }
 
+  // How many spells IN THE WHOLE CLIENT print each landed-on-you line. This is what decides whether
+  // a landing text identifies a spell - the roster only holds castable EQL spells, but the client
+  // also has potions, clickies and AAs that print the identical line. Counted as DISTINCT BASE
+  // NAMES (rank variants collapsed), because 53 Cannibalize ranks are not 53 rival spells.
   const strById = new Map();
-  // How many spells IN THE WHOLE GAME print each landed-on-you line.
-  //
-  // This is the number that decides whether a landing line identifies a spell, and it is not the
-  // same as counting the roster. The roster only holds castable EQL spells; the game also has
-  // potions, clicky items and AAs that print the identical line. "Your mind begins to clear." is
-  // one castable spell and 66 Elixir of Clarity ranks. Judge uniqueness against the roster and
-  // clicking an elixir gets confidently mislabelled as a bard song.
-  //
-  // Shrinking the roster therefore does NOT reduce ambiguity - it hides it, turning "ask the
-  // user" into "confidently wrong". Measured on this rebuild: all 50 landing texts that became
-  // roster-unique are still shared in the game's own data. Not one was a genuine win.
-  //
-  // So the count is taken from the game and carried on the entry, and buffStore's landing index
-  // honours it. That is strictly better than the old behaviour, because the old 11,337-entry
-  // roster was itself only a subset of the game's 66,436 spells and so under-counted too.
-  // Counted as DISTINCT BASE NAMES, not raw spell rows, because most sharing is between ranks of
-  // one spell and those are not ambiguous in any way that matters - the engine already collapses
-  // rank variants, and every rank of Promised Renewal is still Promised Renewal. Counting rows
-  // instead makes 53 Cannibalize ranks look like 53 rival spells and prompts the user to choose
-  // between a spell and itself. Measured on this data: "Your body aches as your mind clears." is
-  // 53 rows but 5 base names, and "You are promised a divine renewal." is 4 rows but exactly 1 -
-  // genuinely unambiguous, and it would have prompted forever under a row count.
-  const gameBasesByText = new Map();
+  const clientBasesByText = new Map();
   for (const line of fs.readFileSync(path.join(eq, 'spells_us_str.txt'), 'utf8').split(/\r?\n/)) {
     if (!line) continue;
     const f = line.split('^');
@@ -221,116 +166,48 @@ function main() {
     if (!t) continue;
     const nm = nameById.get(f[S_ID]);
     if (!nm) continue;
-    if (!gameBasesByText.has(t)) gameBasesByText.set(t, new Set());
-    gameBasesByText.get(t).add(stripRankSuffix(nm));
+    if (!clientBasesByText.has(t)) clientBasesByText.set(t, new Set());
+    clientBasesByText.get(t).add(stripRankSuffix(nm));
   }
-  const gameSharedByText = new Map();
-  for (const [t, set] of gameBasesByText) gameSharedByText.set(t, set.size);
-  console.log(`          : ${spellByName.size} spells, ${strById.size} string rows`);
+  const sharedByText = new Map();
+  for (const [t, set] of clientBasesByText) sharedByText.set(t, set.size);
+  console.log(`            : ${spellByName.size} spells, ${strById.size} string rows`);
 
   const overrides = fs.existsSync(OVERRIDES) ? JSON.parse(fs.readFileSync(OVERRIDES, 'utf8')) : {};
 
+  // ---- current roster + overrides
+  console.log('\nrebuilding from the current roster + roster-overrides.json (set + add)\n');
   const roster = [];
-  const problems = { noGameData: [], noText: [], durationMismatch: [], noIcon: [] };
-
-  // ---- spreadsheet, OR overrides-only when it isn't here
-  //
-  // The curated spreadsheet ("new spell roster to be added.xlsx") is not in the repo. When it is
-  // absent - or `--overrides-only` is passed - the roster is rebuilt from the CURRENT buffs.json
-  // plus roster-overrides.json: every `set` is re-applied to its entry and every `add` block is
-  // added. That is what makes the roster directly editable for corrections and additions without
-  // the spreadsheet (the owner's instruction, 30 Aug 2026). It cannot pick up brand-new spreadsheet
-  // rows - there is no spreadsheet - so a genuinely new bulk import still needs the xlsx.
-  const overridesOnly = process.argv.includes('--overrides-only') || !fs.existsSync(SHEET);
-  if (overridesOnly) {
-    if (!fs.existsSync(SHEET)) {
-      console.log(`\nspreadsheet not found (${path.relative(ROOT, SHEET)})`);
+  for (const e of JSON.parse(fs.readFileSync(OUT, 'utf8'))) {
+    const ov = overrides[e.name];
+    // `set` and `add` both just overwrite fields on an entry that already exists - re-applying
+    // `add` here is what lets you edit an addition's block and re-run to pick up the change.
+    if (ov) Object.assign(e, ov.set || {}, ov.add ? rosterFields(ov.add) : {});
+    // Keep the shared-landing-text count current with the client data.
+    if (e.landingText) {
+      const n = sharedByText.get(e.landingText) || 1;
+      if (n >= 2) e.landingTextSharedBy = n;
+      else delete e.landingTextSharedBy;
     }
-    console.log('rebuilding from the current roster + roster-overrides.json (set + add only)\n');
-    const base = JSON.parse(fs.readFileSync(OUT, 'utf8'));
-    for (const e of base) {
-      const ov = overrides[e.name];
-      // `set` and `add` both just overwrite fields on an entry that already exists - re-applying
-      // `add` here is what lets you edit an addition's `add` block and re-run to pick up the change.
-      if (ov) Object.assign(e, ov.set || {}, ov.add || {});
-      for (const k of Object.keys(e)) if (e[k] == null) delete e[k];
-      roster.push(e);
-    }
+    for (const k of Object.keys(e)) if (e[k] == null) delete e[k];
+    roster.push(e);
   }
 
-  const wb = overridesOnly ? null : readWorkbook(SHEET);
-  const flat = overridesOnly ? [] : wb.sheet('spells');
-  const runs = overridesOnly ? [] : wb.sheetRuns('spells');
-
-  for (let i = 1; i < runs.length; i++) {
-    const rr = runs[i];
-    const fr = flat[i];
-    if (!rr || !Object.keys(rr).length) continue;
-
-    // run[0] is the bare name; run[1] is a grey category tag that must not reach the lookup.
-    const name = ((rr.C && rr.C[0]) || '').trim().replace(/\s+/g, ' ');
-    if (!name) continue;
-    const kind = (((rr.C && rr.C[1]) || '').trim() || (fr.D || '').trim() || '').toLowerCase();
-
-    const g = spellByName.get(name.toLowerCase());
-    if (!g) { problems.noGameData.push(name); continue; }
-
-    const s = strById.get(g[F_ID]) || [];
-    const landingText = (s[S_LANDED_ME] || '').trim() || null;
-    const othersLandingSuffix = s[S_LANDED_OTHER] || null; // leading space is significant
-    const endedText = (s[S_WORE_OFF] || '').trim() || null;
-
-    const sheetDur = parseDuration(fr.N);
-    const gameTicks = Number(g[F_DURATION_TICKS] || 0);
-    const gameDur = Number.isFinite(gameTicks) && gameTicks > 0 ? gameTicks * SECONDS_PER_TICK : null;
-    if (sheetDur != null && gameDur != null && sheetDur !== gameDur) {
-      problems.durationMismatch.push({ name, sheet: sheetDur, game: gameDur });
-    }
-
-    const entry = {
-      name,
-      spellId: Number(g[F_ID]),
-      kind: kind || null,
-      durationSec: sheetDur != null ? sheetDur : gameDur,
-      landingText,
-      endedText,
-      iconId: Number(g[F_ICON]) || null,
-      othersLandingSuffix,
-      category: (fr.F || '').trim() || null,
-      scaleCategory: scaleCategory(fr.F, kind),
-      classes: (fr.E || '').trim() || null,
-      level: fr.A != null ? Number(fr.A) : null,
-      manaCost: fr.H != null ? Number(fr.H) : null,
-      castSec: Number(g[F_CAST_MS] || 0) / 1000 || null,
-      reuseSec: Number(g[F_RECAST_MS] || 0) / 1000 || null,
-      targets: (fr.O || '').trim() || null,
-      // >1 means this line does not identify a spell on its own, even if only one roster entry
-      // claims it. See the comment where this is counted.
-      landingTextSharedBy: landingText ? (gameSharedByText.get(landingText) || 1) : null,
-    };
-    if (entry.landingTextSharedBy != null && entry.landingTextSharedBy < 2) entry.landingTextSharedBy = null;
-
-    const ov = overrides[name];
-    if (ov) Object.assign(entry, ov.set || {});
-
-    // Drop nulls so the file stays close to the old schema and small on disk.
-    for (const k of Object.keys(entry)) if (entry[k] == null) delete entry[k];
-
-    if (entry.durationSec != null && !entry.landingText) problems.noText.push(name);
-    if (!entry.iconId) problems.noIcon.push(name);
-
-    roster.push(entry);
-  }
-
-  // Additions from roster-overrides.json (`add` blocks) - spells the curated spreadsheet omits.
   const added = buildAddedEntries(overrides, { spellByName, strById }, new Set(roster.map((e) => e.name.toLowerCase())));
-  for (const e of added) roster.push(e);
-  if (added.length) console.log(`\nadded from roster-overrides.json (${added.length}): ${added.map((e) => e.name).join(', ')}`);
+  for (const e of added) {
+    if (e.landingText) {
+      const n = sharedByText.get(e.landingText) || 1;
+      if (n >= 2) e.landingTextSharedBy = n;
+    }
+    roster.push(e);
+  }
+  if (added.length) console.log(`added (${added.length}): ${added.map((e) => e.name).join(', ')}`);
 
   roster.sort((a, b) => a.name.localeCompare(b.name));
 
   // ---- report
   const withDur = roster.filter((e) => e.durationSec != null);
+  const noText = roster.filter((e) => e.durationSec != null && !e.landingText).map((e) => e.name);
   const land = new Map();
   for (const e of roster) if (e.landingText) land.set(e.landingText, (land.get(e.landingText) || 0) + 1);
   const uniqueLanding = [...land.values()].filter((v) => v === 1).length;
@@ -343,59 +220,26 @@ function main() {
   console.log(`  with endedText   : ${roster.filter((e) => e.endedText).length}`);
   console.log(`  with iconId      : ${roster.filter((e) => e.iconId).length}`);
   console.log(`  distinct landing : ${land.size}  (unique-owner: ${uniqueLanding})`);
-  console.log('');
   const byKind = {};
   for (const e of roster) byKind[e.kind || '(none)'] = (byKind[e.kind || '(none)'] || 0) + 1;
   console.log(`by kind            : ${JSON.stringify(byKind)}`);
-  const byScale = {};
-  for (const e of withDur) byScale[e.scaleCategory] = (byScale[e.scaleCategory] || 0) + 1;
-  console.log(`duration-bearing   : ${JSON.stringify(byScale)}`);
 
-  if (problems.noGameData.length) {
-    console.log(`\nNOT FOUND in game data (${problems.noGameData.length}):`);
-    for (const n of problems.noGameData.slice(0, 20)) console.log(`  - ${n}`);
-  }
-  if (problems.noText.length) {
-    console.log(`\nHave a duration but no landing text (${problems.noText.length}) - these cannot be detected:`);
-    for (const n of problems.noText.slice(0, 20)) console.log(`  - ${n}`);
-  }
-  if (problems.durationMismatch.length) {
-    console.log(`\nSpreadsheet and game data disagree on duration (${problems.durationMismatch.length}) - spreadsheet wins:`);
-    for (const d of problems.durationMismatch.slice(0, 20)) {
-      console.log(`  - ${d.name}: sheet ${d.sheet}s, game ${d.game}s`);
-    }
+  if (noText.length) {
+    console.log(`\nHave a duration but no landing text (${noText.length}) - these cannot be detected:`);
+    for (const n of noText.slice(0, 20)) console.log(`  - ${n}`);
   }
 
   if (!write) {
-    console.log('\n(report only - pass --write to archive the old roster and write the new one)');
+    console.log('\n(report only - pass --write to write the new roster)');
     return;
   }
 
-  // ---- archive, then write
-  fs.mkdirSync(ARCHIVE_DIR, { recursive: true });
-  if (fs.existsSync(OUT)) {
-    const old = JSON.parse(fs.readFileSync(OUT, 'utf8'));
-    // Only the hand-mined legacy roster is worth archiving. A roster this script produced is
-    // reproducible by re-running it, and archiving one on every rebuild would bury the original
-    // under near-identical copies - the first re-run already created a pointless
-    // "buffs-legacy-1052.json" before this guard existed.
-    const isGenerated = old.length > 0 && old[0] && old[0].spellId != null;
-    const dest = path.join(ARCHIVE_DIR, `buffs-legacy-${old.length}.json`);
-    if (isGenerated) {
-      console.log('\ncurrent roster was generated by this script - not archiving a copy of it');
-    } else if (!fs.existsSync(dest)) {
-      fs.copyFileSync(OUT, dest);
-      console.log(`\narchived old roster -> ${path.relative(ROOT, dest)} (${old.length} entries)`);
-    } else {
-      console.log(`\narchive already exists, left alone -> ${path.relative(ROOT, dest)}`);
-    }
-  }
   fs.writeFileSync(OUT, JSON.stringify(roster, null, 1) + '\n', 'utf8');
-  console.log(`wrote ${path.relative(ROOT, OUT)} (${roster.length} entries)`);
-  console.log('\nNow run: npm test   - the roster baseline WILL fail, and its message lists exactly');
-  console.log('what changed. Read it, then accept it with: node test/roster.test.js --update');
+  console.log(`\nwrote ${path.relative(ROOT, OUT)} (${roster.length} entries)`);
+  console.log('\nIf the roster baseline test fails, its message lists what changed. Read it, then');
+  console.log('accept it with: node test/roster.test.js --update');
 }
 
 if (require.main === module) main();
 
-module.exports = { buildAddedEntries, parseDuration, scaleCategory };
+module.exports = { buildAddedEntries, scaleCategory, rosterFields };

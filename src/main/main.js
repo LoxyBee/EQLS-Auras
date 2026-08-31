@@ -786,19 +786,19 @@ function applyInstallRoot(eqFolder) {
   // file on "duration > 0", which threw away 386 real bard songs that carry 0 there, so backfill
   // re-read spells_us.txt on every launch and put them back.
   //
-  // The roster is no longer mined, so there is nothing to undo. It is built from the curated
-  // EQ Legends spreadsheet - the definitive list of what this server actually has - and songs sit
-  // in it on the same footing as everything else. Running backfill against that re-reads the
-  // client's file, which carries the spells of EVERY EverQuest version, and pushes back in
-  // everything this server does not have. Measured on this install: +1,499 entries, taking the
-  // roster from 1,052 to about 2,551.
+  // The roster is no longer mined, so there is nothing to undo. It is the ~1,000 spells EQ Legends
+  // actually has, and songs sit in it on the same footing as everything else. Running backfill
+  // against that re-reads the client's file, which carries the spells of EVERY EverQuest version,
+  // and pushes back in everything this server does not have. Measured on this install: +1,499
+  // entries, taking the roster from 1,052 to about 2,551.
   //
   // Size is not the real cost. "Is this landing line unique?" is judged by counting roster
   // entries, so every re-added spell votes on ambiguity it has no business voting on - which is
   // precisely what the rebuild set out to remove. See the note at the top of tools/build-roster.js.
   //
-  // If a bard song really is missing, it belongs in the spreadsheet: one rebuild then fixes it
-  // for everyone, instead of each install quietly healing itself into a different roster.
+  // If a bard song really is missing, add it via an `add` block in tools/roster-overrides.json:
+  // one rebuild then fixes it for everyone, instead of each install quietly healing itself into a
+  // different roster.
   const tagged = tagBardSongs(currentInstallRoot, buffStore);
   if (tagged) debugLog(`Tagged ${tagged} existing roster entries as bard songs`);
 }
