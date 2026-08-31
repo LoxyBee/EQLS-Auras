@@ -1990,7 +1990,29 @@ function initWidgetsPanel() {
         else window.eqTracker.removeActiveBuff(buff.name);
       });
 
-      li.append(...(icon ? [icon] : []), nameSpan, timerSpan, removeBtn);
+      // QOL #49 - one-click "this buff's duration looks wrong". Collapses the manual QA loop
+      // (name + rank + computed duration + the detection-log tail that carries the cast, landing
+      // and wear-off lines) into one clipboard paste, with blanks for the two things only the
+      // player knows - the in-game tooltip and what they expected.
+      const durBtn = document.createElement('button');
+      durBtn.textContent = 'Duration looks wrong';
+      durBtn.title = 'Copy a ready-to-send report about this buff’s duration';
+      durBtn.addEventListener('click', async () => {
+        const [versionInfo, logTail] = await Promise.all([
+          window.eqTracker.getVersionInfo().catch(() => ({})),
+          window.eqTracker.getRecentLogTail(4000).catch(() => ''),
+        ]);
+        const text = buildDurationReport({ buff, versionInfo, logTail });
+        try {
+          await navigator.clipboard.writeText(text);
+          durBtn.textContent = 'Copied ✓';
+          setTimeout(() => (durBtn.textContent = 'Duration looks wrong'), 2000);
+        } catch {
+          durBtn.textContent = 'Copy failed';
+        }
+      });
+
+      li.append(...(icon ? [icon] : []), nameSpan, timerSpan, removeBtn, durBtn);
 
       // Only meaningful in 'all' mode - see filterActiveBuffsForWidget and
       // widgetStore.js's excludedBuffNames comment. An 'explicit' mode
@@ -6564,6 +6586,35 @@ function initLogActivityLine() {
     window.eqTracker.getFullscreenState?.().then((v) => setFs(v === true)).catch(() => {});
     window.eqTracker.onFullscreenWarning?.((active) => setFs(!!active));
   }
+}
+
+// QOL #49 - the body of the per-buff "Duration looks wrong" report. Pure so it can be tested
+// without a clipboard. The detection-log tail is where the cast / landing / wear-off lines and
+// the scaling math actually are (same reasoning as the About-page bug report, gotcha #28); this
+// just frames it around one spell and leaves blanks for what only the player can supply.
+function buildDurationReport({ buff, versionInfo, logTail }) {
+  const v = versionInfo || {};
+  const rank = (buff.name.match(/\s([IVXLCDM]+)$/) || [])[1] || null;
+  const lines = [
+    `EQLS Auras ${v.appVersion || '(unknown version)'} - buff duration looks wrong`,
+    '',
+    `Spell: ${buff.name}`,
+    `Rank in the name: ${rank || '(none)'}`,
+    `App computed: ${buff.durationSec != null ? `${buff.durationSec}s` : '(no duration - instant or permanent)'}`,
+    `Time left when reported: ${buff.remainingSec != null ? `${buff.remainingSec}s` : 'n/a'}`,
+    '',
+    'In-game tooltip says: (fill in, e.g. "0:30 (1:00)")',
+    'I expected: (fill in)',
+    '',
+  ];
+  if (logTail && logTail.trim()) {
+    lines.push('Recent detection log (has the cast, landing and wear-off lines):', '```', logTail.trim(), '```');
+  } else {
+    lines.push(
+      '(No detection log - turn on Diagnostics under the Log page and reproduce; that log is what shows the cast/landing/expire timing.)'
+    );
+  }
+  return lines.join('\n');
 }
 
 // About page's "Copy bug report" button - the simplest useful version of the backlog ask: the app
