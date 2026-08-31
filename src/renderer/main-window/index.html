@@ -108,6 +108,17 @@
       <section id="page-tracker" class="page active">
         <h2 class="page-title">Buff Tracker</h2>
 
+        <!-- QOL #50 - a dismissible "still to set up" checklist. Hidden unless something is
+             genuinely unfinished (no spellbook file, AA all at zero, no auras) and the user
+             hasn't dismissed it. Populated by initSetupNudge(). -->
+        <div class="card" id="setup-nudge-card" hidden>
+          <div class="row">
+            <h3 id="setup-nudge-title">A few things left to set up</h3>
+            <button type="button" id="setup-nudge-dismiss" class="modal-close" style="margin-left:auto" title="Hide this for good">✕</button>
+          </div>
+          <ul id="setup-nudge-list" class="buff-list"></ul>
+        </div>
+
         <h3 class="settings-page-section-title">Detection status</h3>
 
         <!-- QOL #5 - the one-line "is the app actually reading my log right now?" answer. Until
@@ -504,6 +515,19 @@
                       <label><input type="radio" name="widget-icon-justify" value="center" /> Center</label>
                       <label><input type="radio" name="widget-icon-justify" value="right" /> Right</label>
                     </div>
+                    <div class="row">
+                      <span class="label" title="A shrinking dark shade over each tile showing how much of the buff's time is left — the same look the action bars use for cooldowns. Wipe recedes from the top down; Radial sweeps around like a clock.">Depletion shade:</span>
+                      <select id="widget-icon-depletion-select" class="text-input">
+                        <option value="none">None</option>
+                        <option value="wipe">Wipe (top-down)</option>
+                        <option value="radial">Radial (clock sweep)</option>
+                      </select>
+                    </div>
+                    <div class="row">
+                      <span class="label" title="When a buff runs out, hold its tile on screen for a moment — greyed, marked 'done' — instead of letting it vanish. 0 turns it off.">Linger when expired:</span>
+                      <input type="range" id="widget-expired-linger-slider" min="0" max="6" step="1" />
+                      <span id="widget-expired-linger-value" class="slider-value">off</span>
+                    </div>
                   </div>
                   <!-- Only meaningful on an aura showing buffs cast on other people - hidden
                        otherwise (see renderBuffFilter). -->
@@ -765,6 +789,12 @@
                     <span class="label" title="When a buff's remaining time drops under this, its tile flashes red. Set to 0 to turn the flash off for this aura.">Expiring-soon flash:</span>
                     <input type="range" id="widget-low-threshold-slider" min="0" max="120" step="5" />
                     <span id="widget-low-threshold-value" class="slider-value">30s</span>
+                  </div>
+                  <div class="row">
+                    <label title="Fades the timer text from its normal colour through amber as the buff runs down, so you can read how close it is at a glance — not just the red flash right at the end. Amber starts at twice the flash threshold above.">
+                      <input type="checkbox" id="widget-timer-color-ramp-checkbox" />
+                      Fade the timer colour as it runs down
+                    </label>
                   </div>
                   <div class="row">
                     <label id="widget-landing-glow-label" title="Flashes the tile briefly when the buff is first applied."><input type="checkbox" id="widget-landing-glow-checkbox" /> Glow when a buff lands</label>

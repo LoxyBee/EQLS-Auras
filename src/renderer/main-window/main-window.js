@@ -23,6 +23,7 @@ async function init() {
   initProfileBar();
   initLogPanel();
   initFirstRunLanding();
+  initSetupNudge();
   initDetectionSettingsPanel();
   initBuffPanels();
   initTrackerBadge();
@@ -223,6 +224,90 @@ function initFirstRunLanding() {
   window.eqTracker.onLogStatus((state) => {
     if (hasLandedOnce && state.eqFolder) setPromoted(false);
   });
+}
+
+// QOL #50 - which setup steps are still unfinished, in the order the user should tackle them.
+// Pure, so it can be tested without the DOM. The EQ folder gates the spellbook row (no folder =
+// no file to find); AA counts as "set" if ANY of the three levels is non-zero; the aura row keys
+// off there being literally no auras at all.
+function setupNudgeGaps({ log, spellbook, character, widgets }) {
+  const items = [];
+  if (!log || !log.eqFolder) {
+    items.push({ text: 'Point the app at your EverQuest folder', page: 'page-settings' });
+  } else if (!spellbook || !spellbook.filePath) {
+    items.push({ text: 'Set your spellbook file — it resolves buffs that share a message', page: 'page-settings' });
+  }
+  const c = character || {};
+  if (!c.aaLevel && !c.exaltationLevel && !c.deftnessLevel) {
+    items.push({ text: 'Set your AA levels so buff durations come out right', page: 'page-settings' });
+  }
+  if (Array.isArray(widgets) && widgets.length === 0) {
+    items.push({ text: 'Add an aura to show on the overlay', page: 'page-overlay' });
+  }
+  return items;
+}
+
+// QOL #50 - a dismissible "still to set up" checklist on the Buff Tracker page. The first-run
+// flow only ever promotes the EQ-folder card; nothing otherwise points out a missing spellbook
+// file, AA left at zero, or no auras yet. Hidden once there is nothing to flag, or once dismissed.
+function initSetupNudge() {
+  const card = document.getElementById('setup-nudge-card');
+  const list = document.getElementById('setup-nudge-list');
+  const title = document.getElementById('setup-nudge-title');
+  const dismissBtn = document.getElementById('setup-nudge-dismiss');
+  if (!card) return;
+  let dismissed = false;
+
+  dismissBtn.addEventListener('click', () => {
+    dismissed = true;
+    card.hidden = true;
+    window.eqTracker.dismissSetupNudge();
+  });
+
+  function goTo(page) {
+    const btn = document.querySelector(`.nav-btn[data-page="${page}"]`);
+    if (btn) activateNavButton(btn);
+  }
+
+  async function refresh() {
+    if (dismissed) return;
+    const [log, spellbook, character, widgets] = await Promise.all([
+      window.eqTracker.getLogState().catch(() => ({})),
+      window.eqTracker.getSpellbookState().catch(() => ({})),
+      window.eqTracker.getCharacterSettings().catch(() => ({})),
+      window.eqTracker.listWidgets().catch(() => []),
+    ]);
+
+    const items = setupNudgeGaps({ log, spellbook, character, widgets });
+
+    if (!items.length) {
+      card.hidden = true;
+      return;
+    }
+    title.textContent = items.length === 1 ? '1 thing left to set up' : `${items.length} things left to set up`;
+    list.innerHTML = '';
+    for (const item of items) {
+      const li = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = '#';
+      link.textContent = item.text;
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        goTo(item.page);
+      });
+      li.appendChild(link);
+      list.appendChild(li);
+    }
+    card.hidden = false;
+  }
+
+  window.eqTracker.getSetupNudgeDismissed().then((wasDismissed) => {
+    dismissed = !!wasDismissed;
+    if (!dismissed) refresh();
+  });
+  // Re-check when the log connection changes (the EQ folder just got set, a spellbook file
+  // appeared) - cheap, and it lets the card clear itself the moment a gap is filled.
+  window.eqTracker.onLogStatus(() => refresh());
 }
 
 // Persistent chip bar living above the sidebar/page-container split (see
@@ -1488,6 +1573,7 @@ function initWidgetsPanel() {
   const lowThresholdValueEl = document.getElementById('widget-low-threshold-value');
   const landingGlowCheckbox = document.getElementById('widget-landing-glow-checkbox');
   const landingGlowLabelEl = document.getElementById('widget-landing-glow-label');
+  const timerColorRampCheckbox = document.getElementById('widget-timer-color-ramp-checkbox');
   const soundLandCheckbox = document.getElementById('widget-sound-land-checkbox');
   const soundLandLabelEl = document.getElementById('widget-sound-land-label');
   const soundExpireCheckbox = document.getElementById('widget-sound-expire-checkbox');
@@ -1658,6 +1744,9 @@ function initWidgetsPanel() {
   const displayIconOnlySettings = document.getElementById('widget-display-icon-only-settings');
   const displayListOnlySettings = document.getElementById('widget-display-list-only-settings');
   const iconJustifyRadios = document.querySelectorAll('input[name="widget-icon-justify"]');
+  const iconDepletionSelect = document.getElementById('widget-icon-depletion-select');
+  const expiredLingerSlider = document.getElementById('widget-expired-linger-slider');
+  const expiredLingerValueEl = document.getElementById('widget-expired-linger-value');
   const deleteBtn = document.getElementById('delete-widget-btn');
   const duplicateWidgetBtn = document.getElementById('duplicate-widget-btn');
   const exportBtn = document.getElementById('export-widget-btn');
@@ -1903,7 +1992,29 @@ function initWidgetsPanel() {
         else window.eqTracker.removeActiveBuff(buff.name);
       });
 
-      li.append(...(icon ? [icon] : []), nameSpan, timerSpan, removeBtn);
+      // QOL #49 - one-click "this buff's duration looks wrong". Collapses the manual QA loop
+      // (name + rank + computed duration + the detection-log tail that carries the cast, landing
+      // and wear-off lines) into one clipboard paste, with blanks for the two things only the
+      // player knows - the in-game tooltip and what they expected.
+      const durBtn = document.createElement('button');
+      durBtn.textContent = 'Duration looks wrong';
+      durBtn.title = 'Copy a ready-to-send report about this buff’s duration';
+      durBtn.addEventListener('click', async () => {
+        const [versionInfo, logTail] = await Promise.all([
+          window.eqTracker.getVersionInfo().catch(() => ({})),
+          window.eqTracker.getRecentLogTail(4000).catch(() => ''),
+        ]);
+        const text = buildDurationReport({ buff, versionInfo, logTail });
+        try {
+          await navigator.clipboard.writeText(text);
+          durBtn.textContent = 'Copied ✓';
+          setTimeout(() => (durBtn.textContent = 'Duration looks wrong'), 2000);
+        } catch {
+          durBtn.textContent = 'Copy failed';
+        }
+      });
+
+      li.append(...(icon ? [icon] : []), nameSpan, timerSpan, removeBtn, durBtn);
 
       // Only meaningful in 'all' mode - see filterActiveBuffsForWidget and
       // widgetStore.js's excludedBuffNames comment. An 'explicit' mode
@@ -2842,6 +2953,7 @@ function initWidgetsPanel() {
     lowThresholdSlider.value = lowThreshold;
     lowThresholdValueEl.textContent = lowThreshold === 0 ? 'off' : `${lowThreshold}s`;
     landingGlowCheckbox.checked = widget.landingGlowEnabled !== false;
+    if (timerColorRampCheckbox) timerColorRampCheckbox.checked = !!widget.timerColorRamp;
     mergeCheckbox.checked = !!widget.mergeSameDuration;
     categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
     const borderWidth = typeof widget.categoryBorderWidthPx === 'number' ? widget.categoryBorderWidthPx : 1;
@@ -2928,6 +3040,12 @@ function initWidgetsPanel() {
     iconLabelAnchorButtons.forEach((b) =>
       b.classList.toggle('active', b.dataset.anchor === (widget.iconLabelAnchor || 'top-center'))
     );
+    if (iconDepletionSelect) iconDepletionSelect.value = widget.iconDepletionShade || 'none';
+    if (expiredLingerSlider) {
+      const linger = typeof widget.expiredLingerSec === 'number' ? widget.expiredLingerSec : 0;
+      expiredLingerSlider.value = linger;
+      expiredLingerValueEl.textContent = linger === 0 ? 'off' : `${linger}s`;
+    }
     updateIconLabelOptionsVisibility();
     const shapeFields = applySettingsPanelShape(widget);
     deleteBtn.style.display = widget.deletable ? '' : 'none';
@@ -3782,7 +3900,10 @@ function initWidgetsPanel() {
       id: 'bard-songs',
       name: 'Bard Songs',
       group: 'standalone',
-      description: 'Every bard song currently on you, no matter who cast it. Grouped by caster when that’s knowable (including your own casts) - everything else lands in an "Unknown" group instead of guessing.',
+      description:
+        'Every bard song currently on you, whoever cast it — grouped by caster when that’s knowable, ' +
+        '"Unknown" when it isn’t. Can also track the debuff songs you’ve put on enemies (off by default), ' +
+        'and split buffs and debuffs into their own sections.',
       create: (name) => window.eqTracker.createBardSongsWidget(name),
     },
     {
@@ -3790,9 +3911,9 @@ function initWidgetsPanel() {
       name: 'Raid named',
       group: 'standalone',
       description:
-        'A checklist of the named mobs in the raid zone you are in - all shown when you enter, ' +
-        'greyed out as they die, reset to a full list when you re-enter (a fresh instance). ' +
-        'Covers Plane of Sky / Hate / Fear, Nagafen and Vox for now; add more as you visit them.',
+        'A checklist of the named mobs for the zone you’re in - all shown when you enter, greyed ' +
+        'as they die. Instanced zones reset to a full list on re-entry; open-world zones show a ' +
+        'respawn countdown. Covers the Voidling raid zones plus a growing set of dungeons.',
       create: (name) => window.eqTracker.createRaidNamedWidget(name),
     },
     {
@@ -4447,6 +4568,11 @@ function initWidgetsPanel() {
   landingGlowCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetLandingGlowEnabled(selectedId, landingGlowCheckbox.checked);
   });
+  if (timerColorRampCheckbox) {
+    timerColorRampCheckbox.addEventListener('change', () => {
+      window.eqTracker.setWidgetTimerColorRamp(selectedId, timerColorRampCheckbox.checked);
+    });
+  }
   // Reported live 24 Aug: "the say text field doesn't update all the time when i try to edit it,
   // it should be freely editable and stay with whatever has been put in it." 'change' only fires
   // on blur/Enter, so anything typed and then left alone (cursor still in the box, no click
@@ -5415,6 +5541,18 @@ function initWidgetsPanel() {
       if (radio.checked) window.eqTracker.setWidgetIconJustify(selectedId, radio.value);
     });
   });
+  if (iconDepletionSelect) {
+    iconDepletionSelect.addEventListener('change', () => {
+      window.eqTracker.setWidgetIconDepletionShade(selectedId, iconDepletionSelect.value);
+    });
+  }
+  if (expiredLingerSlider) {
+    expiredLingerSlider.addEventListener('input', () => {
+      const seconds = Number(expiredLingerSlider.value);
+      expiredLingerValueEl.textContent = seconds === 0 ? 'off' : `${seconds}s`;
+      window.eqTracker.setWidgetExpiredLingerSec(selectedId, seconds);
+    });
+  }
   textJustifyRadios.forEach((radio) => {
     radio.addEventListener('change', () => {
       if (radio.checked) window.eqTracker.setWidgetTextJustify(selectedId, radio.value);
@@ -5428,23 +5566,26 @@ function initWidgetsPanel() {
     // The direction choice only means anything while grouping is on, so it
     // appears and disappears with the toggle rather than sitting there inert.
     allyDirectionRow.style.display = groupAllyCheckbox.checked ? '' : 'none';
-    window.eqTracker.setWidgetGroupAllyBuffs(selectedId, groupAllyCheckbox.checked);
+    window.eqTracker.setWidgetGroupAllyBuffs(selectedId, groupAllyCheckbox.checked).then(updateLocalWidgetCache);
   });
   allyDirectionRadios.forEach((radio) => {
     radio.addEventListener('change', () => {
-      if (radio.checked) window.eqTracker.setWidgetGroupAllyDirection(selectedId, radio.value);
+      if (radio.checked) window.eqTracker.setWidgetGroupAllyDirection(selectedId, radio.value).then(updateLocalWidgetCache);
     });
   });
   hideAllyNameCheckbox.addEventListener('change', () => {
-    window.eqTracker.setWidgetHideAllyNameOnTile(selectedId, hideAllyNameCheckbox.checked);
+    window.eqTracker.setWidgetHideAllyNameOnTile(selectedId, hideAllyNameCheckbox.checked).then(updateLocalWidgetCache);
   });
-  // #29 - Bard Songs aura's hybrid buff/debuff options.
+  // #29 - Bard Songs aura's hybrid buff/debuff options. .then(updateLocalWidgetCache) keeps the
+  // renderer's own widget cache in step with the store so switching away and back re-reads the
+  // real value, not a stale pre-toggle snapshot (see updateLocalWidgetCache's comment - this is
+  // the gap it was written for, applied here after it was reported live on the debuff-songs toggle).
   showDebuffSongsCheckbox.addEventListener('change', () => {
     splitSongsRowEl.style.display = showDebuffSongsCheckbox.checked ? '' : 'none';
-    window.eqTracker.setWidgetShowDebuffSongs(selectedId, showDebuffSongsCheckbox.checked);
+    window.eqTracker.setWidgetShowDebuffSongs(selectedId, showDebuffSongsCheckbox.checked).then(updateLocalWidgetCache);
   });
   splitSongsCheckbox.addEventListener('change', () => {
-    window.eqTracker.setWidgetSplitSongsByType(selectedId, splitSongsCheckbox.checked);
+    window.eqTracker.setWidgetSplitSongsByType(selectedId, splitSongsCheckbox.checked).then(updateLocalWidgetCache);
   });
 
   timerTextColorPicker.addEventListener('input', () => {
@@ -6465,6 +6606,35 @@ function initLogActivityLine() {
     window.eqTracker.getFullscreenState?.().then((v) => setFs(v === true)).catch(() => {});
     window.eqTracker.onFullscreenWarning?.((active) => setFs(!!active));
   }
+}
+
+// QOL #49 - the body of the per-buff "Duration looks wrong" report. Pure so it can be tested
+// without a clipboard. The detection-log tail is where the cast / landing / wear-off lines and
+// the scaling math actually are (same reasoning as the About-page bug report, gotcha #28); this
+// just frames it around one spell and leaves blanks for what only the player can supply.
+function buildDurationReport({ buff, versionInfo, logTail }) {
+  const v = versionInfo || {};
+  const rank = (buff.name.match(/\s([IVXLCDM]+)$/) || [])[1] || null;
+  const lines = [
+    `EQLS Auras ${v.appVersion || '(unknown version)'} - buff duration looks wrong`,
+    '',
+    `Spell: ${buff.name}`,
+    `Rank in the name: ${rank || '(none)'}`,
+    `App computed: ${buff.durationSec != null ? `${buff.durationSec}s` : '(no duration - instant or permanent)'}`,
+    `Time left when reported: ${buff.remainingSec != null ? `${buff.remainingSec}s` : 'n/a'}`,
+    '',
+    'In-game tooltip says: (fill in, e.g. "0:30 (1:00)")',
+    'I expected: (fill in)',
+    '',
+  ];
+  if (logTail && logTail.trim()) {
+    lines.push('Recent detection log (has the cast, landing and wear-off lines):', '```', logTail.trim(), '```');
+  } else {
+    lines.push(
+      '(No detection log - turn on Diagnostics under the Log page and reproduce; that log is what shows the cast/landing/expire timing.)'
+    );
+  }
+  return lines.join('\n');
 }
 
 // About page's "Copy bug report" button - the simplest useful version of the backlog ask: the app

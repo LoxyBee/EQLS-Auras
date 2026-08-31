@@ -1571,6 +1571,14 @@ ipcMain.handle('ui:setMergeRule', (_event, rule) => {
 // Defaults ON, at the owner's request. Only the DEFAULT changed - anyone who has deliberately
 // switched it off has `false` stored and keeps it, because the stored value is read first and
 // this fallback is reached only when the setting has never been touched.
+// QOL #50 - the Buff Tracker "finish setting up" checklist, dismissed for good once the user
+// clicks it away (a per-machine nag, not something to carry between installs).
+ipcMain.handle('ui:getSetupNudgeDismissed', () => loadJson('setupNudgeDismissed', false) === true);
+ipcMain.handle('ui:dismissSetupNudge', () => {
+  saveJson('setupNudgeDismissed', true);
+  return true;
+});
+
 ipcMain.handle('ui:getTradePing', () => loadJson('tradePingEnabled', true) === true);
 ipcMain.handle('ui:setTradePing', (_event, enabled) => {
   const on = enabled === true;
@@ -2149,6 +2157,9 @@ ipcMain.handle('widget:setHideBardSongs', (_event, { id, hide }) => widgetManage
 ipcMain.handle('widget:setShowRowIcon', (_event, { id, enabled }) => widgetManager.setShowRowIcon(id, enabled));
 ipcMain.handle('widget:setMirrorRowDirection', (_event, { id, enabled }) => widgetManager.setMirrorRowDirection(id, enabled));
 ipcMain.handle('widget:setShowIconLabel', (_event, { id, enabled }) => widgetManager.setShowIconLabel(id, enabled));
+ipcMain.handle('widget:setIconDepletionShade', (_event, { id, value }) => widgetManager.setIconDepletionShade(id, value));
+ipcMain.handle('widget:setTimerColorRamp', (_event, { id, enabled }) => widgetManager.setTimerColorRamp(id, enabled));
+ipcMain.handle('widget:setExpiredLingerSec', (_event, { id, seconds }) => widgetManager.setExpiredLingerSec(id, seconds));
 ipcMain.handle('widget:setIconLabelSize', (_event, { id, value }) => widgetManager.setIconLabelSize(id, value));
 ipcMain.handle('widget:setTimerTextColor', (_event, { id, value }) => widgetManager.setTimerTextColor(id, value));
 ipcMain.handle('widget:setGroupAllyBuffs', (_event, { id, value }) => widgetManager.setGroupAllyBuffs(id, value));

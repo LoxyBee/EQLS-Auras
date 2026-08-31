@@ -74,6 +74,49 @@ test('#29 - a debuff bard song landing on an enemy shows on the aura, marked as 
   assert.equal(songs[0].spellCategory, 'debuff', 'so the aura draws the debuff-coloured border');
 });
 
+test('#29 - a bard DAMAGE song (Denon\'s Desperate Dirge shape) never appears on the aura', () => {
+  // Reported live, correcting an earlier fix: DDD is a nuke-category song. It lands third-person on
+  // a mob but debuffs nothing - it must not show on the Bard Songs aura at all.
+  const { engine, buffStore } = makeEngine();
+  engine.setBardSongDebuffsWantedFn(() => true);
+  buffStore.upsert('Test Desperate Dirge', 30, { othersLandingSuffix: ` staggers back a step.` });
+  const e = buffStore.getByName('Test Desperate Dirge');
+  e.kind = 'det';
+  e.scaleCategory = 'nuke';
+  delete e.durationSec;
+  buffStore.markBardSong('Test Desperate Dirge');
+
+  engine.handleLine(`${TS}You begin singing Test Desperate Dirge.`);
+  engine.handleLine(`${TS}a dry bones skeleton staggers back a step.`);
+  assert.equal(engine.getActiveBardSongs().length, 0, 'a damage song is not a debuff song');
+});
+
+test('#29 - a maintained bard debuff song with NO cast-begin line (Largo\'s Melodic Binding) is still caught', () => {
+  // From the owner's real log: Largo's Melodic Binding re-lands every ~6s with no
+  // "You begin singing" line at all - so every cast-driven tier missed it. The third-person
+  // landing text is the only signal, matched directly against the roster's debuff-song suffixes.
+  const { engine, buffStore } = makeEngine();
+  engine.setBardSongDebuffsWantedFn(() => true);
+  buffStore.upsert('Test Melodic Binding', 12, { othersLandingSuffix: ` is bound by strands of test music.` });
+  const e = buffStore.getByName('Test Melodic Binding');
+  e.kind = 'det';
+  e.scaleCategory = 'debuff';
+  buffStore.markBardSong('Test Melodic Binding');
+
+  // no cast line - straight to the pulsing landing text
+  engine.handleLine(`${TS}a dry bones skeleton is bound by strands of test music.`);
+  const songs = engine.getActiveBardSongs();
+  assert.equal(songs.length, 1);
+  assert.equal(songs[0].name, 'Test Melodic Binding');
+  assert.equal(songs[0].isDebuff, true);
+  assert.equal(songs[0].allyName, 'a dry bones skeleton');
+  assert.ok(songs[0].remainingSec > 0, 'it has a real countdown');
+
+  // clears when the target dies
+  engine.handleLine(`${TS}a dry bones skeleton has been slain by Shara!`);
+  assert.equal(engine.getActiveBardSongs().length, 0, 'the debuff song clears when its target dies');
+});
+
 test('#29 - a debuff bard song is NOT tracked when no aura has asked to see debuff songs', () => {
   const { engine, buffStore } = makeEngine();
   // bardSongDebuffsWantedFn defaults to false - the "Also show debuff songs" option is off

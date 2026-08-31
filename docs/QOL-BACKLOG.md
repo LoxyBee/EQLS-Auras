@@ -40,39 +40,7 @@ as `/tell eqtm`). Still needs the owner's call: hotkey, chat command, or both.
 
 ---
 
-## Approved, deferred — build after the current PR merges
-
-From `eq-tracker-de`'s end-user research pass, owner-reviewed 31 Aug. All **NEW**, all approved,
-all held for a follow-up branch so the PR-prep batch ships first.
-
-### 46. Depletion sweep / shade on icon-mode buff tiles — NEW
-Icon-mode tiles have no countdown bar (`overlay.js` `barEl` is `null`); list mode has one. Add a
-per-aura option for a visual depletion indicator on buff / timer **icon** tiles, reusing the
-action bar's conic-gradient radial wipe + top-down clip-path shade. *Size: medium. "Biggest
-at-a-glance win."*
-
-### 47. Graduated timer-text colour — NEW
-Today there is one binary flash threshold per aura. Add a green → yellow → red colour ramp (or a
-2nd warning tier) on the existing per-aura threshold plumbing (`widget-low-threshold-slider`).
-*Size: small.*
-
-### 48. Brief "EXPIRED" linger on icon-mode auras — NEW
-A ~2–4s greyed hold on an icon-mode tile before it clears — the icon-mode equivalent of the
-stacked-text feed's fade. *Size: small–medium.*
-
-### 49. One-click "that buff's duration looked wrong" button — NEW
-On the "Active on this aura" list and on a just-expired entry: a button that captures spell name,
-rank, cast line, landing line, wear-off line, and computed-vs-expected duration into a copyable
-block. Collapses the manual duration-QA loop this project keeps doing by hand (Alacrity, Celestial
-Remedy, Cassindra's Chant — see CLAUDE.md gotchas #25–#29). Pairs with the About-page "Copy bug
-report" button. *Size: medium.*
-
-### 50. Setup-completeness nudge — NEW
-A dismissible "N things to finish setting up" checklist on the Buff Tracker page flagging a
-missing spellbook file, an unset AA level, zero auras. Today first-run only promotes the EQ-folder
-card. *Size: small–medium.*
-
-### Considered and declined — don't re-propose
+## Considered and declined — don't re-propose
 
 - **Manual pull / countdown timer** — already achievable with a chat macro line + a `contains`
   custom-timer trigger.

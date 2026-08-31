@@ -30,6 +30,7 @@ section to **[Confirmed](#confirmed)** at the bottom so the active list stays sh
 | 10 | [Lockouts and log tools](#10--lockouts-and-log-tools) | Raid lockout grid, reset setting, log trim / rotation / archive |
 | 11 | [Backlog batch (30 Aug)](#11--backlog-batch-30-aug) | Death-clears, config export/import, preview button, mute/sound-cooldown, zone aliases |
 | 12 | [Integration batch (pre-PR)](#12--integration-batch-pre-pr) | Move HUD, themed dropdowns, dungeon named board, gem swap, stances, split hour, bug-pass regressions |
+| 13 | [Icon-tile readouts & setup nudge](#13--icon-tile-readouts--setup-nudge-4650) | Depletion shade, graduated timer colour, EXPIRED linger, "duration looks wrong", setup nudge |
 | — | [Confirmed](#confirmed) | Done, kept as regression guards |
 
 ---
@@ -1693,6 +1694,48 @@ smoke; **none of the below is confirmed on a real display / in a real session.**
       **both stay up** (bard resist songs and caster resist spells coexist).
 - [ ] The weekly log archive file is named for the **US Eastern reset day** even if your PC clock
       is on Pacific / UTC / etc.
+
+---
+
+# 13 — Icon-tile readouts & setup nudge (#46–#50)
+
+Branch `feat/qol-icon-and-setup`. All five are per-aura and **off by default**; 89 automated
+suites green, clean smoke. None confirmed on a real display.
+
+## Depletion shade — icon mode (#46)
+
+- [ ] On an icon-only aura, set **Depletion shade** to each of *wipe* and *radial* → a dark shade
+      shrinks over the tile as the buff runs down. The countdown text stays readable over it.
+- [ ] An infinite buff, a damage row, and a zero-duration tile get **no** shade regardless.
+
+## Graduated timer colour (#47)
+
+- [ ] Turn on **"Fade the timer colour as it runs down"**. Watch a buff run from above 2× the
+      expiring-soon threshold: the timer text fades through amber, then the existing red flash
+      takes over at the threshold. Check it in both icon and list mode.
+
+## EXPIRED linger — icon mode (#48)
+
+- [ ] Set **"Linger when expired"** to 3s on an icon aura. A buff expiring holds its tile greyed /
+      "done" for 3s, then clears.
+- [ ] The **expire sound still fires at the true expiry**, not 3s late.
+- [ ] Change the aura's mode or config while a tile is lingering → the linger clears cleanly, no
+      stuck tile.
+
+## "Duration looks wrong" button (#49)
+
+- [ ] With Diagnostics on, click **"Duration looks wrong"** on a row of "Active on this aura" →
+      the clipboard holds a complete block: spell name, rank, computed duration, time left, app
+      version, and the recent cast / landing / wear-off log lines, with blanks for the in-game
+      tooltip and expected value.
+
+## Setup-completeness nudge (#50)
+
+- [ ] On a fresh-ish install the Buff Tracker page shows a card listing what's unconfigured (no EQ
+      folder → no spellbook file → AA all zero → no auras), each row linking to the page that
+      fixes it.
+- [ ] Clicking a row navigates there. Filling a gap clears that row. **Dismiss** hides the whole
+      card for good (survives a restart).
 
 ---
 

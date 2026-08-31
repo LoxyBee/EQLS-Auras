@@ -60,6 +60,12 @@ const INSTANT_RETENTION_SEC = 60;
 // being on an enemy, so an aura can choose to show those separately from buffs on groupmates.
 const ENEMY_SPELL_CATEGORIES = new Set(['debuff', 'charm', 'dot', 'nuke']);
 
+// #29 - which bard songs count as "debuff songs" for the Bard Songs aura: ones that leave a
+// lasting effect ON the enemy (mez / bind / root / charm / slow / DoT). A pure DAMAGE song -
+// Denon's Desperate Dirge, Brusco's Boastful Bellow, `scaleCategory:'nuke'` - is NOT one; nothing
+// runs on the target, so it must never appear on the aura (the owner was explicit about this).
+const DEBUFF_SONG_CATEGORIES = new Set(['debuff', 'charm', 'dot']);
+
 // A buff whose roster `targets` is one of these can only ever land on a pet, an animal, a mob or a
 // corpse - never on the player - so it is never a candidate for a landing message ON the player.
 // Reported live: "You feel smaller." is shared by Shrink (targets Single) and Tiny Companion
@@ -651,6 +657,30 @@ class BuffEngine extends EventEmitter {
     return ENEMY_SPELL_CATEGORIES.has(known && known.scaleCategory);
   }
 
+  // #29 - a bard song that leaves a lasting effect on an enemy (see DEBUFF_SONG_CATEGORIES).
+  // Excludes bard DAMAGE songs, which land third-person on a mob but debuff nothing.
+  _isDebuffSong(known) {
+    return !!(known && known.isBardSong && DEBUFF_SONG_CATEGORIES.has(known.scaleCategory));
+  }
+
+  // #29 - suffix -> [debuff songs], lazily built from the roster. The pulsing-song detection path
+  // below needs to recognise "<mob> is bound by strands of solid music." with no cast-begin line
+  // to work from (a maintained bard debuff re-lands every ~6s and the game prints no per-pulse
+  // cast line). Built from the store's own grouped index so it stays in step with a roster
+  // rebuild; rebuilt if that index identity changes.
+  _getDebuffSongSuffixes() {
+    const src = this.buffStore._getGroupedOthersSuffixIndex();
+    if (this._debuffSongSuffixes && this._debuffSongSuffixSrc === src) return this._debuffSongSuffixes;
+    const out = new Map();
+    for (const [suffix, songs] of src) {
+      const debuffSongs = songs.filter((s) => this._isDebuffSong(s));
+      if (debuffSongs.length) out.set(suffix, debuffSongs);
+    }
+    this._debuffSongSuffixes = out;
+    this._debuffSongSuffixSrc = src;
+    return out;
+  }
+
   _getOrCreateSelfResolutionsMap(profileId) {
     let map = this.selfAmbiguousResolutionsByProfile.get(profileId);
     if (!map) {
@@ -1111,6 +1141,30 @@ class BuffEngine extends EventEmitter {
           this._checkForEndedBuffs(line);
           return;
         }
+      }
+    }
+
+    // #29 - a maintained bard DEBUFF song (Largo's Melodic Binding, Selo's snares, the Tuyen
+    // chants, a charm song) re-lands every ~6s and the game prints NO per-pulse cast line, so
+    // none of the cast-driven tiers above ever see it. When a Bard Songs aura has asked for
+    // debuff songs, match the third-person landing text directly against the roster's debuff-song
+    // suffixes; an unambiguous hit is mirrored onto that aura (via _landOnAlly ->
+    // _trackBardSongOnTarget). Attribution is left to the same evidence _attributeBardSongCaster
+    // already weighs - "You" when nothing else explains it, since these are almost always the
+    // player's own maintained songs.
+    if (this.bardSongDebuffsWantedFn && this.bardSongDebuffsWantedFn()) {
+      for (const [suffix, songs] of this._getDebuffSongSuffixes()) {
+        if (!stripped.endsWith(suffix)) continue;
+        const targetName = stripped.slice(0, -suffix.length).trim();
+        if (!targetName || !this._isValidRecipient(targetName, songs[0])) continue;
+        if (songs.length > 1) {
+          this._debugLog(`BARD DEBUFF SONG AMBIGUOUS on "${targetName}" - "${suffix}" is shared by ${songs.length} songs, skipped`);
+          break;
+        }
+        this._debugLog(`BARD DEBUFF SONG "${songs[0].name}" on "${targetName}" - pulsing song, matched by third-person landing text`);
+        this._landOnAlly(songs[0], targetName);
+        this._checkForEndedBuffs(line);
+        return;
       }
     }
 
@@ -1781,6 +1835,16 @@ class BuffEngine extends EventEmitter {
           changed = true;
         }
       }
+      // #29 - a debuff song mirrored onto the Bard Songs aura should go when its target dies, not
+      // linger out its retention window. The bardSongs key is the allyBuffs key with an `on:` tag.
+      let songsChanged = false;
+      for (const key of this.bardSongs.keys()) {
+        if (key.startsWith(`on:${prefix}`)) {
+          this.bardSongs.delete(key);
+          songsChanged = true;
+        }
+      }
+      if (songsChanged) this.emit('bardSongsChanged', this.getActiveBardSongs());
     }
 
     // A mez broken early. It does not name the spell, so it can only clear a mez - anything else
@@ -2294,6 +2358,10 @@ class BuffEngine extends EventEmitter {
         onEnemy,
       });
       this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+      // #29 - mirror to the Bard Songs aura here too, not only on the finite-duration path below.
+      // A no-duration debuff song (Denon's Desperate Dirge, Brusco's Boastful Bellow) or a
+      // permanent one otherwise lands as an ally buff and never reaches the aura - reported live.
+      if (known.isBardSong) this._trackBardSongOnTarget(known, allyName, this.allyBuffs.get(key));
       return;
     }
     const effectiveDurationSec = this._scaledDuration(known);
@@ -2311,6 +2379,7 @@ class BuffEngine extends EventEmitter {
         onEnemy,
       });
       this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+      if (known.isBardSong) this._trackBardSongOnTarget(known, allyName, this.allyBuffs.get(key));
       return;
     }
     // Notes 12 and 18 used to count identically-named mobs as separate instances under one key
@@ -2337,19 +2406,31 @@ class BuffEngine extends EventEmitter {
   // because the player's own recent cast explained it.
   _trackBardSongOnTarget(known, targetName, entry) {
     if (!entry) return;
+    // A bard DAMAGE song (Denon's Desperate Dirge, Brusco's Boastful Bellow) lands third-person on
+    // a mob but debuffs nothing - it must not appear on the Bard Songs aura. Buff songs on a
+    // groupmate (not an enemy spell at all) always pass; enemy songs only when they truly debuff.
+    if (this._isEnemySpell(known) && !this._isDebuffSong(known)) {
+      this._debugLog(`BARD SONG "${known.name}" on "${targetName}" - a damage song, not shown on the aura`);
+      return;
+    }
+    const isDebuff = this._isDebuffSong(known);
     const castBy = this._attributeBardSongCaster(known.name, known) || 'You';
     const bardKey = `on:${targetName.toLowerCase()}::${known.name.toLowerCase()}`;
     this.bardSongs.set(bardKey, {
       name: known.name,
       castBy,
       onTarget: targetName,
-      isDebuff: this._isEnemySpell(known),
+      isDebuff,
       durationSec: entry.durationSec,
       expiresAt: entry.expiresAt,
       infinite: !!entry.infinite,
+      // A no-duration debuff song (Denon's Dissension) carries through as an instant so the aura
+      // flashes it rather than drawing a countdown it does not have.
+      instant: !!entry.instant,
+      landedAt: entry.landedAt || null,
       endedText: known.endedText || null,
     });
-    this._debugLog(`BARD SONG "${known.name}" - ${this._isEnemySpell(known) ? 'debuff on' : 'buff on'} "${targetName}"`);
+    this._debugLog(`BARD SONG "${known.name}" - ${isDebuff ? 'debuff on' : 'buff on'} "${targetName}"`);
     this.emit('bardSongsChanged', this.getActiveBardSongs());
   }
 
@@ -3011,8 +3092,10 @@ class BuffEngine extends EventEmitter {
           allyName: isDebuff ? b.onTarget : (b.castBy || 'Unknown'),
           isDebuff,
           durationSec: b.durationSec,
-          remainingSec: b.infinite ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
+          remainingSec: b.infinite || b.instant ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
           infinite: !!b.infinite,
+          instant: !!b.instant,
+          landedAt: b.landedAt || null,
           showOnOverlay: known ? known.showOnOverlay !== false : true,
           iconUrl: known?.iconId != null ? this.iconUrlFn(known.iconId) : null,
           isBardSong: true,
@@ -3020,8 +3103,8 @@ class BuffEngine extends EventEmitter {
         };
       })
       .sort((a, b) => {
-        const aNone = a.infinite;
-        const bNone = b.infinite;
+        const aNone = a.infinite || a.instant;
+        const bNone = b.infinite || b.instant;
         if (aNone && bNone) return 0;
         if (aNone) return 1;
         if (bNone) return -1;

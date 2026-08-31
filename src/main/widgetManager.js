@@ -1164,6 +1164,24 @@ function setShowIconLabel(id, enabled) {
   return config;
 }
 
+function setIconDepletionShade(id, value) {
+  const config = widgetStore.update(id, { iconDepletionShade: value });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setTimerColorRamp(id, enabled) {
+  const config = widgetStore.update(id, { timerColorRamp: enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setExpiredLingerSec(id, seconds) {
+  const config = widgetStore.update(id, { expiredLingerSec: Math.max(0, Math.min(6, Number(seconds) || 0)) });
+  pushConfigChanged(id);
+  return config;
+}
+
 // Profile membership IS this widget's on/off control (see
 // isVisibleForActiveProfile) - ticking/unticking the currently active
 // profile here has to show/hide it immediately, which is the whole point of
@@ -1508,6 +1526,9 @@ module.exports = {
   setShowRowIcon,
   setMirrorRowDirection,
   setShowIconLabel,
+  setIconDepletionShade,
+  setTimerColorRamp,
+  setExpiredLingerSec,
   setActiveProfileIds,
   removeProfileFromAllWidgets,
   setGroupAllyBuffs,
