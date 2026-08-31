@@ -60,6 +60,7 @@ const actionBarManager = require('./actionBarManager');
 const { AbilityGroupTracker, KNOWN_STANCES, KNOWN_INVOCATIONS } = require('./abilityGroups');
 const ambiguousPopup = require('./ambiguousPopup');
 const zonePromptPopup = require('./zonePromptPopup');
+const moveHudWindow = require('./moveHudWindow');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
 const soundService = require('./soundService');
@@ -1923,6 +1924,59 @@ ipcMain.handle('widget:setName', (_event, { id, value }) => widgetManager.setNam
 ipcMain.handle('widget:toggleLock', (_event, id) => widgetManager.toggleLock(id));
 ipcMain.handle('widget:resetPosition', (_event, id) => widgetManager.resetPosition(id));
 ipcMain.handle('widget:isLocked', (_event, id) => widgetManager.isLocked(id));
+
+// The move HUD (moveHudWindow.js) - precise single-aura positioning. Entering move mode unlocks
+// the aura, hides the main config window (it just gets in the way of where you want the aura),
+// and opens the HUD frame around it. Done reverses all three.
+let moveModeWidgetId = null;
+let moveStepPx = 1;
+
+function hudMeta(id) {
+  const config = widgetManager.getWidgetConfig(id);
+  return { name: config ? config.name : '', marginPx: moveHudWindow.MARGIN, stepPx: moveStepPx };
+}
+
+widgetManager.setOnWidgetMovedFn((id, bounds) => {
+  if (id === moveModeWidgetId && bounds) {
+    moveHudWindow.reframe(bounds, hudMeta(id));
+  }
+});
+
+function enterMoveMode(id) {
+  const bounds = widgetManager.getWidgetBounds(id);
+  if (!widgetManager.getWidgetConfig(id)) return { ok: false };
+  moveModeWidgetId = id;
+  if (widgetManager.isLocked(id)) widgetManager.setLocked(id, false);
+  const b = bounds || widgetManager.getWidgetBounds(id); // may exist only now that it's unlocked
+  getMainWindow()?.hide();
+  moveHudWindow.open(b || { x: 200, y: 200, width: 160, height: 80 }, hudMeta(id));
+  return { ok: true };
+}
+
+function exitMoveMode() {
+  const id = moveModeWidgetId;
+  moveModeWidgetId = null;
+  moveHudWindow.close();
+  if (id) widgetManager.setLocked(id, true);
+  const win = getMainWindow();
+  if (win) { win.show(); win.focus(); }
+  else createMainWindow();
+}
+
+ipcMain.handle('widget:enterMoveMode', (_event, id) => enterMoveMode(id));
+ipcMain.on('moveHud:setInteractive', (_event, on) => moveHudWindow.setInteractive(on));
+ipcMain.handle('moveHud:nudge', (_event, { dx, dy }) => {
+  if (!moveModeWidgetId) return null;
+  return widgetManager.nudgeWidget(moveModeWidgetId, dx, dy);
+});
+ipcMain.handle('moveHud:setStep', (_event, px) => {
+  moveStepPx = px === 10 ? 10 : 1;
+  return moveStepPx;
+});
+ipcMain.handle('moveHud:resetPosition', () => {
+  if (moveModeWidgetId) widgetManager.resetPosition(moveModeWidgetId);
+});
+ipcMain.handle('moveHud:done', () => exitMoveMode());
 
 // The Action Bar overlay - see actionBarManager.js's own header comment. Multiple bars, same
 // {id, ...} shape every widget:* handler already uses.

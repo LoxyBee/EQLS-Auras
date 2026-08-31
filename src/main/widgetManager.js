@@ -218,6 +218,7 @@ function createWidgetWindow(config) {
     // the same canonical anchor fitToContent already knows how to restore.
     const originX = originXByWidget.get(config.id) || 0;
     widgetStore.savePosition(config.id, { x: x + originX, y });
+    onWidgetMoved(config.id, getWidgetBounds(config.id));
   });
 
   win.on('resized', () => {
@@ -854,7 +855,40 @@ function resetPosition(id) {
   originXByWidget.set(id, 0);
   win.setPosition(pos.x, pos.y);
   widgetStore.savePosition(id, pos);
+  onWidgetMoved(id, getWidgetBounds(id));
   return widgetStore.getById(id);
+}
+
+// The move HUD (see moveHudWindow.js) reframes itself around the aura it is editing whenever the
+// aura's window moves - by a drag, a nudge, or Reset position. main.js wires this to the HUD.
+let onWidgetMoved = () => {};
+function setOnWidgetMovedFn(fn) {
+  if (typeof fn === 'function') onWidgetMoved = fn;
+}
+
+function getWidgetBounds(id) {
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) return null;
+  const [x, y] = win.getPosition();
+  const [width, height] = win.getSize();
+  return { x, y, width, height };
+}
+
+// Move an aura's window by (dx, dy) screen pixels and persist it. Used by the move HUD's nudge
+// arrows. A nudge is a deliberate placement, so it saves the same canonical anchor a real drag
+// does (see the 'moved' handler) - applyPendingFit re-centres on the LIVE window position on
+// re-lock, so the nudged spot is kept without any extra bookkeeping here.
+function nudgeWidget(id, dx, dy) {
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) return null;
+  const [x, y] = win.getPosition();
+  const nx = x + Math.round(Number(dx) || 0);
+  const ny = y + Math.round(Number(dy) || 0);
+  win.setPosition(nx, ny);
+  const originX = originXByWidget.get(id) || 0;
+  widgetStore.savePosition(id, { x: nx + originX, y: ny });
+  onWidgetMoved(id, getWidgetBounds(id));
+  return getWidgetBounds(id);
 }
 
 function toggleLock(id) {
@@ -1402,6 +1436,10 @@ module.exports = {
   toggleLock,
   resetPosition,
   isLocked,
+  isUnlocked,
+  nudgeWidget,
+  getWidgetBounds,
+  setOnWidgetMovedFn,
   setDisplayMode,
   setTimerFormat,
   setTextSize,

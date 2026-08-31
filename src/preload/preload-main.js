@@ -235,6 +235,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   toggleWidgetLock: (id) => ipcRenderer.invoke('widget:toggleLock', id),
   resetWidgetPosition: (id) => ipcRenderer.invoke('widget:resetPosition', id),
   isWidgetLocked: (id) => ipcRenderer.invoke('widget:isLocked', id),
+  enterWidgetMoveMode: (id) => ipcRenderer.invoke('widget:enterMoveMode', id),
   setWidgetDisplayMode: (id, mode) => ipcRenderer.invoke('widget:setDisplayMode', { id, mode }),
   setWidgetTimerFormat: (id, format) => ipcRenderer.invoke('widget:setTimerFormat', { id, value: format }),
   setWidgetTextSize: (id, size) => ipcRenderer.invoke('widget:setTextSize', { id, value: size }),

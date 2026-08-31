@@ -2771,7 +2771,7 @@ function initWidgetsPanel() {
     duplicateWidgetBtn.style.display = widget.kind === 'self-buffs-builtin' ? 'none' : '';
 
     window.eqTracker.isWidgetLocked(id).then((locked) => {
-      lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
+      lockBtn.textContent = locked ? 'Move…' : 'Lock aura';
       lockBtn.classList.toggle('unlocked', !locked);
     });
 
@@ -4176,12 +4176,18 @@ function initWidgetsPanel() {
     window.eqTracker.setWidgetName(selectedId, nameInput.value.trim() || 'Aura').then(refreshWidgets);
   });
   lockBtn.addEventListener('click', async () => {
-    const locked = await window.eqTracker.toggleWidgetLock(selectedId);
-    // Unlocking one aura can complete (or break) "all unlocked", so the
-    // master toggle has to re-read rather than drift out of sync.
+    const wasLocked = await window.eqTracker.isWidgetLocked(selectedId);
+    if (wasLocked) {
+      // Enter move mode: the main window hides and a nudge HUD opens around the aura. The HUD's
+      // Done button brings the window back and re-locks - see moveHudWindow.js / main.js.
+      await window.eqTracker.enterWidgetMoveMode(selectedId);
+      return;
+    }
+    // Already unlocked (e.g. via "Unlock all auras") - just re-lock it.
+    await window.eqTracker.toggleWidgetLock(selectedId);
     refreshMasterButtons();
-    lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
-    lockBtn.classList.toggle('unlocked', !locked);
+    lockBtn.textContent = 'Move…';
+    lockBtn.classList.remove('unlocked');
   });
   resetPositionBtn.addEventListener('click', () => {
     window.eqTracker.resetWidgetPosition(selectedId);
@@ -5206,7 +5212,7 @@ function initWidgetsPanel() {
         // re-read rather than left showing a stale label.
         if (selectedId) {
           window.eqTracker.isWidgetLocked(selectedId).then((locked) => {
-            lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
+            lockBtn.textContent = locked ? 'Move…' : 'Lock aura';
             lockBtn.classList.toggle('unlocked', !locked);
           });
         }

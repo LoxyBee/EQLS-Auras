@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Move aura</title>
+  <link rel="stylesheet" href="move-hud.css" />
+</head>
+<body>
+  <!-- The centre of #frame is a hole the aura shows through; the arrows sit in the margin around
+       it and the strip sits below. Every clickable thing carries .hud-interactive so move-hud.js
+       can flip the window interactive only while the pointer is over one. -->
+  <div id="frame">
+    <button type="button" id="nudge-up" class="arrow hud-interactive" title="Move up">&#9650;</button>
+    <button type="button" id="nudge-left" class="arrow hud-interactive" title="Move left">&#9664;</button>
+    <button type="button" id="nudge-right" class="arrow hud-interactive" title="Move right">&#9654;</button>
+    <button type="button" id="nudge-down" class="arrow hud-interactive" title="Move down">&#9660;</button>
+    <div id="hole"></div>
+  </div>
+
+  <div id="strip">
+    <div class="strip-row">
+      <span id="aura-name">Aura</span>
+      <span id="coords">x: 0  y: 0</span>
+    </div>
+    <div class="strip-row">
+      <span class="strip-label">Step</span>
+      <button type="button" id="step-1" class="step hud-interactive is-on">1&nbsp;px</button>
+      <button type="button" id="step-10" class="step hud-interactive">10&nbsp;px</button>
+      <button type="button" id="reset-pos" class="hud-interactive">Reset position</button>
+      <button type="button" id="done" class="primary hud-interactive">Done</button>
+    </div>
+  </div>
+
+  <script src="move-hud.js"></script>
+</body>
+</html>
