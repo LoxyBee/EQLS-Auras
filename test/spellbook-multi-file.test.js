@@ -125,6 +125,18 @@ test('P3 - the Setup card has an always-available file picker wired to the overr
   assert.match(js, /if \(!candidates\.length\) \{[\s\S]{0,80}spellbookFileRowEl\.style\.display = 'none'/);
 });
 
+test('a pinned file that has gone missing is called out, not routed to the /outputfile hint', () => {
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const fn = js.match(/function renderSpellbookState\(state\) \{[\s\S]*?\n  \}/)[0];
+  // the missing-pin branch fires on mode 'file' with no resolved filePath, and returns before the
+  // generic "Not found - run /outputfile spellbook" block
+  assert.match(fn, /state\.mode === 'file' && !state\.filePath/);
+  const branchAt = fn.indexOf("state.mode === 'file' && !state.filePath");
+  assert.ok(branchAt < fn.indexOf('Not found'), 'the missing-pin check must come before the generic not-found path');
+  assert.ok(fn.slice(branchAt, fn.indexOf('Not found')).includes('return'), 'it must return, not fall through to the /outputfile hint');
+  assert.match(fn, /pinned spellbook file is missing/i);
+});
+
 test('P1 - the hint never shows a bare "<class>" placeholder the user cannot fill in', () => {
   const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
   const code = js.replace(/^\s*\/\/.*$/gm, '');
