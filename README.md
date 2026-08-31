@@ -56,13 +56,13 @@ should be identical, because a change that loses detection is a failure even if 
 
 | File | What it is |
 | --- | --- |
-| **`CLAUDE.md`** | Conventions, architecture, and the detection gotchas. Read the gotchas before touching detection. Its "Remaining backlog" section is the feature roadmap. |
+| **`CLAUDE.md`** | Conventions, architecture, and the detection gotchas. Read the gotchas before touching detection. |
 | **`docs/QOL-BACKLOG.md`** | The live backlog — every requested change, tagged and sequenced. Start here for "what's next". |
 | **`docs/TESTING.md`** | Everything built but not yet confirmed in game. The to-do list for live testing. |
 | **`docs/BUFF-STACKING.md`** | The buff-stacking heading model — spec for the Buff Planner, wired into `src/shared/buffLines.js`. |
 | **`docs/EVIDENCE.md`** | Provenance log for the raid-lockout parser — where every fact came from, and what's still unverified. |
 | **`docs/EQTM-ALIASES.md`** | Provenance for the `eqtm` zone aliases — the 191 nicknames / boss names in `src/shared/data/zoneAliases.js`. |
-| **`docs/HIGHLIGHTS.md`** | Promo copy: taglines and feature summaries for a marketing page. Not a dev doc. |
+| **`docs/HIGHLIGHTS.md`** | Promo copy: the pitch, the feature rundown, and screenshot / video shot-lists for a marketing page. Not a dev doc. |
 
 Older planning docs (`FEATURES.md`, `HANDOFF.md`, `NOTES-STATUS.md`, and earlier `UX_*` / `VISUAL_*`
 / `OPUS-SESSION-STATE.md` design notes) were consolidated into the above; their history is in git.
@@ -73,8 +73,8 @@ Older planning docs (`FEATURES.md`, `HANDOFF.md`, `NOTES-STATUS.md`, and earlier
 
 EverQuest writes everything that happens to a log file. There is no universal "buff landed"
 message — every spell has its own flavour text — so detection is exact-string matching against a
-roster of 1,052 spells built from the EQL spreadsheet and the game's own string table. When a line
-matches, a timer starts. Where a line is ambiguous the app asks rather than guesses, which is the
+curated roster of ~1,067 spells (`src/shared/data/buffs.json`), enriched from the game's own
+string table. When a line matches, a timer starts. Where a line is ambiguous the app asks rather than guesses, which is the
 rule the whole design hangs off: **it would rather show nothing than show something wrong.**
 
 Every log pattern in the codebase carries the number of times it matched across 1,521,971 real

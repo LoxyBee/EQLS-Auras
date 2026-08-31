@@ -29,6 +29,7 @@ section to **[Confirmed](#confirmed)** at the bottom so the active list stays sh
 | 9 | [Built, but nothing to test](#9--built-but-nothing-to-test) | Recorded so it isn't lost |
 | 10 | [Lockouts and log tools](#10--lockouts-and-log-tools) | Raid lockout grid, reset setting, log trim / rotation / archive |
 | 11 | [Backlog batch (30 Aug)](#11--backlog-batch-30-aug) | Death-clears, config export/import, preview button, mute/sound-cooldown, zone aliases |
+| 12 | [Integration batch (pre-PR)](#12--integration-batch-pre-pr) | Move HUD, themed dropdowns, dungeon named board, gem swap, stances, split hour, bug-pass regressions |
 | — | [Confirmed](#confirmed) | Done, kept as regression guards |
 
 ---
@@ -63,7 +64,7 @@ for real once:
 | `overwrite-and-failures.test.js` | the twelve "this cast failed" patterns, nine of which once matched nothing at all |
 | `damage-parser.test.js` | the five damage wordings and the friend/enemy rules, each broken on purpose in nine ways |
 | `zone-routing.test.js` | all 10,712 routes, including the tie-break that looks like dead code and is not |
-| `xlsx.test.js` | the spreadsheet reader, including the empty-cell bug that silently shifted every column |
+| `roster-additions.test.js` | `roster-overrides.json` `set` / `add` blocks, and that `build-roster.js` no longer mentions a spreadsheet |
 
 The other suites cover cooldowns, enemy debuffs, gem slots, the resist flash, share codes, sound-only
 auras, text auras, the song pulse, zone gating, premades, the profile label, the settings-panel
@@ -106,33 +107,34 @@ is why nobody went looking. It now says what is missing and why it matters.
 
 ### 2. The new spell roster
 
-The roster went from 11,337 generic EverQuest entries to the 1,052 spells this server actually has,
-rebuilt from the curated spreadsheet plus the game's own `spells_us.txt` / `spells_us_str.txt`. On
-first launch a one-time migration replaces the roster in your saved data. Automated tests cover the
-mechanics; these cover whether it is *right* in play.
+The roster went from 11,337 generic EverQuest entries to the ~1,067 spells this server actually has
+(`src/shared/data/buffs.json` — the roster of record; there is no longer a spreadsheet). On every
+launch it is rebuilt from the install copy plus your hand-corrections, so a data fix reaches you
+without a version bump. Automated tests cover the mechanics; these cover whether it is *right* in
+play.
 
 Measured against the 19 Aug log before shipping: recognised landing lines went 45 → 83, and
 auto-confirmed 19 → 49. So expect **more** buffs to be picked up and **fewer** questions, not the
 reverse.
 
 - [ ] **First launch after the update.** *Expect*: the app starts normally, Known Buffs shows about
-      1,052 entries rather than 11,000+.
+      1,067 entries rather than 11,000+.
 - [ ] **Your auras still work.** Every aura you had configured still tracks the same buffs. *If any
       aura went blank, stop and report which* — that is the one outcome that matters most.
 - [ ] **Fewer ambiguity prompts** for spells you cast often. Prompts should be noticeably rarer.
 - [ ] **No prompt asks you to choose between a spell and itself** (e.g. two ranks of Cannibalize).
       Rank variants are collapsed; if one appears, the collapsing missed a case.
 - [ ] **Promised Renewal reads 15s**, not 18s or 12s, and does not grow with AA duration bonuses.
-- [ ] **Icons still render** on the overlay — the new roster carries icon ids for 1,051 of 1,052.
+- [ ] **Icons still render** on the overlay — nearly every roster entry carries an icon id.
 - [ ] **A buff that used to be recognised no longer is.** Watch for this specifically. Five spells
       in the whole roster genuinely cannot be detected (Calm-line spells that print no text at all)
       — anything beyond those is a regression worth reporting.
 - [ ] **Bard songs** still detect and still sit at the right-hand end of the gem bar.
 
 **If something is badly wrong.** The old roster is at `archive/buffs-legacy-11337.json`, kept for
-reference. Do **not** copy it back over `src/shared/data/buffs.json` — the app has already migrated
-and it would re-introduce the ambiguity the rebuild removed. Report what broke instead; the roster
-is rebuildable from the spreadsheet in a minute with `node tools/build-roster.js --write`.
+reference. Do **not** copy it back over `src/shared/data/buffs.json` — it would re-introduce the
+ambiguity the rebuild removed. Report what broke instead; a missing or wrong spell is fixed with a
+`set` / `add` block in `tools/roster-overrides.json` and `node tools/build-roster.js --write`.
 
 ---
 
@@ -294,7 +296,7 @@ landing-to-wear-off gap for a heal over time is not its duration at all.
 
 - [ ] **If a heal-over-time countdown looks wrong in game**, that is the thing to tell me about —
       it is the one number I could not reconcile.
-- [ ] **Debuff and charm/mez rates per tier.** The spreadsheet says +10% per tier and marks it
+- [ ] **Debuff and charm/mez rates per tier.** The rate table has +10% per tier marked
       *assumed*; every observation in your logs was cut short by the mob dying before the spell ran
       out, so I have nothing to check it against. **Togor's Insects V should show 315 seconds**
       against a base of 210. If it wears off noticeably early or late, that number is the suspect.
@@ -424,9 +426,9 @@ everything in range.
 - [ ] **The tile clears when the mob dies**, without waiting for the timer.
 - [ ] **The tile clears when the mez breaks** rather than counting down to zero while the mob is
       already hitting you.
-- [ ] **Mesmerize runs 30 seconds, not 24.** The spreadsheet said 24; your own note-17 table said
-      30, and 90 natural expiries in your logs stop dead at 30 with nothing above it, so the roster
-      now says 30. Worth one check against a stopwatch.
+- [ ] **Mesmerize runs 30 seconds, not 24.** An earlier data source said 24; your own note-17
+      table said 30, and 90 natural expiries in your logs stop dead at 30 with nothing above it, so
+      the roster now says 30. Worth one check against a stopwatch.
 - [ ] **Turning it off puts everything back.** Untick it and the mob tiles should stop appearing
       entirely.
 - [ ] **Nothing MIS-fires** — a mob name must never be mistaken for a groupmate.
@@ -1569,6 +1571,128 @@ working as designed). Record: single-instance guard verified; fresh-start smoke 
 - [ ] Routing to **The Hole** goes via Paineel, not Erudin.
 - [ ] Routing **out of Plane of Hate** offers Gate/Origin (or no land route), not a portal to
       Oasis of Marr.
+
+---
+
+# 12 — Integration batch (pre-PR)
+
+Everything converged onto `integration` for the PR: the bug pass, `feat/backlog-detection-and-data`
+(#11 / #16 / #19 / #20 / #21 / #23 / #24 / #26 / #27 / #29 / #33 + roster-spreadsheet retirement),
+`feat/aura-move-hud`, `fix/log-rotation-timezone`, `ui/topic-summaries`, `ui/dropdown-and-cruft-pass`,
+`fix/spellbook-picker-followups`, and startup zone recovery. 84 automated suites green + clean
+smoke; **none of the below is confirmed on a real display / in a real session.**
+
+## Move HUD (auras + action bars)
+
+- [ ] **"Move…"** on an aura's settings → the main window hides and a small panel appears
+      centred; the aura shows its blue drag box.
+- [ ] **Drag the panel partly off any screen edge** → it snaps fully back on. **Done is always
+      reachable.** The panel position survives a restart.
+- [ ] **Nudge arrows** move the aura 1px (or 10px with the Step toggle); the x/y readout updates.
+      **Reset position** jumps it to the default corner.
+- [ ] **Done** → panel closes, the aura re-locks, the main window returns to that aura's panel.
+- [ ] **Snap on, size 16** → nudges jump in 16s, a drag-drop rounds to 16, a faint orange
+      full-screen grid appears; turning snap off hides it. The **snap-size dropdown list is
+      readable** (it was white-on-white once).
+- [ ] **Action Bars → "Move…"** opens the same panel and positions the bar the same way.
+- [ ] **"Unlock all auras"** still free-drags every aura with **no HUD and no main-window hide**.
+- [ ] Multi-monitor: the panel works on a second screen (the grid guide only covers the primary —
+      acceptable).
+
+## Themed dropdowns (`ui/dropdown-and-cruft-pass`)
+
+- [ ] Open every page — **every `<select>` is themed** in the app palette, none falls back to the
+      grey OS control.
+- [ ] The long ones — **spellbook file, "Skill cast" spell, lockout character, zone select** —
+      show a **filter box**; typing narrows the list; Arrow keys + Enter + Escape work.
+- [ ] Picking from a themed dropdown still drives the same behaviour it always did.
+- [ ] The old **"Shows as: {resolved}"** preview line under the text-aura "Say:" field is gone.
+
+## Named-kill board covers dungeons (#33)
+
+- [ ] Enter **Najena / Mistmoore / Splitpaw** (any tracked dungeon) → the board fills with that
+      zone's nameds, all "up".
+- [ ] Kill a named in an **open-world** zone (Najena) → it greys with a **respawn countdown**.
+- [ ] Kill a named in an **instanced** zone (Mistmoore) → it greys and **stays greyed** (a fresh
+      instance = a fresh board).
+- [ ] Enter **The Hole** or **Kedge Keep** → the board fills.
+
+## Action-bar gem swap + slot marker (#11 / #19)
+
+- [ ] Drag a configured gem onto another slot → **exactly those two swap**; the slots between are
+      untouched.
+- [ ] Set up 3 of 8 slots → a **marker dot** appears on exactly those 3.
+
+## Stances / invocations (#16 / #20 / #21)
+
+- [ ] The extra stances — **Balanced / Defensive / Mage Hunter / Striker** — and the
+      **Spellblade / Empowering** invocations can be **picked** from the toggle picker now.
+- [ ] Pick a stance in-game, **restart the app** → the gem still shows the active border without
+      re-picking. Re-lay-out the bar so that toggle sits on a different slot, restart → the border
+      **follows it**.
+- [ ] **Use each of the 9 DERIVED stance/invocation abilities** in-game (the ones whose landing
+      text was derived, not log-confirmed) and check it registers as an infinite-duration tile. If
+      the real log wording differs, that one line in `tools/roster-overrides.json` gets corrected.
+
+## Per-day split rollover hour (#23)
+
+- [ ] Set **"New day starts at"** to 6 AM. Play past midnight → the whole night lands in **one
+      split file dated for the day it started**. A kill after 6 AM goes to the new day's file.
+- [ ] The live log and its timestamps are untouched; the Lockouts grid is unaffected.
+
+## Oversized-log launch nudge (#24)
+
+- [ ] With a live log over ~50 MB, relaunch → an in-app modal offers **"Trim to this week"**.
+      Accepting archives everything before this week's reset and **keeps the current lockout week**
+      in the live log (the Lockouts grid still shows this week). Dismiss → it doesn't re-nudge for
+      7 days.
+
+## Bard Songs hybrid feed (#27 / #29)
+
+- [ ] The Bard Songs premade's **"Active on this aura"** card now lists songs active on you (it
+      showed nothing before).
+- [ ] Turn on **"Also show debuff songs"** → sing a debuff song (e.g. Largo's Melodic Binding) on
+      an enemy → it appears with a **debuff-coloured border**. Off by default.
+- [ ] Turn on **"Split songs by type"** → buff songs and debuff songs render in separate sections.
+
+## Loss of control — generic line (#36)
+
+- [ ] Get charmed by something that writes only the generic `"You lose control of yourself!"` →
+      the Loss of control aura shows **CONTROLLED**, cleared when control returns. Existing Loss of
+      control auras pick up the new trigger automatically (schema migration).
+
+## "You feel smaller" (#26)
+
+- [ ] In a burst with no spellbook loaded, a `"You feel smaller."` resolves to **Shrink with no
+      prompt** (Tiny Companion is a pet spell and is filtered out). A full `node tools/replay-log.js`
+      pass over the real corpus should show no lost detections.
+
+## Startup zone recovery
+
+- [ ] Zone into somewhere, then **kill the app and relaunch** while still in that zone → the
+      travel guide's "current zone", zone-gated aura visibility, and the named board are all
+      correct **immediately**, without waiting for the next zone line.
+
+## Spellbook picker follow-ups
+
+- [ ] Pin a spellbook file, then move/delete it → the picker says the **pinned file is missing**
+      and points at the picker / "Back to auto" (not the generic "run /outputfile" message).
+- [ ] Type a character name in Setup › Spellbook detection → **no disk-scan lag per keystroke**.
+
+## Collapsed-section value previews (`ui/topic-summaries`)
+
+- [ ] Collapse the Setup **"App settings"** block → the header shows icon set, merge rule, text
+      size, hotkey, app version. Collapse an aura panel's **Display & size** topics → each shows
+      its current value (opacity %, tile/list px, text size + justification, mode + sort + merged).
+
+## Bug pass — regressions to watch (bug pass)
+
+- [ ] A groupmate meleeing next to you during a Quick-Buff burst does **not** produce phantom
+      "you cast X on them" entries in Ally Buffs (Fleeting Fury / Spirit of the Puma proc text).
+- [ ] With the stacking model on, cast Endure Magic while an ally bard runs Elemental Rhythms →
+      **both stay up** (bard resist songs and caster resist spells coexist).
+- [ ] The weekly log archive file is named for the **US Eastern reset day** even if your PC clock
+      is on Pacific / UTC / etc.
 
 ---
 
