@@ -97,6 +97,52 @@ test('an unrelated line naming one of the words in chat does not fire it', () =>
   assert.equal(engine.getActive().length, 0, 'a chat line fired the aura');
 });
 
+test('it carries the generic "You lose control of yourself!" catch-all', () => {
+  const { widget, engine } = setup();
+  const controlled = widget.customTimers.find((t) => t.name === 'CONTROLLED');
+  assert.ok(controlled, 'no CONTROLLED trigger in the preset');
+  assert.equal(controlled.triggerText, 'You lose control of yourself!');
+  engine.handleLine(`${TS}You lose control of yourself!`);
+  assert.deepEqual(engine.getActive().map((b) => b.name), ['CONTROLLED']);
+  engine.handleLine(`${TS}You have control of yourself again.`);
+  assert.equal(engine.getActive().length, 0, 'the "have control again" line did not clear it');
+});
+
+test('the v4 -> v5 migration adds CONTROLLED to a Loss of control aura that predates it', () => {
+  const data = {};
+  const io = {
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  };
+  // A v4 store with a Loss of control aura that has NO CONTROLLED trigger.
+  const s1 = new WidgetStore(io);
+  const w = s1.createTextAura('Loss of control', { preset: 'lossOfControl' });
+  data.widgets.version = 4;
+  data.widgets.widgets = data.widgets.widgets.map((x) =>
+    x.id === w.id ? { ...x, customTimers: x.customTimers.filter((t) => t.name !== 'CONTROLLED') } : x
+  );
+  data.widgets.version = 4;
+
+  const s2 = new WidgetStore(io); // reload -> migrate
+  const migrated = s2.getAll().find((x) => x.id === w.id);
+  assert.equal(data.widgets.version, 5);
+  assert.ok(
+    migrated.customTimers.some((t) => t.triggerText === 'You lose control of yourself!'),
+    'the migration did not add the catch-all'
+  );
+
+  // Idempotent: a hand-removed CONTROLLED stays removed on the next load (version-gated).
+  s2.update(migrated.id, {
+    customTimers: migrated.customTimers.filter((t) => t.name !== 'CONTROLLED'),
+  });
+  const s3 = new WidgetStore(io);
+  const after = s3.getAll().find((x) => x.id === w.id);
+  assert.ok(
+    !after.customTimers.some((t) => t.triggerText === 'You lose control of yourself!'),
+    'the migration re-added a deliberately deleted trigger'
+  );
+});
+
 test('it is wired into the premade list under event-alerts', () => {
   assert.match(rendererSrc, /id: 'loss-of-control'/);
   assert.match(rendererSrc, /createTextAuraWidget\(name, 'lossOfControl'\)/);
