@@ -74,6 +74,33 @@ test('#29 - a debuff bard song landing on an enemy shows on the aura, marked as 
   assert.equal(songs[0].spellCategory, 'debuff', 'so the aura draws the debuff-coloured border');
 });
 
+test('#29 - a no-duration DD debuff song (Denon\'s Desperate Dirge shape) still reaches the aura', () => {
+  // Reported live: the only debuff song cast was Denon's Desperate Dirge - a nuke-category song
+  // with NO duration - and it never showed. _trackBardSongOnTarget was only wired on _landOnAlly's
+  // finite-duration branch; a no-duration song fell through the instant branch and was dropped.
+  const { engine, buffStore } = makeEngine();
+  engine.setBardSongDebuffsWantedFn(() => true);
+  buffStore.upsert('Test Desperate Dirge', 30, { othersLandingSuffix: ` staggers back a step.` });
+  const e = buffStore.getByName('Test Desperate Dirge');
+  e.kind = 'det';
+  e.scaleCategory = 'nuke';
+  delete e.durationSec; // the real Denon's Desperate Dirge carries no duration field at all
+  buffStore.markBardSong('Test Desperate Dirge');
+
+  engine.handleLine(`${TS}You begin singing Test Desperate Dirge.`);
+  engine.handleLine(`${TS}a dry bones skeleton staggers back a step.`);
+  const songs = engine.getActiveBardSongs();
+  assert.equal(songs.length, 1);
+  assert.equal(songs[0].name, 'Test Desperate Dirge');
+  assert.equal(songs[0].isDebuff, true);
+  assert.equal(songs[0].instant, true, 'a no-duration song carries through as an instant, no fake countdown');
+  assert.equal(songs[0].remainingSec, null);
+
+  // ...and when the target dies it goes, rather than lingering out its retention window
+  engine.handleLine(`${TS}a dry bones skeleton has been slain by Shara!`);
+  assert.equal(engine.getActiveBardSongs().length, 0, 'the debuff song clears when its target dies');
+});
+
 test('#29 - a debuff bard song is NOT tracked when no aura has asked to see debuff songs', () => {
   const { engine, buffStore } = makeEngine();
   // bardSongDebuffsWantedFn defaults to false - the "Also show debuff songs" option is off

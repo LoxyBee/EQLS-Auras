@@ -1781,6 +1781,16 @@ class BuffEngine extends EventEmitter {
           changed = true;
         }
       }
+      // #29 - a debuff song mirrored onto the Bard Songs aura should go when its target dies, not
+      // linger out its retention window. The bardSongs key is the allyBuffs key with an `on:` tag.
+      let songsChanged = false;
+      for (const key of this.bardSongs.keys()) {
+        if (key.startsWith(`on:${prefix}`)) {
+          this.bardSongs.delete(key);
+          songsChanged = true;
+        }
+      }
+      if (songsChanged) this.emit('bardSongsChanged', this.getActiveBardSongs());
     }
 
     // A mez broken early. It does not name the spell, so it can only clear a mez - anything else
@@ -2294,6 +2304,10 @@ class BuffEngine extends EventEmitter {
         onEnemy,
       });
       this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+      // #29 - mirror to the Bard Songs aura here too, not only on the finite-duration path below.
+      // A no-duration debuff song (Denon's Desperate Dirge, Brusco's Boastful Bellow) or a
+      // permanent one otherwise lands as an ally buff and never reaches the aura - reported live.
+      if (known.isBardSong) this._trackBardSongOnTarget(known, allyName, this.allyBuffs.get(key));
       return;
     }
     const effectiveDurationSec = this._scaledDuration(known);
@@ -2311,6 +2325,7 @@ class BuffEngine extends EventEmitter {
         onEnemy,
       });
       this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+      if (known.isBardSong) this._trackBardSongOnTarget(known, allyName, this.allyBuffs.get(key));
       return;
     }
     // Notes 12 and 18 used to count identically-named mobs as separate instances under one key
@@ -2347,6 +2362,10 @@ class BuffEngine extends EventEmitter {
       durationSec: entry.durationSec,
       expiresAt: entry.expiresAt,
       infinite: !!entry.infinite,
+      // A no-duration debuff song (a DD song like Denon's Desperate Dirge) carries through as an
+      // instant so the aura flashes it briefly rather than drawing a countdown it does not have.
+      instant: !!entry.instant,
+      landedAt: entry.landedAt || null,
       endedText: known.endedText || null,
     });
     this._debugLog(`BARD SONG "${known.name}" - ${this._isEnemySpell(known) ? 'debuff on' : 'buff on'} "${targetName}"`);
@@ -3011,8 +3030,10 @@ class BuffEngine extends EventEmitter {
           allyName: isDebuff ? b.onTarget : (b.castBy || 'Unknown'),
           isDebuff,
           durationSec: b.durationSec,
-          remainingSec: b.infinite ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
+          remainingSec: b.infinite || b.instant ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
           infinite: !!b.infinite,
+          instant: !!b.instant,
+          landedAt: b.landedAt || null,
           showOnOverlay: known ? known.showOnOverlay !== false : true,
           iconUrl: known?.iconId != null ? this.iconUrlFn(known.iconId) : null,
           isBardSong: true,
@@ -3020,8 +3041,8 @@ class BuffEngine extends EventEmitter {
         };
       })
       .sort((a, b) => {
-        const aNone = a.infinite;
-        const bNone = b.infinite;
+        const aNone = a.infinite || a.instant;
+        const bNone = b.infinite || b.instant;
         if (aNone && bNone) return 0;
         if (aNone) return 1;
         if (bNone) return -1;
