@@ -297,5 +297,24 @@ test('ctx carries the injected zone / group / icon accessors', () => {
   assert.equal(host.getEntries('ctx')[0].name, 'Rivervale|Baxa,Avenrae|eqicon://Spirit of Wolf');
 });
 
+// ---------------------------------------------------------------------------
+// the shipped example
+// ---------------------------------------------------------------------------
+
+test('docs/modules/pull-timer.js is a valid v1 module and its onLine works', () => {
+  const example = require('../docs/modules/pull-timer.js');
+  const r = validateModule(example);
+  assert.equal(r.ok, true, r.error);
+
+  const ctx = { stripTimestamp: (l) => l.replace(/^\[[^\]]+\]\s*/, ''), now: Date.now() };
+  const s = { seconds: 8, startWord: 'pulling', cancelWord: 'hold' };
+  assert.deepEqual(
+    example.onLine("[ts] Baxa tells the group, 'pulling now'", ctx, s),
+    { key: 'pull', name: 'Pull', durationSec: 8, remainingSec: 8 }
+  );
+  assert.deepEqual(example.onLine("[ts] Baxa tells the group, 'hold'", ctx, s), { key: 'pull', clear: true });
+  assert.equal(example.onLine('[ts] a rat hits Baxa for 3 points of damage.', ctx, s), null);
+});
+
 module.exports = () => report('module-host');
 if (require.main === module) report('module-host').then((n) => process.exit(n ? 1 : 0));
