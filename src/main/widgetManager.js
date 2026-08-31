@@ -45,6 +45,11 @@ const runtimeLock = new Map(); // id -> boolean
 // comment. Always 0 for anything that isn't an icon-mode widget with a
 // label currently reserving overflow margin.
 const originXByWidget = new Map(); // id -> number
+// The last content size fitToContent was asked for while the aura was UNLOCKED, held back rather
+// than applied - resizing the window under the user's cursor mid-drag is the "the move box jumps"
+// bug. Applied once, re-centred on the frozen box, when the aura is locked again. { contentWidth,
+// contentHeight, originX }.
+const pendingFitByWidget = new Map(); // id -> { contentWidth, contentHeight, originX }
 // Runtime-only, never persisted - true when the auto-hide-when-EQ-unfocused
 // feature (see foregroundWatcher.js) currently has widgets hidden. Kept
 // separate from profile-based visibility (below) so toggling focus never
@@ -496,6 +501,15 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
   const config = widgetStore.getById(id);
   const win = windows.get(id);
   if (!config || !win) return;
+
+  // Freeze the window's size while the aura is unlocked for moving. Content comes and goes as
+  // buffs land and expire, and every resize shifts the blue drag box out from under the cursor
+  // mid-drag. Remember the latest request; applyPendingFit re-applies it, re-centred, on re-lock.
+  if (isUnlocked(id)) {
+    pendingFitByWidget.set(id, { contentWidth, contentHeight, originX });
+    return;
+  }
+
   const minHeight = minHeightFor(config);
   const width = Math.max(40, minWidthFor(config), Math.round(contentWidth) + WINDOW_CONTENT_PADDING_PX);
   const height = Math.max(minHeight + WINDOW_CONTENT_PADDING_PX, Math.round(contentHeight) + WINDOW_CONTENT_PADDING_PX);
@@ -523,6 +537,40 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
   originXByWidget.set(id, roundedOriginX);
   win.setBounds({ x: targetX, y: currentY, width, height });
   widgetStore.update(id, { width, height });
+}
+
+// Apply the content size that came in while the aura was unlocked (fitToContent held it back), now
+// that it is locked again. The frozen box's CENTRE stays put - the owner's choice, 31 Aug: a buff
+// landing or expiring while you were positioning the aura should grow it symmetrically from where
+// you left it, not shove one edge. Also rewrites the stored anchor so later (locked) fitToContent
+// calls grow from this new position rather than snapping back.
+function applyPendingFit(id) {
+  const pending = pendingFitByWidget.get(id);
+  pendingFitByWidget.delete(id);
+  if (!pending) return;
+  const config = widgetStore.getById(id);
+  const win = windows.get(id);
+  if (!config || !win) return;
+
+  const minHeight = minHeightFor(config);
+  const width = Math.max(40, minWidthFor(config), Math.round(pending.contentWidth) + WINDOW_CONTENT_PADDING_PX);
+  const height = Math.max(minHeight + WINDOW_CONTENT_PADDING_PX, Math.round(pending.contentHeight) + WINDOW_CONTENT_PADDING_PX);
+  const [currentWidth, currentHeight] = win.getSize();
+  const [currentX, currentY] = win.getPosition();
+  if (width === currentWidth && height === currentHeight) return;
+
+  const centreX = currentX + currentWidth / 2;
+  const centreY = currentY + currentHeight / 2;
+  const targetX = Math.round(centreX - width / 2);
+  const targetY = Math.round(centreY - height / 2);
+
+  const roundedOriginX = Math.round(pending.originX || 0);
+  originXByWidget.set(id, roundedOriginX);
+  win.setBounds({ x: targetX, y: targetY, width, height });
+  // The canonical anchor is the left edge with the origin offset folded back in - the same shape
+  // config.position carries and fitToContent reads.
+  widgetStore.update(id, { width, height });
+  widgetStore.savePosition(id, { x: targetX + roundedOriginX, y: targetY });
 }
 
 // Brings one widget's window in line with what isVisibleForActiveProfile
@@ -702,6 +750,11 @@ function setLocked(id, locked, { force = true } = {}) {
     win.setIgnoreMouseEvents(shouldIgnoreMouse(config), { forward: true });
     win.webContents.send('widget:lockChanged', locked);
   }
+  // Re-locking: apply whatever size the content settled on while it was frozen, re-centred on the
+  // box the user just positioned (see applyPendingFit). Unlocking: nothing to do - fitToContent
+  // starts holding sizes back from here on.
+  if (locked) applyPendingFit(id);
+  else pendingFitByWidget.delete(id);
   return locked;
 }
 
