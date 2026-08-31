@@ -108,8 +108,18 @@ button, select, input, .snap {
   font: inherit;
   font-size: 12px;
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.08);
+  /* Opaque, dark - the dropdown list is Chromium-drawn and inherits these onto the <option>s.
+     A translucent-white background left the list white-on-near-white and unreadable. */
+  background: #1b2133;
   border: 1px solid var(--line);
   border-radius: 5px;
   padding: 2px 4px;
+}
+#snap-size option {
+  background: #1b2133;
+  color: var(--ink);
+}
+#snap-size option:checked {
+  background: var(--accent);
+  color: #1b1205;
 }
