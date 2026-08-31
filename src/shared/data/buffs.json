@@ -585,7 +585,8 @@
   "kind": "buff",
   "category": "Stance",
   "targets": "Self",
-  "infiniteDuration": true
+  "infiniteDuration": true,
+  "landingText": "You assume a balanced stance."
  },
  {
   "name": "Banish Summoned",
@@ -795,7 +796,8 @@
   "kind": "buff",
   "category": "Stance",
   "targets": "Self",
-  "infiniteDuration": true
+  "infiniteDuration": true,
+  "landingText": "You assume a berserker stance."
  },
  {
   "name": "Berserker Strength",
@@ -3373,7 +3375,8 @@
   "kind": "buff",
   "category": "Stance",
   "targets": "Self",
-  "infiniteDuration": true
+  "infiniteDuration": true,
+  "landingText": "You assume a defensive stance."
  },
  {
   "name": "Deftness",
@@ -8157,7 +8160,8 @@
   "kind": "buff",
   "category": "Invocation",
   "targets": "Self",
-  "infiniteDuration": true
+  "infiniteDuration": true,
+  "landingText": "You begin reciting the inviolable invocation."
  },
  {
   "name": "Invisibility",
@@ -9158,7 +9162,8 @@
   "kind": "buff",
   "category": "Stance",
   "targets": "Self",
-  "infiniteDuration": true
+  "infiniteDuration": true,
+  "landingText": "You assume a mage hunter stance."
  },
  {
   "name": "Magical Monologue",
@@ -10446,7 +10451,8 @@
   "kind": "buff",
   "category": "Stance",
   "targets": "Self",
-  "infiniteDuration": true
+  "infiniteDuration": true,
+  "landingText": "You assume an offensive stance."
  },
  {
   "name": "Overchannel Invocation",
@@ -10454,7 +10460,8 @@
   "kind": "buff",
   "category": "Invocation",
   "targets": "Self",
-  "infiniteDuration": true
+  "infiniteDuration": true,
+  "landingText": "You begin reciting the overchannel invocation."
  },
  {
   "name": "Pacify",
@@ -13783,7 +13790,8 @@
   "kind": "buff",
   "category": "Invocation",
   "targets": "Self",
-  "infiniteDuration": true
+  "infiniteDuration": true,
+  "landingText": "You begin reciting the spellblade invocation."
  },
  {
   "name": "Sphere of Light",
@@ -14707,7 +14715,8 @@
   "kind": "buff",
   "category": "Stance",
   "targets": "Self",
-  "infiniteDuration": true
+  "infiniteDuration": true,
+  "landingText": "You assume a striker stance."
  },
  {
   "name": "Strip Enchantment",

@@ -2000,10 +2000,18 @@ ipcMain.handle('actionBar:setSlotInsetPx', (_event, { id, index, px }) => action
 ipcMain.handle('actionBar:setSlotToggleGroup', (_event, { id, index, group }) => actionBarManager.setSlotToggleGroup(id, index, group));
 ipcMain.handle('actionBar:setSlotToggleName', (_event, { id, index, name }) => actionBarManager.setSlotToggleName(id, index, name));
 ipcMain.handle('actionBar:setSlotToggleDurationSec', (_event, { id, index, sec }) => actionBarManager.setSlotToggleDurationSec(id, index, sec));
-ipcMain.handle('actionBar:getKnownAbilityGroups', () => ({
-  stances: KNOWN_STANCES,
-  invocations: KNOWN_INVOCATIONS,
-}));
+ipcMain.handle('actionBar:getKnownAbilityGroups', () => {
+  // The roster is the source of truth now (#20/#21 added every stance/invocation the owner named
+  // as a category:'Stance'/'Invocation' entry). Union with the hand-seeded KNOWN_ lists so a name
+  // that was only ever observed live - and never made it into the roster - still stays pickable.
+  const roster = buffStore.getAll();
+  const named = (category) => roster.filter((b) => b.category === category).map((b) => b.name);
+  const union = (fromRoster, seed) => [...new Set([...fromRoster, ...seed])].sort();
+  return {
+    stances: union(named('Stance'), KNOWN_STANCES),
+    invocations: union(named('Invocation'), KNOWN_INVOCATIONS),
+  };
+});
 ipcMain.handle('actionBar:getAbilityGroupState', () => abilityGroupTracker.getAllActiveStates());
 ipcMain.handle('actionBar:setSlotMultiIcon', (_event, { id, index, enabled }) => actionBarManager.setSlotMultiIcon(id, index, enabled));
 ipcMain.handle('actionBar:setSlotSecondIcon', (_event, { id, index, iconId }) => actionBarManager.setSlotSecondIcon(id, index, iconId));

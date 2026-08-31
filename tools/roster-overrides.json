@@ -90,61 +90,69 @@
     "Backlog #20 / #21. The owner, 31 Aug 2026, supplied the names (\"numbers don't matter, only",
     "the names\"). These are the EQ Legends multiclass stance / invocation system - character states,",
     "not timed buffs, so infiniteDuration:true (a tile with no countdown, cleared when it changes).",
-    "The two stances and four invocations with a landingText below are confirmed from the owner's own",
-    "log: \"You assume a channeler stance.\" / \"an evasive stance.\", and \"You begin reciting the <x>",
-    "invocation.\". The rest are name-only until a live line confirms the exact wording - they exist",
-    "so they are pickable and so the Buff Planner sees them; detection of the un-confirmed ones just",
-    "needs their landingText added here later. Persisting the ACTIVE stance/invocation across a",
-    "restart (backlog #16) is a separate build - this is only the roster presence."
+    "Every log line for this system is templated, confirmed against the owner's own log across six",
+    "of them: \"You assume a/an <x> stance.\" and \"You begin reciting the <x> invocation.\", where",
+    "<x> is the name with the trailing \" Stance\"/\" Invocation\" dropped and lowercased - NO -ing or",
+    "other transform in any confirmed case (\"Empowering\" only looks transformed because the owner",
+    "named it \"Empowering Invocation\", not \"Empower\"). The nine that were not seen firing in a",
+    "logged session are marked derived: true - same template, article picked by vowel sound. If a",
+    "specific one turns out wrong, correct that one line; the pattern itself is confirmed.",
+    "Persisting the ACTIVE stance/invocation across a restart (backlog #16) is done separately",
+    "(abilityGroups.js) - this is only the roster presence + detection text."
   ],
   "Balanced Stance": {
-    "why": "Backlog #20, owner-named 31 Aug 2026. landingText unconfirmed - the pattern is \"You assume a balanced stance.\" but the owner has not used it in a logged session.",
+    "why": "Backlog #20, owner-named 31 Aug 2026. landingText DERIVED from the confirmed template (see _STANCES_AND_INVOCATIONS) - not seen in a logged session, correct this line if wrong.",
     "add": {
       "noGameLookup": true,
       "kind": "buff",
       "category": "Stance",
       "targets": "Self",
-      "infiniteDuration": true
+      "infiniteDuration": true,
+      "landingText": "You assume a balanced stance."
     }
   },
   "Offensive Stance": {
-    "why": "Backlog #20, owner-named 31 Aug 2026. landingText unconfirmed.",
+    "why": "Backlog #20, owner-named 31 Aug 2026. landingText DERIVED from the confirmed template - article 'an' before the vowel. Not seen in a log; correct this line if wrong.",
     "add": {
       "noGameLookup": true,
       "kind": "buff",
       "category": "Stance",
       "targets": "Self",
-      "infiniteDuration": true
+      "infiniteDuration": true,
+      "landingText": "You assume an offensive stance."
     }
   },
   "Defensive Stance": {
-    "why": "Backlog #20, owner-named 31 Aug 2026. landingText unconfirmed.",
+    "why": "Backlog #20, owner-named 31 Aug 2026. landingText DERIVED from the confirmed template. Not seen in a log; correct this line if wrong.",
     "add": {
       "noGameLookup": true,
       "kind": "buff",
       "category": "Stance",
       "targets": "Self",
-      "infiniteDuration": true
+      "infiniteDuration": true,
+      "landingText": "You assume a defensive stance."
     }
   },
   "Striker Stance": {
-    "why": "Backlog #20, owner-named 31 Aug 2026. landingText unconfirmed.",
+    "why": "Backlog #20, owner-named 31 Aug 2026. landingText DERIVED from the confirmed template. Not seen in a log; correct this line if wrong.",
     "add": {
       "noGameLookup": true,
       "kind": "buff",
       "category": "Stance",
       "targets": "Self",
-      "infiniteDuration": true
+      "infiniteDuration": true,
+      "landingText": "You assume a striker stance."
     }
   },
   "Berserker Stance": {
-    "why": "Backlog #20, owner-named 31 Aug 2026 (Berserker-only). landingText unconfirmed.",
+    "why": "Backlog #20, owner-named 31 Aug 2026 (Berserker-only). landingText DERIVED from the confirmed template. Not seen in a log; correct this line if wrong.",
     "add": {
       "noGameLookup": true,
       "kind": "buff",
       "category": "Stance",
       "targets": "Self",
-      "infiniteDuration": true
+      "infiniteDuration": true,
+      "landingText": "You assume a berserker stance."
     }
   },
   "Channeler Stance": {
@@ -159,13 +167,14 @@
     }
   },
   "Mage Hunter Stance": {
-    "why": "Backlog #20, owner-named 31 Aug 2026. landingText unconfirmed.",
+    "why": "Backlog #20, owner-named 31 Aug 2026. landingText DERIVED from the confirmed template - two words, both lowercased. Not seen in a log; correct this line if wrong.",
     "add": {
       "noGameLookup": true,
       "kind": "buff",
       "category": "Stance",
       "targets": "Self",
-      "infiniteDuration": true
+      "infiniteDuration": true,
+      "landingText": "You assume a mage hunter stance."
     }
   },
   "Evasive Stance": {
@@ -224,33 +233,36 @@
     }
   },
   "Overchannel Invocation": {
-    "why": "Backlog #21, owner-named 31 Aug 2026. landingText unconfirmed - likely \"You begin reciting the overchannel invocation.\" by the confirmed pattern, but not seen in a log.",
+    "why": "Backlog #21, owner-named 31 Aug 2026. landingText DERIVED from the confirmed template. Not seen in a log; correct this line if wrong.",
     "add": {
       "noGameLookup": true,
       "kind": "buff",
       "category": "Invocation",
       "targets": "Self",
-      "infiniteDuration": true
+      "infiniteDuration": true,
+      "landingText": "You begin reciting the overchannel invocation."
     }
   },
   "Inviolable Invocation": {
-    "why": "Backlog #21, owner-named 31 Aug 2026. landingText unconfirmed.",
+    "why": "Backlog #21, owner-named 31 Aug 2026. landingText DERIVED from the confirmed template. Not seen in a log; correct this line if wrong.",
     "add": {
       "noGameLookup": true,
       "kind": "buff",
       "category": "Invocation",
       "targets": "Self",
-      "infiniteDuration": true
+      "infiniteDuration": true,
+      "landingText": "You begin reciting the inviolable invocation."
     }
   },
   "Spellblade Invocation": {
-    "why": "Backlog #21 (\"Spellblade\"), owner-named 31 Aug 2026. Hybrid-class only. landingText unconfirmed.",
+    "why": "Backlog #21 (\"Spellblade\"), owner-named 31 Aug 2026. Hybrid-class only. landingText DERIVED from the confirmed template. Not seen in a log; correct this line if wrong.",
     "add": {
       "noGameLookup": true,
       "kind": "buff",
       "category": "Invocation",
       "targets": "Self",
-      "infiniteDuration": true
+      "infiniteDuration": true,
+      "landingText": "You begin reciting the spellblade invocation."
     }
   }
 }
