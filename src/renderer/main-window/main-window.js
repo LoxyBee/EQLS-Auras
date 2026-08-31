@@ -895,6 +895,38 @@ function initLogPanel() {
   // log:status update on its own - poll it periodically instead.
   setInterval(() => window.eqTracker.getLogState().then(renderState), 5000);
 
+  // QOL #24 - a once-on-launch nudge when the live log has grown past 50 MB, even for someone who
+  // has never archived. Steers toward "Trim to this week" (keeps the current lockout week in the
+  // live log) rather than a whole-log archive that would blank the Lockouts grid. Deferred so it
+  // does not race the window's first paint; re-nudge cadence is capped in the main process.
+  setTimeout(async () => {
+    let check;
+    try { check = await window.eqTracker.launchArchiveCheck(); } catch { return; }
+    if (!check || !check.prompt) return;
+    const mb = (check.sizeBytes / 1048576).toFixed(0);
+    const go = await appConfirm({
+      title: 'Your EQ log is getting large',
+      message: `The log is about ${mb} MB. Trimming it to just the current raid-lockout week keeps the app fast and the Lockouts tab accurate.`,
+      detail: check.holdsCurrentWeek
+        ? 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first); the current week stays in the live log. EverQuest can stay running.'
+        : 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first), then the live log is rewritten to just the current week.',
+      okLabel: 'Trim to this week',
+      cancelLabel: 'Not now',
+    });
+    if (!go) {
+      window.eqTracker.dismissArchivePrompt();
+      return;
+    }
+    const r = await window.eqTracker.trimLockoutLog();
+    const rep = (r && r.report) || {};
+    await appConfirm(
+      rep.ok
+        ? { title: 'Trimmed', message: `Archived ${(rep.archivedBytes / 1048576).toFixed(1)} MB.`, detail: rep.archivedTo, okLabel: 'OK', hideCancel: true }
+        : { title: 'Not trimmed', message: rep.reason || 'The log could not be trimmed right now - try the Lockouts tab in a moment.', okLabel: 'OK', hideCancel: true }
+    );
+    window.eqTracker.getLogState().then(renderState);
+  }, 3500);
+
   browseBtn.addEventListener('click', async () => {
     const state = await window.eqTracker.chooseLogFolder();
     renderState(state);

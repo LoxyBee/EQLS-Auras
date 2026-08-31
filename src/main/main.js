@@ -1270,6 +1270,8 @@ ipcMain.handle('lockouts:trim', async () => {
     logService.watcher.resyncOffset(watched, report.keptBytes);
     logService.splitter.resyncOffset(watched, report.keptBytes);
     await lockoutService.rebuild();
+    // The log just shrank - a later regrowth past the threshold is a fresh event worth nudging on.
+    saveJson('logArchivePromptDismissedAt', 0);
   }
   return { report, projection: lockoutService.getProjection() };
 });
@@ -1307,6 +1309,28 @@ ipcMain.handle('log:openFolder', () => logService.openLogFolder());
 ipcMain.handle('log:archiveHoldsCurrentWeek', () =>
   logRotationService.logHoldsCurrentWeek(logService.watcher.getStatus().currentFilePath));
 
+// QOL #24 - a once-on-launch nudge when the live log has grown past the archive threshold (50 MB,
+// logService.ARCHIVE_PROMPT_THRESHOLD_BYTES). It must fire even for someone who has never archived,
+// so it keys purely off current size, not on any calendar or rotation timing. The renderer's modal
+// steers toward "Trim to this week" (lockout-safe) rather than a whole-log archive. Re-nudged at
+// most once a week so it is not every-launch nagging.
+const LAUNCH_ARCHIVE_RENUDGE_MS = 7 * 24 * 60 * 60 * 1000;
+ipcMain.handle('log:launchArchiveCheck', () => {
+  const state = logService.getState();
+  if (!state.shouldPromptArchive) return { prompt: false };
+  const dismissedAt = Number(loadJson('logArchivePromptDismissedAt', 0)) || 0;
+  if (dismissedAt && Date.now() - dismissedAt < LAUNCH_ARCHIVE_RENUDGE_MS) return { prompt: false };
+  return {
+    prompt: true,
+    sizeBytes: state.fileSizeBytes,
+    holdsCurrentWeek: logRotationService.logHoldsCurrentWeek(state.currentFilePath),
+  };
+});
+ipcMain.handle('log:dismissArchivePrompt', () => {
+  saveJson('logArchivePromptDismissedAt', Date.now());
+  return { ok: true };
+});
+
 ipcMain.handle('log:archiveNow', async () => {
   // The renderer has already confirmed in an in-app modal (and warned if this holds the lockout
   // week). The archive empties the same log the lockout grid is built from, so the grid is rebuilt
@@ -1314,6 +1338,7 @@ ipcMain.handle('log:archiveNow', async () => {
   const result = logService.archiveNow();
   await lockoutService.rebuild();
   broadcast('lockouts:changed', lockoutService.getStatus());
+  if (result && result.ok) saveJson('logArchivePromptDismissedAt', 0); // see QOL #24
   return result;
 });
 ipcMain.handle('log:openArchiveFolder', () => logService.openArchiveFolder());

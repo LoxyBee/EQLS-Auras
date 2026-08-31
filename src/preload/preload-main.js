@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   openLogFolder: () => ipcRenderer.invoke('log:openFolder'),
   archiveLogNow: () => ipcRenderer.invoke('log:archiveNow'),
   openArchiveFolder: () => ipcRenderer.invoke('log:openArchiveFolder'),
+  launchArchiveCheck: () => ipcRenderer.invoke('log:launchArchiveCheck'),
+  dismissArchivePrompt: () => ipcRenderer.invoke('log:dismissArchivePrompt'),
 
   getActiveBuffs: () => ipcRenderer.invoke('buffs:getActive'),
   getUnknownBuffs: () => ipcRenderer.invoke('buffs:getUnknown'),
