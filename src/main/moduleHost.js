@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
+const { stripTimestamp } = require('./buffParser');
 
 // Drop-in custom-aura modules.
 //
@@ -137,6 +138,9 @@ class ModuleHost extends EventEmitter {
       groupMembers: this._groupFn ? this._groupFn() : [],
       now: Date.now(),
       iconUrlForSpell: this._ctx.iconUrlForSpell,
+      // `line` is the RAW log line, `[Www Mmm DD HH:MM:SS YYYY] ` prefix and all - same as every
+      // built-in engine gets. This strips it, for a module that only wants the message.
+      stripTimestamp,
     };
   }
 
@@ -258,6 +262,12 @@ class ModuleHost extends EventEmitter {
       if (!isPlainObject(e)) continue;
       const key = typeof e.key === 'string' && e.key ? e.key : String(e.name || '').toLowerCase();
       if (!key) continue;
+      // `{ key, clear: true }` retracts an entry now, without waiting for its timer - e.g. the
+      // thing it was tracking ended early.
+      if (e.clear) {
+        if (rec.entries.delete(key)) changed = true;
+        continue;
+      }
       const durationSec = typeof e.durationSec === 'number' && e.durationSec > 0 ? e.durationSec : null;
       const remainingSec = typeof e.remainingSec === 'number' ? Math.max(0, e.remainingSec) : durationSec;
       rec.entries.set(key, {

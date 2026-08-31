@@ -257,6 +257,32 @@ test('a persistently slow module is disabled for the session', () => {
   assert.equal(host.getRegistered()[0].disabled, true);
 });
 
+test('{ key, clear: true } retracts an entry immediately', () => {
+  const host = loadedHost(`module.exports = {
+    id: 'c', name: 'C', apiVersion: ${API_VERSION},
+    onLine(l) {
+      if (l.includes('ON')) return { key: 'k', name: 'K', remainingSec: 999 };
+      if (l.includes('OFF')) return { key: 'k', clear: true };
+      return null;
+    },
+  };`);
+  host.handleLine('ON');
+  assert.equal(host.getEntries('c').length, 1);
+  host.handleLine('OFF');
+  assert.equal(host.getEntries('c').length, 0);
+});
+
+test('ctx.stripTimestamp removes the log prefix; line itself is raw', () => {
+  const host = loadedHost(`module.exports = {
+    id: 't', name: 'T', apiVersion: ${API_VERSION},
+    onLine(line, ctx) {
+      return { key: 'k', name: line.startsWith('[') + '|' + ctx.stripTimestamp(line) };
+    },
+  };`);
+  host.handleLine('[Mon Sep 01 12:00:00 2026] You say hi');
+  assert.equal(host.getEntries('t')[0].name, 'true|You say hi');
+});
+
 test('ctx carries the injected zone / group / icon accessors', () => {
   const host = loadedHost(`module.exports = {
     id: 'ctx', name: 'Ctx', apiVersion: ${API_VERSION},
