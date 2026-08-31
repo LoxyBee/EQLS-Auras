@@ -67,7 +67,7 @@ test('an unrelated buff wearing off on an ally does not fire this - only charm s
   const { engine } = setup();
   // The exact same game-wide template, confirmed in the owner's own log too - but Alacrity is not
   // a charm spell, so this aura must stay silent for it.
-  engine.handleLine(`${TS}Your Alacrity spell has worn off of Avenrae.`);
+  engine.handleLine(`${TS}Your Alacrity spell has worn off of Baxa.`);
   assert.equal(engine.getActive().length, 0);
 });
 

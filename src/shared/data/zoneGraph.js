@@ -4,7 +4,7 @@
  *
  * The note was BLOCKED on exactly this: "a zone-connectivity map plus a table of which travel
  * spell lands you in which zone. Neither exists in the app, in buffs.json, or in the new
- * spreadsheet." Shara's answer was "set a research task with another agent, all this data is
+ * spreadsheet." the owner's answer was "set a research task with another agent, all this data is
  * available online, just go find it." It was, and this is it.
  *
  * WHERE IT CAME FROM, and how much of it is corroborated. EverQuest Legends is a custom server, so

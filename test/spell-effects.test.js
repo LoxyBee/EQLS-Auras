@@ -1,6 +1,6 @@
 'use strict';
 /**
- * spellEffects.js - the actual character-stat numbers the buff optimiser ranks on (Shara, 27 Aug:
+ * spellEffects.js - the actual character-stat numbers the buff optimiser ranks on (Vaela, 27 Aug:
  * "rank them by best, that means numerical" / "actual character stats only").
  *
  * The rows below are copied VERBATIM from the owner's real EQ Legends spells_us.txt (the same
@@ -90,7 +90,7 @@ test('statScore adds attribute points 1:1, turns haste into its bonus, weights r
   assert.equal(statScore(installRoot, 500), 4); // +40 magic resist * 0.1 = 4 - situational, well below a real stat
 });
 
-test('regen and cast speed rank high (Shara, 27 Aug)', () => {
+test('regen and cast speed rank high (Vaela, 27 Aug)', () => {
   assert.equal(statScore(installRoot, 600), 48); // mana regen 12 * 4
   assert.equal(statScore(installRoot, 601), 92); // HP regen 15 * 4 + endurance regen 8 * 4
   assert.equal(statScore(installRoot, 602), 45); // cast speed 30 * 1.5

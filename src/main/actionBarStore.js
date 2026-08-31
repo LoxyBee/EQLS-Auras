@@ -96,7 +96,7 @@ const BAR_SETTING_DEFAULTS = {
   showOnAllProfiles: true,
   activeProfileIds: [],
   // Per-bar override of the app-focused auto-hide rule - deliberately NOT the same shared global
-  // flag widgets/auras use (settings:setShowAurasWhenAppFocused). Shara: toggling it while
+  // flag widgets/auras use (settings:setShowAurasWhenAppFocused). the owner: toggling it while
   // configuring one bar was making every bar reappear, because it lived inside a per-bar panel but
   // acted globally. Defaults false to match that global flag's own default.
   showWhenAppFocused: false,

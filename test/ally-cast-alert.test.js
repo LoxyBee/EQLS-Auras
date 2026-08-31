@@ -1,6 +1,6 @@
 'use strict';
 /**
- * "Someone else cast a mez" - note 16's last open question, answered by Shara on 21 August.
+ * "Someone else cast a mez" - note 16's last open question, answered by Vaela on 21 August.
  *
  * I had put two options to her: show an ally's debuff without a countdown, or not at all. She
  * chose a third and better one - make it a warning rather than a tracker. Her words: "a text
@@ -91,13 +91,13 @@ function renderText(config, buff) {
 
 test('with nothing opted in, a groupmate casting mez does nothing', () => {
   const e = engine(null);
-  feed(e, 'Lumbarin begins casting Mesmerization VII.', 'Avenrae begins casting Charm.');
+  feed(e, 'Delo begins casting Mesmerization VII.', 'Baxa begins casting Charm.');
   assert.deepEqual(alerts(e), []);
 });
 
 test('opting into one spell does not warn about another', () => {
   const e = engine(['Mesmerization']);
-  feed(e, 'Avenrae begins casting Charm.');
+  feed(e, 'Baxa begins casting Charm.');
   assert.deepEqual(alerts(e), []);
 });
 
@@ -105,8 +105,8 @@ test('a third-person cast still feeds the disambiguation it always did', () => {
   // The alert is bolted onto a line the engine already read for another purpose. If it swallowed
   // the line, or returned early past it, rival-caster tracking would silently stop working.
   const e = engine(['Mesmerization']);
-  feed(e, 'Lumbarin begins casting Mesmerization VII.');
-  assert.equal(e._recentOtherCaster('Mesmerization VII'), 'Lumbarin');
+  feed(e, 'Delo begins casting Mesmerization VII.');
+  assert.equal(e._recentOtherCaster('Mesmerization VII'), 'Delo');
 });
 
 // ---------------------------------------------------------------------------
@@ -120,14 +120,14 @@ test('the ranks her groupmates actually cast all match the base spell', () => {
   // picking the spell and never once being warned.
   const e = engine(['Mesmerization']);
   feed(e,
-    'Lumbarin begins casting Mesmerization VII.',
+    'Delo begins casting Mesmerization VII.',
     'Jeeve begins casting Mesmerization VI.',
     'Eriador begins casting Mesmerization V.',
     'Mynthi Davissi begins casting Mesmerization.');
   assert.deepEqual(alerts(e).sort(), [
+    'Delo::Mesmerization VII',
     'Eriador::Mesmerization V',
     'Jeeve::Mesmerization VI',
-    'Lumbarin::Mesmerization VII',
     'Mynthi Davissi::Mesmerization',
   ]);
 });
@@ -136,7 +136,7 @@ test('the rank is kept in what it says, not stripped', () => {
   // Matching is rank-insensitive; display is not. Which rank was cast is exactly the interesting
   // part, and it is the only place the app ever learns it.
   const e = engine(['Mesmerization']);
-  feed(e, 'Lumbarin begins casting Mesmerization VII.');
+  feed(e, 'Delo begins casting Mesmerization VII.');
   assert.equal(e.getActiveAllyBuffs()[0].name, 'Mesmerization VII');
 });
 
@@ -144,8 +144,8 @@ test('a sung debuff warns too', () => {
   // "begins singing" is a second cast verb, 215 lines in her logs. A bard debuff never says
   // "casting", so a matcher anchored on that word alone would miss every one of them.
   const e = engine(["Denon's Disruptive Discord"]);
-  feed(e, "Lumbarin begins singing Denon's Disruptive Discord.");
-  assert.deepEqual(alerts(e), ["Lumbarin::Denon's Disruptive Discord"]);
+  feed(e, "Delo begins singing Denon's Disruptive Discord.");
+  assert.deepEqual(alerts(e), ["Delo::Denon's Disruptive Discord"]);
 });
 
 test('her own cast never warns her', () => {
@@ -167,12 +167,12 @@ test('a mob casting it is named, not called a party member', () => {
 
 test('two people casting the same thing are two warnings, and a recast is one', () => {
   const e = engine(['Mesmerization']);
-  feed(e, 'Lumbarin begins casting Mesmerization VII.', 'Jeeve begins casting Mesmerization VII.');
+  feed(e, 'Delo begins casting Mesmerization VII.', 'Jeeve begins casting Mesmerization VII.');
   assert.equal(alerts(e).length, 2, 'one warning replaced the other');
-  const before = e.getActiveAllyBuffs().find((b) => b.allyName === 'Lumbarin').landedAt;
-  feed(e, 'Lumbarin begins casting Mesmerization VII.');
+  const before = e.getActiveAllyBuffs().find((b) => b.allyName === 'Delo').landedAt;
+  feed(e, 'Delo begins casting Mesmerization VII.');
   assert.equal(alerts(e).length, 2, 'a recast by the same person stacked instead of replacing');
-  const after = e.getActiveAllyBuffs().find((b) => b.allyName === 'Lumbarin').landedAt;
+  const after = e.getActiveAllyBuffs().find((b) => b.allyName === 'Delo').landedAt;
   assert.ok(after >= before, 'a recast must refresh the warning, or it will not re-show');
 });
 
@@ -184,7 +184,7 @@ test('it carries no countdown, and cannot', () => {
   // The whole point of her answer. An instant has no remaining time by construction, so there is
   // no number here to be wrong.
   const e = engine(['Charm']);
-  feed(e, 'Avenrae begins casting Charm.');
+  feed(e, 'Baxa begins casting Charm.');
   const b = e.getActiveAllyBuffs()[0];
   assert.equal(b.remainingSec, null, 'a warning must not show a countdown');
   assert.equal(b.instant, true);
@@ -195,7 +195,7 @@ test('it is not marked as a debuff sitting on an enemy', () => {
   // The name on this entry is the CASTER, not a target. Marking it onEnemy would put a person's
   // name into a list of things being debuffed, and would drag it into the wrong aura's filter.
   const e = engine(['Mesmerization']);
-  feed(e, 'Lumbarin begins casting Mesmerization VII.');
+  feed(e, 'Delo begins casting Mesmerization VII.');
   assert.equal(e.getActiveAllyBuffs()[0].onEnemy, false);
 });
 
@@ -226,12 +226,12 @@ test('the message names who cast what', () => {
   const store = newStore();
   const w = store.createTextAura('Ally mez', { preset: 'allyCast' });
   const e = engine(['Mesmerization']);
-  feed(e, 'Lumbarin begins casting Mesmerization VII.');
-  assert.equal(renderText(w, e.getActiveAllyBuffs()[0]), 'Lumbarin cast Mesmerization VII - careful');
+  feed(e, 'Delo begins casting Mesmerization VII.');
+  assert.equal(renderText(w, e.getActiveAllyBuffs()[0]), 'Delo cast Mesmerization VII - careful');
 });
 
 test('a message with no tokens is left exactly as written', () => {
-  const buff = { allyName: 'Lumbarin', name: 'Mesmerization VII' };
+  const buff = { allyName: 'Delo', name: 'Mesmerization VII' };
   assert.equal(renderText({ textAuraMessage: 'DISPELLED' }, buff), 'DISPELLED');
 });
 

@@ -8,7 +8,7 @@
  * and could not compute - but it also turned out not to matter, because the game announces the
  * replacement outright:
  *
- *     Your Shield of Thistles spell on Avenrae has been overwritten.
+ *     Your Shield of Thistles spell on Baxa has been overwritten.
  *
  * 109 of those in the owner's logs, one shape, no exceptions, naming both the spell and the
  * target. For a buff on YOURSELF there is no line at all - the app relies on the spell's own
@@ -52,20 +52,20 @@ const allies = (e) => e.getActiveAllyBuffs().map((b) => `${b.allyName}::${b.name
 // ---------------------------------------------------------------------------
 
 test('the line is matched, and only in its real shape', () => {
-  assert.deepEqual(matchOverwritten(`${TS}Your Shield of Thistles spell on Avenrae has been overwritten.`), {
+  assert.deepEqual(matchOverwritten(`${TS}Your Shield of Thistles spell on Baxa has been overwritten.`), {
     spellName: 'Shield of Thistles',
-    targetName: 'Avenrae',
+    targetName: 'Baxa',
   });
   // Real neighbours from the logs that must not be confused with it.
-  assert.equal(matchOverwritten(`${TS}Your Shield of Thistles spell has worn off of Avenrae.`), null);
+  assert.equal(matchOverwritten(`${TS}Your Shield of Thistles spell has worn off of Baxa.`), null);
   assert.equal(matchOverwritten(`${TS}Your pet's Burnout spell has worn off.`), null);
-  assert.equal(matchOverwritten(`${TS}Your Protection of Rock spell did not take hold on Avenrae.`), null);
+  assert.equal(matchOverwritten(`${TS}Your Protection of Rock spell did not take hold on Baxa.`), null);
 });
 
 test('a spell name with a rank numeral survives the match', () => {
-  assert.deepEqual(matchOverwritten(`${TS}Your Promised Renewal VII spell on Avenrae has been overwritten.`), {
+  assert.deepEqual(matchOverwritten(`${TS}Your Promised Renewal VII spell on Baxa has been overwritten.`), {
     spellName: 'Promised Renewal VII',
-    targetName: 'Avenrae',
+    targetName: 'Baxa',
   });
 });
 
@@ -81,7 +81,7 @@ test('an overwritten buff stops being tracked', () => {
 test('it clears only the named spell on the named target', () => {
   const e = engine();
   feed(e, 'You begin casting Spirit of Wolf.', 'Marrowbane is surrounded by a brief lupine aura.');
-  feed(e, 'Your Spirit of Wolf spell on Avenrae has been overwritten.');
+  feed(e, 'Your Spirit of Wolf spell on Baxa has been overwritten.');
   assert.deepEqual(allies(e), ['Marrowbane::Spirit of Wolf'], 'the wrong target was cleared');
   feed(e, 'Your Bravery spell on Marrowbane has been overwritten.');
   assert.deepEqual(allies(e), ['Marrowbane::Spirit of Wolf'], 'the wrong spell was cleared');
@@ -89,7 +89,7 @@ test('it clears only the named spell on the named target', () => {
 
 test('an overwrite for something not being tracked does nothing bad', () => {
   const e = engine();
-  feed(e, 'Your Bravery spell on Avenrae has been overwritten.');
+  feed(e, 'Your Bravery spell on Baxa has been overwritten.');
   assert.deepEqual(allies(e), []);
 });
 
@@ -100,7 +100,7 @@ test('an overwrite for something not being tracked does nothing bad', () => {
 test('a self buff replaced by a better one hands over cleanly', () => {
   // I said twice that this could not be worked out, because Skin like Wood and Skin like Steel
   // both fade with "Your skin returns to normal." and the app could not tell which had ended.
-  // That was wrong, and Shara said so. It only matters if BOTH are running at once, and the
+  // That was wrong, and Vaela said so. It only matters if BOTH are running at once, and the
   // stacking rule that causes the overwrite is the same rule that prevents that. Whichever one
   // the app is actually holding is the one the fade belongs to.
   //
@@ -146,9 +146,9 @@ test('the real failure wordings are caught', () => {
   for (const line of [
     'Your Spirit of the Puma spell fizzles!',
     'Your Mesmerize spell is interrupted.',
-    'Your Protection of Rock spell did not take hold on Avenrae. (Blocked by Bravery.)',
+    'Your Protection of Rock spell did not take hold on Baxa. (Blocked by Bravery.)',
     'Your Protection of Rock spell did not take hold. (Blocked by Bravery.)',
-    "Your Selo's Accelerando spell did not take hold on Cavity.",
+    "Your Selo's Accelerando spell did not take hold on Jarl.",
     'Insufficient Mana to cast this spell!',
   ]) {
     assert.ok(isFailureLine(TS + line), `not recognised as a failure: ${line}`);
@@ -159,7 +159,7 @@ test('somebody else failing is not your failure', () => {
   // 1,141 of the 1,711 interrupt lines belong to other people, and every fizzle but one does.
   for (const line of [
     "Wambo's Shock of Venom spell fizzles!",
-    "Avenrae's Tremor spell is interrupted.",
+    "Baxa's Tremor spell is interrupted.",
     "Kylieah's Minor Conjuration: Water spell fizzles!",
   ]) {
     assert.equal(isFailureLine(TS + line), false, `treated as your own failure: ${line}`);

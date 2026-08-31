@@ -614,7 +614,7 @@ function applyPendingFit(id) {
 //
 // The order below IS the behaviour. Each clause has a reason it sits where it does.
 // Note 21. The global switch, off until someone turns it on. Held here rather than on the widget
-// because it is app-wide config, which is what Shara asked for - the label is a permanent option,
+// because it is app-wide config, which is what the owner asked for - the label is a permanent option,
 // not something you build and then have to remember you built.
 let loadoutLabelEnabled = false;
 function setLoadoutLabelEnabledState(enabled) {

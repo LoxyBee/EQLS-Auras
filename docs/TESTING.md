@@ -197,7 +197,7 @@ not routed anywhere.
       at all (only auras for debuffs *you* cast, via "Also watch these on enemies"). Say so if you
       want one; it's a real, separate feature, not a side effect of this fix.
 
-## An ally's own buff wrongly landing as YOURS (Insight/Dovairous, 24 Aug)
+## An ally's own buff wrongly landing as YOURS (Insight/Cade, 24 Aug)
 
 Reported live: Insight (an Enchanter-only buff) sitting in Self Buffs on a BRD/CLF character, with
 "Track buffs cast on me by others" OFF - *"it should not be put on me if it did not see my name
@@ -208,7 +208,7 @@ guessed - two separate real gaps, both closed:
    never scribe at all - not "unloaded right now", never once possible - skipped that check
    entirely and fell straight through to a confident `LANDED`. Fixed: absence from the spellbook
    file altogether is now checked directly, not just gated behind "is this even memorizable by me".
-2. **The real trigger, found after checking the raw log line by line:** `"Dovairous activates
+2. **The real trigger, found after checking the raw log line by line:** `"Cade activates
    Quick Buff."` - an ally triggering the exact same instant multi-buff grant this app already
    documents for the player's OWN use (gotchas #12/#18), just from someone else. It drops a whole
    stack of buffs on the entire group at once with no per-spell cast line for any of them, so the
@@ -223,9 +223,9 @@ guessed - two separate real gaps, both closed:
       *Expect*: none of what it drops shows up in Self Buffs unless you also turn on "Track buffs
       cast on me by others" - check the detection log for `ALLY ACTIVATE "..." by "..."` followed
       by `IGNORED "..." - ... an ally's instant grant just fired`. **Self-verified 25 Aug** by
-      injecting `Dovairous activates Quick Buff.` + `You are infused with power.` into the live
+      injecting `Cade activates Quick Buff.` + `You are infused with power.` into the live
       log and reading the result straight from the detection log: `ALLY ACTIVATE "Quick Buff" by
-      "Dovairous"` followed by `IGNORED "Infusion of Spirit" - unique text, an ally's instant grant
+      "Cade"` followed by `IGNORED "Infusion of Spirit" - unique text, an ally's instant grant
       just fired, track others OFF` - exact match, no need for you to check the overlay.
 - [ ] **Your OWN Quick Buff (or equivalent) is completely unaffected** - still grants everything it
       always did, same as before this fix.
@@ -396,7 +396,7 @@ correct case and the wrong one, so a report of it looked identical to normal ope
 The log now records **what opened the window and how long ago**:
 
 ```
-ALLY LANDED "Spirit of the Puma" on "Avenrae" - burst context
+ALLY LANDED "Spirit of the Puma" on "Baxa" - burst context
 (burst opened 4.2s ago by "Cannibalize"), unique third-person landing text
 ```
 
@@ -492,7 +492,7 @@ mez-broken detection needs that to keep working) - this only narrows what's actu
 Add Aura → **Someone else cast a mez**. Or tick **"Warn me when someone else casts these"** on any
 text-only aura. This is your design, built the way you specified it: a warning, no countdown.
 
-- [ ] **When a groupmate casts a mez, the warning appears** and names them — "Lumbarin cast
+- [ ] **When a groupmate casts a mez, the warning appears** and names them — "Delo cast
       Mesmerization VII - careful".
 - [ ] **It appears as they START casting**, roughly two seconds before the mez actually lands. That
       is deliberate: a warning after the fact is too late to stop you swinging. The cost is that a
@@ -915,7 +915,7 @@ had the identical latent bug and should be re-checked for real now that it's fix
       The other two — "You feel dispelled." and "You feel a bit dispelled." — are an inference from
       the third-person versions. **If you get a weaker dispel and nothing shows, tell me the exact
       line** and it is a one-word fix.
-- [ ] **Check it does not fire when someone ELSE is dispelled** ("Avenrae feels very dispelled.").
+- [ ] **Check it does not fire when someone ELSE is dispelled** ("Baxa feels very dispelled.").
       It should not — the triggers are whole-line exact matches.
 
 ## "Buffs shown" is its own card, with gem slots
@@ -1772,7 +1772,7 @@ whole time:**
 ```
 [16:58:32] BARD SONG "Anthem de Arms" - attributed to You        (self-cast: "You begin singing...")
 [16:59:15] BARD SONG "Anthem de Arms" - attributed to Unknown    (landing with no cast-begin evidence)
-[17:03:38] BARD SONG "Anthem de Arms" - attributed to Avenrae    (ally cast-begin: "Avenrae begins singing...")
+[17:03:38] BARD SONG "Anthem de Arms" - attributed to Baxa    (ally cast-begin: "Baxa begins singing...")
 ```
 That third line is also the confirmation for the veto-waiver design change (see CLAUDE.md #15):
 the ally-cast landing would ordinarily be `IGNORED` with the toggle off - the log shows it landing
@@ -1876,7 +1876,7 @@ the actual widget renders these correctly, since it was checked at the engine/de
   Previously the toggle did nothing at all because only 1 of 11,337 roster entries was tagged as a
   song.
 - [x] **Ally buff detection.** Buffs cast on other people now appear on the Ally Buffs aura —
-  confirmed with Shield of Flame on both Avenrae and Lasartik. Had **never** fired before: the tier
+  confirmed with Shield of Flame on both Baxa and Nell. Had **never** fired before: the tier
   was gated on the recipient being a known group member, and group membership is only learned from
   join/leave lines seen live.
 
@@ -2198,11 +2198,11 @@ launches clean, but none has actually been clicked through in a live session.
 
 ## Bard-song self-attribution fix (25 Aug) - needs a real ranked recast to confirm
 
-Reported live: singing "Selo's Accelerating Chorus VI" got attributed to "Imperius" - a MOB seen
+Reported live: singing "Selo's Accelerating Chorus VI" got attributed to "Enro" - a MOB seen
 singing an identically-named ability ~20 minutes earlier, not a real groupmate. Root-caused to the
 raw log and fixed in `buffEngine.js`'s `_attributeBardSongCaster()` - see CLAUDE.md gotcha #31.
 Verified against the real engine with a fictional ranked song (mutation-tested: reverting the fix
-reproduces `'Imperius' !== 'You'` exactly), but not yet re-confirmed against the real game:
+reproduces `'Enro' !== 'You'` exactly), but not yet re-confirmed against the real game:
 
 - [ ] **Sing "Selo's Accelerating Chorus" (or any other ranked bard song) yourself again** and
       confirm the Bard Songs aura attributes it to "You", not a stale name from earlier in the

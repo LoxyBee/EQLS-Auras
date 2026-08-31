@@ -320,7 +320,7 @@ function initials(name) {
 //
 // The name prefix is dropped when the tile already sits under a heading
 // naming that ally (grouping on), or when the user has turned it off
-// outright - repeating "Avenrae:" on every tile in Avenrae's own group is
+// outright - repeating "Baxa:" on every tile in Baxa's own group is
 // just noise eating tile width.
 function displayName(buff) {
   if (!buff.allyName) return buff.name;
@@ -394,7 +394,7 @@ function buildCountBadge(count, why) {
 // refreshing the one target you already have - it's one tile now, duration refreshed on a new
 // cast, same as a buff on a groupmate always was.
 //
-// Shara, 23 August: "a count of x1 should not be displayed, only display count when multiple
+// the owner, 23 August: "a count of x1 should not be displayed, only display count when multiple
 // exist." Returning null in the ordinary case is what enforces it, once, rather than at each call
 // site.
 function countFor(buff) {
@@ -422,7 +422,7 @@ function buildTextTile(buff) {
 // What a text aura actually says.
 //
 // {caster} and {spell} are substituted so one aura can cover a whole list of spells and still say
-// which one just happened, and who by. Shara's example wording was "Party member has cast
+// which one just happened, and who by. the owner's example wording was "Party member has cast
 // Mesmerize on a creature"; the tokens are what let her write that for real, with the actual name
 // in it, instead of a fixed line that is only right for one spell.
 //
@@ -1042,7 +1042,7 @@ function visibleBuffs(buffs, opts = {}) {
 
   // INSTANTS - nukes, heals, gates - only belong on an aura that is not drawing a countdown.
   //
-  // Shara's rule: they "should not be added to selection lists that have a duration based tile"
+  // the owner's rule: they "should not be added to selection lists that have a duration based tile"
   // but "can be added to... text only custom auras... just in case someone wants feedback when a
   // cast is successful or resisted". So a list or icon aura filters them out here, and a text
   // aura keeps them.

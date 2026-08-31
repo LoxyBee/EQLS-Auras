@@ -155,32 +155,32 @@ test('the week is named from the Eastern day, not the machine local day', () => 
 
 test('every character rotates, not just the one being watched', () => {
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt': LINE,
-    'eqlog_Shara_rivervale.txt': LINE,
+    'eqlog_Baxa_rivervale.txt': LINE,
+    'eqlog_Vaela_rivervale.txt': LINE,
     'eqlog_Third_rivervale.txt': LINE,
   });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(r.rotated.length, 3);
   assert.equal(archived(dir).length, 3);
-  for (const name of ['eqlog_Avenrae_rivervale.txt', 'eqlog_Shara_rivervale.txt']) {
+  for (const name of ['eqlog_Baxa_rivervale.txt', 'eqlog_Vaela_rivervale.txt']) {
     assert.equal(fs.statSync(path.join(dir, name)).size, 0, `${name} was not emptied`);
   }
 });
 
 test('the archive holds the log, byte for byte, before the original is emptied', () => {
   const body = LINE + '\r\n' + LINE + '\r\n';
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': body });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': body });
   svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   const a = path.join(dir, 'Archive', archived(dir)[0]);
   assert.equal(fs.readFileSync(a, 'utf8'), body, 'the archive is not the log that was emptied');
-  assert.equal(fs.statSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt')).size, 0);
+  assert.equal(fs.statSync(path.join(dir, 'eqlog_Baxa_rivervale.txt')).size, 0);
 });
 
 test('the archive is named after the week it closes', () => {
   // 11:00 EDT on Tue 1 Sep = 15:00 UTC.
   assert.equal(
-    archiveNameFor('eqlog_Avenrae_rivervale.txt', new Date(Date.UTC(2026, 8, 1, 15, 0, 0))),
-    'eqlog_Avenrae_rivervale_week_2026-09-01.txt'
+    archiveNameFor('eqlog_Baxa_rivervale.txt', new Date(Date.UTC(2026, 8, 1, 15, 0, 0))),
+    'eqlog_Baxa_rivervale_week_2026-09-01.txt'
   );
 });
 
@@ -188,52 +188,52 @@ test('the archive is named after the week it closes', () => {
 // unreadable settings file cannot cause a second rotation mid-week - which matters, because this
 // app currently answers an unreadable settings file by returning defaults.
 test('a second run in the same week does nothing', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const now = new Date(2026, 8, 2, 12, 0, 0);
   const s = svc(dir);
   assert.equal(s.rotateIfDue(now).rotated.length, 1);
 
-  fs.appendFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), LINE);
+  fs.appendFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), LINE);
   const second = s.rotateIfDue(now);
   assert.equal(second.rotated.length, 0);
-  assert.deepEqual(second.skippedAlreadyDone, ['eqlog_Avenrae_rivervale.txt']);
-  assert.ok(fs.statSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt')).size > 0, 'this week was emptied twice');
+  assert.deepEqual(second.skippedAlreadyDone, ['eqlog_Baxa_rivervale.txt']);
+  assert.ok(fs.statSync(path.join(dir, 'eqlog_Baxa_rivervale.txt')).size > 0, 'this week was emptied twice');
 });
 
 test('a fresh service instance also knows the week was done', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const now = new Date(2026, 8, 2, 12, 0, 0);
   svc(dir).rotateIfDue(now);
-  fs.appendFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), LINE);
+  fs.appendFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), LINE);
   // A restart must not re-rotate: the filesystem, not memory, is the record.
   assert.equal(svc(dir).rotateIfDue(now).rotated.length, 0);
 });
 
 test('the next week does rotate', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const s = svc(dir);
   s.rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
-  fs.appendFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), LINE);
+  fs.appendFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), LINE);
   assert.equal(s.rotateIfDue(new Date(2026, 8, 9, 12, 0, 0)).rotated.length, 1);
   assert.deepEqual(archived(dir), [
-    'eqlog_Avenrae_rivervale_week_2026-09-01.txt',
-    'eqlog_Avenrae_rivervale_week_2026-09-08.txt',
+    'eqlog_Baxa_rivervale_week_2026-09-01.txt',
+    'eqlog_Baxa_rivervale_week_2026-09-08.txt',
   ]);
 });
 
 // A week away from the game would otherwise leave a trail of zero-byte archives that look like
 // something went wrong.
 test('an empty log is left alone and produces no archive', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': '' });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': '' });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
-  assert.deepEqual(r.skippedEmpty, ['eqlog_Avenrae_rivervale.txt']);
+  assert.deepEqual(r.skippedEmpty, ['eqlog_Baxa_rivervale.txt']);
   assert.equal(r.rotated.length, 0);
   assert.deepEqual(archived(dir), [], 'an empty log should leave nothing behind');
 });
 
 test('files that are not character logs are never touched', () => {
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt': LINE,
+    'eqlog_Baxa_rivervale.txt': LINE,
     'dbg.txt': 'keep me',
     'Sky.txt': 'keep me too',
   });
@@ -249,7 +249,7 @@ test('files that are not character logs are never touched', () => {
 // The live log is only emptied after the archive is proved to match. If the copy cannot be made,
 // the log must come through completely untouched.
 test('a log is never emptied when the archive cannot be written', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const s = svc(dir);
   // A FILE where the Archive directory needs to be, so mkdir/copy cannot succeed.
   fs.writeFileSync(path.join(dir, 'Archive'), 'not a directory');
@@ -257,7 +257,7 @@ test('a log is never emptied when the archive cannot be written', () => {
   assert.equal(r.rotated.length, 0);
   assert.equal(r.failed.length, 1);
   assert.equal(
-    fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8'),
+    fs.readFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), 'utf8'),
     LINE,
     'THE LOG WAS EMPTIED WITHOUT AN ARCHIVE'
   );
@@ -286,7 +286,7 @@ test('one bad file does not stop the others rotating', () => {
 // A short archive means something went wrong mid-copy. Emptying the original on top of that is how
 // a rotation becomes data loss.
 test('a truncated archive stops the rotation instead of completing it', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const s = svc(dir);
   const realCopy = fs.copyFileSync;
   fs.copyFileSync = (src, dest) => fs.writeFileSync(dest, 'short');
@@ -299,16 +299,16 @@ test('a truncated archive stops the rotation instead of completing it', () => {
   assert.equal(r.rotated.length, 0);
   assert.equal(r.failed.length, 1);
   assert.match(r.failed[0].error, /archive is/);
-  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8'), LINE);
+  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), 'utf8'), LINE);
 });
 
 test('turning it off means nothing is touched at all', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const s = svc(dir, { loadJson: () => ({ enabled: false }), saveJson: () => {} });
   s.loadSettings();
   const r = s.rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(r.reason, 'turned off');
-  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8'), LINE);
+  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), 'utf8'), LINE);
   assert.deepEqual(archived(dir), []);
 });
 
@@ -360,13 +360,13 @@ test('an unreadable logs folder is reported, not thrown', () => {
 // MID-WEEK. Nothing was lost, it went to the Archive folder intact, but it left the live log, which
 // is where the lockout grid reads. Bosses killed on Tuesday night would have read as not killed.
 test('a week that opened with an empty log does not eat the first night of play', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': '' });
-  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': '' });
+  const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   const s = svc(dir);
 
   // Tuesday 11:05, the week opens. She has not played since the last rotation.
   const opened = s.rotateIfDue(new Date(2026, 8, 1, 11, 5, 0));
-  assert.deepEqual(opened.skippedEmpty, ['eqlog_Avenrae_rivervale.txt']);
+  assert.deepEqual(opened.skippedEmpty, ['eqlog_Baxa_rivervale.txt']);
   assert.deepEqual(archived(dir), []);
 
   // Tuesday evening. Two bosses die.
@@ -378,7 +378,7 @@ test('a week that opened with an empty log does not eat the first night of play'
   // Wednesday morning she opens the app again.
   const next = s.rotateIfDue(new Date(2026, 8, 2, 9, 0, 0));
   assert.equal(next.rotated.length, 0, 'IT ROTATED MID-WEEK');
-  assert.deepEqual(next.skippedAlreadyCurrent, ['eqlog_Avenrae_rivervale.txt']);
+  assert.deepEqual(next.skippedAlreadyCurrent, ['eqlog_Baxa_rivervale.txt']);
   assert.equal(fs.readFileSync(live, 'utf8'), night, 'TUESDAY NIGHT LEFT THE LIVE LOG');
   assert.deepEqual(archived(dir), []);
 });
@@ -387,16 +387,16 @@ test('a week that opened with an empty log does not eat the first night of play'
 // anything from before the boundary, not merely whether an archive happens to be on disk.
 test('a log that already starts after the boundary is left alone', () => {
   const body = '[Wed Sep 02 08:00:00 2026] You have slain Lady Vox!\n';
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': body });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': body });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(r.rotated.length, 0);
-  assert.deepEqual(r.skippedAlreadyCurrent, ['eqlog_Avenrae_rivervale.txt']);
-  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8'), body);
+  assert.deepEqual(r.skippedAlreadyCurrent, ['eqlog_Baxa_rivervale.txt']);
+  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), 'utf8'), body);
 });
 
 test('a log that starts before the boundary is what actually rotates', () => {
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt': '[Mon Aug 31 22:00:00 2026] You have slain Lady Vox!\n',
+    'eqlog_Baxa_rivervale.txt': '[Mon Aug 31 22:00:00 2026] You have slain Lady Vox!\n',
   });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(r.rotated.length, 1);
@@ -407,11 +407,11 @@ test('a log that starts before the boundary is what actually rotates', () => {
 // is not a licence to empty someone's log. It is reported rather than passed over in silence.
 test('a log with no readable timestamp is left alone and said out loud', () => {
   const body = 'no timestamp on this line at all\nnor on this one\n';
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': body });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': body });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(r.rotated.length, 0, 'it emptied a log it could not read');
-  assert.deepEqual(r.skippedUnreadable, ['eqlog_Avenrae_rivervale.txt']);
-  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8'), body);
+  assert.deepEqual(r.skippedUnreadable, ['eqlog_Baxa_rivervale.txt']);
+  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), 'utf8'), body);
   assert.deepEqual(archived(dir), []);
 });
 
@@ -419,7 +419,7 @@ test('a log with no readable timestamp is left alone and said out loud', () => {
 // that was mid-write - must not stop the rotation, because the second line is readable.
 test('a torn first line does not hide the timestamp on the second', () => {
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt':
+    'eqlog_Baxa_rivervale.txt':
       'ou have slain Lady Vox!\n[Mon Aug 31 22:00:00 2026] You have slain Lord Nagafen!\n',
   });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
@@ -435,7 +435,7 @@ test('a torn first line does not hide the timestamp on the second', () => {
 // What is checkable is that the report and the archive name are computed from the same thing, and
 // that the renderer reads the field rather than the string - which is where the bug would land.
 test('the reported week and the archive name are the same computation', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(r.boundaryDate, '2026-09-01');
   assert.ok(
@@ -556,7 +556,7 @@ test('every rotation IPC channel is one the renderer can actually reach', () => 
 // only via loadSettings() left setEnabled itself unexercised: a mutant that ignored its argument
 // passed the whole suite, which is a toggle that silently does nothing and rotates anyway forever.
 test('turning it off through the toggle sticks, and is written down', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const saved = [];
   // Built directly rather than through svc(), because svc() opts in for the tests that need it and
   // this test is about the toggle itself - it has to own every call to it.
@@ -566,17 +566,17 @@ test('turning it off through the toggle sticks, and is written down', () => {
   assert.deepEqual(saved, [['logRotation', { enabled: false }]], 'the choice was not persisted');
   const r = s.rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(r.reason, 'turned off');
-  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8'), LINE);
+  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), 'utf8'), LINE);
   assert.deepEqual(archived(dir), []);
   assert.equal(s.setEnabled(true), true, 'setEnabled(true) did not turn it back on');
 });
 
-// Shara's own warning on the Archive log card: clearing the log while EQ is writing to it risks a
+// Vaela's own warning on the Archive log card: clearing the log while EQ is writing to it risks a
 // lost line. The rotation fires on a timer while she is playing, so that warning is about THIS.
 // Both directions are asserted - a gate stuck shut would starve the rotation forever, which is its
 // own kind of wrong answer.
 test('it waits while the game is writing, and proceeds once it stops', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const s = svc(dir);
   let quiet = false;
   s.setIsQuietFn(() => quiet);
@@ -584,13 +584,13 @@ test('it waits while the game is writing, and proceeds once it stops', () => {
   const busy = s.rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(busy.rotated.length, 0, 'IT ROTATED WHILE THE GAME WAS WRITING');
   assert.match(busy.reason, /written to right now/);
-  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8'), LINE);
+  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), 'utf8'), LINE);
   assert.deepEqual(archived(dir), [], 'it made an archive mid-write');
 
   quiet = true;
   const lull = s.rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(lull.rotated.length, 1, 'it never rotates once the log falls quiet');
-  assert.equal(fs.statSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt')).size, 0);
+  assert.equal(fs.statSync(path.join(dir, 'eqlog_Baxa_rivervale.txt')).size, 0);
 });
 
 // The copy-then-truncate ORDER, tested by failing after the Archive directory exists. The sibling
@@ -598,7 +598,7 @@ test('it waits while the game is writing, and proceeds once it stops', () => {
 // the log survives for a reason that has nothing to do with ordering - it passed against code that
 // truncated first. This one fails at the copy itself, which is the only place the order is visible.
 test('the log is emptied only after a copy succeeds, never before', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const s = svc(dir);
   const realCopy = fs.copyFileSync;
   fs.copyFileSync = () => { throw new Error('the disk filled up mid-copy'); };
@@ -612,7 +612,7 @@ test('the log is emptied only after a copy succeeds, never before', () => {
   assert.equal(r.rotated.length, 0);
   assert.equal(r.failed.length, 1);
   assert.equal(
-    fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8'),
+    fs.readFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), 'utf8'),
     LINE,
     'THE LOG WAS EMPTIED BEFORE THE ARCHIVE EXISTED'
   );
@@ -644,8 +644,8 @@ for (const [how, breakIt] of [
   }],
 ]) {
   test(`a week is retried, not written off, when ${how}`, () => {
-    const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
-    const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+    const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
+    const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
     const s = svc(dir);
     const when = new Date(2026, 8, 2, 12, 0, 0);
 
@@ -674,8 +674,8 @@ for (const [how, breakIt] of [
 // and emptying it would take them from both. Measured at roughly 100 microseconds and a byte or so
 // of real exposure, which is small, and not the same as closed.
 test('a log that grows in the last moment before emptying is not emptied', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
-  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
+  const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   const s = svc(dir);
   const real = fs.copyFileSync;
   fs.copyFileSync = (src, dest) => {
@@ -712,7 +712,7 @@ test('the cut is the reset instant, and a pre-reset Tuesday kill is last week', 
   // grid and the rotation treat that as last week's, so the file is entirely rotatable. The kill
   // stamp is built from the instant so it is unambiguous in any machine timezone.
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt':
+    'eqlog_Baxa_rivervale.txt':
       `${stamp(cut.getTime() - 40 * HOUR)} You have slain Lady Vox!\n` +
       `${stamp(cut.getTime() - 3 * HOUR)} You have slain Lord Nagafen!\n`,
   });
@@ -726,20 +726,20 @@ test('a post-reset Tuesday kill keeps the file this week', () => {
   const now = new Date(Date.UTC(2026, 8, 2, 16, 0, 0)); // Wed 2 Sep, 12:00 EDT
   const cut = rotationCutBefore(now).getTime();
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt':
+    'eqlog_Baxa_rivervale.txt':
       `${stamp(cut - 40 * HOUR)} You have slain Lady Vox!\n` +
       `${stamp(cut + 3 * HOUR)} You have slain Lord Nagafen!\n`, // 3h after the reset instant
   });
   const r = svc(dir).rotateIfDue(now);
   assert.equal(r.rotated.length, 0, 'a kill after the reset is this week');
-  assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Avenrae_rivervale.txt']);
+  assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Baxa_rivervale.txt']);
 });
 
 // And the ordinary case still rotates: play that stops before midnight on the Tuesday is entirely
 // last week's as far as the grid is concerned, so there is nothing to lose by archiving it.
 test('play that ends before the boundary day still rotates', () => {
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt':
+    'eqlog_Baxa_rivervale.txt':
       '[Sun Aug 30 21:00:00 2026] You have slain Lady Vox!\n' +
       '[Mon Aug 31 23:50:00 2026] You have slain Lord Nagafen!\n',
   });
@@ -749,7 +749,7 @@ test('play that ends before the boundary day still rotates', () => {
 
 // With a known reset hour the cut IS the reset - the report still carries both, and they match.
 test('the archive is named for the reset and the cut is the same instant', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const r = svc(dir).rotateIfDue(new Date(Date.UTC(2026, 8, 2, 16, 0, 0)));
   assert.equal(r.boundaryDate, '2026-09-01');
   assert.ok(r.rotated[0].archivedTo.endsWith('_week_2026-09-01.txt'));
@@ -779,11 +779,11 @@ test('a log holding both last week and this one is left alone, and says so', () 
   const body =
     '[Mon Aug 31 22:00:00 2026] You have slain Lady Vox!\n' +
     '[Tue Sep 01 20:00:00 2026] You have slain Lord Nagafen!\n';
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': body });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': body });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(r.rotated.length, 0, 'IT ARCHIVED THIS WEEK[S KILLS OUT OF THE LIVE LOG');
-  assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Avenrae_rivervale.txt']);
-  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8'), body);
+  assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Baxa_rivervale.txt']);
+  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), 'utf8'), body);
   assert.deepEqual(archived(dir), []);
 });
 
@@ -802,11 +802,11 @@ test('a log far larger than the read window is judged by its real last line', ()
     '[Tue Sep 01 20:00:00 2026] You have slain Lord Nagafen!\n';
   assert.ok(body.length > 8192 * 2, 'the fixture is not big enough to span two read windows');
 
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': body });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': body });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
-  assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Avenrae_rivervale.txt'],
+  assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Baxa_rivervale.txt'],
     'the crossing at the end of a large log was not seen');
-  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), 'utf8'), body);
+  assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), 'utf8'), body);
 });
 
 // The ordinary case, and the one the owner described: the servers are down at the reset, so the
@@ -815,7 +815,7 @@ test('a log that ends before the reset is the one that rotates', () => {
   const body =
     '[Sun Aug 30 21:00:00 2026] You have slain Lady Vox!\n' +
     '[Mon Aug 31 23:30:00 2026] You have slain Lord Nagafen!\n';
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': body });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': body });
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
   assert.equal(r.rotated.length, 1);
   assert.deepEqual(r.skippedSpansBoundary, []);
@@ -838,17 +838,17 @@ const aged = (dir, name, now, secondsAgo) => {
 test('a log another client is writing to right now is left alone', () => {
   const now = new Date(2026, 8, 2, 12, 0, 0);
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt': LINE,
+    'eqlog_Baxa_rivervale.txt': LINE,
     'eqlog_Boxmule_rivervale.txt': LINE,
   });
-  aged(dir, 'eqlog_Avenrae_rivervale.txt', now, 600);  // idle ten minutes
+  aged(dir, 'eqlog_Baxa_rivervale.txt', now, 600);  // idle ten minutes
   aged(dir, 'eqlog_Boxmule_rivervale.txt', now, 2);    // written to two seconds ago
 
   const r = svc(dir).rotateIfDue(now);
   assert.deepEqual(r.skippedBusy, ['eqlog_Boxmule_rivervale.txt'], 'the busy log was not spared');
   assert.equal(r.rotated.length, 1, 'the idle log should still have rotated');
   assert.equal(fs.readFileSync(path.join(dir, 'eqlog_Boxmule_rivervale.txt'), 'utf8'), LINE);
-  assert.equal(fs.statSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt')).size, 0);
+  assert.equal(fs.statSync(path.join(dir, 'eqlog_Baxa_rivervale.txt')).size, 0);
 });
 
 // Rotation renews every file's mtime, and the watcher follows the newest file in the folder. Empty
@@ -858,23 +858,23 @@ test('a log another client is writing to right now is left alone', () => {
 test('the log being watched is the last one emptied, so the watcher stays on it', () => {
   const now = new Date(2026, 8, 2, 12, 0, 0);
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt': LINE,
+    'eqlog_Baxa_rivervale.txt': LINE,
     'eqlog_Zzmule_rivervale.txt': LINE,
   });
-  aged(dir, 'eqlog_Avenrae_rivervale.txt', now, 600);
+  aged(dir, 'eqlog_Baxa_rivervale.txt', now, 600);
   aged(dir, 'eqlog_Zzmule_rivervale.txt', now, 600);
 
   const s = svc(dir);
-  // Avenrae is being tailed - and sorts FIRST alphabetically, which is the order readdir gives.
-  s.setCurrentFileFn(() => path.join(dir, 'eqlog_Avenrae_rivervale.txt'));
+  // Baxa is being tailed - and sorts FIRST alphabetically, which is the order readdir gives.
+  s.setCurrentFileFn(() => path.join(dir, 'eqlog_Baxa_rivervale.txt'));
   const r = s.rotateIfDue(now);
   assert.equal(r.rotated.length, 2);
   assert.equal(
     path.basename(r.rotated[r.rotated.length - 1].file),
-    'eqlog_Avenrae_rivervale.txt',
+    'eqlog_Baxa_rivervale.txt',
     'THE WATCHED LOG WAS NOT ROTATED LAST - the watcher will jump to the other character'
   );
-  const watched = fs.statSync(path.join(dir, 'eqlog_Avenrae_rivervale.txt')).mtimeMs;
+  const watched = fs.statSync(path.join(dir, 'eqlog_Baxa_rivervale.txt')).mtimeMs;
   const mule = fs.statSync(path.join(dir, 'eqlog_Zzmule_rivervale.txt')).mtimeMs;
   assert.ok(watched >= mule, 'the mule ended up with the newer mtime');
 });
@@ -901,11 +901,11 @@ test('the watcher stays put even when the watched log is the one skipped', () =>
 
   const dir = tempLogs({
     // Hers straddles the reset, so it is refused.
-    'eqlog_Avenrae_rivervale.txt': at(-30, 'You have slain Lady Vox!') + at(2, 'still playing'),
+    'eqlog_Baxa_rivervale.txt': at(-30, 'You have slain Lady Vox!') + at(2, 'still playing'),
     // The mule's is entirely last week's, so it rotates.
     'eqlog_Zzmule_rivervale.txt': at(-50, 'The mule stood in the bank.'),
   });
-  const watched = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const watched = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   const muleFile = path.join(dir, 'eqlog_Zzmule_rivervale.txt');
 
   const ago = (ms) => new Date(Date.now() - ms);
@@ -918,7 +918,7 @@ test('the watcher stays put even when the watched log is the one skipped', () =>
   const r = s.rotateIfDue(now);
 
   assert.deepEqual(r.rotated.map((x) => x.file), ['eqlog_Zzmule_rivervale.txt'], 'the wrong file rotated');
-  assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Avenrae_rivervale.txt']);
+  assert.deepEqual(r.skippedSpansBoundary, ['eqlog_Baxa_rivervale.txt']);
   assert.ok(
     fs.statSync(watched).mtimeMs >= fs.statSync(muleFile).mtimeMs,
     'THE MULE TOOK THE NEWEST MTIME - the tailer will move to it and the player loses lines'
@@ -929,7 +929,7 @@ test('the watcher stays put even when the watched log is the one skipped', () =>
 // return before the module is ever called, so the card went blank again - the same defect one
 // level up. Both host guards must leave the same kind of record.
 test('a check the host declines still leaves something the card can say', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const s = svc(dir);
   const now = new Date(2026, 8, 2, 12, 0, 0);
 
@@ -1011,8 +1011,8 @@ test('#24 - the launch archive nudge is wired, size-gated, and steers to the wee
 // one that had never had anything to do.
 test('what happened survives the quiet minutes that follow it', () => {
   const now = new Date(2026, 8, 2, 12, 0, 0);
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
-  aged(dir, 'eqlog_Avenrae_rivervale.txt', now, 600);
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
+  aged(dir, 'eqlog_Baxa_rivervale.txt', now, 600);
   const s = svc(dir);
 
   s.rotateIfDue(now);
@@ -1042,7 +1042,7 @@ test('every way a check can end leaves something a person could read', () => {
     },
     'no logs folder': () => new LogRotationService(),
     'the game is writing': () => {
-      const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+      const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
       const s2 = svc(dir);
       s2.setIsQuietFn(() => false);
       return s2;
@@ -1054,8 +1054,8 @@ test('every way a check can end leaves something a person could read', () => {
     },
     'nothing to do': () => svc(tempLogs({})),
     'it rotated': () => {
-      const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
-      aged(dir, 'eqlog_Avenrae_rivervale.txt', now, 600);
+      const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
+      aged(dir, 'eqlog_Baxa_rivervale.txt', now, 600);
       return svc(dir);
     },
   };
@@ -1088,8 +1088,8 @@ test('a log buried under megabytes of NUL padding still rotates', () => {
   const line = `[${wd} ${mo} ${p(d.getDate())} ${p(d.getHours())}:00:00 ${d.getFullYear()}] You have slain Lady Vox!\n`;
 
   // Comfortably past HEAD_BYTES_MAX, which is where the old fixed window gave up.
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': '' });
-  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': '' });
+  const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   fs.writeFileSync(live, Buffer.concat([Buffer.alloc(5 * 1024 * 1024), Buffer.from(line)]));
   const ago = (ms) => new Date(Date.now() - ms);
   fs.utimesSync(live, ago(600000), ago(600000));
@@ -1106,9 +1106,9 @@ test('a log buried under more junk than one read window still rotates', () => {
   const now = new Date(2026, 8, 2, 12, 0, 0);
   const junk = '\0'.repeat(20000);
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt': junk + '[Mon Aug 31 22:00:00 2026] You have slain Lady Vox!\n',
+    'eqlog_Baxa_rivervale.txt': junk + '[Mon Aug 31 22:00:00 2026] You have slain Lady Vox!\n',
   });
-  aged(dir, 'eqlog_Avenrae_rivervale.txt', now, 600);
+  aged(dir, 'eqlog_Baxa_rivervale.txt', now, 600);
   const r = svc(dir).rotateIfDue(now);
   assert.deepEqual(r.skippedUnreadable, [], 'it gave up inside the first window');
   assert.equal(r.rotated.length, 1);
@@ -1139,7 +1139,7 @@ test('a space-padded single-digit day is a timestamp, not an unstamped line', ()
 
 test('a log written in a space-padded format would still rotate', () => {
   const dir = tempLogs({
-    'eqlog_Avenrae_rivervale.txt': '[Tue Sep  1 09:00:00 2026] You have slain Lady Vox!\n',
+    'eqlog_Baxa_rivervale.txt': '[Tue Sep  1 09:00:00 2026] You have slain Lady Vox!\n',
   });
   // Boundary is Tuesday 8 September; the log is from the 1st, so it is last week's and must go.
   const r = svc(dir).rotateIfDue(new Date(2026, 8, 9, 12, 0, 0));
@@ -1154,7 +1154,7 @@ test('a log written in a space-padded format would still rotate', () => {
 // Auras live in userData; rotation works inside the EverQuest Logs folder. The two are different
 // trees and this asserts the module cannot reach across.
 test('rotation writes nothing outside the logs folder', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': LINE });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'logRotation.js'), 'utf8');
   assert.ok(!/getPath\(/.test(src), 'the rotation must not resolve app paths - that is where auras live');
   assert.ok(!/userData/.test(src.replace(/^\s*\/\/.*$/gm, '')), 'no userData outside comments');
@@ -1173,7 +1173,7 @@ test('rotation writes nothing outside the logs folder', () => {
 // hatch: archive everything before the reset, keep this week, from a button on the Lockouts page.
 test('trimAtBoundary archives the old part and keeps this week', () => {
   const dir = tempLogs({});
-  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   fs.writeFileSync(live, [
     '[Sun Aug 24 20:00:00 2026] last week',
     '[Tue Aug 25 08:00:00 2026] before the 11:00 ET reset - still last week',
@@ -1197,7 +1197,7 @@ test('trimAtBoundary archives the old part and keeps this week', () => {
 
 test('trimAtBoundary is a no-op on a log that is already just this week', () => {
   const dir = tempLogs({});
-  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   const body = '[Thu Aug 27 21:00:00 2026] this week only\r\n';
   fs.writeFileSync(live, body);
   const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
@@ -1210,11 +1210,11 @@ test('trimAtBoundary is a no-op on a log that is already just this week', () => 
 });
 
 test('trimAtBoundary refuses while the log is being written', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': '[Sun Aug 24 20:00:00 2026] x' });
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': '[Sun Aug 24 20:00:00 2026] x' });
   const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
   s.setResetRule({ weekday: 2, hour: 11 });
   s.setIsQuietFn(() => false);
-  const r = s.trimAtBoundary(path.join(dir, 'eqlog_Avenrae_rivervale.txt'), new Date(2026, 7, 29, 12, 0, 0));
+  const r = s.trimAtBoundary(path.join(dir, 'eqlog_Baxa_rivervale.txt'), new Date(2026, 7, 29, 12, 0, 0));
   assert.equal(r.ok, false);
   assert.match(r.reason, /being written/);
 });
@@ -1229,8 +1229,8 @@ test('trimAtBoundary walks up from the end on a multi-week log', () => {
   lines.push('[Tue Aug 25 08:00:00 2026] Tuesday morning, before the 11:00 ET reset - last week');
   lines.push('[Tue Aug 25 15:00:00 2026] first line of this week');
   lines.push('[Thu Aug 27 21:00:00 2026] Lord Nagafen has been slain by X!');
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': lines.join('\r\n') + '\r\n' });
-  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': lines.join('\r\n') + '\r\n' });
+  const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   const before = fs.statSync(live).size;
 
   const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
@@ -1250,8 +1250,8 @@ test('trimAtBoundary walks up from the end on a multi-week log', () => {
 });
 
 test('trimAtBoundary: whole file older than the boundary -> archive all, keep nothing', () => {
-  const dir = tempLogs({ 'eqlog_Avenrae_rivervale.txt': '[Sun Aug 24 20:00:00 2026] last week only\r\n' });
-  const live = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': '[Sun Aug 24 20:00:00 2026] last week only\r\n' });
+  const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
   s.setResetRule({ weekday: 2, hour: 11 });
   s.setIsQuietFn(() => true);

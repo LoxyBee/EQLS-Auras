@@ -34,7 +34,7 @@ const OTHER_CAST_BEGIN_PATTERN = /^(.+?) begins (?:casting|singing) (.+)\.$/;
 
 // Third-person version of ACTIVATE_PATTERN - "<Name> activates X.", never
 // "You activate...". Reported live and confirmed straight from the log:
-// "Dovairous activates Quick Buff." - an ally triggering the exact same
+// "Cade activates Quick Buff." - an ally triggering the exact same
 // instant multi-grant ability the player's own ACTIVATE_PATTERN exists for
 // (gotchas #12/#18), with none of the buffs it drops carrying any per-spell
 // cast line at all. Verb form alone excludes the player's own line, same as
@@ -54,7 +54,7 @@ const MEMORIZE_FINISHED_PATTERN = /^You have finished memorizing (.+)\.$/;
 const FORGET_SPELL_PATTERN = /^You forget (.+)\.$/;
 
 // EQ's generic heal/proc combat message - confirmed exact wording from a
-// real log: "You healed Shara for 255 hit points by Talisman of Altuna."
+// real log: "You healed Vaela for 255 hit points by Talisman of Altuna."
 // Only ever fires for the PLAYER'S OWN outgoing heal (who it landed on
 // doesn't matter - it always names a spell the player themselves cast), so
 // it's a strong disambiguation signal: if the named spell is one of the
@@ -297,7 +297,7 @@ function isFailureLine(line) {
 // those mezzes was a groupmate's.
 const OTHERS_WORN_OFF_PATTERN = /^Your (.+) spell has worn off of (.+)\.$/;
 
-// "A worry wraith has been slain by Shara!"  (6,617)   /   "You have slain a worry wraith!"  (482)
+// "A worry wraith has been slain by Vaela!"  (6,617)   /   "You have slain a worry wraith!"  (482)
 //
 // Two shapes, and they capitalize differently: the slain-by form forces a capital at the start of
 // the sentence ("A worry wraith"), while the you-have-slain form keeps the name's natural casing
@@ -311,7 +311,7 @@ const YOU_SLEW_PATTERN = /^You have slain (.+)!$/;
 // Backlog #12: death strips every buff, so the engines clear their active state on this line.
 const OWN_DEATH_PATTERN = /^You have been slain by .+!$/;
 
-// "Orc legionnaire has been awakened by Shara."  (142)
+// "Orc legionnaire has been awakened by Vaela."  (142)
 //
 // A mez broken early by damage, naming whoever broke it. This line was not known to the project
 // at all - the note covering AoE mez assumed a break was silent - and it is the only way to tell
@@ -360,7 +360,7 @@ function matchAwakened(line) {
 // resolve it the same way it resolves a cast name.
 const OWN_INTERRUPT_PATTERN = /^Your (.+) spell is interrupted\.$/;
 
-// "Your Shield of Thistles spell on Avenrae has been overwritten."  (109 lines, one shape, no
+// "Your Shield of Thistles spell on Baxa has been overwritten."  (109 lines, one shape, no
 // exceptions.)
 //
 // Note 26, and it turns out to be the whole of it for a buff on somebody else. The note assumed
@@ -372,7 +372,7 @@ const OWN_INTERRUPT_PATTERN = /^Your (.+) spell is interrupted\.$/;
 // are every last one of them "Your pet's <Spell> spell has worn off."
 const OVERWRITTEN_PATTERN = /^Your (.+) spell on (.+) has been overwritten\.$/;
 
-// "Your Protection of Rock spell did not take hold on Avenrae. (Blocked by Bravery.)"
+// "Your Protection of Rock spell did not take hold on Baxa. (Blocked by Bravery.)"
 //
 // The other half of note 26, and the half that matters more: a cast that was REFUSED because
 // something better is already there. 189 in the owner's logs - 133 naming a target, 51 on herself,

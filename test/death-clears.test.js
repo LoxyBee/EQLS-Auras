@@ -82,7 +82,7 @@ test('a MOB dying does NOT clear the player\'s buffs', () => {
   const { engine, buffStore } = makeBuffEngine();
   const buff = uniqueLandingBuff(buffStore);
   engine.handleLine(TS + buff.landingText);
-  engine.handleLine(`${TS}A goblin has been slain by Shara!`);
+  engine.handleLine(`${TS}A goblin has been slain by Vaela!`);
   assert.equal(engine.getActiveBuffs().length, 1, 'a mob death wrongly cleared a self buff');
   engine.handleLine(`${TS}You have slain a goblin!`);
   assert.equal(engine.getActiveBuffs().length, 1, 'killing a mob wrongly cleared a self buff');

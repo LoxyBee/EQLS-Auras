@@ -40,10 +40,10 @@ test('the service can say where it looked and what for', () => {
   assert.equal(blank.fileNamePattern, null);
 
   svc.installRoot = 'C:/Games/EQ';
-  svc.characterBaseName = 'Shara_rivervale';
+  svc.characterBaseName = 'Vaela_rivervale';
   const known = svc.getExpectation();
   assert.equal(known.folder, 'C:/Games/EQ');
-  assert.match(known.fileNamePattern, /^Shara_rivervale-.*Spellbook\.txt$/,
+  assert.match(known.fileNamePattern, /^Vaela_rivervale-.*Spellbook\.txt$/,
     'the pattern has to be recognisable as a real filename, or it helps nobody');
 });
 
@@ -105,7 +105,7 @@ test('the missing state says what to do about it, and what it costs', () => {
   // The action, or knowing the cost is just bad news.
   assert.match(block[0], /does not write this file on its own/i, 'it does not say the file is manual');
   // The command itself, named exactly, because "your client's output-file command" is the sort of
-  // phrase that leaves someone still guessing. Shara supplied it.
+  // phrase that leaves someone still guessing. Vaela supplied it.
   assert.match(html, /<code id="spellbook-command">\/outputfile spellbook<\/code>/,
     'the exact command is not shown');
   assert.match(rendererSrc, /copySpellbookCommandBtn\.addEventListener/, 'there is no copy button');

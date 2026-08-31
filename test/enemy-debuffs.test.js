@@ -171,7 +171,7 @@ test('every mez and charm in the roster is categorised as something cast at an e
 // ---------------------------------------------------------------------------
 
 test('the wear-off line ends it, naming spell and target', () => {
-  // Verbatim from eqlog_Shara_rivervale_2026-08-19.txt.
+  // Verbatim from eqlog_Vaela_rivervale_2026-08-19.txt.
   const e = engine(['Mesmerize']);
   feed(e, 'You begin casting Mesmerize.', 'orc legionnaire has been mesmerized.');
   assert.deepEqual(names(e), ['orc legionnaire::Mesmerize']);
@@ -183,7 +183,7 @@ test('death ends it, and the casing changes between the two lines', () => {
   // The land line keeps the mob's natural casing ("orc legionnaire"); the slain line forces a
   // capital ("Orc legionnaire"). Verified across 6,617 slain lines with no exceptions. A
   // case-sensitive lookup would clear nothing, ever.
-  for (const death of ['Orc legionnaire has been slain by Avenrae!', 'You have slain orc legionnaire!']) {
+  for (const death of ['Orc legionnaire has been slain by Baxa!', 'You have slain orc legionnaire!']) {
     const e = engine(['Mesmerize']);
     feed(e, 'You begin casting Mesmerize.', 'orc legionnaire has been mesmerized.');
     feed(e, death);
@@ -195,7 +195,7 @@ test('a broken mez ends it', () => {
   // The line the project did not know existed. 142 of them in the logs.
   const e = engine(['Mesmerize']);
   feed(e, 'You begin casting Mesmerize.', 'orc legionnaire has been mesmerized.');
-  feed(e, 'Orc legionnaire has been awakened by Shara.');
+  feed(e, 'Orc legionnaire has been awakened by Vaela.');
   assert.deepEqual(names(e), []);
 });
 
@@ -204,7 +204,7 @@ test('a break only clears a mez, not everything on that mob', () => {
   // A charm or a snare on the same mob is still running.
   const e = engine(['Mesmerize', 'Charm']);
   feed(e, 'You begin casting Charm.', 'orc legionnaire has been charmed.');
-  feed(e, 'Orc legionnaire has been awakened by Shara.');
+  feed(e, 'Orc legionnaire has been awakened by Vaela.');
   assert.deepEqual(names(e), ['orc legionnaire::Charm']);
 });
 
@@ -212,7 +212,7 @@ test('an ending line for one mob leaves another mob alone', () => {
   const e = engine(['Mesmerize']);
   feed(e, 'You begin casting Mesmerize.', 'orc legionnaire has been mesmerized.');
   feed(e, 'You begin casting Mesmerize.', 'a sonic bat has been mesmerized.');
-  feed(e, 'Orc legionnaire has been slain by Avenrae!');
+  feed(e, 'Orc legionnaire has been slain by Baxa!');
   assert.deepEqual(names(e), ['a sonic bat::Mesmerize']);
 });
 
@@ -225,13 +225,13 @@ test('a groupmate dying does not forget their buffs', () => {
   feed(e, 'You begin casting Spirit of Wolf.', 'Marrowbane is surrounded by a brief lupine aura.');
   const before = names(e);
   assert.ok(before.includes('Marrowbane::Spirit of Wolf'), 'the ally buff did not land - nothing is being tested');
-  feed(e, 'Marrowbane has been slain by a gnoll!', 'Marrowbane has been awakened by Shara.');
+  feed(e, 'Marrowbane has been slain by a gnoll!', 'Marrowbane has been awakened by Vaela.');
   assert.deepEqual(names(e), before, 'a groupmate dying cleared their buffs');
 });
 
 test('a line naming the spell AND the target does clear an ally buff', () => {
   // Note 26, and the deliberate change of mind. This was scoped to enemies only when enemy
-  // tracking went in, to avoid altering anything nobody had asked about. Shara has since asked
+  // tracking went in, to avoid altering anything nobody had asked about. Vaela has since asked
   // for note 26 specifically, and these two lines are the answer to it: they name the spell and
   // the target, so there is nothing to guess and no reason to hold back.
   for (const ending of [
@@ -249,7 +249,7 @@ test('a line naming the spell AND the target does clear an ally buff', () => {
 test('an overwrite of a different spell, or on a different target, is left alone', () => {
   const e = engine(null);
   feed(e, 'You begin casting Spirit of Wolf.', 'Marrowbane is surrounded by a brief lupine aura.');
-  feed(e, 'Your Spirit of Wolf spell on Avenrae has been overwritten.');
+  feed(e, 'Your Spirit of Wolf spell on Baxa has been overwritten.');
   assert.deepEqual(names(e), ['Marrowbane::Spirit of Wolf'], 'the wrong target was cleared');
   feed(e, 'Your Bravery spell on Marrowbane has been overwritten.');
   assert.deepEqual(names(e), ['Marrowbane::Spirit of Wolf'], 'the wrong spell was cleared');
@@ -264,9 +264,9 @@ test('the ending patterns match the real lines and nothing else', () => {
     spellName: 'Mesmerize',
     targetName: 'orc legionnaire',
   });
-  assert.equal(matchSlain(`${TS}Orc centurion has been slain by Avenrae!`), 'Orc centurion');
+  assert.equal(matchSlain(`${TS}Orc centurion has been slain by Baxa!`), 'Orc centurion');
   assert.equal(matchSlain(`${TS}You have slain orc legionnaire!`), 'orc legionnaire');
-  assert.equal(matchAwakened(`${TS}A worry wraith has been awakened by Shara.`), 'A worry wraith');
+  assert.equal(matchAwakened(`${TS}A worry wraith has been awakened by Vaela.`), 'A worry wraith');
 
   // The self form has no target and must not be read as one.
   assert.equal(matchOthersWornOff(`${TS}Your Yaulp spell has worn off.`), null);
@@ -467,7 +467,7 @@ test('the third option exists in the markup', () => {
 // ("a greater kobold" x2, x3...), since the log gives them no other identity. Reported live 24
 // Aug: chain-mezzing a single target before it wakes (the normal way to hold CC on a mob) hits
 // that same key exactly the way a second, genuinely different mob would, so the count climbed on
-// what was really only ever one mezzed target. Shara: "scrap multi tile combining for aoe debuffs
+// what was really only ever one mezzed target. Vaela: "scrap multi tile combining for aoe debuffs
 // for now. count just the duration, refreshed on a new cast. single tile." So a second landing
 // under the same key is a refresh, exactly like a buff on a groupmate always was - no count, no
 // instances array, one tile, its duration reset to whatever the new landing carries.
@@ -500,9 +500,9 @@ test('the refreshed tile carries the new landing\'s duration, not the old one', 
 
 test('any of the three ending lines clears the tile outright - there is only ever one', () => {
   for (const ending of [
-    'A greater kobold has been slain by Avenrae!',
+    'A greater kobold has been slain by Baxa!',
     'Your Mesmerize spell has worn off of a greater kobold.',
-    'A greater kobold has been awakened by Shara.',
+    'A greater kobold has been awakened by Vaela.',
   ]) {
     const e = engine(['Mesmerize']);
     feed(e, 'You begin casting Mesmerize.', 'a greater kobold has been mesmerized.');
@@ -542,7 +542,7 @@ test('no count field survives on an enemy debuff, and no x2 badge can be drawn f
 // Note 40 - the "Watching: cast by an ally" mode. Same debuff, same enemy,
 // same countdown as everything above, but tracked the moment its
 // third-person landing text appears, with no requirement at all that the
-// player be the one who cast it. Shara's words: "just have it tracked that a
+// player be the one who cast it. Vaela's words: "just have it tracked that a
 // debuff happened from someone, it doesn't need a name" - so unlike the
 // ally-buff tiers this never records who cast it.
 // ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@
  *
  * Stored exactly as the game prints them, with no collapsing. "Befallen" and "Befallen 1
  * (Awakened)" are separate zones, and so are "The Plane of Fear" and "The Plane of Fear - Group"
- * - Shara, 22 August: "make them separate". They are genuinely different places.
+ * - the owner, 22 August: "make them separate". They are genuinely different places.
  */
 
 module.exports = [

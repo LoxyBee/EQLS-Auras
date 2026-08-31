@@ -129,7 +129,7 @@ test('nothing in the planner pipeline exposes the game\'s internal effect number
 test('planner:compute always uses the game stacking data when the spell file is reachable', () => {
   const fn = mainSrc.match(/ipcMain\.handle\('planner:compute'[\s\S]*?\n\}\);/)[0];
   // NOT gated on the useStackingModel diagnostic toggle - the planner needs it to tell buff tiers
-  // apart (Shara's 27 Aug reference loadout).
+  // apart (Vaela's 27 Aug reference loadout).
   assert.doesNotMatch(fn, /loadJson\('useStackingModel'/);
   assert.match(fn, /const checkStack = currentInstallRoot\s*\n?\s*\?\s*\(activeId, incomingId\) => spellStacking\.checkOverwrite\(currentInstallRoot/);
 });

@@ -73,7 +73,7 @@ test('landing again refreshes rather than duplicating', () => {
 
 test('an ordinary chat line does nothing at all', () => {
   const { engine } = makeEngine();
-  engine.handleLine("Avenrae says, 'You begin to snarl as your features become feline.'");
+  engine.handleLine("Baxa says, 'You begin to snarl as your features become feline.'");
   assert.deepEqual(names(engine), [], 'a quoted landing message is not a landing');
 });
 
@@ -108,13 +108,13 @@ test('a natural expiry is logged, not just the text-match ENDED paths', () => {
 
 test('an ally buff\'s natural expiry is logged too, same as the self-buff sweep', () => {
   const { engine, log } = makeEngine();
-  engine._landOnAlly(engine.buffStore.getByName('Alliance') || { name: 'X', durationSec: 30 }, 'Avenrae');
+  engine._landOnAlly(engine.buffStore.getByName('Alliance') || { name: 'X', durationSec: 30 }, 'Baxa');
   const [entry] = [...engine.allyBuffs.values()];
   entry.expiresAt = Date.now() - 1000;
   entry.instant = false; // force the ordinary duration sweep path rather than the instant one
   engine._tick();
   assert.ok(
-    log.some((l) => l.includes('EXPIRED') && l.includes('Avenrae')),
+    log.some((l) => l.includes('EXPIRED') && l.includes('Baxa')),
     'the ally sweep must name both the buff and who it was on'
   );
 });
@@ -123,11 +123,11 @@ test('restoring a session snapshot logs a LOADED line per buff, not just a batch
   const { engine, log } = makeEngine();
   const count = engine.restoreSnapshot({
     selfBuffs: [{ name: 'Spirit of the Puma', durationSec: 1440, expiresAt: Date.now() + 60000 }],
-    allyBuffs: [{ name: 'Shield of Flame', allyName: 'Avenrae', durationSec: 600, expiresAt: Date.now() + 60000 }],
+    allyBuffs: [{ name: 'Shield of Flame', allyName: 'Baxa', durationSec: 600, expiresAt: Date.now() + 60000 }],
   });
   assert.equal(count, 2);
   assert.ok(log.some((l) => l.includes('LOADED') && l.includes('Spirit of the Puma')));
-  assert.ok(log.some((l) => l.includes('LOADED') && l.includes('Shield of Flame') && l.includes('Avenrae')));
+  assert.ok(log.some((l) => l.includes('LOADED') && l.includes('Shield of Flame') && l.includes('Baxa')));
 });
 
 // ---------------------------------------------------------------------------
@@ -143,7 +143,7 @@ test('restoring a session snapshot logs a LOADED line per buff, not just a batch
 // sweep asks `expiresAt <= now` - false for NaN, forever. The result was a tile reading "NaN:NaN"
 // that never counted down and could not be dismissed without restarting.
 //
-// Shara's rule for instants: not tracked on auras that draw countdowns, but available to sound and
+// Vaela's rule for instants: not tracked on auras that draw countdowns, but available to sound and
 // text auras, "just in case someone wants feedback when a cast is successful or resisted". So they
 // still land - that is how those two hear about anything - and the overlay refuses to draw them as
 // countdown tiles.
@@ -223,8 +223,8 @@ test('a buff someone else was seen casting is not counted as yours', () => {
   // Default is self-buffs only. A third-person cast line is the evidence, and it has no time
   // limit on purpose - an auto-renewing song shows that line once and then renews silently.
   const { engine } = makeEngine();
-  engine.handleLine('Avenrae begins to cast a spell.');
-  engine.handleLine('Avenrae begins casting Spirit of the Puma.');
+  engine.handleLine('Baxa begins to cast a spell.');
+  engine.handleLine('Baxa begins casting Spirit of the Puma.');
   engine.handleLine('You begin to snarl as your features become feline.');
   assert.deepEqual(names(engine), [], "someone else's buff must not land on your own aura");
 });
@@ -232,7 +232,7 @@ test('a buff someone else was seen casting is not counted as yours', () => {
 test('but it IS counted once you ask to track other people buffs', () => {
   const { engine } = makeEngine();
   engine.setTrackOthersEnabled(true);
-  engine.handleLine('Avenrae begins casting Spirit of the Puma.');
+  engine.handleLine('Baxa begins casting Spirit of the Puma.');
   engine.handleLine('You begin to snarl as your features become feline.');
   assert.deepEqual(names(engine), ['Spirit of the Puma']);
 });
@@ -264,9 +264,9 @@ test('a second caster of the same spell does not break the veto', () => {
   // firing - with track-others off, that lands another player buff on your own aura.
   const { engine } = makeEngine();
   engine.handleLine('Motrin begins casting Spirit of the Puma.');
-  engine.handleLine('Avenrae begins casting Spirit of the Puma.');
+  engine.handleLine('Baxa begins casting Spirit of the Puma.');
   assert.equal(engine._hasRecentOtherCast('Spirit of the Puma'), true);
-  assert.equal(engine._recentOtherCaster('Spirit of the Puma'), 'Avenrae', 'the latest caster wins');
+  assert.equal(engine._recentOtherCaster('Spirit of the Puma'), 'Baxa', 'the latest caster wins');
   engine.handleLine('You begin to snarl as your features become feline.');
   assert.deepEqual(names(engine), []);
 });
@@ -405,18 +405,18 @@ test('a group-wide instant grant triggered by an ALLY is not self-attributed, ev
   // Reported live 24 Aug, root-caused from the real raw log rather than guessed - the reporter's
   // own instruction: "memorised is not reliable, 'cast' combat log text is, and this is failing
   // that primary check." Checked, and the cast-begin check WAS working (it correctly IGNORED an
-  // earlier cast of the same buff two hours before this one, with "recently cast by Avenrae" as
+  // earlier cast of the same buff two hours before this one, with "recently cast by Baxa" as
   // the reason). It had nothing to work with for the second landing because there genuinely was no
   // "X begins casting Insight." anywhere in the log for it.
   //
   // What actually happened, found by reading the raw lines around the real landing: an ally
-  // (Dovairous) triggered an instant multi-buff grant hitting the whole group at once - the exact
+  // (Cade) triggered an instant multi-buff grant hitting the whole group at once - the exact
   // same shape this project already documents for the player's OWN "Quick Buff" (gotchas #12/#18),
   // just triggered by someone else, so nothing here ever opened a burst window for it. Real,
   // verbatim shape from the log - several people getting the same third-person suffix in the same
   // second as the player's own first-person landing, no "begins casting" line for any of them:
   //   "Kibobab's mind sharpens."       (the real line - but "'s mind sharpens." is itself shared by
-  //   "Avenrae's mind sharpens."        two spells in the roster, so it's a bad example for THIS
+  //   "Baxa's mind sharpens."        two spells in the roster, so it's a bad example for THIS
   //   "an elemental crusader's..."      test specifically - see the dedicated Insight test below,
   //                                      which uses the exact real spell instead.)
   // Reproduced here with an unambiguous stand-in suffix/text pair so this test isolates the
@@ -425,7 +425,7 @@ test('a group-wide instant grant triggered by an ALLY is not self-attributed, ev
   const known = buffStore.getByName('Adorning Grace');
   assert.ok(known, 'expected Adorning Grace in the roster');
   engine.handleLine(`Kibobab${known.othersLandingSuffix}`);
-  engine.handleLine(`Avenrae${known.othersLandingSuffix}`);
+  engine.handleLine(`Baxa${known.othersLandingSuffix}`);
   engine.handleLine(`an elemental crusader${known.othersLandingSuffix}`);
   engine.handleLine(known.landingText);
 
@@ -449,23 +449,23 @@ test('the player\'s OWN AoE group buff landing on allies too is not mistaken for
   const { engine } = makeEngine();
   engine.handleLine('You begin casting Insight.');
   engine.handleLine('Kibobab looks wise.');
-  engine.handleLine('Avenrae looks wise.');
+  engine.handleLine('Baxa looks wise.');
   engine.handleLine('Your mind fills with wisdom.');
   assert.deepEqual(names(engine), ['Insight'], 'the player\'s own group cast landing on herself was wrongly suppressed');
 });
 
-test('the confirmed cause: "Dovairous activates Quick Buff." opens a window of caution for the player\'s OWN landings', () => {
+test('the confirmed cause: "Cade activates Quick Buff." opens a window of caution for the player\'s OWN landings', () => {
   // The reporter found the exact line themselves, straight from the chat log, after the
-  // suffix-based fix above: "Dovairous activates Quick Buff." - the SAME instant multi-grant
+  // suffix-based fix above: "Cade activates Quick Buff." - the SAME instant multi-grant
   // ability gotchas #12/#18 already document for the player's own use ("You activate Quick
   // Buff."), just triggered by an ally. This is the direct, named cause - the suffix-evidence fix
   // above is what catches everything ELSE this same ability drops that doesn't happen to land on
   // another visible person at the same moment.
   const { engine, log } = makeEngine();
-  engine.handleLine('Dovairous activates Quick Buff.');
+  engine.handleLine('Cade activates Quick Buff.');
   engine.handleLine('Your mind fills with wisdom.'); // Insight
   assert.deepEqual(names(engine), [], 'an ally\'s Quick Buff activation did not make the landing suspect');
-  assert.ok(log.some((m) => m.includes('ALLY ACTIVATE') && m.includes('Dovairous') && m.includes('Quick Buff')));
+  assert.ok(log.some((m) => m.includes('ALLY ACTIVATE') && m.includes('Cade') && m.includes('Quick Buff')));
   assert.ok(log.some((m) => m.includes('IGNORED') && m.includes("ally's instant grant")));
 });
 
@@ -479,13 +479,13 @@ test('the player\'s OWN Quick Buff activation stays exactly as permissive as bef
   assert.deepEqual(names(engine), ['Insight'], 'the player\'s own burst became suspicious of its own landings');
 });
 
-test('the real Insight/Dovairous case: an out-of-class buff granted with no cast-begin line at all', () => {
+test('the real Insight/Cade case: an out-of-class buff granted with no cast-begin line at all', () => {
   const { engine, buffStore } = makeEngine();
   const insight = buffStore.getByName('Insight');
   assert.ok(insight, 'expected Insight in the roster');
   assert.equal(insight.othersLandingSuffix, ' looks wise.');
   engine.handleLine('Kibobab looks wise.');
-  engine.handleLine('Avenrae looks wise.');
+  engine.handleLine('Baxa looks wise.');
   engine.handleLine('an elemental crusader looks wise.');
   engine.handleLine(insight.landingText);
   assert.deepEqual(names(engine), [], 'Insight landed on a player whose class cannot even scribe it');
@@ -498,10 +498,10 @@ test('a third-person landing on just ONE other person is still recorded as evide
   const { engine, buffStore, log } = makeEngine();
   const known = buffStore.getAll().find((e) => e.othersLandingSuffix && e.landingText);
   assert.ok(known, 'expected at least one roster entry with both landing texts');
-  engine.handleLine(`Avenrae${known.othersLandingSuffix}`);
+  engine.handleLine(`Baxa${known.othersLandingSuffix}`);
   engine.handleLine(known.landingText);
-  assert.deepEqual(names(engine), [], `"${known.name}" self-attributed despite landing on Avenrae moments earlier`);
-  assert.ok(log.some((m) => m.includes('IGNORED') && m.includes('recently cast by "Avenrae"')));
+  assert.deepEqual(names(engine), [], `"${known.name}" self-attributed despite landing on Baxa moments earlier`);
+  assert.ok(log.some((m) => m.includes('IGNORED') && m.includes('recently cast by "Baxa"')));
 });
 
 test('an ambiguous third-person suffix does not record evidence for the wrong spell', () => {
@@ -515,7 +515,7 @@ test('an ambiguous third-person suffix does not record evidence for the wrong sp
   }
   assert.ok(ambiguousSuffix, 'expected at least one shared othersLandingSuffix in the roster to test with');
   const candidates = shared[ambiguousSuffix];
-  engine.handleLine(`Avenrae${ambiguousSuffix}`);
+  engine.handleLine(`Baxa${ambiguousSuffix}`);
   // Neither candidate's own first-person landing should have been vetoed by an evidence entry
   // recorded for "the wrong one of two possible spells".
   for (const candidate of candidates) {
@@ -523,7 +523,7 @@ test('an ambiguous third-person suffix does not record evidence for the wrong sp
     const shares = buffStore.getAll().filter((e) => e.landingText === candidate.landingText).length;
     if (shares !== 1) continue; // only meaningful against a spell whose FIRST-person text is unique
     const { engine: fresh } = makeEngine();
-    fresh.handleLine(`Avenrae${ambiguousSuffix}`);
+    fresh.handleLine(`Baxa${ambiguousSuffix}`);
     fresh.handleLine(candidate.landingText);
     assert.deepEqual(
       names(fresh),
@@ -657,7 +657,7 @@ test('a burst-context ally landing records what opened the burst', () => {
     .find((b) => b.othersLandingSuffix && buffStore.findAllByOthersLandingSuffix(b.othersLandingSuffix).length === 1);
   assert.ok(pick, 'no unambiguous third-person landing text in the roster to test with');
   engine.handleLine('[Wed Aug 19 21:14:02 2026] You activate Cannibalize.');
-  engine.handleLine(`[Wed Aug 19 21:14:06 2026] Avenrae${pick.othersLandingSuffix}`);
+  engine.handleLine(`[Wed Aug 19 21:14:06 2026] Baxa${pick.othersLandingSuffix}`);
   const landed = log.find((l) => l.startsWith('ALLY LANDED'));
   assert.ok(landed, 'the ally landing was not logged at all');
   assert.match(landed, /burst opened [\d.]+s ago by "Cannibalize"/);
@@ -673,8 +673,8 @@ test('extending a burst does not rewrite where it came from', () => {
     .slice(0, 2);
   assert.equal(picks.length, 2, 'need two unambiguous landing texts');
   engine.handleLine('[Wed Aug 19 21:14:02 2026] You activate Cannibalize.');
-  engine.handleLine(`[Wed Aug 19 21:14:03 2026] Avenrae${picks[0].othersLandingSuffix}`);
-  engine.handleLine(`[Wed Aug 19 21:14:04 2026] Lasartik${picks[1].othersLandingSuffix}`);
+  engine.handleLine(`[Wed Aug 19 21:14:03 2026] Baxa${picks[0].othersLandingSuffix}`);
+  engine.handleLine(`[Wed Aug 19 21:14:04 2026] Nell${picks[1].othersLandingSuffix}`);
   const landings = log.filter((l) => l.startsWith('ALLY LANDED'));
   assert.equal(landings.length, 2);
   for (const line of landings) assert.match(line, /by "Cannibalize"/);

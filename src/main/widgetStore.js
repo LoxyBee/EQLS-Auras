@@ -154,11 +154,11 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // only lands here while there's evidence the player herself cast it.
     // 'ally' drops that requirement: the same debuff on the same enemy, but
     // tracked the moment its third-person landing text appears, regardless
-    // of who cast it. Shara's words: "just have it tracked that a debuff
+    // of who cast it. the owner's words: "just have it tracked that a debuff
     // happened from someone, it doesn't need a name" - so 'ally' mode never
     // records a caster, only that the debuff landed.
     debuffCastBy: 'self',
-    // Note 16, answered by Shara on 21 August. A TEXT aura can warn that somebody else has cast
+    // Note 16, answered by the owner on 21 August. A TEXT aura can warn that somebody else has cast
     // one of the spells it watches - "be careful", rather than a countdown on a debuff that is
     // not yours. She ruled out the timer herself: an ally's debuff has no ending line in the log,
     // so any duration shown for it would be invented, and "a text alert to be careful, and not a
@@ -199,8 +199,8 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // positive is visible and self-corrects the moment you zone, a false negative is invisible and
     // lasts a session.
     //
-    // Zone strings are stored exactly as the game prints them, with no collapsing - Shara, 22
-    // August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
+    // Zone strings are stored exactly as the game prints them, with no collapsing - the owner,
+    // 22 August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
     // "The Plane of Fear" and "The Plane of Fear - Group".
     visibleInZones: [],
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
@@ -417,11 +417,11 @@ function defaultCustomWidget(name) {
     // only lands here while there's evidence the player herself cast it.
     // 'ally' drops that requirement: the same debuff on the same enemy, but
     // tracked the moment its third-person landing text appears, regardless
-    // of who cast it. Shara's words: "just have it tracked that a debuff
+    // of who cast it. the owner's words: "just have it tracked that a debuff
     // happened from someone, it doesn't need a name" - so 'ally' mode never
     // records a caster, only that the debuff landed.
     debuffCastBy: 'self',
-    // Note 16, answered by Shara on 21 August. A TEXT aura can warn that somebody else has cast
+    // Note 16, answered by the owner on 21 August. A TEXT aura can warn that somebody else has cast
     // one of the spells it watches - "be careful", rather than a countdown on a debuff that is
     // not yours. She ruled out the timer herself: an ally's debuff has no ending line in the log,
     // so any duration shown for it would be invented, and "a text alert to be careful, and not a
@@ -462,8 +462,8 @@ function defaultCustomWidget(name) {
     // positive is visible and self-corrects the moment you zone, a false negative is invisible and
     // lasts a session.
     //
-    // Zone strings are stored exactly as the game prints them, with no collapsing - Shara, 22
-    // August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
+    // Zone strings are stored exactly as the game prints them, with no collapsing - the owner,
+    // 22 August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
     // "The Plane of Fear" and "The Plane of Fear - Group".
     visibleInZones: [],
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
@@ -967,7 +967,7 @@ const TEXT_AURA_PRESETS = {
       },
     ],
   }),
-  // Note 16 as Shara specified it on 21 August: a warning that somebody else has cast a debuff,
+  // Note 16 as the owner specified it on 21 August: a warning that somebody else has cast a debuff,
   // not a timer on one. It ships watching the mez and charm family because that is the case she
   // described - do not break a groupmate's mez - and the buff list is editable like any other
   // aura's, so adding slows or snares is a tick each.
@@ -1089,13 +1089,13 @@ const TEXT_AURA_PRESETS = {
   }),
 };
 
-// Note 21, as Shara redirected it on 21 August: the loadout label is a global option, not
+// Note 21, as the owner redirected it on 21 August: the loadout label is a global option, not
 // something you build in Add Aura. "It should be a permanent option that is not tied to creating
 // an aura."
 //
 // It is still a widget underneath, and that is deliberate rather than lazy: everything it needs -
 // a position you can drag, locking, opacity, sizing, surviving a restart - already exists for
-// widgets and would otherwise have to be written again for one label. What Shara asked for is
+// widgets and would otherwise have to be written again for one label. What the owner asked for is
 // where the SWITCH lives and that it is permanent, and both of those are true here. It never
 // appears in Add Aura, it is created once the first time it is switched on, and switching it off
 // hides it rather than deleting it, so its position is still there when it comes back.
@@ -1470,7 +1470,7 @@ class WidgetStore {
     return widget;
   }
 
-  // Note 34's second half. Shara, 23 August: "buff AND debuff need their own custom templates.
+  // Note 34's second half. the owner, 23 August: "buff AND debuff need their own custom templates.
   // add a debuff template."
   //
   // It is an ally-source aura with enemy watching already on, which is the combination nobody
@@ -1829,7 +1829,7 @@ class WidgetStore {
   }
 
   // Note 30. What a code IS, without doing anything with it. A code arriving from chat is text
-  // another player typed, so the app needs to be able to say "Avenrae sent a Resist flash aura"
+  // another player typed, so the app needs to be able to say "Baxa sent a Resist flash aura"
   // before anyone decides anything - and reading is the only part of that which is safe to do
   // without being asked.
   peekCode(code) {

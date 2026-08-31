@@ -143,11 +143,11 @@
 //    adversarial pass refuted that unanimously, and the fact that kills it is in
 //    our own logs:
 //
-//        eqlog_Avenrae_rivervale.txt      Your total time entitled on this account is approximately 0 years, 12 days.
-//        eqlog_Shara_rivervale_*.txt      Your total time entitled on this account is approximately 0 years, 9 days.
+//        eqlog_Baxa_rivervale.txt      Your total time entitled on this account is approximately 0 years, 12 days.
+//        eqlog_Vaela_rivervale_*.txt      Your total time entitled on this account is approximately 0 years, 9 days.
 //
 //    **Two different values means two different accounts.** So the fact that
-//    Avenrae and Shara each received their own grant of the same task, seconds
+//    Baxa and Vaela each received their own grant of the same task, seconds
 //    apart at the same Voidling, says NOTHING about per-character versus
 //    per-account — two accounts would each get a grant under either rule. The
 //    observation had no power to distinguish them and should never have been
@@ -163,7 +163,7 @@
 //    changed last and therefore hops between them, and merging two characters'
 //    observation streams fabricates measurements. Not hypothetically — the first
 //    version of this module reported a FOUR-SECOND reset bracket built from
-//    Avenrae's grant at 17:14:49 and Shara's at 17:14:53.
+//    Baxa's grant at 17:14:49 and the owner's at 17:14:53.
 //
 //    Whether the game scopes lockouts per character or per account is
 //    **not recorded**, and settling it needs two characters on ONE account,
@@ -179,7 +179,7 @@
 // instance-invite line across 27 distinct instance names in our corpus, with
 // no exceptions and no conflicts:
 //
-//   Lumbarin has asked you to join the instance: Nagafen's Lair - Group 1 (Awakened).
+//   Delo has asked you to join the instance: Nagafen's Lair - Group 1 (Awakened).
 //
 // This table is derived, not hand-maintained: regenerated from the corpus by an analysis script
 // kept outside the repo. If the game adds a tier, re-run that derivation and update the table
@@ -353,7 +353,7 @@ const ENTERED_RE = /^You have entered (.+?)\.$/;
 //
 //   [Mon Aug 10 18:05:40 2026] You have entered The Ruins of Old Paineel - Group 1 (Awakened).
 //   [Mon Aug 10 18:05:40 2026] You have entered an area where levitation effects do not function.
-//   [Mon Aug 10 18:11:22 2026] Master Yael has been slain by Cavity!
+//   [Mon Aug 10 18:11:22 2026] Master Yael has been slain by Jarl!
 //
 // The levitation notice parsed as a zone named "an area where levitation
 // effects do not function", which is a bare name, which is the open world — so
@@ -382,7 +382,7 @@ const NOT_A_ZONE = new Set([
 // the instance the way the levitation notice did.
 const LOOKS_LIKE_A_SENTENCE = /^[a-z]/;
 
-// Lumbarin has asked you to join the instance: Nagafen's Lair - Group 1 (Awakened).        Would you like to join? ...
+// Delo has asked you to join the instance: Nagafen's Lair - Group 1 (Awakened).        Would you like to join? ...
 // Client string 3527. The run of spaces is the client's, and is matched
 // loosely so a change in its width cannot break the parse.
 const INSTANCE_INVITE_RE = /^(.+?) has asked you to join the instance: (.+?)\.\s+Would you like to join\?/;
@@ -421,7 +421,7 @@ const INSTANCE_INVITE_RE = /^(.+?) has asked you to join the instance: (.+?)\.\s
 // 12 invites to 12 bare entries and **not one entry line anywhere that states
 // an index of 0**. Three of the twelve are directly paired on 26 Aug 2026:
 //
-//   17:52:12  Shangfei has asked you to join the instance: The Plane of Hate - Group 0 (Normal).
+//   17:52:12  Mira has asked you to join the instance: The Plane of Hate - Group 0 (Normal).
 //   17:55:57  You have entered The Plane of Hate - Group.
 //
 // so the same instance is written both ways, three minutes apart, by the same
@@ -487,7 +487,7 @@ function parseInstanceName(name) {
 // Pure: same input, same output, always.
 // KILL LINES. Two shapes, and a search that knows only the first misses real kills.
 //
-//   Innoruuk, the Prince of Hate has been slain by Jrhx!
+//   Innoruuk, the Prince of Hate has been slain by Krel!
 //   You have slain Innoruuk, the Prince of Hate!
 //
 // The first-person form is what the client writes when YOU land the killing
@@ -538,8 +538,8 @@ const YOU_SLEW_RE = /^You have slain (.+?)!$/;
 //
 // Measured, and it fits exactly. Per character, per week beginning Tuesday:
 //
-//   Avenrae, week of 11 Aug:  18 roster boss kills, 3 task grants, 3 tokens
-//   Shara,   week of 11 Aug:  16 roster boss kills, 3 task grants, 3 tokens
+//   Baxa, week of 11 Aug:  18 roster boss kills, 3 task grants, 3 tokens
+//   Vaela,   week of 11 Aug:  16 roster boss kills, 3 task grants, 3 tokens
 //   Both, week of 4 Aug:       7 roster boss kills, 3 task grants, 3 tokens
 //
 // Eighteen raids, three tokens. The cap is on the token, not on the boss.
@@ -651,7 +651,7 @@ const WEEKLY_TASK_IS_PER_BOSS = false;
 //    `<Name> died.` — 47 lines across the 16 files, 8 of them inside a
 //    `- Group` instance. It is NOT parsed, and that is a decision rather than
 //    an oversight: the shape covers player and pet deaths as well as mob
-//    deaths. `Shara died.` and `Avenrae died.` are both in it, so reading it as
+//    deaths. `Vaela died.` and `Baxa died.` are both in it, so reading it as
 //    a kill line would score the owner's own death as a boss kill.
 //
 //    **It touches none of the ten roster bosses** — searched all 16 files for
@@ -740,7 +740,7 @@ const RAIDS = Object.freeze([
 // THE CLIENT CAPITALISES THE FIRST CHARACTER OF A LINE, so a mob whose name
 // begins with a lowercase article appears in TWO spellings:
 //
-//     A dracoliche has been slain by Orlando!     <- 8 kills, sentence-initial
+//     A dracoliche has been slain by Lom!     <- 8 kills, sentence-initial
 //     You have slain a dracoliche!                <- 3 kills, mid-sentence
 //
 // Exact equality on `a dracoliche` therefore catches 3 of 11 — and a missed kill
@@ -1037,8 +1037,8 @@ const STATE_VERSION = 1;
 // a task is granted to a character, not to an account. Two grouped characters
 // each get their own grant, seconds apart — measured, in our own corpus:
 //
-//   [Mon Aug 10 17:14:49 2026] ... 'Potential of the Void - Lord Nagafen - Weekly'.   (Avenrae)
-//   [Mon Aug 10 17:14:53 2026] ... 'Potential of the Void - Lord Nagafen - Weekly'.   (Shara)
+//   [Mon Aug 10 17:14:49 2026] ... 'Potential of the Void - Lord Nagafen - Weekly'.   (Baxa)
+//   [Mon Aug 10 17:14:53 2026] ... 'Potential of the Void - Lord Nagafen - Weekly'.   (Vaela)
 //
 // Merged into one state those read as a task assigned twice four seconds
 // apart, which this module would then report as a four-second reset bracket.
@@ -1101,7 +1101,7 @@ function createState(character, opts) {
     // These were one array once, and that was a real bug rather than a tidiness
     // problem: `events` is bounded at MAX_EVENTS for memory, and when the bound
     // was reached the oldest keys fell out of the dedupe index with them. Replay
-    // a corpus longer than the bound — which the owner's own 12 Shara files
+    // a corpus longer than the bound — which the owner's own 12 Vaela files
     // are — and the early observations are accepted a second time. Measured
     // before the fix: every 10 Aug task assignment recorded TWICE and the
     // Void-Touched Potential count read 9 instead of 6.
@@ -1846,7 +1846,7 @@ function projectGrid(state, now, opts = {}) {
       if (done.length) {
         // A KILL PROVES COMPLETION, NOT CONSUMPTION.
         //
-        // Measured, one character, one week, one tier: Avenrae killed
+        // Measured, one character, one week, one tier: Baxa killed
         // Innoruuk at D4 on 12, 15 AND 16 Aug 2026 — inside the week beginning
         // Tue 11 Aug, every one in a group instance. So a boss can be killed
         // again after the weekly is done, which the 28 Jul patch note supports:
@@ -2174,8 +2174,8 @@ function project(state, now) {
   };
 }
 
-// `eqlog_Avenrae_rivervale.txt` -> `Avenrae`
-// `eqlog_Shara_rivervale_2026-08-14b.txt` -> `Shara`
+// `eqlog_Baxa_rivervale.txt` -> `Baxa`
+// `eqlog_Vaela_rivervale_2026-08-14b.txt` -> `Vaela`
 //
 // The character is in the FILENAME, never in the line. A host that routes
 // lines to the right per-character state needs this; a host that only ever

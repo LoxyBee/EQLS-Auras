@@ -31,7 +31,7 @@ function isVisibleInZone(visibleInZones, currentZone) {
   // not.
   if (!currentZone) return true;
 
-  // Exact string match, no collapsing. Shara, 22 August: "make them separate". "Befallen" and
+  // Exact string match, no collapsing. the owner, 22 August: "make them separate". "Befallen" and
   // "Befallen 1 (Awakened)" are different places, and so are "The Plane of Fear" and "The Plane of
   // Fear - Group". A prefix or base-name match here would quietly merge all four Befallens.
   return zones.includes(currentZone);
