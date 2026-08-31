@@ -811,6 +811,13 @@ function initLogPanel() {
   const splitChooseFolderBtn = document.getElementById('split-choose-folder-btn');
   const splitResetFolderBtn = document.getElementById('split-reset-folder-btn');
   const splitSubOptionsEl = document.getElementById('split-sub-options');
+  const splitDayStartHourSelect = document.getElementById('split-day-start-hour-select');
+  if (splitDayStartHourSelect && !splitDayStartHourSelect.options.length) {
+    for (let h = 0; h < 24; h++) {
+      const label = h === 0 ? 'Midnight' : h < 12 ? `${h} AM` : h === 12 ? 'Noon' : `${h - 12} PM`;
+      splitDayStartHourSelect.add(new Option(label, String(h)));
+    }
+  }
 
   const fileSizeEl = document.getElementById('log-file-size');
   const archivePromptEl = document.getElementById('archive-prompt');
@@ -842,6 +849,9 @@ function initLogPanel() {
       }
       splitEnabledCheckbox.checked = state.split.enabled;
       splitOutputFolderEl.textContent = state.split.outputDir || '-';
+      if (splitDayStartHourSelect && document.activeElement !== splitDayStartHourSelect) {
+        splitDayStartHourSelect.value = String(state.split.dayStartHour ?? 0);
+      }
       splitSubOptionsEl.style.display = state.split.enabled ? '' : 'none';
     }
 
@@ -937,6 +947,11 @@ function initLogPanel() {
   splitEnabledCheckbox.addEventListener('change', async () => {
     renderState(await window.eqTracker.setSplitEnabled(splitEnabledCheckbox.checked));
   });
+  if (splitDayStartHourSelect) {
+    splitDayStartHourSelect.addEventListener('change', async () => {
+      renderState(await window.eqTracker.setSplitDayStartHour(Number(splitDayStartHourSelect.value)));
+    });
+  }
   splitChooseFolderBtn.addEventListener('click', async () => {
     renderState(await window.eqTracker.chooseSplitFolder());
   });

@@ -1308,7 +1308,7 @@ ipcMain.handle('log:chooseFolder', async () => {
   return state;
 });
 ipcMain.handle('log:setSplitEnabled', (_event, enabled) => logService.setSplitEnabled(enabled));
-ipcMain.handle('log:setSplitOnGap', (_event, splitOnGap) => logService.setSplitOnGap(splitOnGap));
+ipcMain.handle('log:setSplitDayStartHour', (_event, hour) => logService.setSplitDayStartHour(hour));
 ipcMain.handle('log:chooseSplitFolder', () => logService.chooseSplitFolder());
 ipcMain.handle('log:resetSplitFolder', () => logService.resetSplitFolder());
 ipcMain.handle('log:openFolder', () => logService.openLogFolder());

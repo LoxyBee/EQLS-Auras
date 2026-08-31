@@ -44,7 +44,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
     ipcRenderer.on('memorized:line', (_event, line) => callback(line));
   },
   setSplitEnabled: (enabled) => ipcRenderer.invoke('log:setSplitEnabled', enabled),
-  setSplitOnGap: (splitOnGap) => ipcRenderer.invoke('log:setSplitOnGap', splitOnGap),
+  setSplitDayStartHour: (hour) => ipcRenderer.invoke('log:setSplitDayStartHour', hour),
   chooseSplitFolder: () => ipcRenderer.invoke('log:chooseSplitFolder'),
   resetSplitFolder: () => ipcRenderer.invoke('log:resetSplitFolder'),
   openLogFolder: () => ipcRenderer.invoke('log:openFolder'),

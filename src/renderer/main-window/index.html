@@ -1190,17 +1190,20 @@
         <div class="card">
           <h3>Log splitting</h3>
           <p class="hint">
-            Copies new lines into per-day files (and, optionally, a new file whenever logging seems to
-            have stopped and restarted) so you can review a session without wading through the whole log.
-            The original log file is left untouched by this.
+            Copies new lines into per-day files so you can review a session without wading through
+            the whole log. The original log file is left untouched by this.
           </p>
           <div class="row">
             <label><input type="checkbox" id="split-enabled-checkbox" /> Enable log splitting</label>
             <p class="hint" id="split-format-warning" style="display:none"></p>
           </div>
-          <!-- Meaningless while splitting itself is off - there's nothing being written for a gap
-               to split, or a folder to write it into. -->
+          <!-- Meaningless while splitting itself is off - there's nothing being written, or a folder
+               to write it into. -->
           <div id="split-sub-options">
+            <div class="row">
+              <span class="label" title="A raid night that runs past midnight is normally cut across two files. Set this to an hour after you stop playing (e.g. 6 AM) to keep each night in one file - the file dated for the day it started.">New day starts at:</span>
+              <select id="split-day-start-hour-select"></select>
+            </div>
             <div class="row">
               <span class="label">Output folder:</span>
               <span id="split-output-folder">-</span>
