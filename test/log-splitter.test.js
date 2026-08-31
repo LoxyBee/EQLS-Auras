@@ -37,7 +37,7 @@ const store = () => {
 
 function tempLog(body) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-split-'));
-  const file = path.join(dir, 'eqlog_Avenrae_rivervale.txt');
+  const file = path.join(dir, 'eqlog_Baxa_rivervale.txt');
   fs.writeFileSync(file, body, 'utf8');
   return { dir, file };
 }
@@ -102,13 +102,13 @@ test('the first of the month is filed under the first of the month', async () =>
     '[Wed Sep 02 09:00:00 2026] You have slain Cazic Thule!\n'
   );
   assert.deepEqual(files, [
-    'eqlog_Avenrae_rivervale_2026-08-31.txt',
-    'eqlog_Avenrae_rivervale_2026-09-01.txt',
-    'eqlog_Avenrae_rivervale_2026-09-02.txt',
+    'eqlog_Baxa_rivervale_2026-08-31.txt',
+    'eqlog_Baxa_rivervale_2026-09-01.txt',
+    'eqlog_Baxa_rivervale_2026-09-02.txt',
   ], 'SEPTEMBER WAS FILED UNDER AUGUST');
-  assert.ok(read('eqlog_Avenrae_rivervale_2026-09-01.txt').includes('Nagafen'));
-  assert.ok(read('eqlog_Avenrae_rivervale_2026-09-01.txt').includes('Yael'));
-  assert.ok(!read('eqlog_Avenrae_rivervale_2026-08-31.txt').includes('Nagafen'));
+  assert.ok(read('eqlog_Baxa_rivervale_2026-09-01.txt').includes('Nagafen'));
+  assert.ok(read('eqlog_Baxa_rivervale_2026-09-01.txt').includes('Yael'));
+  assert.ok(!read('eqlog_Baxa_rivervale_2026-08-31.txt').includes('Nagafen'));
 });
 
 test('every day of the first nine gets its own file', async () => {
@@ -141,7 +141,7 @@ test('a wrapped broadcast stays with the line it belongs to', async () => {
     'Downtime will be approximately one hour.\n' +
     '[Tue Sep 15 09:00:05 2026] You have slain Lady Vox!\n'
   );
-  assert.deepEqual(files, ['eqlog_Avenrae_rivervale_2026-09-15.txt']);
+  assert.deepEqual(files, ['eqlog_Baxa_rivervale_2026-09-15.txt']);
   const out = read(files[0]);
   assert.ok(out.includes('We apologize'), 'the continuation line was dropped');
   assert.ok(out.includes('approximately one hour'), 'the continuation line was dropped');

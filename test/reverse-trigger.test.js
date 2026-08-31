@@ -3,7 +3,7 @@
  * Reverse detection (widget.reverseDetection) - backlog's "negative/reverse triggers": show a
  * tile while the trigger has NOT happened, hide it for durationSec once it has.
  *
- * WHOLE-AURA, not per-trigger - Shara's own correction: "reverse should not be in each individual
+ * WHOLE-AURA, not per-trigger - Vaela's own correction: "reverse should not be in each individual
  * trigger, it should be a global functionality of an aura, so that you can set 2 AND triggers
  * without having to mess with both triggers separately." The checkbox lives next to "+ Add
  * trigger", not inside any one trigger's own edit modal, and it rides on whatever

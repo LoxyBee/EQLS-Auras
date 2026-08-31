@@ -241,7 +241,7 @@ test('{spell} still falls back to the ordinary buff name when there is no captur
 
 test('an ally buff announces who it is on', () => {
   O.setConfig(textConfig({ textAuraMessage: '' }));
-  assert.equal(O.textFor(buff('Puma', 10, 'Avenrae')), 'Avenrae: Puma');
+  assert.equal(O.textFor(buff('Puma', 10, 'Baxa')), 'Baxa: Puma');
 });
 
 test('{mob} reads the same field {caster} does - reported live as a viable way to name a mob', () => {
@@ -252,7 +252,7 @@ test('{mob} reads the same field {caster} does - reported live as a viable way t
   O.setConfig(textConfig({ textAuraMessage: 'Mez resisted by {mob}' }));
   assert.equal(O.textFor(buff('Mesmerize', 0, 'a greater kobold')), 'Mez resisted by a greater kobold');
   O.setConfig(textConfig({ textAuraMessage: '{caster} and {mob} are the same value' }));
-  assert.equal(O.textFor(buff('X', 0, 'Avenrae')), 'Avenrae and Avenrae are the same value');
+  assert.equal(O.textFor(buff('X', 0, 'Baxa')), 'Baxa and Baxa are the same value');
 });
 
 test('{mob} falls back to a custom timer\'s capturedPrefix when there is no allyName', () => {
@@ -280,8 +280,8 @@ test('{mob} prefers a real allyName over capturedPrefix when both happen to be p
   // silently overridden by whichever field happens to be checked first.
   O.setConfig(textConfig({ textAuraMessage: '{mob}' }));
   assert.equal(
-    O.textFor({ name: 'X', allyName: 'Avenrae', capturedPrefix: 'a greater kobold', showOnOverlay: true, iconUrl: null, isBardSong: false }),
-    'Avenrae'
+    O.textFor({ name: 'X', allyName: 'Baxa', capturedPrefix: 'a greater kobold', showOnOverlay: true, iconUrl: null, isBardSong: false }),
+    'Baxa'
   );
 });
 
@@ -386,7 +386,7 @@ test('an ordinary ally aura (not tracking enemies) is unaffected - still shows o
     displayMode: 'icons', buffFilterMode: 'explicit', buffNames: ['Spirit of Wolf'],
     trackOnEnemies: false, sortOrder: 'time-remaining',
   });
-  const out = O.visibleBuffs([buffOn('Avenrae'), buffOn('Marrowbane')]);
+  const out = O.visibleBuffs([buffOn('Baxa'), buffOn('Marrowbane')]);
   assert.equal(out.length, 2, 'the one-tile rule leaked into an aura that never asked for it');
 });
 
@@ -715,7 +715,7 @@ test('the controls a text aura cannot use are hidden', () => {
 // ---------------------------------------------------------------------------
 
 test('a text aura decides for itself how long an event stays on screen', () => {
-  // Shara: "the 6 second display for text only auras should be a setting the user can do for
+  // Vaela: "the 6 second display for text only auras should be a setting the user can do for
   // themselves. default it to 6 though, incase the user forgets to change it."
   const store = newStore();
   const w = store.createTextAura('Announcer');

@@ -47,10 +47,10 @@ class ProfileStore {
   }
 
   // The buff optimiser (see buffPlanner.js) hangs its input off the active loadout profile:
-  // "tied to the active profile" was Shara's own choice, on the theory that which classes you are
+  // "tied to the active profile" was the owner's own choice, on the theory that which classes you are
   // running IS what a loadout is. `plannerClasses` is up to 3 class codes; `plannerLevel` is the
-  // ONE character level they all share (it's one multiclass character, not three mains - Shara,
-  // 26 Aug); `buffPlanOrder` is the buff names in the priority order she dragged them into, which
+  // ONE character level they all share (it's one multiclass character, not three mains - the
+  // owner, 26 Aug); `buffPlanOrder` is the buff names in the priority order they dragged them into, which
   // the planner walks to fill the 14 slots. All optional - an untouched profile has none, and the
   // planner treats that as "no plan yet".
   setPlannerClasses(id, codes) {

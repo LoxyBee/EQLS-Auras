@@ -298,7 +298,7 @@ test('inferred zone names are kept and flagged rather than dropped', () => {
 // Note 20's destination command - "/tell qeynos"
 // ---------------------------------------------------------------------------
 
-// Shara, 23 August: "the user would type '/tell qeynos' which would then print 'qeynos is not
+// Vaela, 23 August: "the user would type '/tell qeynos' which would then print 'qeynos is not
 // online at this time', when this is seen, the widget would read qeynos as the destination."
 //
 // Both of these lines are already in her logs, so the wording is measured rather than assumed.
@@ -314,7 +314,7 @@ test('a failed tell is read as a destination command', () => {
 test('the same words inside a chat message are ignored', () => {
   const { matchOfflineTell } = require('../src/shared/travelCommand');
   const T = '[Wed Aug 19 21:14:02 2026] ';
-  assert.equal(matchOfflineTell(`${T}Avenrae tells you, 'Qeynos is not online at this time.'`), null);
+  assert.equal(matchOfflineTell(`${T}Baxa tells you, 'Qeynos is not online at this time.'`), null);
   assert.equal(matchOfflineTell(`${T}You have entered Rivervale.`), null);
   // No timestamp means it did not come from the log at all.
   assert.equal(matchOfflineTell('Qeynos is not online at this time.'), null);

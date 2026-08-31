@@ -7,7 +7,7 @@
  * correction (Alacrity's duration, 24 Aug) reached a fresh install fine and did nothing at all
  * for an already-seeded one, because a normal roster entry ships WITH
  * landingText/endedText/iconId from day one, so it never looked "untouched" to that design's
- * refresh heuristic and sat wrong forever. Shara: "it should be seeded from the install not the
+ * refresh heuristic and sat wrong forever. Vaela: "it should be seeded from the install not the
  * person's saved files because it interrupts old installs and doesn't allow live updates."
  *
  * The new rule, and what has to hold for each part of it:

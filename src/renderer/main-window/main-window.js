@@ -686,7 +686,7 @@ function initDetectionSettingsPanel() {
   const loadoutLabelUnlockBtn = document.getElementById('loadout-label-unlock-btn');
   const loadoutLabelResetPositionBtn = document.getElementById('loadout-label-reset-position-btn');
 
-  // The label is deliberately never in the sidebar aura list or Add Aura (Shara: "it should be a
+  // The label is deliberately never in the sidebar aura list or Add Aura (the owner: "it should be a
   // permanent option that is not tied to creating an aura") - but it's still a real widget with a
   // real draggable position underneath, and with nowhere else showing it, "drag it wherever you
   // want it" had no button to start from. Reported live: "this label cannot be moved." These two

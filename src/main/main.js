@@ -306,7 +306,7 @@ if (autoHideOverlayEnabled) foregroundWatcher.start();
 // needing to manually trace the raw EQ log. Capped by truncating on
 // startup rather than mid-session, so a single write is never slowed down
 // by a size check.
-// ITS OWN FOLDER, ONE FILE PER DAY. Shara, 23 August: "I cannot provide this currently as that log
+// ITS OWN FOLDER, ONE FILE PER DAY. the owner, 23 August: "I cannot provide this currently as that log
 // file doesn't exist. it should probably be created as an actual file in it's own folder, that
 // updates and is split per day."
 //
@@ -855,7 +855,7 @@ function raidNamedTile(row) {
 }
 
 /**
- * Note 20's destination command, redesigned 26 Aug. The original version (Shara's own design, 23
+ * Note 20's destination command, redesigned 26 Aug. The original version (the owner's own design, 23
  * August) read the exact word typed as a possible zone name - "/tell qeynos" - which needed
  * knowing the game's own short name for the place and, worse, meant an ORDINARY /tell to an
  * offline GUILDMATE could look like a travel command. Confirmed directly: "Freeport" is also a

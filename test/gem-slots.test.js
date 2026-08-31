@@ -2,7 +2,7 @@
 /**
  * Note 27's second half - what an aura watches, drawn as spell icons.
  *
- * Shara, 22 August: "go ahead and make the change, the gem slot look will be better than a raw
+ * Vaela, 22 August: "go ahead and make the change, the gem slot look will be better than a raw
  * list. no one has any auras worth saving anyway."
  *
  * The second sentence gave permission for a migration. It turned out not to be needed, and that

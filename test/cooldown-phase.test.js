@@ -277,7 +277,7 @@ test('a chat-built trigger is always exact', () => {
 });
 
 test('the cooldown fields are out of the way until wanted', () => {
-  // Shara, 23 August: "not a full sub panel, but just an auto expanding options menu toggle button
+  // Vaela, 23 August: "not a full sub panel, but just an auto expanding options menu toggle button
   // like other menu's so that the options are invisible when not used." Same .topic pattern as
   // every other collapsible section, so it behaves the way the rest of the app already does.
   assert.match(html, /<div class="topic" id="topic-timer-cooldown" data-topic>/);

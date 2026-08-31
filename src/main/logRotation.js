@@ -88,7 +88,7 @@ function boundaryKey(boundary) {
   return `${boundary.getFullYear()}-${p(boundary.getMonth() + 1)}-${p(boundary.getDate())}`;
 }
 
-// `eqlog_Avenrae_rivervale.txt` -> `eqlog_Avenrae_rivervale_week_2026-09-01.txt`
+// `eqlog_Baxa_rivervale.txt` -> `eqlog_Baxa_rivervale_week_2026-09-01.txt`
 function archiveNameFor(logFileName, boundary) {
   const base = path.basename(logFileName, path.extname(logFileName));
   return `${base}_week_${boundaryKey(boundary)}.txt`;
@@ -312,7 +312,7 @@ class LogRotationService {
   /**
    * Is the game idle enough to touch the log right now?
    *
-   * SHARA'S OWN WARNING, on the Archive log card in Setup: "if EQ is actively writing to the log at
+   * THE OWNER'S OWN WARNING, on the Archive log card in Setup: "if EQ is actively writing to the log at
    * the exact moment it's cleared, there's a small chance of a lost line or a game hiccup. Safest
    * to do it right after logging out." That advice was written for a button a person presses. This
    * rotation fires on a schedule, while they are playing, which is exactly the case she warned

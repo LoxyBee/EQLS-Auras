@@ -111,13 +111,13 @@ test('buffs on different people never merge', () => {
   // The tile names whose buffs these are; one covering two people could not.
   M.setRule('duration');
   const out = M.mergeByDuration([
-    buff('Puma', 1440, 900, 'Avenrae'),
-    buff('Puma', 1440, 880, 'Shara'),
-    buff('Talisman', 1440, 870, 'Avenrae'),
+    buff('Puma', 1440, 900, 'Baxa'),
+    buff('Puma', 1440, 880, 'Vaela'),
+    buff('Talisman', 1440, 870, 'Baxa'),
   ]);
-  assert.equal(out.length, 2, 'one merged tile for Avenrae, one lone tile for Shara');
+  assert.equal(out.length, 2, 'one merged tile for Baxa, one lone tile for Vaela');
   const merged = out.find((b) => b.mergedCount);
-  assert.equal(merged.allyName, 'Avenrae');
+  assert.equal(merged.allyName, 'Baxa');
   assert.equal(merged.mergedCount, 2);
 });
 
@@ -205,10 +205,10 @@ test('a merged tile keeps its identity when a member other than the anchor drops
 test('two merged groups on the same person get different identities', () => {
   M.setRule('burst');
   const out = M.mergeByDuration([
-    buff('A', 1440, 1430, 'Avenrae'),
-    buff('B', 1440, 1429, 'Avenrae'),
-    buff('C', 1440, 40, 'Avenrae'),
-    buff('D', 1440, 39, 'Avenrae'),
+    buff('A', 1440, 1430, 'Baxa'),
+    buff('B', 1440, 1429, 'Baxa'),
+    buff('C', 1440, 40, 'Baxa'),
+    buff('D', 1440, 39, 'Baxa'),
   ]);
   const keys = out.map((b) => b.mergedKey);
   assert.equal(out.length, 2);
@@ -241,10 +241,10 @@ test('the anchor member expiring does not re-identify the tile either', () => {
 test('the identity names who and how long, so two people never collide', () => {
   M.setRule('duration');
   const out = M.mergeByDuration([
-    buff('A', 1440, 900, 'Avenrae'),
-    buff('B', 1440, 800, 'Avenrae'),
-    buff('A', 1440, 900, 'Shara'),
-    buff('B', 1440, 800, 'Shara'),
+    buff('A', 1440, 900, 'Baxa'),
+    buff('B', 1440, 800, 'Baxa'),
+    buff('A', 1440, 900, 'Vaela'),
+    buff('B', 1440, 800, 'Vaela'),
   ]);
   assert.equal(out.length, 2);
   assert.notEqual(out[0].mergedKey, out[1].mergedKey);
@@ -255,8 +255,8 @@ test('keyFor prefers the merged identity over the ally or timer identity it inhe
   // A merged tile is built by spreading its lead member, so it still carries that member's
   // allyName and id. Falling through to either would make two different merged groups collide,
   // or give a merged custom timer its lead timer's identity.
-  assert.equal(M.keyFor({ mergedKey: 'merged::x', allyName: 'Avenrae', name: 'A', id: 't1' }), 'merged::x');
-  assert.equal(M.keyFor({ allyName: 'Avenrae', name: 'A' }), 'avenrae::a');
+  assert.equal(M.keyFor({ mergedKey: 'merged::x', allyName: 'Baxa', name: 'A', id: 't1' }), 'merged::x');
+  assert.equal(M.keyFor({ allyName: 'Baxa', name: 'A' }), 'baxa::a');
   assert.equal(M.keyFor({ id: 't1', name: 'A' }), 'id::t1');
   assert.equal(M.keyFor({ name: 'A' }), 'a');
 });

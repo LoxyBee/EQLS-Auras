@@ -2,7 +2,7 @@
 /**
  * Spells that never run out.
  *
- * Shara: "some of the 0 duration spells are actually infinite duration... use yaulp and fury as
+ * Vaela: "some of the 0 duration spells are actually infinite duration... use yaulp and fury as
  * examples of spells that do, and code in functionality for tiles to have infinite duration, and
  * make it easy to find and add more."
  *
@@ -49,7 +49,7 @@ function makeEngine() {
 // The data
 // ---------------------------------------------------------------------------
 
-test('the spells Shara named are marked, and every rank of them', () => {
+test('the spells Vaela named are marked, and every rank of them', () => {
   const marked = roster.filter((e) => e.infiniteDuration === true).map((e) => e.name).sort();
   for (const name of ['Fury', 'Yaulp', 'Yaulp II', 'Yaulp III']) {
     assert.ok(marked.includes(name), `${name} is not marked as lasting forever`);
@@ -139,7 +139,7 @@ test('it sorts LAST, not first', () => {
 
 test('an ally can have one too', () => {
   const { engine, buffStore } = makeEngine();
-  engine._landOnAlly(buffStore.getByName('Fury'), 'Avenrae');
+  engine._landOnAlly(buffStore.getByName('Fury'), 'Baxa');
   const [buff] = engine.getActiveAllyBuffs();
   assert.equal(buff.infinite, true);
   assert.equal(buff.remainingSec, null);

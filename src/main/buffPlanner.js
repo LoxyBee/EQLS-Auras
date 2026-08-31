@@ -1,6 +1,6 @@
 'use strict';
 
-// The buff optimiser (Shara's ask, 26-27 Aug): "input 3 classes, spit out your highest buffs and
+// The buff optimiser (the owner's ask, 26-27 Aug): "input 3 classes, spit out your highest buffs and
 // the best setup across the buff slots" - ranked by the actual character-stat numbers, "level and
 // duration have absolutely 0 to do with anything".
 //
@@ -33,7 +33,7 @@ const SLOT_COUNT = 14;
 // they get their own slots on top of the 14. Only computed when Bard is one of the chosen classes.
 const SONG_SLOT_COUNT = 5;
 
-// EQ Legends caps at level 50 (Shara, 26 Aug). One character level applies to all three classes -
+// EQ Legends caps at level 50 (the owner, 26 Aug). One character level applies to all three classes -
 // it's one character with a multiclass loadout, not three separate mains.
 const DEFAULT_LEVEL = 50;
 const MAX_CHARACTER_LEVEL = 50;
@@ -47,7 +47,7 @@ const VALID_CLASSES = ['BRD', 'BST', 'CLR', 'DRU', 'ENC', 'MAG', 'NEC', 'PAL', '
 const PLAYER_TARGETS = new Set(['Self', 'Group', 'Friendly', 'Group Member', 'Single']);
 
 // Roster categories that are never a stat/combat buff - heals of every shape, illusions, run
-// speed, vision, and other pure utility. Dropped from the planner outright (Shara, 27 Aug: "not
+// speed, vision, and other pure utility. Dropped from the planner outright (the owner, 27 Aug: "not
 // stat related. no combat power. heals included."). This is the coarse filter that works even
 // without the spell file; the fine one (a buff whose effects carry no recognised stat at all) runs
 // on top when the EQ folder is set.
@@ -59,7 +59,7 @@ const NON_STAT_CATEGORIES = new Set([
   'Utility Beneficial', 'Sum: Familiar', 'Pet Haste', 'Pet Misc Buffs',
   'Invulnerability', 'Conversions',
   // NOT excluded, contrary to an earlier guess: 'Spell Focus' (Blessing of Faith is a real slot),
-  // 'Blessings', 'Symbol', 'Melee Guard', 'Spell Guard', 'Block', 'Combat Innates' - Shara's
+  // 'Blessings', 'Symbol', 'Melee Guard', 'Spell Guard', 'Block', 'Combat Innates' - the owner's
   // 27 Aug reference loadout runs buffs from most of those.
 ]);
 
@@ -175,7 +175,7 @@ function baseName(name) {
 }
 
 // The fallback when the spell file isn't available. The roster's `category` column is a stat
-// label, NOT a stacking line - Shara's 27 Aug reference loadout runs Strength AND Infusion of
+// label, NOT a stacking line - the owner's 27 Aug reference loadout runs Strength AND Infusion of
 // Spirit AND Talisman of Altuna, all "stat" categories that overlap - so this does NOT group by
 // category. It only merges spells that share a base name (a rank line), keeping the higher one.
 // Everything else is shown; the player sorts it out. The real answer needs the spell file.
@@ -313,7 +313,7 @@ function orderCandidates(cands, priorityOrder) {
 }
 
 // The stat sheet: every slotted buff's stats summed. "A sum total of stats across everything"
-// (Shara, 27 Aug). Ordered the way a character sheet lists stats (AC, ATK, the attribute block,
+// (the owner, 27 Aug). Ordered the way a character sheet lists stats (AC, ATK, the attribute block,
 // haste, resists, ...), not by magnitude.
 function sumStats(slotLists, multiplierStats) {
   const totals = new Map(); // stat -> { stat, order, value }
@@ -381,7 +381,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   const pool = (c) => poolFor(c, hasBard);
 
   // Permanent buffs (Yaulp, Fury) are "cast once and forget" - they get their OWN uncapped pool and
-  // are resolved SEPARATELY, never deduped against the temp buffs (Shara, 27 Aug: Fury keeps its
+  // are resolved SEPARATELY, never deduped against the temp buffs (the owner, 27 Aug: Fury keeps its
   // permanent listing even when a higher-tier temp Strength buff is also in the 14). Resolving them
   // in the same heading walk as the temp buffs was throwing Fury away as "Rage is the higher tier".
   const permRaw = raw.filter((c) => pool(c) === 'permanent');

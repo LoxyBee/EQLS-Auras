@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Note 20's destination command, as Shara specified it on 23 August:
+ * Note 20's destination command, as the owner specified it on 23 August:
  *
  *   "the user should then be able to use a command to say where they want to go, the widget should
  *    then display the route. the user would type '/tell qeynos' which would then print 'qeynos is

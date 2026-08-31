@@ -36,22 +36,22 @@ const strip = (l) => l.replace(/^\[[^\]]+\]\s*/, '').trim();
 
 test('it matches a real trade request, timestamp and all', () => {
   // Wording taken from the owner's own logs, where it appears 9 times.
-  assert.ok(PATTERN.test(strip('[Wed Aug 19 20:15:02 2026] Avenrae is interested in making a trade.')));
-  assert.ok(PATTERN.test('Shara is interested in making a trade.'));
+  assert.ok(PATTERN.test(strip('[Wed Aug 19 20:15:02 2026] Baxa is interested in making a trade.')));
+  assert.ok(PATTERN.test('Vaela is interested in making a trade.'));
 });
 
 test('it captures who asked', () => {
-  assert.equal('Avenrae is interested in making a trade.'.match(PATTERN)[1], 'Avenrae');
+  assert.equal('Baxa is interested in making a trade.'.match(PATTERN)[1], 'Baxa');
 });
 
 test('it does NOT fire on the other trade lines', () => {
   // All present in the owner's logs. Only the REQUEST should ping - the rest are after the fact
   // and would turn one trade into a burst of sounds.
   for (const line of [
-    'You complete the trade with Avenrae.',
-    'Avenrae has cancelled the trade.',
+    'You complete the trade with Baxa.',
+    'Baxa has cancelled the trade.',
     'You have cancelled the trade.',
-    'You are too far away from Avenrae to trade.',
+    'You are too far away from Baxa to trade.',
   ]) {
     assert.ok(!PATTERN.test(strip(line)), `should not have matched: ${line}`);
   }
@@ -61,9 +61,9 @@ test('it does NOT fire on someone quoting it in chat', () => {
   // The anchors are what stop this. A player saying the sentence produces a wrapped line, and
   // the leading ^ rejects it.
   for (const line of [
-    'Avenrae says, \'Avenrae is interested in making a trade.\'',
-    'Avenrae tells you, \'is interested in making a trade.\'',
-    'Avenrae shouts, \'Shara is interested in making a trade.\'',
+    'Baxa says, \'Baxa is interested in making a trade.\'',
+    'Baxa tells you, \'is interested in making a trade.\'',
+    'Baxa shouts, \'Vaela is interested in making a trade.\'',
   ]) {
     assert.ok(!PATTERN.test(strip(line)), `should not have matched: ${line}`);
   }
@@ -73,8 +73,8 @@ test('it does NOT fire on someone quoting it in chat', () => {
 });
 
 test('it does not match a partial or run-on line', () => {
-  assert.ok(!PATTERN.test('Avenrae is interested in making a trade'), 'missing full stop should not match');
-  assert.ok(!PATTERN.test('Avenrae is interested in making a trade. And a duel.'), 'trailing text should not match');
+  assert.ok(!PATTERN.test('Baxa is interested in making a trade'), 'missing full stop should not match');
+  assert.ok(!PATTERN.test('Baxa is interested in making a trade. And a duel.'), 'trailing text should not match');
 });
 
 test('it fires against the owner real logs, and only on request lines', () => {

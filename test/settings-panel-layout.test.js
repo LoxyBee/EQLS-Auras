@@ -2,7 +2,7 @@
 /**
  * The shape of the aura settings panel - note 27, first half.
  *
- * Shara: "by buffs shown being its own category, I meant, categories such as display and size,
+ * Vaela: "by buffs shown being its own category, I meant, categories such as display and size,
  * configuration, etc. currently buffs shown is a sub category under configuration. but it should
  * be a top level category/card the same as display and size."
  *
@@ -15,7 +15,7 @@
  *
  * The gem-slot half of note 27 is NOT built - it changes how an aura stores its picked spells,
  * which is the one change that could empty auras someone has already set up, and it is waiting on
- * Shara's go-ahead.
+ * Vaela's go-ahead.
  */
 
 const assert = require('node:assert/strict');

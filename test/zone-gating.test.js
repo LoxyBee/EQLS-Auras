@@ -2,7 +2,7 @@
 /**
  * Zone-gated auras - note 38.
  *
- * Shara, 22 August, on whether "The Plane of Fear" and "The Plane of Fear - Group" should be the
+ * Vaela, 22 August, on whether "The Plane of Fear" and "The Plane of Fear - Group" should be the
  * same zone: "make them separate". So a zone is the exact string the game printed, with no
  * collapsing at all - "Befallen" and "Befallen 1 (Awakened)" are two different zones, and gating
  * to one does not cover the other.

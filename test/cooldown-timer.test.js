@@ -162,7 +162,7 @@ test('a sung spell starts it', () => {
 
 test('somebody else casting it does nothing', () => {
   const { engine } = setup([['Promised Renewal', 21]]);
-  feed(engine, 'Avenrae begins casting Promised Renewal VII.');
+  feed(engine, 'Baxa begins casting Promised Renewal VII.');
   assert.deepEqual(running(engine), []);
 });
 
@@ -193,7 +193,7 @@ test("somebody else's interrupt leaves hers alone", () => {
   // 1,141 of the 1,711 interrupt lines in her logs belong to other people.
   const { engine } = setup([['Promised Renewal', 21]]);
   feed(engine, 'You begin casting Promised Renewal VII.');
-  feed(engine, "Avenrae's Promised Renewal spell is interrupted.");
+  feed(engine, "Baxa's Promised Renewal spell is interrupted.");
   assert.deepEqual(running(engine), ['Promised Renewal']);
 });
 
@@ -221,7 +221,7 @@ test('an interrupt does not cancel a hand-built timer', () => {
 
 test('the interrupt line is matched, and only hers', () => {
   assert.equal(matchOwnInterrupt(`${TS}Your Superior Healing spell is interrupted.`), 'Superior Healing');
-  assert.equal(matchOwnInterrupt(`${TS}Avenrae's Tremor spell is interrupted.`), null);
+  assert.equal(matchOwnInterrupt(`${TS}Baxa's Tremor spell is interrupted.`), null);
   assert.equal(matchOwnInterrupt(`${TS}Your Yaulp spell has worn off.`), null);
 });
 

@@ -16,7 +16,7 @@ const { RAID_ZONE_NAMEDS } = require('../src/shared/data/raidZoneNameds');
 
 const TS = '[Wed Aug 19 19:23:03 2026] ';
 const enter = (t, z) => t.handleLine(`${TS}You have entered ${z}.`);
-const slay = (t, n) => t.handleLine(`${TS}${n} has been slain by Avenrae!`);
+const slay = (t, n) => t.handleLine(`${TS}${n} has been slain by Baxa!`);
 
 function make() {
   const t = new RaidNamedTracker();
