@@ -1650,11 +1650,16 @@ smoke; **none of the below is confirmed on a real display / in a real session.**
 
 ## Bard Songs hybrid feed (#27 / #29)
 
-- [ ] The Bard Songs premade's **"Active on this aura"** card now lists songs active on you (it
-      showed nothing before).
-- [ ] Turn on **"Also show debuff songs"** → sing a debuff song (e.g. Largo's Melodic Binding) on
-      an enemy → it appears with a **debuff-coloured border**. Off by default.
-- [ ] Turn on **"Split songs by type"** → buff songs and debuff songs render in separate sections.
+- [ ] The Bard Songs premade's **"Active on this aura"** card lists songs active on you (it
+      showed nothing before). *(#27 — not yet confirmed in a real session.)*
+- [x] **#29 debuff songs — CONFIRMED in-game 31 Aug.** With "Also show debuff songs" on, Largo's
+      Melodic Binding on a surviving mob shows in a **"Debuff songs"** section with a debuff border
+      and a refreshing ~12s countdown, keyed off the pulsing `is bound by strands of solid music.`
+      landing (there is no cast line). It clears when the mob dies.
+- [x] **A bard damage song does NOT appear** — Denon's Desperate Dirge (a `nuke`-category song)
+      lands third-person on a mob but never shows on the aura. Confirmed same session.
+- [ ] "Split songs by type" — buff and debuff songs render in separate sections. *(Not separately
+      confirmed.)*
 
 ## Loss of control — generic line (#36)
 
