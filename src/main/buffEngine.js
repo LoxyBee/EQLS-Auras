@@ -1983,6 +1983,15 @@ class BuffEngine extends EventEmitter {
         if (this.lineStackFn && this.lineStackFn(known.name, activeEntry.name) !== 'unknown') continue;
         const activeKnown = this.buffStore.getByName(activeEntry.name);
         if (!activeKnown || !activeKnown.spellId || activeKnown.scaleCategory !== 'buff') continue;
+        // Never let the effect-slot heuristic rule across the bard-song boundary. We only get here
+        // when the heading model returned 'unknown' - i.e. the two are not both members of the same
+        // modelled line - so the real song exclusions (bard haste vs Alacrity, Selo's vs SoW) were
+        // already decided by lineStackFn above and never reach this loop. Everything left with a
+        // song on either side coexists: resist songs stack with resist spells, with each other, and
+        // with cleric AC lines - measured across 26-31 Aug, every AC-SPA-1 "overwrite" the heuristic
+        // produced was a bard song being wrongly killed, zero of them correct
+        // (docs/research/bard-song-stacking.md).
+        if (known.isBardSong || activeKnown.isBardSong) continue;
         const verdict = this.stackVerdictFn(activeKnown.spellId, known.spellId);
         if (verdict) {
           this._debugLog(`ENDED "${activeKnown.name}" - overwritten by "${known.name}" (${verdict.why})`);
