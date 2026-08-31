@@ -96,6 +96,9 @@
       <button class="nav-btn" data-page="page-settings">Setup</button>
       <button class="nav-btn" data-page="page-log">Log</button>
       <button class="nav-btn" data-page="page-about">About</button>
+      <!-- Nav buttons for custom modules that declare a settings page are injected here by
+           initModules(). No heading, no wrapper - they read as ordinary pages (owner's call). -->
+      <div id="module-nav-slot"></div>
     </nav>
 
     <!-- Drag handle for the sidebar width. A real element rather than CSS `resize`, because
@@ -1755,6 +1758,9 @@
           </div>
         </div>
       </section>
+      <!-- Custom-module settings pages are injected here by initModules(), one per module that
+           declares a `page`, rendered from its spec. -->
+      <div id="module-page-slot"></div>
     </div>
     </div>
   </div>

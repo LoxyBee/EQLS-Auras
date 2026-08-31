@@ -39,6 +39,7 @@ async function init() {
   initLogActivityLine();
   initBugReport();
   initActionBarsPage();
+  initModules();
   initBuffPlanner();
   initLoggingWatch();
   initChangelog();
@@ -6672,6 +6673,131 @@ function initBugReport() {
       statusEl.textContent = 'Could not copy to clipboard.';
     }
   });
+}
+
+// feat/module-system - custom modules that declare a `page` get their own settings page in the
+// sidebar, rendered from that declarative spec. No "Modules" heading, no folder link, no error
+// panel (owner's call) - a module page reads as an ordinary built-in page. Rebuilt whenever the
+// module set changes (hot-reload). A `hasAura` module's overlay aura is handled by the widget
+// system, not here.
+function initModules() {
+  const navSlot = document.getElementById('module-nav-slot');
+  const pageSlot = document.getElementById('module-page-slot');
+  if (!navSlot || !pageSlot || !window.eqTracker.listModules) return;
+
+  function controlRow(moduleId, field, value) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = field.label || field.key;
+    row.appendChild(label);
+
+    let input;
+    const push = (v) => window.eqTracker.setModuleSetting(moduleId, field.key, v);
+
+    if (field.type === 'checkbox') {
+      label.remove();
+      const wrap = document.createElement('label');
+      input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = !!value;
+      input.addEventListener('change', () => push(input.checked));
+      wrap.append(input, document.createTextNode(' ' + (field.label || field.key)));
+      row.appendChild(wrap);
+    } else if (field.type === 'select') {
+      input = document.createElement('select');
+      input.className = 'text-input';
+      for (const opt of field.options || []) {
+        const o = document.createElement('option');
+        o.value = o.textContent = opt;
+        input.appendChild(o);
+      }
+      input.value = value;
+      input.addEventListener('change', () => push(input.value));
+      row.appendChild(input);
+    } else if (field.type === 'slider') {
+      input = document.createElement('input');
+      input.type = 'range';
+      input.min = field.min;
+      input.max = field.max;
+      input.step = typeof field.step === 'number' ? field.step : 1;
+      input.value = value;
+      const out = document.createElement('span');
+      out.className = 'slider-value';
+      out.textContent = value;
+      input.addEventListener('input', () => {
+        out.textContent = input.value;
+        push(Number(input.value));
+      });
+      row.append(input, out);
+    } else {
+      input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'text-input';
+      input.value = value == null ? '' : value;
+      input.addEventListener('change', () => push(input.value));
+      row.appendChild(input);
+    }
+    return row;
+  }
+
+  function buildPage(mod) {
+    const section = document.createElement('section');
+    section.className = 'page';
+    section.id = `page-module-${mod.id}`;
+    section.dataset.moduleId = mod.id;
+
+    const title = document.createElement('h2');
+    title.className = 'page-title';
+    title.textContent = mod.name;
+    section.appendChild(title);
+    if (mod.description) {
+      const hint = document.createElement('p');
+      hint.className = 'hint';
+      hint.textContent = mod.description;
+      section.appendChild(hint);
+    }
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    for (const entry of mod.page || []) {
+      if (entry.section) {
+        const h = document.createElement('h3');
+        h.className = 'settings-subsection-title';
+        h.textContent = entry.section;
+        card.appendChild(h);
+      } else {
+        card.appendChild(controlRow(mod.id, entry, mod.settings[entry.key]));
+      }
+    }
+    if (card.childElementCount) section.appendChild(card);
+    return section;
+  }
+
+  function render(modules) {
+    const active = document.querySelector('.page.active')?.id;
+    navSlot.innerHTML = '';
+    pageSlot.innerHTML = '';
+    for (const mod of modules) {
+      if (!Array.isArray(mod.page) || !mod.page.length) continue; // only modules with settings get a page
+      const btn = document.createElement('button');
+      btn.className = 'nav-btn';
+      btn.dataset.page = `page-module-${mod.id}`;
+      btn.textContent = mod.name;
+      btn.addEventListener('click', () => activateNavButton(btn));
+      navSlot.appendChild(btn);
+      pageSlot.appendChild(buildPage(mod));
+    }
+    // keep the user where they were if that page still exists
+    if (active && document.getElementById(active)) {
+      const stillThere = document.querySelector(`.nav-btn[data-page="${active}"]`);
+      if (stillThere) activateNavButton(stillThere);
+    }
+  }
+
+  window.eqTracker.listModules().then(render);
+  window.eqTracker.onModulesChanged(render);
 }
 
 // The Action Bar overlay (CLAUDE.md's "Action bar cover replacements" backlog entry) - the

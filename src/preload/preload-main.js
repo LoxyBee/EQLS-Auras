@@ -146,6 +146,15 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setCharacterSettings: (settings) => ipcRenderer.invoke('settings:setCharacter', settings),
 
   listWidgets: () => ipcRenderer.invoke('widget:list'),
+
+  // Custom modules (feat/module-system).
+  listModules: () => ipcRenderer.invoke('modules:list'),
+  getModuleEntries: () => ipcRenderer.invoke('modules:entries'),
+  getModuleSettings: (id) => ipcRenderer.invoke('modules:getSettings', id),
+  setModuleSetting: (id, key, value) => ipcRenderer.invoke('modules:setSetting', { id, key, value }),
+  onModulesChanged: (callback) => ipcRenderer.on('modules:changed', (_event, list) => callback(list)),
+  onModuleEntries: (callback) => ipcRenderer.on('modules:entries', (_event, all) => callback(all)),
+  onModuleSettingsChanged: (callback) => ipcRenderer.on('modules:settingsChanged', (_event, p) => callback(p)),
   createWidget: (name, buffSource) => ipcRenderer.invoke('widget:create', { name, buffSource }),
   createAllyBuffsWidget: (name) => ipcRenderer.invoke('widget:createAlly', { name }),
   createBardSongsWidget: (name) => ipcRenderer.invoke('widget:createBardSongs', { name }),
