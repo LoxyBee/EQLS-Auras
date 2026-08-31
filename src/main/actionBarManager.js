@@ -417,6 +417,17 @@ function updateSlot(id, index, patch) {
   return withTotalSlots(store.getById(id));
 }
 
+// QOL #11 - drag one gem onto another to SWAP the two (icon + name + border + cooldown + toggle);
+// everything else stays put. A stance/invocation gem's "active" green border is keyed by slot
+// index in abilityGroups.js and self-corrects on the next stance/invocation line; a running
+// manual cooldown likewise re-resolves on the next tick.
+function swapSlots(id, indexA, indexB) {
+  const updated = store.swapSlots(id, indexA, indexB);
+  if (!updated) return null;
+  pushConfigChanged(id);
+  return withTotalSlots(store.getById(id));
+}
+
 function setSlotIcon(id, index, iconId) {
   return updateSlot(id, index, { iconId: iconId == null ? null : Math.round(Number(iconId)) });
 }
@@ -738,6 +749,7 @@ module.exports = {
   setBorderWidth,
   setBorderOffset,
   setBorderColor,
+  swapSlots,
   setSlotIcon,
   setSlotName,
   setSlotDisabled,

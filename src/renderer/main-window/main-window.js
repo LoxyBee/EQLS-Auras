@@ -6939,9 +6939,25 @@ function initActionBarsPage() {
     slotsGridEl.style.setProperty('--slot-cols', perRow);
   }
 
-  // Updates one gem's box on the settings-page grid - icon, disabled dimming, and a hover tooltip
-  // naming it. The overlay itself (not this settings grid) is what actually renders the name text
-  // and cooldown visuals - this box is just the picker/summary.
+  // QOL #19 - "has anything been set up in this slot" for the at-a-glance grid marker. Anything
+  // that would show on the overlay or change its behaviour counts; a bare empty slot does not.
+  function slotIsConfigured(s) {
+    return !!(
+      s &&
+      (s.iconId != null ||
+        s.secondIconId != null ||
+        s.name ||
+        s.cooldown ||
+        s.toggleGroup ||
+        s.borderEnabled ||
+        s.bgColor ||
+        s.disabled)
+    );
+  }
+
+  // Updates one gem's box on the settings-page grid - icon, disabled dimming, a "configured"
+  // marker (#19), and a hover tooltip naming it. The overlay itself (not this settings grid) is
+  // what actually renders the name text and cooldown visuals - this box is just the picker/summary.
   function refreshGemBox(index) {
     const g = gemBoxes[index];
     const s = currentSlots[index];
@@ -6980,6 +6996,7 @@ function initActionBarsPage() {
       g.box.style.outlineOffset = '';
     }
     g.box.classList.toggle('disabled', !!s.disabled);
+    g.box.classList.toggle('configured', slotIsConfigured(s));
     g.box.title = s.name ? `${s.name} (Slot ${index + 1})` : `Slot ${index + 1}`;
   }
 
@@ -7235,11 +7252,47 @@ function initActionBarsPage() {
   // A plain grid, same "Icons per row" wrap as the real overlay - each box just opens the one
   // Edit gem modal above. No per-box controls live on the page itself.
 
+  // QOL #11 - drag one gem box onto another to SWAP the two whole slots (icon, name, border,
+  // cooldown, toggle). Only those two trade places; every other slot stays exactly where it was.
+  // The grid re-renders from the returned config, so nothing is tracked here beyond which box the
+  // drag started on.
+  let dragFromSlot = null;
+  function onGemDragStart(e) {
+    dragFromSlot = Number(this.dataset.slotIndex);
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(dragFromSlot)); // Firefox needs some data set
+  }
+  function onGemDragOver(e) {
+    if (dragFromSlot == null || Number(this.dataset.slotIndex) === dragFromSlot) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    this.classList.add('drag-over');
+  }
+  function onGemDragLeave() {
+    this.classList.remove('drag-over');
+  }
+  function onGemDrop(e) {
+    e.preventDefault();
+    this.classList.remove('drag-over');
+    const b = Number(this.dataset.slotIndex);
+    if (dragFromSlot == null || b === dragFromSlot || !selectedActionBarId) return;
+    const a = dragFromSlot;
+    window.eqTracker.swapActionBarSlots(selectedActionBarId, a, b).then(() => selectActionBar(selectedActionBarId));
+  }
+  function onGemDragEnd() {
+    this.classList.remove('dragging');
+    gemBoxes.forEach((g) => g.box.classList.remove('drag-over'));
+    dragFromSlot = null;
+  }
+
   for (let i = 0; i < 12; i++) {
     const box = document.createElement('button');
     box.type = 'button';
     box.className = 'icon-picker-box';
     box.title = `Slot ${i + 1}`;
+    box.dataset.slotIndex = String(i);
+    box.draggable = true;
     const img = document.createElement('img');
     img.alt = '';
     img.style.display = 'none';
@@ -7252,6 +7305,11 @@ function initActionBarsPage() {
     placeholder.textContent = String(i + 1);
     box.append(img, secondImg, placeholder);
     box.addEventListener('click', () => openGemModal(i));
+    box.addEventListener('dragstart', onGemDragStart);
+    box.addEventListener('dragover', onGemDragOver);
+    box.addEventListener('dragleave', onGemDragLeave);
+    box.addEventListener('drop', onGemDrop);
+    box.addEventListener('dragend', onGemDragEnd);
     slotsGridEl.appendChild(box);
     gemBoxes.push({ box, img, secondImg, placeholder });
   }

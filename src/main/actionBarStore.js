@@ -246,6 +246,22 @@ class ActionBarStore {
     return { ...bar };
   }
 
+  // QOL #11 - exchange the two whole slot objects (icon + name + border + cooldown + toggle).
+  // A SWAP, not a list reorder: drag 2 onto 7 and only 2 and 7 trade places, everything else
+  // stays exactly where it was. Out-of-range indices clamp; equal indices are a no-op.
+  swapSlots(id, indexA, indexB) {
+    const bar = this.bars.find((b) => b.id === id);
+    if (!bar) return null;
+    const clamp = (n) => Math.max(0, Math.min(TOTAL_SLOTS - 1, Math.round(Number(n) || 0)));
+    const a = clamp(indexA);
+    const b = clamp(indexB);
+    if (a !== b && Array.isArray(bar.slots)) {
+      [bar.slots[a], bar.slots[b]] = [bar.slots[b], bar.slots[a]];
+      this._save();
+    }
+    return { ...bar };
+  }
+
   savePosition(id, pos) {
     const bar = this.bars.find((b) => b.id === id);
     if (!bar) return;

@@ -1974,6 +1974,7 @@ ipcMain.handle('actionBar:toggleLock', (_event, id) => actionBarManager.toggleLo
 ipcMain.handle('actionBar:isLocked', (_event, id) => actionBarManager.isLocked(id));
 ipcMain.handle('actionBar:resetPosition', (_event, id) => actionBarManager.resetPosition(id));
 ipcMain.handle('actionBar:nudge', (_event, { id, dx, dy }) => actionBarManager.nudgePosition(id, dx, dy));
+ipcMain.handle('actionBar:swapSlots', (_event, { id, a, b }) => actionBarManager.swapSlots(id, a, b));
 ipcMain.handle('actionBar:setSlotIcon', (_event, { id, index, iconId }) => actionBarManager.setSlotIcon(id, index, iconId));
 ipcMain.handle('actionBar:setOpacity', (_event, { id, opacity }) => actionBarManager.setOpacity(id, opacity));
 ipcMain.handle('actionBar:setSlotName', (_event, { id, index, name }) => actionBarManager.setSlotName(id, index, name));
