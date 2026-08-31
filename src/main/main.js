@@ -1321,6 +1321,7 @@ ipcMain.handle('log:openArchiveFolder', () => logService.openArchiveFolder());
 ipcMain.handle('buffs:getActive', () => buffEngine.getActiveBuffs());
 ipcMain.handle('buffs:getActiveAllies', () => buffEngine.getActiveAllyBuffs());
 ipcMain.handle('buffs:getActiveBardSongs', () => buffEngine.getActiveBardSongs());
+ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffEngine.removeActiveBardSong(castBy, name));
 
 ipcMain.handle('damage:getActive', () => damageEngine.getActive());
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));

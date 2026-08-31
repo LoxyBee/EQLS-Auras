@@ -468,5 +468,47 @@ test('a non-bard-song buff never appears in the bard songs list', () => {
   assert.equal(engine.getActiveBardSongs().length, 0);
 });
 
+// ---------------------------------------------------------------------------
+// #27 - the "Active on this aura" card is fed on the Bard Songs premade
+// ---------------------------------------------------------------------------
+//
+// Reported live: the "active effects on this aura" card, which works like Self Buffs', showed
+// nothing on the Bard Songs premade. Two causes: the settings window had no bard-songs data feed
+// at all (no preload bridge, activeSourceForWidget fell through to self buffs), and
+// filterActiveBuffsForWidget applied the inherited `hideBardSongs: true` default, which strips
+// every row since they are all isBardSong by construction.
+const fs = require('node:fs');
+const path = require('node:path');
+const readSrc = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+
+test('#27 - the bard-songs feed is wired IPC -> preload -> settings window', () => {
+  const main = readSrc('src', 'main', 'main.js');
+  const preload = readSrc('src', 'preload', 'preload-main.js');
+  const renderer = readSrc('src', 'renderer', 'main-window', 'main-window.js');
+
+  assert.match(main, /ipcMain\.handle\('buffs:getActiveBardSongs'/);
+  assert.match(main, /ipcMain\.handle\('buffs:removeActiveBardSong'/);
+  assert.match(main, /broadcast\('buffs:activeBardSongs'/);
+
+  assert.match(preload, /getActiveBardSongs:\s*\(\)\s*=>\s*ipcRenderer\.invoke\('buffs:getActiveBardSongs'\)/);
+  assert.match(preload, /onActiveBardSongsChanged:/);
+  assert.match(preload, /removeActiveBardSong:/);
+
+  assert.match(renderer, /let latestBardSongs = \[\]/);
+  assert.match(renderer, /onActiveBardSongsChanged\(\(songs\) => \{\s*latestBardSongs = songs/);
+  assert.match(renderer, /widget\.buffSource === 'bardSongs'\) return latestBardSongs/);
+});
+
+test('#27 - filterActiveBuffsForWidget does not strip a bard-songs aura with hideBardSongs inherited true', () => {
+  const renderer = readSrc('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function filterActiveBuffsForWidget\(widget\) \{[\s\S]*?\n  \}/)[0];
+  // the bardSongs bypass must come BEFORE the buffFilterMode / hideBardSongs block
+  assert.ok(
+    fn.indexOf("widget.buffSource === 'bardSongs'") < fn.indexOf('if (widget.hideBardSongs)'),
+    'the hideBardSongs filter would run first and strip every row'
+  );
+  assert.match(fn, /buffSource === 'bardSongs'\) \{\s*return source\.filter/);
+});
+
 module.exports = () => report('bard-songs');
 if (require.main === module) report('bard-songs').then((n) => process.exit(n ? 1 : 0));

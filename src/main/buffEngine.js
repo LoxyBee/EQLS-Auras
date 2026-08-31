@@ -51,6 +51,14 @@ const INSTANT_RETENTION_SEC = 60;
 // being on an enemy, so an aura can choose to show those separately from buffs on groupmates.
 const ENEMY_SPELL_CATEGORIES = new Set(['debuff', 'charm', 'dot', 'nuke']);
 
+// A buff whose roster `targets` is one of these can only ever land on a pet, an animal, a mob or a
+// corpse - never on the player - so it is never a candidate for a landing message ON the player.
+// Reported live: "You feel smaller." is shared by Shrink (targets Single) and Tiny Companion
+// (targets Pet), and the disambiguation queued a prompt every time the player cast Shrink, offering
+// a spell that is mechanically impossible on a player. A denylist rather than a Self/Group/Friendly
+// allowlist so a custom entry with no `targets` set is still considered a candidate.
+const NON_PLAYER_TARGETS = new Set(['Pet', 'Animal', 'Undead', 'Construct', 'Corpse', 'Plant']);
+
 // Notes 11/17. Extra duration per mote tier, as a fraction of BASE - linear, not compounding. See
 // _scaledDuration for the measurements behind each one and for which of them are still the
 // spreadsheet's word rather than established fact.
@@ -1276,7 +1284,9 @@ class BuffEngine extends EventEmitter {
       // something else's incoming one, so every tier below that reasons "this must be my own
       // cast" is scoped to candidates that can legitimately land on their own caster in the
       // first place - which an enemy-only category never can.
-      const selfPlausible = candidates.filter((c) => !ENEMY_SPELL_CATEGORIES.has(c.scaleCategory));
+      const selfPlausible = candidates.filter(
+        (c) => !ENEMY_SPELL_CATEGORIES.has(c.scaleCategory) && !NON_PLAYER_TARGETS.has(c.targets)
+      );
       const selfCandidates = this.spellbookCheckFn ? selfPlausible.filter((c) => this.spellbookCheckFn(c.name)) : [];
 
       // A recent third-person cast-begin line naming one of these
@@ -2267,6 +2277,14 @@ class BuffEngine extends EventEmitter {
   removeActiveAllyBuff(allyName, name) {
     this.allyBuffs.delete(`${allyName.toLowerCase()}::${name.toLowerCase()}`);
     this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+  }
+
+  // The Bard Songs aura's "Active on this aura" list has a Remove per row, same as ally buffs. The
+  // key prefix is the caster lowercased; getActiveBardSongs surfaces a null caster as "Unknown",
+  // which lowercases back to the "unknown::" the map actually uses.
+  removeActiveBardSong(castBy, name) {
+    this.bardSongs.delete(`${String(castBy || 'unknown').toLowerCase()}::${name.toLowerCase()}`);
+    this.emit('bardSongsChanged', this.getActiveBardSongs());
   }
 
   setBlockedNames(names) {

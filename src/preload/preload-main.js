@@ -69,6 +69,12 @@ contextBridge.exposeInMainWorld('eqTracker', {
   onActiveCustomTimersChanged: (callback) => {
     ipcRenderer.on('customTimers:active', (_event, timers) => callback(timers));
   },
+
+  getActiveBardSongs: () => ipcRenderer.invoke('buffs:getActiveBardSongs'),
+  removeActiveBardSong: (castBy, name) => ipcRenderer.invoke('buffs:removeActiveBardSong', { castBy, name }),
+  onActiveBardSongsChanged: (callback) => {
+    ipcRenderer.on('buffs:activeBardSongs', (_event, songs) => callback(songs));
+  },
   getBlockedBuffs: () => ipcRenderer.invoke('buffs:getBlocked'),
   blockBuff: (name) => ipcRenderer.invoke('buffs:blockBuff', name),
   unblockBuff: (name) => ipcRenderer.invoke('buffs:unblockBuff', name),

@@ -1659,6 +1659,7 @@ function initWidgetsPanel() {
   // broadcast.
   let latestSelfBuffs = [];
   let latestAllyBuffs = [];
+  let latestBardSongs = [];
   let latestActiveCustomTimers = [];
 
   function findWidget(id) {
@@ -1688,6 +1689,7 @@ function initWidgetsPanel() {
 
   function activeSourceForWidget(widget) {
     if (widget.buffSource === 'ally') return latestAllyBuffs;
+    if (widget.buffSource === 'bardSongs') return latestBardSongs;
     if (widget.buffSource === 'customTimer') return latestActiveCustomTimers;
     return latestSelfBuffs;
   }
@@ -1699,6 +1701,13 @@ function initWidgetsPanel() {
   // drift out of sync with it.
   function filterActiveBuffsForWidget(widget) {
     const source = activeSourceForWidget(widget);
+    // Backlog #15, mirroring overlay.js's visibleBuffs(): the Bard Songs aura IS every bard song on
+    // the player by construction, so the hideBardSongs / maxDuration / name-list filters below
+    // don't apply - and hideBardSongs (true on the inherited custom-widget default) would strip
+    // every row, which is exactly why "Active on this aura" showed nothing on this premade.
+    if (widget.buffSource === 'bardSongs') {
+      return source.filter((b) => b.showOnOverlay !== false);
+    }
     if (widget.buffFilterMode === 'all') {
       let filtered = source.filter((b) => b.showOnOverlay !== false);
       if (widget.hideBardSongs) filtered = filtered.filter((b) => !b.isBardSong);
@@ -1742,6 +1751,7 @@ function initWidgetsPanel() {
       removeBtn.textContent = 'Remove';
       removeBtn.addEventListener('click', () => {
         if (widget.buffSource === 'ally') window.eqTracker.removeActiveAllyBuff(buff.allyName, buff.name);
+        else if (widget.buffSource === 'bardSongs') window.eqTracker.removeActiveBardSong(buff.allyName, buff.name);
         else if (widget.buffSource === 'customTimer') window.eqTracker.removeActiveCustomTimer(buff.id);
         else window.eqTracker.removeActiveBuff(buff.name);
       });
@@ -5464,6 +5474,14 @@ function initWidgetsPanel() {
   });
   window.eqTracker.onActiveAllyBuffsChanged((buffs) => {
     latestAllyBuffs = buffs;
+    refreshActiveBuffsCardIfSelected();
+  });
+  window.eqTracker.getActiveBardSongs().then((songs) => {
+    latestBardSongs = songs;
+    refreshActiveBuffsCardIfSelected();
+  });
+  window.eqTracker.onActiveBardSongsChanged((songs) => {
+    latestBardSongs = songs;
     refreshActiveBuffsCardIfSelected();
   });
   window.eqTracker.getActiveCustomTimers().then((timers) => {
