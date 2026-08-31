@@ -128,7 +128,11 @@ test('the explanation is shown ONLY when the file is missing', () => {
     fn[1].indexOf('state.filePath') < fn[1].indexOf('Not found'),
     'the found case must be handled first, or the warning shows even when all is well'
   );
-  assert.match(rendererSrc, /getSpellbookState\(\)\.then\(renderSpellbookState\)/);
+  // renderSpellbook = renderSpellbookState (status/hints) + renderSpellbookFilePicker (the P3
+  // picker). The picker rebuild reads every spellbook file off disk, so it is deliberately NOT on
+  // renderSpellbookState, which fires on each debounced keystroke in the Character fields.
+  assert.match(rendererSrc, /getSpellbookState\(\)\.then\(renderSpellbook\)/);
+  assert.match(rendererSrc, /setSpellbookCharacter\([^)]*\)\s*\.then\(renderSpellbookState\)/, 'typing a character name must not trigger the disk-scanning picker rebuild');
 });
 
 test('the status reads as a warning rather than as an error or as nothing', () => {

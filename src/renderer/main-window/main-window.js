@@ -461,7 +461,18 @@ function initDetectionSettingsPanel() {
   }
 
   function renderSpellbookState(state) {
-    renderSpellbookFilePicker(state);
+    // A pinned file that has since moved or been deleted: getFilePath() is null, so without this
+    // the generic "not found, run /outputfile spellbook" block below would show - wrong advice,
+    // since the fix is to pick another file or go back to auto, not to regenerate anything.
+    if (state.mode === 'file' && !state.filePath) {
+      spellbookStatusEl.textContent = 'The pinned spellbook file is missing - pick another below, or go back to auto.';
+      spellbookStatusEl.classList.add('warn');
+      spellbookMissingHintEl.style.display = 'none';
+      if (spellbookCharHintEl) {
+        spellbookCharHintEl.textContent = 'The file you picked is no longer where it was.';
+      }
+      return;
+    }
     if (state.filePath) {
       const classes = loadedClasses(state);
       const cls = classes.length ? ` [${classes.join(', ')}]` : '';
@@ -501,6 +512,15 @@ function initDetectionSettingsPanel() {
     }
   }
 
+  // Status text + hints, and (only when the file pin might have changed) the picker below. The
+  // picker rebuild does a full-folder readdir + parse of every spellbook file in the main process,
+  // so it must NOT ride along on renderSpellbookState - that fires on every debounced keystroke in
+  // the Character fields, which turned typing a name into a disk scan per keypress.
+  function renderSpellbook(state) {
+    renderSpellbookState(state);
+    renderSpellbookFilePicker(state);
+  }
+
   // The "Change spellbook file..." safety valve (P3). Shown whenever the install folder has at
   // least one *-Spellbook.txt at all - a single-character machine never needs it but seeing the
   // one file listed is reassuring rather than noisy. Hidden entirely when there are none (the
@@ -530,7 +550,7 @@ function initDetectionSettingsPanel() {
     });
   }
 
-  window.eqTracker.getSpellbookState().then(renderSpellbookState);
+  window.eqTracker.getSpellbookState().then(renderSpellbook);
   if (spellbookCharNameEl && spellbookCharServerEl) {
     window.eqTracker.getSpellbookCharacter().then((c) => {
       spellbookCharNameEl.value = c.name || '';
@@ -550,11 +570,12 @@ function initDetectionSettingsPanel() {
   }
 
   if (spellbookFileSelectEl) {
+    // The pin changed here, so the picker's own selection/reset-button state must refresh too.
     spellbookFileSelectEl.addEventListener('change', () => {
-      window.eqTracker.setSpellbookFileOverride(spellbookFileSelectEl.value).then(renderSpellbookState);
+      window.eqTracker.setSpellbookFileOverride(spellbookFileSelectEl.value).then(renderSpellbook);
     });
     spellbookFileResetEl.addEventListener('click', () => {
-      window.eqTracker.setSpellbookFileOverride('').then(renderSpellbookState);
+      window.eqTracker.setSpellbookFileOverride('').then(renderSpellbook);
     });
   }
 
