@@ -2837,7 +2837,7 @@ function initWidgetsPanel() {
     duplicateWidgetBtn.style.display = widget.kind === 'self-buffs-builtin' ? 'none' : '';
 
     window.eqTracker.isWidgetLocked(id).then((locked) => {
-      lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
+      lockBtn.textContent = locked ? 'Move…' : 'Lock aura';
       lockBtn.classList.toggle('unlocked', !locked);
     });
 
@@ -4242,12 +4242,18 @@ function initWidgetsPanel() {
     window.eqTracker.setWidgetName(selectedId, nameInput.value.trim() || 'Aura').then(refreshWidgets);
   });
   lockBtn.addEventListener('click', async () => {
-    const locked = await window.eqTracker.toggleWidgetLock(selectedId);
-    // Unlocking one aura can complete (or break) "all unlocked", so the
-    // master toggle has to re-read rather than drift out of sync.
+    const wasLocked = await window.eqTracker.isWidgetLocked(selectedId);
+    if (wasLocked) {
+      // Enter move mode: the main window hides and a nudge HUD opens around the aura. The HUD's
+      // Done button brings the window back and re-locks - see moveHudWindow.js / main.js.
+      await window.eqTracker.enterWidgetMoveMode(selectedId);
+      return;
+    }
+    // Already unlocked (e.g. via "Unlock all auras") - just re-lock it.
+    await window.eqTracker.toggleWidgetLock(selectedId);
     refreshMasterButtons();
-    lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
-    lockBtn.classList.toggle('unlocked', !locked);
+    lockBtn.textContent = 'Move…';
+    lockBtn.classList.remove('unlocked');
   });
   resetPositionBtn.addEventListener('click', () => {
     window.eqTracker.resetWidgetPosition(selectedId);
@@ -5272,7 +5278,7 @@ function initWidgetsPanel() {
         // re-read rather than left showing a stale label.
         if (selectedId) {
           window.eqTracker.isWidgetLocked(selectedId).then((locked) => {
-            lockBtn.textContent = locked ? 'Unlock to move' : 'Lock aura';
+            lockBtn.textContent = locked ? 'Move…' : 'Lock aura';
             lockBtn.classList.toggle('unlocked', !locked);
           });
         }
@@ -6744,7 +6750,7 @@ function initActionBarsPage() {
     });
     window.eqTracker.isActionBarLocked(id).then((locked) => {
       if (selectedActionBarId !== id) return;
-      unlockBtn.textContent = locked ? 'Unlock to move' : 'Lock bar';
+      unlockBtn.textContent = locked ? 'Move…' : 'Lock bar';
       unlockBtn.classList.toggle('unlocked', !locked);
     });
   }
@@ -6820,10 +6826,6 @@ function initActionBarsPage() {
   const marginValue = document.getElementById('action-bar-margin-value');
   const unlockBtn = document.getElementById('action-bar-unlock-btn');
   const resetBtn = document.getElementById('action-bar-reset-btn');
-  const nudgeUpBtn = document.getElementById('action-bar-nudge-up');
-  const nudgeDownBtn = document.getElementById('action-bar-nudge-down');
-  const nudgeLeftBtn = document.getElementById('action-bar-nudge-left');
-  const nudgeRightBtn = document.getElementById('action-bar-nudge-right');
   const slotsGridEl = document.getElementById('action-bar-slots-grid');
   const iconModalBackdrop = document.getElementById('action-bar-icon-modal-backdrop');
   const iconModalTitle = document.getElementById('action-bar-icon-modal-title');
@@ -7670,18 +7672,21 @@ function initActionBarsPage() {
   });
   unlockBtn.addEventListener('click', async () => {
     if (!selectedActionBarId) return;
-    const locked = await window.eqTracker.toggleActionBarLock(selectedActionBarId);
-    unlockBtn.textContent = locked ? 'Unlock to move' : 'Lock bar';
-    unlockBtn.classList.toggle('unlocked', !locked);
+    const wasLocked = await window.eqTracker.isActionBarLocked(selectedActionBarId);
+    if (wasLocked) {
+      // Enter move mode: main window hides, the move HUD opens for this bar (nudge arrows, snap,
+      // Done). See moveHudWindow.js / main.js.
+      await window.eqTracker.enterActionBarMoveMode(selectedActionBarId);
+      return;
+    }
+    await window.eqTracker.toggleActionBarLock(selectedActionBarId); // was unlocked (Unlock all) - re-lock
+    unlockBtn.textContent = 'Move…';
+    unlockBtn.classList.remove('unlocked');
   });
   resetBtn.addEventListener('click', () => {
     if (!selectedActionBarId) return;
     window.eqTracker.resetActionBarPosition(selectedActionBarId);
   });
-  nudgeUpBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, 0, -1));
-  nudgeDownBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, 0, 1));
-  nudgeLeftBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, -1, 0));
-  nudgeRightBtn.addEventListener('click', () => selectedActionBarId && window.eqTracker.nudgeActionBar(selectedActionBarId, 1, 0));
 
   // Same reasoning as initWidgetsPanel's identical listeners: a profile rename/create needs the
   // tooltip's name list refreshed, and switching the active profile needs the dot's colour

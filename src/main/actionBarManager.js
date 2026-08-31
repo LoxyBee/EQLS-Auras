@@ -10,10 +10,16 @@ const path = require('path');
 const { BrowserWindow, screen } = require('electron');
 const { ActionBarStore, TOTAL_SLOTS } = require('./actionBarStore');
 const { loadJson, saveJson } = require('./store');
+const positionSnap = require('./positionSnap');
 
 const store = new ActionBarStore({ loadJson, saveJson });
 
 const windows = new Map(); // id -> BrowserWindow
+// The move HUD (moveHudWindow.js) - fired on every move of a bar's window so the HUD's x/y readout
+// keeps up. main.js wires this. movedGuard suppresses the extra 'moved' our own snap setPosition fires.
+let onBarMoved = () => {};
+function setOnMovedFn(fn) { if (typeof fn === 'function') onBarMoved = fn; }
+const movedGuard = new Set();
 // Always starts locked/click-through on launch regardless of how it was left last time - same
 // safety behaviour every other overlay window in this app has (see widgetManager.js's own
 // runtimeLock comment). Deliberately not persisted.
@@ -125,8 +131,18 @@ function createWindow(config) {
   });
 
   win.on('moved', () => {
-    const [x, y] = win.getPosition();
+    if (movedGuard.has(config.id)) return;
+    let [x, y] = win.getPosition();
+    // Snap the drop onto the grid, but only for the bar being positioned through the move HUD.
+    if (positionSnap.active(config.id) && (positionSnap.snap(x) !== x || positionSnap.snap(y) !== y)) {
+      x = positionSnap.snap(x);
+      y = positionSnap.snap(y);
+      movedGuard.add(config.id);
+      win.setPosition(x, y);
+      movedGuard.delete(config.id);
+    }
     store.savePosition(config.id, { x, y });
+    onBarMoved(config.id, getBounds(config.id));
   });
 
   win.on('closed', () => {
@@ -685,21 +701,35 @@ function resetPosition(id) {
   const pos = getDefaultPosition(config);
   win.setPosition(pos.x, pos.y);
   store.savePosition(id, pos);
+  onBarMoved(id, getBounds(id));
   return store.getById(id);
+}
+
+function getBounds(id) {
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) return null;
+  const [x, y] = win.getPosition();
+  const [width, height] = win.getSize();
+  return { x, y, width, height };
 }
 
 // 1px-at-a-time repositioning for lining the bar up exactly - a mouse drag can't reliably land
 // on an exact pixel, which matters here since the whole point of this stage is matching the
-// real bar's position precisely. Works whether or not the bar is currently unlocked - nudging
-// isn't a drag, so there's no click-through concern to work around.
+// real bar's position precisely. Driven by the move HUD (moveHudWindow.js).
 function nudgePosition(id, dx, dy) {
   const win = windows.get(id);
   if (!win) return null;
   const [x, y] = win.getPosition();
-  const pos = { x: x + Math.round(dx), y: y + Math.round(dy) };
-  win.setPosition(pos.x, pos.y);
-  store.savePosition(id, pos);
-  return store.getById(id);
+  let nx = x + Math.round(Number(dx) || 0);
+  let ny = y + Math.round(Number(dy) || 0);
+  if (positionSnap.active(id)) {
+    nx = positionSnap.snap(nx);
+    ny = positionSnap.snap(ny);
+  }
+  win.setPosition(nx, ny);
+  store.savePosition(id, { x: nx, y: ny });
+  onBarMoved(id, getBounds(id));
+  return getBounds(id);
 }
 
 function initActionBars() {
@@ -733,6 +763,8 @@ module.exports = {
   isMasterHidden,
   resetPosition,
   nudgePosition,
+  getBounds,
+  setOnMovedFn,
   setOpacity,
   setSlotCount,
   setCooldownStyle,

@@ -60,6 +60,9 @@ const actionBarManager = require('./actionBarManager');
 const { AbilityGroupTracker, KNOWN_STANCES, KNOWN_INVOCATIONS } = require('./abilityGroups');
 const ambiguousPopup = require('./ambiguousPopup');
 const zonePromptPopup = require('./zonePromptPopup');
+const moveHudWindow = require('./moveHudWindow');
+const gridGuideWindow = require('./gridGuideWindow');
+const positionSnap = require('./positionSnap');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
 const soundService = require('./soundService');
@@ -1958,6 +1961,97 @@ ipcMain.handle('widget:toggleLock', (_event, id) => widgetManager.toggleLock(id)
 ipcMain.handle('widget:resetPosition', (_event, id) => widgetManager.resetPosition(id));
 ipcMain.handle('widget:isLocked', (_event, id) => widgetManager.isLocked(id));
 
+// The move HUD (moveHudWindow.js) - precise positioning for one aura OR one action bar. Entering
+// move mode unlocks the target, hides the main config window (it just covers where you want the
+// target), and opens the detached HUD panel. Done reverses all three. One panel, one code path -
+// `moveTarget.kind` picks which manager the nudge / reset / bounds calls go to.
+let moveTarget = null; // { kind: 'widget' | 'actionBar', id } | null
+let moveStepPx = 1;
+
+positionSnap.set(loadJson('overlaySnapGrid', { enabled: false, sizePx: 8 }));
+
+const targetManager = (kind) => (kind === 'actionBar' ? actionBarManager : widgetManager);
+
+function targetName(kind, id) {
+  const cfg = kind === 'actionBar' ? actionBarManager.getConfig(id) : widgetManager.getWidgetConfig(id);
+  return cfg ? cfg.name : '';
+}
+function targetBounds(kind, id) {
+  return kind === 'actionBar' ? actionBarManager.getBounds(id) : widgetManager.getWidgetBounds(id);
+}
+function targetLocked(kind, id) {
+  return kind === 'actionBar' ? actionBarManager.isLocked(id) : widgetManager.isLocked(id);
+}
+function targetSetLocked(kind, id, locked) {
+  return kind === 'actionBar' ? actionBarManager.setLocked(id, locked) : widgetManager.setLocked(id, locked);
+}
+
+function hudMeta() {
+  const grid = positionSnap.get();
+  return {
+    name: moveTarget ? targetName(moveTarget.kind, moveTarget.id) : '',
+    stepPx: moveStepPx,
+    snapEnabled: grid.enabled,
+    snapSizePx: grid.sizePx,
+  };
+}
+
+function onMoveTargetMoved(id, bounds) {
+  if (moveTarget && id === moveTarget.id && bounds) moveHudWindow.update(bounds, hudMeta());
+}
+widgetManager.setOnWidgetMovedFn(onMoveTargetMoved);
+actionBarManager.setOnMovedFn(onMoveTargetMoved);
+
+function enterMoveMode(kind, id) {
+  if (!targetName(kind, id) && !targetBounds(kind, id)) return { ok: false };
+  moveTarget = { kind, id };
+  positionSnap.setActive(id);
+  if (targetLocked(kind, id)) targetSetLocked(kind, id, false);
+  const b = targetBounds(kind, id); // exists now that it is unlocked
+  getMainWindow()?.hide();
+  moveHudWindow.open(b || { x: 200, y: 200, width: 160, height: 80 }, hudMeta());
+  if (positionSnap.get().enabled) gridGuideWindow.show(positionSnap.get().sizePx);
+  return { ok: true };
+}
+
+function exitMoveMode() {
+  const t = moveTarget;
+  moveTarget = null;
+  positionSnap.setActive(null);
+  moveHudWindow.close();
+  gridGuideWindow.hide();
+  if (t) targetSetLocked(t.kind, t.id, true);
+  const win = getMainWindow();
+  if (win) { win.show(); win.focus(); }
+  else createMainWindow();
+}
+
+ipcMain.handle('widget:enterMoveMode', (_event, id) => enterMoveMode('widget', id));
+ipcMain.handle('actionBar:enterMoveMode', (_event, id) => enterMoveMode('actionBar', id));
+ipcMain.handle('moveHud:nudge', (_event, { dx, dy }) => {
+  if (!moveTarget) return null;
+  return moveTarget.kind === 'actionBar'
+    ? actionBarManager.nudgePosition(moveTarget.id, dx, dy)
+    : widgetManager.nudgeWidget(moveTarget.id, dx, dy);
+});
+ipcMain.handle('moveHud:setStep', (_event, px) => {
+  moveStepPx = px === 10 ? 10 : 1;
+  return moveStepPx;
+});
+ipcMain.handle('moveHud:setSnap', (_event, { enabled, sizePx }) => {
+  const grid = positionSnap.set({ enabled, sizePx });
+  saveJson('overlaySnapGrid', grid);
+  if (moveTarget) {
+    if (grid.enabled) gridGuideWindow.show(grid.sizePx);
+    else gridGuideWindow.hide();
+  }
+  return grid;
+});
+ipcMain.handle('moveHud:resetPosition', () => {
+  if (moveTarget) targetManager(moveTarget.kind).resetPosition(moveTarget.id);
+});
+ipcMain.handle('moveHud:done', () => exitMoveMode());
+
 // The Action Bar overlay - see actionBarManager.js's own header comment. Multiple bars, same
 // {id, ...} shape every widget:* handler already uses.
 ipcMain.handle('actionBar:list', () => actionBarManager.getAllBars());
@@ -1973,7 +2067,6 @@ ipcMain.handle('actionBar:setShowWhenAppFocused', (_event, { id, enabled }) => a
 ipcMain.handle('actionBar:toggleLock', (_event, id) => actionBarManager.toggleLock(id));
 ipcMain.handle('actionBar:isLocked', (_event, id) => actionBarManager.isLocked(id));
 ipcMain.handle('actionBar:resetPosition', (_event, id) => actionBarManager.resetPosition(id));
-ipcMain.handle('actionBar:nudge', (_event, { id, dx, dy }) => actionBarManager.nudgePosition(id, dx, dy));
 ipcMain.handle('actionBar:swapSlots', (_event, { id, a, b }) => actionBarManager.swapSlots(id, a, b));
 ipcMain.handle('actionBar:setSlotIcon', (_event, { id, index, iconId }) => actionBarManager.setSlotIcon(id, index, iconId));
 ipcMain.handle('actionBar:setOpacity', (_event, { id, opacity }) => actionBarManager.setOpacity(id, opacity));
