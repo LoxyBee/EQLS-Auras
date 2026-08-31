@@ -11,6 +11,8 @@ const nameEl = document.getElementById('aura-name');
 const coordsEl = document.getElementById('coords');
 const step1El = document.getElementById('step-1');
 const step10El = document.getElementById('step-10');
+const snapOnEl = document.getElementById('snap-on');
+const snapSizeEl = document.getElementById('snap-size');
 
 let stepPx = 1;
 
@@ -24,7 +26,15 @@ window.eqMoveHud.onFrame((payload) => {
   if (payload.name != null) nameEl.textContent = payload.name || 'Aura';
   if (typeof a.x === 'number') coordsEl.textContent = `x: ${a.x}  y: ${a.y}`;
   if (typeof payload.stepPx === 'number' && payload.stepPx !== stepPx) setStep(payload.stepPx, false);
+  if (typeof payload.snapEnabled === 'boolean') snapOnEl.checked = payload.snapEnabled;
+  if (payload.snapSizePx != null) snapSizeEl.value = String(payload.snapSizePx);
 });
+
+function pushSnap() {
+  window.eqMoveHud.setSnap(snapOnEl.checked, Number(snapSizeEl.value));
+}
+snapOnEl.addEventListener('change', pushSnap);
+snapSizeEl.addEventListener('change', pushSnap);
 
 function setStep(px, tell = true) {
   stepPx = px === 10 ? 10 : 1;

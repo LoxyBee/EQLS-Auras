@@ -61,6 +61,7 @@ const { AbilityGroupTracker, KNOWN_STANCES, KNOWN_INVOCATIONS } = require('./abi
 const ambiguousPopup = require('./ambiguousPopup');
 const zonePromptPopup = require('./zonePromptPopup');
 const moveHudWindow = require('./moveHudWindow');
+const gridGuideWindow = require('./gridGuideWindow');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
 const soundService = require('./soundService');
@@ -1931,9 +1932,18 @@ ipcMain.handle('widget:isLocked', (_event, id) => widgetManager.isLocked(id));
 let moveModeWidgetId = null;
 let moveStepPx = 1;
 
+widgetManager.setSnapGrid(loadJson('overlaySnapGrid', { enabled: false, sizePx: 8 }));
+
 function hudMeta(id) {
   const config = widgetManager.getWidgetConfig(id);
-  return { name: config ? config.name : '', marginPx: moveHudWindow.MARGIN, stepPx: moveStepPx };
+  const grid = widgetManager.getSnapGrid();
+  return {
+    name: config ? config.name : '',
+    marginPx: moveHudWindow.MARGIN,
+    stepPx: moveStepPx,
+    snapEnabled: grid.enabled,
+    snapSizePx: grid.sizePx,
+  };
 }
 
 widgetManager.setOnWidgetMovedFn((id, bounds) => {
@@ -1943,20 +1953,23 @@ widgetManager.setOnWidgetMovedFn((id, bounds) => {
 });
 
 function enterMoveMode(id) {
-  const bounds = widgetManager.getWidgetBounds(id);
   if (!widgetManager.getWidgetConfig(id)) return { ok: false };
   moveModeWidgetId = id;
+  widgetManager.setSnapWidgetId(id);
   if (widgetManager.isLocked(id)) widgetManager.setLocked(id, false);
-  const b = bounds || widgetManager.getWidgetBounds(id); // may exist only now that it's unlocked
+  const b = widgetManager.getWidgetBounds(id); // exists now that it is unlocked
   getMainWindow()?.hide();
   moveHudWindow.open(b || { x: 200, y: 200, width: 160, height: 80 }, hudMeta(id));
+  if (widgetManager.getSnapGrid().enabled) gridGuideWindow.show(widgetManager.getSnapGrid().sizePx);
   return { ok: true };
 }
 
 function exitMoveMode() {
   const id = moveModeWidgetId;
   moveModeWidgetId = null;
+  widgetManager.setSnapWidgetId(null);
   moveHudWindow.close();
+  gridGuideWindow.hide();
   if (id) widgetManager.setLocked(id, true);
   const win = getMainWindow();
   if (win) { win.show(); win.focus(); }
@@ -1972,6 +1985,15 @@ ipcMain.handle('moveHud:nudge', (_event, { dx, dy }) => {
 ipcMain.handle('moveHud:setStep', (_event, px) => {
   moveStepPx = px === 10 ? 10 : 1;
   return moveStepPx;
+});
+ipcMain.handle('moveHud:setSnap', (_event, { enabled, sizePx }) => {
+  const grid = widgetManager.setSnapGrid({ enabled, sizePx });
+  saveJson('overlaySnapGrid', grid);
+  if (moveModeWidgetId) {
+    if (grid.enabled) gridGuideWindow.show(grid.sizePx);
+    else gridGuideWindow.hide();
+  }
+  return grid;
 });
 ipcMain.handle('moveHud:resetPosition', () => {
   if (moveModeWidgetId) widgetManager.resetPosition(moveModeWidgetId);

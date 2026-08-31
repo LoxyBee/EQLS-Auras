@@ -135,5 +135,57 @@ test('a drag of the aura window also fires onWidgetMoved (so the HUD reframes)',
   assert.deepEqual(moves, [config.id]);
 });
 
+// --- snap to grid (phase 2) -----------------------------------------------------------------
+
+test('setSnapGrid clamps the size and getSnapGrid reads it back', () => {
+  assert.deepEqual(wm.setSnapGrid({ enabled: true, sizePx: 16 }), { enabled: true, sizePx: 16 });
+  assert.deepEqual(wm.getSnapGrid(), { enabled: true, sizePx: 16 });
+  assert.equal(wm.setSnapGrid({ enabled: true, sizePx: 1 }).sizePx, 2, 'floored');
+  assert.equal(wm.setSnapGrid({ enabled: true, sizePx: 0 }).sizePx, 8, 'a junk 0 falls back to the default');
+  assert.equal(wm.setSnapGrid({ enabled: true, sizePx: 9999 }).sizePx, 200, 'ceiled');
+  wm.setSnapGrid({ enabled: false, sizePx: 8 });
+});
+
+test('a nudge lands on the grid only for the aura in move mode, only when snap is on', () => {
+  const { config, win } = makeAura('Snapper');
+  wm.setLocked(config.id, false);
+  win.setPosition(103, 97);
+
+  wm.setSnapGrid({ enabled: true, sizePx: 8 });
+  wm.setSnapWidgetId(config.id);
+  wm.nudgeWidget(config.id, 1, 1); // 104,98 -> nearest 8: 104, 96
+  assert.deepEqual(win.getPosition(), [104, 96]);
+
+  // a different aura, not the one in move mode: no snap
+  const other = makeAura('Free');
+  wm.setLocked(other.config.id, false);
+  other.win.setPosition(101, 101);
+  wm.nudgeWidget(other.config.id, 1, 1);
+  assert.deepEqual(other.win.getPosition(), [102, 102], 'a non-move-mode aura is not snapped');
+
+  wm.setSnapGrid({ enabled: false, sizePx: 8 });
+  wm.setSnapWidgetId(null);
+});
+
+test('a drag drop of the move-mode aura snaps to the grid; others are left alone', () => {
+  const { config, win } = makeAura('DragSnap');
+  wm.setLocked(config.id, false);
+  wm.setSnapGrid({ enabled: true, sizePx: 10 });
+  wm.setSnapWidgetId(config.id);
+
+  win.x = 137; win.y = 62;
+  win.emit('moved');
+  assert.deepEqual(win.getPosition(), [140, 60], 'the drop rounded to the 10px grid');
+
+  const other = makeAura('DragFree');
+  wm.setLocked(other.config.id, false);
+  other.win.x = 137; other.win.y = 62;
+  other.win.emit('moved');
+  assert.deepEqual(other.win.getPosition(), [137, 62], 'a non-move-mode aura is not snapped on drop');
+
+  wm.setSnapGrid({ enabled: false, sizePx: 8 });
+  wm.setSnapWidgetId(null);
+});
+
 module.exports = () => report('move-hud');
 if (require.main === module) report('move-hud').then((n) => process.exit(n ? 1 : 0));

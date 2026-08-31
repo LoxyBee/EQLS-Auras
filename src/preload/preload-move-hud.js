@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('eqMoveHud', {
   setInteractive: (on) => ipcRenderer.send('moveHud:setInteractive', !!on),
   nudge: (dx, dy) => ipcRenderer.invoke('moveHud:nudge', { dx, dy }),
   setStep: (px) => ipcRenderer.invoke('moveHud:setStep', px),
+  setSnap: (enabled, sizePx) => ipcRenderer.invoke('moveHud:setSnap', { enabled, sizePx }),
   resetPosition: () => ipcRenderer.invoke('moveHud:resetPosition'),
   done: () => ipcRenderer.invoke('moveHud:done'),
 });

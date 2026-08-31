@@ -1,7 +1,7 @@
-/* MARGIN (46) and STRIP_H (104) are also in moveHudWindow.js - keep them in step. */
+/* MARGIN (46) and STRIP_H (132) are also in moveHudWindow.js - keep them in step. */
 :root {
   --margin: 46px;
-  --strip-h: 104px;
+  --strip-h: 132px;
   --accent: #f0a54a;
   --panel: rgba(18, 22, 34, 0.92);
   --line: rgba(255, 255, 255, 0.5);
@@ -120,4 +120,21 @@ html, body {
   color: #1b1205;
   border-color: rgba(0, 0, 0, 0.35);
   font-weight: 700;
+}
+
+.snap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+.snap input { margin: 0; }
+#snap-size {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 2px 4px;
 }

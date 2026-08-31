@@ -17,7 +17,7 @@ const { BrowserWindow } = require('electron');
 // MARGIN is the room each edge leaves for a ~40px arrow; STRIP_H is the control strip under the
 // aura. Both are also hard-coded in move-hud.css - keep them in step.
 const MARGIN = 46;
-const STRIP_H = 104;
+const STRIP_H = 132;
 
 let win = null;
 
@@ -43,7 +43,6 @@ function createWindow(auraBounds) {
     skipTaskbar: true,
     resizable: false,
     fullscreenable: false,
-    focusable: false, // never steal focus from the game
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload-move-hud.js'),

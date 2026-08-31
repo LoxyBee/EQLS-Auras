@@ -50,6 +50,16 @@ const originXByWidget = new Map(); // id -> number
 // bug. Applied once, re-centred on the frozen box, when the aura is locked again. { contentWidth,
 // contentHeight, originX }.
 const pendingFitByWidget = new Map(); // id -> { contentWidth, contentHeight, originX }
+// Move HUD (moveHudWindow.js) - the one aura currently being positioned, and the grid-snap state
+// mirrored from main.js's persisted `overlaySnapGrid`. Snap only ever touches snapWidgetId, so a
+// bulk "Unlock all" drag is never snapped. movedGuard suppresses the extra 'moved' our own snap
+// setPosition fires.
+let snapGrid = { enabled: false, sizePx: 8 };
+let snapWidgetId = null;
+const movedGuard = new Set();
+// The HUD reframes around the aura on every move of the aura's window (drag, nudge, Reset). main.js
+// wires this to moveHudWindow.reframe.
+let onWidgetMoved = () => {};
 // Runtime-only, never persisted - true when the auto-hide-when-EQ-unfocused
 // feature (see foregroundWatcher.js) currently has widgets hidden. Kept
 // separate from profile-based visibility (below) so toggling focus never
@@ -210,14 +220,25 @@ function createWidgetWindow(config) {
   });
 
   win.on('moved', () => {
+    if (movedGuard.has(config.id)) return; // re-fired by our own snap setPosition just below
     const [x, y] = win.getPosition();
-    // The stored position is the grid's own intended screen position, not
-    // necessarily the window's raw x - see fitToContent's originX handling.
-    // Whatever origin offset is currently applied has to be added back so a
-    // real user drag (which always reports the window's true x) still saves
-    // the same canonical anchor fitToContent already knows how to restore.
+    let sx = x;
+    let sy = y;
+    // Snap the drop onto the grid, but only for the aura being positioned through the HUD - a
+    // bulk "Unlock all" drag is left exactly where it lands.
+    if (snapGrid.enabled && config.id === snapWidgetId && (snapValue(x) !== x || snapValue(y) !== y)) {
+      sx = snapValue(x);
+      sy = snapValue(y);
+      movedGuard.add(config.id);
+      win.setPosition(sx, sy);
+      movedGuard.delete(config.id);
+    }
+    // The stored position is the grid's own intended screen position, not necessarily the
+    // window's raw x - see fitToContent's originX handling. Whatever origin offset is currently
+    // applied has to be added back so a real user drag (which always reports the window's true x)
+    // still saves the same canonical anchor fitToContent already knows how to restore.
     const originX = originXByWidget.get(config.id) || 0;
-    widgetStore.savePosition(config.id, { x: x + originX, y });
+    widgetStore.savePosition(config.id, { x: sx + originX, y: sy });
     onWidgetMoved(config.id, getWidgetBounds(config.id));
   });
 
@@ -859,9 +880,6 @@ function resetPosition(id) {
   return widgetStore.getById(id);
 }
 
-// The move HUD (see moveHudWindow.js) reframes itself around the aura it is editing whenever the
-// aura's window moves - by a drag, a nudge, or Reset position. main.js wires this to the HUD.
-let onWidgetMoved = () => {};
 function setOnWidgetMovedFn(fn) {
   if (typeof fn === 'function') onWidgetMoved = fn;
 }
@@ -874,6 +892,26 @@ function getWidgetBounds(id) {
   return { x, y, width, height };
 }
 
+// Snap-to-grid for the move HUD (phase 2). Runtime state mirrored from main.js's persisted
+// `overlaySnapGrid` (declared with the other module state up top). Only applied to snapWidgetId.
+function setSnapGrid(cfg) {
+  snapGrid = {
+    enabled: !!(cfg && cfg.enabled),
+    sizePx: Math.max(2, Math.min(200, Math.round(Number(cfg && cfg.sizePx) || 8))),
+  };
+  return snapGrid;
+}
+function getSnapGrid() {
+  return { ...snapGrid };
+}
+function setSnapWidgetId(id) {
+  snapWidgetId = id || null;
+}
+function snapValue(v) {
+  const g = snapGrid.sizePx;
+  return Math.round(v / g) * g;
+}
+
 // Move an aura's window by (dx, dy) screen pixels and persist it. Used by the move HUD's nudge
 // arrows. A nudge is a deliberate placement, so it saves the same canonical anchor a real drag
 // does (see the 'moved' handler) - applyPendingFit re-centres on the LIVE window position on
@@ -882,8 +920,12 @@ function nudgeWidget(id, dx, dy) {
   const win = windows.get(id);
   if (!win || win.isDestroyed()) return null;
   const [x, y] = win.getPosition();
-  const nx = x + Math.round(Number(dx) || 0);
-  const ny = y + Math.round(Number(dy) || 0);
+  let nx = x + Math.round(Number(dx) || 0);
+  let ny = y + Math.round(Number(dy) || 0);
+  if (snapGrid.enabled && id === snapWidgetId) {
+    nx = snapValue(nx);
+    ny = snapValue(ny);
+  }
   win.setPosition(nx, ny);
   const originX = originXByWidget.get(id) || 0;
   widgetStore.savePosition(id, { x: nx + originX, y: ny });
@@ -1440,6 +1482,9 @@ module.exports = {
   nudgeWidget,
   getWidgetBounds,
   setOnWidgetMovedFn,
+  setSnapGrid,
+  getSnapGrid,
+  setSnapWidgetId,
   setDisplayMode,
   setTimerFormat,
   setTextSize,
