@@ -946,6 +946,31 @@ test('the manual archive button rebuilds the lockout grid too', () => {
   assert.ok(/appConfirm/.test(btn) && /archiveHoldsCurrentWeek/.test(btn), 'the archive button no longer confirms in-app or no longer warns');
 });
 
+// QOL #24 - the once-on-launch nudge when the live log has grown past 50 MB. Must fire on size
+// alone (even for someone who has never archived), steer toward the lockout-safe trim, and not nag
+// every launch.
+test('#24 - the launch archive nudge is wired, size-gated, and steers to the week-safe trim', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const at = main.indexOf("ipcMain.handle('log:launchArchiveCheck'");
+  assert.ok(at > -1, 'the launch archive check handler is missing');
+  const handler = main.slice(at, main.indexOf('ipcMain.handle', at + 1));
+  assert.ok(/state\.shouldPromptArchive/.test(handler), 'it is not gated on the 50 MB threshold');
+  assert.ok(/logArchivePromptDismissedAt/.test(handler) && /RENUDGE/.test(handler), 'no re-nudge cadence cap');
+  assert.ok(main.includes("ipcMain.handle('log:dismissArchivePrompt'"), 'no way to record a dismissal');
+  // a successful trim or archive clears the dismissal so a later regrowth re-nudges
+  assert.ok(/saveJson\('logArchivePromptDismissedAt', 0\)/.test(main), 'a trim/archive does not reset the nudge');
+
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload', 'preload-main.js'), 'utf8');
+  assert.match(preload, /launchArchiveCheck:/);
+  assert.match(preload, /dismissArchivePrompt:/);
+
+  const rend = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  const nudge = rend.slice(rend.indexOf('launchArchiveCheck()'), rend.indexOf('launchArchiveCheck()') + 1400);
+  assert.ok(/appConfirm/.test(nudge), 'the nudge does not use the in-app modal');
+  assert.ok(/trimLockoutLog\(\)/.test(nudge), 'the nudge does not offer the week-safe trim');
+  assert.ok(/dismissArchivePrompt\(\)/.test(nudge), 'a "Not now" does not get recorded');
+});
+
 // ---------------------------------------------------------------------------
 // Saying what happened, for longer than one minute
 // ---------------------------------------------------------------------------

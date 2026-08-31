@@ -369,6 +369,38 @@ test('a debuff scribed in the spellbook is never landed on the player as a self-
   );
 });
 
+test('a pet-only spell sharing a landing text is not offered as a candidate on the player', () => {
+  // Reported live: "You feel smaller." is shared by Shrink (targets Single) and Tiny Companion
+  // (targets Pet). In a burst (the player just activated Quick Buff), with no spellbook to narrow
+  // it, the engine queued a real two-option prompt - Shrink or Tiny Companion - even though Tiny
+  // Companion can only ever land on a pet, never a player. Now the pet-target candidate is dropped
+  // before the burst tier, so Shrink alone remains and lands with no prompt at all.
+  const { engine, buffStore, log } = makeEngine();
+  const shrink = buffStore.getByName('Shrink');
+  const tiny = buffStore.getByName('Tiny Companion');
+  assert.ok(shrink && tiny, 'expected both Shrink and Tiny Companion in the roster');
+  assert.equal(shrink.landingText, tiny.landingText, 'this test needs them to still share landing text');
+  assert.equal(tiny.targets, 'Pet', 'Tiny Companion must be a Pet-target entry for this to mean anything');
+
+  // no spellbook narrowing available; the player's own burst is the only self-evidence
+  engine.handleLine('[Wed Aug 19 20:00:00 2026] You activate Quick Buff.');
+  engine.handleLine(`[Wed Aug 19 20:00:01 2026] ${shrink.landingText}`);
+
+  assert.deepEqual(names(engine), ['Shrink']);
+  assert.ok(
+    log.some((m) => m.includes('LANDED "Shrink"') && m.includes('only one candidate')),
+    'with Tiny Companion dropped, Shrink is the only candidate and lands directly'
+  );
+  assert.ok(
+    !log.some((m) => m.includes('Tiny Companion')),
+    'Tiny Companion (Pet-target) must never appear as a candidate for a landing on the player'
+  );
+  assert.ok(
+    !engine.getAmbiguousCasts().some((c) => c.text === shrink.landingText),
+    'no unresolved Shrink-vs-Tiny-Companion prompt should be left pending'
+  );
+});
+
 test('a group-wide instant grant triggered by an ALLY is not self-attributed, even with zero cast-begin evidence', () => {
   // Reported live 24 Aug, root-caused from the real raw log rather than guessed - the reporter's
   // own instruction: "memorised is not reliable, 'cast' combat log text is, and this is failing

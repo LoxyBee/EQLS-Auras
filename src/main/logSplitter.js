@@ -35,13 +35,15 @@ const TIMESTAMP_PATTERN = /^\[\w{3} (\w{3}) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2
 const FLUSH_LINE_THRESHOLD = 5000;
 const POLL_INTERVAL_MS = 1000;
 
-// There's no log line for "/log off" or "/log on" - the game just stops
-// writing entirely while logging is off, then resumes. The only trace of
-// that is a gap in line timestamps, so that's what "start a new file on
-// /log off + /log on" has to detect. This threshold is how long a gap has
-// to be before it's treated as a real logging break rather than normal
-// in-game quiet time.
-const SESSION_GAP_MS = 10 * 60 * 1000;
+// The hour (0-23, local) at which the per-day split file rolls over. Default 0 = calendar
+// midnight. Set higher (e.g. 6) so a raid night that runs past midnight stays in ONE file - the
+// file dated for the day it STARTED - instead of being cut in two. Only changes which copy-file a
+// line is filed under; the live log and every line's real timestamp are untouched (QOL #23).
+const DEFAULT_DAY_START_HOUR = 0;
+function clampDayStartHour(h) {
+  const n = Number(h);
+  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : DEFAULT_DAY_START_HOUR;
+}
 
 // WHEN A LINE HAS NO READABLE STAMP, it is filed under the day of the line before it. That is
 // correct and it is why the rule exists: EverQuest wraps a long server broadcast onto continuation
@@ -75,13 +77,22 @@ const UNSTAMPED_ALARM_RATIO = 0.05;
 // precisely the case it exists for.
 const UNSTAMPED_ALARM_MIN_LINES = 200;
 
-function extractDateKey(line) {
+// `dayStartHour` 0 (the default) is the fast path: the date in the stamp IS the file's date, pure
+// string work, and it is the path the UNSTAMPED_ALARM reasoning below is measured against. A
+// non-zero hour shifts the stamp back by that many hours before taking the date, so anything
+// before <hour>:00 lands in the previous day's file.
+function extractDateKey(line, dayStartHour = 0) {
   const match = TIMESTAMP_PATTERN.exec(line);
   if (!match) return null;
-  const [, monAbbr, day, , , , year] = match;
+  const [, monAbbr, day, hh, mm, ss, year] = match;
   const month = MONTHS[monAbbr];
   if (!month) return null;
-  return `${year}-${month}-${day.padStart(2, '0')}`;
+  if (!dayStartHour) return `${year}-${month}-${day.padStart(2, '0')}`;
+  const t = new Date(`${year}-${month}-${day.padStart(2, '0')}T${hh}:${mm}:${ss}`);
+  if (Number.isNaN(t.getTime())) return null;
+  t.setHours(t.getHours() - dayStartHour);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`;
 }
 
 function extractTimestampMs(line) {
@@ -122,15 +133,7 @@ function lastStampMsInFile(filePath) {
   }
 }
 
-function formatSessionSuffix(ms) {
-  const d = new Date(ms);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${hh}${mm}${ss}`;
-}
-
-// Continuously copies lines from the active eqlog file into per-calendar-day
+// Continuously copies lines from the active eqlog file into per-day
 // files under a Split folder (default, or a user-chosen one), so a log
 // that's never cleared doesn't turn into one unmanageable multi-hundred-MB
 // file. Remembers how far it's already processed (per file path) so
@@ -144,15 +147,13 @@ class LogSplitter {
 
     const settings = store.loadJson('splitSettings', {});
     this.enabled = settings.enabled !== false;
-    this.splitOnGap = settings.splitOnGap === true;
+    this.dayStartHour = clampDayStartHour(settings.splitDayStartHour);
     this.customOutputDir = settings.customOutputDir || null;
 
     this.filePath = null;
     this.outputDir = null;
     this.offset = 0;
     this.lastDateKeySeen = null;
-    this.lastTimestampMs = null;
-    this.sessionSuffix = '';
     this.timer = null;
     this.processing = false;
 
@@ -227,14 +228,10 @@ class LogSplitter {
     if (saved && typeof saved === 'object') {
       this.offset = saved.offset || 0;
       this.lastDateKeySeen = saved.lastDateKeySeen || null;
-      this.lastTimestampMs = saved.lastTimestampMs || null;
-      this.sessionSuffix = saved.sessionSuffix || '';
     } else {
       // Legacy format was a plain offset number - still fine to reuse.
       this.offset = typeof saved === 'number' ? saved : 0;
       this.lastDateKeySeen = null;
-      this.lastTimestampMs = null;
-      this.sessionSuffix = '';
     }
 
     this._scheduleProcessing();
@@ -256,9 +253,12 @@ class LogSplitter {
     }
   }
 
-  setSplitOnGap(splitOnGap) {
-    this.splitOnGap = splitOnGap;
+  // QOL #23 - the hour (0-23) the per-day file rolls over. Takes effect for lines processed from
+  // now on; existing split files are not rewritten.
+  setDayStartHour(hour) {
+    this.dayStartHour = clampDayStartHour(hour);
     this._persistSettings();
+    return this.dayStartHour;
   }
 
   setOutputDir(dir) {
@@ -273,7 +273,7 @@ class LogSplitter {
   getSettings() {
     return {
       enabled: this.enabled,
-      splitOnGap: this.splitOnGap,
+      dayStartHour: this.dayStartHour,
       outputDir: this.outputDir,
       customOutputDir: this.customOutputDir,
       // Rides along with the settings because this is the payload that already reaches the Setup
@@ -286,7 +286,7 @@ class LogSplitter {
   _persistSettings() {
     this.store.saveJson('splitSettings', {
       enabled: this.enabled,
-      splitOnGap: this.splitOnGap,
+      splitDayStartHour: this.dayStartHour,
       customOutputDir: this.customOutputDir,
     });
   }
@@ -330,7 +330,7 @@ class LogSplitter {
   // The live log was rewritten in place by a trim (logRotation.trimAtBoundary) - the front was
   // moved to Archive and the kept tail is now at byte 0. This week's tail was ALREADY split into
   // the per-day files, so re-reading it from 0 would double those lines. Skip straight to the new
-  // end. `lastTimestampMs` etc. carry over - the tail is the same content, just relocated.
+  // end. `lastDateKeySeen` carries over - the tail is the same content, just relocated.
   resyncOffset(filePath, bytes) {
     if (this.filePath !== filePath) return;
     this.offset = Math.max(0, bytes | 0);
@@ -341,8 +341,6 @@ class LogSplitter {
     this.progress[this.filePath] = {
       offset: this.offset,
       lastDateKeySeen: this.lastDateKeySeen,
-      lastTimestampMs: this.lastTimestampMs,
-      sessionSuffix: this.sessionSuffix,
     };
     this.store.saveJson('splitProgress', this.progress);
   }
@@ -370,8 +368,6 @@ class LogSplitter {
       // end and treat whatever comes next as a fresh session.
       this.offset = 0;
       this.lastDateKeySeen = null;
-      this.lastTimestampMs = null;
-      this.sessionSuffix = '';
     }
 
     if (stat.size <= this.offset) return;
@@ -389,18 +385,14 @@ class LogSplitter {
       if (!dedupeCutoff.has(outPath)) dedupeCutoff.set(outPath, lastStampMsInFile(outPath));
       return dedupeCutoff.get(outPath);
     };
-    const buffers = new Map(); // key: "dateKey|sessionSuffix" -> lines[]
+    const buffers = new Map(); // key: dateKey -> lines[]
     let bufferedLineCount = 0;
     let lastDateKey = this.lastDateKeySeen;
-    let lastTimestampMs = this.lastTimestampMs;
-    let sessionSuffix = this.sessionSuffix;
 
     const flush = () => {
-      for (const [key, lines] of buffers) {
+      for (const [dateKey, lines] of buffers) {
         if (lines.length === 0) continue;
-        const [dateKey, suffix] = key.split('|');
-        const suffixPart = suffix ? `_${suffix}` : '';
-        const outPath = path.join(this.outputDir, `${baseName}_${dateKey}${suffixPart}.txt`);
+        const outPath = path.join(this.outputDir, `${baseName}_${dateKey}.txt`);
         fs.appendFileSync(outPath, lines.join('\n') + '\n', 'utf8');
         lines.length = 0;
       }
@@ -416,7 +408,7 @@ class LogSplitter {
 
     rl.on('line', (line) => {
       if (line.length === 0) return;
-      const parsedDateKey = extractDateKey(line);
+      const parsedDateKey = extractDateKey(line, this.dayStartHour);
       if (parsedDateKey) {
         lastDateKey = parsedDateKey;
         stampedBatch += 1;
@@ -427,21 +419,8 @@ class LogSplitter {
       const dateKey = parsedDateKey || lastDateKey;
       if (!dateKey) return; // no timestamp seen yet - can't bucket this line
 
-      if (this.splitOnGap) {
-        const ts = extractTimestampMs(line);
-        if (ts !== null) {
-          if (lastTimestampMs !== null && ts - lastTimestampMs > SESSION_GAP_MS) {
-            sessionSuffix = formatSessionSuffix(ts);
-          }
-          lastTimestampMs = ts;
-        }
-      } else {
-        sessionSuffix = '';
-      }
-
       if (dedupe) {
-        const suffixPart = sessionSuffix ? `_${sessionSuffix}` : '';
-        const outPath = path.join(this.outputDir, `${baseName}_${dateKey}${suffixPart}.txt`);
+        const outPath = path.join(this.outputDir, `${baseName}_${dateKey}.txt`);
         const cutoff = cutoffFor(outPath);
         if (cutoff !== null) {
           const ts = extractTimestampMs(line);
@@ -455,9 +434,8 @@ class LogSplitter {
         }
       }
 
-      const key = `${dateKey}|${sessionSuffix}`;
-      if (!buffers.has(key)) buffers.set(key, []);
-      buffers.get(key).push(line);
+      if (!buffers.has(dateKey)) buffers.set(dateKey, []);
+      buffers.get(dateKey).push(line);
       bufferedLineCount++;
       if (bufferedLineCount >= FLUSH_LINE_THRESHOLD) flush();
     });
@@ -478,8 +456,6 @@ class LogSplitter {
       }
       this.offset = newSize;
       this.lastDateKeySeen = lastDateKey;
-      this.lastTimestampMs = lastTimestampMs;
-      this.sessionSuffix = sessionSuffix;
       this._persistProgress();
       this.processing = false;
     });

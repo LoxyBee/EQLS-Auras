@@ -7,6 +7,8 @@
  */
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { test, report } = require('./harness');
 const { AbilityGroupTracker } = require('../src/main/abilityGroups');
 
@@ -144,6 +146,98 @@ test('a later swap to a DIFFERENT stance clears the border off the old one, even
   const states = tracker.getAllActiveStates();
   assert.equal(states.find((s) => s.index === 0).isActive, false, 'the old active gem loses the border on a real swap');
   assert.equal(states.find((s) => s.index === 1).isActive, true);
+});
+
+// QOL #16 - the active stance/invocation survives an app restart, the same way the current zone
+// does (it is a character state the player is still in, not a timed buff that may have lapsed).
+test('the active pick is persisted by name on every change', () => {
+  const slots = [
+    { barId: 'bar1', index: 0, group: 'stance', toggleName: 'Evasive Stance', toggleDurationSec: 6 },
+    { barId: 'bar1', index: 1, group: 'invocation', toggleName: 'Divine Invocation', toggleDurationSec: 20 },
+  ];
+  const { tracker } = makeTracker(slots);
+  const saved = [];
+  tracker.setPersistFn((s) => saved.push(s));
+  tracker.handleLine(`${TS}You assume an evasive stance.`);
+  tracker.handleLine(`${TS}You begin reciting the divine invocation.`);
+  assert.deepEqual(saved.at(-1), { stance: 'Evasive Stance', invocation: 'Divine Invocation' });
+});
+
+test('restore() lights the gem that now holds the persisted toggle, resolving by name not slot key', () => {
+  // The bar was re-laid-out while the app was closed: Evasive Stance is on a different slot now.
+  const slots = [
+    { barId: 'bar2', index: 3, group: 'stance', toggleName: 'Evasive Stance', toggleDurationSec: 6 },
+    { barId: 'bar2', index: 4, group: 'stance', toggleName: 'Offensive Stance', toggleDurationSec: 6 },
+  ];
+  const { tracker, changes } = makeTracker(slots);
+  tracker.restore({ stance: 'Evasive Stance', invocation: null });
+  const states = tracker.getAllActiveStates();
+  assert.equal(states.length, 1);
+  assert.equal(states[0].barId, 'bar2');
+  assert.equal(states[0].index, 3);
+  assert.equal(states[0].isActive, true);
+  assert.equal(states[0].durationSec, null, 'restored as a state, not a running cooldown');
+  assert.ok(changes.length > 0, 'restore should notify the renderer so the border draws immediately');
+});
+
+test('restore() with a persisted pick that has no configured gem lights nothing (and does not crash)', () => {
+  const { tracker } = makeTracker([
+    { barId: 'bar1', index: 0, group: 'stance', toggleName: 'Offensive Stance', toggleDurationSec: 6 },
+  ]);
+  tracker.restore({ stance: 'Channeler Stance', invocation: null });
+  assert.equal(tracker.getAllActiveStates().length, 0);
+});
+
+test('restore() tolerates a missing / malformed saved blob', () => {
+  const { tracker } = makeTracker([]);
+  tracker.restore(null);
+  tracker.restore({});
+  tracker.restore({ stance: 42 });
+  assert.equal(tracker.getAllActiveStates().length, 0);
+});
+
+test('a swap to a stance with no gem clears the persisted pick too, not just the border', () => {
+  const slots = [{ barId: 'bar1', index: 0, group: 'stance', toggleName: 'Evasive Stance', toggleDurationSec: 6 }];
+  const { tracker } = makeTracker(slots);
+  const saved = [];
+  tracker.setPersistFn((s) => saved.push(s));
+  tracker.handleLine(`${TS}You assume an evasive stance.`);
+  tracker.handleLine(`${TS}You assume a defensive stance.`); // no gem for this
+  assert.equal(saved.at(-1).stance, null, 'a pick we cannot show a border for must not stay persisted');
+});
+
+// #20/#21 - every stance/invocation the owner named is now a roster entry (category Stance/
+// Invocation), and the "which toggle can this gem be" picker builds its list FROM the roster
+// (union'd with the hand-seeded KNOWN_ lists so a live-only observation is not lost). Before this
+// the picker was the hardcoded list alone, so Balanced / Defensive / Mage Hunter / Striker /
+// Spellblade / Overchannel / ... could not be selected at all - which is exactly what #20/#21 were.
+test('the ability-group picker is sourced from the roster, not just the hardcoded list', () => {
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const handler = mainSrc.match(/getKnownAbilityGroups',\s*\(\)\s*=>\s*\{([\s\S]*?)\n\}\);/);
+  assert.ok(handler, 'the getKnownAbilityGroups handler has been restructured');
+  assert.match(handler[1], /buffStore\.getAll\(\)/, 'the picker no longer reads the roster');
+  assert.match(handler[1], /category === 'Stance'|category\) => .*filter/, 'not filtering by category');
+  assert.match(handler[1], /KNOWN_STANCES/, 'the hand-seeded list is no longer union\'d in as a fallback');
+});
+
+test('every stance/invocation the owner named is in the built roster with a landing text', () => {
+  const roster = require('../src/shared/data/buffs.json');
+  const want = {
+    Stance: ['Balanced Stance', 'Offensive Stance', 'Defensive Stance', 'Striker Stance',
+      'Berserker Stance', 'Channeler Stance', 'Mage Hunter Stance', 'Evasive Stance'],
+    Invocation: ['Inversion Invocation', 'Divine Invocation', 'Empowering Invocation',
+      'Recovery Invocation', 'Overchannel Invocation', 'Inviolable Invocation', 'Spellblade Invocation'],
+  };
+  for (const [category, names] of Object.entries(want)) {
+    for (const name of names) {
+      const entry = roster.find((b) => b.name === name);
+      assert.ok(entry, `${name} missing from the roster`);
+      assert.equal(entry.category, category);
+      assert.equal(entry.infiniteDuration, true, `${name} should be a state, not a timed buff`);
+      assert.ok(entry.landingText && /^You (assume|begin reciting)/.test(entry.landingText),
+        `${name} has no usable landing text`);
+    }
+  }
 });
 
 module.exports = () => report('ability-groups');

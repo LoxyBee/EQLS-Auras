@@ -3,7 +3,7 @@
  * Note 20 - the travel guide's routing.
  *
  * The note was blocked on data that did not exist anywhere in the app, in buffs.json, or in the
- * spreadsheet. It exists now, sourced and cross-checked, and these tests are about the two things
+ * roster. It exists now, sourced and cross-checked, and these tests are about the two things
  * that could quietly go wrong with it: a graph that looks complete and is not, and a route that
  * looks shortest and is not.
  *

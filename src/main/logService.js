@@ -122,8 +122,8 @@ class LogService {
     return this.getState();
   }
 
-  setSplitOnGap(splitOnGap) {
-    this.splitter.setSplitOnGap(splitOnGap);
+  setSplitDayStartHour(hour) {
+    this.splitter.setDayStartHour(hour);
     this._broadcast('log:status', this.getState());
     return this.getState();
   }

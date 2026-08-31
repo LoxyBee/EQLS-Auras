@@ -56,6 +56,47 @@ test('entering a raid zone puts every named up', () => {
   assert.ok(rows.some((r) => r.name === 'Cazic-Thule'));
 });
 
+test('the two Voidling raid zones added 31 Aug have working boards', () => {
+  const { t } = make();
+  enter(t, 'The Ruins of Old Paineel');
+  let rows = t.getActive();
+  assert.ok(rows.some((r) => r.name === 'Master Yael'));
+  slay(t, 'Master Yael');
+  assert.equal(t.getActive().filter((r) => r.killed).length, 1);
+
+  enter(t, 'Kedge Keep 2 (Fused)'); // instance suffix still resolves
+  assert.equal(t.getCurrentZone(), 'Kedge Keep');
+  assert.ok(t.getActive().some((r) => r.name === 'Phinigel Autropos' && r.killed === false));
+});
+
+// #33's actual scope: every tracked zone, not just raids. Dungeons too.
+test('a dungeon zone board works, and open-world nameds respawn on their timer', () => {
+  const { t } = make();
+  enter(t, 'The Castle of Mistmoore'); // instanced -> respawns:false
+  assert.ok(t.getActive().some((r) => r.name === 'Xicotl' && r.tier === 'boss'));
+  slay(t, 'Xicotl');
+  const x = t.getActive().find((r) => r.name === 'Xicotl');
+  assert.equal(x.killed, true);
+  assert.equal(x.respawnRemainingSec, null, 'an instanced zone kill stays down until re-entry');
+
+  enter(t, 'Najena'); // open-world -> respawns:true
+  slay(t, 'Rathyl'); // respawnMinutes 19
+  const r = t.getActive().find((row) => row.name === 'Rathyl');
+  assert.equal(r.killed, true);
+  assert.ok(r.respawnRemainingSec > 19 * 60 - 5 && r.respawnRemainingSec <= 19 * 60);
+});
+
+test('the board sorts boss, then mini, then lesser', () => {
+  const { t } = make();
+  enter(t, 'Najena');
+  const tiers = t.getActive().map((r) => r.tier);
+  const firstMini = tiers.indexOf('mini');
+  const firstLesser = tiers.indexOf('lesser');
+  assert.equal(tiers[0], 'boss');
+  assert.ok(firstMini < firstLesser, 'minis should come before lesser trash');
+  assert.ok(tiers.slice(0, firstLesser).every((x) => x !== 'lesser'));
+});
+
 test('an instance difficulty resolves to the same board', () => {
   const { t } = make();
   enter(t, 'The Plane of Hate - Group 4 (Refined)');

@@ -131,7 +131,7 @@ class RaidNamedTracker extends EventEmitter {
       killed: !!e.killedAt,
       respawnRemainingSec: e.respawnAt ? Math.max(0, Math.round((e.respawnAt - now) / 1000)) : null,
     }));
-    const rank = (t) => (t === 'boss' ? 0 : 1);
+    const rank = (t) => (t === 'boss' ? 0 : t === 'mini' ? 1 : 2); // boss, then mini, then lesser trash
     return rows.sort((a, b) => rank(a.tier) - rank(b.tier));
   }
 

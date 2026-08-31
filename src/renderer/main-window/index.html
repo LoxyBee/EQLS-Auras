@@ -521,6 +521,15 @@
                       <label title="Grouping already puts the name in the heading and drops it from the buffs automatically. This drops it when grouping is off too."><input type="checkbox" id="widget-hide-ally-name-checkbox" /> Hide the player name on each buff</label>
                     </div>
                   </div>
+                  <!-- #29 - Bard Songs aura only. Debuff songs (on an enemy) ride the same feed. -->
+                  <div id="widget-bard-song-settings" style="display:none">
+                    <div class="row">
+                      <label title="Debuff songs like Largo's Melodic Binding land on an enemy, not you. Off by default; when on they show in this same aura with a debuff-coloured border."><input type="checkbox" id="widget-show-debuff-songs-checkbox" /> Also show debuff songs</label>
+                    </div>
+                    <div class="row" id="widget-split-songs-row">
+                      <label title="Puts buff songs and debuff songs in their own groups with their own heading, instead of one list."><input type="checkbox" id="widget-split-songs-checkbox" /> Split buff songs and debuff songs</label>
+                    </div>
+                  </div>
                 </div></div>
               </div>
             </div>
@@ -1181,17 +1190,20 @@
         <div class="card">
           <h3>Log splitting</h3>
           <p class="hint">
-            Copies new lines into per-day files (and, optionally, a new file whenever logging seems to
-            have stopped and restarted) so you can review a session without wading through the whole log.
-            The original log file is left untouched by this.
+            Copies new lines into per-day files so you can review a session without wading through
+            the whole log. The original log file is left untouched by this.
           </p>
           <div class="row">
             <label><input type="checkbox" id="split-enabled-checkbox" /> Enable log splitting</label>
             <p class="hint" id="split-format-warning" style="display:none"></p>
           </div>
-          <!-- Meaningless while splitting itself is off - there's nothing being written for a gap
-               to split, or a folder to write it into. -->
+          <!-- Meaningless while splitting itself is off - there's nothing being written, or a folder
+               to write it into. -->
           <div id="split-sub-options">
+            <div class="row">
+              <span class="label" title="A raid night that runs past midnight is normally cut across two files. Set this to an hour after you stop playing (e.g. 6 AM) to keep each night in one file - the file dated for the day it started.">New day starts at:</span>
+              <select id="split-day-start-hour-select"></select>
+            </div>
             <div class="row">
               <span class="label">Output folder:</span>
               <span id="split-output-folder">-</span>

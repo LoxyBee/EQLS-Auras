@@ -4,7 +4,7 @@
  *
  * Three things multiply: the roster's base duration, the mote tier (the Roman numeral outside the
  * name field), and the AA/Exaltation bonus. Every number asserted here was measured from the
- * owner's own logs rather than taken from the spreadsheet, because two of the spreadsheet's rates
+ * owner's own logs rather than the roster's imported values, because two of those rates
  * were marked unverified and one thing the code already did was measurably wrong.
  *
  * The measurements have a known bias worth stating: the wear-off line lags true expiry by up to

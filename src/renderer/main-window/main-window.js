@@ -811,6 +811,13 @@ function initLogPanel() {
   const splitChooseFolderBtn = document.getElementById('split-choose-folder-btn');
   const splitResetFolderBtn = document.getElementById('split-reset-folder-btn');
   const splitSubOptionsEl = document.getElementById('split-sub-options');
+  const splitDayStartHourSelect = document.getElementById('split-day-start-hour-select');
+  if (splitDayStartHourSelect && !splitDayStartHourSelect.options.length) {
+    for (let h = 0; h < 24; h++) {
+      const label = h === 0 ? 'Midnight' : h < 12 ? `${h} AM` : h === 12 ? 'Noon' : `${h - 12} PM`;
+      splitDayStartHourSelect.add(new Option(label, String(h)));
+    }
+  }
 
   const fileSizeEl = document.getElementById('log-file-size');
   const archivePromptEl = document.getElementById('archive-prompt');
@@ -842,6 +849,9 @@ function initLogPanel() {
       }
       splitEnabledCheckbox.checked = state.split.enabled;
       splitOutputFolderEl.textContent = state.split.outputDir || '-';
+      if (splitDayStartHourSelect && document.activeElement !== splitDayStartHourSelect) {
+        splitDayStartHourSelect.value = String(state.split.dayStartHour ?? 0);
+      }
       splitSubOptionsEl.style.display = state.split.enabled ? '' : 'none';
     }
 
@@ -895,6 +905,38 @@ function initLogPanel() {
   // log:status update on its own - poll it periodically instead.
   setInterval(() => window.eqTracker.getLogState().then(renderState), 5000);
 
+  // QOL #24 - a once-on-launch nudge when the live log has grown past 50 MB, even for someone who
+  // has never archived. Steers toward "Trim to this week" (keeps the current lockout week in the
+  // live log) rather than a whole-log archive that would blank the Lockouts grid. Deferred so it
+  // does not race the window's first paint; re-nudge cadence is capped in the main process.
+  setTimeout(async () => {
+    let check;
+    try { check = await window.eqTracker.launchArchiveCheck(); } catch { return; }
+    if (!check || !check.prompt) return;
+    const mb = (check.sizeBytes / 1048576).toFixed(0);
+    const go = await appConfirm({
+      title: 'Your EQ log is getting large',
+      message: `The log is about ${mb} MB. Trimming it to just the current raid-lockout week keeps the app fast and the Lockouts tab accurate.`,
+      detail: check.holdsCurrentWeek
+        ? 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first); the current week stays in the live log. EverQuest can stay running.'
+        : 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first), then the live log is rewritten to just the current week.',
+      okLabel: 'Trim to this week',
+      cancelLabel: 'Not now',
+    });
+    if (!go) {
+      window.eqTracker.dismissArchivePrompt();
+      return;
+    }
+    const r = await window.eqTracker.trimLockoutLog();
+    const rep = (r && r.report) || {};
+    await appConfirm(
+      rep.ok
+        ? { title: 'Trimmed', message: `Archived ${(rep.archivedBytes / 1048576).toFixed(1)} MB.`, detail: rep.archivedTo, okLabel: 'OK', hideCancel: true }
+        : { title: 'Not trimmed', message: rep.reason || 'The log could not be trimmed right now - try the Lockouts tab in a moment.', okLabel: 'OK', hideCancel: true }
+    );
+    window.eqTracker.getLogState().then(renderState);
+  }, 3500);
+
   browseBtn.addEventListener('click', async () => {
     const state = await window.eqTracker.chooseLogFolder();
     renderState(state);
@@ -905,6 +947,11 @@ function initLogPanel() {
   splitEnabledCheckbox.addEventListener('change', async () => {
     renderState(await window.eqTracker.setSplitEnabled(splitEnabledCheckbox.checked));
   });
+  if (splitDayStartHourSelect) {
+    splitDayStartHourSelect.addEventListener('change', async () => {
+      renderState(await window.eqTracker.setSplitDayStartHour(Number(splitDayStartHourSelect.value)));
+    });
+  }
   splitChooseFolderBtn.addEventListener('click', async () => {
     renderState(await window.eqTracker.chooseSplitFolder());
   });
@@ -1498,6 +1545,10 @@ function initWidgetsPanel() {
   const marginWidthSlider = document.getElementById('widget-margin-width-slider');
   const allyGroupingSettingsEl = document.getElementById('widget-ally-grouping-settings');
   const groupAllyCheckbox = document.getElementById('widget-group-ally-checkbox');
+  const bardSongSettingsEl = document.getElementById('widget-bard-song-settings');
+  const showDebuffSongsCheckbox = document.getElementById('widget-show-debuff-songs-checkbox');
+  const splitSongsCheckbox = document.getElementById('widget-split-songs-checkbox');
+  const splitSongsRowEl = document.getElementById('widget-split-songs-row');
   const allyDirectionRadios = document.querySelectorAll('input[name="widget-ally-direction"]');
   const allyDirectionRow = document.getElementById('widget-ally-direction-row');
   const hideAllyNameCheckbox = document.getElementById('widget-hide-ally-name-checkbox');
@@ -1659,6 +1710,7 @@ function initWidgetsPanel() {
   // broadcast.
   let latestSelfBuffs = [];
   let latestAllyBuffs = [];
+  let latestBardSongs = [];
   let latestActiveCustomTimers = [];
 
   function findWidget(id) {
@@ -1688,6 +1740,7 @@ function initWidgetsPanel() {
 
   function activeSourceForWidget(widget) {
     if (widget.buffSource === 'ally') return latestAllyBuffs;
+    if (widget.buffSource === 'bardSongs') return latestBardSongs;
     if (widget.buffSource === 'customTimer') return latestActiveCustomTimers;
     return latestSelfBuffs;
   }
@@ -1699,6 +1752,14 @@ function initWidgetsPanel() {
   // drift out of sync with it.
   function filterActiveBuffsForWidget(widget) {
     const source = activeSourceForWidget(widget);
+    // Backlog #15, mirroring overlay.js's visibleBuffs(): the Bard Songs aura IS every bard song on
+    // the player by construction, so the hideBardSongs / maxDuration / name-list filters below
+    // don't apply - and hideBardSongs (true on the inherited custom-widget default) would strip
+    // every row, which is exactly why "Active on this aura" showed nothing on this premade.
+    if (widget.buffSource === 'bardSongs') {
+      // #29 - debuff songs are opt-in on this aura, same as overlay.js's visibleBuffs.
+      return source.filter((b) => b.showOnOverlay !== false && (widget.showDebuffSongs || !b.isDebuff));
+    }
     if (widget.buffFilterMode === 'all') {
       let filtered = source.filter((b) => b.showOnOverlay !== false);
       if (widget.hideBardSongs) filtered = filtered.filter((b) => !b.isBardSong);
@@ -1742,6 +1803,7 @@ function initWidgetsPanel() {
       removeBtn.textContent = 'Remove';
       removeBtn.addEventListener('click', () => {
         if (widget.buffSource === 'ally') window.eqTracker.removeActiveAllyBuff(buff.allyName, buff.name);
+        else if (widget.buffSource === 'bardSongs') window.eqTracker.removeActiveBardSong(buff.allyName, buff.name);
         else if (widget.buffSource === 'customTimer') window.eqTracker.removeActiveCustomTimer(buff.id);
         else window.eqTracker.removeActiveBuff(buff.name);
       });
@@ -2436,7 +2498,7 @@ function initWidgetsPanel() {
     // and no 'track-others' (that toggle is global engine state, not per-widget, and already has a
     // home on Self Buffs' own panel) - see widgetStore.js's defaultBardSongsWidget for the same
     // reasoning on the data side.
-    'bard-songs': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'ally-grouping'],
+    'bard-songs': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'ally-grouping', 'bard-song-options'],
     // Backlog #33. No picker or source (content is the current zone's named list), no 'sort' (the
     // board is fixed boss-then-mini order, like the travel route), no 'merge'/'borders' (no
     // duration, no spell category). Just how it looks and where it sits, plus the list sizing
@@ -2607,6 +2669,7 @@ function initWidgetsPanel() {
     // offering a setting that could never do anything. A text aura draws no per-person tiles at
     // all, hence excluded from every text shape above.
     allyGroupingSettingsEl.style.display = has('ally-grouping') ? '' : 'none';
+    bardSongSettingsEl.style.display = has('bard-song-options') ? '' : 'none';
     // Only self-buffs-builtin, not ally - "track buffs cast on me by others" is about buffs
     // landing on the player, unrelated to the Ally Buffs widget's own concern (buffs the player
     // casts on others).
@@ -2751,6 +2814,9 @@ function initWidgetsPanel() {
     wrapTextCheckbox.checked = !!widget.wrapText;
     showIconLabelCheckbox.checked = !!widget.showIconLabel;
     groupAllyCheckbox.checked = !!widget.groupAllyBuffs;
+    showDebuffSongsCheckbox.checked = !!widget.showDebuffSongs;
+    splitSongsCheckbox.checked = !!widget.splitSongsByType;
+    splitSongsRowEl.style.display = widget.showDebuffSongs ? '' : 'none';
     allyDirectionRadios.forEach((r) => (r.checked = r.value === (widget.groupAllyDirection || 'vertical')));
     hideAllyNameCheckbox.checked = !!widget.hideAllyNameOnTile;
     allyDirectionRow.style.display = widget.groupAllyBuffs ? '' : 'none';
@@ -5303,6 +5369,14 @@ function initWidgetsPanel() {
   hideAllyNameCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetHideAllyNameOnTile(selectedId, hideAllyNameCheckbox.checked);
   });
+  // #29 - Bard Songs aura's hybrid buff/debuff options.
+  showDebuffSongsCheckbox.addEventListener('change', () => {
+    splitSongsRowEl.style.display = showDebuffSongsCheckbox.checked ? '' : 'none';
+    window.eqTracker.setWidgetShowDebuffSongs(selectedId, showDebuffSongsCheckbox.checked);
+  });
+  splitSongsCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetSplitSongsByType(selectedId, splitSongsCheckbox.checked);
+  });
 
   timerTextColorPicker.addEventListener('input', () => {
     window.eqTracker.setWidgetTimerTextColor(selectedId, timerTextColorPicker.value);
@@ -5464,6 +5538,14 @@ function initWidgetsPanel() {
   });
   window.eqTracker.onActiveAllyBuffsChanged((buffs) => {
     latestAllyBuffs = buffs;
+    refreshActiveBuffsCardIfSelected();
+  });
+  window.eqTracker.getActiveBardSongs().then((songs) => {
+    latestBardSongs = songs;
+    refreshActiveBuffsCardIfSelected();
+  });
+  window.eqTracker.onActiveBardSongsChanged((songs) => {
+    latestBardSongs = songs;
     refreshActiveBuffsCardIfSelected();
   });
   window.eqTracker.getActiveCustomTimers().then((timers) => {
@@ -6857,9 +6939,25 @@ function initActionBarsPage() {
     slotsGridEl.style.setProperty('--slot-cols', perRow);
   }
 
-  // Updates one gem's box on the settings-page grid - icon, disabled dimming, and a hover tooltip
-  // naming it. The overlay itself (not this settings grid) is what actually renders the name text
-  // and cooldown visuals - this box is just the picker/summary.
+  // QOL #19 - "has anything been set up in this slot" for the at-a-glance grid marker. Anything
+  // that would show on the overlay or change its behaviour counts; a bare empty slot does not.
+  function slotIsConfigured(s) {
+    return !!(
+      s &&
+      (s.iconId != null ||
+        s.secondIconId != null ||
+        s.name ||
+        s.cooldown ||
+        s.toggleGroup ||
+        s.borderEnabled ||
+        s.bgColor ||
+        s.disabled)
+    );
+  }
+
+  // Updates one gem's box on the settings-page grid - icon, disabled dimming, a "configured"
+  // marker (#19), and a hover tooltip naming it. The overlay itself (not this settings grid) is
+  // what actually renders the name text and cooldown visuals - this box is just the picker/summary.
   function refreshGemBox(index) {
     const g = gemBoxes[index];
     const s = currentSlots[index];
@@ -6898,6 +6996,7 @@ function initActionBarsPage() {
       g.box.style.outlineOffset = '';
     }
     g.box.classList.toggle('disabled', !!s.disabled);
+    g.box.classList.toggle('configured', slotIsConfigured(s));
     g.box.title = s.name ? `${s.name} (Slot ${index + 1})` : `Slot ${index + 1}`;
   }
 
@@ -7153,11 +7252,47 @@ function initActionBarsPage() {
   // A plain grid, same "Icons per row" wrap as the real overlay - each box just opens the one
   // Edit gem modal above. No per-box controls live on the page itself.
 
+  // QOL #11 - drag one gem box onto another to SWAP the two whole slots (icon, name, border,
+  // cooldown, toggle). Only those two trade places; every other slot stays exactly where it was.
+  // The grid re-renders from the returned config, so nothing is tracked here beyond which box the
+  // drag started on.
+  let dragFromSlot = null;
+  function onGemDragStart(e) {
+    dragFromSlot = Number(this.dataset.slotIndex);
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(dragFromSlot)); // Firefox needs some data set
+  }
+  function onGemDragOver(e) {
+    if (dragFromSlot == null || Number(this.dataset.slotIndex) === dragFromSlot) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    this.classList.add('drag-over');
+  }
+  function onGemDragLeave() {
+    this.classList.remove('drag-over');
+  }
+  function onGemDrop(e) {
+    e.preventDefault();
+    this.classList.remove('drag-over');
+    const b = Number(this.dataset.slotIndex);
+    if (dragFromSlot == null || b === dragFromSlot || !selectedActionBarId) return;
+    const a = dragFromSlot;
+    window.eqTracker.swapActionBarSlots(selectedActionBarId, a, b).then(() => selectActionBar(selectedActionBarId));
+  }
+  function onGemDragEnd() {
+    this.classList.remove('dragging');
+    gemBoxes.forEach((g) => g.box.classList.remove('drag-over'));
+    dragFromSlot = null;
+  }
+
   for (let i = 0; i < 12; i++) {
     const box = document.createElement('button');
     box.type = 'button';
     box.className = 'icon-picker-box';
     box.title = `Slot ${i + 1}`;
+    box.dataset.slotIndex = String(i);
+    box.draggable = true;
     const img = document.createElement('img');
     img.alt = '';
     img.style.display = 'none';
@@ -7170,6 +7305,11 @@ function initActionBarsPage() {
     placeholder.textContent = String(i + 1);
     box.append(img, secondImg, placeholder);
     box.addEventListener('click', () => openGemModal(i));
+    box.addEventListener('dragstart', onGemDragStart);
+    box.addEventListener('dragover', onGemDragOver);
+    box.addEventListener('dragleave', onGemDragLeave);
+    box.addEventListener('drop', onGemDrop);
+    box.addEventListener('dragend', onGemDragEnd);
     slotsGridEl.appendChild(box);
     gemBoxes.push({ box, img, secondImg, placeholder });
   }
