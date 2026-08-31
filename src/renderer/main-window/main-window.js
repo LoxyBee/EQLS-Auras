@@ -2687,6 +2687,7 @@ function initWidgetsPanel() {
     if (widget.kind === 'ally-buffs-builtin') return 'ally-buffs';
     if (widget.kind === 'bard-songs-builtin') return 'bard-songs';
     if (widget.kind === 'raid-named-builtin') return 'raid-named';
+    if (widget.kind === 'module-aura') return 'module';
     if (widget.buffSource === 'damage') return 'damage';
     if (widget.buffSource === 'travel') return 'travel';
     if (widget.displayMode === 'text') {
@@ -2712,6 +2713,10 @@ function initWidgetsPanel() {
     // duration, no spell category). Just how it looks and where it sits, plus the list sizing
     // controls that matter for a checklist ('list-format', same as travel).
     'raid-named': ['list-format', 'timer-text', 'opacity', 'position', 'alerts'],
+    // feat/module-system. The module IS the source - no picker, no source choice, no spell-based
+    // controls. Just how it looks, where it sits, and the standard alerts. Its own settings live
+    // on the module's own page.
+    'module': ['display-choice', 'timer-text', 'opacity', 'position', 'alerts'],
     'custom-buff': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'buff-source', 'buff-picker', 'ally-grouping'],
     'custom-debuff': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'debuff-cast-by', 'buff-picker', 'ally-grouping'],
     'ally-alert': ['text-fields', 'text-instant', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-picker'],
@@ -4245,6 +4250,26 @@ function initWidgetsPanel() {
     premadeListEl.appendChild(li);
   }
 
+  // feat/module-system - custom modules with `hasAura` become Standalone-tools entries in the Add
+  // Aura list. Kept fresh from the host (hot-reload) so a dropped-in module shows up without a
+  // restart. Synthesised into the same premade shape so renderPremadeChoice needs no special case.
+  let moduleAuraChoices = [];
+  function refreshModuleAuraChoices() {
+    if (!window.eqTracker.listModules) return Promise.resolve();
+    return window.eqTracker.listModules().then((modules) => {
+      moduleAuraChoices = (modules || [])
+        .filter((m) => m.hasAura)
+        .map((m) => ({
+          name: m.name,
+          description: m.description || 'A custom module.',
+          group: 'standalone',
+          create: (n) => window.eqTracker.createModuleAuraWidget(n, m.id),
+        }));
+    });
+  }
+  refreshModuleAuraChoices();
+  if (window.eqTracker.onModulesChanged) window.eqTracker.onModulesChanged(() => refreshModuleAuraChoices());
+
   function renderPremadeList() {
     premadeListEl.innerHTML = '';
     // A premade that has been BUILT must not still be offered as planned too, or the Add Aura list
@@ -4257,10 +4282,12 @@ function initWidgetsPanel() {
     const stillPlanned = PLANNED_PREMADE_WIDGETS.filter((p) => !builtNames.has(p.name));
     for (const group of PREMADE_GROUPS) {
       const built = PREMADE_WIDGETS.filter((p) => p.group === group.id);
+      const modChoices = group.id === 'standalone' ? moduleAuraChoices : [];
       const planned = stillPlanned.filter((p) => p.group === group.id);
-      if (!built.length && !planned.length) continue;
+      if (!built.length && !modChoices.length && !planned.length) continue;
       renderPremadeGroupHeading(group);
       for (const premade of built) renderPremadeChoice(premade);
+      for (const premade of modChoices) renderPremadeChoice(premade);
       for (const premade of planned) renderPremadeChoice(premade, true);
     }
   }
@@ -4381,6 +4408,8 @@ function initWidgetsPanel() {
     importStatus.textContent = '';
     modalNewWidgetNameInput.value = '';
     renderPremadeList();
+    // Modules are fetched async; re-render once they're in so a dropped-in module shows up here.
+    refreshModuleAuraChoices().then(renderPremadeList);
     addWidgetModalBackdrop.style.display = 'flex';
   }
 

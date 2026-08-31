@@ -1044,6 +1044,10 @@ function visibleBuffs(buffs, opts = {}) {
   // same argument as travel/damage above.
   if (currentConfig.buffSource === 'raidNamed') return buffs;
 
+  // feat/module-system. The module already decided what its aura shows; there is no spell list to
+  // match against and no duration cap to apply. Same argument as travel/raidNamed above.
+  if (currentConfig.buffSource === 'module') return buffs;
+
   if (currentConfig.buffSource === 'damage') {
     let rows = buffs;
     // Your row only. It hides the others rather than un-counting them, so the percentage still
@@ -1746,6 +1750,9 @@ let lastRaidNamed = [];
 // Note 20. Keyed by aura id - one broadcast carries every travel aura's route and each window
 // takes its own. See pushTravelRoutes in main.js for why it is shaped that way.
 let lastTravelRoutes = {};
+// feat/module-system. One broadcast carries every custom module's live entries, keyed by module
+// id; a module aura reads its own slice by currentConfig.moduleId.
+let lastModuleEntries = {};
 
 // QOL #1 - "Preview this aura" from the settings panel. While active, currentSourceBuffs() hands
 // render() a sample set instead of the real one and visibleBuffs() lets it straight through, so
@@ -1771,6 +1778,8 @@ function previewSampleBuffs() {
         mk('King Tranix', null, null, { tier: 'mini', killed: true, infinite: true }),
         mk('Warlord Skarlon', null, null, { tier: 'mini', killed: false, infinite: true }),
       ];
+    case 'module':
+      return [mk(currentConfig.name || 'Module', 9, 12, { key: 'preview' })];
     default:
       return [mk('Spirit of Wolf', 140, 300), mk('Aegolism', 520, 600)];
   }
@@ -1821,6 +1830,8 @@ function currentSourceBuffs() {
   // Backlog #33. One shared board (the current zone's named list), not per-widget - like damage,
   // unlike travel/customTimer.
   if (currentConfig.buffSource === 'raidNamed') return lastRaidNamed;
+  // feat/module-system. One shared broadcast keyed by module id; this aura takes its own module's.
+  if (currentConfig.buffSource === 'module') return lastModuleEntries[currentConfig.moduleId] || [];
   return lastSelfBuffs;
 }
 
@@ -2069,6 +2080,18 @@ window.eqOverlay.onTravelRoutesChanged((routes) => {
   lastTravelRoutes = routes;
   render(currentSourceBuffs());
 });
+
+// feat/module-system - every custom module's live entries, keyed by module id.
+if (window.eqOverlay.getModuleEntries) {
+  window.eqOverlay.getModuleEntries().then((all) => {
+    lastModuleEntries = all || {};
+    render(currentSourceBuffs());
+  });
+  window.eqOverlay.onModuleEntries((all) => {
+    lastModuleEntries = all || {};
+    render(currentSourceBuffs());
+  });
+}
 
 window.eqOverlay.getActiveDamage().then((rows) => {
   lastDamageRows = rows;

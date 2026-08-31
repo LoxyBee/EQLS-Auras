@@ -1808,6 +1808,7 @@ ipcMain.handle('widget:create', (_event, { name, buffSource }) => widgetManager.
 ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAllyBuffsWidget(name));
 ipcMain.handle('widget:createBardSongs', (_event, { name }) => widgetManager.createBardSongsWidget(name));
 ipcMain.handle('widget:createRaidNamed', (_event, { name }) => widgetManager.createRaidNamedWidget(name));
+ipcMain.handle('widget:createModuleAura', (_event, { name, moduleId }) => widgetManager.createModuleAuraWidget(name, moduleId));
 ipcMain.handle('widget:createDebuff', (_event, { name }) => widgetManager.createDebuffWidget(name));
 ipcMain.handle('widget:createDamageMeter', (_event, { name, mineOnly }) =>
   widgetManager.createDamageMeterWidget(name, mineOnly)
