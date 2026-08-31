@@ -201,6 +201,10 @@ abilityGroupTracker.setGetGroupSlotsFn((group) => {
   return out;
 });
 abilityGroupTracker.setOnChangeFn(() => broadcast('actionBar:abilityGroupChanged', abilityGroupTracker.getAllActiveStates()));
+// QOL #16 - the active stance/invocation is a character state the player is still in after a
+// restart (like the current zone), so persist it by name and restore it once the bars are known.
+abilityGroupTracker.setPersistFn((state) => saveJson('activeAbilityGroups', state));
+abilityGroupTracker.restore(loadJson('activeAbilityGroups', { stance: null, invocation: null }));
 // See customTimerEngine._resolveCastName. getByName tries the exact name first and only then the
 // rank-stripped one, which is what tells a mote rank ("Cannibalize V" -> Cannibalize) apart from a
 // spell whose name merely ends in a numeral ("Yaulp III" -> itself).

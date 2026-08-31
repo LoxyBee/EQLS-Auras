@@ -146,5 +146,63 @@ test('a later swap to a DIFFERENT stance clears the border off the old one, even
   assert.equal(states.find((s) => s.index === 1).isActive, true);
 });
 
+// QOL #16 - the active stance/invocation survives an app restart, the same way the current zone
+// does (it is a character state the player is still in, not a timed buff that may have lapsed).
+test('the active pick is persisted by name on every change', () => {
+  const slots = [
+    { barId: 'bar1', index: 0, group: 'stance', toggleName: 'Evasive Stance', toggleDurationSec: 6 },
+    { barId: 'bar1', index: 1, group: 'invocation', toggleName: 'Divine Invocation', toggleDurationSec: 20 },
+  ];
+  const { tracker } = makeTracker(slots);
+  const saved = [];
+  tracker.setPersistFn((s) => saved.push(s));
+  tracker.handleLine(`${TS}You assume an evasive stance.`);
+  tracker.handleLine(`${TS}You begin reciting the divine invocation.`);
+  assert.deepEqual(saved.at(-1), { stance: 'Evasive Stance', invocation: 'Divine Invocation' });
+});
+
+test('restore() lights the gem that now holds the persisted toggle, resolving by name not slot key', () => {
+  // The bar was re-laid-out while the app was closed: Evasive Stance is on a different slot now.
+  const slots = [
+    { barId: 'bar2', index: 3, group: 'stance', toggleName: 'Evasive Stance', toggleDurationSec: 6 },
+    { barId: 'bar2', index: 4, group: 'stance', toggleName: 'Offensive Stance', toggleDurationSec: 6 },
+  ];
+  const { tracker, changes } = makeTracker(slots);
+  tracker.restore({ stance: 'Evasive Stance', invocation: null });
+  const states = tracker.getAllActiveStates();
+  assert.equal(states.length, 1);
+  assert.equal(states[0].barId, 'bar2');
+  assert.equal(states[0].index, 3);
+  assert.equal(states[0].isActive, true);
+  assert.equal(states[0].durationSec, null, 'restored as a state, not a running cooldown');
+  assert.ok(changes.length > 0, 'restore should notify the renderer so the border draws immediately');
+});
+
+test('restore() with a persisted pick that has no configured gem lights nothing (and does not crash)', () => {
+  const { tracker } = makeTracker([
+    { barId: 'bar1', index: 0, group: 'stance', toggleName: 'Offensive Stance', toggleDurationSec: 6 },
+  ]);
+  tracker.restore({ stance: 'Channeler Stance', invocation: null });
+  assert.equal(tracker.getAllActiveStates().length, 0);
+});
+
+test('restore() tolerates a missing / malformed saved blob', () => {
+  const { tracker } = makeTracker([]);
+  tracker.restore(null);
+  tracker.restore({});
+  tracker.restore({ stance: 42 });
+  assert.equal(tracker.getAllActiveStates().length, 0);
+});
+
+test('a swap to a stance with no gem clears the persisted pick too, not just the border', () => {
+  const slots = [{ barId: 'bar1', index: 0, group: 'stance', toggleName: 'Evasive Stance', toggleDurationSec: 6 }];
+  const { tracker } = makeTracker(slots);
+  const saved = [];
+  tracker.setPersistFn((s) => saved.push(s));
+  tracker.handleLine(`${TS}You assume an evasive stance.`);
+  tracker.handleLine(`${TS}You assume a defensive stance.`); // no gem for this
+  assert.equal(saved.at(-1).stance, null, 'a pick we cannot show a border for must not stay persisted');
+});
+
 module.exports = () => report('ability-groups');
 if (require.main === module) report('ability-groups').then((n) => process.exit(n ? 1 : 0));
