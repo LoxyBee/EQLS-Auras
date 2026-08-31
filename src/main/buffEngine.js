@@ -2593,7 +2593,14 @@ class BuffEngine extends EventEmitter {
   // SONG_PULSE_CONFIRM_HITS times and exactly one candidate is a song (nothing else re-lands on
   // its own). Independent of the spellbook and burst - it exists to catch a maintained bard song
   // even when the spellbook signal is down. Any break in the cadence, or a different song
-  // suddenly matching the text, resets the count.
+  // suddenly matching the text, resets the count. Three real "Psalm of Purity" pulses in the
+  // owner's log run 6,6,6,6,6,7,6,6s apart for 9+ pulses; 3 hits confirms in ~12-18s while the
+  // song is still very much up.
+  //
+  // INTENTIONAL: an ALLY bard maintaining Psalm of Purity on the group also pulses this text on
+  // the player every 6s, and this lands it as her own song. That is correct per the owner's
+  // standing position - bard-song self-vs-ally is undecidable from the log, track it anyway (see
+  // CLAUDE.md P1 and the Bard Songs aura's veto waiver). Not a bug to "fix" later.
   _pulsedAmbiguousSong(text, candidates) {
     const song = this._songAmongSplitCandidates(candidates);
     if (!song) {
