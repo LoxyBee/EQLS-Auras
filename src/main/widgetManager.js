@@ -1164,6 +1164,12 @@ function setShowIconLabel(id, enabled) {
   return config;
 }
 
+function setIconDepletionShade(id, value) {
+  const config = widgetStore.update(id, { iconDepletionShade: value });
+  pushConfigChanged(id);
+  return config;
+}
+
 // Profile membership IS this widget's on/off control (see
 // isVisibleForActiveProfile) - ticking/unticking the currently active
 // profile here has to show/hide it immediately, which is the whole point of
@@ -1508,6 +1514,7 @@ module.exports = {
   setShowRowIcon,
   setMirrorRowDirection,
   setShowIconLabel,
+  setIconDepletionShade,
   setActiveProfileIds,
   removeProfileFromAllWidgets,
   setGroupAllyBuffs,

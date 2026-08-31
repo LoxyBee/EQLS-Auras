@@ -504,6 +504,14 @@
                       <label><input type="radio" name="widget-icon-justify" value="center" /> Center</label>
                       <label><input type="radio" name="widget-icon-justify" value="right" /> Right</label>
                     </div>
+                    <div class="row">
+                      <span class="label" title="A shrinking dark shade over each tile showing how much of the buff's time is left — the same look the action bars use for cooldowns. Wipe recedes from the top down; Radial sweeps around like a clock.">Depletion shade:</span>
+                      <select id="widget-icon-depletion-select" class="text-input">
+                        <option value="none">None</option>
+                        <option value="wipe">Wipe (top-down)</option>
+                        <option value="radial">Radial (clock sweep)</option>
+                      </select>
+                    </div>
                   </div>
                   <!-- Only meaningful on an aura showing buffs cast on other people - hidden
                        otherwise (see renderBuffFilter). -->

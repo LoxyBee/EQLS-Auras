@@ -575,7 +575,14 @@ function buildIconTile(buff) {
   time.className = 'tile-time';
   root.appendChild(time);
 
-  const ref = { root, timeEl: time, labelEl: null, lastIconUrl: undefined };
+  // QOL #46 - the depletion shade, drawn over the icon (see updateTileShade). Always built so the
+  // per-tick path can just show/hide it; inert until the aura's iconDepletionShade is set.
+  const shade = document.createElement('div');
+  shade.className = 'tile-shade';
+  shade.style.display = 'none';
+  root.appendChild(shade);
+
+  const ref = { root, timeEl: time, shadeEl: shade, labelEl: null, lastIconUrl: undefined };
   updateTileIcon(ref, buff);
   // Appended after the icon so it draws over it - .buff-tile is position:relative and the badge
   // is absolutely placed in its corner.
@@ -623,6 +630,37 @@ function updateTileIcon(ref, buff) {
   ref.root.insertBefore(iconEl, ref.timeEl);
 }
 
+// QOL #46 - the icon-mode depletion shade. Same two looks the action bars use for cooldowns
+// (actionbar.js updateCooldownVisuals): 'wipe' is a solid shade pinned to the bottom that shrinks
+// as the buff runs down; 'radial' is a conic wedge that closes like a clock. The fraction is
+// remaining/duration, so a full tile means a fresh buff. Skipped for anything with no real
+// countdown - an infinite buff, a damage-meter row (valueText), a raid-board named.
+function updateTileShade(ref, buff) {
+  const el = ref.shadeEl;
+  if (!el) return;
+  const style = currentConfig.iconDepletionShade || 'none';
+  const hasCountdown =
+    style !== 'none' &&
+    !buff.infinite &&
+    buff.valueText == null &&
+    typeof buff.durationSec === 'number' &&
+    buff.durationSec > 0 &&
+    typeof buff.remainingSec === 'number';
+  if (!hasCountdown) {
+    if (el.style.display !== 'none') el.style.display = 'none';
+    return;
+  }
+  const frac = Math.max(0, Math.min(1, buff.remainingSec / buff.durationSec));
+  el.style.display = '';
+  if (style === 'radial') {
+    el.style.clipPath = 'none';
+    el.style.background = `conic-gradient(rgba(0, 0, 0, 0.62) ${frac * 360}deg, transparent 0)`;
+  } else {
+    el.style.background = 'rgba(0, 0, 0, 0.62)';
+    el.style.clipPath = `inset(${(1 - frac) * 100}% 0 0 0)`;
+  }
+}
+
 // Positions/sizes/colors a text overlay on top of an icon tile (the
 // countdown, or the optional name label - see buildIconTile) via inline
 // styles rather than an external stylesheet rule. This is here because the
@@ -661,6 +699,9 @@ function applyTilePositionedTextStyle(el, low, anchor, textSize, wrap, color) {
   // overflow content (wrapText off) is often wider than the tile by design.
   // The translate technique centers correctly either way.
   el.style.position = 'absolute';
+  // Above the QOL #46 depletion shade (z-index:1) so a darkening tile never swallows its own
+  // countdown / label.
+  el.style.zIndex = '2';
   el.style.top = vertical === 'top' ? '2px' : vertical === 'middle' ? '50%' : 'auto';
   el.style.bottom = vertical === 'bottom' ? '2px' : 'auto';
   el.style.left = horizontal === 'left' ? '2px' : horizontal === 'center' ? '50%' : 'auto';
@@ -769,6 +810,7 @@ function updateRef(ref, buff, isIcon) {
     buff.valueText != null ? buff.valueText : formatTime(buff.remainingSec, currentConfig.timerFormat);
   if (isIcon) {
     updateTileIcon(ref, buff);
+    updateTileShade(ref, buff);
     applyTilePositionedTextStyle(ref.timeEl, low, currentConfig.contentAnchor || 'bottom-center', currentConfig.textSize || 10, false, currentConfig.timerTextColor);
     if (ref.labelEl) {
       applyTilePositionedTextStyle(

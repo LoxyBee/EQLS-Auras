@@ -258,6 +258,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetShowRowIcon: (id, enabled) => ipcRenderer.invoke('widget:setShowRowIcon', { id, enabled }),
   setWidgetMirrorRowDirection: (id, enabled) => ipcRenderer.invoke('widget:setMirrorRowDirection', { id, enabled }),
   setWidgetShowIconLabel: (id, enabled) => ipcRenderer.invoke('widget:setShowIconLabel', { id, enabled }),
+  setWidgetIconDepletionShade: (id, value) => ipcRenderer.invoke('widget:setIconDepletionShade', { id, value }),
   setWidgetIconLabelSize: (id, size) => ipcRenderer.invoke('widget:setIconLabelSize', { id, value: size }),
   setWidgetIconLabelAnchor: (id, anchor) => ipcRenderer.invoke('widget:setIconLabelAnchor', { id, value: anchor }),
   setWidgetTimerTextColor: (id, value) => ipcRenderer.invoke('widget:setTimerTextColor', { id, value }),

@@ -682,6 +682,7 @@ const SHAREABLE_FIELDS = [
   'showIconLabel',
   'iconLabelSize',
   'iconLabelAnchor',
+  'iconDepletionShade',
   'wrapText',
   'iconJustify',
   'textJustify',
@@ -825,6 +826,10 @@ function normalizeWidget(widget) {
     showIconLabel: !!widget.showIconLabel,
     iconLabelSize: typeof widget.iconLabelSize === 'number' ? widget.iconLabelSize : 11,
     iconLabelAnchor: widget.iconLabelAnchor || 'top-center',
+    // Icon mode only (QOL #46) - a shrinking dark shade over each tile showing how much of the
+    // buff's duration is left, reusing the action bars' cooldown-shade look. 'none' by default so
+    // existing icon auras are unchanged. 'wipe' = a top-down clip; 'radial' = a conic clock sweep.
+    iconDepletionShade: ['wipe', 'radial'].includes(widget.iconDepletionShade) ? widget.iconDepletionShade : 'none',
     // Existing widgets saved before this field existed default to on for
     // the two "show everything" builtins (matches defaultSelfBuffsWidget/
     // defaultAllyBuffsWidget's own defaults for a fresh one) and off for
