@@ -280,8 +280,8 @@ defaults that can damage a user's files. Ship as one branch.
 > clean), **P3-7 ✅** (test-date landmines de-fanged before they could red-light CI on release
 > week), and the **eqlsource app icon** wired into the build + main window.
 > Still genuinely open: P1-1, P1-2's rework, P1-3 (partly covered by the evidence model),
-> P1-4's general catch-up scan, P1-5, P2-*, P3-1/2/3/4, P4-1/2. (P3-6 turned out already-done —
-> `test/pin.test.js` predates the review.)
+> P1-4's general catch-up scan, P1-5, P2-*, P3-1/3/4, P4-1/2. (P3-6 turned out already-done —
+> `test/pin.test.js` predates the review. P3-7 ✅. P3-2 ✅ — adaptive polling + circuit breaker.)
 >
 > **Re-ratings (a5, 2 Sep):** #8 → ~4 (narrow, bounded, never over-lands). #17 → 5 (auto
 > pre-import backup exists). #23 → ~3 (re-measured 85.75% credited / 9.92% held / 4.33% unresolved
@@ -526,16 +526,20 @@ Individually small, none blocking. Pick them up between larger work.
 *Touches:* `src/main/buffEngine.js` · `customTimerEngine.js` · `sessionSnapshot.js` · `main.js`
 (powerMonitor)
 
-### P3-2 — Adaptive foreground polling + circuit breaker — finding #7 — sev 4 — 1–2 days
-1. Adaptive interval: back off to ~1 s when neither EQ nor the app has been foreground for a while;
-   tighten again on activity.
-2. Circuit breaker: after N consecutive spawn failures, stop polling entirely and surface "auto-hide
-   unavailable" in the UI rather than retrying forever.
-3. Document that AV may flag the PowerShell child and how to allowlist it.
-4. Stretch: a tiny prebuilt helper `.exe` using `SetWinEventHook` (event-driven, no polling) shipped
-   in `extraFiles` — only if someone wants to build it.
+### P3-2 — Adaptive foreground polling + circuit breaker — finding #7 — sev 4 — ✅ DONE (`fix/public-release-hardening`, 1 Sep, commit 2826973)
+1. ✅ Adaptive interval — `IDLE_BACKOFF_AFTER` (25) consecutive "neither focused" polls → 1200 ms;
+   the first relevant poll snaps back to 300 ms. `_nextInterval()` is its own method so the
+   threshold is directly testable.
+2. ✅ Circuit breaker — `MAX_CONSECUTIVE_FAILURES` (20) failed polls → emit `unavailable`, stop the
+   loop, `start()` becomes a no-op for the session. `main.js` broadcasts `overlay:autoHideUnavailable`
+   + a new `overlay:autoHideAvailable` IPC for the on-load read; the Buff Tracker page shows a plain
+   "auto-hide isn't working, the auras still work" line next to the fullscreen warning.
+3. ⬜ AV-allowlist doc note — handed to Documentation (a `docs/TESTING.md` / known-issues line).
+4. ⬜ Stretch (`SetWinEventHook` helper `.exe`) — not done, still optional.
 
-*Touches:* `src/main/foregroundWatcher.js` · Setup page status line
+Both mechanisms mutation-checked in `test/foreground-watcher.test.js`.
+
+*Touches:* `src/main/foregroundWatcher.js` · `src/main/main.js` · `preload-main.js` · Buff Tracker page
 
 ### P3-3 — Rework the config import UI — finding #17 — sev 6 — 2 days
 1. Split the picker into two clearly labelled groups — never one merged list.
