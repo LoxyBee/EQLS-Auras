@@ -19,6 +19,8 @@ jobs:
 
       - run: npm ci
 
+      - run: npm test
+
       - run: npm run dist
 
       # Fixed artifactName in package.json (EQLS-Auras-Setup.exe) means this download URL never
