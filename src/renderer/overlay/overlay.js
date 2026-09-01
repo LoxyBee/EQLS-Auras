@@ -5,17 +5,10 @@ const contentWrap = document.getElementById('content-wrap');
 const dragOverlayEl = document.getElementById('drag-overlay');
 const dragNameEl = document.getElementById('drag-name');
 
-// Note 6, reworked at the owner's instruction: the name pill used to be its own clickable button,
-// which meant it also had to be a no-drag hole cut out of the draggable box - "the tiny edge to
-// open up an aura ... is too small". That button is gone. The name is now a plain label riding
-// along with the rest of the box, and right-clicking ANYWHERE on the box opens settings instead -
-// one big target instead of one small one, and it does not compete with left-click-drag for the
-// same pixels. Only reachable while unlocked, since the whole box is hidden otherwise.
-dragOverlayEl.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-  window.eqOverlay.openSettings(widgetId);
-});
-
+// Note 6: the name is a plain label riding along with the rest of the drag box (it used to be its
+// own no-drag button, which was "too small" a target). Right-clicking the box used to open the
+// aura's settings, but that never worked reliably (freeze-bug history) and was removed 1 Sep at
+// the owner's instruction - get to an aura's settings from the sidebar list.
 
 // Used only until the real config arrives from getConfig() below - a
 // freshly created widget's window has to fully boot before that resolves,

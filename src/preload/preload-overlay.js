@@ -59,14 +59,9 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   reportContentSize: (widgetId, width, height, originX) => {
     ipcRenderer.send('widget:reportContentSize', { id: widgetId, width, height, originX });
   },
-  // Note 6. Only the second thing an overlay window can send to the main process - it is
-  // otherwise receive-only, which is why this needed a new channel rather than an existing one.
-  openSettings: (widgetId) => {
-    ipcRenderer.send('widget:openSettings', widgetId);
-  },
   // Routes into the SAME debugLog() every main-process detection line already goes through - see
   // main.js's own debugLogEnabled gate. An overlay window can't write the file itself (renderer,
-  // no fs access), so this is fire-and-forget, same shape as reportContentSize/openSettings above.
+  // no fs access), so this is fire-and-forget, same shape as reportContentSize above.
   debugLog: (message) => {
     ipcRenderer.send('debug:logLine', message);
   },

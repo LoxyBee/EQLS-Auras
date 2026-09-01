@@ -2979,8 +2979,8 @@ function initWidgetsPanel() {
     // was actually saved: a later edit ("...was resisted by mob") never reached the file, and the
     // file instead still held an EARLIER one (".../resisted :(") - not lost on save, lost on the
     // NEXT re-render. This whole panel is rebuilt from scratch by selectWidget, and that runs on
-    // more than just "you clicked a different aura" - right-clicking this SAME aura's own move
-    // box on the overlay (onOpenWidgetSettings, note 6) calls it again on the widget already open.
+    // more than just "you clicked a different aura" - e.g. re-opening this SAME aura from the
+    // sidebar calls it again on the widget already open.
     // Every other field here is a fresh idempotent snapshot each time, so a stray extra call to
     // this function was invisible - except this ONE field, which the debounced save (see the
     // 'input' listener below) had not necessarily finished writing back yet, so a re-render mid-
@@ -3771,10 +3771,6 @@ function initWidgetsPanel() {
     }
     shareCodeOfferEl.style.display = 'flex';
   });
-
-  // Note 6 - an aura's name was clicked in its move box out on the overlay. Registered in here
-  // rather than alongside the other IPC listeners because focusWidget lives in this closure.
-  window.eqTracker.onOpenWidgetSettings((id) => focusWidget(id));
 
   // Refreshes the widget list, then selects+focuses a specific one - shared
   // by every path that ends with a brand-new (or overwritten) widget:

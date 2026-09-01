@@ -240,9 +240,6 @@ contextBridge.exposeInMainWorld('eqTracker', {
   onZoneChanged: (cb) => ipcRenderer.on('zone:changed', (_e, zone) => cb(zone)),
   setWidgetShowOnAllProfiles: (id, value) =>
     ipcRenderer.invoke('widget:setShowOnAllProfiles', { id, value }),
-  onOpenWidgetSettings: (callback) => {
-    ipcRenderer.on('widget:openSettings', (_event, id) => callback(id));
-  },
   exportWidget: (id) => ipcRenderer.invoke('widget:export', id),
   peekWidgetCode: (code) => ipcRenderer.invoke('widget:peekCode', code),
   importWidget: (code) => ipcRenderer.invoke('widget:import', code),

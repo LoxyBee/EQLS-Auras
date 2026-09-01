@@ -550,8 +550,8 @@ test('the Say field is never overwritten while it still has focus', () => {
   // Reported live 24 Aug, the SECOND report on this field: a later edit ("...was resisted by
   // mob") never reached the saved file, which instead still held an EARLIER one - not lost on
   // save, lost on the NEXT re-render. selectWidget rebuilds this whole panel from scratch, and
-  // that runs on more than "you clicked a different aura" - right-clicking THIS SAME aura's own
-  // move box on the overlay (onOpenWidgetSettings, note 6) calls it again on the widget already
+  // that runs on more than "you clicked a different aura" - re-opening THIS SAME aura from the
+  // sidebar calls it again on the widget already
   // open, and if the debounced save above hadn't finished writing back yet, the re-render stamped
   // the box with the store's still-older value right over whatever was actively being typed.
   // Anchored to the start of the line (with optional leading whitespace) so this only matches an

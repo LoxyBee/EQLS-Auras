@@ -86,70 +86,9 @@ test('an empty name does not leave an empty pill sitting there', () => {
   assert.match(overlayCss, /\.drag-name:empty\s*\{\s*display:\s*none;/);
 });
 
-test('right-clicking the box reaches the settings window, hop by hop', () => {
-  // Five hops, and a missing one anywhere is a right-click that does nothing with no error.
-  assert.match(
-    overlayJs,
-    /dragOverlayEl\.addEventListener\('contextmenu', \(e\) => \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*window\.eqOverlay\.openSettings\(widgetId\);/
-  );
-  assert.match(preloadOverlay, /openSettings: \(widgetId\) => \{\s*ipcRenderer\.send\('widget:openSettings', widgetId\);/);
-  assert.match(mainSrc, /ipcMain\.on\('widget:openSettings'/);
-  assert.match(preloadMain, /onOpenWidgetSettings: \(callback\) => \{/);
-  assert.match(rendererSrc, /window\.eqTracker\.onOpenWidgetSettings\(\(id\) => focusWidget\(id\)\)/);
-});
-
-test('the native right-click menu is suppressed, not stacked on top of', () => {
-  // Without preventDefault, right-clicking the box would open settings AND pop Chromium's own
-  // context menu over the game - the second half being the actual bug this guards.
-  const fn = overlayJs.match(/dragOverlayEl\.addEventListener\('contextmenu', \(e\) => \{([\s\S]*?)\n\}\);/);
-  assert.ok(fn, 'the contextmenu listener has been restructured');
-  assert.match(fn[1], /e\.preventDefault\(\);/);
-});
-
-test('the settings window is raised, not just messaged', () => {
-  // A message to a minimised window is a message nobody sees.
-  const handler = mainSrc.match(/ipcMain\.on\('widget:openSettings'[\s\S]*?\n\}\);/);
-  assert.ok(handler, 'the open-settings handler has been restructured');
-  assert.match(handler[0], /isMinimized\(\)/, 'a minimised window would stay minimised');
-  assert.match(handler[0], /\.focus\(\)/);
-  assert.match(handler[0], /isDestroyed\(\)/, 'sending to a destroyed window throws');
-});
-
-test('navigation is sent before the OS focus-steal, and focus is deferred off the click', () => {
-  // Reported live 24 Aug: "right clicking on a blue move box freezes the app entirely... unless
-  // i alt tab" and "it also doesn't nav me". Root cause - win.focus() asks Windows for OS
-  // foreground focus from inside the SAME right-click gesture the overlay's own always-on-top,
-  // drag-region window is still processing; Windows' foreground-lock protection can make that
-  // block synchronously, and since Electron's main process is single-threaded, a block there
-  // freezes every ipcMain handler in the app - not just this one - which is also why the
-  // navigation message never arrived (it used to run AFTER the now-frozen focus() call).
-  const handler = mainSrc.match(/ipcMain\.on\('widget:openSettings'[\s\S]*?\n\}\);/);
-  assert.ok(handler, 'the open-settings handler has been restructured');
-  const sendAt = handler[0].indexOf('webContents.send');
-  const focusAt = handler[0].indexOf('.focus()');
-  assert.ok(sendAt >= 0 && focusAt >= 0, 'both the navigation send and the focus call must be present');
-  assert.ok(sendAt < focusAt, 'navigation must be sent before the risky focus call, not after it');
-  assert.match(handler[0], /setImmediate\(/, 'show()/focus() must be deferred off the triggering click');
-  // The deferred callback needs its own liveness checks - the window can close in the gap between
-  // scheduling and running.
-  const deferredAt = handler[0].indexOf('setImmediate(');
-  const deferred = handler[0].slice(deferredAt);
-  assert.match(deferred, /isDestroyed\(\)/, 'the deferred callback can run after the window is gone');
-});
-
-test('the listener is registered where focusWidget can be seen', () => {
-  // focusWidget lives inside initWidgetsPanel's closure, so a listener registered next to the
-  // other IPC wiring at the top of the file would be a ReferenceError at click time - which
-  // would not surface until someone actually right-clicked the box.
-  const listener = rendererSrc.indexOf('onOpenWidgetSettings');
-  const panel = rendererSrc.indexOf('function focusWidget(id)');
-  assert.ok(listener >= 0 && panel >= 0);
-  const enclosing = rendererSrc.lastIndexOf('function initWidgetsPanel', listener);
-  assert.ok(
-    enclosing >= 0 && enclosing < listener && enclosing < panel,
-    'the listener must sit inside the same closure as focusWidget'
-  );
-});
+// The right-click-the-box-to-open-settings path (5-hop chain, freeze-bug history) was REMOVED
+// 1 Sep - the owner: "this didn't work and can be removed." Get to an aura's settings from the
+// sidebar list instead.
 
 module.exports = () => report('move-box');
 if (require.main === module) report('move-box').then((n) => process.exit(n ? 1 : 0));
