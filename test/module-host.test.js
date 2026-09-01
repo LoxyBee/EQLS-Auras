@@ -316,5 +316,26 @@ test('docs/modules/pull-timer.js is a valid v1 module and its onLine works', () 
   assert.equal(example.onLine('[ts] a rat hits Baxa for 3 points of damage.', ctx, s), null);
 });
 
+test('docs/modules/aggro-board.js is a valid v1 module, key-exclusive, self-clears on slain', () => {
+  const mod = require('../docs/modules/aggro-board.js');
+  assert.equal(validateModule(mod).ok, true, validateModule(mod).error);
+
+  const ctx = { stripTimestamp: (l) => l.replace(/^\[[^\]]+\]\s*/, ''), now: Date.now() };
+  const s = { showMargin: true, staleSeconds: 12 };
+
+  // a mob swinging at someone -> the holder tile, other two keys cleared
+  const out = mod.onLine('[ts] a vis ghoul knight hits Baxa for 40 points of damage.', ctx, s);
+  const holder = out.find((e) => e.key === 'aggro-holder');
+  assert.ok(holder && holder.name.includes('Baxa') && holder.durationSec === 0);
+  assert.deepEqual(out.filter((e) => e.clear).map((e) => e.key).sort(), ['aggro-quiet', 'aggro-stale']);
+
+  // the mob dies -> back to the "nothing swinging" tile
+  const dead = mod.onLine('[ts] a vis ghoul knight has been slain by Baxa!', ctx, s);
+  assert.equal(dead.find((e) => !e.clear).key, 'aggro-quiet');
+
+  // an unrelated line is ignored
+  assert.equal(mod.onLine('[ts] You gain experience!', ctx, s), null);
+});
+
 module.exports = () => report('module-host');
 if (require.main === module) report('module-host').then((n) => process.exit(n ? 1 : 0));
