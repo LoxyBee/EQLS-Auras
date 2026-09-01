@@ -73,9 +73,10 @@ const { ICON_SETS } = require('./iconExtractor');
 const { SpellbookService } = require('./spellbookService');
 const { resolveInstallRoot } = require('./eqLocator');
 const { tagBardSongs } = require('./bardSongTagger');
-// rosterBackfill is intentionally NOT wired up any more - see applyInstallRoot for why.
-// Kept as a require so the module stays discoverable rather than looking like dead code.
-const { backfillBardSongs: _unusedBackfillBardSongs } = require('./rosterBackfill');
+// rosterBackfill.js was deleted 1 Sep (teardown #14). It re-read the client spell file on every
+// launch and re-added other-expansion bard songs, which was right when the roster was mined and
+// wrong once it became the EQL-scoped set. A missing song goes in via tools/roster-overrides.json
+// now - see applyInstallRoot. test/roster.test.js fails if the module or a call to it comes back.
 const { saveSnapshot, loadSnapshot } = require('./sessionSnapshot');
 const gameSpellData = require('./gameSpellData');
 const spellStacking = require('./spellStacking');

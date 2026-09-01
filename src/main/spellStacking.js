@@ -8,7 +8,7 @@
 // EQEmu (the open-source server codebase most EQ emulators, including this one, descend from) has
 // a public, well-known algorithm for exactly this - Mob::CheckStackConflict - which the client's
 // own spells_us.txt already carries the data for for every spell, the same file bardSongTagger.js
-// and rosterBackfill.js already mine. This module reimplements the CORE of that algorithm (same
+// already mines. This module reimplements the CORE of that algorithm (same
 // effect ID landing in the same numbered slot, compared by magnitude, plus the two dedicated
 // "stacking command" effect slots spells can carry) against real ground truth pulled from the
 // owner's own logs and spell file, 25 Aug: five confirmed "did not take hold... (Blocked by X)"

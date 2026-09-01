@@ -153,23 +153,29 @@ test('game-wide sharing evidence is recorded on entries', () => {
 });
 
 test('nothing re-inflates the roster from the client spell file at runtime', () => {
-  // backfillBardSongs re-read spells_us.txt on every launch and pushed in any bard song the
+  // rosterBackfill.js re-read spells_us.txt on every launch and pushed in any bard song the
   // roster lacked. That was right when the roster was MINED and the mining had dropped songs.
   // It is wrong now: the roster is only the ~1,000 spells EQ Legends actually has, while the client
   // file carries the spells of every EverQuest version. Measured on a real install, re-enabling
-  // it adds ~1,499 entries and takes the roster from 1,052 to about 2,551.
+  // it added ~1,499 entries and took the roster from 1,052 to about 2,551.
   //
   // The cost is not size. "Is this landing line unique?" is decided by counting roster entries,
   // so each re-added spell votes on ambiguity it should have no part in - undoing the rebuild
   // quietly, at runtime, on a machine where nobody would think to look.
+  //
+  // The module was deleted on 1 Sep (teardown #14 / P2-3). This test now guards two ways: the file
+  // must stay gone, AND nothing may call a backfill-shaped function. If a song really is missing,
+  // add it via an `add` block in tools/roster-overrides.json and rebuild - see applyInstallRoot.
+  assert.ok(
+    !fs.existsSync(path.join(ROOT, 'src', 'main', 'rosterBackfill.js')),
+    'src/main/rosterBackfill.js is back. It re-reads the client spell file and pushes in every ' +
+    'spell this server does not have. Delete it again; add missing songs via roster-overrides.json.'
+  );
   const mainJs = fs.readFileSync(path.join(ROOT, 'src', 'main', 'main.js'), 'utf8');
   const code = mainJs.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  const called = /\bbackfillBardSongs\s*\(/.test(code);
   assert.ok(
-    !called,
-    'main.js calls backfillBardSongs again. That re-reads the client spell file and pushes back ' +
-    'in every spell this server does not have. If a song really is missing, add it via an `add` ' +
-    'block in tools/roster-overrides.json and rebuild instead - see the note in applyInstallRoot.'
+    !/\bbackfillBardSongs\s*\(/.test(code) && !/require\(['"]\.\/rosterBackfill['"]\)/.test(code),
+    'main.js requires or calls rosterBackfill again - see above.'
   );
 });
 

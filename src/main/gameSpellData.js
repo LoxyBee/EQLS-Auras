@@ -129,8 +129,9 @@ function getIconId(installRoot, name) {
 }
 
 // Full records for every bard-only spell - name, duration, landing/ended
-// text, icon. Used to backfill songs the roster's mining filter dropped, see
-// rosterBackfill.js.
+// text, icon. Was the input to rosterBackfill.js (deleted 1 Sep); currently
+// unused, kept as a thin read over the already-parsed cache in case a future
+// feature wants per-song game data.
 function getBardSongRecords(installRoot) {
   return load(installRoot)?.bardSongs || null;
 }
