@@ -108,6 +108,7 @@ function defaultSelfBuffsWidget(overrides = {}) {
   return {
     id: 'self-buffs',
     kind: 'self-buffs-builtin',
+    folderId: '',
     name: 'Self Buffs',
     deletable: false,
     enabled: true,
@@ -323,6 +324,7 @@ function defaultCustomWidget(name) {
     id: crypto.randomUUID(),
     kind: 'custom',
     name,
+    folderId: '', // sidebar grouping only - see the renderer
     deletable: true,
     enabled: true,
     displayMode: 'list',
@@ -737,9 +739,21 @@ const LEGACY_SHARE_CODE_PREFIXES = ['EQBT2-'];
 // silently falling back to a default.
 const LEGACY_TEXT_SIZE_PX = { small: 11, medium: 13, large: 16 };
 
+// Sidebar folder - pure organisation of the Overlay Auras list, nothing to do with visibility
+// (loadout profiles own that). id is stable; name/collapsed are user-set.
+function normalizeFolder(folder) {
+  return {
+    id: typeof folder.id === 'string' && folder.id ? folder.id : crypto.randomUUID(),
+    name: typeof folder.name === 'string' ? folder.name : 'Folder',
+    collapsed: !!folder.collapsed,
+  };
+}
+
 function normalizeWidget(widget) {
   return {
     ...widget,
+    // Sidebar folder membership, '' = ungrouped. Organisation only.
+    folderId: typeof widget.folderId === 'string' ? widget.folderId : '',
     displayMode: normalizeDisplayMode(widget.displayMode),
     // Clamped to the slider's own 8-28 range. The control was wired to the wrong DOM element for
     // a while (a shared id with the much larger text-aura message slider, 12-120), so a text aura
@@ -1183,7 +1197,12 @@ class WidgetStore {
   _loadOrMigrate() {
     const existing = this.store.loadJson('widgets', null);
     if (existing) {
-      const data = { ...existing, widgets: existing.widgets.map(normalizeWidget) };
+      const data = {
+        ...existing,
+        widgets: existing.widgets.map(normalizeWidget),
+        // Sidebar-only grouping (organise, not visibility - see the renderer). [{ id, name, collapsed }].
+        folders: Array.isArray(existing.folders) ? existing.folders.map(normalizeFolder) : [],
+      };
       // v1 -> v2: bard songs became opt-in rather than shown by default.
       // Version-gated so it runs exactly once - a user who later decides they
       // DO want songs shown must not have that choice stomped on every launch.
@@ -1284,7 +1303,7 @@ class WidgetStore {
 
     const selfBuffs = defaultSelfBuffsWidget(overrides);
 
-    const data = { version: 5, widgets: [selfBuffs] };
+    const data = { version: 5, widgets: [selfBuffs], folders: [] };
     this.store.saveJson('widgets', data);
     return data;
   }
@@ -1866,6 +1885,65 @@ class WidgetStore {
     this.data.widgets = [...reordered, ...leftover];
     this._save();
     return true;
+  }
+
+  // --- Sidebar folders (organisation of the Overlay Auras list, not visibility) ---------------
+
+  getFolders() {
+    return this.data.folders || (this.data.folders = []);
+  }
+
+  createFolder(name) {
+    const folder = normalizeFolder({ name: String(name || '').trim() || 'New folder' });
+    this.getFolders().push(folder);
+    this._save();
+    return folder;
+  }
+
+  renameFolder(id, name) {
+    const folder = this.getFolders().find((f) => f.id === id);
+    if (!folder) return null;
+    folder.name = String(name || '').trim() || folder.name;
+    this._save();
+    return folder;
+  }
+
+  // Deleting a folder never deletes its auras - they fall back to ungrouped.
+  deleteFolder(id) {
+    const before = this.getFolders().length;
+    this.data.folders = this.getFolders().filter((f) => f.id !== id);
+    if (this.data.folders.length === before) return false;
+    for (const w of this.data.widgets) if (w.folderId === id) w.folderId = '';
+    this._save();
+    return true;
+  }
+
+  setFolderCollapsed(id, collapsed) {
+    const folder = this.getFolders().find((f) => f.id === id);
+    if (!folder) return null;
+    folder.collapsed = !!collapsed;
+    this._save();
+    return folder;
+  }
+
+  // Full list of folder ids in the new order; unknown ids skipped, unnamed folders kept after.
+  reorderFolders(orderedIds) {
+    const known = new Map(this.getFolders().map((f) => [f.id, f]));
+    const reordered = orderedIds.map((id) => known.get(id)).filter(Boolean);
+    const placed = new Set(reordered.map((f) => f.id));
+    this.data.folders = [...reordered, ...this.getFolders().filter((f) => !placed.has(f.id))];
+    this._save();
+    return true;
+  }
+
+  // '' (or an unknown id) => ungrouped.
+  setWidgetFolder(widgetId, folderId) {
+    const widget = this.data.widgets.find((w) => w.id === widgetId);
+    if (!widget) return null;
+    const valid = folderId && this.getFolders().some((f) => f.id === folderId);
+    widget.folderId = valid ? folderId : '';
+    this._save();
+    return widget;
   }
 
   savePosition(id, position) {
