@@ -94,7 +94,12 @@ test('it is wired end to end, as a toggle', () => {
   assert.match(read('src', 'renderer', 'main-window', 'index.html'), /id="widget-preview-btn"/);
   assert.match(read('src', 'renderer', 'main-window', 'index.html'), /id="master-preview-all-btn"/);
   assert.match(read('src', 'renderer', 'main-window', 'main-window.js'), /previewWidget\(selectedId\)/);
-  assert.match(read('src', 'renderer', 'main-window', 'main-window.js'), /setOverlayPreviewAll\(!state\.previewAll\)/);
+  // the all-button toggles on "any aura previewing", so one press always clears it
+  assert.match(read('src', 'renderer', 'main-window', 'main-window.js'), /setOverlayPreviewAll\(!state\.previewAny\)/);
+  assert.match(read('src', 'main', 'widgetManager.js'), /function isPreviewAny\(\)/);
+  // a recreated overlay window re-syncs its preview flag instead of missing the one-shot event
+  assert.match(read('src', 'renderer', 'overlay', 'overlay.js'), /window\.eqOverlay\.getPreviewMode\(widgetId\)/);
+  assert.match(read('src', 'main', 'main.js'), /ipcMain\.handle\('widget:getPreviewMode'/);
 });
 
 module.exports = () => report('preview-aura');

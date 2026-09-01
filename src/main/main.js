@@ -1718,11 +1718,12 @@ ipcMain.handle('overlay:getMasterState', () => ({
   masterHidden: widgetManager.isMasterHidden(),
   soundsMuted: widgetManager.isSoundsMuted(),
   previewAll: widgetManager.isPreviewAll(),
+  previewAny: widgetManager.isPreviewAny(), // the button toggles on this - "any on" -> one press clears all
   suspendedMove: suspendedMove ? suspendedMove.kind : null,
 }));
 ipcMain.handle('overlay:setPreviewAll', (_event, enabled) => {
   widgetManager.setPreviewAll(!!enabled);
-  return widgetManager.isPreviewAll();
+  return widgetManager.isPreviewAny();
 });
 // "Back to moving auras" - the pad's centre button opened a settings page and stashed the move
 // session; put it back exactly as it was.
@@ -1810,6 +1811,7 @@ ipcMain.handle('widget:list', () => widgetManager.getAllWidgetConfigs());
 ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig(id));
 ipcMain.handle('widget:preview', (_event, id) => widgetManager.previewWidget(id));
 ipcMain.handle('widget:isPreviewing', (_event, id) => widgetManager.isPreviewShown(id));
+ipcMain.handle('widget:getPreviewMode', (_event, id) => widgetManager.isPreviewShown(id)); // overlay re-sync on load
 // An overlay asks for this as it boots, the same way it asks for its lock state - a window
 // created on demand would otherwise start out assuming it may make noise.
 ipcMain.handle('widget:isAudible', (_event, id) => {

@@ -1857,6 +1857,14 @@ window.eqOverlay.onPreviewMode(({ enabled } = {}) => {
   previewActive = !!enabled;
   render(currentSourceBuffs());
 });
+// A window recreated (profile switch, resize) while preview was on/off would otherwise boot with
+// previewActive = false and miss the one-shot event - re-sync from the main process on load.
+if (window.eqOverlay.getPreviewMode) {
+  window.eqOverlay.getPreviewMode(widgetId).then((on) => {
+    previewActive = !!on;
+    render(currentSourceBuffs());
+  });
+}
 
 // QOL - "Show example content" is a persistent toggle now, not a timed flash. While it's on, an
 // aura with nothing real to show fills with sample tiles so you can see where to put it and how

@@ -5525,8 +5525,10 @@ function initWidgetsPanel() {
       masterMuteBtn.textContent = state.soundsMuted ? 'Sounds muted - unmute' : 'Mute sounds';
     }
     if (masterPreviewAllBtn) {
-      masterPreviewAllBtn.classList.toggle('active', state.previewAll);
-      masterPreviewAllBtn.textContent = state.previewAll ? 'Hide example content' : 'Show example content';
+      // Keyed off "any aura previewing", not "every aura" - so one press always clears it, and it
+      // can't read as OFF while sample tiles are still on screen.
+      masterPreviewAllBtn.classList.toggle('active', state.previewAny);
+      masterPreviewAllBtn.textContent = state.previewAny ? 'Hide example content' : 'Show example content';
     }
     if (resumeMoveBtn) {
       resumeMoveBtn.style.display = state.suspendedMove ? '' : 'none';
@@ -5554,7 +5556,7 @@ function initWidgetsPanel() {
   if (masterPreviewAllBtn) {
     masterPreviewAllBtn.addEventListener('click', () => {
       window.eqTracker.getOverlayMasterState().then((state) =>
-        window.eqTracker.setOverlayPreviewAll(!state.previewAll).then(() => {
+        window.eqTracker.setOverlayPreviewAll(!state.previewAny).then(() => {
           refreshMasterButtons();
           // The per-aura button shows the same state for whichever aura is open.
           if (selectedId) {
