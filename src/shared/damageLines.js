@@ -44,8 +44,14 @@ const YOUR_MELEE =
 // "Baxa slashes a zol ghoul knight for 47 points of damage." - 242,600 lines, the single
 // largest damage wording in the logs. Names neither side as friend or foe; the engine settles
 // that by direction rather than by reading the names.
+//
+// The verb list was 14; a cross-check against jmoyers/everquest-companion's parser + its EQ Legends
+// fixture corpus found 12 missing, and two of them are common: `cleaves` (warrior, 568 fixture
+// lines) and `frenzies on` (berserker/monk, 129) - ~5% of all melee, silently uncounted. The rest
+// (smites, stings, backstabs, shoots, reaves, slams, rends, gnaws, lashes, flurries) are rarer but
+// real. "frenzies on" carries its "on" as part of the verb.
 const OTHER_MELEE =
-  new RegExp(`^(.+?) (?:hits|slashes|crushes|pierces|bashes|kicks|bites|claws|punches|slices|smashes|gores|mauls|strikes) (.+?) for ([0-9]+) points? of damage\\.${CRIT_SUFFIX}$`);
+  new RegExp(`^(.+?) (?:hits|slashes|crushes|pierces|bashes|kicks|bites|claws|punches|slices|smashes|gores|mauls|strikes|cleaves|smites|stings|backstabs|shoots|reaves|slams|rends|gnaws|lashes|flurries|frenzies on) (.+?) for ([0-9]+) points? of damage\\.${CRIT_SUFFIX}$`);
 
 // "Fright has taken 394 damage from your Envenomed Bolt IV." - 2,567 lines. A DoT tick or a proc
 // that names you only as "your". Distinct from the direct nuke wording below ("You hit X ... by").
@@ -72,11 +78,20 @@ const DIRECT_SPELL =
 // lines, and the reason damage shields cannot be waved away as a rounding error. Here the
 // possessive IS the attacker, the opposite of OTHER_SPELL - which is exactly why both were
 // measured rather than assumed to share a shape.
+//
+// When the PLAYER holds the shield, EQ writes "YOUR" instead of a possessive:
+// "A rock golem is pierced by YOUR thorns for 5 points of non-melee damage." - almost every DS
+// line in the companion-repo fixtures is this form, so the old `(.+?)'s` matched ~1 in 20. The DS
+// skill name is `(.+?)` non-greedy now, not one lowercase word, so a multi-word or capitalised
+// shield name still parses.
 const DAMAGE_SHIELD =
-  /^(.+?) is [a-z]+ by (.+?)'s [a-z]+ for ([0-9]+) points? of non-melee damage\.$/;
+  /^(.+?) is [a-z]+ by (YOUR|.+?'s) (.+?) for ([0-9]+) points? of non-melee damage\.$/;
 
 // The timestamp every line carries. Stripped before matching so no pattern has to carry it.
-const STAMP = /^\[[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2} \d{4}\] /;
+// EQ space-pads a single-digit day ("[Fri Aug  1 21:00:00 2026]" - two spaces, one digit), so this
+// must allow \s+ and \d{1,2}, matching buffParser.js - the old `\d{2}` + single space broke every
+// damage line on days 1-9 of a month.
+const STAMP = /^\[\w{3} \w{3}\s+\d{1,2} \d{2}:\d{2}:\d{2} \d{4}\]\s*/;
 
 /**
  * One damage line, or null.
@@ -111,7 +126,10 @@ function parseDamageLine(line) {
   // pattern requires "points of damage", so they cannot collide - but the order is fixed anyway
   // so that a future edit loosening one cannot silently start stealing the other's lines.
   m = DAMAGE_SHIELD.exec(body);
-  if (m) return { attacker: m[2], target: m[1], amount: Number(m[3]), kind: 'shield' };
+  if (m) {
+    const attacker = m[2] === 'YOUR' ? 'You' : m[2].replace(/'s$/, '');
+    return { attacker, target: m[1], amount: Number(m[4]), kind: 'shield' };
+  }
 
   m = OTHER_MELEE.exec(body);
   if (m) return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'melee' };

@@ -90,6 +90,43 @@ test('a line with no timestamp still parses', () => {
   assert.equal(parseDamageLine('You crush a wan ghoul knight for 60 points of damage.').amount, 60);
 });
 
+// Cross-checked against a second EQ Legends parser + fixture corpus. `cleaves` (warrior) and
+// `frenzies on` (berserker/monk) alone are ~5% of all melee and were silently uncounted; the
+// rarer additions (backstabs, smites, ...) are real too. "frenzies on" carries its "on".
+test('the melee verbs added from the fixture cross-check all parse', () => {
+  assert.deepEqual(
+    parseDamageLine(`${T}Baxa cleaves a zol ghoul knight for 88 points of damage.`),
+    { attacker: 'Baxa', target: 'a zol ghoul knight', amount: 88, kind: 'melee' }
+  );
+  assert.deepEqual(
+    parseDamageLine(`${T}Krung frenzies on a zol ghoul knight for 21 points of damage.`),
+    { attacker: 'Krung', target: 'a zol ghoul knight', amount: 21, kind: 'melee' }
+  );
+  assert.deepEqual(
+    parseDamageLine(`${T}Sneaky backstabs a wan ghoul knight for 512 points of damage.`),
+    { attacker: 'Sneaky', target: 'a wan ghoul knight', amount: 512, kind: 'melee' }
+  );
+});
+
+// When the PLAYER holds the damage shield, EQ writes "YOUR", not a possessive - almost every DS
+// line in the fixture corpus is this form, and the old `(.+?)'s` matched about 1 in 20.
+test('a damage shield worn by the player is credited to You', () => {
+  assert.deepEqual(
+    parseDamageLine(`${T}A rock golem is pierced by YOUR thorns for 5 points of non-melee damage.`),
+    { attacker: 'You', target: 'A rock golem', amount: 5, kind: 'shield' }
+  );
+});
+
+// EQ space-pads a single-digit day: "[Fri Aug  1 21:00:00 2026]" is two spaces and one digit.
+// The old `\d{2}` + single-space stamp matched none of these, so the meter was dark for the
+// first nine days of every month.
+test('a single-digit-day timestamp is still stripped', () => {
+  assert.deepEqual(
+    parseDamageLine(`[Fri Aug  1 21:00:00 2026] You crush a wan ghoul knight for 60 points of damage.`),
+    { attacker: 'You', target: 'a wan ghoul knight', amount: 60, kind: 'melee' }
+  );
+});
+
 // The direct-nuke wording - ~21,000 lines the meter was blind to. A nuking loadout's whole
 // output arrives this way, so the caster was simply absent from the meter.
 test('the direct-damage-spell wording is read, first and third person', () => {
