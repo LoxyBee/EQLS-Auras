@@ -608,6 +608,8 @@ test('#29 - the show-debuff-songs / split-by-type options are wired end to end',
   assert.match(overlay, /currentConfig\.showDebuffSongs \|\| !b\.isDebuff/);
   assert.match(overlay, /function groupBySongType/);
   assert.match(overlay, /function shouldSplitSongs/);
+  // the bardSongs feed collapses a maintained debuff song on N mobs to one tile
+  assert.match(overlay, /return collapseDebuffSongs\(shown\)/);
   // the "Active on this aura" card in the settings window honours showDebuffSongs too
   assert.match(renderer, /widget\.showDebuffSongs \|\| !b\.isDebuff/);
 });
@@ -621,6 +623,48 @@ test('#27 - filterActiveBuffsForWidget does not strip a bard-songs aura with hid
     'the hideBardSongs filter would run first and strip every row'
   );
   assert.match(fn, /buffSource === 'bardSongs'\) \{[\s\S]{0,220}return source\.filter/);
+});
+
+// One maintained debuff song on N mobs is one song on the aura - overlay.js's collapseDebuffSongs.
+function loadCollapse() {
+  const src = readSrc('src', 'renderer', 'overlay', 'overlay.js');
+  const kf = src.match(/function keyFor\(buff\) \{[\s\S]*?\n\}/);
+  const cd = src.match(/function collapseDebuffSongs\(songs\) \{[\s\S]*?\n\}/);
+  assert.ok(kf && cd, 'keyFor / collapseDebuffSongs renamed or restructured');
+  return new Function(`${kf[0]}\n${cd[0]}\nreturn collapseDebuffSongs;`)();
+}
+
+test('collapseDebuffSongs folds one debuff song on several mobs into a single badged tile', () => {
+  const collapse = loadCollapse();
+  const out = collapse([
+    { name: 'Selo’s', isDebuff: false, remainingSec: 17, allyName: 'You' },
+    { name: "Largo's Melodic Binding", isDebuff: true, remainingSec: 11, allyName: 'a kobold', id: 'k1' },
+    { name: "Largo's Melodic Binding", isDebuff: true, remainingSec: 5, allyName: 'a rat', id: 'k2' },
+    { name: "Largo's Melodic Binding", isDebuff: true, remainingSec: 9, allyName: 'a bat', id: 'k3' },
+  ]);
+  const buff = out.filter((b) => !b.isDebuff);
+  const debuff = out.filter((b) => b.isDebuff);
+  assert.equal(buff.length, 1, 'the buff song is untouched');
+  assert.equal(debuff.length, 1, 'three debuff-song tiles collapsed to one');
+  assert.equal(debuff[0].remainingSec, 5, 'the soonest-expiring instance leads');
+  assert.equal(debuff[0].mergedCount, 3);
+  assert.equal(debuff[0].allyName, null, 'no single mob name on the collapsed tile');
+  assert.equal(debuff[0].mergedKey, "debuffsong::largo's melodic binding");
+});
+
+test('collapseDebuffSongs leaves a lone debuff song as one stable tile with no badge', () => {
+  const collapse = loadCollapse();
+  const out = collapse([{ name: 'Largo', isDebuff: true, remainingSec: 8, allyName: 'a kobold', id: 'k1' }]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].mergedCount, undefined, 'x1 shows no count');
+  assert.equal(out[0].mergedKey, 'debuffsong::largo', 'still keyed by song, not by the mob');
+  assert.equal(out[0].allyName, null);
+});
+
+test('collapseDebuffSongs is a no-op when there are no debuff songs', () => {
+  const collapse = loadCollapse();
+  const songs = [{ name: 'A', isDebuff: false, remainingSec: 10 }, { name: 'B', isDebuff: false, remainingSec: 12 }];
+  assert.deepEqual(collapse(songs), songs);
 });
 
 module.exports = () => report('bard-songs');

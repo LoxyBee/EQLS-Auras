@@ -479,6 +479,16 @@ function reorderWidgets(orderedIds) {
   return widgetStore.reorderWidgets(orderedIds);
 }
 
+// Sidebar folders - organisation of the Overlay Auras list only; nothing here touches an overlay
+// window. Thin pass-throughs to widgetStore.
+function getFolders() { return widgetStore.getFolders(); }
+function createFolder(name) { return widgetStore.createFolder(name); }
+function renameFolder(id, name) { return widgetStore.renameFolder(id, name); }
+function deleteFolder(id) { return widgetStore.deleteFolder(id); }
+function setFolderCollapsed(id, collapsed) { return widgetStore.setFolderCollapsed(id, collapsed); }
+function reorderFolders(orderedIds) { return widgetStore.reorderFolders(orderedIds); }
+function setWidgetFolder(id, folderId) { return widgetStore.setWidgetFolder(id, folderId); }
+
 function resetWidgetToDefault(id) {
   const ok = widgetStore.resetToDefault(id);
   // The running overlay window (if any) has a stale config in its own renderer memory until told
@@ -661,12 +671,13 @@ function shouldBeOnScreen(config) {
   // switched off, and re-locking hands it straight back to the normal rules. forceShown rather
   // than isUnlocked, so "Unlock all auras" does not drag every switched-off aura onto the screen
   // with it.
-  if (!isVisibleForActiveProfile(config) && !forceShown.has(config.id)) return false;
+  if (!isVisibleForActiveProfile(config) && !forceShown.has(config.id) && !previewShown.has(config.id)) return false;
 
   // Note 38, beside the profile check because it is the same kind of rule - this aura does not
   // belong here right now - and honouring the same manual override, so unlocking an aura to move
-  // it still works in the wrong zone.
-  if (!isVisibleInCurrentZone(config) && !forceShown.has(config.id)) return false;
+  // it still works in the wrong zone. "Show example content" gets the same pass - you are
+  // arranging the screen, the same reason unlock does.
+  if (!isVisibleInCurrentZone(config) && !forceShown.has(config.id) && !previewShown.has(config.id)) return false;
 
   // Note 4: master hide beats unlock, deliberately, and this is the one clause that had to be
   // decided rather than inherited. It exists to clear the screen while doing other UI work, so
@@ -674,7 +685,7 @@ function shouldBeOnScreen(config) {
   // exactly the failure that would make the button useless.
   if (masterHidden) return false;
 
-  if (isUnlocked(config.id)) return true;
+  if (isUnlocked(config.id) || previewShown.has(config.id)) return true;
   return !foregroundHidden;
 }
 
@@ -811,38 +822,58 @@ function isMasterHidden() {
   return masterHidden;
 }
 
-// QOL #1 - flash a sample tile on one aura's overlay window for a few seconds, from the settings
-// panel, so its size / position / colours / font can be judged without alt-tabbing into the game.
-// The overlay renderer builds the sample and reverts itself (see overlay.js's previewActive); this
-// side only has to make sure the window is on screen for the duration and then put it back.
-const PREVIEW_MS = 6000;
-const previewTimers = new Map(); // id -> timeout
+// "Show example content" - a persistent toggle (not the old timed flash). While an aura is in
+// preview, its overlay window is kept on screen (like a hand-unlock - see forceShown) and the
+// renderer fills it with a sample tile whenever it has nothing real to show. Runtime-only, same
+// reasoning as masterHidden: a forgotten preview surviving a restart would look like phantom buffs.
+const previewShown = new Set(); // ids currently in preview
 
-function previewWidget(id) {
+function isPreviewShown(id) {
+  return previewShown.has(id);
+}
+function isPreviewAll() {
+  const all = widgetStore.getAll();
+  return all.length > 0 && all.every((c) => previewShown.has(c.id));
+}
+// The button toggles on THIS: any aura previewing at all. isPreviewAll only reports "literally
+// every aura", which reads as OFF the moment one aura is created after the toggle or dropped from
+// preview individually - and then the button turns MORE on instead of clearing. "any" makes one
+// press always clear the lot.
+function isPreviewAny() {
+  return previewShown.size > 0;
+}
+
+function setPreview(id, enabled) {
   const config = widgetStore.getById(id);
   if (!config) return null;
+  if (enabled) previewShown.add(id);
+  else previewShown.delete(id);
+
   let win = windows.get(id);
-  if (!win) {
-    createWidgetWindow(config);
+  if (enabled && !win) {
+    createWidgetWindow(config); // its ready-to-show handler shows it (shouldBeOnScreen is true now)
     win = windows.get(id);
   }
-  if (!win || win.isDestroyed()) return config;
-
-  const start = () => {
-    if (win.isDestroyed()) return;
-    win.showInactive();
-    win.webContents.send('widget:preview', { durationMs: PREVIEW_MS });
+  const send = () => {
+    const w = windows.get(id);
+    if (w && !w.isDestroyed()) w.webContents.send('widget:previewMode', { enabled: !!enabled });
   };
-  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', start);
-  else start();
-
-  clearTimeout(previewTimers.get(id));
-  previewTimers.set(id, setTimeout(() => {
-    previewTimers.delete(id);
-    const cfg = widgetStore.getById(id);
-    if (cfg) applyVisibility(cfg); // back to hidden, or shown if the profile says so
-  }, PREVIEW_MS + 800));
+  if (win && !win.isDestroyed()) {
+    if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
+    else send();
+  }
+  applyVisibility(config); // show it now, or hand it back to the normal rules when turned off
   return config;
+}
+
+function setPreviewAll(enabled) {
+  for (const config of widgetStore.getAll()) setPreview(config.id, enabled);
+}
+
+// Kept name for the existing IPC/preload/button - now a toggle rather than a timed flash.
+function previewWidget(id) {
+  setPreview(id, !previewShown.has(id));
+  return { previewing: previewShown.has(id) };
 }
 
 // QOL #10. Runtime-only (see soundsMuted's declaration). Re-pushes `audible` to every open aura
@@ -857,6 +888,18 @@ function setSoundsMuted(muted) {
 
 function isSoundsMuted() {
   return soundsMuted;
+}
+
+// On-screen unlocked auras and their current window rects - for hanging a nudge-pad window above
+// each one during "Unlock all auras" (see nudgePadWindow.js).
+function getVisibleUnlockedBounds() {
+  const out = [];
+  for (const config of widgetStore.getAll()) {
+    if (isLocked(config.id)) continue;
+    const win = windows.get(config.id);
+    if (win && !win.isDestroyed() && win.isVisible()) out.push({ id: config.id, bounds: getWidgetBounds(config.id) });
+  }
+  return out;
 }
 
 function areAllUnlocked() {
@@ -911,6 +954,22 @@ function nudgeWidget(id, dx, dy) {
     nx = positionSnap.snap(nx);
     ny = positionSnap.snap(ny);
   }
+  win.setPosition(nx, ny);
+  const originX = originXByWidget.get(id) || 0;
+  widgetStore.savePosition(id, { x: nx + originX, y: ny });
+  onWidgetMoved(id, getWidgetBounds(id));
+  return getWidgetBounds(id);
+}
+
+// Put an aura's window at an explicit position - one or both axes; an axis left undefined is kept
+// where it is. Used by the move HUD's "centre on screen" buttons, so unlike nudgeWidget it does
+// NOT snap to grid (centre means centre). Persists the same canonical anchor a drag/nudge does.
+function placeWidget(id, { x, y } = {}) {
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) return null;
+  const [cx, cy] = win.getPosition();
+  const nx = typeof x === 'number' ? Math.round(x) : cx;
+  const ny = typeof y === 'number' ? Math.round(y) : cy;
   win.setPosition(nx, ny);
   const originX = originXByWidget.get(id) || 0;
   widgetStore.savePosition(id, { x: nx + originX, y: ny });
@@ -1058,13 +1117,22 @@ function isLoadoutLabelEnabled() {
 // The timeout is clamped HERE and not only in the slider's min/max: a share code is the one path
 // by which a number this app never wrote can arrive, and a fightTimeoutSec of zero would end every
 // fight the instant it started.
-function setDamageOptions(id, { fightTimeoutSec, mineOnly, showTotalRow } = {}) {
+const DAMAGE_VALUE_MODES = ['total', 'dps', 'both'];
+const DAMAGE_SCOPES = ['all', 'group', 'mine'];
+
+function setDamageOptions(
+  id,
+  { fightTimeoutSec, mineOnly, showTotalRow, valueMode, scope, showCharmedPetsRow } = {}
+) {
   const changes = {};
   if (typeof fightTimeoutSec === 'number' && Number.isFinite(fightTimeoutSec)) {
     changes.fightTimeoutSec = Math.min(600, Math.max(1, Math.round(fightTimeoutSec)));
   }
   if (typeof mineOnly === 'boolean') changes.mineOnly = mineOnly;
   if (typeof showTotalRow === 'boolean') changes.showTotalRow = showTotalRow;
+  if (DAMAGE_VALUE_MODES.includes(valueMode)) changes.damageValueMode = valueMode;
+  if (DAMAGE_SCOPES.includes(scope)) changes.damageScope = scope;
+  if (typeof showCharmedPetsRow === 'boolean') changes.showCharmedPetsRow = showCharmedPetsRow;
   const config = widgetStore.update(id, changes);
   pushConfigChanged(id);
   return config;
@@ -1474,11 +1542,23 @@ module.exports = {
   applyCodeToSelfBuffs,
   deleteWidget,
   reorderWidgets,
+  getFolders,
+  createFolder,
+  renameFolder,
+  deleteFolder,
+  setFolderCollapsed,
+  reorderFolders,
+  setWidgetFolder,
   resetWidgetToDefault,
   applyProfileVisibility,
   setForegroundHidden,
   setMasterHidden,
   previewWidget,
+  setPreview,
+  setPreviewAll,
+  isPreviewShown,
+  isPreviewAll,
+  isPreviewAny,
   isSoundsMuted,
   setSoundsMuted,
   isMasterHidden,
@@ -1490,12 +1570,14 @@ module.exports = {
   shouldIgnoreMouse,
   setAllUnlocked,
   areAllUnlocked,
+  getVisibleUnlockedBounds,
   setLocked,
   toggleLock,
   resetPosition,
   isLocked,
   isUnlocked,
   nudgeWidget,
+  placeWidget,
   getWidgetBounds,
   setOnWidgetMovedFn,
   setDisplayMode,

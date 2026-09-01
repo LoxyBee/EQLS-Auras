@@ -216,12 +216,13 @@ test('the settings window can reach it, and hides it where it cannot apply', () 
   assert.match(rendererSrc, /bordersRowEl\.style\.display = has\('borders'\) \? '' : 'none';/);
   const fn = rendererSrc.match(/const SHAPE_FIELDS = \{([\s\S]*?)\n {2}\};/);
   assert.ok(fn, 'SHAPE_FIELDS has been renamed or restructured');
-  // Travel guide joined this list once it got its own settings shape: a route leg carries no
-  // spellCategory at all (it isn't a spell), so the control would be offered and do nothing.
-  for (const shape of ['text', 'text-customTimer', 'ally-alert', 'travel']) {
+  // Travel guide, then Damage parser, joined this list once each got its own settings shape: a
+  // route leg / a damage row carries no spellCategory at all (neither is a spell), so the control
+  // would be offered and do nothing.
+  for (const shape of ['text', 'text-customTimer', 'ally-alert', 'travel', 'raid-named', 'damage']) {
     assert.doesNotMatch(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'borders'`), `${shape} draws no spell tile and must not offer this`);
   }
-  for (const shape of ['self-buffs', 'ally-buffs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage']) {
+  for (const shape of ['self-buffs', 'ally-buffs', 'custom-buff', 'custom-debuff', 'custom-timer']) {
     assert.match(fn[1], new RegExp(`'${shape}': \\[[^\\]]*'borders'`), `${shape} lost the control`);
   }
 });

@@ -5,6 +5,9 @@
 // it here.
 let grid = { enabled: false, sizePx: 8 };
 let activeId = null;
+// "Unlock all auras" mode - every unlocked aura carries its own nudge arrows, so snap has to
+// apply to all of them, not just the one `activeId` the single-aura move HUD tracks.
+let allActive = false;
 
 function set(cfg) {
   grid = {
@@ -22,13 +25,18 @@ function setActive(id) {
   activeId = id || null;
 }
 
+function setActiveAll(on) {
+  allActive = !!on;
+}
+
 function snap(v) {
   return Math.round(v / grid.sizePx) * grid.sizePx;
 }
 
 // Should a move of `id` be snapped right now?
 function active(id) {
-  return grid.enabled && id != null && id === activeId;
+  if (!grid.enabled || id == null) return false;
+  return allActive || id === activeId;
 }
 
-module.exports = { set, get, setActive, snap, active };
+module.exports = { set, get, setActive, setActiveAll, snap, active };

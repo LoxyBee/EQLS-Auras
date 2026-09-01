@@ -238,7 +238,16 @@ test('text-stack is a field of every text shape, and no other', () => {
 test('render() hands a stacking text aura to its own feed path and returns', () => {
   assert.match(
     overlaySrc,
-    /if \(currentConfig\.displayMode === 'text' && currentConfig\.stackTextLines && !currentConfig\.alwaysOn && !previewActive\) \{\s*\n\s*renderTextFeed\(buffs\);\s*\n\s*return;/
+    /if \(currentConfig\.displayMode === 'text' && currentConfig\.stackTextLines && !currentConfig\.alwaysOn && !showingPreviewSample\) \{[\s\S]*?renderTextFeed\(buffs\);\s*\n\s*return;/
+  );
+});
+
+test('switching back into the feed path forces one repaint over whatever the tile path drew', () => {
+  // The "Show example content" sample is drawn by the tile path; without this the feed can skip
+  // its repaint (unchanged signature) and leave that sample stuck. See overlay.js.
+  assert.match(
+    overlaySrc,
+    /if \(listEl\.dataset\.mode !== 'text-feed'\) lastFeedSig = null;\s*\n\s*renderTextFeed\(buffs\);/
   );
 });
 

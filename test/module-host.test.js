@@ -42,6 +42,17 @@ test('validateModule accepts a minimal good module and normalises optionals', ()
   assert.deepEqual(r.module.page, []);
   assert.deepEqual(r.module.defaults, {});
   assert.equal(r.module.hasAura, false);
+  // No aura -> nowhere to put an aura-panel, so settings fall back to a sidebar page.
+  assert.equal(r.module.settingsUI, 'sidebar');
+});
+
+test('settingsUI defaults to "aura" for a module with an aura, and honours an explicit choice', () => {
+  const base = { id: 'x', name: 'X', apiVersion: API_VERSION, onLine: () => null, hasAura: true };
+  assert.equal(validateModule({ ...base }).module.settingsUI, 'aura');
+  assert.equal(validateModule({ ...base, settingsUI: 'sidebar' }).module.settingsUI, 'sidebar');
+  assert.equal(validateModule({ ...base, settingsUI: 'nonsense' }).module.settingsUI, 'aura');
+  // asks for 'aura' but has no aura -> can't honour it, falls back to sidebar
+  assert.equal(validateModule({ ...base, hasAura: false, settingsUI: 'aura' }).module.settingsUI, 'sidebar');
 });
 
 test('validateModule rejects the ways a module can be wrong', () => {
@@ -314,6 +325,40 @@ test('docs/modules/pull-timer.js is a valid v1 module and its onLine works', () 
   );
   assert.deepEqual(example.onLine("[ts] Baxa tells the group, 'hold'", ctx, s), { key: 'pull', clear: true });
   assert.equal(example.onLine('[ts] a rat hits Baxa for 3 points of damage.', ctx, s), null);
+});
+
+test('modules load from the install folder, not userData, and ship in the installer', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.match(main, /const MODULES_DIR = app\.isPackaged\s*\n?\s*\? path\.join\(path\.dirname\(app\.getPath\('exe'\)\), 'modules'\)/);
+  assert.doesNotMatch(main, /new ModuleHost\(path\.join\(app\.getPath\('userData'\), 'modules'\)/);
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  assert.ok(pkg.build.extraFiles.some((e) => e.from === 'modules' && e.to === 'modules'), 'modules/ is not shipped');
+  // the shipped folder has aggro-board and NOT pull-timer (pull-timer is disabled, docs-only)
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'modules', 'aggro-board.js')));
+  assert.ok(!fs.existsSync(path.join(__dirname, '..', 'modules', 'pull-timer.js')));
+});
+
+test('modules/aggro-board.js (shipped) is a valid v1 module, key-exclusive, self-clears on slain', () => {
+  const mod = require('../modules/aggro-board.js');
+  assert.equal(validateModule(mod).ok, true, validateModule(mod).error);
+  // Its two options live on the aura panel, not a sidebar page.
+  assert.equal(validateModule(mod).module.settingsUI, 'aura');
+
+  const ctx = { stripTimestamp: (l) => l.replace(/^\[[^\]]+\]\s*/, ''), now: Date.now() };
+  const s = { showMargin: true, staleSeconds: 12 };
+
+  // a mob swinging at someone -> the holder tile, other two keys cleared
+  const out = mod.onLine('[ts] a vis ghoul knight hits Baxa for 40 points of damage.', ctx, s);
+  const holder = out.find((e) => e.key === 'aggro-holder');
+  assert.ok(holder && holder.name.includes('Baxa') && holder.durationSec === 0);
+  assert.deepEqual(out.filter((e) => e.clear).map((e) => e.key).sort(), ['aggro-quiet', 'aggro-stale']);
+
+  // the mob dies -> back to the "nothing swinging" tile
+  const dead = mod.onLine('[ts] a vis ghoul knight has been slain by Baxa!', ctx, s);
+  assert.equal(dead.find((e) => !e.clear).key, 'aggro-quiet');
+
+  // an unrelated line is ignored
+  assert.equal(mod.onLine('[ts] You gain experience!', ctx, s), null);
 });
 
 module.exports = () => report('module-host');

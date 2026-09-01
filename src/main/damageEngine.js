@@ -94,12 +94,35 @@ class DamageEngine extends EventEmitter {
     this.fightStartedAt = null;
     this.lastDamageAt = null;
     this.totalDamage = 0;
+    // A second tally, spanning the whole time since the last zone line rather than one fight. It
+    // exists so a meter has something to show between pulls and right after zoning: getActive falls
+    // back to it whenever no fight is underway. Reset wholesale on enterZone(); the fight timeout
+    // never touches it.
+    this.sinceZoneByAttacker = new Map();
+    this.sinceZoneTotal = 0;
+    this.sinceZoneStartedAt = null;
+    this.sinceZoneLastAt = null;
     // Lines awaiting proof of which way they point: { attacker, target, amount, kind, at }
     this.pending = [];
     this.timeoutSec = DEFAULT_FIGHT_TIMEOUT_SEC;
     // Enemies known from elsewhere - the mez/snare/slow targets buffEngine already tracks. Lets a
     // character who debuffs but does not attack still seed the set.
     this.knownEnemiesFn = () => [];
+    // The "group" damage scope filters on this - lowercased names of everyone admitted to the
+    // player's group this session (see groupRoster.js). Empty array => no roster known yet, and the
+    // group scope quietly falls back to showing the whole fight.
+    this.groupFn = () => [];
+    // Charmed-pet facts (see petTracker.js): own pets keyed name#gen, unknown-owner pets folded
+    // into one row, ally pets counted in group scope when their owner is admitted. null => none.
+    this.petsFn = () => null;
+  }
+
+  setGroupFn(fn) {
+    if (typeof fn === 'function') this.groupFn = fn;
+  }
+
+  setPetsFn(fn) {
+    if (typeof fn === 'function') this.petsFn = fn;
   }
 
   setKnownEnemiesFn(fn) {
@@ -154,12 +177,24 @@ class DamageEngine extends EventEmitter {
     const a = hit.attacker.toLowerCase();
     const t = hit.target.toLowerCase();
 
-    // Rule 1. Unambiguous from grammar alone, so it is checked before anything that could have
-    // learned wrong.
+    // Rule 1. The damage itself is unambiguous - it happened, it was yours, credit it - but WHO
+    // it proves the target to be is not, quite: a real log has friendly fire in it ("You crush
+    // Zorrick for 37 points of damage." - measured, a real groupmate, not a mob). Blindly adding
+    // the target to `enemies` on a name that is ALREADY an established friend poisons the set for
+    // every future line from that person - the collision guard below would then start dropping
+    // their own outgoing damage for the rest of the session, which is a far worse loss than one
+    // stray hit being counted as an enemy would have been. So: credit the hit always, but only
+    // teach `enemies` when the target isn't already known as a person.
     if (hit.attacker === 'You') {
-      this.enemies.add(t);
+      if (!this.friends.has(t)) this.enemies.add(t);
       return 'out';
     }
+
+    // Name-collision guard. A name that has ended up in BOTH sets - most often a charmed pet whose
+    // mob name matches a live hostile of the same name you are also fighting - gives contradictory
+    // answers below. There is no honest way to say which hit this is, so drop it rather than credit
+    // it to whichever rule fires first. Rare; a wrong credit is worse than a missing one.
+    if (this.enemies.has(a) && this.friends.has(a)) return 'drop';
 
     const attackerEnemy = this._isEnemy(hit.attacker);
     const targetEnemy = this._isEnemy(hit.target);
@@ -192,6 +227,8 @@ class DamageEngine extends EventEmitter {
       if (this.pending.length > MAX_PENDING) this.pending.shift();
       return;
     }
+    // The collision guard - neither held nor credited.
+    if (dir === 'drop') return;
 
     // Checked BEFORE crediting, so the line that opens a new fight is not swept away by the
     // expiry of the fight it just ended.
@@ -235,6 +272,28 @@ class DamageEngine extends EventEmitter {
     this.byAttacker.set(attacker, row);
     this.totalDamage += amount;
     this.lastDamageAt = Math.max(this.lastDamageAt || 0, at);
+
+    // Same credit, into the tally that outlives the fight. Never expired here - only enterZone()
+    // clears it.
+    if (this.sinceZoneStartedAt === null) this.sinceZoneStartedAt = at;
+    if (at < this.sinceZoneStartedAt) this.sinceZoneStartedAt = at;
+    const zrow = this.sinceZoneByAttacker.get(attacker) || { damage: 0, hits: 0 };
+    zrow.damage += amount;
+    zrow.hits += 1;
+    this.sinceZoneByAttacker.set(attacker, zrow);
+    this.sinceZoneTotal += amount;
+    this.sinceZoneLastAt = Math.max(this.sinceZoneLastAt || 0, at);
+  }
+
+  // A zone line. The fight state is left alone - a zone line mid-fight is rare and the timeout
+  // still ends that fight correctly - but the "since zone-in" tally starts over, because that is
+  // exactly what it measures.
+  enterZone(now = Date.now()) {
+    this.sinceZoneByAttacker.clear();
+    this.sinceZoneTotal = 0;
+    this.sinceZoneStartedAt = null;
+    this.sinceZoneLastAt = null;
+    this.emit('activeChanged', this.getActive(now));
   }
 
   _expireIfIdle(now) {
@@ -269,6 +328,15 @@ class DamageEngine extends EventEmitter {
     return Math.max(1, (end - this.fightStartedAt) / 1000);
   }
 
+  // First counted hit to last counted hit since zone-in - same shape as fightSeconds, so the rate
+  // it feeds means the same thing (damage over the span damage was actually happening, not over
+  // every idle minute spent standing in the zone).
+  sinceZoneSeconds() {
+    if (this.sinceZoneStartedAt === null) return 0;
+    const end = Math.max(this.sinceZoneLastAt || 0, this.sinceZoneStartedAt);
+    return Math.max(1, (end - this.sinceZoneStartedAt) / 1000);
+  }
+
   /**
    * Overlay tiles, biggest first.
    *
@@ -277,30 +345,139 @@ class DamageEngine extends EventEmitter {
    * That is the whole integration - no second renderer, and every list setting an aura already has
    * (row size, text size, colours, anchor, drag, per-loadout visibility) works here for free.
    */
-  getActive(now = Date.now()) {
-    if (this.fightStartedAt === null || this.totalDamage <= 0) return [];
-    const secs = this.fightSeconds(now);
-    const rows = [...this.byAttacker.entries()]
-      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits }))
+  getActive(now = Date.now(), scope = 'all') {
+    const pets = (this.petsFn && this.petsFn()) || null;
+    // A fight is underway - the current-fight rows, as always.
+    if (this.fightStartedAt !== null && this.totalDamage > 0) {
+      return this._tilesFrom(this.byAttacker, this.fightSeconds(now), false, scope, pets);
+    }
+    // No fight - fall back to the running tally since the last zone line, so the meter isn't blank
+    // between pulls and right after zoning. The total row carries a `sinceZone` flag so the overlay
+    // can mark that this isn't the last fight's number.
+    if (this.sinceZoneStartedAt !== null && this.sinceZoneTotal > 0) {
+      return this._tilesFrom(this.sinceZoneByAttacker, this.sinceZoneSeconds(), true, scope, pets);
+    }
+    return [];
+  }
+
+  /**
+   * @param scope 'all' (everyone in the fight, today's behaviour), 'group' (you + anyone admitted
+   *   to your group this session + your charmed pets + a groupmate's charmed pet), or 'mine' (you +
+   *   your charmed pets only). For 'group'/'mine' the total and every share % are recomputed over
+   *   ONLY the rows the scope keeps - non-scope damage is not counted at all, not merely hidden.
+   *   An empty group roster makes 'group' fall back to 'all', flagged on the total row.
+   */
+  _tilesFrom(byAttacker, secs, sinceZone, scope = 'all', pets = null) {
+    const admittedList = (() => {
+      try {
+        return (this.groupFn() || []).map((n) => String(n).toLowerCase());
+      } catch {
+        return [];
+      }
+    })();
+    let fellBack = false;
+    if (scope === 'group' && admittedList.length === 0) {
+      scope = 'all';
+      fellBack = true;
+    }
+    const admits = (nameLower) => admittedList.includes(nameLower);
+    const ownPetKey = pets ? pets.ownPetKeyByName : new Map();
+    const unknownPets = pets ? pets.unknownPetNames : new Set();
+    const allyPetLeader = pets ? pets.allyPetLeader : new Map();
+
+    // Fold raw attacker rows into the display buckets the scope allows. Anything the scope excludes
+    // never enters `agg`, so `totalDamage` and the shares below are its own denominator.
+    const agg = new Map(); // displayName -> { damage, hits, isPet, unknownPets }
+    const bump = (name, r, extra) => {
+      const cur = agg.get(name) || { damage: 0, hits: 0 };
+      cur.damage += r.damage;
+      cur.hits += r.hits;
+      agg.set(name, Object.assign(cur, extra || {}));
+    };
+
+    for (const [rawName, r] of byAttacker) {
+      const key = rawName.toLowerCase();
+      const isSelf = rawName === 'You' || key === 'you' || key === 'yourself';
+      const petKey = ownPetKey.get(key);
+      const allyLeader = allyPetLeader.get(key);
+
+      if (unknownPets.has(key)) {
+        // Never attributed to a person - one combined row, and not shown in 'mine'.
+        if (scope !== 'mine') bump('Charmed pets', r, { unknownPets: true });
+        continue;
+      }
+      if (isSelf) {
+        bump('You', r);
+        continue;
+      }
+      if (petKey) {
+        // Own pet: kept distinct across re-charms by the #gen in its key.
+        bump(petKey, r, { isPet: true });
+        continue;
+      }
+      if (scope === 'mine') continue;
+      if (scope === 'group') {
+        if (allyLeader && admits(allyLeader)) bump(rawName, r, { isPet: true });
+        else if (admits(key)) bump(rawName, r);
+        continue;
+      }
+      // scope 'all'
+      bump(rawName, r);
+    }
+
+    const totalDamage = [...agg.values()].reduce((s, r) => s + r.damage, 0);
+    const rows = [...agg.entries()]
+      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits, isPet: !!r.isPet, unknownPets: !!r.unknownPets }))
       .sort((a, b) => b.damage - a.damage);
     const top = rows.length ? rows[0].damage : 0;
+    if (totalDamage <= 0) return [];
 
-    const tiles = rows.map((r) => ({
-      name: r.name,
-      valueText: `${formatDamage(r.damage)}  ${Math.round((r.damage / this.totalDamage) * 100)}%`,
-      // Against the BIGGEST row, not against the total. A bar measured against the total leaves
-      // every bar short in a five-person group, with even the longest only a fifth of the way
-      // across - which reads as everybody doing badly rather than as a comparison.
-      barPercent: top > 0 ? Math.max(0, Math.min(100, (r.damage / top) * 100)) : 0,
-      ...INERT_TIMER_FIELDS,
-    }));
+    const tiles = rows.map((r) => {
+      const pct = `${Math.round((r.damage / totalDamage) * 100)}%`;
+      const dmg = formatDamage(r.damage);
+      const rate = `${formatDamage(Math.round(r.damage / secs))}/s`;
+      return {
+        name: r.name,
+        // Three readings of the same row - the aura picks one where the tile is drawn (see
+        // damageValueMode), so one engine feeds meters that differ on it. `valueText` is cumulative
+        // damage + share; `dpsText` is that attacker's own rate + the same share; `bothText` is
+        // "damage (rate)  share".
+        valueText: `${dmg}  ${pct}`,
+        dpsText: `${rate}  ${pct}`,
+        bothText: `${dmg} (${rate})  ${pct}`,
+        // Against the BIGGEST row, not against the total. A bar measured against the total leaves
+        // every bar short in a five-person group, with even the longest only a fifth of the way
+        // across - which reads as everybody doing badly rather than as a comparison.
+        barPercent: top > 0 ? Math.max(0, Math.min(100, (r.damage / top) * 100)) : 0,
+        // `isPet` - a charmed pet you or a groupmate own (own pets carry a #gen in the name).
+        // `unknownPets` - the combined "Charmed pets" row for owner-unknown charms. Both are
+        // display hints for the overlay; nothing downstream needs them.
+        isPet: r.isPet,
+        unknownPets: r.unknownPets,
+        ...INERT_TIMER_FIELDS,
+      };
+    });
 
-    // Always emitted. An aura that does not want it drops it when it draws - see the overlay -
-    // which is what lets one meter show it and another not, from one engine.
-    tiles.unshift({
+    // Always emitted, at the BOTTOM (owner's call). An aura that does not want it drops it when it
+    // draws - see the overlay - which is what lets one meter show it and another not, from one
+    // engine. `noBar` because the total is not a comparison against anything, so a full-width bar
+    // just adds noise; it draws as a plain label + value line.
+    tiles.push({
       name: 'Total',
-      valueText: `${formatDamage(this.totalDamage)}  ${formatDamage(Math.round(this.totalDamage / secs))}/s`,
-      barPercent: 100,
+      // `totalRow` is what the overlay's mine-only / hide-total filters key off, so the row keeps
+      // being recognised as the total whatever its label reads. `sinceZone` marks the between-pulls
+      // view. The Total is the fight summary and always shows both its damage and its rate,
+      // whatever damageValueMode the attacker rows are set to - it carries only `valueText`, so the
+      // overlay's mode switch leaves it alone.
+      totalRow: true,
+      sinceZone: !!sinceZone,
+      // `scope` is what this row set was actually built for; `scopeFellBack` is set when a 'group'
+      // request had no roster to filter on and quietly became 'all'.
+      scope,
+      scopeFellBack: fellBack,
+      valueText: `${formatDamage(totalDamage)}  ${formatDamage(Math.round(totalDamage / secs))}/s`,
+      barPercent: null,
+      noBar: true,
       ...INERT_TIMER_FIELDS,
     });
 

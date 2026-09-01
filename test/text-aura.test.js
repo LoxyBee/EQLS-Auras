@@ -66,12 +66,16 @@ function loadOverlayLogic() {
     pick(/let mergeRule = '[a-z]+';/, 'mergeRule'),
     'let currentConfig = {};',
     'let widgetId = \'w1\';',
-    // QOL #1 preview mode - stubbed here; currentSourceBuffs references it but this suite never
-    // triggers a preview. The real previewSampleBuffs is exercised in preview-aura.test.js.
+    // "Show example content" preview mode - stubbed here; currentSourceBuffs references it but this
+    // suite never turns a preview on. The real previewSampleBuffs is exercised in preview-aura.test.js.
     'let previewActive = false;',
+    'let showingPreviewSample = false;',
     'function previewSampleBuffs() { return []; }',
     'let lastSelfBuffs = [];',
     'let lastAllyBuffs = [];',
+    'let lastBardSongs = [];',
+    'let lastRaidNamed = [];',
+    'let lastModuleEntries = {};',
     'let lastCustomTimers = [];',
     'let lastDamageRows = [];',
     'let lastTravelRoutes = {};',
@@ -84,6 +88,7 @@ function loadOverlayLogic() {
     pick(/function textFor\(buff\) \{[\s\S]*?\n\}/, 'textFor'),
     pick(/function visibleBuffs\(buffs, opts = \{\}\) \{[\s\S]*?\n\}/, 'visibleBuffs'),
     pick(/function currentSourceBuffs\(\) \{[\s\S]*?\n\}/, 'currentSourceBuffs'),
+    pick(/function realSourceBuffs\(\) \{[\s\S]*?\n\}/, 'realSourceBuffs'),
   ];
   // eslint-disable-next-line no-new-func
   return new Function(
@@ -550,8 +555,8 @@ test('the Say field is never overwritten while it still has focus', () => {
   // Reported live 24 Aug, the SECOND report on this field: a later edit ("...was resisted by
   // mob") never reached the saved file, which instead still held an EARLIER one - not lost on
   // save, lost on the NEXT re-render. selectWidget rebuilds this whole panel from scratch, and
-  // that runs on more than "you clicked a different aura" - right-clicking THIS SAME aura's own
-  // move box on the overlay (onOpenWidgetSettings, note 6) calls it again on the widget already
+  // that runs on more than "you clicked a different aura" - re-opening THIS SAME aura from the
+  // sidebar calls it again on the widget already
   // open, and if the debounced save above hadn't finished writing back yet, the re-render stamped
   // the box with the store's still-older value right over whatever was actively being typed.
   // Anchored to the start of the line (with optional leading whitespace) so this only matches an

@@ -56,6 +56,10 @@ What the app does today. Everything here is built and shipped. Backlog is in `do
 
 **Zone-by-zone routes.** Pick where you're going, get the route across 100+ zones and the travel spell for each step.
 
+## Action bars
+
+**Skin your hotbar.** Overlay tiles that sit on your real action bar buttons — game spell icons, hybrid icons that combine two, or plain frames. Per profile. Doesn't touch the real bar.
+
 ## Quality of life
 
 **Trade pings.** A sound the moment someone opens a trade with you.

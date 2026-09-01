@@ -52,21 +52,18 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onConfigChanged: (callback) => {
     ipcRenderer.on('widget:configChanged', (_event, config) => callback(config));
   },
-  // QOL #1 - the settings panel asked to flash a sample tile on this aura.
-  onPreview: (callback) => {
-    ipcRenderer.on('widget:preview', (_event, opts) => callback(opts));
+  // "Show example content" - a persistent toggle (from the aura's own settings, or the Overlay
+  // page's all-auras control). While on, an empty aura fills with a sample tile.
+  onPreviewMode: (callback) => {
+    ipcRenderer.on('widget:previewMode', (_event, opts) => callback(opts || {}));
   },
+  getPreviewMode: (widgetId) => ipcRenderer.invoke('widget:getPreviewMode', widgetId),
   reportContentSize: (widgetId, width, height, originX) => {
     ipcRenderer.send('widget:reportContentSize', { id: widgetId, width, height, originX });
   },
-  // Note 6. Only the second thing an overlay window can send to the main process - it is
-  // otherwise receive-only, which is why this needed a new channel rather than an existing one.
-  openSettings: (widgetId) => {
-    ipcRenderer.send('widget:openSettings', widgetId);
-  },
   // Routes into the SAME debugLog() every main-process detection line already goes through - see
   // main.js's own debugLogEnabled gate. An overlay window can't write the file itself (renderer,
-  // no fs access), so this is fire-and-forget, same shape as reportContentSize/openSettings above.
+  // no fs access), so this is fire-and-forget, same shape as reportContentSize above.
   debugLog: (message) => {
     ipcRenderer.send('debug:logLine', message);
   },

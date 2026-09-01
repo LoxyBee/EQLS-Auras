@@ -178,6 +178,111 @@ test('a nudge lands on the grid only for the aura that is active, only when snap
   snap.setActive(null);
 });
 
+test('"Unlock all auras" mode (setActiveAll) snaps every aura, not just one', () => {
+  const a = makeAura('AllA');
+  const b = makeAura('AllB');
+  wm.setLocked(a.config.id, false);
+  wm.setLocked(b.config.id, false);
+  snap.set({ enabled: true, sizePx: 10 });
+  snap.setActiveAll(true);
+  a.win.setPosition(103, 97);
+  b.win.setPosition(108, 92);
+  wm.nudgeWidget(a.config.id, 1, 1); // 104,98 -> 100,100
+  wm.nudgeWidget(b.config.id, 1, 1); // 109,93 -> 110,90
+  assert.deepEqual(a.win.getPosition(), [100, 100]);
+  assert.deepEqual(b.win.getPosition(), [110, 90], 'the second aura snapped too');
+  snap.setActiveAll(false);
+  snap.set({ enabled: false, sizePx: 8 });
+});
+
+test('the nudge pad is a separate window centred over the box, wired renderer -> preload -> main', () => {
+  const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+  // it is its OWN window, not inside the clipped aura box, and not on the move HUD any more
+  assert.doesNotMatch(read('src', 'renderer', 'overlay', 'index.html'), /id="nudge-pad"/);
+  assert.doesNotMatch(read('src', 'renderer', 'move-hud', 'index.html'), /id="nudge-pad"/);
+  assert.match(read('src', 'renderer', 'nudge-pad', 'nudge-pad.js'), /window\.eqNudgePad\.nudge\(id, kind,/);
+  assert.match(read('src', 'preload', 'preload-nudge-pad.js'), /ipcRenderer\.send\('nudgePad:nudge'/);
+  const pad = read('src', 'main', 'nudgePadWindow.js');
+  assert.match(pad, /function showFor\(id, bounds, kind = 'widget'\)/);
+  assert.match(pad, /function updateFor\(id, bounds\)/); // follows the box on every move
+  // centred over the box, not offset above it
+  assert.match(pad, /let y = Math\.round\(by \+ \(bh - PAD_H\) \/ 2\)/);
+  const main = read('src', 'main', 'main.js');
+  assert.match(main, /ipcMain\.on\('nudgePad:nudge'/);
+  assert.match(main, /kind === 'actionBar'[\s\S]{0,80}actionBarManager\.nudgePosition\(id, dx, dy\)/);
+  assert.match(main, /widgetManager\.nudgeWidget\(id, dx, dy\)/);
+  assert.match(main, /nudgePadWindow\.showFor\(id, b, kind\)/); // single "Move…" (aura or bar)
+  assert.match(main, /getVisibleUnlockedBounds\(\)\) nudgePadWindow\.showFor/); // "Unlock all auras"
+  assert.match(main, /nudgePadWindow\.updateFor\(id, bounds\)/); // follow
+  assert.match(main, /broadcast\('widget:nudgeStep', moveStepPx\)/);
+});
+
+test('the pad centre button opens the aura settings (auras only), navigation before the focus grab', () => {
+  const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+  assert.match(read('src', 'renderer', 'nudge-pad', 'index.html'), /id="open-settings"/);
+  const padJs = read('src', 'renderer', 'nudge-pad', 'nudge-pad.js');
+  assert.match(padJs, /kind === 'widget'\) \{[\s\S]{0,120}window\.eqNudgePad\.openSettings\(id\)/);
+  assert.match(padJs, /classList\.add\('no-settings'\)/); // action bars have no settings page
+  assert.match(read('src', 'preload', 'preload-nudge-pad.js'), /ipcRenderer\.send\('nudgePad:openSettings'/);
+  assert.match(read('src', 'preload', 'preload-main.js'), /onOpenWidgetSettings: \(callback\)/);
+  assert.match(read('src', 'renderer', 'main-window', 'main-window.js'), /onOpenWidgetSettings\(\(id\) => focusWidget\(id\)\)/);
+  const handler = read('src', 'main', 'main.js').match(/ipcMain\.on\('nudgePad:openSettings'[\s\S]*?\n\}\);/)[0];
+  const sendAt = handler.indexOf('webContents.send');
+  const focusAt = handler.indexOf('.focus()');
+  assert.ok(sendAt >= 0 && focusAt >= 0 && sendAt < focusAt, 'nav message goes out before the risky focus() call');
+  assert.match(handler, /setImmediate\(/, 'show()/focus() deferred off the click');
+});
+
+test('opening an aura from the pad, or "Unlock all", ends any move session already open', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  // one shared teardown, used by the HUD Done button and the pad centre button
+  assert.match(main, /function endMoveSession\(\{ suspend = false \} = \{\}\) \{[\s\S]*?exitUnlockAllMode\(\)[\s\S]*?exitMoveMode\(\)[\s\S]*?\n\}/);
+  assert.match(main, /ipcMain\.handle\('moveHud:done', \(\) => endMoveSession\(\)\)/);
+  assert.match(main, /ipcMain\.on\('nudgePad:openSettings', \(_event, id\) => \{\s*\n\s*endMoveSession\(\{ suspend: true \}\);/);
+  // "Unlock all" tears down a stuck single move first, then opens its own session unconditionally
+  const h = main.match(/ipcMain\.handle\('overlay:setAllUnlocked'[\s\S]*?\n\}\);/)[0];
+  assert.match(h, /if \(hudMode === 'single'\) exitMoveMode\(\);/);
+  assert.match(h, /widgetManager\.setAllUnlocked\(true\);\s*\n\s*enterUnlockAllMode\(\);/);
+});
+
+test('the move HUD centres the single-move target on its display, one axis at a time, no snap', () => {
+  const { config, win } = makeAura('Centred');
+  wm.setLocked(config.id, false);
+  win.setBounds({ x: 100, y: 100, width: 200, height: 100 });
+  // work area 1920x1080 (DISPLAY in this file)
+  wm.placeWidget(config.id, { x: Math.round((1920 - 200) / 2) }); // centre-h
+  assert.deepEqual(win.getPosition(), [860, 100], 'x centred, y kept');
+  wm.placeWidget(config.id, { y: Math.round((1080 - 100) / 2) }); // centre-v
+  assert.deepEqual(win.getPosition(), [860, 490], 'y centred, x kept');
+
+  // structural: the HUD wiring
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const h = main.match(/ipcMain\.handle\('moveHud:centre'[\s\S]*?\n\}\);/)[0];
+  assert.match(h, /hudMode !== 'single'\) return null/, 'centre is single-move only');
+  assert.match(h, /axis === 'h'\) pos\.x =/);
+  assert.match(h, /axis === 'v'\) pos\.y =/);
+  assert.match(h, /placeBar\(moveTarget\.id, pos\)[\s\S]*?placeWidget\(moveTarget\.id, pos\)/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'move-hud', 'index.html'), 'utf8'), /id="centre-h"[\s\S]*id="centre-v"/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'move-hud', 'move-hud.css'), 'utf8'), /\[data-mode="all"\] \.centre-row \{ display: none/);
+});
+
+test('"Back to moving" resumes the move session the pad centre button stashed', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  // endMoveSession({suspend:true}) remembers the mode
+  assert.match(main, /suspendedMove = suspend && hudMode === 'all'\s*\n\s*\? \{ kind: 'all' \}/);
+  // the resume IPC puts it back, keeping the (now-consumed) suspend flag from re-clearing
+  const r = main.match(/ipcMain\.handle\('move:resume'[\s\S]*?\n\}\);/)[0];
+  assert.match(r, /const s = suspendedMove;\s*\n\s*suspendedMove = null;/);
+  assert.match(r, /s\.kind === 'all'[\s\S]*?enterUnlockAllMode\(\{ keepSuspended: true \}\)/);
+  assert.match(r, /enterMoveMode\(s\.moveKind, s\.id, \{ keepSuspended: true \}\)/);
+  // master state carries it so the top-bar button can show
+  assert.match(main, /suspendedMove: suspendedMove \? suspendedMove\.kind : null/);
+  const renderer = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  assert.match(renderer, /resumeMoveBtn\.style\.display = state\.suspendedMove \? '' : 'none'/);
+  assert.match(renderer, /window\.eqTracker\.resumeMove\(\)\.then\(refreshMasterButtons\)/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'index.html'), 'utf8'), /id="resume-move-btn"/);
+});
+
 test('a drag drop of the active aura snaps to the grid; others are left alone', () => {
   const { config, win } = makeAura('DragSnap');
   wm.setLocked(config.id, false);

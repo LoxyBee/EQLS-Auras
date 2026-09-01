@@ -127,16 +127,17 @@ const FIELD_SHAPES = {
   // (a route leg has no spellCategory to colour - see category-borders.test.js). 'list-format'
   // below is travel's own replacement for the list-width/row-size sizing it still wants.
   'display-choice': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'module'],
-  'sort': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage'],
-  'merge': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage'],
-  'borders': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage'],
-  // 'raid-named' (backlog #33) reuses 'list-format' the same way travel does - a fixed-order
-  // checklist with no icon mode, wanting only the list-width/row-size sizing.
-  'list-format': ['raid-named', 'travel'],
+  'sort': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer'],
+  'merge': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer'],
+  'borders': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer'],
+  // 'raid-named' (#33) and 'damage' (note 19) reuse 'list-format' the same way travel does - a
+  // list of non-spell rows with no icon mode, wanting only the list-width/row-size sizing and none
+  // of the sort/merge/borders that only make sense for spell tiles.
+  'list-format': ['raid-named', 'travel', 'damage'],
   'timer-text': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel', 'module'],
   'opacity': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'module'],
   'position': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'module'],
-  'alerts': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'module'],
+  'alerts': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'travel', 'module'],
   'text-fields': ['ally-alert', 'text', 'text-customTimer'],
   'text-instant': ['ally-alert', 'text'],
   // "Stack multiple lines" + its "Lines visible" sub-slider - every text shape gets it, including
@@ -159,6 +160,10 @@ const FIELD_SHAPES = {
   'track-others': ['self-buffs'],
   'damage-settings': ['damage'],
   'travel-settings': ['travel'],
+  // feat/module-system - a module aura whose module keeps its controls on the aura panel
+  // (settingsUI 'aura', the default). Whether the card actually shows also depends on the loaded
+  // module declaring controls, but the shape always carries the slot.
+  'module-settings': ['module'],
 };
 // 'buff-source' is the one field with a real, deliberate exception baked into the design: an
 // ally-cast-alert aura's buffSource:'ally' is plumbing (see widgetShape's own comment history),

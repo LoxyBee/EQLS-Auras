@@ -76,6 +76,56 @@ test('a file override beats the typed name which beats the log-derived name', ()
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('a transient reload failure keeps the last known good spellbook, does not blank it', () => {
+  // 31 Aug incident: the spellbook went dead after a restart and stayed dead all session because
+  // the 30s poll re-read nothing (readdir under an AV lock) and _load blanked the set every time.
+  const dir = fixture();
+  try {
+    const s = new SpellbookService();
+    s.setInstallRoot(dir);
+    s.setCharacterBaseName('Vaela_rivervale');
+    assert.equal(s.getCount(), 5, 'loaded to start');
+
+    // simulate what the periodic poll does when _findFiles() transiently returns nothing
+    s._load([]);
+    assert.equal(s.getCount(), 5, 'a poll that read nothing must not blank the loaded book');
+
+    // simulate an unreadable file (AV lock) - _readOne returns null for it
+    s._load([path.join(dir, 'Vaela_rivervale-SHM-Spellbook.txt', 'not-a-real-path')]);
+    assert.equal(s.getCount(), 5, 'an unreadable file must not blank the loaded book either');
+
+    // once the poll reads a real file again, the book updates normally
+    fs.writeFileSync(path.join(dir, 'Vaela_rivervale-SHM-Spellbook.txt'), '1\tTorpor\n2\tNew Spell');
+    s._load(s._findFiles());
+    assert.ok(s.has('New Spell'));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a deliberate target change to nothing IS allowed to clear the spellbook', () => {
+  const dir = fixture();
+  try {
+    const s = new SpellbookService();
+    s.setInstallRoot(dir);
+    s.setCharacterBaseName('Vaela_rivervale');
+    assert.equal(s.getCount(), 5);
+    // pinning a file that doesn't exist is a real choice - it must not fall back to the old book
+    s.setFileOverride(path.join(dir, 'gone.txt'));
+    assert.equal(s.getCount(), 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the reload poll runs even when the first load came up empty (self-heals)', () => {
+  const dir = fixture();
+  try {
+    const s = new SpellbookService();
+    s.setInstallRoot(dir);
+    s.setCharacterBaseName('Nobody_here'); // no matching file -> first load empty
+    assert.equal(s.getCount(), 0);
+    assert.ok(s.timer, 'the 30s reload timer must be running even after an empty first load');
+    clearInterval(s.timer);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('a file override pointing at a missing file loads nothing rather than silently falling back', () => {
   const dir = fixture();
   try {

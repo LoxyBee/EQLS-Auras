@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setMergeRule: (rule) => ipcRenderer.invoke('ui:setMergeRule', rule),
   getSetupNudgeDismissed: () => ipcRenderer.invoke('ui:getSetupNudgeDismissed'),
   dismissSetupNudge: () => ipcRenderer.invoke('ui:dismissSetupNudge'),
+  getSetupWizardDone: () => ipcRenderer.invoke('ui:getSetupWizardDone'),
+  setSetupWizardDone: (done) => ipcRenderer.invoke('ui:setSetupWizardDone', done),
   getTradePing: () => ipcRenderer.invoke('ui:getTradePing'),
   setTradePing: (enabled) => ipcRenderer.invoke('ui:setTradePing', enabled),
   getTellPing: () => ipcRenderer.invoke('ui:getTellPing'),
@@ -125,6 +127,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setOverlayAllUnlocked: (unlocked) => ipcRenderer.invoke('overlay:setAllUnlocked', unlocked),
   setOverlayMasterHidden: (hidden) => ipcRenderer.invoke('overlay:setMasterHidden', hidden),
   setOverlaySoundsMuted: (muted) => ipcRenderer.invoke('overlay:setSoundsMuted', muted),
+  setOverlayPreviewAll: (enabled) => ipcRenderer.invoke('overlay:setPreviewAll', enabled),
+  resumeMove: () => ipcRenderer.invoke('move:resume'),
   onOverlayMasterStateChanged: (callback) => {
     ipcRenderer.on('overlay:masterStateChanged', () => callback());
   },
@@ -240,6 +244,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   onZoneChanged: (cb) => ipcRenderer.on('zone:changed', (_e, zone) => cb(zone)),
   setWidgetShowOnAllProfiles: (id, value) =>
     ipcRenderer.invoke('widget:setShowOnAllProfiles', { id, value }),
+  // The nudge pad's centre button asked to open an aura's settings - see main.js.
   onOpenWidgetSettings: (callback) => {
     ipcRenderer.on('widget:openSettings', (_event, id) => callback(id));
   },
@@ -250,6 +255,13 @@ contextBridge.exposeInMainWorld('eqTracker', {
   applyCodeToSelfBuffs: (code) => ipcRenderer.invoke('widget:applyCodeToSelfBuffs', code),
   deleteWidget: (id) => ipcRenderer.invoke('widget:delete', id),
   reorderWidgets: (orderedIds) => ipcRenderer.invoke('widget:reorder', { orderedIds }),
+  listAuraFolders: () => ipcRenderer.invoke('auraFolders:list'),
+  createAuraFolder: (name) => ipcRenderer.invoke('auraFolders:create', name),
+  renameAuraFolder: (id, name) => ipcRenderer.invoke('auraFolders:rename', { id, name }),
+  deleteAuraFolder: (id) => ipcRenderer.invoke('auraFolders:delete', id),
+  setAuraFolderCollapsed: (id, collapsed) => ipcRenderer.invoke('auraFolders:setCollapsed', { id, collapsed }),
+  reorderAuraFolders: (orderedIds) => ipcRenderer.invoke('auraFolders:reorder', { orderedIds }),
+  setWidgetFolder: (id, folderId) => ipcRenderer.invoke('widget:setFolder', { id, folderId }),
   resetWidgetToDefault: (id) => ipcRenderer.invoke('widget:resetToDefault', { id }),
   setWidgetName: (id, name) => ipcRenderer.invoke('widget:setName', { id, value: name }),
   toggleWidgetLock: (id) => ipcRenderer.invoke('widget:toggleLock', id),
@@ -300,6 +312,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getSoundInfo: (id) => ipcRenderer.invoke('sounds:getInfo', id),
   openSoundsFolder: () => ipcRenderer.invoke('sounds:openFolder'),
   openConfigFolder: () => ipcRenderer.invoke('app:openConfigFolder'),
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   backupConfig: () => ipcRenderer.invoke('app:backupConfig'),
   exportConfig: () => ipcRenderer.invoke('config:export'),
   listImportableConfig: () => ipcRenderer.invoke('config:listImportable'),
@@ -309,6 +322,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getFullscreenState: () => ipcRenderer.invoke('overlay:fullscreenState'),
   onFullscreenWarning: (cb) => ipcRenderer.on('overlay:fullscreenWarning', (_e, active) => cb(active)),
   previewWidget: (id) => ipcRenderer.invoke('widget:preview', id),
+  isWidgetPreviewing: (id) => ipcRenderer.invoke('widget:isPreviewing', id),
   setWidgetListWidth: (id, width) => ipcRenderer.invoke('widget:setListWidth', { id, value: width }),
   setWidgetOpacity: (id, opacity) => ipcRenderer.invoke('widget:setOpacity', { id, value: opacity }),
   setWidgetBuffFilter: (id, mode, names) => ipcRenderer.invoke('widget:setBuffFilter', { id, mode, names }),

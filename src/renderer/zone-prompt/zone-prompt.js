@@ -51,12 +51,10 @@ function applyPrompt(prompt) {
   if (mode !== currentMode) searchEl.value = '';
   currentMode = mode;
   dragBarEl.textContent = (mode && TITLES[mode]) || 'Which zone?';
-  // Stopping tracking only means anything for a destination - "stop knowing where I am" isn't a
-  // real action, the app just doesn't know until the next zone line either way. Same reasoning
-  // for the "fix current zone" shortcut - already ON the current-zone picker, it would be
-  // pointless.
-  stopTrackingEl.style.display = mode === 'destination' ? '' : 'none';
-  fixCurrentEl.style.display = mode === 'destination' ? '' : 'none';
+  // Both action buttons stay visible in every mode (Shara, 28 Aug 2026). They were previously
+  // hidden outside 'destination' mode on the reasoning that "stop tracking" / "fix current zone"
+  // don't apply to the current-zone question - but a control vanishing between prompts reads as a
+  // bug, and "Stop tracking" still clears the destination and closes the popup from here too.
   render();
 }
 

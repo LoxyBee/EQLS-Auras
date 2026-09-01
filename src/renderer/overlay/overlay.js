@@ -5,16 +5,10 @@ const contentWrap = document.getElementById('content-wrap');
 const dragOverlayEl = document.getElementById('drag-overlay');
 const dragNameEl = document.getElementById('drag-name');
 
-// Note 6, reworked at the owner's instruction: the name pill used to be its own clickable button,
-// which meant it also had to be a no-drag hole cut out of the draggable box - "the tiny edge to
-// open up an aura ... is too small". That button is gone. The name is now a plain label riding
-// along with the rest of the box, and right-clicking ANYWHERE on the box opens settings instead -
-// one big target instead of one small one, and it does not compete with left-click-drag for the
-// same pixels. Only reachable while unlocked, since the whole box is hidden otherwise.
-dragOverlayEl.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-  window.eqOverlay.openSettings(widgetId);
-});
+// Note 6: the name is a plain label riding along with the rest of the drag box (it used to be its
+// own no-drag button, which was "too small" a target). Right-clicking the box used to open the
+// aura's settings, but that never worked reliably (freeze-bug history) and was removed 1 Sep at
+// the owner's instruction - get to an aura's settings from the sidebar list.
 
 // Used only until the real config arrives from getConfig() below - a
 // freshly created widget's window has to fully boot before that resolves,
@@ -308,6 +302,14 @@ function colorForName(name) {
   return `hsl(${hue}, 45%, 32%)`;
 }
 
+// Note 19. A translucent per-attacker bar fill for the damage meter - same stable hue as
+// colorForName, but lighter and see-through so the row's name and number stay readable over it.
+function damageBarColor(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return `hsla(${hash % 360}, 55%, 50%, 0.3)`;
+}
+
 function initials(name) {
   const words = name.split(/\s+/).filter(Boolean);
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
@@ -323,6 +325,12 @@ function initials(name) {
 // outright - repeating "Baxa:" on every tile in Baxa's own group is
 // just noise eating tile width.
 function displayName(buff) {
+  // The damage meter's total row, when it's showing the running tally between pulls rather than the
+  // last fight - see damageEngine.getActive.
+  if (buff.totalRow && buff.scopeFellBack) return 'Total (whole fight)';
+  if (buff.totalRow && buff.sinceZone) return 'Total (since zone)';
+  // A charmed pet you own, kept distinct across re-charms by a trailing "#n" - shown as " #n".
+  if (buff.isPet && /#\d+$/.test(buff.name || '')) return buff.name.replace(/#(\d+)$/, ' #$1');
   if (!buff.allyName) return buff.name;
   if (currentConfig.hideAllyNameOnTile || currentConfig.groupAllyBuffs) return buff.name;
   return `${buff.allyName}: ${buff.name}`;
@@ -376,6 +384,39 @@ function groupBySongType(buffs) {
   return out;
 }
 
+// A maintained debuff song (Largo's Melodic Binding and the like) has no cast line and re-lands
+// every ~6s on EVERY mob it is on, so the feed carries one entry per target - three mobs, three
+// near-identical tiles. On the aura it is one song: collapse every debuff song to a single tile
+// keyed by name, the soonest-expiring instance as the lead (its timer is the one worth watching),
+// with the merged badge showing how many enemies carry it. Buff songs are left exactly as they
+// are - a buff song on the player is genuinely one thing already.
+function collapseDebuffSongs(songs) {
+  const byName = new Map();
+  for (const s of songs) {
+    if (!s.isDebuff) continue;
+    const k = s.name.toLowerCase();
+    if (!byName.has(k)) byName.set(k, []);
+    byName.get(k).push(s);
+  }
+  if (!byName.size) return songs;
+
+  const out = songs.filter((b) => !b.isDebuff);
+  for (const [k, group] of byName) {
+    const lead = group.reduce((a, b) =>
+      ((b.remainingSec ?? Infinity) < (a.remainingSec ?? Infinity) ? b : a));
+    out.push({
+      ...lead,
+      allyName: null, // it is "the song", not "the song on mob X"
+      id: null, // so keyFor falls through to the stable mergedKey below, not a per-target id
+      mergedKey: `debuffsong::${k}`,
+      ...(group.length > 1
+        ? { mergedCount: group.length, mergedKeys: group.map(keyFor) }
+        : {}),
+    });
+  }
+  return out;
+}
+
 // Note 8's count, and deliberately ONE builder rather than two. Note 12 wants the identical badge
 // on a different kind of merged tile, and two copies of a thing described as "the same badge" is
 // how they end up not being the same badge.
@@ -398,7 +439,12 @@ function buildCountBadge(count, why) {
 // exist." Returning null in the ordinary case is what enforces it, once, rather than at each call
 // site.
 function countFor(buff) {
-  if (buff.mergedCount > 1) return { n: buff.mergedCount, why: buff.mergedCount + ' buffs merged into this one' };
+  if (buff.mergedCount > 1) {
+    const why = buff.isDebuff
+      ? `this song is on ${buff.mergedCount} enemies`
+      : `${buff.mergedCount} buffs merged into this one`;
+    return { n: buff.mergedCount, why };
+  }
   return null;
 }
 
@@ -822,8 +868,19 @@ function updateRef(ref, buff, isIcon) {
   // and this is where its number goes. Two lines rather than a second renderer: every list
   // setting the aura already has (row height, text size, colours, anchor, drag, per-loadout
   // visibility) then applies to it for free. Inert for every other aura, which never sets it.
+  // Note 19. A damage aura's per-attacker rows read as cumulative damage ('total'), their own
+  // per-second rate ('dps'), or "damage (rate)" ('both') - damageValueMode, applied here so one
+  // engine feeds meters that differ on it. The Total row only carries valueText (already both), so
+  // this leaves it alone. `damageShowDps` is the old boolean this replaced - still honoured if the
+  // mode was never set.
+  let damageText = buff.valueText;
+  if (currentConfig.buffSource === 'damage') {
+    const mode = currentConfig.damageValueMode || (currentConfig.damageShowDps ? 'dps' : 'total');
+    if (mode === 'dps' && buff.dpsText != null) damageText = buff.dpsText;
+    else if (mode === 'both' && buff.bothText != null) damageText = buff.bothText;
+  }
   ref.timeEl.textContent =
-    buff.valueText != null ? buff.valueText : formatTime(buff.remainingSec, currentConfig.timerFormat);
+    damageText != null ? damageText : formatTime(buff.remainingSec, currentConfig.timerFormat);
   if (isIcon) {
     updateTileIcon(ref, buff);
     updateTileShade(ref, buff);
@@ -839,18 +896,29 @@ function updateRef(ref, buff, isIcon) {
       );
     }
   } else {
-    // A full bar for a buff that never depletes. An empty one would say the opposite of the truth.
-    // barPercent before the infinite check, or a damage row - which IS infinite, having no
-    // expiry - would draw every bar full and show nothing about who is doing what.
-    const pct =
-      typeof buff.barPercent === 'number'
-        ? Math.max(0, Math.min(100, buff.barPercent))
-        : buff.infinite
-          ? 100
-          : buff.durationSec > 0
-            ? Math.max(0, Math.min(100, (buff.remainingSec / buff.durationSec) * 100))
-            : 0;
-    ref.barEl.style.width = `${pct}%`;
+    // Note 19. The damage meter's Total row: a plain label + value line, no bar - it is not a
+    // comparison against anything.
+    if (buff.noBar) {
+      ref.barEl.style.display = 'none';
+    } else {
+      ref.barEl.style.display = '';
+      // A full bar for a buff that never depletes. An empty one would say the opposite of the
+      // truth. barPercent before the infinite check, or a damage row - which IS infinite, having
+      // no expiry - would draw every bar full and show nothing about who is doing what.
+      const pct =
+        typeof buff.barPercent === 'number'
+          ? Math.max(0, Math.min(100, buff.barPercent))
+          : buff.infinite
+            ? 100
+            : buff.durationSec > 0
+              ? Math.max(0, Math.min(100, (buff.remainingSec / buff.durationSec) * 100))
+              : 0;
+      ref.barEl.style.width = `${pct}%`;
+      // Note 19. Each attacker's bar gets a stable colour derived from the name (owner's call), so
+      // the same person keeps the same colour tick to tick. Only for a damage meter - every other
+      // aura's bar stays the one CSS fill.
+      ref.barEl.style.background = currentConfig.buffSource === 'damage' ? damageBarColor(buff.name) : '';
+    }
     // QOL #47 - list mode. Empty string clears the override so the row falls back to its CSS
     // colour (--timer-text-color, or the red .buff-row.low .time rule when low).
     ref.timeEl.style.color = rampAmber || '';
@@ -1052,8 +1120,10 @@ function visibleBuffs(buffs, opts = {}) {
     let rows = buffs;
     // Your row only. It hides the others rather than un-counting them, so the percentage still
     // reads as your share of the whole fight.
-    if (currentConfig.mineOnly) rows = rows.filter((b) => b.name === 'You' || b.name === 'Total');
-    if (currentConfig.showTotalRow === false) rows = rows.filter((b) => b.name !== 'Total');
+    if (currentConfig.mineOnly) rows = rows.filter((b) => b.name === 'You' || b.isPet || b.totalRow);
+    if (currentConfig.showTotalRow === false) rows = rows.filter((b) => !b.totalRow);
+    // Line C - the combined owner-unknown charmed-pet row, hidden if the aura asked.
+    if (currentConfig.showCharmedPetsRow === false) rows = rows.filter((b) => !b.unknownPets);
     return rows;
   }
 
@@ -1064,7 +1134,9 @@ function visibleBuffs(buffs, opts = {}) {
   // every single tile this aura has (every entry here has isBardSong true by construction).
   if (currentConfig.buffSource === 'bardSongs') {
     // #29 - debuff songs (on an enemy) ride the same feed but are opt-in.
-    return buffs.filter((b) => b.showOnOverlay !== false && (currentConfig.showDebuffSongs || !b.isDebuff));
+    const shown = buffs.filter((b) => b.showOnOverlay !== false && (currentConfig.showDebuffSongs || !b.isDebuff));
+    // One maintained debuff song on N mobs is one song - collapse it to a single tile.
+    return collapseDebuffSongs(shown);
   }
 
   let filtered;
@@ -1482,14 +1554,21 @@ function render(buffs) {
   // The stacked-line text feed is its own render path - it keeps a short scrolling history of
   // recent firings instead of one live tile, so none of the tile-diffing / merge / grouping
   // machinery below applies. alwaysOn wins (nothing to stack when there is no event at all).
-  if (currentConfig.displayMode === 'text' && currentConfig.stackTextLines && !currentConfig.alwaysOn && !previewActive) {
+  if (currentConfig.displayMode === 'text' && currentConfig.stackTextLines && !currentConfig.alwaysOn && !showingPreviewSample) {
+    // The tile path and the feed path each track what they last drew independently (tileRefs /
+    // dataset.mode vs lastFeedSig). Coming BACK to the feed after the tile path drew something -
+    // most visibly the "Show example content" sample - the feed can compute an unchanged signature
+    // (both empty => same string) and skip its repaint, leaving that stale tile on screen. Force
+    // one repaint whenever the list isn't already in feed mode.
+    if (listEl.dataset.mode !== 'text-feed') lastFeedSig = null;
     renderTextFeed(buffs);
     return;
   }
 
-  // QOL #1 - a preview shows exactly the sample it was handed, past every filter: the point is to
-  // judge the tile's look, not to re-test the aura's own spell list.
-  const visible = previewActive ? buffs : visibleBuffs(buffs);
+  // The example sample is shown exactly as handed over, past every filter - the point is to judge
+  // the tile's look and placement, not to re-test the aura's own spell list. Real content while the
+  // toggle is on still filters normally (showingPreviewSample is false then).
+  const visible = showingPreviewSample ? buffs : visibleBuffs(buffs);
   const isText = currentConfig.displayMode === 'text';
   const isIcon = currentConfig.displayMode === 'icons';
   const modeKey = isText ? 'text' : isIcon ? 'icons' : 'list';
@@ -1499,7 +1578,7 @@ function render(buffs) {
   // sound / glow / "genuinely expired" set below still works from the real `visible`, so the
   // expire sound fires at the true expiry, not when the linger clears.
   let tileBuffs = visible;
-  const lingerSec = isIcon && !previewActive ? currentConfig.expiredLingerSec || 0 : 0;
+  const lingerSec = isIcon && !showingPreviewSample ? currentConfig.expiredLingerSec || 0 : 0;
   if (lingerSec > 0) {
     const { soonest } = trackExpiredLinger(visible, keyFor, lingerSec * 1000);
     if (expiredLinger.size) tileBuffs = [...visible, ...[...expiredLinger.values()].map((e) => e.buff)];
@@ -1744,7 +1823,9 @@ let lastSelfBuffs = [];
 let lastAllyBuffs = [];
 let lastBardSongs = [];
 let lastCustomTimers = [];
-let lastDamageRows = [];
+// Note 19. Three scoped views from one engine (whole fight / just my group / just me) - the aura
+// picks its own by damageScope. See damageViews() in main.js.
+let lastDamageViews = { all: [], group: [], mine: [] };
 // Backlog #33. One shared board - the current raid zone's named list, killed ones flagged.
 let lastRaidNamed = [];
 // Note 20. Keyed by aura id - one broadcast carries every travel aura's route and each window
@@ -1774,9 +1855,9 @@ function previewSampleBuffs() {
       return [mk(currentConfig.name || 'Preview', 8, 12, { id: 'preview' })];
     case 'raidNamed':
       return [
-        mk('Lord Nagafen', null, null, { tier: 'boss', killed: false, infinite: true }),
-        mk('King Tranix', null, null, { tier: 'mini', killed: true, infinite: true }),
-        mk('Warlord Skarlon', null, null, { tier: 'mini', killed: false, infinite: true }),
+        mk('Cazic-Thule', null, null, { tier: 'boss', killed: false, infinite: true }),
+        mk('Dread', null, null, { tier: 'mini', killed: true, infinite: true }),
+        mk('Fright', null, null, { tier: 'mini', killed: false, infinite: true }),
       ];
     case 'module':
       return [mk(currentConfig.name || 'Module', 9, 12, { key: 'preview' })];
@@ -1785,15 +1866,37 @@ function previewSampleBuffs() {
   }
 }
 
-window.eqOverlay.onPreview(({ durationMs } = {}) => {
-  const ms = Number(durationMs) > 0 ? Number(durationMs) : 6000;
-  previewActive = true;
+window.eqOverlay.onPreviewMode(({ enabled } = {}) => {
+  previewActive = !!enabled;
   render(currentSourceBuffs());
-  setTimeout(() => { previewActive = false; render(currentSourceBuffs()); }, ms);
 });
+// A window recreated (profile switch, resize) while preview was on/off would otherwise boot with
+// previewActive = false and miss the one-shot event - re-sync from the main process on load.
+if (window.eqOverlay.getPreviewMode) {
+  window.eqOverlay.getPreviewMode(widgetId).then((on) => {
+    previewActive = !!on;
+    render(currentSourceBuffs());
+  });
+}
+
+// QOL - "Show example content" is a persistent toggle now, not a timed flash. While it's on, an
+// aura with nothing real to show fills with sample tiles so you can see where to put it and how
+// big it is; the moment real content arrives it takes over (real always wins over the sample).
+// `showingPreviewSample` records which of the two the current render is showing, so filters/linger
+// are only bypassed for the actual sample.
+let showingPreviewSample = false;
 
 function currentSourceBuffs() {
-  if (previewActive) return previewSampleBuffs();
+  const real = realSourceBuffs();
+  if (previewActive && real.length === 0) {
+    showingPreviewSample = true;
+    return previewSampleBuffs();
+  }
+  showingPreviewSample = false;
+  return real;
+}
+
+function realSourceBuffs() {
   if (currentConfig.buffSource === 'ally') return lastAllyBuffs;
   // Backlog #15. Every bard song currently active on the player, already grouped-by-caster-ready
   // (see buffEngine.getActiveBardSongs - it emits `allyName` holding the CASTER here, reusing that
@@ -1825,7 +1928,10 @@ function currentSourceBuffs() {
   // Note 19. Rows arrive already sorted biggest-first from damageEngine, which is why a damage
   // meter is created with sortOrder 'default' - see createDamageMeter. Any other sort order would
   // reorder them by a time remaining they deliberately do not have.
-  if (currentConfig.buffSource === 'damage') return lastDamageRows;
+  if (currentConfig.buffSource === 'damage') {
+    const scope = currentConfig.damageScope || 'all';
+    return lastDamageViews[scope] || lastDamageViews.all || [];
+  }
   if (currentConfig.buffSource === 'travel') return lastTravelRoutes[widgetId] || [];
   // Backlog #33. One shared board (the current zone's named list), not per-widget - like damage,
   // unlike travel/customTimer.
@@ -2093,14 +2199,14 @@ if (window.eqOverlay.getModuleEntries) {
   });
 }
 
-window.eqOverlay.getActiveDamage().then((rows) => {
-  lastDamageRows = rows;
+function applyDamageViews(views) {
+  // Tolerate the old bare-array shape from any stale main process during a hot reload.
+  if (Array.isArray(views)) lastDamageViews = { all: views, group: views, mine: views };
+  else if (views && typeof views === 'object') lastDamageViews = views;
   render(currentSourceBuffs());
-});
-window.eqOverlay.onActiveDamageChanged((rows) => {
-  lastDamageRows = rows;
-  render(currentSourceBuffs());
-});
+}
+window.eqOverlay.getActiveDamage().then(applyDamageViews);
+window.eqOverlay.onActiveDamageChanged(applyDamageViews);
 
 window.eqOverlay.getLockState(widgetId).then(applyLockState);
 window.eqOverlay.onLockChanged(applyLockState);

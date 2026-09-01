@@ -468,8 +468,29 @@ body {
   text-align: center;
 }
 
+/* initModules() injects the custom-module nav buttons inside this wrapper. `display: contents`
+   drops the wrapper from layout so those buttons are real flex children of .sidebar - same gap,
+   same stretch, same everything as the hand-written nav buttons around them. Without it the
+   wrapper is one flex item and the button inside renders subtly unlike its siblings. */
+#module-nav-slot {
+  display: contents;
+}
+
 .nav-btn:hover {
   background: var(--panel);
+}
+
+/* A clicked nav button keeps focus; without an explicit rule Chromium draws its own ring, which
+   reads as a stray box on whichever page button was opened last (usually a module's). The active
+   page is already shown by the left accent bar, so the keyboard focus cue can be the same quiet
+   treatment the rest of the app's controls use. */
+.nav-btn:focus:not(:focus-visible) {
+  outline: none;
+}
+.nav-btn:focus-visible {
+  outline: none;
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
 }
 
 .nav-btn.active {
@@ -505,6 +526,33 @@ body {
 .nav-sub-row.dragging {
   opacity: 0.4;
 }
+
+/* Sidebar folder header - groups the aura list, changes nothing on screen. */
+.nav-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 6px 3px;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-mut);
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+}
+.nav-folder-header:hover { color: var(--ink); }
+.nav-folder-header.drop-target {
+  background: var(--accent-line);
+  color: var(--ink);
+}
+.nav-folder-header.dragging { opacity: 0.4; }
+.nav-folder-chevron { font-size: 10px; width: 10px; }
+.nav-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Auras inside a folder sit indented under their header. */
+.nav-sub-row.in-folder { margin-left: 12px; }
 
 .nav-sub-btn {
   flex: 1;
@@ -2288,6 +2336,31 @@ body.sidebar-resizing .sidebar {
 .context-menu button.danger {
   color: var(--danger);
 }
+
+.context-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--line);
+}
+
+/* First-run setup wizard (initSetupWizard) - one step visible at a time inside the modal card. */
+#setup-wizard-card { min-width: 26em; max-width: 32em; }
+.sw-step { margin: 6px 0 4px; }
+.sw-step ul { margin: 6px 0; padding-left: 18px; }
+.sw-step li { margin: 3px 0; }
+.sw-cmd {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 15px;
+  padding: 4px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--accent-line);
+  border-radius: 5px;
+  color: var(--ink);
+}
+#sw-progress { margin-top: 0; }
+#setup-wizard-card .modal-actions { margin-top: 12px; }
+#sw-next[disabled] { opacity: 0.5; cursor: not-allowed; }
 
 /* ---------------------------------------------------------------------------
    Buff Planner page (initBuffPlanner / src/main/buffPlanner.js)

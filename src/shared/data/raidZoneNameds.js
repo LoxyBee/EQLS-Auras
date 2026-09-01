@@ -5,12 +5,23 @@
 // `respawns` AND a named has a `respawnMinutes`, the greyed entry shows a countdown and comes back
 // when it elapses.
 //
-// COVERS EVERY TRACKED ZONE, not just raids (backlog #33's actual scope - the raid-only naming
-// below is historical). Two kinds:
-//   - `respawns: false` - instanced (Voidling raids; the instanced dungeons). A fresh instance is
-//     a fresh board, so a kill stays greyed until you re-enter. `respawnMinutes` are ignored.
-//   - `respawns: true` - persistent open-world zones (Najena, Splitpaw, The Warrens). A greyed
-//     named with a `respawnMinutes` counts down and comes back on its own.
+// COVERS EVERY TRACKED ZONE, not just raids (backlog #33's actual scope). Two axes:
+//
+//   `respawns`:
+//   - `false` - instanced. A fresh instance is a fresh board, so a kill stays greyed until you
+//     re-enter. `respawnMinutes` are ignored.
+//   - `true` - persistent open-world zones (Najena, Splitpaw, The Warrens). A greyed named with a
+//     `respawnMinutes` counts down and comes back on its own.
+//
+//   `raid`:
+//   - absent - a DUNGEON board. Lights up on a plain "You have entered X." line.
+//   - `true` - a RAID board (the Planes; the classic raid-boss lists). Lights up ONLY after the
+//     player's own "You say, 'danger'" to the Voidling armed the zone change. A raid instance and
+//     a group instance of the same zone carry the SAME zone string and "- Group"/difficulty suffix
+//     (measured against the owner's real logs), so the dialogue is the only discriminator - the
+//     same signal lockoutCore keys its weekly-attempt event on. Some zones (Nagafen's Lair) exist
+//     as BOTH: the dungeon nameds are the un-flagged entry here; the raid boss lives in his own
+//     Voidling instance and is tracked by lockoutCore, not on this board.
 //
 // Zone keys are the BASE zone name. The tracker strips an instance-difficulty suffix
 // ("The Plane of Hate - Group 3 (Fused)", "Nagafen's Lair 1 (Awakened)") before matching, so one
@@ -28,6 +39,7 @@
 const RAID_ZONE_NAMEDS = {
   "The Plane of Sky": {
     shortName: 'airplane',
+    raid: true, // Voidling-gated: shows only after the player's own "You say, 'danger'"
     respawns: false,
     nameds: [
       { name: 'The Spiroc Lord', tier: 'boss' },
@@ -46,6 +58,7 @@ const RAID_ZONE_NAMEDS = {
   },
   "The Plane of Hate": {
     shortName: 'hateplane',
+    raid: true, // Voidling-gated: shows only after the player's own "You say, 'danger'"
     respawns: false,
     nameds: [
       { name: 'Innoruuk, the Prince of Hate', tier: 'boss' },
@@ -66,6 +79,7 @@ const RAID_ZONE_NAMEDS = {
   },
   "The Plane of Fear": {
     shortName: 'fearplane',
+    raid: true, // Voidling-gated: shows only after the player's own "You say, 'danger'"
     respawns: false,
     nameds: [
       { name: 'Cazic-Thule', tier: 'boss' },
@@ -77,19 +91,24 @@ const RAID_ZONE_NAMEDS = {
       { name: 'A broken golem', tier: 'mini' },
     ],
   },
+  // The "Nagafen's Lair" zone string is only ever the GROUP DUNGEON on EQL. The Lord Nagafen RAID
+  // was moved into its own Voidling-entry instance (docs/EVIDENCE.md's "Potential of the Void -
+  // Lord Nagafen - Weekly" task; the raid-lockout tracker in lockoutCore.js owns that side). This
+  // board previously listed the classic Sol B raid targets - Lord Nagafen, King Tranix, Warlord
+  // Skarlon, Magus Rokyl, Zordak Ragefire - none of which appear in ANY of the owner's logs. The
+  // nameds below are the ones her own kill/cast lines actually show in the group instance.
   "Nagafen's Lair": {
     shortName: 'soldungb',
     respawns: false,
     nameds: [
-      { name: 'Lord Nagafen', tier: 'boss' },
-      { name: 'King Tranix', tier: 'mini' },
-      { name: 'Warlord Skarlon', tier: 'mini' },
-      { name: 'Magus Rokyl', tier: 'mini' },
-      { name: 'Zordak Ragefire', tier: 'mini' },
+      { name: 'Efreeti Lord Djarn', tier: 'boss' }, // log-confirmed (2,917 lines, farmed repeatedly)
+      { name: 'a kobold king', tier: 'mini' },      // log-confirmed
+      { name: 'a kobold noble', tier: 'mini' },     // log-confirmed
     ],
   },
   "Permafrost Keep": {
     shortName: 'permafrost',
+    raid: true, // Voidling-gated: shows only after the player's own "You say, 'danger'"
     respawns: false,
     nameds: [
       { name: 'Lady Vox', tier: 'boss' },
@@ -99,6 +118,7 @@ const RAID_ZONE_NAMEDS = {
   // "Master Yael" is confirmed from the owner's own log; the rest are eqlsource-surveyed.
   "The Ruins of Old Paineel": {
     shortName: 'hole',
+    raid: true, // Voidling-gated: shows only after the player's own "You say, 'danger'"
     respawns: false,
     nameds: [
       { name: 'Master Yael', tier: 'boss' },
@@ -125,6 +145,7 @@ const RAID_ZONE_NAMEDS = {
   },
   "Kedge Keep": {
     shortName: 'kedge',
+    raid: true, // Voidling-gated: shows only after the player's own "You say, 'danger'"
     respawns: false,
     nameds: [
       { name: 'Phinigel Autropos', tier: 'boss' }, // long-established raid boss name; not yet in a kill line here

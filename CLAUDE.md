@@ -37,6 +37,7 @@ a docs update or a new CLAUDE.md note for it. When in doubt, a fix is small.
 - **Self-buffs are the default and priority.** Tracking buffs cast by *others* on the player is opt-in, off by default, and explicitly deferred to live in the future multi-widget overlay system rather than the main window.
 - **Ally-buff tracking** (buffs the player casts *on other people*) is confirmed **core/planned functionality**, but explicitly "build when convenient" — not blocking other work. Likely reuses the third-person landing-message infrastructure (see "Infusion of Spirit" gotcha below).
 - **Completeness over perfect naming** for instant multi-buff abilities (e.g. "Quick Buff" granting ~14 buffs at once with no per-buff cast line). The user explicitly said a possibly-mislabeled buff showing up beats a real buff being silently dropped — this is why the burst-window/ambiguous-fallback logic exists and is intentionally permissive in that one context.
+- **But never show more tiles than is accurate** (owner, 1 Sep). The app can't see the character's active level, so it must not *invent* buffs. Landing the 11 buffs Quick Buff actually dropped is fine — that's the case above. Landing all 4 candidates of a shared landing line when only 1 or 2 landed is **not** fine: a buff that didn't land showing on the overlay is worse than one that did being mislabelled. This bounds the rule above — permissiveness is for "*which* of these did I cast", never "*how many* landed". If a wrong remembered ambiguous resolution ever does need addressing, that is a correction path — not more permissive landing. (The owner declined building one for the Shield of Words case, 1 Sep — the stale resolutions stay and keep applying; that's accepted, not a bug to chase.)
 - **Rank suffixes ("Rk. II/III", trailing Roman numerals) are not part of a spell's real name** for matching purposes — but see the important nuance below: this is *not* universally true and blindly stripping broke things once already.
 - The user wants to eventually **package and hand this app to other people** — it now builds a real Windows installer (see Packaging section). Keep `npm run dist` working.
 - Collaboration style: the user tests live in-game and reports exact symptoms/screenshots. When something breaks, they want it *actually* root-caused (see the "duplicate instance" and "packaged build" debugging episodes) — not a guessed fix. Prefer adding temporary file-based debug logging (packaged Windows GUI apps have no visible console) over guessing, then removing it once confirmed.
@@ -66,11 +67,10 @@ a docs update or a new CLAUDE.md note for it. When in doubt, a fix is small.
 - `src/shared/shareCodeChat.js` — spots an aura share code pasted into chat (note 30). **Recognises and never applies**; see gotcha #24.
 - `src/shared/zoneVisibility.js` — the one zone-visibility rule, extracted so tests import it rather than reproducing it. It exists because a reproduced copy passed four times while the real rule was inverted.
 - `src/main/sessionSnapshot.js` — persists live timer state (self buffs, ally buffs, custom timers) so a restart does not wipe everything currently running. Restores only within a 5-minute grace window. See gotcha #19.
-- `src/main/foregroundWatcher.js` — polls (every 2s, inline PowerShell/P-Invoke, no native module) which of EQ / this app owns the foreground window, emitting `{ eqFocused, ownAppFocused }`. Two separate auto-hide settings key off those independently — see gotcha #10. The same PS query also calls `SHQueryUserNotificationState` and sets a `foregroundFullscreen` flag on state 3 (D3D fullscreen) / 4 (presentation) — `main.js` turns that into an `overlay:fullscreenWarning` broadcast and the Buff Tracker page shows a "auras can't draw over exclusive full-screen" line (QOL #9; the P/Invoke is doc-verified, not yet run on the real machine).
+- `src/main/foregroundWatcher.js` — polls (**300ms**, a self-rescheduling `setTimeout` loop rather than `setInterval` so a slow respawn can't pile up queries; was 2000ms, tightened after a live report that a 2s poll made the overlay visibly slow to show/hide when swapping windows — inline PowerShell/P-Invoke, no native module) which of EQ / this app owns the foreground window, emitting `{ eqFocused, ownAppFocused }`; `widgetManager.setForegroundHidden()` hides/shows enabled widgets from it, matching on `eqgame.exe`'s process name (see gotcha #10 for why process name, not window title, is the match target, and why it also matches this app's own process). On by default, Setup-page checkbox to turn it off. The same PS query also calls `SHQueryUserNotificationState` and sets a `foregroundFullscreen` flag on state 3 (D3D fullscreen) / 4 (presentation) — `main.js` turns that into an `overlay:fullscreenWarning` broadcast and the Buff Tracker page shows a "auras can't draw over exclusive full-screen" line (QOL #9; the P/Invoke is doc-verified, not yet run on the real machine).
 - `src/main/spellbookService.js` — auto-detects and parses the character's `<CharName>-<Class>-Spellbook.txt` file (found in the EQ install root, not Logs) to know exactly which spells the player has scribed; this is the primary disambiguation signal for self-buffs. A manual **character/server override** (`setCharacterOverride()` / `_effectiveBaseName()`, store key `spellbookCharacter`, IPC `spellbook:getCharacter/setCharacter`, QOL #14) beats the log-derived name when set — for when auto-detection picks the wrong log or none. `getExpectation()` reports `manualCharacter`.
 - `src/main/iconExtractor.js` / `iconService.js` — reads real spell icon art directly from the user's own EQ install (`Textures/Alternate N/SpellsNN.tga`, hand-rolled TGA reader + PNG encoder, no deps), served to renderers via a custom `eqicon://` protocol, cached in userData. Icon set (Alternate 1/2/3) is user-selectable since they're genuinely different art styles.
 - `src/main/overlayWindow.js` — the actual transparent/click-through always-on-top overlay (currently a single window, not yet the multi-widget system).
-- `src/main/foregroundWatcher.js` — polls (every 2s, via an inline PowerShell/P-Invoke snippet, no native npm module) whether `eqgame.exe` is the OS foreground window; `widgetManager.setForegroundHidden()` hides/shows enabled widgets accordingly. On by default (Setup page checkbox to turn it off) - see gotcha #10 for why process name, not window title, is the match target.
 - `src/main/soundService.js` — custom alert sounds. Mirrors `iconService.js`'s pattern exactly (same reason: a sandboxed renderer can't load an arbitrary local file path directly) - a native file picker copies the chosen audio file into `userData/customSounds/` under a fresh id, served back to renderers via a registered `eqsound://` protocol. Each widget has three independent slots (`landSoundId`/`expireSoundId`/`warningSoundId`, one per alert type, not one shared sound) - `null` means the original synthesized beep in `overlay.js`. **A picked sound is still saved under `userData` on purpose** - see the userData-in-install-folder decision below. **`bundledSoundsDir()` (25 Aug)** is a separate, real folder shipped INSIDE the install itself (`sounds/` next to the .exe, via `package.json`'s `extraFiles` - not packed into `app.asar`, which is one opaque file nothing can browse or write into), seeded with a handful of synthesized starter sounds (`tools/generate-bundled-sounds.js` - hand-rolled tones, no external audio, nothing to license). It's the picker's default folder once nothing's remembered yet, ahead of `C:\Windows\Media` - so "Choose sound..." opens there showing the starters, and dropping a file into that folder via Explorer makes it show up the same way. Resolves differently packaged vs dev (`app.isPackaged ? path.dirname(app.getPath('exe')) : app.getAppPath()` - packaged, `getAppPath()` points inside `app.asar`, which `extraFiles` content is never placed in). **Update (30 Aug, QOL #39): the browse/drop folder is now `userData/sounds/`**, seeded on startup from `bundledSoundsDir()` by `seedStarterSounds()` (idempotent — never overwrites a file already there, never touches user files); `defaultPickerDir()` prefers it. The install `sounds/` is purely the seed source now, so the whole sound library lives with auras/profiles under `userData` and travels with a backup/export.
   - **`soundCooldownSec` (per-aura, QOL #45)** — a 0–60s floor on the gap between any two alert sounds from one aura, across all three slots. Clamped by `widgetStore.clampSoundCooldownSec` (a **module export**, not an instance method — calling it on the store instance throws and silently eats the whole `update()`; that was a real bug). In `SHAREABLE_FIELDS` + `normalizeWidget`. This is the owner's replacement for the never-built looping-sound aura (QOL #15).
 - `src/main/configTransfer.js` — portable config export/import (QOL #3c). `exportConfig()` writes `userData/exports/eqls-config-<stamp>/` with every portable `.json` + `customSounds/` + `sounds/`, **minus a ~14-entry machine-specific deny-list** — window bounds, live gem/zone state, the EQ folder path, `splitProgress`: anything that must NOT travel between installs. `importConfig()` takes a `pre-import-<stamp>` safety backup under `backups/`, swaps the files in, and restarts. `listImportable()` offers both export bundles and backup folders. Separate from `app:backupConfig` (QOL #3b), which just snapshots the whole `userData` (skipping `Cache`/`detection-logs`/`backups`) into `backups/backup-<stamp>/`.
@@ -84,7 +84,9 @@ a docs update or a new CLAUDE.md note for it. When in doubt, a fix is small.
   - **`rosterBackfill.js` is no longer wired in.** It undid a mining mistake that no longer exists; run against the new roster it would re-read the client file and add ~1,499 other-expansion bard songs, taking 1,052 → ~2,551. A test in `test/roster.test.js` fails if it is ever called again.
 - `src/shared/data/raidZoneNameds.js` — the named-kill board's data: **16 tracked zones** (6 Voidling raid zones + 8 surveyed dungeons — Mistmoore, Lower Guk, Crushbone, Befallen, Blackburrow instanced with `respawns:false`, i.e. a fresh instance = a fresh board; Najena, The Lair of the Splitpaw, The Warrens open-world with `respawns:true` and per-named respawn countdowns). Each entry lists its nameds by tier (`boss` / `mini` / `lesser`). Apostrophes are written as the backtick the EQL client actually emits (`Coercer T`vala`); matching normalises case and one leading article. Some spellings are flagged unverified in comments. **NOT covered, deliberately:** ~50 no-named overworld/city zones, and Temple of Cazic-Thule / Upper Guk / RunnyEye / Unrest (eqlwiki-only, not eqlsource-surveyed). Provenance is `docs/research/eql-zones-and-nameds.md`.
 - `src/main/raidNamedTracker.js` — the board's engine: own `currentZone`, a `changed` event, rebuilds the board on zone change; a slain line greys a named; `setZone()` is also called by the startup zone-recovery. A new `raidNamed` buff source + `raid-named-builtin` aura kind + its own `SHAPE_FIELDS` entry; `overlay.js` dims killed rows.
-  - **Scope note — do not re-narrow it.** An earlier build gated the board to raid zones only, behind a "Voidling danger" signal. That was an over-narrowing; #33's real ask is per-zone named tracking everywhere. The gate was discarded — **don't rebuild it.**
+  - **The board has two kinds of entry — the hybrid, owner-confirmed 1 Sep.** A **dungeon** entry (no flag) lights up on a plain `You have entered X.` line — #33's "every tracked zone". A **`raid: true`** entry (the 3 Planes, Permafrost Keep, The Ruins of Old Paineel, Kedge Keep) lights up ONLY after the player's own `You say, 'danger'` to the Voidling armed that zone change: a raid instance and a group instance of the same zone are identical in the log (same zone name, same `- Group` / difficulty suffix — measured against the owner's real logs), so the hail is the only discriminator — the same signal `lockoutCore` keys its weekly-attempt event on. `raidNamedTracker._raidEntryArmed` + the per-entry `raid` gate in `_enterZone`; `buffParser.matchOwnVoidlingDanger`; `logZonePeek.readLastZoneEntry` returns `{ zone, viaVoidling }` (256 KB back-scan) so a mid-raid restart rebuilds the board and a restart in a group instance does not.
+  - **Never seed a dungeon board from the classic raid target list.** Owner's rule: "raid instances are already-existing areas; the raids are bosses moved into a separate instance." A dungeon board needs real dungeon-clear kill lines from a live log. Nagafen's Lair was wrong this way (listed the Sol B raid bosses — fixed to Efreeti Lord Djarn + kobolds). **`Permafrost Keep` (only Lady Vox) is the next suspect** — needs a dungeon-clear log; flag as known-thin, don't invent.
+  - *(An earlier pass discarded the Voidling gate as "an over-narrowing" and this file said "don't rebuild it"; the owner reversed that on 1 Sep — the gate is real for the raid half.)*
 - `src/main/abilityGroups.js` — the action bar's mutually-exclusive toggle groups (stance, invocation). `activeNameByGroup` tracks the active pick **by toggle name** (survives a bar re-layout, which a slot index wouldn't); `setPersistFn()` + `restore()` persist it to store key `activeAbilityGroups` and restore it at startup, resolved against the current bar layout. Same "a stance is a character state you're still in, not a timed buff" reasoning as `logZonePeek`. `actionBar:getKnownAbilityGroups` builds the toggle-name picker **from the roster** (spells whose category is Stance / Invocation) unioned with the `KNOWN_` seed lists — a hardcoded seed list alone was why several real stances "couldn't be selected".
 - `src/main/actionBarStore.js` / `src/main/actionBarManager.js` — the Action Bars page's data + orchestration. `swapSlots(barId, a, b)` exchanges two gem slots wholesale (icon/name/border/cooldown/toggle) — a **swap**, not a list reorder; slots between are untouched. Drag-to-swap on the settings grid, plus a marker dot on any slot that has anything configured. `actionBar:swapSlots` / `actionBar:enterMoveMode` IPC.
 - `src/main/moveHudWindow.js` + `src/renderer/move-hud/` + `src/preload/preload-move-hud.js` — the **move HUD** (see its own section below). A detached, screen-clamped panel for nudging one aura *or* one action bar into position.
@@ -95,22 +97,31 @@ a docs update or a new CLAUDE.md note for it. When in doubt, a fix is small.
 
 ## Move HUD
 
-Positioning one aura or one action bar precisely (`feat/aura-move-hud`; depends on the Fix 5
-"freeze the window size while unlocked" change, so it sequences after it).
+Positioning one aura or one action bar precisely. **Shipped as a detached panel in `feat/aura-move-hud`
+(PR #29), then reworked 1 Sep on `feat/per-box-nudge-arrows`** — the description below is the
+current, reworked shape; the original single-panel-with-a-4-arrow-pad design is gone.
 
-- The settings-panel **"Move…"** button (was "Unlock to move") unlocks that one aura / bar, **hides
-  the main config window**, and opens a small **detached panel** — it opens centred, is draggable
-  by its body, and is **clamped so it can never sit even partly off-screen** (the owner: "so you
-  can never lose the done button"). Panel: name + live x/y, a 4-arrow nudge pad, Step 1px/10px,
-  Snap checkbox + grid size, Reset position, Done. Done re-locks, closes the panel, restores the
-  main window.
-- It is **not** a frame that wraps the aura, and there is **no click-through hole** — an earlier
-  frame design had both and they were dropped. Panel position is store key `moveHudPosition`.
-- The aura keeps its own blue drag box for coarse positioning. **"Unlock all auras" is untouched**
-  — that stays bulk free-drag with no HUD and no main-window hide. `main.js` move mode is
-  `{ kind: 'widget' | 'actionBar', id }` — one HUD, dispatched.
-- A nudge persists the same canonical anchor a drag does; Fix 5's `applyPendingFit` re-centres on
-  the **live** position on re-lock, so a nudged spot is kept.
+- Every unlocked aura/bar gets its **own floating nudge-pad window** (`src/main/nudgePadWindow.js`,
+  `src/renderer/nudge-pad/`) centred directly over its blue drag box: a 3×3 d-pad (arrows on the
+  cross) plus a centre ⚙ button. This is true for **both** single-aura move and **"Unlock all
+  auras"** now — unlike the original design, unlock-all is no longer bulk-free-drag-only; every
+  unlocked box gets its own pad. `positionSnap.setActiveAll()` is what makes snap apply to all of
+  them at once in that mode.
+- **Step and Snap are shared, global settings**, not per-pad — one small floating panel
+  (`moveHudWindow.js`, `PANEL_W/H = 320×150`, opens top-centre of the work area, store key
+  `moveHudPosition`) holds Step (1px/10px) + Snap (checkbox + grid size) on one row, plus — only in
+  single-aura mode — **Centre horizontally** / **Centre vertically** buttons (`moveHud:centre` IPC,
+  computed against `screen.getDisplayMatching()`'s work area).
+- **The centre ⚙ on a pad opens that aura's settings** (`nudgePad:openSettings`) — this ends the
+  move session but remembers it: `main.js` tracks `suspendedMove = { kind, id }`, and a
+  **"↩ Back to moving"** button (top bar) calls `move:resume`, which re-enters the exact same mode
+  (single aura, or "all") without you having to re-open the Overlay Auras page and re-click Unlock.
+- No frame wraps the aura and there is no click-through hole (dropped from an earlier design, still
+  true). The aura keeps its own blue drag box for coarse positioning; right-click-to-open-settings
+  on the box was tried and removed (clicking a box no longer does anything but drag it).
+- A nudge persists the same canonical anchor a drag does. `main.js`'s move mode is
+  `{ kind: 'widget' | 'actionBar', id }` for a single aura, or a distinct all-mode — `hudMode`
+  tracks which; `endMoveSession({ suspend })` is the one shared teardown both paths funnel through.
 
 ## Lockouts and log rotation
 
@@ -205,17 +216,20 @@ that's the original 40-note numbering.
 The prose below is older triage kept for the *reasoning* behind why things were built the way
 they were, not for status — `QOL-BACKLOG.md` and `docs/TESTING.md` are the current picture.
 
-## Standalone-tool auras' settings-panel shape — designed and built 25 Aug; Travel guide unlocked 26 Aug, Damage parser still locked
+## Standalone-tool auras' settings-panel shape — designed and built 25 Aug; Travel guide unlocked 26 Aug, Damage parser unlocked (feat/damage-parser-unlock, 1 Sep release)
 
 **Travel guide creation was unlocked 26 Aug, at the owner's direct request** — it's back in
 `PREMADE_WIDGETS` in `main-window.js` (`id: 'travel-guide'`, `group: 'standalone'`), with its own
 `SHAPE_FIELDS.travel` (`['list-format', 'timer-text', 'opacity', 'position', 'alerts',
 'travel-settings']` — see below for why 'sort'/'merge'/'borders' were dropped rather than kept from
-the 25 Aug shape, and what 'list-format' replaces them with). Damage parser is still locked out of
-the Add Aura premade list, exactly as this section originally described — it remains in
-`PLANNED_PREMADE_WIDGETS` rather than `PREMADE_WIDGETS`, so no *new* Damage parser can be created
-yet. Existing auras of either kind, made before the original 24 Aug lock, were untouched by any of
-this and kept working the whole time.
+the 25 Aug shape, and what 'list-format' replaces them with).
+
+**Damage parser was unlocked for the 1.0.0 release** (`feat/damage-parser-unlock`) — it too is now
+in `PREMADE_WIDGETS` (`id: 'damage-parser'`, `group: 'standalone'`), creatable from Add Aura like
+any other premade. It also picked up scope filtering ('all'/'group'/'mine' — see
+`src/main/groupRoster.js`/`petTracker.js`) and charmed-pet rows along the way. The rest of this
+section is kept for the reasoning behind the panel-shape work; treat every "still locked" sentence
+below as historical, not current status.
 
 **Travel guide also got several other things 26 Aug, all at the owner's request, not part of the
 original settings-panel rework:**
@@ -278,29 +292,15 @@ Neither meant anything for these two: a route has no spell to pick and no source
 damage meter's rows are attackers, not buffs. The owner's own words: *"custom standalone auras are
 not supposed to follow this same UI format."*
 
-**Now built**, as part of a much broader settings-panel rework (25 Aug, see
+**Built** as part of a much broader settings-panel rework (25 Aug, see
 `test/settings-panel-shapes.test.js` and its own header comment for the full design): every aura
 resolves to one of twelve shapes via `widgetShape()`, and a `SHAPE_FIELDS` table says which
-optional rows/cards each shape gets. Damage parser and Travel guide are each their own shape now,
+optional rows/cards each shape gets. Damage parser and Travel guide are each their own shape,
 and neither includes the buff-picker card, the "Watching:" row, or the Display style radios — only
 their own settings block (`widget-damage-settings` / `widget-travel-settings`) plus whichever of
 the ordinary aura fields actually apply (Travel guide's own list narrowed further on 26 Aug — see
-above). Confirmed structurally (the shape-field matrix test) and by launching the app clean;
-**not yet confirmed by opening an existing Damage parser aura's settings and looking at it** — see
-docs/TESTING.md's "Settings-panel rework (25 Aug)" section for that checklist (its Travel guide
-half is superseded by the 26 Aug unlock above).
-
-**Damage parser is still locked, deliberately — this is a separate decision from the panel design
-being done.** (Travel guide's own lock was lifted 26 Aug, at the owner's direct request — see
-above.) Re-enabling *creation* of a new Damage parser aura is a one-line mechanical change whenever
-wanted: add an `id: 'damage-parser'` entry back to `PREMADE_WIDGETS` in `main-window.js`, with a
-`create()` calling `window.eqTracker.createDamageMeterWidget(name, false)` — the IPC channel,
-preload bridge and `widgetManager.js` functions behind it were never touched and still work end to
-end — then delete the matching entry from `PLANNED_PREMADE_WIDGETS`. Don't do this without being
-asked; the design being finished doesn't imply the lock should lift on its own. **Give it a
-`group: 'standalone'`** when it moves — see the premade-list grouping note just below; an entry
-with no `group` is silently dropped from the Add Aura list rather than shown ungrouped (confirmed
-by `test/premade-list.test.js`'s own coverage of this).
+above). Both display-verified live: creatable from Add Aura, settings panel opens and shows the
+right fields, no leftover buff-picker/Watching remnants.
 
 ## Premade list grouped by Timers / Event alerts / Standalone tools — 25 Aug
 

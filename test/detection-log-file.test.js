@@ -84,7 +84,7 @@ test('there is a way to reach it from inside the app', () => {
   assert.match(mainSrc, /ipcMain\.handle\('debug:openLogFolder'/);
   assert.match(mainSrc, /shell\.openPath\(DEBUG_LOG_DIR\)/);
   assert.match(mainSrc, /require\('electron'\)/);
-  assert.match(mainSrc, /globalShortcut, shell \}/, 'shell is used but never imported');
+  assert.match(mainSrc, /globalShortcut, shell(, \w+)* \} = require\('electron'\)/, 'shell is used but never imported');
   assert.match(preloadSrc, /openDebugLogFolder:/);
   assert.match(html, /id="open-debug-log-folder-btn"/);
   assert.match(rendererSrc, /openDebugLogFolderBtn\.addEventListener\('click'/);

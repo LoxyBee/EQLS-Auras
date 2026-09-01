@@ -108,6 +108,7 @@ function defaultSelfBuffsWidget(overrides = {}) {
   return {
     id: 'self-buffs',
     kind: 'self-buffs-builtin',
+    folderId: '',
     name: 'Self Buffs',
     deletable: false,
     enabled: true,
@@ -181,10 +182,21 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // 1,521,971 logged lines her character deals 2,712 damage lines against roughly 346,000 from
     // everyone else, so a meter defaulting to "just mine" would be an almost empty box for her.
     mineOnly: false,
-    // The leading row carrying the fight's total and its rate. The per-attacker rows below it
-    // cannot show a rate - each attacker's own share of the elapsed time is not something the log
-    // records - so this is where the number people actually quote comes from.
+    // The leading row carrying the fight's total and its rate.
     showTotalRow: true,
+    // Note 19. What each per-attacker row's number reads as: 'total' cumulative damage (default),
+    // 'dps' that attacker's own rate (their damage / the fight length, the same divide the Total
+    // rate uses), or 'both' - "damage (rate)". The Total row always shows both regardless.
+    damageValueMode: 'total',
+    // Note 19. Whose damage this meter is about: 'all' the whole fight (default, unchanged),
+    // 'group' only the player + anyone who has been in their group this session (+ their charmed
+    // pets), 'mine' only the player + their charmed pets. 'group'/'mine' recompute every share %
+    // over just what they show - non-scope damage is not counted at all. This is separate from
+    // `mineOnly`, which only HIDES the other rows while still counting them toward your %.
+    damageScope: 'all',
+    // Note 19 / line C. A combined "Charmed pets" row for charmed mobs whose owner can't be
+    // determined. On by default; it never attributes to a person and can be hidden here.
+    showCharmedPetsRow: true,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -321,6 +333,7 @@ function defaultCustomWidget(name) {
     id: crypto.randomUUID(),
     kind: 'custom',
     name,
+    folderId: '', // sidebar grouping only - see the renderer
     deletable: true,
     enabled: true,
     displayMode: 'list',
@@ -444,10 +457,21 @@ function defaultCustomWidget(name) {
     // 1,521,971 logged lines her character deals 2,712 damage lines against roughly 346,000 from
     // everyone else, so a meter defaulting to "just mine" would be an almost empty box for her.
     mineOnly: false,
-    // The leading row carrying the fight's total and its rate. The per-attacker rows below it
-    // cannot show a rate - each attacker's own share of the elapsed time is not something the log
-    // records - so this is where the number people actually quote comes from.
+    // The leading row carrying the fight's total and its rate.
     showTotalRow: true,
+    // Note 19. What each per-attacker row's number reads as: 'total' cumulative damage (default),
+    // 'dps' that attacker's own rate (their damage / the fight length, the same divide the Total
+    // rate uses), or 'both' - "damage (rate)". The Total row always shows both regardless.
+    damageValueMode: 'total',
+    // Note 19. Whose damage this meter is about: 'all' the whole fight (default, unchanged),
+    // 'group' only the player + anyone who has been in their group this session (+ their charmed
+    // pets), 'mine' only the player + their charmed pets. 'group'/'mine' recompute every share %
+    // over just what they show - non-scope damage is not counted at all. This is separate from
+    // `mineOnly`, which only HIDES the other rows while still counting them toward your %.
+    damageScope: 'all',
+    // Note 19 / line C. A combined "Charmed pets" row for charmed mobs whose owner can't be
+    // determined. On by default; it never attributes to a person and can be hidden here.
+    showCharmedPetsRow: true,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -669,6 +693,9 @@ const SHAREABLE_FIELDS = [
   'fightTimeoutSec',
   'mineOnly',
   'showTotalRow',
+  'damageValueMode',
+  'damageScope',
+  'showCharmedPetsRow',
   'travelDestination',
   'showOnAllProfiles',
   'visibleInZones',
@@ -732,9 +759,21 @@ const LEGACY_SHARE_CODE_PREFIXES = ['EQBT2-'];
 // silently falling back to a default.
 const LEGACY_TEXT_SIZE_PX = { small: 11, medium: 13, large: 16 };
 
+// Sidebar folder - pure organisation of the Overlay Auras list, nothing to do with visibility
+// (loadout profiles own that). id is stable; name/collapsed are user-set.
+function normalizeFolder(folder) {
+  return {
+    id: typeof folder.id === 'string' && folder.id ? folder.id : crypto.randomUUID(),
+    name: typeof folder.name === 'string' ? folder.name : 'Folder',
+    collapsed: !!folder.collapsed,
+  };
+}
+
 function normalizeWidget(widget) {
   return {
     ...widget,
+    // Sidebar folder membership, '' = ungrouped. Organisation only.
+    folderId: typeof widget.folderId === 'string' ? widget.folderId : '',
     displayMode: normalizeDisplayMode(widget.displayMode),
     // Clamped to the slider's own 8-28 range. The control was wired to the wrong DOM element for
     // a while (a shared id with the much larger text-aura message slider, 12-120), so a text aura
@@ -774,6 +813,15 @@ function normalizeWidget(widget) {
     // it, showing up as tiles that simply stop updating.
     buffNames: Array.isArray(widget.buffNames) ? widget.buffNames : [],
     customTimers: Array.isArray(widget.customTimers) ? widget.customTimers : [],
+    // Note 19. `damageShowDps` was the old on/off boolean before 'both' was added - carry a widget
+    // that only has the boolean over to the equivalent mode.
+    damageValueMode:
+      widget.damageValueMode ||
+      (typeof widget.damageShowDps === 'boolean' ? (widget.damageShowDps ? 'dps' : 'total') : 'total'),
+    // Note 19. Anything unrecognised (or a widget saved before the field existed) is the whole
+    // fight, the pre-existing behaviour.
+    damageScope: ['all', 'group', 'mine'].includes(widget.damageScope) ? widget.damageScope : 'all',
+    showCharmedPetsRow: widget.showCharmedPetsRow !== false,
     // A widget saved before this field existed still has its real duration sitting on its first
     // trigger (they were all in sync anyway on every real aura seen so far - see the field's own
     // comment) - read it from there rather than resetting everyone to the bare default. A widget
@@ -1173,7 +1221,12 @@ class WidgetStore {
   _loadOrMigrate() {
     const existing = this.store.loadJson('widgets', null);
     if (existing) {
-      const data = { ...existing, widgets: existing.widgets.map(normalizeWidget) };
+      const data = {
+        ...existing,
+        widgets: existing.widgets.map(normalizeWidget),
+        // Sidebar-only grouping (organise, not visibility - see the renderer). [{ id, name, collapsed }].
+        folders: Array.isArray(existing.folders) ? existing.folders.map(normalizeFolder) : [],
+      };
       // v1 -> v2: bard songs became opt-in rather than shown by default.
       // Version-gated so it runs exactly once - a user who later decides they
       // DO want songs shown must not have that choice stomped on every launch.
@@ -1274,7 +1327,7 @@ class WidgetStore {
 
     const selfBuffs = defaultSelfBuffsWidget(overrides);
 
-    const data = { version: 5, widgets: [selfBuffs] };
+    const data = { version: 5, widgets: [selfBuffs], folders: [] };
     this.store.saveJson('widgets', data);
     return data;
   }
@@ -1495,6 +1548,8 @@ class WidgetStore {
     // simply never run. Off explicitly rather than left on and inert, so the settings page does
     // not offer a switch that cannot do anything.
     widget.landingGlowEnabled = false;
+    widget.displayMode = 'list';
+    widget.premadeOrigin = { kind: 'damage', mineOnly: !!mineOnly };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -1775,6 +1830,18 @@ class WidgetStore {
       fresh = defaultAllyBuffsWidget(widget.name);
     } else if (origin.kind === 'bardSongs') {
       fresh = defaultBardSongsWidget(widget.name);
+    } else if (origin.kind === 'raidNamed') {
+      fresh = defaultRaidNamedWidget(widget.name);
+    } else if (origin.kind === 'damage') {
+      // Rebuild through the same path the premade uses, minus the push/save - resetToDefault
+      // handles persistence below. Keeps the sortOrder/listWidth/glow-off decisions in one place.
+      fresh = defaultCustomWidget(widget.name);
+      fresh.buffSource = 'damage';
+      fresh.displayMode = 'list';
+      fresh.sortOrder = 'default';
+      fresh.listWidth = 260;
+      fresh.landingGlowEnabled = false;
+      fresh.mineOnly = !!origin.mineOnly;
     } else if (origin.kind === 'textAura' && TEXT_AURA_PRESETS[origin.preset]) {
       fresh = defaultCustomWidget(widget.name);
       fresh.displayMode = 'text';
@@ -1842,6 +1909,65 @@ class WidgetStore {
     this.data.widgets = [...reordered, ...leftover];
     this._save();
     return true;
+  }
+
+  // --- Sidebar folders (organisation of the Overlay Auras list, not visibility) ---------------
+
+  getFolders() {
+    return this.data.folders || (this.data.folders = []);
+  }
+
+  createFolder(name) {
+    const folder = normalizeFolder({ name: String(name || '').trim() || 'New folder' });
+    this.getFolders().push(folder);
+    this._save();
+    return folder;
+  }
+
+  renameFolder(id, name) {
+    const folder = this.getFolders().find((f) => f.id === id);
+    if (!folder) return null;
+    folder.name = String(name || '').trim() || folder.name;
+    this._save();
+    return folder;
+  }
+
+  // Deleting a folder never deletes its auras - they fall back to ungrouped.
+  deleteFolder(id) {
+    const before = this.getFolders().length;
+    this.data.folders = this.getFolders().filter((f) => f.id !== id);
+    if (this.data.folders.length === before) return false;
+    for (const w of this.data.widgets) if (w.folderId === id) w.folderId = '';
+    this._save();
+    return true;
+  }
+
+  setFolderCollapsed(id, collapsed) {
+    const folder = this.getFolders().find((f) => f.id === id);
+    if (!folder) return null;
+    folder.collapsed = !!collapsed;
+    this._save();
+    return folder;
+  }
+
+  // Full list of folder ids in the new order; unknown ids skipped, unnamed folders kept after.
+  reorderFolders(orderedIds) {
+    const known = new Map(this.getFolders().map((f) => [f.id, f]));
+    const reordered = orderedIds.map((id) => known.get(id)).filter(Boolean);
+    const placed = new Set(reordered.map((f) => f.id));
+    this.data.folders = [...reordered, ...this.getFolders().filter((f) => !placed.has(f.id))];
+    this._save();
+    return true;
+  }
+
+  // '' (or an unknown id) => ungrouped.
+  setWidgetFolder(widgetId, folderId) {
+    const widget = this.data.widgets.find((w) => w.id === widgetId);
+    if (!widget) return null;
+    const valid = folderId && this.getFolders().some((f) => f.id === folderId);
+    widget.folderId = valid ? folderId : '';
+    this._save();
+    return widget;
   }
 
   savePosition(id, position) {

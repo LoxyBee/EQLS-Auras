@@ -24,7 +24,7 @@ const path = require('path');
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
 const fs = require('fs');
-const { ipcMain, protocol, BrowserWindow, Menu, Tray, globalShortcut, shell } = require('electron');
+const { ipcMain, protocol, BrowserWindow, Menu, Tray, globalShortcut, shell, screen } = require('electron');
 const { buildTrayIcon } = require('./trayIcon');
 const { createMainWindow, getMainWindow } = require('./mainWindow');
 const { LogService } = require('./logService');
@@ -35,6 +35,8 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
+const { GroupRoster } = require('./groupRoster');
+const { PetTracker } = require('./petTracker');
 const { RaidNamedTracker } = require('./raidNamedTracker');
 const { ModuleHost } = require('./moduleHost');
 const { readLastZoneEntry } = require('./logZonePeek');
@@ -64,6 +66,7 @@ const ambiguousPopup = require('./ambiguousPopup');
 const zonePromptPopup = require('./zonePromptPopup');
 const moveHudWindow = require('./moveHudWindow');
 const gridGuideWindow = require('./gridGuideWindow');
+const nudgePadWindow = require('./nudgePadWindow');
 const positionSnap = require('./positionSnap');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
@@ -179,6 +182,10 @@ function toggleMasterHidden() {
 
 const customTimerEngine = new CustomTimerEngine();
 const damageEngine = new DamageEngine();
+// Note 19. Who is / has been in the player's group, and which charmed pets are the player's - both
+// feed the damage meter's "group" / "mine" scopes and its charmed-pet rows.
+const groupRoster = new GroupRoster();
+const petTracker = new PetTracker();
 const raidNamedTracker = new RaidNamedTracker();
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
@@ -223,7 +230,16 @@ const spellbookService = new SpellbookService();
 // Drop-in custom-aura modules (feat/module-system). Additive and greenfield - the built-in aura
 // types are untouched. The host rides the same 'line' bus below as a pure observer; its entries
 // reach the overlay through one generic per-module channel. See moduleHost.js's header.
-const moduleHost = new ModuleHost(path.join(app.getPath('userData'), 'modules'), { loadJson, saveJson });
+//
+// Modules live in a `modules/` folder INSIDE the install (next to the .exe), shipped via
+// package.json's extraFiles and seeded with the bundled ones - same resolution as soundService's
+// bundledSoundsDir(). NOT userData: the owner's call, 1 Sep. Dev build reads the repo's own
+// modules/ folder. The default per-user NSIS install is writable, so a user can still drop their
+// own .js in there (it goes on an uninstall, like anything else in the install dir).
+const MODULES_DIR = app.isPackaged
+  ? path.join(path.dirname(app.getPath('exe')), 'modules')
+  : path.join(app.getAppPath(), 'modules');
+const moduleHost = new ModuleHost(MODULES_DIR, { loadJson, saveJson });
 moduleHost.setCurrentZoneFn(() => widgetManager.getCurrentZone());
 moduleHost.setGroupMembersFn(() => [...buffEngine.groupMembers.values()]);
 moduleHost.setIconUrlForSpellFn((name) => {
@@ -254,6 +270,15 @@ damageEngine.setKnownEnemiesFn(() =>
     .filter((b) => b.onEnemy && b.allyName)
     .map((b) => b.allyName)
 );
+// Note 19. The "group" damage scope filters on who has been in the player's group this session;
+// the charmed-pet rows need to know which charmed mobs are the player's own. Both are pulled live.
+damageEngine.setGroupFn(() => groupRoster.getAdmitted());
+damageEngine.setPetsFn(() => petTracker.snapshot());
+petTracker.setOwnNameFn(() => spellbookService.getCharacterName());
+petTracker.setCharmSpellCheck((name) => {
+  const entry = buffStore.getByName(name);
+  return !!entry && entry.scaleCategory === 'charm';
+});
 // See buffEngine.setAllyDebuffAlertNamesFn - spells a text aura wants a warning about when
 // somebody else casts them.
 buffEngine.setAllyDebuffAlertNamesFn(() => widgetManager.getAllyDebuffAlertNames());
@@ -469,6 +494,9 @@ logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
 // Note 19. A fourth listener for the same reason as the third: damage is not a buff, and giving
 // buffEngine a second job would mean every future change to either having to think about both.
 logService.watcher.on('line', (line) => damageEngine.handleLine(line));
+// Note 19. Group membership and charmed-pet ownership - two small trackers the damage meter reads.
+logService.watcher.on('line', (line) => groupRoster.handleLine(line));
+logService.watcher.on('line', (line) => petTracker.handleLine(line));
 logService.watcher.on('line', (line) => raidNamedTracker.handleLine(line));
 logService.watcher.on('line', (line) => abilityGroupTracker.handleLine(line));
 // Custom modules ride the same bus as pure observers. Its handleLine catches per-module throws
@@ -764,6 +792,8 @@ logService.watcher.on('line', (line) => {
   if (!zone) return;
   const changed = applyZoneChangeAndNotify(zone);
   debugLog(`ZONE now "${changed}"`);
+  // The damage meter's "since zone-in" tally starts over here - see damageEngine.enterZone.
+  damageEngine.enterZone();
   // Note 20. Where you are is half of every route, so a zone line is the main thing that makes a
   // travel aura redraw.
   pushTravelRoutes();
@@ -872,7 +902,18 @@ customTimerEngine.on('activeChanged', (timers) => {
   broadcast('customTimers:active', timers);
   saveSessionSnapshotSoon();
 });
-damageEngine.on('activeChanged', (rows) => broadcast('damage:active', rows));
+// Note 19. One engine, but a damage aura can be scoped to the whole fight, just the player's
+// group, or just the player (+ their charmed pets), and 'group'/'mine' recompute the % denominator
+// - so the three views are computed here and the overlay picks its aura's. `all` stays a plain
+// array for any older consumer; `damage:active` carries the object.
+function damageViews() {
+  return {
+    all: damageEngine.getActive(Date.now(), 'all'),
+    group: damageEngine.getActive(Date.now(), 'group'),
+    mine: damageEngine.getActive(Date.now(), 'mine'),
+  };
+}
+damageEngine.on('activeChanged', () => broadcast('damage:active', damageViews()));
 // Backlog #33 - the named-kill board. Each row becomes an infinite buff-shaped tile (killed ones
 // flagged so overlay.js can dim them); a row with a live respawn countdown carries remainingSec.
 raidNamedTracker.on('changed', (rows) => broadcast('raidNamed:active', rows.map(raidNamedTile)));
@@ -1094,6 +1135,7 @@ setInterval(() => {
   // path that edits a widget without remembering to call this.
   refreshDamageOptions();
   damageEngine.tick();
+  petTracker.tick();
   abilityGroupTracker.sweep();
   // Note 20. Catches the two inputs that change without a zone line - editing the destination and
   // scribing a travel spell. Cheap: a breadth-first search over 104 nodes, only for auras that are
@@ -1203,13 +1245,16 @@ app.whenReady().then(() => {
   setImmediate(() => {
     const logPath = logService.watcher.getStatus().currentFilePath;
     if (!logPath) return;
-    const zone = readLastZoneEntry(logPath);
-    if (!zone) return;
-    applyZoneChangeAndNotify(zone);
-    raidNamedTracker.setZone(zone);
-    customTimerEngine.seedZone(zone);
+    const found = readLastZoneEntry(logPath);
+    if (!found) return;
+    applyZoneChangeAndNotify(found.zone);
+    raidNamedTracker.setZone(found.zone, found.viaVoidling);
+    customTimerEngine.seedZone(found.zone);
     pushTravelRoutes();
-    debugLog(`ZONE recovered on startup: "${zone}" (from the log tail)`);
+    debugLog(
+      `ZONE recovered on startup: "${found.zone}" (from the log tail` +
+      (found.viaVoidling ? ', raid entry confirmed)' : ')')
+    );
   });
 
   app.on('activate', () => {
@@ -1401,7 +1446,7 @@ ipcMain.handle('buffs:getActiveAllies', () => buffEngine.getActiveAllyBuffs());
 ipcMain.handle('buffs:getActiveBardSongs', () => buffEngine.getActiveBardSongs());
 ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffEngine.removeActiveBardSong(castBy, name));
 
-ipcMain.handle('damage:getActive', () => damageEngine.getActive());
+ipcMain.handle('damage:getActive', () => damageViews());
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
 ipcMain.handle('travel:getRoutes', () => travelRoutes());
 ipcMain.handle('travel:getZones', () => allZoneNames());
@@ -1597,6 +1642,12 @@ ipcMain.handle('ui:setMergeRule', (_event, rule) => {
 // this fallback is reached only when the setting has never been touched.
 // QOL #50 - the Buff Tracker "finish setting up" checklist, dismissed for good once the user
 // clicks it away (a per-machine nag, not something to carry between installs).
+// First-run setup wizard - shown once, then re-openable from the Setup page.
+ipcMain.handle('ui:getSetupWizardDone', () => loadJson('setupWizardDone', false) === true);
+ipcMain.handle('ui:setSetupWizardDone', (_event, done) => {
+  saveJson('setupWizardDone', done !== false);
+  return true;
+});
 ipcMain.handle('ui:getSetupNudgeDismissed', () => loadJson('setupNudgeDismissed', false) === true);
 ipcMain.handle('ui:dismissSetupNudge', () => {
   saveJson('setupNudgeDismissed', true);
@@ -1711,14 +1762,50 @@ ipcMain.handle('overlay:getMasterState', () => ({
   allUnlocked: widgetManager.areAllUnlocked(),
   masterHidden: widgetManager.isMasterHidden(),
   soundsMuted: widgetManager.isSoundsMuted(),
+  previewAll: widgetManager.isPreviewAll(),
+  previewAny: widgetManager.isPreviewAny(), // the button toggles on this - "any on" -> one press clears all
+  suspendedMove: suspendedMove ? suspendedMove.kind : null,
 }));
+ipcMain.handle('overlay:setPreviewAll', (_event, enabled) => {
+  widgetManager.setPreviewAll(!!enabled);
+  return widgetManager.isPreviewAny();
+});
+// "Back to moving auras" - the pad's centre button opened a settings page and stashed the move
+// session; put it back exactly as it was.
+ipcMain.handle('move:resume', () => {
+  const s = suspendedMove;
+  suspendedMove = null;
+  if (!s) { notifyMasterState(); return { resumed: false }; }
+  if (s.kind === 'all') {
+    widgetManager.setAllUnlocked(true);
+    enterUnlockAllMode({ keepSuspended: true });
+    notifyMasterState();
+  } else {
+    enterMoveMode(s.moveKind, s.id, { keepSuspended: true });
+  }
+  return { resumed: true };
+});
 ipcMain.handle('overlay:setMasterHidden', (_event, hidden) => {
   actionBarManager.setMasterHidden(hidden);
   return widgetManager.setMasterHidden(hidden);
 });
 // QOL #10 - global mute for every aura's alert sounds.
 ipcMain.handle('overlay:setSoundsMuted', (_event, muted) => widgetManager.setSoundsMuted(muted));
-ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => widgetManager.setAllUnlocked(unlocked));
+ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => {
+  // The shared step/snap HUD rides with "Unlock all" - opened here, and every box gets its own
+  // nudge pad. A single-aura "Move…" that was left open (e.g. its centre button opened settings
+  // without a Done) is torn down first, so the two move modes never overlap.
+  if (unlocked) {
+    if (hudMode === 'single') exitMoveMode();
+    const res = widgetManager.setAllUnlocked(true);
+    enterUnlockAllMode(); // clears any suspended move - this is a fresh session
+    return res;
+  }
+  const res = widgetManager.setAllUnlocked(false);
+  if (hudMode === 'all') exitUnlockAllMode();
+  if (suspendedMove) { suspendedMove = null; notifyMasterState(); }
+  return res;
+});
 ipcMain.handle('settings:getShowAurasWhenAppFocused', () => showAurasWhenAppFocused);
 ipcMain.handle('settings:setShowAurasWhenAppFocused', (_event, enabled) => {
   showAurasWhenAppFocused = enabled;
@@ -1768,36 +1855,8 @@ ipcMain.handle('spellbook:clearMemorized', () => buffEngine.clearMemorized());
 ipcMain.handle('widget:list', () => widgetManager.getAllWidgetConfigs());
 ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig(id));
 ipcMain.handle('widget:preview', (_event, id) => widgetManager.previewWidget(id));
-// Note 6 - clicking an aura's name in its move box. Raises the settings window and tells it
-// which aura to open. Worth knowing: this pulls EverQuest out of focus, so with auto-hide on it
-// is also the moment your other auras vanish. The unlocked ones stay put, which is the only
-// reason that is tolerable.
-//
-// Reported live 24 Aug: "right clicking on a blue move box freezes the app entirely... unless i
-// alt tab". Root cause - win.focus() asks Windows to hand this window OS foreground focus, and
-// this call fires from inside the SAME right-click gesture the overlay's own always-on-top,
-// `-webkit-app-region: drag` window is still processing. Windows' foreground-lock protection can
-// make a focus() request like that block synchronously waiting for the lock to release - and
-// since Electron's main process is single-threaded, a block there freezes EVERY ipcMain handler
-// in the app, not just this one, until something (alt-tabbing away and back) clears the lock.
-// That also explains "it also doesn't nav me": the webContents.send() below used to run AFTER
-// focus()/show(), so a frozen focus() call meant the navigation message never even got sent.
-//
-// Fixed two ways together: the navigation message goes out FIRST, so the settings page opens
-// correctly regardless of whether the OS ever grants focus - and show()/focus() are deferred to
-// setImmediate, off the input event that triggered them, so even if Windows makes the focus
-// request wait, it is not this process's own single thread doing the waiting.
-ipcMain.on('widget:openSettings', (_event, id) => {
-  const win = getMainWindow();
-  if (!win || win.isDestroyed()) return;
-  win.webContents.send('widget:openSettings', id);
-  setImmediate(() => {
-    if (win.isDestroyed()) return;
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-  });
-});
+ipcMain.handle('widget:isPreviewing', (_event, id) => widgetManager.isPreviewShown(id));
+ipcMain.handle('widget:getPreviewMode', (_event, id) => widgetManager.isPreviewShown(id)); // overlay re-sync on load
 // An overlay asks for this as it boots, the same way it asks for its lock state - a window
 // created on demand would otherwise start out assuming it may make noise.
 ipcMain.handle('widget:isAudible', (_event, id) => {
@@ -1992,7 +2051,7 @@ ipcMain.handle('debug:setEnabled', (_event, enabled) => {
 });
 // The one place a renderer (an overlay window - see preload-overlay.js's debugLog bridge) can
 // write into the same debug log every detection line already goes through. .on, not .handle - the
-// overlay has nothing to wait for a reply about, same as widget:reportContentSize/openSettings.
+// overlay has nothing to wait for a reply about, same as widget:reportContentSize.
 ipcMain.on('debug:logLine', (_event, message) => debugLog(message));
 ipcMain.handle('zone:current', () => widgetManager.getCurrentZone());
 ipcMain.handle('zone:known', () => KNOWN_ZONES);
@@ -2013,6 +2072,15 @@ ipcMain.handle('widget:duplicate', (_event, id) => widgetManager.duplicateWidget
 ipcMain.handle('widget:applyCodeToSelfBuffs', (_event, code) => widgetManager.applyCodeToSelfBuffs(code));
 ipcMain.handle('widget:delete', (_event, id) => widgetManager.deleteWidget(id));
 ipcMain.handle('widget:reorder', (_event, { orderedIds }) => widgetManager.reorderWidgets(orderedIds));
+// Sidebar folders (Overlay Auras list organisation - see the renderer). None of these touch an
+// overlay window; the renderer just re-fetches the list + folders after each.
+ipcMain.handle('auraFolders:list', () => widgetManager.getFolders());
+ipcMain.handle('auraFolders:create', (_event, name) => widgetManager.createFolder(name));
+ipcMain.handle('auraFolders:rename', (_event, { id, name }) => widgetManager.renameFolder(id, name));
+ipcMain.handle('auraFolders:delete', (_event, id) => widgetManager.deleteFolder(id));
+ipcMain.handle('auraFolders:setCollapsed', (_event, { id, collapsed }) => widgetManager.setFolderCollapsed(id, collapsed));
+ipcMain.handle('auraFolders:reorder', (_event, { orderedIds }) => widgetManager.reorderFolders(orderedIds));
+ipcMain.handle('widget:setFolder', (_event, { id, folderId }) => widgetManager.setWidgetFolder(id, folderId));
 ipcMain.handle('widget:resetToDefault', (_event, { id }) => widgetManager.resetWidgetToDefault(id));
 ipcMain.handle('widget:setName', (_event, { id, value }) => widgetManager.setName(id, value));
 ipcMain.handle('widget:toggleLock', (_event, id) => widgetManager.toggleLock(id));
@@ -2044,9 +2112,24 @@ function targetSetLocked(kind, id, locked) {
   return kind === 'actionBar' ? actionBarManager.setLocked(id, locked) : widgetManager.setLocked(id, locked);
 }
 
+// 'single' - one aura/bar being positioned via its "Move…" button (main window hidden).
+// 'all' - "Unlock all auras" is on; the HUD is just the shared step/snap controls, every aura
+// carries its own nudge arrows, and the main window stays open.
+let hudMode = null;
+
+// When the pad's centre button opens an aura's settings, the move session that was open is torn
+// down but REMEMBERED here, so the "Back to moving" button (main window top bar) can put it back:
+// tweak one aura's settings, then resume moving all of them. null | { kind:'all' } |
+// { kind:'single', moveKind, id }.
+let suspendedMove = null;
+function notifyMasterState() {
+  getMainWindow()?.webContents.send('overlay:masterStateChanged');
+}
+
 function hudMeta() {
   const grid = positionSnap.get();
   return {
+    mode: hudMode || 'single',
     name: moveTarget ? targetName(moveTarget.kind, moveTarget.id) : '',
     stepPx: moveStepPx,
     snapEnabled: grid.enabled,
@@ -2056,18 +2139,23 @@ function hudMeta() {
 
 function onMoveTargetMoved(id, bounds) {
   if (moveTarget && id === moveTarget.id && bounds) moveHudWindow.update(bounds, hudMeta());
+  // Keep this aura's nudge pad glued above its box (no-op if it has no pad open).
+  if (bounds) nudgePadWindow.updateFor(id, bounds);
 }
 widgetManager.setOnWidgetMovedFn(onMoveTargetMoved);
 actionBarManager.setOnMovedFn(onMoveTargetMoved);
 
-function enterMoveMode(kind, id) {
+function enterMoveMode(kind, id, { keepSuspended = false } = {}) {
   if (!targetName(kind, id) && !targetBounds(kind, id)) return { ok: false };
+  if (!keepSuspended && suspendedMove) { suspendedMove = null; notifyMasterState(); }
   moveTarget = { kind, id };
+  hudMode = 'single';
   positionSnap.setActive(id);
   if (targetLocked(kind, id)) targetSetLocked(kind, id, false);
   const b = targetBounds(kind, id); // exists now that it is unlocked
   getMainWindow()?.hide();
   moveHudWindow.open(b || { x: 200, y: 200, width: 160, height: 80 }, hudMeta());
+  nudgePadWindow.showFor(id, b, kind); // a pad over the box - aura or action bar
   if (positionSnap.get().enabled) gridGuideWindow.show(positionSnap.get().sizePx);
   return { ok: true };
 }
@@ -2075,8 +2163,10 @@ function enterMoveMode(kind, id) {
 function exitMoveMode() {
   const t = moveTarget;
   moveTarget = null;
+  hudMode = null;
   positionSnap.setActive(null);
   moveHudWindow.close();
+  nudgePadWindow.hideAll();
   gridGuideWindow.hide();
   if (t) targetSetLocked(t.kind, t.id, true);
   const win = getMainWindow();
@@ -2084,22 +2174,82 @@ function exitMoveMode() {
   else createMainWindow();
 }
 
+// "Unlock all auras" - the shared HUD holds only the step/snap controls; every aura gets its own
+// nudge-pad window above its box. The main window stays open (unlike single move mode).
+function enterUnlockAllMode({ keepSuspended = false } = {}) {
+  if (!keepSuspended && suspendedMove) { suspendedMove = null; notifyMasterState(); }
+  hudMode = 'all';
+  positionSnap.setActiveAll(true);
+  moveHudWindow.open(null, hudMeta());
+  for (const { id, bounds } of widgetManager.getVisibleUnlockedBounds()) nudgePadWindow.showFor(id, bounds);
+  if (positionSnap.get().enabled) gridGuideWindow.show(positionSnap.get().sizePx);
+}
+function exitUnlockAllMode() {
+  hudMode = null;
+  positionSnap.setActiveAll(false);
+  moveHudWindow.close();
+  nudgePadWindow.hideAll();
+  gridGuideWindow.hide();
+}
+
+// End whatever positioning session is open - a single "Move…" or "Unlock all auras" - re-locking
+// and closing the HUD + every pad. Shared by the HUD's Done button and the pad's centre button.
+// `suspend: true` (from the pad centre button) remembers the mode so "Back to moving" can resume.
+function endMoveSession({ suspend = false } = {}) {
+  suspendedMove = suspend && hudMode === 'all'
+    ? { kind: 'all' }
+    : suspend && hudMode === 'single' && moveTarget
+      ? { kind: 'single', moveKind: moveTarget.kind, id: moveTarget.id }
+      : null;
+  if (hudMode === 'all') {
+    widgetManager.setAllUnlocked(false);
+    exitUnlockAllMode();
+    getMainWindow()?.webContents.send('overlay:masterStateChanged');
+  } else if (hudMode === 'single') {
+    exitMoveMode();
+  }
+  notifyMasterState();
+}
+
 ipcMain.handle('widget:enterMoveMode', (_event, id) => enterMoveMode('widget', id));
 ipcMain.handle('actionBar:enterMoveMode', (_event, id) => enterMoveMode('actionBar', id));
-ipcMain.handle('moveHud:nudge', (_event, { dx, dy }) => {
-  if (!moveTarget) return null;
-  return moveTarget.kind === 'actionBar'
-    ? actionBarManager.nudgePosition(moveTarget.id, dx, dy)
-    : widgetManager.nudgeWidget(moveTarget.id, dx, dy);
+// An arrow on a per-box nudge pad (nudgePadWindow.js). Only an unlocked thing shows a pad, so the
+// lock check is belt-and-braces. Routed by kind, same split targetManager uses.
+ipcMain.on('nudgePad:nudge', (_event, { id, kind, dx, dy } = {}) => {
+  if (!id) return;
+  if (kind === 'actionBar') {
+    if (!actionBarManager.isLocked(id)) actionBarManager.nudgePosition(id, dx, dy);
+  } else if (!widgetManager.isLocked(id)) {
+    widgetManager.nudgeWidget(id, dx, dy);
+  }
 });
+// The pad's centre button - end the move and jump to this aura's settings. Ending the move first
+// (exitMoveMode / exitUnlockAllMode) closes the HUD and every pad and re-locks - otherwise the
+// move UI is left half-open behind the settings page and a later "Unlock all" collides with it.
+// Same freeze-safe shape as the old right-click path: nav message FIRST, show()/focus() deferred,
+// and it comes from the pad's own focusable:false window so the 24 Aug foreground-lock never bit.
+ipcMain.on('nudgePad:openSettings', (_event, id) => {
+  endMoveSession({ suspend: true }); // remembered, so "Back to moving" can resume it
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send('widget:openSettings', id);
+  setImmediate(() => {
+    if (win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+});
+ipcMain.handle('widget:getNudgeStep', () => moveStepPx);
 ipcMain.handle('moveHud:setStep', (_event, px) => {
   moveStepPx = px === 10 ? 10 : 1;
+  broadcast('widget:nudgeStep', moveStepPx); // the per-box arrows read this
   return moveStepPx;
 });
 ipcMain.handle('moveHud:setSnap', (_event, { enabled, sizePx }) => {
   const grid = positionSnap.set({ enabled, sizePx });
   saveJson('overlaySnapGrid', grid);
-  if (moveTarget) {
+  if (moveTarget || hudMode === 'all') {
     if (grid.enabled) gridGuideWindow.show(grid.sizePx);
     else gridGuideWindow.hide();
   }
@@ -2108,7 +2258,21 @@ ipcMain.handle('moveHud:setSnap', (_event, { enabled, sizePx }) => {
 ipcMain.handle('moveHud:resetPosition', () => {
   if (moveTarget) targetManager(moveTarget.kind).resetPosition(moveTarget.id);
 });
-ipcMain.handle('moveHud:done', () => exitMoveMode());
+// Centre the single-move target on its own display's work area. `axis` is 'h' | 'v' - one axis at
+// a time, the other kept where it is (owner's ask). Exact, so it ignores snap-to-grid.
+ipcMain.handle('moveHud:centre', (_event, axis) => {
+  if (!moveTarget || hudMode !== 'single') return null;
+  const b = targetBounds(moveTarget.kind, moveTarget.id);
+  if (!b) return null;
+  const wa = (screen.getDisplayMatching(b) || screen.getPrimaryDisplay()).workArea;
+  const pos = {};
+  if (axis === 'h') pos.x = Math.round(wa.x + (wa.width - b.width) / 2);
+  if (axis === 'v') pos.y = Math.round(wa.y + (wa.height - b.height) / 2);
+  return moveTarget.kind === 'actionBar'
+    ? actionBarManager.placeBar(moveTarget.id, pos)
+    : widgetManager.placeWidget(moveTarget.id, pos);
+});
+ipcMain.handle('moveHud:done', () => endMoveSession());
 
 // The Action Bar overlay - see actionBarManager.js's own header comment. Multiple bars, same
 // {id, ...} shape every widget:* handler already uses.
@@ -2222,6 +2386,14 @@ ipcMain.handle('sounds:openFolder', () => soundService.openPickerFolder());
 // QOL #3a - the userData folder, where every aura / profile / setting JSON lives. For a manual
 // backup before an update.
 ipcMain.handle('app:openConfigFolder', () => shell.openPath(app.getPath('userData')));
+
+// Opens a link in the user's real browser - never navigates a renderer window. Locked to
+// https:// so a compromised renderer can't use it to launch a local file or a custom-scheme
+// handler. The only caller today is the About page's site link.
+ipcMain.handle('app:openExternal', (_event, url) => {
+  if (typeof url === 'string' && /^https:\/\//i.test(url)) return shell.openExternal(url);
+  return false;
+});
 
 // QOL #3c - export / import the whole config as a portable bundle folder. See configTransfer.js.
 ipcMain.handle('config:export', () => configTransfer.exportConfig(app.getPath('userData')));

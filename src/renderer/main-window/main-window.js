@@ -4,14 +4,25 @@ async function init() {
 
   try {
     const info = await window.eqTracker.getVersionInfo();
-    statusEl.textContent = 'App, main process, and IPC are all working.';
+    statusEl.textContent = 'The app is running.';
     versionEl.innerHTML = `
       <dt>App version</dt><dd>${info.appVersion}</dd>
       <dt>Electron version</dt><dd>${info.electronVersion}</dd>
       <dt>Node version</dt><dd>${info.nodeVersion}</dd>
     `;
+    const aboutVersionEl = document.getElementById('about-version');
+    if (aboutVersionEl) aboutVersionEl.textContent = `v${info.appVersion}`;
   } catch (err) {
     statusEl.textContent = 'Something is wrong: ' + err.message;
+  }
+
+  // About-page site link - opens in the real browser via the main process, never navigates here.
+  const aboutSiteLink = document.getElementById('about-site-link');
+  if (aboutSiteLink && window.eqTracker.openExternal) {
+    aboutSiteLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.eqTracker.openExternal('https://eqlsource.com/tools/');
+    });
   }
 
   const appSettingsBlock = document.getElementById('app-settings-block');
@@ -22,6 +33,7 @@ async function init() {
   initTopicToggles();
   initProfileBar();
   initLogPanel();
+  initSetupWizard();
   initFirstRunLanding();
   initSetupNudge();
   initDetectionSettingsPanel();
@@ -40,6 +52,11 @@ async function init() {
   initBugReport();
   initActionBarsPage();
   initModules();
+  // One fetch of the module list, fanned out to every subscriber registered above (initModules for
+  // sidebar pages, initWidgetsPanel for Add-Aura entries + the per-aura settings card). Kept fresh
+  // on hot-reload.
+  refreshModuleRegistry();
+  if (window.eqTracker.onModulesChanged) window.eqTracker.onModulesChanged(refreshModuleRegistry);
   initBuffPlanner();
   initLoggingWatch();
   initChangelog();
@@ -121,7 +138,7 @@ function initLoggingWatch() {
     autoClosed = false;
     const done = await appConfirm({
       title: 'EverQuest logging looks off',
-      message: 'EverQuest is running, but nothing is being written to its log — the tracker can’t see buffs, lockouts or anything else without it.',
+      message: 'EverQuest is running, but nothing is being written to its log. The app can’t see anything without it.',
       detail: 'In game, type  /log on  then click "I’ve done it".',
       okLabel: "I’ve done it",
       cancelLabel: 'Dismiss',
@@ -133,7 +150,7 @@ function initLoggingWatch() {
     if (r.seemsOff) {
       await appConfirm({
         title: 'Still nothing',
-        message: 'Still no log activity. Give it a few seconds after /log on, or check the log-folder path on the Setup page.',
+        message: 'Still no log activity. Give it a few seconds, or check the log-folder path on the Setup page.',
         okLabel: 'OK',
         hideCancel: true,
       });
@@ -191,6 +208,112 @@ function initTopicToggles() {
 // nothing's happening. Reverts to normal permanently once a folder is
 // actually confirmed - if auto-detection just works (the common case for
 // a standard install), the user may never see this state at all.
+// The first-run setup wizard - a guided front for the same actions the Setup page has. Shows once
+// (persisted flag), re-openable from a Setup-page button. Steps: welcome -> EQ folder -> turn on
+// logging -> AA levels -> done. "Skip" and the ✕ both close without marking it done, so it comes
+// back next launch; "Finish" on the last step marks it done for good.
+function initSetupWizard() {
+  const backdrop = document.getElementById('setup-wizard-backdrop');
+  if (!backdrop) return;
+  const card = document.getElementById('setup-wizard-card');
+  const titleEl = document.getElementById('sw-title');
+  const progressEl = document.getElementById('sw-progress');
+  const backBtn = document.getElementById('sw-back');
+  const skipBtn = document.getElementById('sw-skip');
+  const nextBtn = document.getElementById('sw-next');
+  const closeBtn = document.getElementById('sw-close');
+
+  const STEPS = ['welcome', 'folder', 'logging', 'aa', 'done'];
+  let i = 0;
+  let hasFolder = false;
+  let sawLogLine = false;
+
+  function open() {
+    i = 0;
+    render();
+    backdrop.style.display = 'flex';
+  }
+  function close(markDone) {
+    backdrop.style.display = 'none';
+    if (markDone) window.eqTracker.setSetupWizardDone(true);
+  }
+
+  function render() {
+    const step = STEPS[i];
+    for (const el of card.querySelectorAll('.sw-step')) el.hidden = el.dataset.step !== step;
+    progressEl.textContent = `Step ${i + 1} of ${STEPS.length}`;
+    titleEl.textContent = i === STEPS.length - 1 ? 'All set' : 'Set up EQLS Auras';
+    backBtn.style.visibility = i === 0 ? 'hidden' : 'visible';
+    skipBtn.style.display = step === 'done' ? 'none' : '';
+    nextBtn.textContent = step === 'done' ? 'Finish' : 'Next';
+    // The folder step is the one hard requirement - can't Next past it with nothing picked.
+    nextBtn.disabled = step === 'folder' && !hasFolder;
+
+    if (step === 'folder') refreshFolder();
+    if (step === 'aa') loadAa();
+    if (step === 'done') refreshDone();
+  }
+
+  function refreshFolder() {
+    window.eqTracker.getLogState().then((s) => {
+      hasFolder = !!s.eqFolder;
+      document.getElementById('sw-folder-status').textContent = s.eqFolder ? '✓ ' + s.eqFolder : 'Not set yet';
+      document.getElementById('sw-folder-detail').textContent = s.currentFilePath
+        ? 'Found a log file: ' + s.currentFilePath
+        : (s.eqFolder ? "Folder set - no log file yet. Turn logging on (next step) and it'll appear." : '');
+      nextBtn.disabled = !hasFolder;
+    });
+  }
+
+  document.getElementById('sw-browse').addEventListener('click', () => {
+    window.eqTracker.chooseLogFolder().then(() => refreshFolder());
+  });
+
+  window.eqTracker.onLogLine(() => {
+    sawLogLine = true;
+    const el = document.getElementById('sw-log-live');
+    if (el) el.textContent = '✓ Log lines are coming in.';
+  });
+
+  function loadAa() {
+    window.eqTracker.getCharacterSettings().then((c) => {
+      document.getElementById('sw-aa').value = c.aaLevel || 0;
+      document.getElementById('sw-exalt').value = c.exaltationLevel || 0;
+      document.getElementById('sw-deft').value = c.deftnessLevel || 0;
+    });
+  }
+  function saveAa() {
+    const clamp = (v) => Math.max(0, Math.min(50, Number(v) || 0));
+    return window.eqTracker.setCharacterSettings({
+      aaLevel: clamp(document.getElementById('sw-aa').value),
+      exaltationLevel: clamp(document.getElementById('sw-exalt').value),
+      deftnessLevel: clamp(document.getElementById('sw-deft').value),
+    });
+  }
+
+  function refreshDone() {
+    const bits = [];
+    bits.push(sawLogLine ? 'Log connected.' : 'Turn on logging in game if you haven\'t.');
+    document.getElementById('sw-done-detail').textContent = bits.join(' ');
+  }
+
+  backBtn.addEventListener('click', () => { if (i > 0) { i--; render(); } });
+  skipBtn.addEventListener('click', () => close(false));
+  closeBtn.addEventListener('click', () => close(false));
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(false); });
+  nextBtn.addEventListener('click', async () => {
+    if (STEPS[i] === 'aa') await saveAa();
+    if (STEPS[i] === 'done') { close(true); return; }
+    if (i < STEPS.length - 1) { i++; render(); }
+  });
+
+  const reopenBtn = document.getElementById('open-setup-wizard-btn');
+  if (reopenBtn) reopenBtn.addEventListener('click', open);
+
+  // Auto-show on first run.
+  window.eqTracker.getSetupWizardDone().then((done) => { if (!done) open(); });
+}
+
 function initFirstRunLanding() {
   const eyebrowEl = document.getElementById('eq-log-eyebrow');
   const headingEl = document.getElementById('eq-log-heading');
@@ -208,16 +331,18 @@ function initFirstRunLanding() {
     headingEl.textContent = on ? "Let's find your EverQuest log" : 'EverQuest log file';
   }
 
-  window.eqTracker.getLogState().then((state) => {
+  Promise.all([window.eqTracker.getLogState(), window.eqTracker.getSetupWizardDone()]).then(([state, wizardDone]) => {
     if (state.eqFolder) {
       setPromoted(false);
     } else {
       setPromoted(true);
-      // Only the very first landing decision navigates - once the app has
-      // landed once, later status updates (below) only ever clear the
-      // promoted state, never re-navigate out from under the user.
-      const setupBtn = document.querySelector('.nav-btn[data-page="page-settings"]');
-      if (setupBtn) activateNavButton(setupBtn);
+      // Only navigate to Setup if the wizard isn't handling first-run - it's a modal on top of
+      // whatever page, so navigating underneath it as well is just noise. Once past first launch,
+      // later status updates only ever CLEAR the promoted state, never re-navigate.
+      if (wizardDone) {
+        const setupBtn = document.querySelector('.nav-btn[data-page="page-settings"]');
+        if (setupBtn) activateNavButton(setupBtn);
+      }
     }
     hasLandedOnce = true;
   });
@@ -236,7 +361,7 @@ function setupNudgeGaps({ log, spellbook, character, widgets }) {
   if (!log || !log.eqFolder) {
     items.push({ text: 'Point the app at your EverQuest folder', page: 'page-settings' });
   } else if (!spellbook || !spellbook.filePath) {
-    items.push({ text: 'Set your spellbook file — it resolves buffs that share a message', page: 'page-settings' });
+    items.push({ text: 'Set your spellbook file — it identifies buffs that share a message', page: 'page-settings' });
   }
   const c = character || {};
   if (!c.aaLevel && !c.exaltationLevel && !c.deftnessLevel) {
@@ -393,7 +518,7 @@ function initProfileBar() {
       deleteBtn.title = profiles.length <= 1 ? "Can't delete the only remaining profile" : `Delete "${profile.name}"`;
       deleteBtn.addEventListener('click', () => {
         const confirmed = window.confirm(
-          `Delete the loadout profile "${profile.name}"? This permanently discards its remembered ambiguous-cast answers. Auras aren't deleted or hidden - they just stop listing this profile as one they belong to.`
+          `Delete the loadout profile "${profile.name}"? Its remembered answers are discarded for good. Auras aren't deleted or hidden.`
         );
         if (!confirmed) return;
         window.eqTracker.deleteProfile(profile.id).then((removed) => {
@@ -551,7 +676,7 @@ function initDetectionSettingsPanel() {
     // the generic "not found, run /outputfile spellbook" block below would show - wrong advice,
     // since the fix is to pick another file or go back to auto, not to regenerate anything.
     if (state.mode === 'file' && !state.filePath) {
-      spellbookStatusEl.textContent = 'The pinned spellbook file is missing - pick another below, or go back to auto.';
+      spellbookStatusEl.textContent = 'The pinned spellbook file is missing — pick another below, or go back to auto.';
       spellbookStatusEl.classList.add('warn');
       spellbookMissingHintEl.style.display = 'none';
       if (spellbookCharHintEl) {
@@ -586,7 +711,7 @@ function initDetectionSettingsPanel() {
     if (spellbookCharHintEl) {
       const pattern = (state.fileNamePattern || '').replace('-<class>-', '-(any class)-');
       if (state.mode === 'file') {
-        spellbookCharHintEl.textContent = 'Using the file picked below. Clear it to go back to auto-detection.';
+        spellbookCharHintEl.textContent = 'Using the file picked below. Clear it to go back to auto.';
       } else if (pattern) {
         spellbookCharHintEl.textContent =
           (state.mode === 'manual' ? 'Using the character above. ' : 'Detected from your log. ') +
@@ -1055,10 +1180,10 @@ function initLogPanel() {
     const mb = (check.sizeBytes / 1048576).toFixed(0);
     const go = await appConfirm({
       title: 'Your EQ log is getting large',
-      message: `The log is about ${mb} MB. Trimming it to just the current raid-lockout week keeps the app fast and the Lockouts tab accurate.`,
+      message: `The log is about ${mb} MB. Trimming it to just the current lockout week keeps the app fast and the Lockouts tab accurate.`,
       detail: check.holdsCurrentWeek
-        ? 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first); the current week stays in the live log. EverQuest can stay running.'
-        : 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first), then the live log is rewritten to just the current week.',
+        ? 'Everything before this week’s reset is copied to Logs\\Archive\\; the current week stays in the live log. EverQuest can stay running.'
+        : 'Everything before this week’s reset is copied to Logs\\Archive\\, then the live log is rewritten to just the current week.',
       okLabel: 'Trim to this week',
       cancelLabel: 'Not now',
     });
@@ -1071,7 +1196,7 @@ function initLogPanel() {
     await appConfirm(
       rep.ok
         ? { title: 'Trimmed', message: `Archived ${(rep.archivedBytes / 1048576).toFixed(1)} MB.`, detail: rep.archivedTo, okLabel: 'OK', hideCancel: true }
-        : { title: 'Not trimmed', message: rep.reason || 'The log could not be trimmed right now - try the Lockouts tab in a moment.', okLabel: 'OK', hideCancel: true }
+        : { title: 'Not trimmed', message: rep.reason || 'The log could not be trimmed right now — try again in a moment.', okLabel: 'OK', hideCancel: true }
     );
     window.eqTracker.getLogState().then(renderState);
   }, 3500);
@@ -1104,7 +1229,7 @@ function initLogPanel() {
       title: 'Archive log now',
       message: 'Archive the current log and empty the live log file?',
       detail: holdsWeek
-        ? 'Your log currently holds this lockout week. Archiving it whole takes this week’s raid kills out of the file the Lockouts tab reads — the grid will show "not looked" until you play again. If you use the Lockouts tab, use "Trim log to this week" there instead.'
+        ? 'Your log holds this lockout week. Archiving it whole removes this week’s raid kills from what the Lockouts tab reads — the grid shows "not looked" until you play again. Use "Trim log to this week" instead if you use that tab.'
         : 'Copies the current log to a timestamped file, then empties the live log. Best done right after /log off.',
       okLabel: holdsWeek ? 'Archive anyway' : 'Archive',
       danger: holdsWeek,
@@ -1365,7 +1490,7 @@ function initAmbiguousPanel() {
   const resetBtn = document.getElementById('reset-ambiguous-btn');
   resetBtn.addEventListener('click', () => {
     const confirmed = window.confirm(
-      'Clear every remembered "this text means buff X" choice? Anything ambiguous will prompt you again from scratch.'
+      'Clear every remembered answer? Unclear casts will prompt you again from scratch.'
     );
     if (confirmed) {
       window.eqTracker.resetAmbiguousResolutions();
@@ -1458,25 +1583,25 @@ const TRIGGER_TYPES = [
   {
     value: 'chat',
     label: 'Chat message',
-    description: 'Something you or someone else says in a channel. No need to know the exact log wording.',
+    description: 'Something said in a channel. No need to know the exact log wording.',
     fieldsId: 'widget-new-timer-chat-fields',
   },
   {
     value: 'raw',
     label: 'Exact log line',
-    description: 'Any line at all, matched literally - an emote, an achievement, a spell message.',
+    description: 'Any log line, matched literally — an emote, achievement, spell message.',
     fieldsId: 'widget-new-timer-raw-fields',
   },
   {
     value: 'skill',
     label: 'Skill cast',
-    description: 'Starts the moment you begin casting a spell you pick from the list, by name rather than by log wording.',
+    description: 'Starts the moment you begin casting a spell you pick, by name not log text.',
     fieldsId: 'widget-new-timer-skill-fields',
   },
   {
     value: 'zone',
     label: 'Zone change',
-    description: 'Starts the instant you enter or leave a particular zone, picked from a list.',
+    description: 'Starts the instant you enter or leave a zone you pick.',
     fieldsId: 'widget-new-timer-zone-fields',
   },
   {
@@ -1639,6 +1764,12 @@ function initWidgetsPanel() {
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
   const mineOnlyCheckbox = document.getElementById('widget-mine-only-checkbox');
   const totalRowCheckbox = document.getElementById('widget-total-row-checkbox');
+  const damageShowDamageCb = document.getElementById('widget-damage-show-damage');
+  const damageShowRateCb = document.getElementById('widget-damage-show-rate');
+  const damageScopeSelect = document.getElementById('widget-damage-scope');
+  const damageCharmedPetsCb = document.getElementById('widget-damage-charmed-pets');
+  const moduleSettingsEl = document.getElementById('widget-module-settings');
+  const moduleSettingsControlsEl = document.getElementById('widget-module-settings-controls');
   const bordersRowEl = document.getElementById('widget-borders-row');
   const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
@@ -1865,6 +1996,10 @@ function initWidgetsPanel() {
   const maxDurationValueEl = document.getElementById('widget-max-duration-value');
 
   let widgets = [];
+  let auraFolders = []; // sidebar grouping only - see renderWidgetSubmenu
+  const pendingFolderMoves = new Map(); // widgetId -> folderId, applied on drop of a sidebar drag
+  let draggedFolderId = null; // a folder header being dragged to reorder folders
+  let folderDragMoved = false; // suppress the header's click (collapse toggle) right after a drag
   let selectedId = null;
   let allKnownBuffs = [];
   // For the sidebar's per-widget profile-scope dot (see renderWidgetSubmenu)
@@ -2025,7 +2160,7 @@ function initWidgetsPanel() {
       if (widget.buffFilterMode === 'all') {
         const excludeBtn = document.createElement('button');
         excludeBtn.textContent = "Don't track here";
-        excludeBtn.title = 'Hide this buff from this aura only - other auras are unaffected';
+        excludeBtn.title = 'Hides this buff from this aura only.';
         excludeBtn.addEventListener('click', () => {
           window.eqTracker.excludeWidgetBuff(widget.id, buff.name).then(() =>
             refreshWidgets().then(() => {
@@ -2158,7 +2293,7 @@ function initWidgetsPanel() {
       hideHotkeyHintEl.textContent =
         bound === choice
           ? ''
-          : 'Could not register that key (another app may already own it) - falling back to Alt+Shift+H.';
+          : 'Could not register that key — another app may own it. Falling back to Alt+Shift+H.';
     });
   }
   window.eqTracker.getHideHotkeyChoice().then((choice) => {
@@ -2259,9 +2394,8 @@ function initWidgetsPanel() {
     } else if (!currentZone) {
       warnEl.textContent =
         'This aura is limited to ' + zones.length + ' zone' + (zones.length === 1 ? '' : 's') +
-        ", but the app does not know where you are yet - it only finds out when you change zone. " +
-        'Until then the aura shows anyway, which is deliberate: a missing aura you cannot explain ' +
-        'is worse than one showing where you did not ask for it.';
+        ", but the app does not know where you are yet — it finds out when you change zone. " +
+        'Until then the aura shows anyway.';
       warnEl.style.display = '';
     } else if (!zones.includes(currentZone)) {
       warnEl.textContent =
@@ -2313,79 +2447,162 @@ function initWidgetsPanel() {
   }
 
   function refreshWidgets() {
-    return window.eqTracker.listWidgets().then((list) => {
+    return Promise.all([
+      window.eqTracker.listWidgets(),
+      window.eqTracker.listAuraFolders ? window.eqTracker.listAuraFolders() : Promise.resolve([]),
+    ]).then(([list, folders]) => {
       widgets = list;
+      auraFolders = Array.isArray(folders) ? folders : [];
       renderWidgetSubmenu();
     });
   }
 
-  // Widgets live as buttons in the sidebar submenu (under "Overlay
-  // Widgets"), not as page content - clicking one both navigates to the
-  // Overlay Widgets page and opens that widget's settings panel there.
+  // Widgets live as buttons in the sidebar submenu (under "Overlay Auras"), not as page content -
+  // clicking one both navigates to the Overlay Auras page and opens that widget's settings panel.
   // Delete lives inside the settings panel itself, not here.
-  function renderWidgetSubmenu() {
-    submenuEl.querySelectorAll('.nav-sub-row').forEach((row) => row.remove());
-    widgets.forEach((widget) => {
-      const row = document.createElement('div');
-      row.className = 'nav-sub-row';
+  //
+  // Folders (auraFolders) group the list in the sidebar only - they change nothing about what is
+  // on screen (loadout profiles own that). Layout: ungrouped auras first, then each folder as a
+  // collapsible header with its auras indented under it.
+  function buildAuraRow(widget) {
+    const row = document.createElement('div');
+    row.className = 'nav-sub-row';
 
-      const btn = document.createElement('button');
-      btn.className = 'nav-btn nav-sub-btn' + (widget.id === selectedId ? ' active' : '');
-      btn.dataset.page = 'page-overlay';
-      btn.dataset.widgetId = widget.id;
-      btn.addEventListener('click', () => {
-        activateNavButton(btn);
-        selectWidget(widget.id);
-      });
+    const btn = document.createElement('button');
+    btn.className = 'nav-btn nav-sub-btn' + (widget.id === selectedId ? ' active' : '');
+    btn.dataset.page = 'page-overlay';
+    btn.dataset.widgetId = widget.id;
+    btn.addEventListener('click', () => {
+      activateNavButton(btn);
+      selectWidget(widget.id);
+    });
 
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'nav-sub-name';
-      nameSpan.textContent = widget.name;
-      btn.appendChild(nameSpan);
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'nav-sub-name';
+    nameSpan.textContent = widget.name;
+    btn.appendChild(nameSpan);
 
-      // Always shown now, on every widget - reported live as liked but backwards: green means
-      // "this is actually on right now" (the current profile, not just scoped to some profile
-      // list), grey means it isn't. The old version only appeared for a widget scoped to fewer
-      // profiles than exist, and used a single colour regardless of whether that scoping
-      // actually included the CURRENT profile - so a widget correctly, deliberately disabled
-      // everywhere (like the reported case) showed the exact same dot as one merely restricted
-      // to two profiles out of three. latestProfiles.length === 0 before the initial fetch
-      // resolves means "unknown yet," not "zero profiles exist" (there's always at least the
-      // default one) - the dot itself only needs currentActiveProfileId/showOnAllProfiles/
-      // activeProfileIds, all already on the widget or fetched independently, so it renders
-      // regardless; only the tooltip's profile-name list waits on latestProfiles.
-      const activeProfileIds = widget.activeProfileIds || [];
-      const isActiveNow = !!widget.showOnAllProfiles || activeProfileIds.includes(currentActiveProfileId);
-      const dotWrap = document.createElement('span');
-      dotWrap.className = 'profile-dot-wrap';
-      const dot = document.createElement('span');
-      dot.className = 'profile-dot' + (isActiveNow ? ' profile-dot-on' : ' profile-dot-off');
-      const tooltip = document.createElement('span');
-      tooltip.className = 'tooltip-bubble';
-      if (widget.showOnAllProfiles) {
-        tooltip.textContent = 'Active now (every profile)';
-      } else {
-        const names = latestProfiles.filter((p) => activeProfileIds.includes(p.id)).map((p) => p.name);
-        const scopeText = names.length > 0 ? `scoped to: ${names.join(', ')}` : 'not scoped to any profile';
-        tooltip.textContent = isActiveNow ? `Active now (${scopeText})` : `Not active on the current profile (${scopeText})`;
+    // green = active on the CURRENT profile right now; grey = not. See the long note that used to
+    // live here (git blame) - the dot needs only fields already on the widget, the tooltip's
+    // profile-name list waits on latestProfiles.
+    const activeProfileIds = widget.activeProfileIds || [];
+    const isActiveNow = !!widget.showOnAllProfiles || activeProfileIds.includes(currentActiveProfileId);
+    const dotWrap = document.createElement('span');
+    dotWrap.className = 'profile-dot-wrap';
+    const dot = document.createElement('span');
+    dot.className = 'profile-dot' + (isActiveNow ? ' profile-dot-on' : ' profile-dot-off');
+    const tooltip = document.createElement('span');
+    tooltip.className = 'tooltip-bubble';
+    if (widget.showOnAllProfiles) {
+      tooltip.textContent = 'Active now (every profile)';
+    } else {
+      const names = latestProfiles.filter((p) => activeProfileIds.includes(p.id)).map((p) => p.name);
+      const scopeText = names.length > 0 ? `scoped to: ${names.join(', ')}` : 'not scoped to any profile';
+      tooltip.textContent = isActiveNow ? `Active now (${scopeText})` : `Not active on the current profile (${scopeText})`;
+    }
+    dotWrap.append(dot, tooltip);
+    btn.appendChild(dotWrap);
+
+    row.dataset.widgetId = widget.id;
+    row.dataset.folderId = widget.folderId || '';
+    row.draggable = true;
+    row.addEventListener('dragstart', onSubRowDragStart);
+    row.addEventListener('dragover', onSubRowDragOver);
+    row.addEventListener('dragleave', onSubRowDragLeave);
+    row.addEventListener('drop', onSubRowDrop);
+    row.addEventListener('dragend', onSubRowDragEnd);
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openSidebarContextMenu(widget.id, e.clientX, e.clientY);
+    });
+
+    row.appendChild(btn);
+    return row;
+  }
+
+  function buildFolderHeader(folder) {
+    const header = document.createElement('div');
+    header.className = 'nav-folder-header' + (folder.collapsed ? ' collapsed' : '');
+    header.dataset.folderId = folder.id;
+
+    const chevron = document.createElement('span');
+    chevron.className = 'nav-folder-chevron';
+    chevron.textContent = folder.collapsed ? '▸' : '▾';
+    const name = document.createElement('span');
+    name.className = 'nav-folder-name';
+    name.textContent = folder.name;
+    header.append(chevron, name);
+
+    header.addEventListener('click', () => {
+      if (folderDragMoved) { folderDragMoved = false; return; } // a drag, not a real click
+      window.eqTracker.setAuraFolderCollapsed(folder.id, !folder.collapsed).then(refreshWidgets);
+    });
+    header.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openFolderContextMenu(folder.id, e.clientX, e.clientY);
+    });
+
+    // The header is also its own drag handle - reorders the folder among the other folders.
+    header.draggable = true;
+    header.addEventListener('dragstart', (e) => {
+      draggedFolderId = folder.id;
+      header.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', folder.id);
+    });
+    header.addEventListener('dragend', () => {
+      header.classList.remove('dragging');
+      if (draggedFolderId) {
+        folderDragMoved = true;
+        const orderedIds = [...submenuEl.querySelectorAll('.nav-folder-header')].map((h) => h.dataset.folderId);
+        window.eqTracker.reorderAuraFolders(orderedIds).then(refreshWidgets);
       }
-      dotWrap.append(dot, tooltip);
-      btn.appendChild(dotWrap);
+      draggedFolderId = null;
+    });
 
-      row.dataset.widgetId = widget.id;
-      row.draggable = true;
-      row.addEventListener('dragstart', onSubRowDragStart);
-      row.addEventListener('dragover', onSubRowDragOver);
-      row.addEventListener('dragleave', onSubRowDragLeave);
-      row.addEventListener('drop', onSubRowDrop);
-      row.addEventListener('dragend', onSubRowDragEnd);
-      row.addEventListener('contextmenu', (e) => {
+    // dragover: an AURA being dragged -> highlight as a file-here target. A FOLDER being dragged ->
+    // move this header past it for live reorder feedback.
+    header.addEventListener('dragover', (e) => {
+      if (draggedFolderId && draggedFolderId !== folder.id) {
         e.preventDefault();
-        openSidebarContextMenu(widget.id, e.clientX, e.clientY);
-      });
+        const dragging = submenuEl.querySelector('.nav-folder-header.dragging');
+        if (!dragging) return;
+        const rect = header.getBoundingClientRect();
+        const before = e.clientY - rect.top < rect.height / 2;
+        submenuEl.insertBefore(dragging, before ? header : header.nextSibling);
+        return;
+      }
+      if (!draggedWidgetId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      header.classList.add('drop-target');
+    });
+    header.addEventListener('dragleave', () => header.classList.remove('drop-target'));
+    header.addEventListener('drop', (e) => {
+      e.preventDefault();
+      header.classList.remove('drop-target');
+      if (draggedWidgetId) pendingFolderMoves.set(draggedWidgetId, folder.id);
+    });
+    return header;
+  }
 
-      row.appendChild(btn);
-      submenuEl.insertBefore(row, addRow);
+  function renderWidgetSubmenu() {
+    submenuEl.querySelectorAll('.nav-sub-row, .nav-folder-header').forEach((el) => el.remove());
+    const folders = auraFolders;
+    const folderIds = new Set(folders.map((f) => f.id));
+    const inFolder = (w) => (w.folderId && folderIds.has(w.folderId) ? w.folderId : '');
+
+    // Ungrouped first, in array order.
+    widgets.filter((w) => !inFolder(w)).forEach((w) => submenuEl.insertBefore(buildAuraRow(w), addRow));
+    // Then each folder, in folder order, its auras in array order.
+    folders.forEach((folder) => {
+      submenuEl.insertBefore(buildFolderHeader(folder), addRow);
+      if (folder.collapsed) return;
+      widgets.filter((w) => inFolder(w) === folder.id).forEach((w) => {
+        const row = buildAuraRow(w);
+        row.classList.add('in-folder');
+        submenuEl.insertBefore(row, addRow);
+      });
     });
   }
 
@@ -2437,8 +2654,27 @@ function initWidgetsPanel() {
   function onSubRowDragEnd() {
     this.classList.remove('dragging');
     if (draggedWidgetId) {
-      const orderedIds = [...submenuEl.querySelectorAll('.nav-sub-row')].map((r) => r.dataset.widgetId);
-      window.eqTracker.reorderWidgets(orderedIds).then(refreshWidgets);
+      // The new visual order of the aura rows is the new array order.
+      const rows = [...submenuEl.querySelectorAll('.nav-sub-row')];
+      const orderedIds = rows.map((r) => r.dataset.widgetId);
+
+      // Which folder each aura now sits in: the nearest folder header ABOVE it in the list, or ''
+      // (ungrouped) if there's no header before it. Plus any explicit drop onto a folder header.
+      const moves = new Map(pendingFolderMoves);
+      pendingFolderMoves.clear();
+      let currentFolder = '';
+      for (const el of submenuEl.querySelectorAll('.nav-folder-header, .nav-sub-row')) {
+        if (el.classList.contains('nav-folder-header')) { currentFolder = el.dataset.folderId; continue; }
+        const id = el.dataset.widgetId;
+        if (!moves.has(id) && (el.dataset.folderId || '') !== currentFolder) moves.set(id, currentFolder);
+      }
+
+      const applyMoves = [...moves.entries()].map(([id, folderId]) =>
+        window.eqTracker.setWidgetFolder(id, folderId)
+      );
+      Promise.all(applyMoves)
+        .then(() => window.eqTracker.reorderWidgets(orderedIds))
+        .then(refreshWidgets);
     }
     draggedWidgetId = null;
   }
@@ -2467,6 +2703,31 @@ function initWidgetsPanel() {
     // Same rule resetWidgetBtn already uses on the settings page - only an aura built from a
     // premade has a recipe to reset back to.
     sidebarContextResetBtn.style.display = widget && widget.premadeOrigin ? '' : 'none';
+
+    // "Move to folder" items - rebuilt each open, one per folder plus "No folder" (only if the
+    // aura is currently in one). Inserted before the separator.
+    sidebarContextMenuEl.querySelectorAll('.ctx-move-folder').forEach((li) => li.remove());
+    const sep = document.getElementById('sidebar-context-folders-sep');
+    const curFolder = widget ? widget.folderId || '' : '';
+    const targets = [
+      ...(curFolder ? [{ id: '', name: 'No folder' }] : []),
+      ...auraFolders.filter((f) => f.id !== curFolder).map((f) => ({ id: f.id, name: f.name })),
+    ];
+    for (const t of targets) {
+      const li = document.createElement('li');
+      li.className = 'ctx-move-folder';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = t.id ? `Move to "${t.name}"` : 'Move out of folder';
+      b.addEventListener('click', () => {
+        closeSidebarContextMenu();
+        window.eqTracker.setWidgetFolder(widgetId, t.id).then(refreshWidgets);
+      });
+      li.appendChild(b);
+      sep.parentElement.insertBefore(li, sep);
+    }
+    sep.style.display = targets.length ? '' : 'none';
+
     sidebarContextMenuEl.style.display = 'block';
     // Positioned, then clamped - a menu opened by right-clicking a row near the bottom of the
     // window would otherwise draw itself partly off-screen, which on a frameless borderless window
@@ -2500,6 +2761,63 @@ function initWidgetsPanel() {
     if (sidebarContextMenuEl.style.display !== 'none' && !e.defaultPrevented) closeSidebarContextMenu();
   });
 
+  // --- Folder controls (sidebar grouping) ---------------------------------------------------
+  const folderContextMenuEl = document.getElementById('folder-context-menu');
+  const folderContextRenameBtn = document.getElementById('folder-context-rename');
+  const folderContextDeleteBtn = document.getElementById('folder-context-delete');
+  let folderContextId = null;
+
+  function openFolderContextMenu(folderId, x, y) {
+    folderContextId = folderId;
+    folderContextMenuEl.style.display = 'block';
+    const r = folderContextMenuEl.getBoundingClientRect();
+    folderContextMenuEl.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
+    folderContextMenuEl.style.top = `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`;
+  }
+  function closeFolderContextMenu() {
+    folderContextMenuEl.style.display = 'none';
+    folderContextId = null;
+  }
+  window.addEventListener('click', (e) => {
+    if (folderContextMenuEl.style.display !== 'none' && !folderContextMenuEl.contains(e.target)) closeFolderContextMenu();
+  });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFolderContextMenu(); });
+  window.addEventListener('contextmenu', (e) => {
+    if (folderContextMenuEl.style.display !== 'none' && !e.defaultPrevented) closeFolderContextMenu();
+  });
+
+  folderContextRenameBtn.addEventListener('click', () => {
+    const id = folderContextId;
+    closeFolderContextMenu();
+    const folder = auraFolders.find((f) => f.id === id);
+    if (folder) openFolderRenameModal(id, folder.name);
+  });
+  folderContextDeleteBtn.addEventListener('click', () => {
+    const id = folderContextId;
+    closeFolderContextMenu();
+    if (id) window.eqTracker.deleteAuraFolder(id).then(refreshWidgets);
+  });
+
+  const newFolderBtn = document.getElementById('new-aura-folder-btn');
+  if (newFolderBtn) {
+    newFolderBtn.addEventListener('click', () => {
+      window.eqTracker.createAuraFolder('New folder').then((folder) => {
+        refreshWidgets().then(() => { if (folder && folder.id) openFolderRenameModal(folder.id, folder.name); });
+      });
+    });
+  }
+
+  // Reuses the aura rename modal's own DOM/flow (see openRenameModal) but targets a folder.
+  let renamingFolderId = null;
+  function openFolderRenameModal(id, currentName) {
+    renamingFolderId = id;
+    renameWidgetId = null; // make sure saveRename below doesn't also fire the aura path
+    renameWidgetInput.value = currentName || '';
+    renameModalBackdrop.style.display = 'flex';
+    renameWidgetInput.focus();
+    renameWidgetInput.select();
+  }
+
   // Used to call the browser's built-in text-prompt dialog here, which Electron's renderer never
   // actually implements - it silently did nothing, with no error to notice. Reported live as
   // "rename does nothing". The next fix (opening the aura's own settings page and focusing its
@@ -2528,10 +2846,19 @@ function initWidgetsPanel() {
   function closeRenameModal() {
     renameModalBackdrop.style.display = 'none';
     renameWidgetId = null;
+    renamingFolderId = null;
   }
   function saveRename() {
+    const value = renameWidgetInput.value.trim();
+    if (renamingFolderId) {
+      window.eqTracker.renameAuraFolder(renamingFolderId, value || 'Folder').then(() => {
+        refreshWidgets();
+        closeRenameModal();
+      });
+      return;
+    }
     if (!renameWidgetId) return;
-    window.eqTracker.setWidgetName(renameWidgetId, renameWidgetInput.value.trim() || 'Aura').then(() => {
+    window.eqTracker.setWidgetName(renameWidgetId, value || 'Aura').then(() => {
       refreshWidgets();
       closeRenameModal();
     });
@@ -2714,16 +3041,21 @@ function initWidgetsPanel() {
     // controls that matter for a checklist ('list-format', same as travel).
     'raid-named': ['list-format', 'timer-text', 'opacity', 'position', 'alerts'],
     // feat/module-system. The module IS the source - no picker, no source choice, no spell-based
-    // controls. Just how it looks, where it sits, and the standard alerts. Its own settings live
-    // on the module's own page.
-    'module': ['display-choice', 'timer-text', 'opacity', 'position', 'alerts'],
+    // controls. Just how it looks, where it sits, the standard alerts, and (for a module that
+    // keeps its settings on the aura panel rather than a sidebar page) its own declared controls.
+    'module': ['display-choice', 'timer-text', 'opacity', 'position', 'alerts', 'module-settings'],
     'custom-buff': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'buff-source', 'buff-picker', 'ally-grouping'],
     'custom-debuff': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'debuff-cast-by', 'buff-picker', 'ally-grouping'],
     'ally-alert': ['text-fields', 'text-instant', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-picker'],
     'text': ['text-fields', 'text-instant', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'buff-picker'],
     'text-customTimer': ['text-fields', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'custom-timers'],
     'custom-timer': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'custom-timers'],
-    'damage': ['sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'damage-settings'],
+    // A damage meter is a LIST of attacker rows, biggest first - not spells. No 'sort' (the engine
+    // hands the rows pre-sorted and any re-sort would only scramble a real meter, same as travel/
+    // raid-named), no 'merge'/'borders' (no duration, no spell category), no 'alerts' (nothing
+    // expires or lands). 'list-format' for row sizing, 'timer-text' because the row's number is
+    // drawn through that same element, plus its own damage-settings block.
+    'damage': ['list-format', 'timer-text', 'opacity', 'position', 'damage-settings'],
     // No 'sort' - the legs are fixed walking order and widgetStore.createTravelGuide hardcodes
     // sortOrder:'default' for exactly that reason; offering "Alphabetical"/"Time remaining" here
     // would let someone scramble their own directions. No 'merge' either - every leg carries the
@@ -2760,7 +3092,7 @@ function initWidgetsPanel() {
           expire: [' Play a sound when a buff expires', 'Plays a sound the moment the buff runs out.'],
           warn: [
             ' Warn me before a buff expires',
-            'Plays a sound a set time before the buff runs out, while there is still time to recast.',
+            'Plays a sound a set time before the buff runs out.',
           ],
         };
     [
@@ -2877,6 +3209,14 @@ function initWidgetsPanel() {
     // fight timeout on a buff aura would be a live control that changes nothing.
     damageSettingsEl.style.display = has('damage-settings') ? '' : 'none';
     travelSettingsEl.style.display = has('travel-settings') ? '' : 'none';
+    // feat/module-system - a module aura whose module keeps its controls on the aura panel
+    // ('aura', the default) rather than a sidebar page. Hidden if the module isn't loaded yet
+    // (registry is async - the card appears on the re-render once it is) or declares no controls.
+    // Only visibility here; the controls themselves are (re)built in renderBuffFilter, once per
+    // selectWidget, so a display-mode toggle can't blow away a half-edited value.
+    if (moduleSettingsEl) {
+      moduleSettingsEl.style.display = has('module-settings') && moduleAuraHasPanelSettings(widget) ? '' : 'none';
+    }
     // Grouping is per-person, so it needs tiles that actually carry a person - shown for the Ally
     // Buffs builtin and any custom aura set to the ally source, hidden everywhere else rather than
     // offering a setting that could never do anything. A text aura draws no per-person tiles at
@@ -2968,19 +3308,37 @@ function initWidgetsPanel() {
     const fightTimeout = typeof widget.fightTimeoutSec === 'number' ? widget.fightTimeoutSec : 10;
     fightTimeoutSlider.value = String(fightTimeout);
     fightTimeoutValueEl.textContent = `${fightTimeout}s`;
+    const previewBtnEl = document.getElementById('widget-preview-btn');
+    if (previewBtnEl && widget.id) {
+      window.eqTracker.isWidgetPreviewing(widget.id).then((on) => {
+        previewBtnEl.textContent = on ? 'Hide example content' : 'Show example content';
+        previewBtnEl.classList.toggle('unlocked', !!on);
+      });
+    }
     mineOnlyCheckbox.checked = !!widget.mineOnly;
     // Defaulted ON, so the check is against false rather than for true - an aura saved before this
     // setting existed has no value at all, and treating that as "off" would silently remove the
     // total line from a meter that has always shown one.
     totalRowCheckbox.checked = widget.showTotalRow !== false;
+    {
+      const mode = widget.damageValueMode || (widget.damageShowDps ? 'dps' : 'total');
+      if (damageShowDamageCb) damageShowDamageCb.checked = mode === 'total' || mode === 'both';
+      if (damageShowRateCb) damageShowRateCb.checked = mode === 'dps' || mode === 'both';
+    }
+    if (damageScopeSelect) {
+      damageScopeSelect.value = ['all', 'group', 'mine'].includes(widget.damageScope)
+        ? widget.damageScope
+        : 'all';
+    }
+    if (damageCharmedPetsCb) damageCharmedPetsCb.checked = widget.showCharmedPetsRow !== false;
     allyAlertCheckbox.checked = !!widget.allyDebuffAlert;
     alwaysOnCheckbox.checked = !!widget.alwaysOn;
     // Reported live 24 Aug, and confirmed by directly comparing what was on screen against what
     // was actually saved: a later edit ("...was resisted by mob") never reached the file, and the
     // file instead still held an EARLIER one (".../resisted :(") - not lost on save, lost on the
     // NEXT re-render. This whole panel is rebuilt from scratch by selectWidget, and that runs on
-    // more than just "you clicked a different aura" - right-clicking this SAME aura's own move
-    // box on the overlay (onOpenWidgetSettings, note 6) calls it again on the widget already open.
+    // more than just "you clicked a different aura" - e.g. re-opening this SAME aura from the
+    // sidebar calls it again on the widget already open.
     // Every other field here is a fresh idempotent snapshot each time, so a stray extra call to
     // this function was invisible - except this ONE field, which the debounced save (see the
     // 'input' listener below) had not necessarily finished writing back yet, so a re-render mid-
@@ -3089,6 +3447,12 @@ function initWidgetsPanel() {
     if (fields.has('travel-settings')) {
       showTravelDestination(widget.travelDestination);
       showTravelPickerCommand();
+    }
+
+    // feat/module-system - (re)build the module aura's own controls, once per selectWidget so a
+    // later shape re-check (a display-mode toggle) only flips visibility, never rebuilds mid-edit.
+    if (fields.has('module-settings') && moduleAuraHasPanelSettings(widget) && moduleSettingsControlsEl) {
+      renderModulePageControls(moduleSettingsControlsEl, moduleById(widget.moduleId));
     }
 
     if (fields.has('custom-timers')) {
@@ -3711,7 +4075,7 @@ function initWidgetsPanel() {
     const widget = findWidget(id);
     if (!widget) return;
     const confirmed = window.confirm(
-      `Reset "${widget.name}" to how it was when it was first built? Every setting changed since ` +
+      `Reset "${widget.name}" to how it was first built? Every setting changed since ` +
         "then is lost - its position and which profiles/zones it's limited to are the only things kept."
     );
     if (!confirmed) return;
@@ -3772,8 +4136,9 @@ function initWidgetsPanel() {
     shareCodeOfferEl.style.display = 'flex';
   });
 
-  // Note 6 - an aura's name was clicked in its move box out on the overlay. Registered in here
-  // rather than alongside the other IPC listeners because focusWidget lives in this closure.
+  // The nudge pad's centre button (out on the overlay) asked to open this aura's settings.
+  // Registered in here rather than beside the other IPC listeners because focusWidget lives in
+  // this closure.
   window.eqTracker.onOpenWidgetSettings((id) => focusWidget(id));
 
   // Refreshes the widget list, then selects+focuses a specific one - shared
@@ -3804,8 +4169,8 @@ function initWidgetsPanel() {
       name: 'Buff timer',
       group: 'timers',
       description:
-        'Pick one spell and whether you are watching it on yourself, on someone you cast it on, ' +
-        'or on something you cast it at, and the aura is built for you.',
+        'Pick a spell and where you\'re watching it — on you, on someone you cast it on, or on ' +
+        'something you cast it at.',
       // No create() - this one opens a panel instead. See renderPremadeList.
       panel: 'buff-timer',
     },
@@ -3814,8 +4179,8 @@ function initWidgetsPanel() {
       name: 'Cooldown timer',
       group: 'timers',
       description:
-        'Pick a spell and get a countdown to when you can cast it again, rather than how long it ' +
-        'lasts. The recast time is filled in for you, and you can correct it.',
+        'Pick a spell and get a countdown to when you can cast it again. The recast time is ' +
+        'filled in — correct it if needed.',
       panel: 'buff-timer',
       mode: 'cooldown',
     },
@@ -3824,10 +4189,9 @@ function initWidgetsPanel() {
       name: 'Skill ready reminder (example)',
       group: 'timers',
       description:
-        'A worked example, not a separate feature: the same picker as Cooldown timer, but instead ' +
-        'of counting the cooldown down, this shows a reminder tile the moment the skill IS ready ' +
-        'and hides it the instant you cast it - "go use this" rather than "wait this long". Shows ' +
-        'what Reverse detection (on any aura\'s Custom triggers card) can do.',
+        'A worked example: like Cooldown timer, but it shows a tile the moment the skill IS ready ' +
+        'and hides it once you cast it — "go use this" not "wait this long". Demonstrates Reverse ' +
+        'detection.',
       panel: 'buff-timer',
       mode: 'cooldown',
       reverseExample: true,
@@ -3837,9 +4201,8 @@ function initWidgetsPanel() {
       name: 'Debuff on an enemy',
       group: 'timers',
       description:
-        'A timer for a mez, charm, snare or slow on the thing you cast it at, showing its name ' +
-        'and clearing when it dies, wears off, or the mez is broken. Same picker as Buff timer, ' +
-        'opened with the enemy option already chosen.',
+        'A timer for a mez, charm, snare or slow on what you cast it at — shows the target\'s ' +
+        'name, clears when it dies or wears off.',
       panel: 'buff-timer',
       // Which of the three "On:" options the panel should start on. The picker is identical; the
       // only difference between this premade and Buff timer is what it assumes you came for.
@@ -3850,9 +4213,8 @@ function initWidgetsPanel() {
       name: 'You Have Been Dispelled',
       group: 'event-alerts',
       description:
-        'Flashes DISPELLED in large letters when something strips your buffs, then clears itself ' +
-        'after eight seconds. A text aura - it draws no icon and no countdown. Listens for all ' +
-        'three strengths of the message.',
+        'Flashes DISPELLED in large letters when something strips your buffs, then clears after ' +
+        '8 seconds. No icon, no countdown.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'dispelled'),
     },
     {
@@ -3860,9 +4222,8 @@ function initWidgetsPanel() {
       name: 'Resist flash',
       group: 'event-alerts',
       description:
-        'Flashes RESISTED for a second and a half whenever a spell you cast is resisted. Covers ' +
-        'every spell at once, not one you have to pick - useful for mez and charm, where a resist ' +
-        'is the difference between a mob standing still and a mob hitting you.',
+        'Flashes RESISTED whenever a spell you cast is resisted. Covers every spell — useful for ' +
+        'mez and charm.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'resisted'),
     },
     {
@@ -3870,9 +4231,8 @@ function initWidgetsPanel() {
       name: 'Charm Broke',
       group: 'event-alerts',
       description:
-        'Flashes "[target] has broken free!" the instant your charm wears off, so you know to ' +
-        're-charm or back off before it turns on you. Covers every charm spell in the roster at ' +
-        'once, not one you have to pick.',
+        'Flashes "[target] has broken free!" the instant your charm wears off. Covers every ' +
+        'charm spell.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'charmBroke'),
     },
     {
@@ -3880,9 +4240,8 @@ function initWidgetsPanel() {
       name: 'Loss of control',
       group: 'event-alerts',
       description:
-        'Shows STUNNED / MESMERIZED / CHARMED / AFRAID / ROOTED / SNARED while one of those is on ' +
-        'you, and clears the instant it lifts. One tile, whichever applies. Watches the charm, ' +
-        'fear, root, snare, mez and stun wordings at once - the trigger list is editable to add more.',
+        'Shows STUNNED / MESMERIZED / CHARMED / AFRAID / ROOTED / SNARED while one is on you, and ' +
+        'clears when it lifts. One tile. Trigger list is editable.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'lossOfControl'),
     },
     {
@@ -3890,16 +4249,15 @@ function initWidgetsPanel() {
       name: 'Pet status',
       group: 'event-alerts',
       description:
-        'For a charmed pet (bard or enchanter). Shows PET ENGAGED while it is fighting, PET IDLE ' +
-        'when it backs off, and PET GONE the moment your charm breaks. Reads the pet’s own ' +
-        '"Attacking ... Master" / "calming down" lines, so it works no matter which mob you have charmed.',
+        'For a charmed pet. Shows PET ENGAGED while it fights, PET IDLE when it backs off, and ' +
+        'PET GONE the moment your charm breaks.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'petStatus'),
     },
     {
       id: 'ally-buffs',
       name: 'Ally Buffs',
       group: 'standalone',
-      description: 'Shows every buff you’ve cast on your current group members, with the same filter options (hide bard songs, hide long buffs, sound alerts, etc.) as Self Buffs.',
+      description: 'Every buff you’ve cast on your group, grouped by player. Same filter options as Self Buffs.',
       create: (name) => window.eqTracker.createAllyBuffsWidget(name),
     },
     {
@@ -3907,9 +4265,8 @@ function initWidgetsPanel() {
       name: 'Bard Songs',
       group: 'standalone',
       description:
-        'Every bard song currently on you, whoever cast it — grouped by caster when that’s knowable, ' +
-        '"Unknown" when it isn’t. Can also track the debuff songs you’ve put on enemies (off by default), ' +
-        'and split buffs and debuffs into their own sections.',
+        'Every bard song on you, whoever cast it — grouped by caster, "Unknown" when it isn’t. ' +
+        'Can also show debuff songs you’ve put on enemies (off by default).',
       create: (name) => window.eqTracker.createBardSongsWidget(name),
     },
     {
@@ -3917,9 +4274,8 @@ function initWidgetsPanel() {
       name: 'Raid named',
       group: 'standalone',
       description:
-        'A checklist of the named mobs for the zone you’re in - all shown when you enter, greyed ' +
-        'as they die. Instanced zones reset to a full list on re-entry; open-world zones show a ' +
-        'respawn countdown. Covers the Voidling raid zones plus a growing set of dungeons.',
+        'A checklist of the named mobs for your zone — all shown on entry, greyed as they die. ' +
+        'Instanced zones reset on re-entry; open-world zones show a respawn countdown.',
       create: (name) => window.eqTracker.createRaidNamedWidget(name),
     },
     {
@@ -3927,11 +4283,18 @@ function initWidgetsPanel() {
       name: 'Travel guide',
       group: 'standalone',
       description:
-        'The shortest way from where you are to wherever you are going, one leg per line, with the ' +
-        'current zone shown at the top. In game, type /tell eqtm to pick a destination ' +
-        'from a searchable list (typing it again closes the list); it\'ll also ask where you ' +
-        'currently are the first time, and clears itself the moment you arrive.',
+        'The shortest route to where you\'re going, one leg per line, with your current zone at ' +
+        'the top. In game, type /tell eqtm to pick a destination; it clears when you arrive.',
       create: (name) => window.eqTracker.createTravelGuideWidget(name, ''),
+    },
+    {
+      id: 'damage-parser',
+      name: 'Damage parser',
+      group: 'standalone',
+      description:
+        'A live damage readout for the current fight — one row per attacker, biggest first, with ' +
+        'each one\'s share. A "just my row" toggle hides the rest without un-counting them.',
+      create: (name) => window.eqTracker.createDamageMeterWidget(name, false),
     },
   ];
 
@@ -3942,19 +4305,12 @@ function initWidgetsPanel() {
   // reported live, 25 Aug: a separate "Not built yet" bucket at the bottom meant a planned Buff
   // timer/Debuff-on-enemy entry never read as belonging with the timers it was a preview of.
   const PLANNED_PREMADE_WIDGETS = [
-    // Locked at the owner's instruction, 2026-08-24: a "standalone tool" aura (a route, a fight
-    // readout) was given the same settings-panel shape as an ordinary buff aura - a "Buffs shown"
-    // card offering a source and a spell picker that mean nothing for either of them. Travel guide
-    // got its own shape (see SHAPE_FIELDS.travel above) and moved back into PREMADE_WIDGETS once
-    // that landed. Damage parser is still waiting on the same treatment.
-    {
-      name: 'Damage parser',
-      group: 'standalone',
-      description:
-        'A live damage readout for the fight you are in. Built, but its settings page still looks ' +
-        'like a buff aura\'s - offering a "Buffs shown" picker that does nothing for a damage row. ' +
-        'Locked until it gets its own layout.',
-    },
+    // Both the "standalone tool" auras that were locked 2026-08-24 for having a buff-aura settings
+    // shape (a "Buffs shown" source + spell picker that mean nothing for a route or a fight
+    // readout) are now unlocked: Travel guide got SHAPE_FIELDS.travel, and Damage parser got
+    // SHAPE_FIELDS.damage narrowed to just what a list of non-spell rows can use (no sort/merge/
+    // borders/alerts; list-format for sizing). Both are back in PREMADE_WIDGETS above.
+    //
     // The rest of the roadmap, shown in the app rather than only in docs/QOL-BACKLOG.md. Listing something
     // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
     // it looks to anyone using the app who did not write it.
@@ -3962,8 +4318,8 @@ function initWidgetsPanel() {
       name: 'First aggro',
       group: 'standalone',
       description:
-        'Shows who hit the boss first, or who the boss hit first. Not built yet - and it can only ' +
-        'ever be as complete as your own log, which does not see everything across a raid.',
+        'Shows who hit the boss first, or who it hit first. Not built yet — and it can only be as ' +
+        'complete as your own log.',
     },
   ];
 
@@ -4251,24 +4607,32 @@ function initWidgetsPanel() {
   }
 
   // feat/module-system - custom modules with `hasAura` become Standalone-tools entries in the Add
-  // Aura list. Kept fresh from the host (hot-reload) so a dropped-in module shows up without a
-  // restart. Synthesised into the same premade shape so renderPremadeChoice needs no special case.
+  // Aura list, synthesised into the same premade shape so renderPremadeChoice needs no special
+  // case. Fed off the shared module registry (hot-reload), which also re-renders an open module
+  // aura's settings panel so its controls appear the moment a module is dropped in.
   let moduleAuraChoices = [];
-  function refreshModuleAuraChoices() {
-    if (!window.eqTracker.listModules) return Promise.resolve();
-    return window.eqTracker.listModules().then((modules) => {
-      moduleAuraChoices = (modules || [])
-        .filter((m) => m.hasAura)
-        .map((m) => ({
-          name: m.name,
-          description: m.description || 'A custom module.',
-          group: 'standalone',
-          create: (n) => window.eqTracker.createModuleAuraWidget(n, m.id),
-        }));
+  onModuleRegistryChange((modules) => {
+    moduleAuraChoices = (modules || [])
+      .filter((m) => m.hasAura)
+      .map((m) => ({
+        name: m.name,
+        description: m.description || 'A custom module.',
+        group: 'standalone',
+        create: (n) => window.eqTracker.createModuleAuraWidget(n, m.id),
+      }));
+    renderPremadeList();
+    if (selectedId) {
+      const w = findWidget(selectedId);
+      if (w && w.kind === 'module-aura') selectWidget(selectedId);
+    }
+  });
+  if (window.eqTracker.onModuleSettingsChanged) {
+    window.eqTracker.onModuleSettingsChanged(() => {
+      if (!selectedId) return;
+      const w = findWidget(selectedId);
+      if (w && w.kind === 'module-aura') selectWidget(selectedId);
     });
   }
-  refreshModuleAuraChoices();
-  if (window.eqTracker.onModulesChanged) window.eqTracker.onModulesChanged(() => refreshModuleAuraChoices());
 
   function renderPremadeList() {
     premadeListEl.innerHTML = '';
@@ -4408,8 +4772,9 @@ function initWidgetsPanel() {
     importStatus.textContent = '';
     modalNewWidgetNameInput.value = '';
     renderPremadeList();
-    // Modules are fetched async; re-render once they're in so a dropped-in module shows up here.
-    refreshModuleAuraChoices().then(renderPremadeList);
+    // Re-pull the module list on open so a just-dropped module shows up here; the registry
+    // subscriber above rebuilds moduleAuraChoices and re-renders the list when it lands.
+    refreshModuleRegistry();
     addWidgetModalBackdrop.style.display = 'flex';
   }
 
@@ -4508,12 +4873,13 @@ function initWidgetsPanel() {
   });
   const previewBtn = document.getElementById('widget-preview-btn');
   if (previewBtn) {
-    previewBtn.addEventListener('click', () => {
+    // A toggle now, not a timed flash: it stays on until pressed again (or the aura is closed).
+    previewBtn.addEventListener('click', async () => {
       if (!selectedId) return;
-      previewBtn.disabled = true;
-      window.eqTracker.previewWidget(selectedId).finally(() => {
-        setTimeout(() => { previewBtn.disabled = false; }, 6500);
-      });
+      const res = await window.eqTracker.previewWidget(selectedId);
+      const on = !!(res && res.previewing);
+      previewBtn.textContent = on ? 'Hide example content' : 'Show example content';
+      previewBtn.classList.toggle('unlocked', on);
     });
   }
   buffSourceRadios.forEach((radio) => {
@@ -4706,6 +5072,30 @@ function initWidgetsPanel() {
   totalRowCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetDamageOptions(selectedId, { showTotalRow: totalRowCheckbox.checked });
   });
+  if (damageShowDamageCb && damageShowRateCb) {
+    const pushDamageValueMode = (justToggled) => {
+      // At least one must stay on - re-tick whichever the user just turned off if they'd both be off.
+      if (!damageShowDamageCb.checked && !damageShowRateCb.checked) justToggled.checked = true;
+      const d = damageShowDamageCb.checked;
+      const r = damageShowRateCb.checked;
+      const mode = d && r ? 'both' : r ? 'dps' : 'total';
+      window.eqTracker.setWidgetDamageOptions(selectedId, { valueMode: mode });
+    };
+    damageShowDamageCb.addEventListener('change', () => pushDamageValueMode(damageShowDamageCb));
+    damageShowRateCb.addEventListener('change', () => pushDamageValueMode(damageShowRateCb));
+  }
+  if (damageScopeSelect) {
+    damageScopeSelect.addEventListener('change', () => {
+      window.eqTracker.setWidgetDamageOptions(selectedId, { scope: damageScopeSelect.value });
+    });
+  }
+  if (damageCharmedPetsCb) {
+    damageCharmedPetsCb.addEventListener('change', () => {
+      window.eqTracker.setWidgetDamageOptions(selectedId, {
+        showCharmedPetsRow: damageCharmedPetsCb.checked,
+      });
+    });
+  }
 
   debuffCastByRadios.forEach((radio) => {
     radio.addEventListener('change', () => {
@@ -5012,8 +5402,10 @@ function initWidgetsPanel() {
   // process rather than tracked here, so the button stays correct even when
   // something else changes it (unlocking a single aura, a profile switch).
   const masterUnlockAllBtn = document.getElementById('master-unlock-all-btn');
+  const masterPreviewAllBtn = document.getElementById('master-preview-all-btn');
   const masterHideAllBtn = document.getElementById('master-hide-all-btn');
   const masterMuteBtn = document.getElementById('master-mute-btn');
+  const resumeMoveBtn = document.getElementById('resume-move-btn');
 
 
   // =========================================================================
@@ -5272,7 +5664,7 @@ function initWidgetsPanel() {
       else if (st.lastError === 'no logs folder configured' || st.backfill === 'failed') {
         why = "EverQuest's folder has not been found. Set it on the Setup page and come back.";
       } else if (st.backfill === 'done') {
-        why = 'Your Logs folder was read, but it holds no character logs this could use.';
+        why = 'Your Logs folder was read, but it holds no usable character logs.';
       } else why = 'Not read yet.';
       lockoutSummaryEl.textContent = why;
       return;
@@ -5419,7 +5811,7 @@ function initWidgetsPanel() {
         const go = await appConfirm({
           title: 'Trim log to this week',
           message: 'Archive everything before this week’s reset and rewrite the live log to just the current week?',
-          detail: 'The removed part is copied to Logs\\Archive\\ and size-verified before anything is changed. EverQuest can stay running.',
+          detail: 'The removed part is copied to Logs\\Archive\\ and verified before anything changes. EverQuest can stay running.',
           okLabel: 'Trim log',
           danger: true,
         });
@@ -5485,6 +5877,16 @@ function initWidgetsPanel() {
       masterMuteBtn.classList.toggle('active', state.soundsMuted);
       masterMuteBtn.textContent = state.soundsMuted ? 'Sounds muted - unmute' : 'Mute sounds';
     }
+    if (masterPreviewAllBtn) {
+      // Keyed off "any aura previewing", not "every aura" - so one press always clears it, and it
+      // can't read as OFF while sample tiles are still on screen.
+      masterPreviewAllBtn.classList.toggle('active', state.previewAny);
+      masterPreviewAllBtn.textContent = state.previewAny ? 'Hide example content' : 'Show example content';
+    }
+    if (resumeMoveBtn) {
+      resumeMoveBtn.style.display = state.suspendedMove ? '' : 'none';
+      resumeMoveBtn.textContent = state.suspendedMove === 'all' ? '↩ Back to moving all auras' : '↩ Back to moving';
+    }
   }
   function refreshMasterButtons() {
     return window.eqTracker.getOverlayMasterState().then(renderMasterButtons);
@@ -5504,6 +5906,22 @@ function initWidgetsPanel() {
       })
     );
   });
+  if (masterPreviewAllBtn) {
+    masterPreviewAllBtn.addEventListener('click', () => {
+      window.eqTracker.getOverlayMasterState().then((state) =>
+        window.eqTracker.setOverlayPreviewAll(!state.previewAny).then(() => {
+          refreshMasterButtons();
+          // The per-aura button shows the same state for whichever aura is open.
+          if (selectedId) {
+            window.eqTracker.isWidgetPreviewing(selectedId).then((on) => {
+              const b = document.getElementById('widget-preview-btn');
+              if (b) { b.textContent = on ? 'Hide example content' : 'Show example content'; b.classList.toggle('unlocked', !!on); }
+            });
+          }
+        })
+      );
+    });
+  }
   // The Pause hotkey toggles the same state from outside this window, so the button has to
   // re-read rather than assume it is the only thing that can change it.
   window.eqTracker.onOverlayMasterStateChanged(() => refreshMasterButtons());
@@ -5517,6 +5935,11 @@ function initWidgetsPanel() {
       window.eqTracker.getOverlayMasterState().then((state) =>
         window.eqTracker.setOverlaySoundsMuted(!state.soundsMuted).then(refreshMasterButtons)
       );
+    });
+  }
+  if (resumeMoveBtn) {
+    resumeMoveBtn.addEventListener('click', () => {
+      window.eqTracker.resumeMove().then(refreshMasterButtons);
     });
   }
   refreshMasterButtons();
@@ -6555,7 +6978,7 @@ function initConfigFolderLink() {
       if (!list.length) {
         await appConfirm({
           title: 'Nothing to import',
-          message: 'No exported bundle or backup was found. Export one first, or drop a bundle folder into the exports folder.',
+          message: 'No exported bundle or backup found. Export one first, or drop a bundle folder into the exports folder.',
           okLabel: 'OK', hideCancel: true,
         });
         return;
@@ -6611,17 +7034,17 @@ function initLogActivityLine() {
     try { a = await window.eqTracker.getLogActivity(); } catch { return; }
     el.classList.remove('warn', 'ok');
     if (!a.folderSet) {
-      el.textContent = 'No EverQuest log folder is set yet — set it on the Log page.';
+      el.textContent = 'No EverQuest log folder set yet — set it on the Log page.';
       el.classList.add('warn');
     } else if (!a.sawLine) {
-      el.textContent = `Watching ${a.file || 'for a log file'} — nothing read yet. Type something in game (or /log on) to confirm.`;
+      el.textContent = `Watching ${a.file || 'for a log file'} — nothing read yet. Type something in game to confirm.`;
     } else if (a.lastLineAgoMs < 15000) {
       el.textContent = `Reading ${a.file} — last line ${ago(a.lastLineAgoMs)}.`;
       el.classList.add('ok');
     } else if (a.lastLineAgoMs < 90000) {
       el.textContent = `Watching ${a.file} — last line ${ago(a.lastLineAgoMs)}.`;
     } else {
-      el.textContent = `Watching ${a.file} — nothing for ${ago(a.lastLineAgoMs)}. If you are in game, check that /log on is active.`;
+      el.textContent = `Watching ${a.file} — nothing for ${ago(a.lastLineAgoMs)}. In game, check /log on is active.`;
       el.classList.add('warn');
     }
   }
@@ -6704,72 +7127,133 @@ function initBugReport() {
   });
 }
 
-// feat/module-system - custom modules that declare a `page` get their own settings page in the
-// sidebar, rendered from that declarative spec. No "Modules" heading, no folder link, no error
-// panel (owner's call) - a module page reads as an ordinary built-in page. Rebuilt whenever the
-// module set changes (hot-reload). A `hasAura` module's overlay aura is handled by the widget
-// system, not here.
+// feat/module-system - the renderer side of custom modules.
+//
+// A module's `page` controls render in ONE of two places, chosen by its `settingsUI` (see
+// moduleHost.js and docs/MODULE-AUTHORING.md): 'aura' (the default and the recommended shape)
+// puts them on the module aura's own settings panel - no sidebar entry at all; 'sidebar' gives
+// the module its own nav button + page, for the rare module with enough GLOBAL options that an
+// aura panel would be cramped. Either way the controls are built from the same declarative spec
+// by moduleControlRow() below.
+
+// One shared, hot-reloaded copy of the registered-module list. Both initModules() (sidebar pages)
+// and initWidgetsPanel() (Add-Aura entries + the per-aura settings card) read it, so there is one
+// fetch and one change subscription rather than several that could drift.
+let moduleRegistry = [];
+const moduleRegistrySubs = [];
+function onModuleRegistryChange(fn) {
+  moduleRegistrySubs.push(fn);
+  fn(moduleRegistry);
+}
+function refreshModuleRegistry() {
+  if (!window.eqTracker.listModules) return Promise.resolve([]);
+  return window.eqTracker.listModules().then((mods) => {
+    moduleRegistry = Array.isArray(mods) ? mods : [];
+    for (const fn of moduleRegistrySubs) fn(moduleRegistry);
+    return moduleRegistry;
+  });
+}
+function moduleById(id) {
+  return moduleRegistry.find((m) => m.id === id) || null;
+}
+
+// True when this aura is fed by a module that keeps its declared controls on the aura's own
+// settings panel (settingsUI 'aura', the default) AND actually declares some. False while the
+// module registry is still loading - the panel re-renders when it arrives.
+function moduleAuraHasPanelSettings(widget) {
+  if (!widget || widget.kind !== 'module-aura') return false;
+  const m = moduleById(widget.moduleId);
+  return !!(
+    m &&
+    m.settingsUI !== 'sidebar' &&
+    Array.isArray(m.page) &&
+    m.page.some((e) => 'key' in e)
+  );
+}
+
+// One control row from a module's page spec. Used by both the sidebar page and the aura settings
+// card. `setModuleSetting` is per-module (not per-aura) - every aura fed by one module shares the
+// one set of settings, matching the single onLine() that feeds them all.
+function moduleControlRow(moduleId, field, value) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = field.label || field.key;
+  row.appendChild(label);
+
+  let input;
+  const push = (v) => window.eqTracker.setModuleSetting(moduleId, field.key, v);
+
+  if (field.type === 'checkbox') {
+    label.remove();
+    const wrap = document.createElement('label');
+    input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = !!value;
+    input.addEventListener('change', () => push(input.checked));
+    wrap.append(input, document.createTextNode(' ' + (field.label || field.key)));
+    row.appendChild(wrap);
+  } else if (field.type === 'select') {
+    input = document.createElement('select');
+    input.className = 'text-input';
+    for (const opt of field.options || []) {
+      const o = document.createElement('option');
+      o.value = o.textContent = opt;
+      input.appendChild(o);
+    }
+    input.value = value;
+    input.addEventListener('change', () => push(input.value));
+    row.appendChild(input);
+  } else if (field.type === 'slider') {
+    input = document.createElement('input');
+    input.type = 'range';
+    input.min = field.min;
+    input.max = field.max;
+    input.step = typeof field.step === 'number' ? field.step : 1;
+    input.value = value;
+    const out = document.createElement('span');
+    out.className = 'slider-value';
+    out.textContent = value;
+    input.addEventListener('input', () => {
+      out.textContent = input.value;
+      push(Number(input.value));
+    });
+    row.append(input, out);
+  } else {
+    input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'text-input';
+    input.value = value == null ? '' : value;
+    input.addEventListener('change', () => push(input.value));
+    row.appendChild(input);
+  }
+  return row;
+}
+
+// Fill a container with a module's page controls (headings + rows). Shared by the sidebar page and
+// the aura settings card. Returns the number of control rows added.
+function renderModulePageControls(container, mod) {
+  container.innerHTML = '';
+  let controls = 0;
+  for (const entry of mod.page || []) {
+    if (entry.section) {
+      const h = document.createElement('h3');
+      h.className = 'settings-subsection-title';
+      h.textContent = entry.section;
+      container.appendChild(h);
+    } else {
+      container.appendChild(moduleControlRow(mod.id, entry, mod.settings[entry.key]));
+      controls++;
+    }
+  }
+  return controls;
+}
+
 function initModules() {
   const navSlot = document.getElementById('module-nav-slot');
   const pageSlot = document.getElementById('module-page-slot');
   if (!navSlot || !pageSlot || !window.eqTracker.listModules) return;
-
-  function controlRow(moduleId, field, value) {
-    const row = document.createElement('div');
-    row.className = 'row';
-    const label = document.createElement('span');
-    label.className = 'label';
-    label.textContent = field.label || field.key;
-    row.appendChild(label);
-
-    let input;
-    const push = (v) => window.eqTracker.setModuleSetting(moduleId, field.key, v);
-
-    if (field.type === 'checkbox') {
-      label.remove();
-      const wrap = document.createElement('label');
-      input = document.createElement('input');
-      input.type = 'checkbox';
-      input.checked = !!value;
-      input.addEventListener('change', () => push(input.checked));
-      wrap.append(input, document.createTextNode(' ' + (field.label || field.key)));
-      row.appendChild(wrap);
-    } else if (field.type === 'select') {
-      input = document.createElement('select');
-      input.className = 'text-input';
-      for (const opt of field.options || []) {
-        const o = document.createElement('option');
-        o.value = o.textContent = opt;
-        input.appendChild(o);
-      }
-      input.value = value;
-      input.addEventListener('change', () => push(input.value));
-      row.appendChild(input);
-    } else if (field.type === 'slider') {
-      input = document.createElement('input');
-      input.type = 'range';
-      input.min = field.min;
-      input.max = field.max;
-      input.step = typeof field.step === 'number' ? field.step : 1;
-      input.value = value;
-      const out = document.createElement('span');
-      out.className = 'slider-value';
-      out.textContent = value;
-      input.addEventListener('input', () => {
-        out.textContent = input.value;
-        push(Number(input.value));
-      });
-      row.append(input, out);
-    } else {
-      input = document.createElement('input');
-      input.type = 'text';
-      input.className = 'text-input';
-      input.value = value == null ? '' : value;
-      input.addEventListener('change', () => push(input.value));
-      row.appendChild(input);
-    }
-    return row;
-  }
 
   function buildPage(mod) {
     const section = document.createElement('section');
@@ -6790,17 +7274,7 @@ function initModules() {
 
     const card = document.createElement('div');
     card.className = 'card';
-    for (const entry of mod.page || []) {
-      if (entry.section) {
-        const h = document.createElement('h3');
-        h.className = 'settings-subsection-title';
-        h.textContent = entry.section;
-        card.appendChild(h);
-      } else {
-        card.appendChild(controlRow(mod.id, entry, mod.settings[entry.key]));
-      }
-    }
-    if (card.childElementCount) section.appendChild(card);
+    if (renderModulePageControls(card, mod)) section.appendChild(card);
     return section;
   }
 
@@ -6809,7 +7283,10 @@ function initModules() {
     navSlot.innerHTML = '';
     pageSlot.innerHTML = '';
     for (const mod of modules) {
-      if (!Array.isArray(mod.page) || !mod.page.length) continue; // only modules with settings get a page
+      // Only 'sidebar' modules get a nav button + page. The default ('aura') puts a module's
+      // controls on its aura's settings panel instead - see initWidgetsPanel().
+      if (mod.settingsUI !== 'sidebar') continue;
+      if (!Array.isArray(mod.page) || !mod.page.length) continue;
       const btn = document.createElement('button');
       btn.className = 'nav-btn';
       btn.dataset.page = `page-module-${mod.id}`;
@@ -6825,8 +7302,7 @@ function initModules() {
     }
   }
 
-  window.eqTracker.listModules().then(render);
-  window.eqTracker.onModulesChanged(render);
+  onModuleRegistryChange(render);
 }
 
 // The Action Bar overlay (CLAUDE.md's "Action bar cover replacements" backlog entry) - the

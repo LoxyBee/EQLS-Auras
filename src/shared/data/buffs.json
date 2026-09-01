@@ -1898,7 +1898,8 @@
   "manaCost": 0,
   "castSec": 3,
   "targets": "Group",
-  "landingTextSharedBy": 2
+  "landingTextSharedBy": 2,
+  "durationSec": 12
  },
  {
   "name": "Cassindra's Chorus of Clarity",

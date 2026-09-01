@@ -79,5 +79,30 @@ test('the card, dismiss flag and IPC are wired', () => {
   assert.match(mainSrc, /saveJson\('setupNudgeDismissed', true\)/);
 });
 
+test('the first-run setup wizard is wired end to end', () => {
+  // modal + all five steps
+  assert.match(html, /id="setup-wizard-backdrop"/);
+  for (const step of ['welcome', 'folder', 'logging', 'aa', 'done']) {
+    assert.match(html, new RegExp(`data-step="${step}"`), `wizard step "${step}" missing`);
+  }
+  assert.match(html, /id="open-setup-wizard-btn"/, 'no "Run setup again" button on the Setup page');
+
+  // renderer: shows once, marks done on Finish, reuses the real Setup IPC
+  assert.match(rendererSrc, /function initSetupWizard\(\)/);
+  assert.match(rendererSrc, /initSetupWizard\(\);/);
+  assert.match(rendererSrc, /window\.eqTracker\.getSetupWizardDone\(\)\.then\(\(done\) => \{ if \(!done\) open\(\)/);
+  assert.match(rendererSrc, /if \(STEPS\[i\] === 'done'\) \{ close\(true\)/);
+  assert.match(rendererSrc, /window\.eqTracker\.chooseLogFolder\(\)/);
+  assert.match(rendererSrc, /window\.eqTracker\.setCharacterSettings\(\{/);
+  // can't skip past the folder step with nothing chosen
+  assert.match(rendererSrc, /nextBtn\.disabled = step === 'folder' && !hasFolder/);
+
+  // IPC + preload for the persisted "done" flag
+  assert.match(preloadSrc, /getSetupWizardDone: \(\) =>/);
+  assert.match(preloadSrc, /setSetupWizardDone: \(done\) =>/);
+  assert.match(mainSrc, /ui:getSetupWizardDone/);
+  assert.match(mainSrc, /saveJson\('setupWizardDone'/);
+});
+
 module.exports = () => report('setup-nudge');
 if (require.main === module) report('setup-nudge').then((n) => process.exit(n ? 1 : 0));

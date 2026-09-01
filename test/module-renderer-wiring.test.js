@@ -1,9 +1,13 @@
 'use strict';
 /**
- * feat/module-system - the renderer side. initModules() builds a sidebar nav button + a
- * spec-rendered settings page for each custom module that declares a `page`. Structural checks
- * (source + markup + preload) - the live rendering is exercised by tools/smoke-render.js and,
- * ultimately, a real module dropped into userData/modules/.
+ * feat/module-system - the renderer side.
+ *
+ * A module's `page` controls render in ONE of two places, chosen by its `settingsUI`:
+ *   'aura'    (default, recommended) - on the module aura's own settings panel, no sidebar entry
+ *   'sidebar' - a dedicated nav button + page, for a module with a lot of GLOBAL options
+ *
+ * Structural checks (source + markup + preload). Live rendering is exercised by
+ * tools/smoke-render.js and, ultimately, a real module dropped into the modules folder.
  */
 
 const assert = require('node:assert/strict');
@@ -18,36 +22,52 @@ const rendererSrc = read('renderer', 'main-window', 'main-window.js');
 const preloadMain = read('preload', 'preload-main.js');
 const preloadOverlay = read('preload', 'preload-overlay.js');
 
-test('the sidebar and page-container have injection slots, no "Modules" heading', () => {
+test('the sidebar and page-container keep injection slots for sidebar-mode modules, no "Modules" heading', () => {
   assert.match(html, /id="module-nav-slot"/);
   assert.match(html, /id="module-page-slot"/);
   assert.ok(!/>\s*Modules\s*</.test(html), 'there must be no "Modules" heading in the nav');
 });
 
-test('initModules is called from init and renders only modules that declare a page', () => {
-  assert.match(rendererSrc, /\binitModules\(\);/);
-  assert.match(rendererSrc, /function initModules\(\)/);
-  assert.match(rendererSrc, /only modules with settings get a page/);
-  assert.match(rendererSrc, /window\.eqTracker\.onModulesChanged\(render\)/);
+test('the per-aura settings panel has a module-settings card', () => {
+  assert.match(html, /id="widget-module-settings"/);
+  assert.match(html, /id="widget-module-settings-controls"/);
 });
 
-test('every page control type is handled', () => {
-  const fn = rendererSrc.match(/function controlRow\(moduleId, field, value\) \{[\s\S]*?\n  \}/);
-  assert.ok(fn, 'controlRow not found');
+test('one shared, hot-reloaded module registry feeds both the sidebar and the aura panel', () => {
+  assert.match(rendererSrc, /function refreshModuleRegistry\(\)/);
+  assert.match(rendererSrc, /function onModuleRegistryChange\(fn\)/);
+  assert.match(rendererSrc, /window\.eqTracker\.onModulesChanged\(refreshModuleRegistry\)/);
+  assert.match(rendererSrc, /\binitModules\(\);/);
+});
+
+test('initModules builds a sidebar page ONLY for settingsUI === "sidebar" modules', () => {
+  assert.match(rendererSrc, /function initModules\(\)/);
+  assert.match(rendererSrc, /if \(mod\.settingsUI !== 'sidebar'\) continue;/);
+  assert.match(rendererSrc, /page-module-\$\{mod\.id\}/, 'module page id still namespaced');
+  assert.match(rendererSrc, /onModuleRegistryChange\(render\);/);
+});
+
+test('every page control type is handled by the shared control builder', () => {
+  const fn = rendererSrc.match(/function moduleControlRow\(moduleId, field, value\) \{[\s\S]*?\n\}/);
+  assert.ok(fn, 'moduleControlRow not found');
   for (const t of ['checkbox', 'select', 'slider']) assert.ok(fn[0].includes(`field.type === '${t}'`), t);
   assert.match(fn[0], /setModuleSetting\(moduleId, field\.key/);
 });
 
+test('a module aura panel renders that module\'s controls, gated on it being aura-mode', () => {
+  assert.match(rendererSrc, /function moduleAuraHasPanelSettings\(widget\)/);
+  assert.match(rendererSrc, /m\.settingsUI !== 'sidebar'/);
+  assert.match(rendererSrc, /renderModulePageControls\(moduleSettingsControlsEl, moduleById\(widget\.moduleId\)\)/);
+  // the shape carries the slot
+  assert.match(rendererSrc, /'module': \[[^\]]*'module-settings'[^\]]*\]/);
+});
+
 test('the module IPC is bridged in both preloads', () => {
-  for (const m of ['listModules', 'getModuleSettings', 'setModuleSetting', 'onModulesChanged']) {
+  for (const m of ['listModules', 'getModuleSettings', 'setModuleSetting', 'onModulesChanged', 'onModuleSettingsChanged']) {
     assert.ok(preloadMain.includes(m), `preload-main missing ${m}`);
   }
   assert.match(preloadOverlay, /getModuleEntries/);
   assert.match(preloadOverlay, /onModuleEntries/);
-});
-
-test('a module page id is namespaced so it cannot collide with a built-in page', () => {
-  assert.match(rendererSrc, /page-module-\$\{mod\.id\}/);
 });
 
 module.exports = () => report('module-renderer-wiring');

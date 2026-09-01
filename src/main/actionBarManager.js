@@ -732,6 +732,20 @@ function nudgePosition(id, dx, dy) {
   return getBounds(id);
 }
 
+// Put a bar's window at an explicit position - one or both axes; an undefined axis is kept. Used
+// by the move HUD's "centre on screen" buttons, so it does NOT snap (centre means centre).
+function placeBar(id, { x, y } = {}) {
+  const win = windows.get(id);
+  if (!win) return null;
+  const [cx, cy] = win.getPosition();
+  const nx = typeof x === 'number' ? Math.round(x) : cx;
+  const ny = typeof y === 'number' ? Math.round(y) : cy;
+  win.setPosition(nx, ny);
+  store.savePosition(id, { x: nx, y: ny });
+  onBarMoved(id, getBounds(id));
+  return getBounds(id);
+}
+
 function initActionBars() {
   for (const config of store.getAll()) createWindow(config);
 }
@@ -763,6 +777,7 @@ module.exports = {
   isMasterHidden,
   resetPosition,
   nudgePosition,
+  placeBar,
   getBounds,
   setOnMovedFn,
   setOpacity,
