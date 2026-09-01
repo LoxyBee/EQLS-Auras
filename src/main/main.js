@@ -1790,36 +1790,6 @@ ipcMain.handle('widget:list', () => widgetManager.getAllWidgetConfigs());
 ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig(id));
 ipcMain.handle('widget:preview', (_event, id) => widgetManager.previewWidget(id));
 ipcMain.handle('widget:isPreviewing', (_event, id) => widgetManager.isPreviewShown(id));
-// Note 6 - clicking an aura's name in its move box. Raises the settings window and tells it
-// which aura to open. Worth knowing: this pulls EverQuest out of focus, so with auto-hide on it
-// is also the moment your other auras vanish. The unlocked ones stay put, which is the only
-// reason that is tolerable.
-//
-// Reported live 24 Aug: "right clicking on a blue move box freezes the app entirely... unless i
-// alt tab". Root cause - win.focus() asks Windows to hand this window OS foreground focus, and
-// this call fires from inside the SAME right-click gesture the overlay's own always-on-top,
-// `-webkit-app-region: drag` window is still processing. Windows' foreground-lock protection can
-// make a focus() request like that block synchronously waiting for the lock to release - and
-// since Electron's main process is single-threaded, a block there freezes EVERY ipcMain handler
-// in the app, not just this one, until something (alt-tabbing away and back) clears the lock.
-// That also explains "it also doesn't nav me": the webContents.send() below used to run AFTER
-// focus()/show(), so a frozen focus() call meant the navigation message never even got sent.
-//
-// Fixed two ways together: the navigation message goes out FIRST, so the settings page opens
-// correctly regardless of whether the OS ever grants focus - and show()/focus() are deferred to
-// setImmediate, off the input event that triggered them, so even if Windows makes the focus
-// request wait, it is not this process's own single thread doing the waiting.
-ipcMain.on('widget:openSettings', (_event, id) => {
-  const win = getMainWindow();
-  if (!win || win.isDestroyed()) return;
-  win.webContents.send('widget:openSettings', id);
-  setImmediate(() => {
-    if (win.isDestroyed()) return;
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-  });
-});
 // An overlay asks for this as it boots, the same way it asks for its lock state - a window
 // created on demand would otherwise start out assuming it may make noise.
 ipcMain.handle('widget:isAudible', (_event, id) => {
@@ -2014,7 +1984,7 @@ ipcMain.handle('debug:setEnabled', (_event, enabled) => {
 });
 // The one place a renderer (an overlay window - see preload-overlay.js's debugLog bridge) can
 // write into the same debug log every detection line already goes through. .on, not .handle - the
-// overlay has nothing to wait for a reply about, same as widget:reportContentSize/openSettings.
+// overlay has nothing to wait for a reply about, same as widget:reportContentSize.
 ipcMain.on('debug:logLine', (_event, message) => debugLog(message));
 ipcMain.handle('zone:current', () => widgetManager.getCurrentZone());
 ipcMain.handle('zone:known', () => KNOWN_ZONES);

@@ -60,19 +60,37 @@ function showFor(id, bounds, kind = 'widget') {
       sandbox: true,
     },
   });
-  win.setAlwaysOnTop(true, 'screen-saver');
+  // relativeLevel 2 keeps the pad above the aura overlays, which are 'screen-saver' at level 0 -
+  // otherwise clicking an aura box raises that window over its own pad (owner hit exactly that).
+  win.setAlwaysOnTop(true, 'screen-saver', 2);
   win.on('system-context-menu', (e) => e.preventDefault());
   win.loadFile(path.join(__dirname, '..', 'renderer', 'nudge-pad', 'index.html'), {
     query: { id, kind },
   });
   win.once('ready-to-show', () => { if (!win.isDestroyed()) win.showInactive(); });
   pads.set(id, { win, kind });
+  ensureTopTimer();
 }
 
-// The box moved (drag / nudge) - keep the pad centred over it.
+// The box moved (drag / nudge) - keep the pad centred over it and back on top.
 function updateFor(id, bounds) {
   const p = pads.get(id);
-  if (p && !p.win.isDestroyed()) p.win.setBounds(placeFor(bounds));
+  if (p && !p.win.isDestroyed()) {
+    p.win.setBounds(placeFor(bounds));
+    p.win.moveTop();
+  }
+}
+
+// A cheap safety net for the click-raises-the-aura case: a plain click on an aura box (no drag, so
+// no updateFor) still pulls that overlay window over the pad on some Windows setups. Re-top every
+// pad a few times a second while any are open.
+let topTimer = null;
+function ensureTopTimer() {
+  if (topTimer) return;
+  topTimer = setInterval(() => {
+    if (!pads.size) { clearInterval(topTimer); topTimer = null; return; }
+    for (const p of pads.values()) if (p && !p.win.isDestroyed()) p.win.moveTop();
+  }, 300);
 }
 
 function hideFor(id) {
@@ -84,6 +102,7 @@ function hideFor(id) {
 function hideAll() {
   for (const p of pads.values()) if (p && !p.win.isDestroyed()) p.win.destroy();
   pads.clear();
+  if (topTimer) { clearInterval(topTimer); topTimer = null; }
 }
 
 module.exports = { showFor, updateFor, hideFor, hideAll, PAD_W, PAD_H };
