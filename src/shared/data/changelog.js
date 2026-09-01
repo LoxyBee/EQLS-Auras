@@ -57,6 +57,7 @@ const CHANGELOG = [
       'A picked alert sound keeps its name when you reopen the settings, and "Use default" is always there',
       'The stale "Not active yet." note is gone from the timer-text colour picker',
       'Mote-scaled bard song timers now land on the real 6-second boundary',
+      'Every tooltip and hint reworded shorter and plainer',
     ],
   },
 ];
