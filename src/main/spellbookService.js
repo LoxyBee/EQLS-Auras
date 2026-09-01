@@ -87,10 +87,15 @@ class SpellbookService {
       clearInterval(this.timer);
       this.timer = null;
     }
-    this._load(this._findFiles());
-    if (this.loadedFiles.length) {
-      this.timer = setInterval(() => this._load(this._findFiles()), RELOAD_INTERVAL_MS);
-    }
+    // A setter is a deliberate target change - apply whatever it finds, even nothing (switching to
+    // a character with no file, or pinning a missing file, really does mean "no spellbook now").
+    this._load(this._findFiles(), { targetChanged: true });
+    // Always poll, even when that first load came up empty. A transient failure - readdirSync
+    // throwing under an AV lock, installRoot or the log-derived character name momentarily null
+    // during a startup / file-roll race - would otherwise leave the spellbook signal dead for the
+    // whole session (confirmed 31 Aug: it went dead after a restart and only twice recovered all
+    // day). With the timer always running it self-heals within 30s.
+    this.timer = setInterval(() => this._load(this._findFiles()), RELOAD_INTERVAL_MS);
   }
 
   // Every spellbook file the current mode points at (absolute paths). A file override is just
@@ -135,19 +140,28 @@ class SpellbookService {
     }
   }
 
-  _load(files) {
+  _load(files, { targetChanged = false } = {}) {
     const names = new Set();
     const baseNames = new Set();
     const loaded = [];
+    let anyRead = false;
     for (const filePath of files) {
       const spells = this._readOne(filePath);
       if (spells === null) continue;
+      anyRead = true;
       for (const name of spells) {
         names.add(name.toLowerCase());
         baseNames.add(stripRankSuffix(name).toLowerCase());
       }
       loaded.push({ path: filePath, className: this._classOf(filePath), count: spells.length });
     }
+    // The 30-second poll must never blank a loaded spellbook because a single reload read nothing.
+    // `files` is empty on a transient `_findFiles()` failure (readdir throwing under an AV lock,
+    // installRoot/base-name momentarily null), and `_readOne` returns null on a locked file - the
+    // player's actual spellbook has not changed. This blanking silently killed the app's strongest
+    // ambiguous-landing signal for a whole session (31 Aug), re-failing every 30s. A deliberate
+    // target change (a setter, `targetChanged`) is still allowed to clear it.
+    if (!anyRead && !targetChanged && this.spellNames.size > 0) return;
     this.spellNames = names;
     this.baseSpellNames = baseNames;
     this.loadedFiles = loaded;
