@@ -426,6 +426,27 @@ function matchDidNotTakeHold(line) {
   return { spellName: m[1], targetName: m[2] || null, blockedBy: m[3] || null };
 }
 
+// The player's own raid-entry keyword to the Voidling NPC. On EQ Legends a raid target is a private
+// instance: you hail a Voidling and click the [danger] keyword to accept the risk, and the next
+// zone change lands you in the raid. Verified against the owner's real log:
+//
+//   [Sun Aug 30 17:49:36 2026] You say, 'Hail, voidling'
+//   [Sun Aug 30 17:49:37 2026] Voidling says, 'Ah, another who thinks themselves a Legend. ... the [danger]...'
+//   [Sun Aug 30 17:49:40 2026] You say, 'danger'
+//   [Sun Aug 30 17:49:53 2026] You have entered The Plane of Hate - Group 4 (Refined).
+//
+// This is the SAME signal lockoutCore.js keys its weekly-attempt event on (`SELF_DANGER_RE`), for
+// the same reason: only the player's own "You say, 'danger'" means the PLAYER is entering a raid.
+// Groupmates spam "<Name> says, 'danger'" at the same NPC, and the "- Group"/no-"- Group" grammar
+// in the zone name does NOT split raid from group instance reliably (measured: the owner's real
+// Plane of Hate raid entered as "... - Group 4 (Refined)" while a group-only Nagafen's Lair entered
+// as "Nagafen's Lair 4 (Refined)"). Exact and case-sensitive, matching lockoutCore.
+const SELF_DANGER = /^You say, 'danger'$/;
+
+function matchOwnVoidlingDanger(line) {
+  return SELF_DANGER.test(stripTimestamp(line));
+}
+
 function matchOverwritten(line) {
   const m = OVERWRITTEN_PATTERN.exec(stripTimestamp(line));
   return m ? { spellName: m[1], targetName: m[2] } : null;
@@ -454,6 +475,7 @@ module.exports = {
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
   matchZoneChange,
+  matchOwnVoidlingDanger,
   matchDidNotTakeHold,
   matchOverwritten,
   matchOwnInterrupt,

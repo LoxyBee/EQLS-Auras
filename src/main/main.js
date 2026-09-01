@@ -1203,13 +1203,16 @@ app.whenReady().then(() => {
   setImmediate(() => {
     const logPath = logService.watcher.getStatus().currentFilePath;
     if (!logPath) return;
-    const zone = readLastZoneEntry(logPath);
-    if (!zone) return;
-    applyZoneChangeAndNotify(zone);
-    raidNamedTracker.setZone(zone);
-    customTimerEngine.seedZone(zone);
+    const found = readLastZoneEntry(logPath);
+    if (!found) return;
+    applyZoneChangeAndNotify(found.zone);
+    raidNamedTracker.setZone(found.zone, found.viaVoidling);
+    customTimerEngine.seedZone(found.zone);
     pushTravelRoutes();
-    debugLog(`ZONE recovered on startup: "${zone}" (from the log tail)`);
+    debugLog(
+      `ZONE recovered on startup: "${found.zone}" (from the log tail` +
+      (found.viaVoidling ? ', raid entry confirmed)' : ')')
+    );
   });
 
   app.on('activate', () => {
