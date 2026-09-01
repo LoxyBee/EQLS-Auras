@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8" /><title>Grid</title>
+<head><meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: eqicon:; media-src 'self' eqsound:; connect-src 'none'; base-uri 'none'; form-action 'none'" />
+<title>Grid</title>
 <style>
   html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
   #grid {
@@ -12,9 +14,6 @@
 </style></head>
 <body>
   <div id="grid"></div>
-  <script>
-    const el = document.getElementById('grid');
-    window.eqGridGuide.onSize((px) => el.style.setProperty('--g', px + 'px'));
-  </script>
+  <script src="grid-guide.js"></script>
 </body>
 </html>

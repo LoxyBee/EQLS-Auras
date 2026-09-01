@@ -268,5 +268,43 @@ test('"Use default" is always shown, and the reset buttons are not hidden markup
   assert.match(js, /resetBtn\.disabled = !soundId/);
 });
 
+test('every shipped renderer HTML carries a strict CSP, and none re-opens the door', () => {
+  // Renderer content includes spell / zone / chat-derived strings and pasted share codes. script-src
+  // 'self' + connect-src 'none' is what stops a bad string turning into code or exfiltration. A
+  // missing meta on one page, or an 'unsafe-inline'/'unsafe-eval' slipped into script-src, is the
+  // hole - so this checks all of them, not just the main window.
+  const rendererDir = path.join(__dirname, '..', 'src', 'renderer');
+  const pages = fs.readdirSync(rendererDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => path.join(rendererDir, d.name, 'index.html'))
+    .filter((p) => fs.existsSync(p));
+  assert.ok(pages.length >= 7, `expected every renderer to have an index.html, found ${pages.length}`);
+
+  for (const p of pages) {
+    const src = fs.readFileSync(p, 'utf8');
+    const name = path.basename(path.dirname(p));
+    const meta = src.match(/http-equiv="Content-Security-Policy"\s+content="([^"]+)"/i);
+    assert.ok(meta, `${name}/index.html has no Content-Security-Policy meta`);
+    const csp = meta[1];
+    assert.match(csp, /default-src 'none'/, `${name}: default-src is not locked to 'none'`);
+    assert.match(csp, /script-src 'self'/, `${name}: script-src is not 'self'`);
+    assert.ok(!/script-src[^;]*'unsafe-inline'/.test(csp), `${name}: script-src allows 'unsafe-inline'`);
+    assert.ok(!/'unsafe-eval'/.test(csp), `${name}: CSP allows 'unsafe-eval'`);
+    assert.match(csp, /connect-src 'none'/, `${name}: connect-src is not 'none'`);
+    // No inline <script> - it would be dead under script-src 'self' anyway.
+    assert.ok(!/<script(?![^>]*\ssrc=)[^>]*>[^<]/.test(src), `${name}: has an inline <script> that CSP will block`);
+    // No inline event handlers.
+    assert.ok(!/\son[a-z]+="/.test(src), `${name}: has an inline on*= handler that CSP will block`);
+  }
+});
+
+test('navigation is locked down for every window, present and future', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.match(main, /app\.on\('web-contents-created'/, 'no app-wide web-contents-created handler - popups would be unguarded');
+  assert.match(main, /\.on\('will-navigate'/, 'no will-navigate guard');
+  assert.match(main, /e\.preventDefault\(\)/);
+  assert.match(main, /setWindowOpenHandler\(\(\{ url \}\) => \{[\s\S]*?action: 'deny'/, 'window.open is not denied');
+});
+
 module.exports = () => report('renderer-wiring');
 if (require.main === module) report('renderer-wiring').then((n) => process.exit(n ? 1 : 0));

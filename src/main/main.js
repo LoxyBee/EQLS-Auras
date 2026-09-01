@@ -2682,6 +2682,25 @@ app.on('will-quit', () => {
 // A renderer dying takes its window with it, which can cascade into
 // window-all-closed and look like a clean quit - `reason` distinguishes a
 // real crash ('crashed'/'oom') from an ordinary teardown ('clean-exit').
+// Navigation lockdown for EVERY window in the app, present and future - one registration covers
+// the main window, the overlay, every aura, and the little popup windows. These pages render
+// spell / zone / chat-derived strings and pasted share codes; nothing they contain should be able
+// to navigate the window somewhere else or open a new one. All content is loaded from local files,
+// so a navigation attempt is always either a bug or an injection - deny it and log it.
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-navigate', (e, url) => {
+    // about:blank / the page's own file reload are fine; anything else is denied.
+    if (url !== contents.getURL()) {
+      e.preventDefault();
+      debugLog(`BLOCKED navigation to ${url}`);
+    }
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    debugLog(`BLOCKED window.open / target=_blank to ${url}`);
+    return { action: 'deny' };
+  });
+});
+
 app.on('render-process-gone', (_event, _contents, details) => {
   debugLog(`SHUTDOWN: render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
 });

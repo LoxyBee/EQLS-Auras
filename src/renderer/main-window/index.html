@@ -2,6 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <!-- Strict CSP: only this app's own scripts run, nothing connects out, and the only non-self
+       resources are the custom eqicon:// / eqsound:// protocols, data: URIs, and Google Fonts
+       (the one deliberate CDN - see the comment below). Renderer content includes spell / zone /
+       chat-derived strings and pasted share codes, so script-src 'self' + connect-src 'none' is
+       the guard that a bad string can't turn into code or exfiltration. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: eqicon:; media-src 'self' eqsound:; connect-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>EQLS Auras</title>
   <!-- Poppins for all UI/prose text (see --sans in main-window.css). Timer
        figures and other data values stay on the existing Consolas --mono -
