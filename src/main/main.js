@@ -1612,6 +1612,12 @@ ipcMain.handle('ui:setMergeRule', (_event, rule) => {
 // this fallback is reached only when the setting has never been touched.
 // QOL #50 - the Buff Tracker "finish setting up" checklist, dismissed for good once the user
 // clicks it away (a per-machine nag, not something to carry between installs).
+// First-run setup wizard - shown once, then re-openable from the Setup page.
+ipcMain.handle('ui:getSetupWizardDone', () => loadJson('setupWizardDone', false) === true);
+ipcMain.handle('ui:setSetupWizardDone', (_event, done) => {
+  saveJson('setupWizardDone', done !== false);
+  return true;
+});
 ipcMain.handle('ui:getSetupNudgeDismissed', () => loadJson('setupNudgeDismissed', false) === true);
 ipcMain.handle('ui:dismissSetupNudge', () => {
   saveJson('setupNudgeDismissed', true);

@@ -1049,6 +1049,9 @@
             <span id="log-file">-</span>
             <button id="open-folder-btn">📁 Open log folder</button>
           </div>
+          <div class="row">
+            <button type="button" id="open-setup-wizard-btn">Run setup again</button>
+          </div>
           <p id="log-error" class="error"></p>
         </div>
 
@@ -2566,6 +2569,74 @@
       <div class="modal-actions">
         <button id="rename-widget-save-btn">Save</button>
         <button id="rename-widget-cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- First-run setup wizard. Shows once (persisted flag setupWizardDone), re-openable from the
+       Setup page's "Run setup again" button. initSetupWizard() in main-window.js drives the steps
+       and reuses the existing Setup-page IPC - it's a guided front for the same actions. -->
+  <div id="setup-wizard-backdrop" class="modal-backdrop" style="display:none">
+    <div class="modal-card" id="setup-wizard-card">
+      <div class="modal-header">
+        <h3 id="sw-title">Set up EQLS Auras</h3>
+        <button id="sw-close" class="modal-close" title="Close - you can finish setup later from the Setup page">✕</button>
+      </div>
+      <p class="hint" id="sw-progress"></p>
+
+      <div class="sw-step" data-step="welcome">
+        <p>This takes about a minute. Three things and you're done:</p>
+        <ul class="buff-list">
+          <li>Point the app at your EverQuest folder</li>
+          <li>Turn EverQuest's log on</li>
+          <li>Enter your AA levels (so buff timers are right)</li>
+        </ul>
+      </div>
+
+      <div class="sw-step" data-step="folder" hidden>
+        <p>Pick your EverQuest folder. The app reads the log file inside it - it never changes anything in there.</p>
+        <div class="row">
+          <button type="button" id="sw-browse">Choose folder&hellip;</button>
+          <span id="sw-folder-status" class="hint"></span>
+        </div>
+        <p class="hint" id="sw-folder-detail"></p>
+      </div>
+
+      <div class="sw-step" data-step="logging" hidden>
+        <p>In EverQuest, type this and press enter:</p>
+        <p><code class="sw-cmd">/log on</code></p>
+        <p class="hint">Leave it on. The app only works while EverQuest is writing its log.</p>
+        <div class="row">
+          <span id="sw-log-live" class="hint">Waiting for the first log line&hellip;</span>
+        </div>
+      </div>
+
+      <div class="sw-step" data-step="aa" hidden>
+        <p>Your AA levels. These make buff durations come out right - leave a box at 0 if you don't have that line.</p>
+        <div class="row">
+          <label class="label" for="sw-aa">Reinforcement AA</label>
+          <input type="number" id="sw-aa" class="text-input" min="0" max="50" style="width:5em" value="0" />
+        </div>
+        <div class="row">
+          <label class="label" for="sw-exalt">Exaltation AA</label>
+          <input type="number" id="sw-exalt" class="text-input" min="0" max="50" style="width:5em" value="0" />
+        </div>
+        <div class="row">
+          <label class="label" for="sw-deft">Spell Casting Deftness AA</label>
+          <input type="number" id="sw-deft" class="text-input" min="0" max="50" style="width:5em" value="0" />
+        </div>
+      </div>
+
+      <div class="sw-step" data-step="done" hidden>
+        <p><strong>That's it.</strong> The overlay is running.</p>
+        <p class="hint" id="sw-done-detail"></p>
+        <p>Next: open <strong>Overlay Auras</strong> in the sidebar and add the auras you want on screen.</p>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" id="sw-back">Back</button>
+        <button type="button" id="sw-skip">Skip</button>
+        <button type="button" id="sw-next">Next</button>
       </div>
     </div>
   </div>

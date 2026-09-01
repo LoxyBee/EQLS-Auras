@@ -22,6 +22,7 @@ async function init() {
   initTopicToggles();
   initProfileBar();
   initLogPanel();
+  initSetupWizard();
   initFirstRunLanding();
   initSetupNudge();
   initDetectionSettingsPanel();
@@ -191,6 +192,112 @@ function initTopicToggles() {
 // nothing's happening. Reverts to normal permanently once a folder is
 // actually confirmed - if auto-detection just works (the common case for
 // a standard install), the user may never see this state at all.
+// The first-run setup wizard - a guided front for the same actions the Setup page has. Shows once
+// (persisted flag), re-openable from a Setup-page button. Steps: welcome -> EQ folder -> turn on
+// logging -> AA levels -> done. "Skip" and the ✕ both close without marking it done, so it comes
+// back next launch; "Finish" on the last step marks it done for good.
+function initSetupWizard() {
+  const backdrop = document.getElementById('setup-wizard-backdrop');
+  if (!backdrop) return;
+  const card = document.getElementById('setup-wizard-card');
+  const titleEl = document.getElementById('sw-title');
+  const progressEl = document.getElementById('sw-progress');
+  const backBtn = document.getElementById('sw-back');
+  const skipBtn = document.getElementById('sw-skip');
+  const nextBtn = document.getElementById('sw-next');
+  const closeBtn = document.getElementById('sw-close');
+
+  const STEPS = ['welcome', 'folder', 'logging', 'aa', 'done'];
+  let i = 0;
+  let hasFolder = false;
+  let sawLogLine = false;
+
+  function open() {
+    i = 0;
+    render();
+    backdrop.style.display = 'flex';
+  }
+  function close(markDone) {
+    backdrop.style.display = 'none';
+    if (markDone) window.eqTracker.setSetupWizardDone(true);
+  }
+
+  function render() {
+    const step = STEPS[i];
+    for (const el of card.querySelectorAll('.sw-step')) el.hidden = el.dataset.step !== step;
+    progressEl.textContent = `Step ${i + 1} of ${STEPS.length}`;
+    titleEl.textContent = i === STEPS.length - 1 ? 'All set' : 'Set up EQLS Auras';
+    backBtn.style.visibility = i === 0 ? 'hidden' : 'visible';
+    skipBtn.style.display = step === 'done' ? 'none' : '';
+    nextBtn.textContent = step === 'done' ? 'Finish' : 'Next';
+    // The folder step is the one hard requirement - can't Next past it with nothing picked.
+    nextBtn.disabled = step === 'folder' && !hasFolder;
+
+    if (step === 'folder') refreshFolder();
+    if (step === 'aa') loadAa();
+    if (step === 'done') refreshDone();
+  }
+
+  function refreshFolder() {
+    window.eqTracker.getLogState().then((s) => {
+      hasFolder = !!s.eqFolder;
+      document.getElementById('sw-folder-status').textContent = s.eqFolder ? '✓ ' + s.eqFolder : 'Not set yet';
+      document.getElementById('sw-folder-detail').textContent = s.currentFilePath
+        ? 'Found a log file: ' + s.currentFilePath
+        : (s.eqFolder ? "Folder set - no log file yet. Turn logging on (next step) and it'll appear." : '');
+      nextBtn.disabled = !hasFolder;
+    });
+  }
+
+  document.getElementById('sw-browse').addEventListener('click', () => {
+    window.eqTracker.chooseLogFolder().then(() => refreshFolder());
+  });
+
+  window.eqTracker.onLogLine(() => {
+    sawLogLine = true;
+    const el = document.getElementById('sw-log-live');
+    if (el) el.textContent = '✓ Log lines are coming in.';
+  });
+
+  function loadAa() {
+    window.eqTracker.getCharacterSettings().then((c) => {
+      document.getElementById('sw-aa').value = c.aaLevel || 0;
+      document.getElementById('sw-exalt').value = c.exaltationLevel || 0;
+      document.getElementById('sw-deft').value = c.deftnessLevel || 0;
+    });
+  }
+  function saveAa() {
+    const clamp = (v) => Math.max(0, Math.min(50, Number(v) || 0));
+    return window.eqTracker.setCharacterSettings({
+      aaLevel: clamp(document.getElementById('sw-aa').value),
+      exaltationLevel: clamp(document.getElementById('sw-exalt').value),
+      deftnessLevel: clamp(document.getElementById('sw-deft').value),
+    });
+  }
+
+  function refreshDone() {
+    const bits = [];
+    bits.push(sawLogLine ? 'Log connected.' : 'Turn on logging in game if you haven\'t.');
+    document.getElementById('sw-done-detail').textContent = bits.join(' ');
+  }
+
+  backBtn.addEventListener('click', () => { if (i > 0) { i--; render(); } });
+  skipBtn.addEventListener('click', () => close(false));
+  closeBtn.addEventListener('click', () => close(false));
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(false); });
+  nextBtn.addEventListener('click', async () => {
+    if (STEPS[i] === 'aa') await saveAa();
+    if (STEPS[i] === 'done') { close(true); return; }
+    if (i < STEPS.length - 1) { i++; render(); }
+  });
+
+  const reopenBtn = document.getElementById('open-setup-wizard-btn');
+  if (reopenBtn) reopenBtn.addEventListener('click', open);
+
+  // Auto-show on first run.
+  window.eqTracker.getSetupWizardDone().then((done) => { if (!done) open(); });
+}
+
 function initFirstRunLanding() {
   const eyebrowEl = document.getElementById('eq-log-eyebrow');
   const headingEl = document.getElementById('eq-log-heading');
@@ -208,16 +315,18 @@ function initFirstRunLanding() {
     headingEl.textContent = on ? "Let's find your EverQuest log" : 'EverQuest log file';
   }
 
-  window.eqTracker.getLogState().then((state) => {
+  Promise.all([window.eqTracker.getLogState(), window.eqTracker.getSetupWizardDone()]).then(([state, wizardDone]) => {
     if (state.eqFolder) {
       setPromoted(false);
     } else {
       setPromoted(true);
-      // Only the very first landing decision navigates - once the app has
-      // landed once, later status updates (below) only ever clear the
-      // promoted state, never re-navigate out from under the user.
-      const setupBtn = document.querySelector('.nav-btn[data-page="page-settings"]');
-      if (setupBtn) activateNavButton(setupBtn);
+      // Only navigate to Setup if the wizard isn't handling first-run - it's a modal on top of
+      // whatever page, so navigating underneath it as well is just noise. Once past first launch,
+      // later status updates only ever CLEAR the promoted state, never re-navigate.
+      if (wizardDone) {
+        const setupBtn = document.querySelector('.nav-btn[data-page="page-settings"]');
+        if (setupBtn) activateNavButton(setupBtn);
+      }
     }
     hasLandedOnce = true;
   });

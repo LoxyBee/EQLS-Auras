@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setMergeRule: (rule) => ipcRenderer.invoke('ui:setMergeRule', rule),
   getSetupNudgeDismissed: () => ipcRenderer.invoke('ui:getSetupNudgeDismissed'),
   dismissSetupNudge: () => ipcRenderer.invoke('ui:dismissSetupNudge'),
+  getSetupWizardDone: () => ipcRenderer.invoke('ui:getSetupWizardDone'),
+  setSetupWizardDone: (done) => ipcRenderer.invoke('ui:setSetupWizardDone', done),
   getTradePing: () => ipcRenderer.invoke('ui:getTradePing'),
   setTradePing: (enabled) => ipcRenderer.invoke('ui:setTradePing', enabled),
   getTellPing: () => ipcRenderer.invoke('ui:getTellPing'),

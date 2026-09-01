@@ -2322,6 +2322,25 @@ body.sidebar-resizing .sidebar {
   background: var(--line);
 }
 
+/* First-run setup wizard (initSetupWizard) - one step visible at a time inside the modal card. */
+#setup-wizard-card { min-width: 26em; max-width: 32em; }
+.sw-step { margin: 6px 0 4px; }
+.sw-step ul { margin: 6px 0; padding-left: 18px; }
+.sw-step li { margin: 3px 0; }
+.sw-cmd {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 15px;
+  padding: 4px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--accent-line);
+  border-radius: 5px;
+  color: var(--ink);
+}
+#sw-progress { margin-top: 0; }
+#setup-wizard-card .modal-actions { margin-top: 12px; }
+#sw-next[disabled] { opacity: 0.5; cursor: not-allowed; }
+
 /* ---------------------------------------------------------------------------
    Buff Planner page (initBuffPlanner / src/main/buffPlanner.js)
    --------------------------------------------------------------------------- */
