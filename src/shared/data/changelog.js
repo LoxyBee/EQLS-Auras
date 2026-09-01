@@ -54,6 +54,7 @@ const CHANGELOG = [
     ],
     fixes: [
       'The lockout grid reads just the current week from your live log, so turning the weekly archive off doesn\'t slow it down',
+      'A groupmate\'s damage no longer drops to zero on the meter for the rest of the session after one stray hit lands on them',
       'A groupmate\'s own melee procs no longer show up as buffs you cast on them',
       'Bard resist songs and caster resist spells no longer knock each other off',
       '"You feel smaller" resolves to Shrink without asking - Tiny Companion only lands on a pet',
