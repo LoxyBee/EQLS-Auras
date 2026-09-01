@@ -56,6 +56,10 @@ What the app does today. Everything here is built and shipped. Backlog is in `do
 
 **Zone-by-zone routes.** Pick where you're going, get the route across 100+ zones and the travel spell for each step.
 
+## Action bars
+
+**Skin your hotbar.** Covers over your real action bar buttons — custom art or plain frames, per profile. Doesn't touch the real bar.
+
 ## Quality of life
 
 **Trade pings.** A sound the moment someone opens a trade with you.
