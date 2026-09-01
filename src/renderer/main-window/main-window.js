@@ -122,7 +122,7 @@ function initLoggingWatch() {
     autoClosed = false;
     const done = await appConfirm({
       title: 'EverQuest logging looks off',
-      message: 'EverQuest is running, but nothing is being written to its log — the tracker can’t see buffs, lockouts or anything else without it.',
+      message: 'EverQuest is running, but nothing is being written to its log. The app can’t see anything without it.',
       detail: 'In game, type  /log on  then click "I’ve done it".',
       okLabel: "I’ve done it",
       cancelLabel: 'Dismiss',
@@ -134,7 +134,7 @@ function initLoggingWatch() {
     if (r.seemsOff) {
       await appConfirm({
         title: 'Still nothing',
-        message: 'Still no log activity. Give it a few seconds after /log on, or check the log-folder path on the Setup page.',
+        message: 'Still no log activity. Give it a few seconds, or check the log-folder path on the Setup page.',
         okLabel: 'OK',
         hideCancel: true,
       });
@@ -345,7 +345,7 @@ function setupNudgeGaps({ log, spellbook, character, widgets }) {
   if (!log || !log.eqFolder) {
     items.push({ text: 'Point the app at your EverQuest folder', page: 'page-settings' });
   } else if (!spellbook || !spellbook.filePath) {
-    items.push({ text: 'Set your spellbook file — it resolves buffs that share a message', page: 'page-settings' });
+    items.push({ text: 'Set your spellbook file — it identifies buffs that share a message', page: 'page-settings' });
   }
   const c = character || {};
   if (!c.aaLevel && !c.exaltationLevel && !c.deftnessLevel) {
@@ -502,7 +502,7 @@ function initProfileBar() {
       deleteBtn.title = profiles.length <= 1 ? "Can't delete the only remaining profile" : `Delete "${profile.name}"`;
       deleteBtn.addEventListener('click', () => {
         const confirmed = window.confirm(
-          `Delete the loadout profile "${profile.name}"? This permanently discards its remembered ambiguous-cast answers. Auras aren't deleted or hidden - they just stop listing this profile as one they belong to.`
+          `Delete the loadout profile "${profile.name}"? Its remembered answers are discarded for good. Auras aren't deleted or hidden.`
         );
         if (!confirmed) return;
         window.eqTracker.deleteProfile(profile.id).then((removed) => {
@@ -660,7 +660,7 @@ function initDetectionSettingsPanel() {
     // the generic "not found, run /outputfile spellbook" block below would show - wrong advice,
     // since the fix is to pick another file or go back to auto, not to regenerate anything.
     if (state.mode === 'file' && !state.filePath) {
-      spellbookStatusEl.textContent = 'The pinned spellbook file is missing - pick another below, or go back to auto.';
+      spellbookStatusEl.textContent = 'The pinned spellbook file is missing — pick another below, or go back to auto.';
       spellbookStatusEl.classList.add('warn');
       spellbookMissingHintEl.style.display = 'none';
       if (spellbookCharHintEl) {
@@ -695,7 +695,7 @@ function initDetectionSettingsPanel() {
     if (spellbookCharHintEl) {
       const pattern = (state.fileNamePattern || '').replace('-<class>-', '-(any class)-');
       if (state.mode === 'file') {
-        spellbookCharHintEl.textContent = 'Using the file picked below. Clear it to go back to auto-detection.';
+        spellbookCharHintEl.textContent = 'Using the file picked below. Clear it to go back to auto.';
       } else if (pattern) {
         spellbookCharHintEl.textContent =
           (state.mode === 'manual' ? 'Using the character above. ' : 'Detected from your log. ') +
@@ -1164,10 +1164,10 @@ function initLogPanel() {
     const mb = (check.sizeBytes / 1048576).toFixed(0);
     const go = await appConfirm({
       title: 'Your EQ log is getting large',
-      message: `The log is about ${mb} MB. Trimming it to just the current raid-lockout week keeps the app fast and the Lockouts tab accurate.`,
+      message: `The log is about ${mb} MB. Trimming it to just the current lockout week keeps the app fast and the Lockouts tab accurate.`,
       detail: check.holdsCurrentWeek
-        ? 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first); the current week stays in the live log. EverQuest can stay running.'
-        : 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first), then the live log is rewritten to just the current week.',
+        ? 'Everything before this week’s reset is copied to Logs\\Archive\\; the current week stays in the live log. EverQuest can stay running.'
+        : 'Everything before this week’s reset is copied to Logs\\Archive\\, then the live log is rewritten to just the current week.',
       okLabel: 'Trim to this week',
       cancelLabel: 'Not now',
     });
@@ -1180,7 +1180,7 @@ function initLogPanel() {
     await appConfirm(
       rep.ok
         ? { title: 'Trimmed', message: `Archived ${(rep.archivedBytes / 1048576).toFixed(1)} MB.`, detail: rep.archivedTo, okLabel: 'OK', hideCancel: true }
-        : { title: 'Not trimmed', message: rep.reason || 'The log could not be trimmed right now - try the Lockouts tab in a moment.', okLabel: 'OK', hideCancel: true }
+        : { title: 'Not trimmed', message: rep.reason || 'The log could not be trimmed right now — try again in a moment.', okLabel: 'OK', hideCancel: true }
     );
     window.eqTracker.getLogState().then(renderState);
   }, 3500);
@@ -1213,7 +1213,7 @@ function initLogPanel() {
       title: 'Archive log now',
       message: 'Archive the current log and empty the live log file?',
       detail: holdsWeek
-        ? 'Your log currently holds this lockout week. Archiving it whole takes this week’s raid kills out of the file the Lockouts tab reads — the grid will show "not looked" until you play again. If you use the Lockouts tab, use "Trim log to this week" there instead.'
+        ? 'Your log holds this lockout week. Archiving it whole removes this week’s raid kills from what the Lockouts tab reads — the grid shows "not looked" until you play again. Use "Trim log to this week" instead if you use that tab.'
         : 'Copies the current log to a timestamped file, then empties the live log. Best done right after /log off.',
       okLabel: holdsWeek ? 'Archive anyway' : 'Archive',
       danger: holdsWeek,
@@ -1474,7 +1474,7 @@ function initAmbiguousPanel() {
   const resetBtn = document.getElementById('reset-ambiguous-btn');
   resetBtn.addEventListener('click', () => {
     const confirmed = window.confirm(
-      'Clear every remembered "this text means buff X" choice? Anything ambiguous will prompt you again from scratch.'
+      'Clear every remembered answer? Unclear casts will prompt you again from scratch.'
     );
     if (confirmed) {
       window.eqTracker.resetAmbiguousResolutions();
@@ -1567,25 +1567,25 @@ const TRIGGER_TYPES = [
   {
     value: 'chat',
     label: 'Chat message',
-    description: 'Something you or someone else says in a channel. No need to know the exact log wording.',
+    description: 'Something said in a channel. No need to know the exact log wording.',
     fieldsId: 'widget-new-timer-chat-fields',
   },
   {
     value: 'raw',
     label: 'Exact log line',
-    description: 'Any line at all, matched literally - an emote, an achievement, a spell message.',
+    description: 'Any log line, matched literally — an emote, achievement, spell message.',
     fieldsId: 'widget-new-timer-raw-fields',
   },
   {
     value: 'skill',
     label: 'Skill cast',
-    description: 'Starts the moment you begin casting a spell you pick from the list, by name rather than by log wording.',
+    description: 'Starts the moment you begin casting a spell you pick, by name not log text.',
     fieldsId: 'widget-new-timer-skill-fields',
   },
   {
     value: 'zone',
     label: 'Zone change',
-    description: 'Starts the instant you enter or leave a particular zone, picked from a list.',
+    description: 'Starts the instant you enter or leave a zone you pick.',
     fieldsId: 'widget-new-timer-zone-fields',
   },
   {
@@ -2140,7 +2140,7 @@ function initWidgetsPanel() {
       if (widget.buffFilterMode === 'all') {
         const excludeBtn = document.createElement('button');
         excludeBtn.textContent = "Don't track here";
-        excludeBtn.title = 'Hide this buff from this aura only - other auras are unaffected';
+        excludeBtn.title = 'Hides this buff from this aura only.';
         excludeBtn.addEventListener('click', () => {
           window.eqTracker.excludeWidgetBuff(widget.id, buff.name).then(() =>
             refreshWidgets().then(() => {
@@ -2273,7 +2273,7 @@ function initWidgetsPanel() {
       hideHotkeyHintEl.textContent =
         bound === choice
           ? ''
-          : 'Could not register that key (another app may already own it) - falling back to Alt+Shift+H.';
+          : 'Could not register that key — another app may own it. Falling back to Alt+Shift+H.';
     });
   }
   window.eqTracker.getHideHotkeyChoice().then((choice) => {
@@ -2374,9 +2374,8 @@ function initWidgetsPanel() {
     } else if (!currentZone) {
       warnEl.textContent =
         'This aura is limited to ' + zones.length + ' zone' + (zones.length === 1 ? '' : 's') +
-        ", but the app does not know where you are yet - it only finds out when you change zone. " +
-        'Until then the aura shows anyway, which is deliberate: a missing aura you cannot explain ' +
-        'is worse than one showing where you did not ask for it.';
+        ", but the app does not know where you are yet — it finds out when you change zone. " +
+        'Until then the aura shows anyway.';
       warnEl.style.display = '';
     } else if (!zones.includes(currentZone)) {
       warnEl.textContent =
@@ -3073,7 +3072,7 @@ function initWidgetsPanel() {
           expire: [' Play a sound when a buff expires', 'Plays a sound the moment the buff runs out.'],
           warn: [
             ' Warn me before a buff expires',
-            'Plays a sound a set time before the buff runs out, while there is still time to recast.',
+            'Plays a sound a set time before the buff runs out.',
           ],
         };
     [
@@ -4036,7 +4035,7 @@ function initWidgetsPanel() {
     const widget = findWidget(id);
     if (!widget) return;
     const confirmed = window.confirm(
-      `Reset "${widget.name}" to how it was when it was first built? Every setting changed since ` +
+      `Reset "${widget.name}" to how it was first built? Every setting changed since ` +
         "then is lost - its position and which profiles/zones it's limited to are the only things kept."
     );
     if (!confirmed) return;
@@ -4130,8 +4129,8 @@ function initWidgetsPanel() {
       name: 'Buff timer',
       group: 'timers',
       description:
-        'Pick one spell and whether you are watching it on yourself, on someone you cast it on, ' +
-        'or on something you cast it at, and the aura is built for you.',
+        'Pick a spell and where you\'re watching it — on you, on someone you cast it on, or on ' +
+        'something you cast it at.',
       // No create() - this one opens a panel instead. See renderPremadeList.
       panel: 'buff-timer',
     },
@@ -4140,8 +4139,8 @@ function initWidgetsPanel() {
       name: 'Cooldown timer',
       group: 'timers',
       description:
-        'Pick a spell and get a countdown to when you can cast it again, rather than how long it ' +
-        'lasts. The recast time is filled in for you, and you can correct it.',
+        'Pick a spell and get a countdown to when you can cast it again. The recast time is ' +
+        'filled in — correct it if needed.',
       panel: 'buff-timer',
       mode: 'cooldown',
     },
@@ -4150,10 +4149,9 @@ function initWidgetsPanel() {
       name: 'Skill ready reminder (example)',
       group: 'timers',
       description:
-        'A worked example, not a separate feature: the same picker as Cooldown timer, but instead ' +
-        'of counting the cooldown down, this shows a reminder tile the moment the skill IS ready ' +
-        'and hides it the instant you cast it - "go use this" rather than "wait this long". Shows ' +
-        'what Reverse detection (on any aura\'s Custom triggers card) can do.',
+        'A worked example: like Cooldown timer, but it shows a tile the moment the skill IS ready ' +
+        'and hides it once you cast it — "go use this" not "wait this long". Demonstrates Reverse ' +
+        'detection.',
       panel: 'buff-timer',
       mode: 'cooldown',
       reverseExample: true,
@@ -4163,9 +4161,8 @@ function initWidgetsPanel() {
       name: 'Debuff on an enemy',
       group: 'timers',
       description:
-        'A timer for a mez, charm, snare or slow on the thing you cast it at, showing its name ' +
-        'and clearing when it dies, wears off, or the mez is broken. Same picker as Buff timer, ' +
-        'opened with the enemy option already chosen.',
+        'A timer for a mez, charm, snare or slow on what you cast it at — shows the target\'s ' +
+        'name, clears when it dies or wears off.',
       panel: 'buff-timer',
       // Which of the three "On:" options the panel should start on. The picker is identical; the
       // only difference between this premade and Buff timer is what it assumes you came for.
@@ -4176,9 +4173,8 @@ function initWidgetsPanel() {
       name: 'You Have Been Dispelled',
       group: 'event-alerts',
       description:
-        'Flashes DISPELLED in large letters when something strips your buffs, then clears itself ' +
-        'after eight seconds. A text aura - it draws no icon and no countdown. Listens for all ' +
-        'three strengths of the message.',
+        'Flashes DISPELLED in large letters when something strips your buffs, then clears after ' +
+        '8 seconds. No icon, no countdown.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'dispelled'),
     },
     {
@@ -4186,9 +4182,8 @@ function initWidgetsPanel() {
       name: 'Resist flash',
       group: 'event-alerts',
       description:
-        'Flashes RESISTED for a second and a half whenever a spell you cast is resisted. Covers ' +
-        'every spell at once, not one you have to pick - useful for mez and charm, where a resist ' +
-        'is the difference between a mob standing still and a mob hitting you.',
+        'Flashes RESISTED whenever a spell you cast is resisted. Covers every spell — useful for ' +
+        'mez and charm.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'resisted'),
     },
     {
@@ -4196,9 +4191,8 @@ function initWidgetsPanel() {
       name: 'Charm Broke',
       group: 'event-alerts',
       description:
-        'Flashes "[target] has broken free!" the instant your charm wears off, so you know to ' +
-        're-charm or back off before it turns on you. Covers every charm spell in the roster at ' +
-        'once, not one you have to pick.',
+        'Flashes "[target] has broken free!" the instant your charm wears off. Covers every ' +
+        'charm spell.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'charmBroke'),
     },
     {
@@ -4206,9 +4200,8 @@ function initWidgetsPanel() {
       name: 'Loss of control',
       group: 'event-alerts',
       description:
-        'Shows STUNNED / MESMERIZED / CHARMED / AFRAID / ROOTED / SNARED while one of those is on ' +
-        'you, and clears the instant it lifts. One tile, whichever applies. Watches the charm, ' +
-        'fear, root, snare, mez and stun wordings at once - the trigger list is editable to add more.',
+        'Shows STUNNED / MESMERIZED / CHARMED / AFRAID / ROOTED / SNARED while one is on you, and ' +
+        'clears when it lifts. One tile. Trigger list is editable.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'lossOfControl'),
     },
     {
@@ -4216,16 +4209,15 @@ function initWidgetsPanel() {
       name: 'Pet status',
       group: 'event-alerts',
       description:
-        'For a charmed pet (bard or enchanter). Shows PET ENGAGED while it is fighting, PET IDLE ' +
-        'when it backs off, and PET GONE the moment your charm breaks. Reads the pet’s own ' +
-        '"Attacking ... Master" / "calming down" lines, so it works no matter which mob you have charmed.',
+        'For a charmed pet. Shows PET ENGAGED while it fights, PET IDLE when it backs off, and ' +
+        'PET GONE the moment your charm breaks.',
       create: (name) => window.eqTracker.createTextAuraWidget(name, 'petStatus'),
     },
     {
       id: 'ally-buffs',
       name: 'Ally Buffs',
       group: 'standalone',
-      description: 'Shows every buff you’ve cast on your current group members, with the same filter options (hide bard songs, hide long buffs, sound alerts, etc.) as Self Buffs.',
+      description: 'Every buff you’ve cast on your group, grouped by player. Same filter options as Self Buffs.',
       create: (name) => window.eqTracker.createAllyBuffsWidget(name),
     },
     {
@@ -4233,9 +4225,8 @@ function initWidgetsPanel() {
       name: 'Bard Songs',
       group: 'standalone',
       description:
-        'Every bard song currently on you, whoever cast it — grouped by caster when that’s knowable, ' +
-        '"Unknown" when it isn’t. Can also track the debuff songs you’ve put on enemies (off by default), ' +
-        'and split buffs and debuffs into their own sections.',
+        'Every bard song on you, whoever cast it — grouped by caster, "Unknown" when it isn’t. ' +
+        'Can also show debuff songs you’ve put on enemies (off by default).',
       create: (name) => window.eqTracker.createBardSongsWidget(name),
     },
     {
@@ -4243,9 +4234,8 @@ function initWidgetsPanel() {
       name: 'Raid named',
       group: 'standalone',
       description:
-        'A checklist of the named mobs for the zone you’re in - all shown when you enter, greyed ' +
-        'as they die. Instanced zones reset to a full list on re-entry; open-world zones show a ' +
-        'respawn countdown. Covers the Voidling raid zones plus a growing set of dungeons.',
+        'A checklist of the named mobs for your zone — all shown on entry, greyed as they die. ' +
+        'Instanced zones reset on re-entry; open-world zones show a respawn countdown.',
       create: (name) => window.eqTracker.createRaidNamedWidget(name),
     },
     {
@@ -4253,10 +4243,8 @@ function initWidgetsPanel() {
       name: 'Travel guide',
       group: 'standalone',
       description:
-        'The shortest way from where you are to wherever you are going, one leg per line, with the ' +
-        'current zone shown at the top. In game, type /tell eqtm to pick a destination ' +
-        'from a searchable list (typing it again closes the list); it\'ll also ask where you ' +
-        'currently are the first time, and clears itself the moment you arrive.',
+        'The shortest route to where you\'re going, one leg per line, with your current zone at ' +
+        'the top. In game, type /tell eqtm to pick a destination; it clears when you arrive.',
       create: (name) => window.eqTracker.createTravelGuideWidget(name, ''),
     },
     {
@@ -4264,10 +4252,8 @@ function initWidgetsPanel() {
       name: 'Damage parser',
       group: 'standalone',
       description:
-        'A live damage readout for the fight you are in - one row per attacker, biggest first, ' +
-        'with each one\'s share. Counts everyone hitting what you are fighting (a "just my row" ' +
-        'toggle hides the rest without un-counting them). A fight ends after a settable pause ' +
-        'with no damage.',
+        'A live damage readout for the current fight — one row per attacker, biggest first, with ' +
+        'each one\'s share. A "just my row" toggle hides the rest without un-counting them.',
       create: (name) => window.eqTracker.createDamageMeterWidget(name, false),
     },
   ];
@@ -4292,8 +4278,8 @@ function initWidgetsPanel() {
       name: 'First aggro',
       group: 'standalone',
       description:
-        'Shows who hit the boss first, or who the boss hit first. Not built yet - and it can only ' +
-        'ever be as complete as your own log, which does not see everything across a raid.',
+        'Shows who hit the boss first, or who it hit first. Not built yet — and it can only be as ' +
+        'complete as your own log.',
     },
   ];
 
@@ -5617,7 +5603,7 @@ function initWidgetsPanel() {
       else if (st.lastError === 'no logs folder configured' || st.backfill === 'failed') {
         why = "EverQuest's folder has not been found. Set it on the Setup page and come back.";
       } else if (st.backfill === 'done') {
-        why = 'Your Logs folder was read, but it holds no character logs this could use.';
+        why = 'Your Logs folder was read, but it holds no usable character logs.';
       } else why = 'Not read yet.';
       lockoutSummaryEl.textContent = why;
       return;
@@ -5764,7 +5750,7 @@ function initWidgetsPanel() {
         const go = await appConfirm({
           title: 'Trim log to this week',
           message: 'Archive everything before this week’s reset and rewrite the live log to just the current week?',
-          detail: 'The removed part is copied to Logs\\Archive\\ and size-verified before anything is changed. EverQuest can stay running.',
+          detail: 'The removed part is copied to Logs\\Archive\\ and verified before anything changes. EverQuest can stay running.',
           okLabel: 'Trim log',
           danger: true,
         });
@@ -6931,7 +6917,7 @@ function initConfigFolderLink() {
       if (!list.length) {
         await appConfirm({
           title: 'Nothing to import',
-          message: 'No exported bundle or backup was found. Export one first, or drop a bundle folder into the exports folder.',
+          message: 'No exported bundle or backup found. Export one first, or drop a bundle folder into the exports folder.',
           okLabel: 'OK', hideCancel: true,
         });
         return;
@@ -6987,17 +6973,17 @@ function initLogActivityLine() {
     try { a = await window.eqTracker.getLogActivity(); } catch { return; }
     el.classList.remove('warn', 'ok');
     if (!a.folderSet) {
-      el.textContent = 'No EverQuest log folder is set yet — set it on the Log page.';
+      el.textContent = 'No EverQuest log folder set yet — set it on the Log page.';
       el.classList.add('warn');
     } else if (!a.sawLine) {
-      el.textContent = `Watching ${a.file || 'for a log file'} — nothing read yet. Type something in game (or /log on) to confirm.`;
+      el.textContent = `Watching ${a.file || 'for a log file'} — nothing read yet. Type something in game to confirm.`;
     } else if (a.lastLineAgoMs < 15000) {
       el.textContent = `Reading ${a.file} — last line ${ago(a.lastLineAgoMs)}.`;
       el.classList.add('ok');
     } else if (a.lastLineAgoMs < 90000) {
       el.textContent = `Watching ${a.file} — last line ${ago(a.lastLineAgoMs)}.`;
     } else {
-      el.textContent = `Watching ${a.file} — nothing for ${ago(a.lastLineAgoMs)}. If you are in game, check that /log on is active.`;
+      el.textContent = `Watching ${a.file} — nothing for ${ago(a.lastLineAgoMs)}. In game, check /log on is active.`;
       el.classList.add('warn');
     }
   }
