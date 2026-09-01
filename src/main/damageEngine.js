@@ -108,6 +108,21 @@ class DamageEngine extends EventEmitter {
     // Enemies known from elsewhere - the mez/snare/slow targets buffEngine already tracks. Lets a
     // character who debuffs but does not attack still seed the set.
     this.knownEnemiesFn = () => [];
+    // The "group" damage scope filters on this - lowercased names of everyone admitted to the
+    // player's group this session (see groupRoster.js). Empty array => no roster known yet, and the
+    // group scope quietly falls back to showing the whole fight.
+    this.groupFn = () => [];
+    // Charmed-pet facts (see petTracker.js): own pets keyed name#gen, unknown-owner pets folded
+    // into one row, ally pets counted in group scope when their owner is admitted. null => none.
+    this.petsFn = () => null;
+  }
+
+  setGroupFn(fn) {
+    if (typeof fn === 'function') this.groupFn = fn;
+  }
+
+  setPetsFn(fn) {
+    if (typeof fn === 'function') this.petsFn = fn;
   }
 
   setKnownEnemiesFn(fn) {
@@ -169,6 +184,12 @@ class DamageEngine extends EventEmitter {
       return 'out';
     }
 
+    // Name-collision guard. A name that has ended up in BOTH sets - most often a charmed pet whose
+    // mob name matches a live hostile of the same name you are also fighting - gives contradictory
+    // answers below. There is no honest way to say which hit this is, so drop it rather than credit
+    // it to whichever rule fires first. Rare; a wrong credit is worse than a missing one.
+    if (this.enemies.has(a) && this.friends.has(a)) return 'drop';
+
     const attackerEnemy = this._isEnemy(hit.attacker);
     const targetEnemy = this._isEnemy(hit.target);
 
@@ -200,6 +221,8 @@ class DamageEngine extends EventEmitter {
       if (this.pending.length > MAX_PENDING) this.pending.shift();
       return;
     }
+    // The collision guard - neither held nor credited.
+    if (dir === 'drop') return;
 
     // Checked BEFORE crediting, so the line that opens a new fight is not swept away by the
     // expiry of the fight it just ended.
@@ -316,25 +339,92 @@ class DamageEngine extends EventEmitter {
    * That is the whole integration - no second renderer, and every list setting an aura already has
    * (row size, text size, colours, anchor, drag, per-loadout visibility) works here for free.
    */
-  getActive(now = Date.now()) {
+  getActive(now = Date.now(), scope = 'all') {
+    const pets = (this.petsFn && this.petsFn()) || null;
     // A fight is underway - the current-fight rows, as always.
     if (this.fightStartedAt !== null && this.totalDamage > 0) {
-      return this._tilesFrom(this.byAttacker, this.totalDamage, this.fightSeconds(now), false);
+      return this._tilesFrom(this.byAttacker, this.fightSeconds(now), false, scope, pets);
     }
     // No fight - fall back to the running tally since the last zone line, so the meter isn't blank
     // between pulls and right after zoning. The total row carries a `sinceZone` flag so the overlay
     // can mark that this isn't the last fight's number.
     if (this.sinceZoneStartedAt !== null && this.sinceZoneTotal > 0) {
-      return this._tilesFrom(this.sinceZoneByAttacker, this.sinceZoneTotal, this.sinceZoneSeconds(), true);
+      return this._tilesFrom(this.sinceZoneByAttacker, this.sinceZoneSeconds(), true, scope, pets);
     }
     return [];
   }
 
-  _tilesFrom(byAttacker, totalDamage, secs, sinceZone) {
-    const rows = [...byAttacker.entries()]
-      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits }))
+  /**
+   * @param scope 'all' (everyone in the fight, today's behaviour), 'group' (you + anyone admitted
+   *   to your group this session + your charmed pets + a groupmate's charmed pet), or 'mine' (you +
+   *   your charmed pets only). For 'group'/'mine' the total and every share % are recomputed over
+   *   ONLY the rows the scope keeps - non-scope damage is not counted at all, not merely hidden.
+   *   An empty group roster makes 'group' fall back to 'all', flagged on the total row.
+   */
+  _tilesFrom(byAttacker, secs, sinceZone, scope = 'all', pets = null) {
+    const admittedList = (() => {
+      try {
+        return (this.groupFn() || []).map((n) => String(n).toLowerCase());
+      } catch {
+        return [];
+      }
+    })();
+    let fellBack = false;
+    if (scope === 'group' && admittedList.length === 0) {
+      scope = 'all';
+      fellBack = true;
+    }
+    const admits = (nameLower) => admittedList.includes(nameLower);
+    const ownPetKey = pets ? pets.ownPetKeyByName : new Map();
+    const unknownPets = pets ? pets.unknownPetNames : new Set();
+    const allyPetLeader = pets ? pets.allyPetLeader : new Map();
+
+    // Fold raw attacker rows into the display buckets the scope allows. Anything the scope excludes
+    // never enters `agg`, so `totalDamage` and the shares below are its own denominator.
+    const agg = new Map(); // displayName -> { damage, hits, isPet, unknownPets }
+    const bump = (name, r, extra) => {
+      const cur = agg.get(name) || { damage: 0, hits: 0 };
+      cur.damage += r.damage;
+      cur.hits += r.hits;
+      agg.set(name, Object.assign(cur, extra || {}));
+    };
+
+    for (const [rawName, r] of byAttacker) {
+      const key = rawName.toLowerCase();
+      const isSelf = rawName === 'You' || key === 'you' || key === 'yourself';
+      const petKey = ownPetKey.get(key);
+      const allyLeader = allyPetLeader.get(key);
+
+      if (unknownPets.has(key)) {
+        // Never attributed to a person - one combined row, and not shown in 'mine'.
+        if (scope !== 'mine') bump('Charmed pets', r, { unknownPets: true });
+        continue;
+      }
+      if (isSelf) {
+        bump('You', r);
+        continue;
+      }
+      if (petKey) {
+        // Own pet: kept distinct across re-charms by the #gen in its key.
+        bump(petKey, r, { isPet: true });
+        continue;
+      }
+      if (scope === 'mine') continue;
+      if (scope === 'group') {
+        if (allyLeader && admits(allyLeader)) bump(rawName, r, { isPet: true });
+        else if (admits(key)) bump(rawName, r);
+        continue;
+      }
+      // scope 'all'
+      bump(rawName, r);
+    }
+
+    const totalDamage = [...agg.values()].reduce((s, r) => s + r.damage, 0);
+    const rows = [...agg.entries()]
+      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits, isPet: !!r.isPet, unknownPets: !!r.unknownPets }))
       .sort((a, b) => b.damage - a.damage);
     const top = rows.length ? rows[0].damage : 0;
+    if (totalDamage <= 0) return [];
 
     const tiles = rows.map((r) => {
       const pct = `${Math.round((r.damage / totalDamage) * 100)}%`;
@@ -353,6 +443,11 @@ class DamageEngine extends EventEmitter {
         // every bar short in a five-person group, with even the longest only a fifth of the way
         // across - which reads as everybody doing badly rather than as a comparison.
         barPercent: top > 0 ? Math.max(0, Math.min(100, (r.damage / top) * 100)) : 0,
+        // `isPet` - a charmed pet you or a groupmate own (own pets carry a #gen in the name).
+        // `unknownPets` - the combined "Charmed pets" row for owner-unknown charms. Both are
+        // display hints for the overlay; nothing downstream needs them.
+        isPet: r.isPet,
+        unknownPets: r.unknownPets,
         ...INERT_TIMER_FIELDS,
       };
     });
@@ -370,6 +465,10 @@ class DamageEngine extends EventEmitter {
       // overlay's mode switch leaves it alone.
       totalRow: true,
       sinceZone: !!sinceZone,
+      // `scope` is what this row set was actually built for; `scopeFellBack` is set when a 'group'
+      // request had no roster to filter on and quietly became 'all'.
+      scope,
+      scopeFellBack: fellBack,
       valueText: `${formatDamage(totalDamage)}  ${formatDamage(Math.round(totalDamage / secs))}/s`,
       barPercent: null,
       noBar: true,

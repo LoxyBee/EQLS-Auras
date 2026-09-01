@@ -462,6 +462,27 @@ function looksLikeLandingMessage(line) {
   return LANDING_HINT_PATTERNS.some((pattern) => pattern.test(stripped));
 }
 
+// "a spite golem has been charmed."  - the one line that marks a charm landing, from either the
+// player's own charm or anyone else's. It names no caster, which is why petTracker.js has to pair
+// it with a preceding "You begin casting <charm spell>." to know the pet is the PLAYER'S. On its
+// own it means only "that mob is now charmed by somebody".
+const CHARMED_PATTERN = /^(.+) has been charmed\.$/;
+
+function matchCharmed(line) {
+  const m = CHARMED_PATTERN.exec(stripTimestamp(line));
+  return m ? m[1].trim() : null;
+}
+
+// "a spite golem says, 'My leader is Baxa.'"  - a charmed (or ordinary) pet answering who owns it.
+// The only line that ties a pet to a specific player without watching the charm cast, so it is how
+// an ally's charmed pet is told apart from a genuinely unknown-owner one.
+const PET_LEADER_PATTERN = /^(.+) says, 'My leader is (.+)\.'$/;
+
+function matchPetLeader(line) {
+  const m = PET_LEADER_PATTERN.exec(stripTimestamp(line));
+  return m ? { petName: m[1].trim(), leaderName: m[2].trim() } : null;
+}
+
 module.exports = {
   matchCastBegin,
   matchSingingBegin,
@@ -474,6 +495,8 @@ module.exports = {
   matchGroupMemberJoined,
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
+  matchCharmed,
+  matchPetLeader,
   matchZoneChange,
   matchOwnVoidlingDanger,
   matchDidNotTakeHold,

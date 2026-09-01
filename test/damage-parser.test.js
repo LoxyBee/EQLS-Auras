@@ -395,5 +395,111 @@ test('the enemy seed is read live, not copied once', () => {
   assert.equal(e.totalDamage, 57, 'the held line was credited once the mez was known');
 });
 
+// ---------------------------------------------------------------------------
+// Scopes: whole fight / just my group / just me  (feat/group-roster-and-charm-pets)
+// ---------------------------------------------------------------------------
+
+function seedFight(e) {
+  // You hit the mob (rule 1), a groupmate and a stranger both also hit it (rule 2).
+  e.handleLine(`${T}a zol ghoul knight has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Baxa slashes a zol ghoul knight for 300 points of damage.`, 1000);
+  e.handleLine(`${T}Enro slashes a zol ghoul knight for 600 points of damage.`, 1000);
+}
+
+test("scope 'all' is unchanged - everyone counts, % over the whole fight", () => {
+  const e = new DamageEngine();
+  seedFight(e);
+  const rows = e.getActive(1000, 'all');
+  const total = rows.find((r) => r.totalRow);
+  assert.match(total.valueText, /^1000/);
+  assert.equal(rows.find((r) => r.name === 'Enro').valueText, '600  60%');
+});
+
+test("scope 'group' counts only admitted names and recomputes the denominator", () => {
+  const e = new DamageEngine();
+  e.setGroupFn(() => ['baxa']); // Baxa is in the group, Enro is a stranger
+  seedFight(e);
+  const rows = e.getActive(1000, 'group');
+  assert.equal(rows.find((r) => r.name === 'Enro'), undefined, 'the stranger is not shown');
+  const total = rows.find((r) => r.totalRow);
+  assert.match(total.valueText, /^400/, 'total is You + Baxa only, not 1000');
+  assert.equal(rows.find((r) => r.name === 'Baxa').valueText, '300  75%');
+});
+
+test("scope 'group' with no roster falls back to the whole fight, flagged", () => {
+  const e = new DamageEngine();
+  seedFight(e);
+  const rows = e.getActive(1000, 'group');
+  const total = rows.find((r) => r.totalRow);
+  assert.equal(total.scopeFellBack, true);
+  assert.match(total.valueText, /^1000/);
+});
+
+test("scope 'mine' is you plus your charmed pets only", () => {
+  const e = new DamageEngine();
+  e.setPetsFn(() => ({
+    ownPetKeyByName: new Map([['a spite golem', 'a spite golem#1']]),
+    unknownPetNames: new Set(),
+    allyPetLeader: new Map(),
+  }));
+  seedFight(e);
+  e.handleLine(`${T}a spite golem has taken 50 damage from a zol ghoul knight.`, 1000); // pet vs mob
+  e.handleLine(`${T}a spite golem slashes a zol ghoul knight for 50 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'mine');
+  const names = rows.filter((r) => !r.totalRow).map((r) => r.name).sort();
+  assert.deepEqual(names, ['You', 'a spite golem#1']);
+});
+
+// ---------------------------------------------------------------------------
+// Charmed pets
+// ---------------------------------------------------------------------------
+
+test('an own charmed pet is its own labelled row, kept distinct by generation', () => {
+  const e = new DamageEngine();
+  e.setPetsFn(() => ({
+    ownPetKeyByName: new Map([['a spite golem', 'a spite golem#2']]),
+    unknownPetNames: new Set(),
+    allyPetLeader: new Map(),
+  }));
+  e.handleLine(`${T}a zol ghoul knight has taken 10 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}a spite golem slashes a zol ghoul knight for 200 points of damage.`, 1000);
+  const row = e.getActive(1000, 'all').find((r) => r.name === 'a spite golem#2');
+  assert.ok(row && row.isPet);
+});
+
+test('unknown-owner charmed pets fold into one "Charmed pets" row', () => {
+  const e = new DamageEngine();
+  e.setPetsFn(() => ({
+    ownPetKeyByName: new Map(),
+    unknownPetNames: new Set(['a spite golem', 'a stone golem']),
+    allyPetLeader: new Map(),
+  }));
+  e.handleLine(`${T}a zol ghoul knight has taken 10 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}a spite golem slashes a zol ghoul knight for 100 points of damage.`, 1000);
+  e.handleLine(`${T}a stone golem slashes a zol ghoul knight for 100 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'all');
+  const pets = rows.filter((r) => r.unknownPets);
+  assert.equal(pets.length, 1);
+  assert.match(pets[0].valueText, /^200/);
+});
+
+test('name-collision guard: a name in both friends and enemies is dropped, not credited', () => {
+  const e = new DamageEngine();
+  // A charmed "a spite golem" fights a mob you tagged, so rule 2 makes the name a friend.
+  e.handleLine(`${T}a zol ghoul knight has taken 5 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}a spite golem slashes a zol ghoul knight for 100 points of damage.`, 1000);
+  assert.ok(e.friends.has('a spite golem'));
+  // Then you AoE and tag a DIFFERENT, identically-named add - rule 1 puts the same name in enemies.
+  e.handleLine(`${T}a spite golem has taken 5 damage from your Plague III.`, 1000);
+  assert.ok(e.enemies.has('a spite golem'));
+  const credited = (e.byAttacker.get('a spite golem') || { damage: 0 }).damage;
+  e.handleLine(`${T}a spite golem slashes a zol ghoul knight for 999 points of damage.`, 1000);
+  assert.equal(
+    (e.byAttacker.get('a spite golem') || { damage: 0 }).damage,
+    credited,
+    'the ambiguous hit was not credited'
+  );
+});
+
 module.exports = () => report('damage-parser');
 if (require.main === module) report('damage-parser').then((n) => process.exit(n ? 1 : 0));
