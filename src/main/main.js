@@ -1720,14 +1720,17 @@ ipcMain.handle('overlay:setMasterHidden', (_event, hidden) => {
 // QOL #10 - global mute for every aura's alert sounds.
 ipcMain.handle('overlay:setSoundsMuted', (_event, muted) => widgetManager.setSoundsMuted(muted));
 ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => {
-  const res = widgetManager.setAllUnlocked(unlocked);
-  // The shared step/snap HUD rides with "Unlock all" - opened here, and the per-aura nudge arrows
-  // on each box become live. Guarded so it doesn't fight a single-aura move already in progress.
+  // The shared step/snap HUD rides with "Unlock all" - opened here, and every box gets its own
+  // nudge pad. A single-aura "Move…" that was left open (e.g. its centre button opened settings
+  // without a Done) is torn down first, so the two move modes never overlap.
   if (unlocked) {
-    if (hudMode !== 'single') enterUnlockAllMode();
-  } else if (hudMode === 'all') {
-    exitUnlockAllMode();
+    if (hudMode === 'single') exitMoveMode();
+    const res = widgetManager.setAllUnlocked(true);
+    enterUnlockAllMode();
+    return res;
   }
+  const res = widgetManager.setAllUnlocked(false);
+  if (hudMode === 'all') exitUnlockAllMode();
   return res;
 });
 ipcMain.handle('settings:getShowAurasWhenAppFocused', () => showAurasWhenAppFocused);
@@ -2094,6 +2097,18 @@ function exitUnlockAllMode() {
   gridGuideWindow.hide();
 }
 
+// End whatever positioning session is open - a single "Move…" or "Unlock all auras" - re-locking
+// and closing the HUD + every pad. Shared by the HUD's Done button and the pad's centre button.
+function endMoveSession() {
+  if (hudMode === 'all') {
+    widgetManager.setAllUnlocked(false);
+    exitUnlockAllMode();
+    getMainWindow()?.webContents.send('overlay:masterStateChanged');
+  } else if (hudMode === 'single') {
+    exitMoveMode();
+  }
+}
+
 ipcMain.handle('widget:enterMoveMode', (_event, id) => enterMoveMode('widget', id));
 ipcMain.handle('actionBar:enterMoveMode', (_event, id) => enterMoveMode('actionBar', id));
 // An arrow on a per-box nudge pad (nudgePadWindow.js). Only an unlocked thing shows a pad, so the
@@ -2106,11 +2121,13 @@ ipcMain.on('nudgePad:nudge', (_event, { id, kind, dx, dy } = {}) => {
     widgetManager.nudgeWidget(id, dx, dy);
   }
 });
-// The pad's centre button - jump to this aura's settings. Same shape as the old right-click path
-// but from the pad's own focusable:false window, not the overlay's drag-region window, so the
-// 24 Aug foreground-lock freeze doesn't apply. Still: navigation message goes out FIRST, and the
-// show()/focus() is deferred off the click so a slow OS focus grant can't stall this thread.
+// The pad's centre button - end the move and jump to this aura's settings. Ending the move first
+// (exitMoveMode / exitUnlockAllMode) closes the HUD and every pad and re-locks - otherwise the
+// move UI is left half-open behind the settings page and a later "Unlock all" collides with it.
+// Same freeze-safe shape as the old right-click path: nav message FIRST, show()/focus() deferred,
+// and it comes from the pad's own focusable:false window so the 24 Aug foreground-lock never bit.
 ipcMain.on('nudgePad:openSettings', (_event, id) => {
+  endMoveSession();
   const win = getMainWindow();
   if (!win || win.isDestroyed()) return;
   win.webContents.send('widget:openSettings', id);
@@ -2139,15 +2156,7 @@ ipcMain.handle('moveHud:setSnap', (_event, { enabled, sizePx }) => {
 ipcMain.handle('moveHud:resetPosition', () => {
   if (moveTarget) targetManager(moveTarget.kind).resetPosition(moveTarget.id);
 });
-ipcMain.handle('moveHud:done', () => {
-  if (hudMode === 'all') {
-    widgetManager.setAllUnlocked(false);
-    exitUnlockAllMode();
-    getMainWindow()?.webContents.send('overlay:masterStateChanged');
-  } else {
-    exitMoveMode();
-  }
-});
+ipcMain.handle('moveHud:done', () => endMoveSession());
 
 // The Action Bar overlay - see actionBarManager.js's own header comment. Multiple bars, same
 // {id, ...} shape every widget:* handler already uses.
