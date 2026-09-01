@@ -58,7 +58,7 @@ What the app does today. Everything here is built and shipped. Backlog is in `do
 
 ## Action bars
 
-**Skin your hotbar.** Covers over your real action bar buttons — custom art or plain frames, per profile. Doesn't touch the real bar.
+**Skin your hotbar.** Overlay tiles that sit on your real action bar buttons — game spell icons, hybrid icons that combine two, or plain frames. Per profile. Doesn't touch the real bar.
 
 ## Quality of life
 
