@@ -383,6 +383,20 @@
                   <div id="widget-damage-settings" style="display:none">
                     <h4 class="settings-subsection-title">Damage meter</h4>
                     <div class="row">
+                      <label for="widget-damage-scope" title="Whose damage this meter counts. Group and Me recompute every % over just what they show — other damage isn't counted at all.">This meter shows</label>
+                      <select id="widget-damage-scope">
+                        <option value="all">Everyone in the fight</option>
+                        <option value="group">Just my group</option>
+                        <option value="mine">Just me (and my pets)</option>
+                      </select>
+                    </div>
+                    <div class="row">
+                      <label title="A combined row for charmed pets whose owner can't be worked out. Never counted as a person.">
+                        <input type="checkbox" id="widget-damage-charmed-pets" />
+                        Show a &quot;Charmed pets&quot; row
+                      </label>
+                    </div>
+                    <div class="row">
                       <label for="widget-fight-timeout-slider" title="How long with no damage before the fight counts as over.">A fight ends after</label>
                       <input type="range" id="widget-fight-timeout-slider" min="3" max="60" step="1" />
                       <span id="widget-fight-timeout-value" class="slider-value"></span>

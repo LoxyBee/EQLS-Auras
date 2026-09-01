@@ -188,6 +188,15 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // 'dps' that attacker's own rate (their damage / the fight length, the same divide the Total
     // rate uses), or 'both' - "damage (rate)". The Total row always shows both regardless.
     damageValueMode: 'total',
+    // Note 19. Whose damage this meter is about: 'all' the whole fight (default, unchanged),
+    // 'group' only the player + anyone who has been in their group this session (+ their charmed
+    // pets), 'mine' only the player + their charmed pets. 'group'/'mine' recompute every share %
+    // over just what they show - non-scope damage is not counted at all. This is separate from
+    // `mineOnly`, which only HIDES the other rows while still counting them toward your %.
+    damageScope: 'all',
+    // Note 19 / line C. A combined "Charmed pets" row for charmed mobs whose owner can't be
+    // determined. On by default; it never attributes to a person and can be hidden here.
+    showCharmedPetsRow: true,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -454,6 +463,15 @@ function defaultCustomWidget(name) {
     // 'dps' that attacker's own rate (their damage / the fight length, the same divide the Total
     // rate uses), or 'both' - "damage (rate)". The Total row always shows both regardless.
     damageValueMode: 'total',
+    // Note 19. Whose damage this meter is about: 'all' the whole fight (default, unchanged),
+    // 'group' only the player + anyone who has been in their group this session (+ their charmed
+    // pets), 'mine' only the player + their charmed pets. 'group'/'mine' recompute every share %
+    // over just what they show - non-scope damage is not counted at all. This is separate from
+    // `mineOnly`, which only HIDES the other rows while still counting them toward your %.
+    damageScope: 'all',
+    // Note 19 / line C. A combined "Charmed pets" row for charmed mobs whose owner can't be
+    // determined. On by default; it never attributes to a person and can be hidden here.
+    showCharmedPetsRow: true,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -676,6 +694,8 @@ const SHAREABLE_FIELDS = [
   'mineOnly',
   'showTotalRow',
   'damageValueMode',
+  'damageScope',
+  'showCharmedPetsRow',
   'travelDestination',
   'showOnAllProfiles',
   'visibleInZones',
@@ -798,6 +818,10 @@ function normalizeWidget(widget) {
     damageValueMode:
       widget.damageValueMode ||
       (typeof widget.damageShowDps === 'boolean' ? (widget.damageShowDps ? 'dps' : 'total') : 'total'),
+    // Note 19. Anything unrecognised (or a widget saved before the field existed) is the whole
+    // fight, the pre-existing behaviour.
+    damageScope: ['all', 'group', 'mine'].includes(widget.damageScope) ? widget.damageScope : 'all',
+    showCharmedPetsRow: widget.showCharmedPetsRow !== false,
     // A widget saved before this field existed still has its real duration sitting on its first
     // trigger (they were all in sync anyway on every real aura seen so far - see the field's own
     // comment) - read it from there rather than resetting everyone to the bare default. A widget

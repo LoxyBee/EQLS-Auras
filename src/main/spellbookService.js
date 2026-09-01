@@ -224,6 +224,12 @@ class SpellbookService {
    * deciding whether an ambiguous buff message is yours - had been contributing nothing, and
    * hundreds of landings per session were being ignored for want of it.
    */
+  // The player's own character name as best the app knows it (manual override, else the log-derived
+  // name), or null. petTracker uses it to spot a "<pet> says, 'My leader is <me>.'" line.
+  getCharacterName() {
+    return this._effectiveBaseName() || null;
+  }
+
   getExpectation() {
     const base = this._effectiveBaseName();
     return {

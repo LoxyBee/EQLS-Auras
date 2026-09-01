@@ -35,6 +35,8 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
+const { GroupRoster } = require('./groupRoster');
+const { PetTracker } = require('./petTracker');
 const { RaidNamedTracker } = require('./raidNamedTracker');
 const { ModuleHost } = require('./moduleHost');
 const { readLastZoneEntry } = require('./logZonePeek');
@@ -180,6 +182,10 @@ function toggleMasterHidden() {
 
 const customTimerEngine = new CustomTimerEngine();
 const damageEngine = new DamageEngine();
+// Note 19. Who is / has been in the player's group, and which charmed pets are the player's - both
+// feed the damage meter's "group" / "mine" scopes and its charmed-pet rows.
+const groupRoster = new GroupRoster();
+const petTracker = new PetTracker();
 const raidNamedTracker = new RaidNamedTracker();
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
@@ -264,6 +270,15 @@ damageEngine.setKnownEnemiesFn(() =>
     .filter((b) => b.onEnemy && b.allyName)
     .map((b) => b.allyName)
 );
+// Note 19. The "group" damage scope filters on who has been in the player's group this session;
+// the charmed-pet rows need to know which charmed mobs are the player's own. Both are pulled live.
+damageEngine.setGroupFn(() => groupRoster.getAdmitted());
+damageEngine.setPetsFn(() => petTracker.snapshot());
+petTracker.setOwnNameFn(() => spellbookService.getCharacterName());
+petTracker.setCharmSpellCheck((name) => {
+  const entry = buffStore.getByName(name);
+  return !!entry && entry.scaleCategory === 'charm';
+});
 // See buffEngine.setAllyDebuffAlertNamesFn - spells a text aura wants a warning about when
 // somebody else casts them.
 buffEngine.setAllyDebuffAlertNamesFn(() => widgetManager.getAllyDebuffAlertNames());
@@ -479,6 +494,9 @@ logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
 // Note 19. A fourth listener for the same reason as the third: damage is not a buff, and giving
 // buffEngine a second job would mean every future change to either having to think about both.
 logService.watcher.on('line', (line) => damageEngine.handleLine(line));
+// Note 19. Group membership and charmed-pet ownership - two small trackers the damage meter reads.
+logService.watcher.on('line', (line) => groupRoster.handleLine(line));
+logService.watcher.on('line', (line) => petTracker.handleLine(line));
 logService.watcher.on('line', (line) => raidNamedTracker.handleLine(line));
 logService.watcher.on('line', (line) => abilityGroupTracker.handleLine(line));
 // Custom modules ride the same bus as pure observers. Its handleLine catches per-module throws
@@ -884,7 +902,18 @@ customTimerEngine.on('activeChanged', (timers) => {
   broadcast('customTimers:active', timers);
   saveSessionSnapshotSoon();
 });
-damageEngine.on('activeChanged', (rows) => broadcast('damage:active', rows));
+// Note 19. One engine, but a damage aura can be scoped to the whole fight, just the player's
+// group, or just the player (+ their charmed pets), and 'group'/'mine' recompute the % denominator
+// - so the three views are computed here and the overlay picks its aura's. `all` stays a plain
+// array for any older consumer; `damage:active` carries the object.
+function damageViews() {
+  return {
+    all: damageEngine.getActive(Date.now(), 'all'),
+    group: damageEngine.getActive(Date.now(), 'group'),
+    mine: damageEngine.getActive(Date.now(), 'mine'),
+  };
+}
+damageEngine.on('activeChanged', () => broadcast('damage:active', damageViews()));
 // Backlog #33 - the named-kill board. Each row becomes an infinite buff-shaped tile (killed ones
 // flagged so overlay.js can dim them); a row with a live respawn countdown carries remainingSec.
 raidNamedTracker.on('changed', (rows) => broadcast('raidNamed:active', rows.map(raidNamedTile)));
@@ -1106,6 +1135,7 @@ setInterval(() => {
   // path that edits a widget without remembering to call this.
   refreshDamageOptions();
   damageEngine.tick();
+  petTracker.tick();
   abilityGroupTracker.sweep();
   // Note 20. Catches the two inputs that change without a zone line - editing the destination and
   // scribing a travel spell. Cheap: a breadth-first search over 104 nodes, only for auras that are
@@ -1416,7 +1446,7 @@ ipcMain.handle('buffs:getActiveAllies', () => buffEngine.getActiveAllyBuffs());
 ipcMain.handle('buffs:getActiveBardSongs', () => buffEngine.getActiveBardSongs());
 ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffEngine.removeActiveBardSong(castBy, name));
 
-ipcMain.handle('damage:getActive', () => damageEngine.getActive());
+ipcMain.handle('damage:getActive', () => damageViews());
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
 ipcMain.handle('travel:getRoutes', () => travelRoutes());
 ipcMain.handle('travel:getZones', () => allZoneNames());

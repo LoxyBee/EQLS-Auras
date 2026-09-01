@@ -327,7 +327,10 @@ function initials(name) {
 function displayName(buff) {
   // The damage meter's total row, when it's showing the running tally between pulls rather than the
   // last fight - see damageEngine.getActive.
+  if (buff.totalRow && buff.scopeFellBack) return 'Total (whole fight)';
   if (buff.totalRow && buff.sinceZone) return 'Total (since zone)';
+  // A charmed pet you own, kept distinct across re-charms by a trailing "#n" - shown as " #n".
+  if (buff.isPet && /#\d+$/.test(buff.name || '')) return buff.name.replace(/#(\d+)$/, ' #$1');
   if (!buff.allyName) return buff.name;
   if (currentConfig.hideAllyNameOnTile || currentConfig.groupAllyBuffs) return buff.name;
   return `${buff.allyName}: ${buff.name}`;
@@ -1117,8 +1120,10 @@ function visibleBuffs(buffs, opts = {}) {
     let rows = buffs;
     // Your row only. It hides the others rather than un-counting them, so the percentage still
     // reads as your share of the whole fight.
-    if (currentConfig.mineOnly) rows = rows.filter((b) => b.name === 'You' || b.totalRow);
+    if (currentConfig.mineOnly) rows = rows.filter((b) => b.name === 'You' || b.isPet || b.totalRow);
     if (currentConfig.showTotalRow === false) rows = rows.filter((b) => !b.totalRow);
+    // Line C - the combined owner-unknown charmed-pet row, hidden if the aura asked.
+    if (currentConfig.showCharmedPetsRow === false) rows = rows.filter((b) => !b.unknownPets);
     return rows;
   }
 
@@ -1812,7 +1817,9 @@ let lastSelfBuffs = [];
 let lastAllyBuffs = [];
 let lastBardSongs = [];
 let lastCustomTimers = [];
-let lastDamageRows = [];
+// Note 19. Three scoped views from one engine (whole fight / just my group / just me) - the aura
+// picks its own by damageScope. See damageViews() in main.js.
+let lastDamageViews = { all: [], group: [], mine: [] };
 // Backlog #33. One shared board - the current raid zone's named list, killed ones flagged.
 let lastRaidNamed = [];
 // Note 20. Keyed by aura id - one broadcast carries every travel aura's route and each window
@@ -1915,7 +1922,10 @@ function realSourceBuffs() {
   // Note 19. Rows arrive already sorted biggest-first from damageEngine, which is why a damage
   // meter is created with sortOrder 'default' - see createDamageMeter. Any other sort order would
   // reorder them by a time remaining they deliberately do not have.
-  if (currentConfig.buffSource === 'damage') return lastDamageRows;
+  if (currentConfig.buffSource === 'damage') {
+    const scope = currentConfig.damageScope || 'all';
+    return lastDamageViews[scope] || lastDamageViews.all || [];
+  }
   if (currentConfig.buffSource === 'travel') return lastTravelRoutes[widgetId] || [];
   // Backlog #33. One shared board (the current zone's named list), not per-widget - like damage,
   // unlike travel/customTimer.
@@ -2183,14 +2193,14 @@ if (window.eqOverlay.getModuleEntries) {
   });
 }
 
-window.eqOverlay.getActiveDamage().then((rows) => {
-  lastDamageRows = rows;
+function applyDamageViews(views) {
+  // Tolerate the old bare-array shape from any stale main process during a hot reload.
+  if (Array.isArray(views)) lastDamageViews = { all: views, group: views, mine: views };
+  else if (views && typeof views === 'object') lastDamageViews = views;
   render(currentSourceBuffs());
-});
-window.eqOverlay.onActiveDamageChanged((rows) => {
-  lastDamageRows = rows;
-  render(currentSourceBuffs());
-});
+}
+window.eqOverlay.getActiveDamage().then(applyDamageViews);
+window.eqOverlay.onActiveDamageChanged(applyDamageViews);
 
 window.eqOverlay.getLockState(widgetId).then(applyLockState);
 window.eqOverlay.onLockChanged(applyLockState);

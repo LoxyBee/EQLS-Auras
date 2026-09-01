@@ -1750,6 +1750,8 @@ function initWidgetsPanel() {
   const totalRowCheckbox = document.getElementById('widget-total-row-checkbox');
   const damageShowDamageCb = document.getElementById('widget-damage-show-damage');
   const damageShowRateCb = document.getElementById('widget-damage-show-rate');
+  const damageScopeSelect = document.getElementById('widget-damage-scope');
+  const damageCharmedPetsCb = document.getElementById('widget-damage-charmed-pets');
   const bordersRowEl = document.getElementById('widget-borders-row');
   const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
@@ -3297,6 +3299,12 @@ function initWidgetsPanel() {
       if (damageShowDamageCb) damageShowDamageCb.checked = mode === 'total' || mode === 'both';
       if (damageShowRateCb) damageShowRateCb.checked = mode === 'dps' || mode === 'both';
     }
+    if (damageScopeSelect) {
+      damageScopeSelect.value = ['all', 'group', 'mine'].includes(widget.damageScope)
+        ? widget.damageScope
+        : 'all';
+    }
+    if (damageCharmedPetsCb) damageCharmedPetsCb.checked = widget.showCharmedPetsRow !== false;
     allyAlertCheckbox.checked = !!widget.allyDebuffAlert;
     alwaysOnCheckbox.checked = !!widget.alwaysOn;
     // Reported live 24 Aug, and confirmed by directly comparing what was on screen against what
@@ -5034,6 +5042,18 @@ function initWidgetsPanel() {
     };
     damageShowDamageCb.addEventListener('change', () => pushDamageValueMode(damageShowDamageCb));
     damageShowRateCb.addEventListener('change', () => pushDamageValueMode(damageShowRateCb));
+  }
+  if (damageScopeSelect) {
+    damageScopeSelect.addEventListener('change', () => {
+      window.eqTracker.setWidgetDamageOptions(selectedId, { scope: damageScopeSelect.value });
+    });
+  }
+  if (damageCharmedPetsCb) {
+    damageCharmedPetsCb.addEventListener('change', () => {
+      window.eqTracker.setWidgetDamageOptions(selectedId, {
+        showCharmedPetsRow: damageCharmedPetsCb.checked,
+      });
+    });
   }
 
   debuffCastByRadios.forEach((radio) => {
