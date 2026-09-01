@@ -4,6 +4,51 @@
 10 = really bad). Part 2 is the fix plan for each finding, sequenced into phases by what unblocks
 what.*
 
+## Review notes (Long Context, 2 Sep) — read before acting on severities below
+
+Checked a sample of findings directly against the code rather than taking them on faith. The
+factual claims hold up well — most are independently verifiable or are the project's own
+documented admissions, not invented. Two corrections and a set of severity disagreements:
+
+**Corrections:**
+- **#1**'s module path (`%APPDATA%\EQ Buff Tracker\modules\`) is now stale — as of 1 Sep, modules
+  load from the **install folder** (`modules/` next to the `.exe`), not userData. Doesn't change
+  the finding (still no sandbox, still auto-`fs.watch`-loaded), just the path.
+- **#7**'s 300ms poll interval — verified correct in `foregroundWatcher.js`. It's CLAUDE.md that
+  had the stale number ("every 2s"), fixed separately in this same pass. If anything this makes #7
+  slightly worse than stated, not overstated.
+- **New, found while checking this doc, not in it**: `test/log-rotation.test.js` has ~20 tests
+  hardcoding `new Date(2026, 8, 2, ...)` ("tomorrow", when written) as a fake "now" while writing
+  real files with real mtimes — the exact wall-clock fragility finding #9 describes, but as a
+  **test** landmine rather than a runtime one. One (`'a week that opened with an empty log...'`)
+  had already flipped and was failing; fixed by pinning that file's mtime instead of trusting real
+  time to stay behind the hardcoded date. The other ~19 are still ticking and will start failing
+  one at a time as real time passes each hardcoded date. Worth its own remediation item — see
+  Phase 3 addendum at the bottom.
+
+**Severity disagreements** (didn't touch the ratings below — noting where I'd weigh them
+differently, so read the two together rather than either alone):
+- **#8** (by-design mislabeling) — 6→7/10 feels high for how narrow and bounded this actually is
+  (one burst-detection case, with an explicit "never over-land" boundary — buff count is never
+  invented, only naming within an already-confirmed burst). I'd call it a 4.
+- **#10 / #11** (stale memorized state, restart blindness) — both real, but framed as oversights
+  when the project's own docs treat them as consciously accepted tradeoffs with built-in correction
+  paths (a per-gem "forget" UI; the deliberate zone-line exception to never-replay). Worth
+  softening (Phase 1's plan to do exactly that is right), not evidence nobody thought about it.
+- **#17** (config import risk) — undersells that `importConfig()` already takes an automatic
+  pre-import safety backup before touching anything. I'd rate it a notch lower than 6.
+- **#20** (workflow as a bug) — the single-brancher model was adopted deliberately after real
+  concurrent-edit conflicts, not stumbled into. Fair to call friction, not quite fair to call
+  unconsidered.
+- **#1**'s severity (9/10) — the core finding (no consent, no sandbox, auto-execute) is legitimate
+  and worth closing given the stated goal of eventually handing this app to other people. But it's
+  pitched at public-plugin-store severity for what was designed as a single-trusted-collaborator
+  path. I'd keep it high (7–8), not top-of-scale.
+
+Everything else — the detection-engine early-return chain (#2), the roster-completeness false
+confidence (#3), the monolith files (#12), and the cruft/process items (#14/#15/#19/#21/#22) — I
+agree with essentially as stated; most are drawn directly from the project's own CLAUDE.md.
+
 ---
 
 # Part 1 — The Teardown
@@ -457,6 +502,27 @@ session
 3. If a real rebrand ever happens: a proper copy-and-pointer migration, not a string edit.
 
 *Touches:* `src/main/main.js` · new `test/userdata-pin.test.js`
+
+### P3-7 — De-fang the hardcoded-future-date tests in `log-rotation.test.js` — finding #9's test-side twin — sev 5 — 1 day
+Found 2 Sep, not in the original review: ~20 tests hardcode `new Date(2026, 8, 2, ...)` as a fake
+"now" while writing real files with real (current wall-clock) mtimes via `tempLogs()`. The rotation
+code's `QUIET_MS` check compares that fake "now" against the file's real mtime — fine while the
+hardcoded date sits safely in the future, silently wrong once real time catches up to it. One test
+had already flipped and was failing; fixed narrowly (pin that one file's mtime with
+`fs.utimesSync` to a date safely before the fake boundary, rather than trusting real time to stay
+behind it). The other ~19 are not failing yet only because real time hasn't reached their
+hardcoded dates.
+
+1. Same fix, applied file-wide: every `tempLogs()`-created file that a test's assertions depend on
+   being "quiet" should get an explicit, safely-past `fs.utimesSync` rather than relying on the gap
+   between real-now and a hardcoded fake-now.
+2. Alternative worth considering: make `tempLogs()` take an optional mtime and default it to
+   something far in the past (e.g. 2000-01-01) so every future test in this file is immune by
+   default, not just the ones someone remembers to pin.
+3. Either way, add a one-line comment at the top of the file warning that a hardcoded calendar date
+   used as "now" is a landmine, not a convenience - pick a date and it works until it doesn't.
+
+*Touches:* `test/log-rotation.test.js`
 
 ---
 

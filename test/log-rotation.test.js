@@ -362,6 +362,11 @@ test('an unreadable logs folder is reported, not thrown', () => {
 test('a week that opened with an empty log does not eat the first night of play', () => {
   const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': '' });
   const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
+  // The QUIET_MS check compares the fake "now" below against the file's REAL mtime (tempLogs()
+  // just wrote it). Pin the mtime safely before the fake boundary so this test's own pass/fail
+  // does not depend on how much real wall-clock time has passed since it was written - without
+  // this, the file's real mtime eventually catches up to and overtakes a hardcoded fake date.
+  fs.utimesSync(live, new Date(2020, 0, 1), new Date(2020, 0, 1));
   const s = svc(dir);
 
   // Tuesday 11:05, the week opens. She has not played since the last rotation.

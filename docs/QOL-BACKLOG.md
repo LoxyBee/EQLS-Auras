@@ -28,12 +28,6 @@ Hangs off the owner's own first-aggro premade (original-note #2).
 *Needs:* the exact invis-fade lines from the log; and what "before the boss aggros" is measured
 against (an aggro line vs. first damage).
 
-### 37. Pet-is-attacking tracker — NEW — built, not in this release
-An indicator for whether your pet is currently engaged — pet-attack / pet-target lines vs.
-pet-returning / pet-dead lines. Built on an unmerged branch (`TEXT_AURA_PRESETS.petStatus`:
-PET ENGAGED / IDLE / GONE off the pet's own speech lines, Event alerts group) — not part of the
-pre-PR batch. Fold into the next batch.
-
 ### 42. Chat-read command and/or hotkey for macro-driven profile swap — folds into #6
 A profile-cycle hotkey, and/or an in-game `/tell` command word your macros can fire (same pattern
 as `/tell eqtm`). Still needs the owner's call: hotkey, chat command, or both.
