@@ -1,12 +1,13 @@
-// The move HUD renderer - a small detached control panel.
+// The move HUD renderer - a small detached panel of SHARED controls (step size, snap-to-grid).
 //
-//  - 'single' mode ("Move…" on one aura or action bar): a nudge pad, a live x/y readout, step
-//    size, snap-to-grid, Reset position, Done. The main window is hidden while it is up.
-//  - 'all' mode ("Unlock all auras"): the nudge arrows are on each aura's own blue box, so this
-//    panel drops the pad and the coords and is just the shared step / snap controls + Lock all.
+//  - 'single' mode ("Move…" on one aura or action bar): also shows the live x/y readout and a
+//    "Reset position" button. The main window is hidden while it is up.
+//  - 'all' mode ("Unlock all auras"): just the shared controls; "Done" becomes "Lock all auras".
 //
-// The window (moveHudWindow.js) clamps itself back on screen after every drag. Body is
-// -webkit-app-region:drag; every control is no-drag (see move-hud.css).
+// The nudge arrows are NOT here - they live in a pad window over each box (nudgePadWindow.js), so
+// one aura, one bar, or all of them nudge the same way. The window (moveHudWindow.js) clamps
+// itself back on screen after every drag. Body is -webkit-app-region:drag; every control is
+// no-drag (see move-hud.css).
 
 const panelEl = document.getElementById('panel');
 const nameEl = document.getElementById('aura-name');
@@ -50,10 +51,5 @@ function pushSnap() {
 snapOnEl.addEventListener('change', pushSnap);
 snapSizeEl.addEventListener('change', pushSnap);
 
-// The pad only nudges the single-mode target (an action bar has no per-box arrows of its own).
-document.getElementById('nudge-up').addEventListener('click', () => window.eqMoveHud.nudge(0, -stepPx));
-document.getElementById('nudge-down').addEventListener('click', () => window.eqMoveHud.nudge(0, stepPx));
-document.getElementById('nudge-left').addEventListener('click', () => window.eqMoveHud.nudge(-stepPx, 0));
-document.getElementById('nudge-right').addEventListener('click', () => window.eqMoveHud.nudge(stepPx, 0));
 resetEl.addEventListener('click', () => window.eqMoveHud.resetPosition());
 doneEl.addEventListener('click', () => window.eqMoveHud.done());

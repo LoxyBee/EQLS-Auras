@@ -195,20 +195,23 @@ test('"Unlock all auras" mode (setActiveAll) snaps every aura, not just one', ()
   snap.set({ enabled: false, sizePx: 8 });
 });
 
-test('the per-aura nudge pad is a separate anchored window, wired renderer -> preload -> main', () => {
+test('the nudge pad is a separate window centred over the box, wired renderer -> preload -> main', () => {
   const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
-  // it is its OWN window, not inside the clipped aura box
+  // it is its OWN window, not inside the clipped aura box, and not on the move HUD any more
   assert.doesNotMatch(read('src', 'renderer', 'overlay', 'index.html'), /id="nudge-pad"/);
-  assert.match(read('src', 'renderer', 'nudge-pad', 'nudge-pad.js'), /window\.eqNudgePad\.nudge\(widgetId,/);
-  assert.match(read('src', 'preload', 'preload-nudge-pad.js'), /ipcRenderer\.send\('widget:nudgeSelf'/);
+  assert.doesNotMatch(read('src', 'renderer', 'move-hud', 'index.html'), /id="nudge-pad"/);
+  assert.match(read('src', 'renderer', 'nudge-pad', 'nudge-pad.js'), /window\.eqNudgePad\.nudge\(id, kind,/);
+  assert.match(read('src', 'preload', 'preload-nudge-pad.js'), /ipcRenderer\.send\('nudgePad:nudge'/);
   const pad = read('src', 'main', 'nudgePadWindow.js');
-  assert.match(pad, /function showFor\(widgetId, bounds\)/);
-  assert.match(pad, /function updateFor\(widgetId, bounds\)/); // follows the box on every move
-  assert.match(pad, /y < wa\.y\) y = /); // flips below the box when there's no room above
+  assert.match(pad, /function showFor\(id, bounds, kind = 'widget'\)/);
+  assert.match(pad, /function updateFor\(id, bounds\)/); // follows the box on every move
+  // centred over the box, not offset above it
+  assert.match(pad, /let y = Math\.round\(by \+ \(bh - PAD_H\) \/ 2\)/);
   const main = read('src', 'main', 'main.js');
-  assert.match(main, /ipcMain\.on\('widget:nudgeSelf'/);
-  assert.match(main, /!widgetManager\.isLocked\(id\)\) widgetManager\.nudgeWidget\(id, dx, dy\)/);
-  assert.match(main, /nudgePadWindow\.showFor\(id, b\)/); // single "Move…"
+  assert.match(main, /ipcMain\.on\('nudgePad:nudge'/);
+  assert.match(main, /kind === 'actionBar'[\s\S]{0,80}actionBarManager\.nudgePosition\(id, dx, dy\)/);
+  assert.match(main, /widgetManager\.nudgeWidget\(id, dx, dy\)/);
+  assert.match(main, /nudgePadWindow\.showFor\(id, b, kind\)/); // single "Move…" (aura or bar)
   assert.match(main, /getVisibleUnlockedBounds\(\)\) nudgePadWindow\.showFor/); // "Unlock all auras"
   assert.match(main, /nudgePadWindow\.updateFor\(id, bounds\)/); // follow
   assert.match(main, /broadcast\('widget:nudgeStep', moveStepPx\)/);

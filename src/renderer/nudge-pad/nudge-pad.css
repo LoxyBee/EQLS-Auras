@@ -1,5 +1,5 @@
-/* PAD_W (86) / PAD_H (58) are set in nudgePadWindow.js - keep #pad inside them.
-   Amber arrows, matching the move HUD's own pad (the owner's "brown arrows like before"). */
+/* PAD_W (86) / PAD_H (52) are set in nudgePadWindow.js - keep #pad inside them. The window sits
+   centred over the aura's blue box. Amber arrows (the owner's "brown arrows like before"). */
 :root {
   --accent: #f0a54a;
 }

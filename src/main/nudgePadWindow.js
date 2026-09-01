@@ -1,49 +1,48 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
 
-// One tiny always-on-top pad per unlocked aura, holding just the four nudge arrows. It is a
-// separate window (not drawn inside the aura's own box) because an empty aura's box is far too
-// short to hold the arrows without clipping them - the owner hit exactly that. The pad is
-// anchored just above the aura's blue box and follows it on every move; it is torn down when the
-// aura re-locks.
+// One tiny always-on-top pad per thing being positioned (an aura, or an action bar), holding just
+// the four nudge arrows. It is a separate window - not drawn inside the aura's own box - because
+// an empty aura's box is far too short to hold the arrows without clipping them (the owner hit
+// exactly that). The pad sits CENTRED OVER the box and follows it on every move; it is torn down
+// when the thing re-locks.
 //
-// Same "small frameless always-on-top helper" idea as moveHudWindow.js, but keyed by aura id and
+// Same "small frameless always-on-top helper" idea as moveHudWindow.js, but keyed by id and
 // auto-positioned rather than user-dragged.
 
-const PAD_W = 90;
-const PAD_H = 40;
-const GAP = 6; // between the pad and the aura box
+const PAD_W = 86;
+const PAD_H = 52;
 
-const pads = new Map(); // widgetId -> BrowserWindow
+const pads = new Map(); // id -> { win, kind }
 
-// Sit the pad centred just above the box; flip below if it would leave the work area at the top.
+// Centre the pad over the box, clamped to the box's display's work area.
 function placeFor(bounds) {
   const b = bounds || {};
   const bx = Number(b.x) || 0;
   const by = Number(b.y) || 0;
   const bw = Number(b.width) || 0;
+  const bh = Number(b.height) || 0;
   let x = Math.round(bx + (bw - PAD_W) / 2);
-  let y = Math.round(by - PAD_H - GAP);
+  let y = Math.round(by + (bh - PAD_H) / 2);
 
-  const display = screen.getDisplayMatching({ x: bx, y: by, width: Math.max(1, bw), height: 1 })
+  const display = screen.getDisplayMatching({ x: bx, y: by, width: Math.max(1, bw), height: Math.max(1, bh) })
     || screen.getPrimaryDisplay();
   const wa = display.workArea;
-  if (y < wa.y) y = Math.round(by + (Number(b.height) || 0) + GAP); // no room above -> below
   x = Math.max(wa.x, Math.min(x, wa.x + wa.width - PAD_W));
   y = Math.max(wa.y, Math.min(y, wa.y + wa.height - PAD_H));
   return { x, y, width: PAD_W, height: PAD_H };
 }
 
-function showFor(widgetId, bounds) {
-  if (!widgetId) return;
-  let win = pads.get(widgetId);
+function showFor(id, bounds, kind = 'widget') {
+  if (!id) return;
+  const existing = pads.get(id);
   const place = placeFor(bounds);
-  if (win && !win.isDestroyed()) {
-    win.setBounds(place);
-    win.showInactive();
+  if (existing && !existing.win.isDestroyed()) {
+    existing.win.setBounds(place);
+    existing.win.showInactive();
     return;
   }
-  win = new BrowserWindow({
+  const win = new BrowserWindow({
     ...place,
     frame: false,
     transparent: true,
@@ -64,26 +63,26 @@ function showFor(widgetId, bounds) {
   win.setAlwaysOnTop(true, 'screen-saver');
   win.on('system-context-menu', (e) => e.preventDefault());
   win.loadFile(path.join(__dirname, '..', 'renderer', 'nudge-pad', 'index.html'), {
-    query: { widgetId },
+    query: { id, kind },
   });
   win.once('ready-to-show', () => { if (!win.isDestroyed()) win.showInactive(); });
-  pads.set(widgetId, win);
+  pads.set(id, { win, kind });
 }
 
-// The aura moved (drag / nudge) - keep the pad glued above it.
-function updateFor(widgetId, bounds) {
-  const win = pads.get(widgetId);
-  if (win && !win.isDestroyed()) win.setBounds(placeFor(bounds));
+// The box moved (drag / nudge) - keep the pad centred over it.
+function updateFor(id, bounds) {
+  const p = pads.get(id);
+  if (p && !p.win.isDestroyed()) p.win.setBounds(placeFor(bounds));
 }
 
-function hideFor(widgetId) {
-  const win = pads.get(widgetId);
-  if (win && !win.isDestroyed()) win.destroy();
-  pads.delete(widgetId);
+function hideFor(id) {
+  const p = pads.get(id);
+  if (p && !p.win.isDestroyed()) p.win.destroy();
+  pads.delete(id);
 }
 
 function hideAll() {
-  for (const win of pads.values()) if (win && !win.isDestroyed()) win.destroy();
+  for (const p of pads.values()) if (p && !p.win.isDestroyed()) p.win.destroy();
   pads.clear();
 }
 

@@ -2088,8 +2088,7 @@ function enterMoveMode(kind, id) {
   const b = targetBounds(kind, id); // exists now that it is unlocked
   getMainWindow()?.hide();
   moveHudWindow.open(b || { x: 200, y: 200, width: 160, height: 80 }, hudMeta());
-  // Auras get a per-box nudge pad; an action bar is positioned from the HUD's own pad instead.
-  if (kind === 'widget') nudgePadWindow.showFor(id, b);
+  nudgePadWindow.showFor(id, b, kind); // a pad over the box - aura or action bar
   if (positionSnap.get().enabled) gridGuideWindow.show(positionSnap.get().sizePx);
   return { ok: true };
 }
@@ -2127,17 +2126,15 @@ function exitUnlockAllMode() {
 
 ipcMain.handle('widget:enterMoveMode', (_event, id) => enterMoveMode('widget', id));
 ipcMain.handle('actionBar:enterMoveMode', (_event, id) => enterMoveMode('actionBar', id));
-// The move HUD's own pad - single mode only (an action bar has no per-box arrows).
-ipcMain.handle('moveHud:nudge', (_event, { dx, dy }) => {
-  if (!moveTarget) return null;
-  return moveTarget.kind === 'actionBar'
-    ? actionBarManager.nudgePosition(moveTarget.id, dx, dy)
-    : widgetManager.nudgeWidget(moveTarget.id, dx, dy);
-});
-// A per-aura nudge arrow on the overlay box itself (not the HUD). Only an unlocked aura shows
-// arrows, so the lock check is belt-and-braces.
-ipcMain.on('widget:nudgeSelf', (_event, { id, dx, dy } = {}) => {
-  if (id && !widgetManager.isLocked(id)) widgetManager.nudgeWidget(id, dx, dy);
+// An arrow on a per-box nudge pad (nudgePadWindow.js). Only an unlocked thing shows a pad, so the
+// lock check is belt-and-braces. Routed by kind, same split targetManager uses.
+ipcMain.on('nudgePad:nudge', (_event, { id, kind, dx, dy } = {}) => {
+  if (!id) return;
+  if (kind === 'actionBar') {
+    if (!actionBarManager.isLocked(id)) actionBarManager.nudgePosition(id, dx, dy);
+  } else if (!widgetManager.isLocked(id)) {
+    widgetManager.nudgeWidget(id, dx, dy);
+  }
 });
 ipcMain.handle('widget:getNudgeStep', () => moveStepPx);
 ipcMain.handle('moveHud:setStep', (_event, px) => {

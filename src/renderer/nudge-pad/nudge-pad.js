@@ -1,13 +1,15 @@
-// The per-aura nudge pad renderer. The aura id is in the query string (same idiom as the overlay
-// window). Each arrow nudges that one aura by the shared step size (1 or 10 px), pushed from the
-// move HUD via widget:nudgeStep and read once on load.
+// The per-box nudge pad renderer. The target id + kind ('widget' | 'actionBar') are in the query
+// string (same idiom as the overlay window). Each arrow nudges that one thing by the shared step
+// size (1 or 10 px), pushed from the move HUD via widget:nudgeStep and read once on load.
 
-const widgetId = new URLSearchParams(window.location.search).get('widgetId');
+const q = new URLSearchParams(window.location.search);
+const id = q.get('id');
+const kind = q.get('kind') || 'widget';
 let stepPx = 1;
 
 for (const btn of document.querySelectorAll('.nudge')) {
   btn.addEventListener('click', () => {
-    window.eqNudgePad.nudge(widgetId, Number(btn.dataset.dx) * stepPx, Number(btn.dataset.dy) * stepPx);
+    window.eqNudgePad.nudge(id, kind, Number(btn.dataset.dx) * stepPx, Number(btn.dataset.dy) * stepPx);
   });
 }
 
