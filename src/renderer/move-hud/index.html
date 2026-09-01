@@ -6,22 +6,24 @@
   <link rel="stylesheet" href="move-hud.css" />
 </head>
 <body>
-  <!-- A detached, draggable panel. The body is -webkit-app-region:drag so you grab it anywhere
-       empty; every control is no-drag. It never leaves the screen (clamped in moveHudWindow.js),
-       so the Done button can't be lost. -->
-  <div id="panel">
+  <!-- A detached, draggable panel. In 'single' mode (one aura/bar, "Move…") it carries a nudge pad
+       and a live x/y readout. In 'all' mode ("Unlock all auras") the nudge arrows live on each
+       aura's own blue box instead, so the panel is just the shared step-size / snap controls.
+       Body is -webkit-app-region:drag; every control is no-drag. Clamped on-screen (moveHudWindow.js). -->
+  <div id="panel" data-mode="single">
     <div class="row head">
       <span id="aura-name">Aura</span>
-      <span id="coords">x: 0  y: 0</span>
+      <span id="coords"></span>
     </div>
 
-    <div class="row">
+    <div class="row body-row">
       <div id="nudge-pad">
         <button type="button" id="nudge-up" class="nudge" title="Move up">&#9650;</button>
         <button type="button" id="nudge-left" class="nudge" title="Move left">&#9664;</button>
         <button type="button" id="nudge-right" class="nudge" title="Move right">&#9654;</button>
         <button type="button" id="nudge-down" class="nudge" title="Move down">&#9660;</button>
       </div>
+      <div id="all-hint" class="hint">Use the &#9650;&#9660;&#9664;&#9654; arrows on each aura's own box to nudge it.</div>
       <div class="controls">
         <div class="row">
           <span class="label">Step</span>

@@ -64,6 +64,15 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   openSettings: (widgetId) => {
     ipcRenderer.send('widget:openSettings', widgetId);
   },
+  // Per-aura nudge arrows on the drag box - moves THIS aura's window by (dx, dy) px.
+  nudge: (widgetId, dx, dy) => {
+    ipcRenderer.send('widget:nudgeSelf', { id: widgetId, dx, dy });
+  },
+  // The shared step size (1 or 10 px), pushed from the move HUD.
+  onNudgeStep: (callback) => {
+    ipcRenderer.on('widget:nudgeStep', (_event, px) => callback(px));
+  },
+  getNudgeStep: () => ipcRenderer.invoke('widget:getNudgeStep'),
   // Routes into the SAME debugLog() every main-process detection line already goes through - see
   // main.js's own debugLogEnabled gate. An overlay window can't write the file itself (renderer,
   // no fs access), so this is fire-and-forget, same shape as reportContentSize/openSettings above.

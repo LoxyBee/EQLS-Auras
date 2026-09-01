@@ -10,7 +10,7 @@ const { loadJson, saveJson } = require('./store');
 // Same "small always-on-top helper window" idea as zonePromptPopup.js. Fully interactive (drag it
 // by its background, -webkit-app-region:drag; controls are no-drag), so none of the click-through
 // juggling the earlier wrapping-frame version needed.
-const PANEL_W = 384;
+const PANEL_W = 330;
 const PANEL_H = 150;
 
 let win = null;
@@ -26,11 +26,13 @@ function clampToScreen(bounds) {
   };
 }
 
+// Default: near the top centre of the primary display, out of the way of the auras being arranged
+// (owner's placement, 1 Sep). The panel is draggable and its position is remembered after that.
 function centred() {
   const { workArea } = screen.getPrimaryDisplay();
   return {
     x: Math.round(workArea.x + (workArea.width - PANEL_W) / 2),
-    y: Math.round(workArea.y + (workArea.height - PANEL_H) / 2),
+    y: Math.round(workArea.y + 24),
   };
 }
 

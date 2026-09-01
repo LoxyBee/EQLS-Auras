@@ -16,6 +16,23 @@ dragOverlayEl.addEventListener('contextmenu', (e) => {
   window.eqOverlay.openSettings(widgetId);
 });
 
+// Per-aura nudge arrows (see index.html). The step size is global - it lives in the shared move
+// HUD and arrives here via onNudgeStep. Each click moves THIS aura's window by one step; the
+// main process snaps it if snap-to-grid is on.
+let nudgeStepPx = 1;
+for (const btn of document.querySelectorAll('#nudge-pad .nudge')) {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dx = Number(btn.dataset.dx) * nudgeStepPx;
+    const dy = Number(btn.dataset.dy) * nudgeStepPx;
+    window.eqOverlay.nudge(widgetId, dx, dy);
+  });
+}
+window.eqOverlay.onNudgeStep((px) => { nudgeStepPx = Number(px) === 10 ? 10 : 1; });
+if (window.eqOverlay.getNudgeStep) {
+  window.eqOverlay.getNudgeStep().then((px) => { nudgeStepPx = Number(px) === 10 ? 10 : 1; });
+}
+
 // Used only until the real config arrives from getConfig() below - a
 // freshly created widget's window has to fully boot before that resolves,
 // and in that brief window this is what governs what renders. Defaults to

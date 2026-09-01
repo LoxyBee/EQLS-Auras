@@ -1718,7 +1718,17 @@ ipcMain.handle('overlay:setMasterHidden', (_event, hidden) => {
 });
 // QOL #10 - global mute for every aura's alert sounds.
 ipcMain.handle('overlay:setSoundsMuted', (_event, muted) => widgetManager.setSoundsMuted(muted));
-ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => widgetManager.setAllUnlocked(unlocked));
+ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => {
+  const res = widgetManager.setAllUnlocked(unlocked);
+  // The shared step/snap HUD rides with "Unlock all" - opened here, and the per-aura nudge arrows
+  // on each box become live. Guarded so it doesn't fight a single-aura move already in progress.
+  if (unlocked) {
+    if (hudMode !== 'single') enterUnlockAllMode();
+  } else if (hudMode === 'all') {
+    exitUnlockAllMode();
+  }
+  return res;
+});
 ipcMain.handle('settings:getShowAurasWhenAppFocused', () => showAurasWhenAppFocused);
 ipcMain.handle('settings:setShowAurasWhenAppFocused', (_event, enabled) => {
   showAurasWhenAppFocused = enabled;
@@ -2044,9 +2054,15 @@ function targetSetLocked(kind, id, locked) {
   return kind === 'actionBar' ? actionBarManager.setLocked(id, locked) : widgetManager.setLocked(id, locked);
 }
 
+// 'single' - one aura/bar being positioned via its "Move…" button (main window hidden).
+// 'all' - "Unlock all auras" is on; the HUD is just the shared step/snap controls, every aura
+// carries its own nudge arrows, and the main window stays open.
+let hudMode = null;
+
 function hudMeta() {
   const grid = positionSnap.get();
   return {
+    mode: hudMode || 'single',
     name: moveTarget ? targetName(moveTarget.kind, moveTarget.id) : '',
     stepPx: moveStepPx,
     snapEnabled: grid.enabled,
@@ -2063,6 +2079,7 @@ actionBarManager.setOnMovedFn(onMoveTargetMoved);
 function enterMoveMode(kind, id) {
   if (!targetName(kind, id) && !targetBounds(kind, id)) return { ok: false };
   moveTarget = { kind, id };
+  hudMode = 'single';
   positionSnap.setActive(id);
   if (targetLocked(kind, id)) targetSetLocked(kind, id, false);
   const b = targetBounds(kind, id); // exists now that it is unlocked
@@ -2075,6 +2092,7 @@ function enterMoveMode(kind, id) {
 function exitMoveMode() {
   const t = moveTarget;
   moveTarget = null;
+  hudMode = null;
   positionSnap.setActive(null);
   moveHudWindow.close();
   gridGuideWindow.hide();
@@ -2084,22 +2102,45 @@ function exitMoveMode() {
   else createMainWindow();
 }
 
+// "Unlock all auras" - the shared HUD holds only the step/snap controls; every aura's own box
+// carries the nudge arrows. The main window stays open (unlike single move mode).
+function enterUnlockAllMode() {
+  hudMode = 'all';
+  positionSnap.setActiveAll(true);
+  moveHudWindow.open(null, hudMeta());
+  if (positionSnap.get().enabled) gridGuideWindow.show(positionSnap.get().sizePx);
+}
+function exitUnlockAllMode() {
+  hudMode = null;
+  positionSnap.setActiveAll(false);
+  moveHudWindow.close();
+  gridGuideWindow.hide();
+}
+
 ipcMain.handle('widget:enterMoveMode', (_event, id) => enterMoveMode('widget', id));
 ipcMain.handle('actionBar:enterMoveMode', (_event, id) => enterMoveMode('actionBar', id));
+// The move HUD's own pad - single mode only (an action bar has no per-box arrows).
 ipcMain.handle('moveHud:nudge', (_event, { dx, dy }) => {
   if (!moveTarget) return null;
   return moveTarget.kind === 'actionBar'
     ? actionBarManager.nudgePosition(moveTarget.id, dx, dy)
     : widgetManager.nudgeWidget(moveTarget.id, dx, dy);
 });
+// A per-aura nudge arrow on the overlay box itself (not the HUD). Only an unlocked aura shows
+// arrows, so the lock check is belt-and-braces.
+ipcMain.on('widget:nudgeSelf', (_event, { id, dx, dy } = {}) => {
+  if (id && !widgetManager.isLocked(id)) widgetManager.nudgeWidget(id, dx, dy);
+});
+ipcMain.handle('widget:getNudgeStep', () => moveStepPx);
 ipcMain.handle('moveHud:setStep', (_event, px) => {
   moveStepPx = px === 10 ? 10 : 1;
+  broadcast('widget:nudgeStep', moveStepPx); // the per-box arrows read this
   return moveStepPx;
 });
 ipcMain.handle('moveHud:setSnap', (_event, { enabled, sizePx }) => {
   const grid = positionSnap.set({ enabled, sizePx });
   saveJson('overlaySnapGrid', grid);
-  if (moveTarget) {
+  if (moveTarget || hudMode === 'all') {
     if (grid.enabled) gridGuideWindow.show(grid.sizePx);
     else gridGuideWindow.hide();
   }
@@ -2108,7 +2149,15 @@ ipcMain.handle('moveHud:setSnap', (_event, { enabled, sizePx }) => {
 ipcMain.handle('moveHud:resetPosition', () => {
   if (moveTarget) targetManager(moveTarget.kind).resetPosition(moveTarget.id);
 });
-ipcMain.handle('moveHud:done', () => exitMoveMode());
+ipcMain.handle('moveHud:done', () => {
+  if (hudMode === 'all') {
+    widgetManager.setAllUnlocked(false);
+    exitUnlockAllMode();
+    getMainWindow()?.webContents.send('overlay:masterStateChanged');
+  } else {
+    exitMoveMode();
+  }
+});
 
 // The Action Bar overlay - see actionBarManager.js's own header comment. Multiple bars, same
 // {id, ...} shape every widget:* handler already uses.

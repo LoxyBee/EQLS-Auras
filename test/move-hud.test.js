@@ -178,6 +178,36 @@ test('a nudge lands on the grid only for the aura that is active, only when snap
   snap.setActive(null);
 });
 
+test('"Unlock all auras" mode (setActiveAll) snaps every aura, not just one', () => {
+  const a = makeAura('AllA');
+  const b = makeAura('AllB');
+  wm.setLocked(a.config.id, false);
+  wm.setLocked(b.config.id, false);
+  snap.set({ enabled: true, sizePx: 10 });
+  snap.setActiveAll(true);
+  a.win.setPosition(103, 97);
+  b.win.setPosition(108, 92);
+  wm.nudgeWidget(a.config.id, 1, 1); // 104,98 -> 100,100
+  wm.nudgeWidget(b.config.id, 1, 1); // 109,93 -> 110,90
+  assert.deepEqual(a.win.getPosition(), [100, 100]);
+  assert.deepEqual(b.win.getPosition(), [110, 90], 'the second aura snapped too');
+  snap.setActiveAll(false);
+  snap.set({ enabled: false, sizePx: 8 });
+});
+
+test('the per-box nudge arrow is wired: overlay -> preload -> main -> nudgeWidget', () => {
+  const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+  assert.match(read('src', 'renderer', 'overlay', 'index.html'), /id="nudge-pad"/);
+  assert.match(read('src', 'renderer', 'overlay', 'overlay.js'), /window\.eqOverlay\.nudge\(widgetId, dx, dy\)/);
+  assert.match(read('src', 'preload', 'preload-overlay.js'), /ipcRenderer\.send\('widget:nudgeSelf'/);
+  const main = read('src', 'main', 'main.js');
+  assert.match(main, /ipcMain\.on\('widget:nudgeSelf'/);
+  assert.match(main, /!widgetManager\.isLocked\(id\)\) widgetManager\.nudgeWidget\(id, dx, dy\)/);
+  // the step size is shared, pushed from the HUD and read back on load
+  assert.match(read('src', 'main', 'main.js'), /broadcast\('widget:nudgeStep', moveStepPx\)/);
+  assert.match(read('src', 'renderer', 'overlay', 'overlay.js'), /window\.eqOverlay\.getNudgeStep\(\)/);
+});
+
 test('a drag drop of the active aura snaps to the grid; others are left alone', () => {
   const { config, win } = makeAura('DragSnap');
   wm.setLocked(config.id, false);

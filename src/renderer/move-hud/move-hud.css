@@ -1,4 +1,4 @@
-/* PANEL_W (384) / PANEL_H (150) are set in moveHudWindow.js - keep the panel inside them. */
+/* PANEL_W (330) / PANEL_H (150) are set in moveHudWindow.js - keep the panel inside them. */
 :root {
   --accent: #f0a54a;
   --panel: rgba(18, 22, 34, 0.94);
@@ -38,10 +38,12 @@ html, body {
   margin: 4px 0;
   font-size: 12px;
 }
+.body-row { align-items: flex-start; }
 .head { font-weight: 700; }
 #coords { margin-left: auto; color: var(--dim); font-weight: 400; font-variant-numeric: tabular-nums; }
 #aura-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
 .label { color: var(--dim); }
+.hint { color: var(--dim); font-size: 11px; line-height: 1.35; flex: 1; }
 
 #nudge-pad {
   position: relative;
@@ -50,6 +52,10 @@ html, body {
   flex: 0 0 auto;
 }
 .controls { flex: 1; }
+
+/* 'all' mode - the arrows are on each aura's box, so drop the pad and show the hint instead. */
+#panel[data-mode="all"] #nudge-pad { display: none; }
+#panel[data-mode="single"] #all-hint { display: none; }
 
 button, select, input, .snap {
   -webkit-app-region: no-drag; /* controls are clickable, not drag handles */
@@ -108,18 +114,11 @@ button, select, input, .snap {
   font: inherit;
   font-size: 12px;
   color: var(--ink);
-  /* Opaque, dark - the dropdown list is Chromium-drawn and inherits these onto the <option>s.
-     A translucent-white background left the list white-on-near-white and unreadable. */
+  /* Opaque, dark - the dropdown list is Chromium-drawn and inherits these onto the <option>s. */
   background: #1b2133;
   border: 1px solid var(--line);
   border-radius: 5px;
   padding: 2px 4px;
 }
-#snap-size option {
-  background: #1b2133;
-  color: var(--ink);
-}
-#snap-size option:checked {
-  background: var(--accent);
-  color: #1b1205;
-}
+#snap-size option { background: #1b2133; color: var(--ink); }
+#snap-size option:checked { background: var(--accent); color: #1b1205; }
