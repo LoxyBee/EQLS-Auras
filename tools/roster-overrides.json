@@ -270,5 +270,11 @@
       "infiniteDuration": true,
       "landingText": "You begin reciting the spellblade invocation."
     }
+  },
+  "Cassindra's Chant of Clarity": {
+    "why": "Shara, 28 August 2026: told directly it is 12 seconds. The game data gives it no duration, so a wrong value (1 minute) was leaking in - its landing text \"Your mind clears.\" is shared with Brilliance (gotcha #15), and 12s is the modal bard-song duration besides. (Recovered 1 Sep from lost owner commit d0dbdfb.)",
+    "set": {
+      "durationSec": 12
+    }
   }
 }
