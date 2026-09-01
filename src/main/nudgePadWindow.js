@@ -1,17 +1,17 @@
 const path = require('path');
 const { BrowserWindow, screen } = require('electron');
 
-// One tiny always-on-top pad per thing being positioned (an aura, or an action bar), holding just
-// the four nudge arrows. It is a separate window - not drawn inside the aura's own box - because
-// an empty aura's box is far too short to hold the arrows without clipping them (the owner hit
-// exactly that). The pad sits CENTRED OVER the box and follows it on every move; it is torn down
-// when the thing re-locks.
+// One tiny always-on-top pad per thing being positioned (an aura, or an action bar): a d-pad of
+// four nudge arrows plus a centre button that opens the aura's settings. It is a separate window
+// - not drawn inside the aura's own box - because an empty aura's box is far too short to hold it
+// without clipping (the owner hit exactly that). The pad sits CENTRED OVER the box and follows it
+// on every move; it is torn down when the thing re-locks.
 //
 // Same "small frameless always-on-top helper" idea as moveHudWindow.js, but keyed by id and
 // auto-positioned rather than user-dragged.
 
-const PAD_W = 86;
-const PAD_H = 52;
+const PAD_W = 78;
+const PAD_H = 78;
 
 const pads = new Map(); // id -> { win, kind }
 

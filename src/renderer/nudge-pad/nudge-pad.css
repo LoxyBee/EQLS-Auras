@@ -1,5 +1,6 @@
-/* PAD_W (86) / PAD_H (52) are set in nudgePadWindow.js - keep #pad inside them. The window sits
-   centred over the aura's blue box. Amber arrows (the owner's "brown arrows like before"). */
+/* PAD_W (78) / PAD_H (78) are set in nudgePadWindow.js - keep #pad inside them. The window sits
+   centred over the box. Amber d-pad (the owner's "brown arrows like before") + a centre button
+   that opens the aura's settings. */
 :root {
   --accent: #f0a54a;
 }
@@ -21,11 +22,11 @@ html, body {
   inset: 2px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(2, 1fr);
+  grid-template-rows: repeat(3, 1fr);
   gap: 3px;
 }
 
-.nudge {
+#pad button {
   padding: 0;
   font-size: 12px;
   line-height: 1;
@@ -36,11 +37,25 @@ html, body {
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 }
-.nudge:hover { background: #f4b466; }
-.nudge:active { transform: translateY(1px); background: #ffc178; }
+#pad button:hover { background: #f4b466; }
+#pad button:active { transform: translateY(1px); background: #ffc178; }
 
-/* Up spans the top-middle; the other three sit on the bottom row. */
+/* The four arrows on the cross, the settings button as a round hub in the centre. */
 .nudge[data-dy="-1"] { grid-area: 1 / 2; }
 .nudge[data-dx="-1"] { grid-area: 2 / 1; }
-.nudge[data-dy="1"]  { grid-area: 2 / 2; }
 .nudge[data-dx="1"]  { grid-area: 2 / 3; }
+.nudge[data-dy="1"]  { grid-area: 3 / 2; }
+
+#open-settings {
+  grid-area: 2 / 2;
+  border-radius: 50%;
+  font-size: 13px;
+  color: var(--accent);
+  background: #1b2133;
+  border-color: rgba(0, 0, 0, 0.5);
+}
+#open-settings:hover { background: #2a3350; }
+#open-settings:active { background: #333e60; }
+
+/* On an action bar there is no settings page to jump to, so the centre button is hidden. */
+#pad.no-settings #open-settings { visibility: hidden; }

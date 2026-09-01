@@ -217,6 +217,22 @@ test('the nudge pad is a separate window centred over the box, wired renderer ->
   assert.match(main, /broadcast\('widget:nudgeStep', moveStepPx\)/);
 });
 
+test('the pad centre button opens the aura settings (auras only), navigation before the focus grab', () => {
+  const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+  assert.match(read('src', 'renderer', 'nudge-pad', 'index.html'), /id="open-settings"/);
+  const padJs = read('src', 'renderer', 'nudge-pad', 'nudge-pad.js');
+  assert.match(padJs, /kind === 'widget'\) \{[\s\S]{0,120}window\.eqNudgePad\.openSettings\(id\)/);
+  assert.match(padJs, /classList\.add\('no-settings'\)/); // action bars have no settings page
+  assert.match(read('src', 'preload', 'preload-nudge-pad.js'), /ipcRenderer\.send\('nudgePad:openSettings'/);
+  assert.match(read('src', 'preload', 'preload-main.js'), /onOpenWidgetSettings: \(callback\)/);
+  assert.match(read('src', 'renderer', 'main-window', 'main-window.js'), /onOpenWidgetSettings\(\(id\) => focusWidget\(id\)\)/);
+  const handler = read('src', 'main', 'main.js').match(/ipcMain\.on\('nudgePad:openSettings'[\s\S]*?\n\}\);/)[0];
+  const sendAt = handler.indexOf('webContents.send');
+  const focusAt = handler.indexOf('.focus()');
+  assert.ok(sendAt >= 0 && focusAt >= 0 && sendAt < focusAt, 'nav message goes out before the risky focus() call');
+  assert.match(handler, /setImmediate\(/, 'show()/focus() deferred off the click');
+});
+
 test('a drag drop of the active aura snaps to the grid; others are left alone', () => {
   const { config, win } = makeAura('DragSnap');
   wm.setLocked(config.id, false);

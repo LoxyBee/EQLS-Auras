@@ -6,12 +6,13 @@
   <link rel="stylesheet" href="nudge-pad.css" />
 </head>
 <body>
-  <!-- One tiny always-on-top pad per unlocked aura, anchored just above its blue box
-       (nudgePadWindow.js positions it and follows the box). Each arrow nudges that one aura by
-       the shared step size. -->
+  <!-- One tiny always-on-top pad per thing being positioned (aura or action bar), centred over
+       its box (nudgePadWindow.js positions it and follows the box). The four arrows nudge it by
+       the shared step size; the centre button opens that aura's settings (auras only). -->
   <div id="pad">
     <button type="button" class="nudge" data-dx="0" data-dy="-1" title="Nudge up">&#9650;</button>
     <button type="button" class="nudge" data-dx="-1" data-dy="0" title="Nudge left">&#9664;</button>
+    <button type="button" id="open-settings" title="Open this aura's settings">&#9881;</button>
     <button type="button" class="nudge" data-dx="1" data-dy="0" title="Nudge right">&#9654;</button>
     <button type="button" class="nudge" data-dx="0" data-dy="1" title="Nudge down">&#9660;</button>
   </div>

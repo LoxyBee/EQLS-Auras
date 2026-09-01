@@ -2117,6 +2117,21 @@ ipcMain.on('nudgePad:nudge', (_event, { id, kind, dx, dy } = {}) => {
     widgetManager.nudgeWidget(id, dx, dy);
   }
 });
+// The pad's centre button - jump to this aura's settings. Same shape as the old right-click path
+// but from the pad's own focusable:false window, not the overlay's drag-region window, so the
+// 24 Aug foreground-lock freeze doesn't apply. Still: navigation message goes out FIRST, and the
+// show()/focus() is deferred off the click so a slow OS focus grant can't stall this thread.
+ipcMain.on('nudgePad:openSettings', (_event, id) => {
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send('widget:openSettings', id);
+  setImmediate(() => {
+    if (win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+});
 ipcMain.handle('widget:getNudgeStep', () => moveStepPx);
 ipcMain.handle('moveHud:setStep', (_event, px) => {
   moveStepPx = px === 10 ? 10 : 1;
