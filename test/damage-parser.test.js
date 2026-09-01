@@ -212,15 +212,23 @@ test('the shouted YOU is the same person as You', () => {
 // Fights
 // ---------------------------------------------------------------------------
 
-test('a fight ends after the timeout and the meter clears', () => {
+test('a fight ends after the timeout and the meter falls back to the since-zone tally', () => {
   const e = new DamageEngine();
   e.setOptions({ fightTimeoutSec: 10 });
   e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
   assert.equal(e.getActive(1000).length, 2); // Total + You
+  assert.equal(e.getActive(1000)[1].name, 'Total', 'labelled as the current fight');
   e.tick(5000);
   assert.equal(e.getActive(5000).length, 2, 'still inside the timeout');
   e.tick(20000);
-  assert.deepEqual(e.getActive(20000), [], 'cleared once the fight went quiet');
+  // The fight is over, but "since zone-in" keeps the number on screen between pulls.
+  const after = e.getActive(20000);
+  assert.equal(after.length, 2);
+  assert.equal(after[after.length - 1].name, 'Total');
+  assert.equal(after[after.length - 1].sinceZone, true);
+  // Only a zone line wipes it.
+  e.enterZone(21000);
+  assert.deepEqual(e.getActive(21000), []);
 });
 
 test('a new fight starts clean rather than adding to the last one', () => {

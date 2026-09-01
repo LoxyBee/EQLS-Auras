@@ -76,9 +76,32 @@ test('resetToDefault rebuilds a damage aura, keeping id / position / name', () =
 });
 
 test('the Total row is emitted last and bar-less', () => {
-  assert.match(engineSrc, /tiles\.push\(\{\s*\n\s*name: 'Total'/);
-  assert.ok(!engineSrc.includes("tiles.unshift"), 'the total must no longer be unshifted to the top');
-  assert.match(engineSrc, /noBar: true/);
+  const { DamageEngine } = require('../src/main/damageEngine');
+  const e = new DamageEngine();
+  e.handleLine('[Wed Aug 19 21:14:02 2026] You crush a kobold for 100 points of damage.', 1000);
+  e.handleLine('[Wed Aug 19 21:14:02 2026] Groupmate hits a kobold for 40 points of damage.', 1500);
+  const tiles = e.getActive(1600);
+  assert.equal(tiles[tiles.length - 1].name, 'Total', 'total is the last row');
+  assert.equal(tiles[tiles.length - 1].noBar, true, 'total draws without a bar');
+  assert.ok(!engineSrc.includes('tiles.unshift'), 'the total must no longer be unshifted to the top');
+});
+
+test('with no fight underway the meter shows the running total since zone-in, relabelled', () => {
+  const { DamageEngine } = require('../src/main/damageEngine');
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 5 });
+  e.handleLine('[Wed Aug 19 21:14:02 2026] You crush a kobold for 100 points of damage.', 1000);
+  e.handleLine('[Wed Aug 19 21:14:02 2026] Groupmate hits a kobold for 40 points of damage.', 1200);
+  // fight ends in silence
+  e.tick(1000 + 6000);
+  const tiles = e.getActive(1000 + 6000);
+  assert.ok(tiles.length >= 2, 'the between-pulls meter is not empty');
+  assert.equal(tiles[tiles.length - 1].name, 'Total');
+  assert.equal(tiles[tiles.length - 1].sinceZone, true);
+  assert.equal(tiles[0].name, 'You', 'still biggest-first');
+  // a zone line wipes it
+  e.enterZone(1000 + 7000);
+  assert.deepEqual(e.getActive(1000 + 7000), []);
 });
 
 test('the overlay hides the bar for a noBar row and colours per-attacker bars only on a damage meter', () => {

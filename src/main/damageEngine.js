@@ -94,6 +94,14 @@ class DamageEngine extends EventEmitter {
     this.fightStartedAt = null;
     this.lastDamageAt = null;
     this.totalDamage = 0;
+    // A second tally, spanning the whole time since the last zone line rather than one fight. It
+    // exists so a meter has something to show between pulls and right after zoning: getActive falls
+    // back to it whenever no fight is underway. Reset wholesale on enterZone(); the fight timeout
+    // never touches it.
+    this.sinceZoneByAttacker = new Map();
+    this.sinceZoneTotal = 0;
+    this.sinceZoneStartedAt = null;
+    this.sinceZoneLastAt = null;
     // Lines awaiting proof of which way they point: { attacker, target, amount, kind, at }
     this.pending = [];
     this.timeoutSec = DEFAULT_FIGHT_TIMEOUT_SEC;
@@ -235,6 +243,28 @@ class DamageEngine extends EventEmitter {
     this.byAttacker.set(attacker, row);
     this.totalDamage += amount;
     this.lastDamageAt = Math.max(this.lastDamageAt || 0, at);
+
+    // Same credit, into the tally that outlives the fight. Never expired here - only enterZone()
+    // clears it.
+    if (this.sinceZoneStartedAt === null) this.sinceZoneStartedAt = at;
+    if (at < this.sinceZoneStartedAt) this.sinceZoneStartedAt = at;
+    const zrow = this.sinceZoneByAttacker.get(attacker) || { damage: 0, hits: 0 };
+    zrow.damage += amount;
+    zrow.hits += 1;
+    this.sinceZoneByAttacker.set(attacker, zrow);
+    this.sinceZoneTotal += amount;
+    this.sinceZoneLastAt = Math.max(this.sinceZoneLastAt || 0, at);
+  }
+
+  // A zone line. The fight state is left alone - a zone line mid-fight is rare and the timeout
+  // still ends that fight correctly - but the "since zone-in" tally starts over, because that is
+  // exactly what it measures.
+  enterZone(now = Date.now()) {
+    this.sinceZoneByAttacker.clear();
+    this.sinceZoneTotal = 0;
+    this.sinceZoneStartedAt = null;
+    this.sinceZoneLastAt = null;
+    this.emit('activeChanged', this.getActive(now));
   }
 
   _expireIfIdle(now) {
@@ -269,6 +299,15 @@ class DamageEngine extends EventEmitter {
     return Math.max(1, (end - this.fightStartedAt) / 1000);
   }
 
+  // First counted hit to last counted hit since zone-in - same shape as fightSeconds, so the rate
+  // it feeds means the same thing (damage over the span damage was actually happening, not over
+  // every idle minute spent standing in the zone).
+  sinceZoneSeconds() {
+    if (this.sinceZoneStartedAt === null) return 0;
+    const end = Math.max(this.sinceZoneLastAt || 0, this.sinceZoneStartedAt);
+    return Math.max(1, (end - this.sinceZoneStartedAt) / 1000);
+  }
+
   /**
    * Overlay tiles, biggest first.
    *
@@ -278,9 +317,21 @@ class DamageEngine extends EventEmitter {
    * (row size, text size, colours, anchor, drag, per-loadout visibility) works here for free.
    */
   getActive(now = Date.now()) {
-    if (this.fightStartedAt === null || this.totalDamage <= 0) return [];
-    const secs = this.fightSeconds(now);
-    const rows = [...this.byAttacker.entries()]
+    // A fight is underway - the current-fight rows, as always.
+    if (this.fightStartedAt !== null && this.totalDamage > 0) {
+      return this._tilesFrom(this.byAttacker, this.totalDamage, this.fightSeconds(now), false);
+    }
+    // No fight - fall back to the running tally since the last zone line, so the meter isn't blank
+    // between pulls and right after zoning. The total row carries a `sinceZone` flag so the overlay
+    // can mark that this isn't the last fight's number.
+    if (this.sinceZoneStartedAt !== null && this.sinceZoneTotal > 0) {
+      return this._tilesFrom(this.sinceZoneByAttacker, this.sinceZoneTotal, this.sinceZoneSeconds(), true);
+    }
+    return [];
+  }
+
+  _tilesFrom(byAttacker, totalDamage, secs, sinceZone) {
+    const rows = [...byAttacker.entries()]
       .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits }))
       .sort((a, b) => b.damage - a.damage);
     const top = rows.length ? rows[0].damage : 0;
@@ -291,8 +342,8 @@ class DamageEngine extends EventEmitter {
       // reasoning as showTotalRow - the choice is applied where the tile is drawn). `valueText` is
       // cumulative damage + share; `dpsText` is that attacker's own rate (their damage / the fight
       // length) + the same share.
-      valueText: `${formatDamage(r.damage)}  ${Math.round((r.damage / this.totalDamage) * 100)}%`,
-      dpsText: `${formatDamage(Math.round(r.damage / secs))}/s  ${Math.round((r.damage / this.totalDamage) * 100)}%`,
+      valueText: `${formatDamage(r.damage)}  ${Math.round((r.damage / totalDamage) * 100)}%`,
+      dpsText: `${formatDamage(Math.round(r.damage / secs))}/s  ${Math.round((r.damage / totalDamage) * 100)}%`,
       // Against the BIGGEST row, not against the total. A bar measured against the total leaves
       // every bar short in a five-person group, with even the longest only a fifth of the way
       // across - which reads as everybody doing badly rather than as a comparison.
@@ -306,7 +357,12 @@ class DamageEngine extends EventEmitter {
     // just adds noise; it draws as a plain label + value line.
     tiles.push({
       name: 'Total',
-      valueText: `${formatDamage(this.totalDamage)}  ${formatDamage(Math.round(this.totalDamage / secs))}/s`,
+      // `totalRow` is what the overlay's mine-only / hide-total filters key off, so the row keeps
+      // being recognised as the total whatever its label reads. `sinceZone` marks the between-pulls
+      // view.
+      totalRow: true,
+      sinceZone: !!sinceZone,
+      valueText: `${formatDamage(totalDamage)}  ${formatDamage(Math.round(totalDamage / secs))}/s`,
       barPercent: null,
       noBar: true,
       ...INERT_TIMER_FIELDS,

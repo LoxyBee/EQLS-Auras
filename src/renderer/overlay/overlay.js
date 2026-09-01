@@ -331,6 +331,9 @@ function initials(name) {
 // outright - repeating "Baxa:" on every tile in Baxa's own group is
 // just noise eating tile width.
 function displayName(buff) {
+  // The damage meter's total row, when it's showing the running tally between pulls rather than the
+  // last fight - see damageEngine.getActive.
+  if (buff.totalRow && buff.sinceZone) return 'Total (since zone)';
   if (!buff.allyName) return buff.name;
   if (currentConfig.hideAllyNameOnTile || currentConfig.groupAllyBuffs) return buff.name;
   return `${buff.allyName}: ${buff.name}`;
@@ -1073,8 +1076,8 @@ function visibleBuffs(buffs, opts = {}) {
     let rows = buffs;
     // Your row only. It hides the others rather than un-counting them, so the percentage still
     // reads as your share of the whole fight.
-    if (currentConfig.mineOnly) rows = rows.filter((b) => b.name === 'You' || b.name === 'Total');
-    if (currentConfig.showTotalRow === false) rows = rows.filter((b) => b.name !== 'Total');
+    if (currentConfig.mineOnly) rows = rows.filter((b) => b.name === 'You' || b.totalRow);
+    if (currentConfig.showTotalRow === false) rows = rows.filter((b) => !b.totalRow);
     return rows;
   }
 
