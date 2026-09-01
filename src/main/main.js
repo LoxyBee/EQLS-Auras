@@ -2387,6 +2387,14 @@ ipcMain.handle('sounds:openFolder', () => soundService.openPickerFolder());
 // backup before an update.
 ipcMain.handle('app:openConfigFolder', () => shell.openPath(app.getPath('userData')));
 
+// Opens a link in the user's real browser - never navigates a renderer window. Locked to
+// https:// so a compromised renderer can't use it to launch a local file or a custom-scheme
+// handler. The only caller today is the About page's site link.
+ipcMain.handle('app:openExternal', (_event, url) => {
+  if (typeof url === 'string' && /^https:\/\//i.test(url)) return shell.openExternal(url);
+  return false;
+});
+
 // QOL #3c - export / import the whole config as a portable bundle folder. See configTransfer.js.
 ipcMain.handle('config:export', () => configTransfer.exportConfig(app.getPath('userData')));
 ipcMain.handle('config:listImportable', () => configTransfer.listImportable(app.getPath('userData')));

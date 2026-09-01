@@ -312,6 +312,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getSoundInfo: (id) => ipcRenderer.invoke('sounds:getInfo', id),
   openSoundsFolder: () => ipcRenderer.invoke('sounds:openFolder'),
   openConfigFolder: () => ipcRenderer.invoke('app:openConfigFolder'),
+  openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   backupConfig: () => ipcRenderer.invoke('app:backupConfig'),
   exportConfig: () => ipcRenderer.invoke('config:export'),
   listImportableConfig: () => ipcRenderer.invoke('config:listImportable'),

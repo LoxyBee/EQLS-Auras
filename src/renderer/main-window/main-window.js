@@ -4,14 +4,25 @@ async function init() {
 
   try {
     const info = await window.eqTracker.getVersionInfo();
-    statusEl.textContent = 'App, main process, and IPC are all working.';
+    statusEl.textContent = 'The app is running.';
     versionEl.innerHTML = `
       <dt>App version</dt><dd>${info.appVersion}</dd>
       <dt>Electron version</dt><dd>${info.electronVersion}</dd>
       <dt>Node version</dt><dd>${info.nodeVersion}</dd>
     `;
+    const aboutVersionEl = document.getElementById('about-version');
+    if (aboutVersionEl) aboutVersionEl.textContent = `v${info.appVersion}`;
   } catch (err) {
     statusEl.textContent = 'Something is wrong: ' + err.message;
+  }
+
+  // About-page site link - opens in the real browser via the main process, never navigates here.
+  const aboutSiteLink = document.getElementById('about-site-link');
+  if (aboutSiteLink && window.eqTracker.openExternal) {
+    aboutSiteLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.eqTracker.openExternal('https://eqlsource.com/tools/');
+    });
   }
 
   const appSettingsBlock = document.getElementById('app-settings-block');
