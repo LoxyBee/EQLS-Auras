@@ -85,11 +85,20 @@ test('the Setup-page Custom-modules list + consent gate are wired', () => {
   assert.match(mainSrc, /ipcMain\.handle\('modules:setEnabled'/);
 });
 
-test('moduleHost: a discovered module is off until enabled, bundled ones default on', () => {
-  assert.match(moduleHostSrc, /const BUNDLED_MODULE_IDS = \['aggro-board'\]/);
+test('the Custom-modules list shows ONLY user-added modules, not vouched core ones', () => {
+  const fn = rendererSrc.slice(rendererSrc.indexOf('function initModulesPanel()'), rendererSrc.indexOf('function initModulesPanel()') + 3500);
+  // the render filters core rows out, and the card is hidden when nothing user-added remains
+  assert.match(fn, /\.filter\(\(m\) => !m\.core\)/, 'core modules are not filtered out of the panel list');
+  assert.match(fn, /card\.hidden = mods\.length === 0/, 'the card is not hidden when the (filtered) list is empty');
+});
+
+test('moduleHost: a user-added module is off until enabled; core ones are always on', () => {
+  assert.match(moduleHostSrc, /const CORE_MODULE_IDS = \['aggro-board', 'pull-timer'\]/);
   assert.match(moduleHostSrc, /this\._isEnabled\(rec\.module\.id\)/, 'handleLine does not gate on the enable state');
-  assert.match(moduleHostSrc, /setModuleEnabled\(id, enabled\)/);
+  assert.match(moduleHostSrc, /CORE_MODULE_IDS\.includes\(id\) \|\| this\.enabledIds\.has\(id\)/, '_isEnabled does not treat core ids as always-on');
+  assert.match(moduleHostSrc, /setModuleEnabled\(id, enabled\) \{\s*\n\s*if \(CORE_MODULE_IDS\.includes\(id\)\) return true;/, 'setModuleEnabled can still toggle a core id');
   assert.match(moduleHostSrc, /saveJson\('enabledModuleIds'/);
+  assert.match(moduleHostSrc, /core: CORE_MODULE_IDS\.includes\(d\.id\)/, 'getRegistered rows carry no core flag for the renderer to filter on');
 });
 
 module.exports = () => report('module-renderer-wiring');

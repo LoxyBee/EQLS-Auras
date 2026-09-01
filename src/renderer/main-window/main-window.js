@@ -7306,9 +7306,11 @@ function initModules() {
   onModuleRegistryChange(render);
 }
 
-// The Setup-page "Custom modules" list: one row per .js found in the modules/ folder, each with an
-// Enable toggle (off until the user turns it on) and any load/validation error shown inline. The
-// first time a module is enabled, a consent dialog spells out that it runs arbitrary code.
+// The Setup-page "Custom modules" list: one row per USER-ADDED .js in the modules/ folder, each
+// with an Enable toggle (off until the user turns it on) and any load/validation error shown
+// inline. The first time a module is enabled, a consent dialog spells out that it runs arbitrary
+// code. Vouched "core" modules (m.core) are filtered out - they're always on and shouldn't sit
+// here taking up space - so the whole card stays hidden until a user actually drops a file in.
 function initModulesPanel() {
   const card = document.getElementById('modules-panel-card');
   const list = document.getElementById('modules-panel-list');
@@ -7323,7 +7325,8 @@ function initModulesPanel() {
   }
 
   function render(modules) {
-    const mods = modules || [];
+    // User-added only. A core (vouched) module is always on and never listed here.
+    const mods = (modules || []).filter((m) => !m.core);
     card.hidden = mods.length === 0;
     list.innerHTML = '';
     for (const m of mods) {

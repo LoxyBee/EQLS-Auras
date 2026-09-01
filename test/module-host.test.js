@@ -18,8 +18,8 @@ const { ModuleHost, validateModule, defaultFor, API_VERSION } = require('../src/
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-modules-'));
 const write = (dir, file, body) => fs.writeFileSync(path.join(dir, file), body);
-// Seeds `enabledModuleIds: 'all'` so a loaded module is active - a discovered module is OFF by
-// default in production (bundled ids only), and the 'disabled by default' test below builds its
+// Seeds `enabledModuleIds: 'all'` so a loaded module is active - a user-added module is OFF by
+// default in production (core ids only), and the 'inert until enabled' test below builds its
 // own bare store to check that.
 const fakeStore = () => {
   const data = { enabledModuleIds: 'all' };
@@ -137,7 +137,7 @@ test('a good module loads; a bad one emits moduleError, not a crash', () => {
 test('a discovered module is INERT until enabled, and the first enable is the gate', () => {
   const dir = tempDir();
   write(dir, 'x.js', GOOD.replace("id: 'test-mod'", "id: 'x'"));
-  const host = new ModuleHost(dir, bareStore()); // no enabledModuleIds -> bundled only, x is not bundled
+  const host = new ModuleHost(dir, bareStore()); // no enabledModuleIds -> core only, x is not core
   host.stop();
   host.loadModules();
 
@@ -161,14 +161,40 @@ test('a discovered module is INERT until enabled, and the first enable is the ga
   assert.equal(host.getEntries('x').length, 0);
 });
 
-test('the bundled module (aggro-board) is enabled out of the box', () => {
-  const { BUNDLED_MODULE_IDS } = require('../src/main/moduleHost');
+test('a core (vouched) module is enabled out of the box and flagged core; a user one is not', () => {
+  const { CORE_MODULE_IDS } = require('../src/main/moduleHost');
+  assert.ok(CORE_MODULE_IDS.includes('aggro-board'));
+  assert.ok(CORE_MODULE_IDS.includes('pull-timer'), 'pull-timer is pre-vouched even though it does not ship');
+
   const dir = tempDir();
   write(dir, 'aggro-board.js', fs.readFileSync(path.join(__dirname, '..', 'modules', 'aggro-board.js'), 'utf8'));
+  write(dir, 'mine.js', GOOD.replace("id: 'test-mod'", "id: 'mine'"));
   const host = new ModuleHost(dir, bareStore());
   host.stop();
   host.loadModules();
-  assert.ok(BUNDLED_MODULE_IDS.includes('aggro-board'));
+
+  const core = host.getRegistered().find((m) => m.id === 'aggro-board');
+  assert.equal(core.enabled, true);
+  assert.equal(core.core, true, 'the renderer filters the Custom-modules list on this flag');
+
+  const user = host.getRegistered().find((m) => m.id === 'mine');
+  assert.equal(user.enabled, false, 'a user-added module stays off');
+  assert.equal(user.core, false);
+});
+
+test('a core module stays on even if the persisted allow-list omits it (hand-edited JSON)', () => {
+  const dir = tempDir();
+  write(dir, 'aggro-board.js', fs.readFileSync(path.join(__dirname, '..', 'modules', 'aggro-board.js'), 'utf8'));
+  const store = bareStore();
+  store.data.enabledModuleIds = []; // someone cleared the list by hand
+  const host = new ModuleHost(dir, store);
+  host.stop();
+  host.loadModules();
+  assert.equal(host.getRegistered().find((m) => m.id === 'aggro-board').enabled, true);
+  assert.equal(host._isEnabled('aggro-board'), true, 'handleLine would skip it otherwise');
+
+  // and setModuleEnabled(false) can't switch it off
+  host.setModuleEnabled('aggro-board', false);
   assert.equal(host.getRegistered().find((m) => m.id === 'aggro-board').enabled, true);
 });
 

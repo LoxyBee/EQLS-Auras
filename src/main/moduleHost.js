@@ -13,12 +13,24 @@ const { stripTimestamp } = require('./buffParser');
 // scans that folder at startup and watches it for changes, so dropping a file in makes it show up
 // with no restart.
 //
-// A DISCOVERED MODULE IS INERT UNTIL EXPLICITLY ENABLED. It appears on the Setup page's "Custom
-// modules" list, with any load/validation error shown inline, but its `onLine` never runs, it
-// never appears in Add Aura, and its aura draws nothing until the user ticks Enable - and the
-// first time they do, the renderer shows a consent dialog ("this runs code with full access to
-// your PC"). `enabledModuleIds` is the persisted allow-list; it defaults to the one bundled module
-// (aggro-board) so that shipped feature keeps working, and nothing else.
+// TWO TIERS, keyed on CORE_MODULE_IDS below:
+//
+//   CORE (vouched)   - a module id listed in CORE_MODULE_IDS. Folded in by this project in a
+//                      source change + a build, so it is as trusted as the app's own code. Enabled
+//                      automatically, no consent, and it NEVER shows on the Setup page's "Custom
+//                      modules" list (the renderer filters `core` rows out) - so a vouched addition
+//                      doesn't sit in the options taking up space. The install's modules/ folder is
+//                      the only place these ship from; an end user can't add to this list.
+//
+//   USER-ADDED       - any other .js the user dropped into the modules/ folder themselves. INERT
+//                      until explicitly enabled: `onLine` never runs, it is absent from Add Aura,
+//                      and its aura draws nothing. It appears on the Setup page's "Custom modules"
+//                      list (which stays hidden entirely until at least one such module exists),
+//                      with any load error shown inline, and the first enable shows a consent
+//                      dialog ("this runs code with full access to your PC").
+//
+// `enabledModuleIds` is the persisted allow-list for the USER-ADDED tier; it defaults to the core
+// ids so a fresh install has exactly the vouched set and nothing else.
 //
 // This is NOT how the built-in aura types work - they stay hardcoded. This path is additive: an
 // enabled module rides the SAME log-line stream every built-in engine gets, as a pure observer -
@@ -40,9 +52,14 @@ const API_VERSION = 1;
 const SLOW_CALL_MS = 50;
 const SLOW_STRIKES = 20;
 
-// Ships in the install's modules/ folder, written by this project - trusted, so enabled out of the
-// box. A drop-in module the user added is NOT here and starts disabled.
-const BUNDLED_MODULE_IDS = ['aggro-board'];
+// The vouched set. Each id here has been folded into core by this project in a deliberate source
+// change - trusted like the app's own code, so enabled out of the box, and kept OFF the Setup
+// page's Custom-modules list (see getRegistered's `core` flag). A drop-in module the user added is
+// NOT here: it starts disabled and shows on that list behind a consent gate.
+// - aggro-board: ships in the install's modules/ folder.
+// - pull-timer:  docs/modules/ example, not shipped, but pre-vouched so folding it in later needs
+//                no consent step.
+const CORE_MODULE_IDS = ['aggro-board', 'pull-timer'];
 
 const ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 const FIELD_TYPES = new Set(['slider', 'checkbox', 'select', 'text']);
@@ -140,13 +157,13 @@ class ModuleHost extends EventEmitter {
     // What the last scan found on disk, for the Setup page's Custom-modules list - INCLUDING files
     // that failed to load. [{ file, id?, name?, description?, hasAura?, error? }].
     this.discovered = [];
-    // The explicit allow-list. A module not in here is inert (onLine never runs, no aura, absent
-    // from Add Aura) even though it was found and validated. Defaults to the bundled module only.
-    // The string 'all' enables everything - used by the test harness, and a deliberate opt-in a
-    // power user can hand-write into the JSON.
-    const enabled = this.store.loadJson('enabledModuleIds', [...BUNDLED_MODULE_IDS]);
+    // The explicit allow-list. A user-added module not in here is inert (onLine never runs, no
+    // aura, absent from Add Aura) even though it was found and validated. Defaults to the core set
+    // only. The string 'all' enables everything - used by the test harness, and a deliberate opt-in
+    // a power user can hand-write into the JSON.
+    const enabled = this.store.loadJson('enabledModuleIds', [...CORE_MODULE_IDS]);
     this._enableAll = enabled === 'all';
-    this.enabledIds = new Set(Array.isArray(enabled) ? enabled : [...BUNDLED_MODULE_IDS]);
+    this.enabledIds = new Set(Array.isArray(enabled) ? enabled : [...CORE_MODULE_IDS]);
     // Per-module persisted settings, keyed by module id. Absent keys fall back to page defaults.
     this.settingsById = this.store.loadJson('moduleSettings', {}) || {};
     this._ctx = { now: () => Date.now(), iconUrlForSpell: () => null };
@@ -222,11 +239,13 @@ class ModuleHost extends EventEmitter {
   }
 
   _isEnabled(id) {
-    return this._enableAll || this.enabledIds.has(id);
+    return this._enableAll || CORE_MODULE_IDS.includes(id) || this.enabledIds.has(id);
   }
 
-  // Flip a discovered module on/off. The renderer gates the first "on" behind a consent dialog.
+  // Flip a USER-ADDED module on/off. The renderer gates the first "on" behind a consent dialog.
+  // A core (vouched) id is always on and ignores this.
   setModuleEnabled(id, enabled) {
+    if (CORE_MODULE_IDS.includes(id)) return true;
     if (enabled) this.enabledIds.add(id);
     else this.enabledIds.delete(id);
     if (!enabled) {
@@ -364,12 +383,13 @@ class ModuleHost extends EventEmitter {
   /**
    * One row per discovered module `.js` - what the Setup page's Custom-modules list and the
    * Add-Aura / settings-page consumers build from. A file that failed to load appears too, with
-   * `error` set and no `id`. `enabled` is the explicit allow-list state; consumers that only care
-   * about live modules (Add Aura, the aura panel) filter on it themselves.
+   * `error` set and no `id`. `enabled` is the effective on/off state; `core` marks a vouched module
+   * (always on, and the Setup-page list filters these out so they don't clutter it). Consumers that
+   * only care about live modules (Add Aura, the aura panel) filter on `enabled` themselves.
    */
   getRegistered() {
     return this.discovered.map((d) => {
-      if (!d.id) return { file: d.file, error: d.error, enabled: false };
+      if (!d.id) return { file: d.file, error: d.error, enabled: false, core: false };
       const rec = this.registry.get(d.id);
       return {
         id: d.id,
@@ -380,6 +400,7 @@ class ModuleHost extends EventEmitter {
         settingsUI: d.settingsUI,
         page: rec ? rec.module.page : [],
         settings: this.getSettings(d.id),
+        core: CORE_MODULE_IDS.includes(d.id),
         enabled: this._isEnabled(d.id),
         // `disabled` (kept for back-compat) is the SLOW-STRIKE kill, a different thing from not
         // being enabled.
@@ -415,4 +436,4 @@ class ModuleHost extends EventEmitter {
   }
 }
 
-module.exports = { ModuleHost, validateModule, defaultFor, API_VERSION, SLOW_CALL_MS, SLOW_STRIKES, BUNDLED_MODULE_IDS };
+module.exports = { ModuleHost, validateModule, defaultFor, API_VERSION, SLOW_CALL_MS, SLOW_STRIKES, CORE_MODULE_IDS };
