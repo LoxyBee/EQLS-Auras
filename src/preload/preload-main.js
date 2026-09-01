@@ -156,6 +156,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getModuleEntries: () => ipcRenderer.invoke('modules:entries'),
   getModuleSettings: (id) => ipcRenderer.invoke('modules:getSettings', id),
   setModuleSetting: (id, key, value) => ipcRenderer.invoke('modules:setSetting', { id, key, value }),
+  setModuleEnabled: (id, enabled) => ipcRenderer.invoke('modules:setEnabled', { id, enabled }),
+  onModuleError: (callback) => ipcRenderer.on('modules:error', (_event, e) => callback(e)),
   onModulesChanged: (callback) => ipcRenderer.on('modules:changed', (_event, list) => callback(list)),
   onModuleEntries: (callback) => ipcRenderer.on('modules:entries', (_event, all) => callback(all)),
   onModuleSettingsChanged: (callback) => ipcRenderer.on('modules:settingsChanged', (_event, p) => callback(p)),

@@ -7,33 +7,42 @@ const { stripTimestamp } = require('./buffParser');
 
 // Drop-in custom-aura modules.
 //
-// A module is a single `.js` file in `userData/modules/`. It exports one object describing a new
-// aura type: an optional settings `page` (a declarative spec the app renders), an optional overlay
-// aura (`hasAura`), and a pure `onLine(line, ctx, settings)` that turns log lines into overlay
-// entries. The host scans that folder at startup AND watches it for changes, so dropping a file in
-// makes the module appear with no restart. A malformed file is skipped with a reason written to
-// the debug log - there is deliberately no user-facing module list, error panel or folder link.
-// The only visible sign of a module is its own settings page and its aura.
+// A module is a single `.js` file in the install's `modules/` folder. It exports one object
+// describing a new aura type: an optional settings `page`, an optional overlay aura (`hasAura`),
+// and a pure `onLine(line, ctx, settings)` that turns log lines into overlay entries. The host
+// scans that folder at startup and watches it for changes, so dropping a file in makes it show up
+// with no restart.
 //
-// This is NOT how the built-in aura types work - they stay hardcoded. This path is additive: a
-// module rides the SAME log-line stream every built-in engine gets (main.js fans
-// `logService.watcher`'s 'line' event here too), as a pure observer - it can never consume a line
-// away from the built-ins.
+// A DISCOVERED MODULE IS INERT UNTIL EXPLICITLY ENABLED. It appears on the Setup page's "Custom
+// modules" list, with any load/validation error shown inline, but its `onLine` never runs, it
+// never appears in Add Aura, and its aura draws nothing until the user ticks Enable - and the
+// first time they do, the renderer shows a consent dialog ("this runs code with full access to
+// your PC"). `enabledModuleIds` is the persisted allow-list; it defaults to the one bundled module
+// (aggro-board) so that shipped feature keeps working, and nothing else.
 //
-// Trust model: modules come from the owner or a known collaborator, so there is no sandbox - a
-// module `require()`s into the main process with full Node access. The only guard is a per-call
-// time budget: a module repeatedly slower than SLOW_CALL_MS is disabled for the session so it
-// can't drag the whole log bus down. A genuinely hung (infinite-loop) module would still freeze
-// the app - true isolation needs a Worker and is out of scope for v1.
+// This is NOT how the built-in aura types work - they stay hardcoded. This path is additive: an
+// enabled module rides the SAME log-line stream every built-in engine gets, as a pure observer -
+// it can never consume a line away from the built-ins.
+//
+// Trust model: an enabled module `require()`s into the main process with full Node access - there
+// is no sandbox (that needs a Worker/utilityProcess and is a later change). The guards are: the
+// enable gate + consent above, a per-call time budget (SLOW_CALL_MS / SLOW_STRIKES disables a
+// module that keeps blocking the log bus), and the fact that config bundles do NOT carry module
+// files. A genuinely hung (infinite-loop) module would still freeze the app. Residual: the file's
+// top-level code runs on the scan `require()` even before enable - closing that means not
+// require()ing until enable, which loses the ability to show the module's real name pre-enable;
+// deferred with the sandbox.
 //
 // Same DI shape as the other engines - no `electron` import, so it runs under plain-node tests.
-// The modules directory and a { loadJson, saveJson } store are passed in; `ctx` accessors are
-// injected via setters.
 
 const API_VERSION = 1;
 
 const SLOW_CALL_MS = 50;
 const SLOW_STRIKES = 20;
+
+// Ships in the install's modules/ folder, written by this project - trusted, so enabled out of the
+// box. A drop-in module the user added is NOT here and starts disabled.
+const BUNDLED_MODULE_IDS = ['aggro-board'];
 
 const ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 const FIELD_TYPES = new Set(['slider', 'checkbox', 'select', 'text']);
@@ -128,6 +137,16 @@ class ModuleHost extends EventEmitter {
     this.store = store || { loadJson: (_k, f) => f, saveJson: () => {} };
     // id -> { module, entries: Map<key, entry>, slowStrikes, disabled }
     this.registry = new Map();
+    // What the last scan found on disk, for the Setup page's Custom-modules list - INCLUDING files
+    // that failed to load. [{ file, id?, name?, description?, hasAura?, error? }].
+    this.discovered = [];
+    // The explicit allow-list. A module not in here is inert (onLine never runs, no aura, absent
+    // from Add Aura) even though it was found and validated. Defaults to the bundled module only.
+    // The string 'all' enables everything - used by the test harness, and a deliberate opt-in a
+    // power user can hand-write into the JSON.
+    const enabled = this.store.loadJson('enabledModuleIds', [...BUNDLED_MODULE_IDS]);
+    this._enableAll = enabled === 'all';
+    this.enabledIds = new Set(Array.isArray(enabled) ? enabled : [...BUNDLED_MODULE_IDS]);
     // Per-module persisted settings, keyed by module id. Absent keys fall back to page defaults.
     this.settingsById = this.store.loadJson('moduleSettings', {}) || {};
     this._ctx = { now: () => Date.now(), iconUrlForSpell: () => null };
@@ -163,6 +182,7 @@ class ModuleHost extends EventEmitter {
   loadModules(dir = this.modulesDir) {
     this.modulesDir = dir;
     this.registry.clear();
+    this.discovered = [];
     if (!dir) return this.getRegistered();
 
     let files = [];
@@ -170,6 +190,7 @@ class ModuleHost extends EventEmitter {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       files = fs.readdirSync(dir).filter((f) => f.endsWith('.js') && !f.startsWith('.'));
     } catch (err) {
+      this.discovered.push({ file: '(folder)', error: `could not read the modules folder: ${err.message}` });
       this.emit('moduleError', { id: '(folder)', error: `could not read the modules folder: ${err.message}` });
       return this.getRegistered();
     }
@@ -181,23 +202,41 @@ class ModuleHost extends EventEmitter {
         delete require.cache[require.resolve(full)];
         raw = require(full);
       } catch (err) {
+        this.discovered.push({ file, error: `failed to load: ${err.message}` });
         this.emit('moduleError', { id: file, error: `failed to load: ${err.message}` });
         continue;
       }
       const result = validateModule(raw, { knownIds: new Set(this.registry.keys()) });
       if (!result.ok) {
+        this.discovered.push({ file, error: result.error });
         this.emit('moduleError', { id: file, error: result.error });
         continue;
       }
-      this.registry.set(result.module.id, {
-        module: result.module,
-        entries: new Map(),
-        slowStrikes: 0,
-        disabled: false,
-      });
+      const m = result.module;
+      this.discovered.push({ file, id: m.id, name: m.name, description: m.description, hasAura: m.hasAura, settingsUI: m.settingsUI });
+      // Registered, but only ACTIVE (onLine runs, aura works, offered in Add Aura) when enabled.
+      this.registry.set(m.id, { module: m, entries: new Map(), slowStrikes: 0, disabled: false });
     }
     this.emit('modulesChanged', this.getRegistered());
     return this.getRegistered();
+  }
+
+  _isEnabled(id) {
+    return this._enableAll || this.enabledIds.has(id);
+  }
+
+  // Flip a discovered module on/off. The renderer gates the first "on" behind a consent dialog.
+  setModuleEnabled(id, enabled) {
+    if (enabled) this.enabledIds.add(id);
+    else this.enabledIds.delete(id);
+    if (!enabled) {
+      const rec = this.registry.get(id);
+      if (rec) rec.entries.clear();
+    }
+    this.store.saveJson('enabledModuleIds', this._enableAll ? 'all' : [...this.enabledIds]);
+    this.emit('modulesChanged', this.getRegistered());
+    this.emit('entriesChanged', this.getAllEntries());
+    return this._isEnabled(id);
   }
 
   /** Watch the folder so a dropped/removed file reloads everything, no restart. Debounced. */
@@ -251,7 +290,7 @@ class ModuleHost extends EventEmitter {
     let anyChanged = false;
 
     for (const rec of this.registry.values()) {
-      if (rec.disabled) continue;
+      if (rec.disabled || !this._isEnabled(rec.module.id)) continue;
       let out;
       const started = Date.now();
       try {
@@ -322,23 +361,36 @@ class ModuleHost extends EventEmitter {
 
   // --- reads for main.js / the renderers ---------------------------------------------------
 
-  /** One row per registered module - what the sidebar and the per-module pages build from. */
+  /**
+   * One row per discovered module `.js` - what the Setup page's Custom-modules list and the
+   * Add-Aura / settings-page consumers build from. A file that failed to load appears too, with
+   * `error` set and no `id`. `enabled` is the explicit allow-list state; consumers that only care
+   * about live modules (Add Aura, the aura panel) filter on it themselves.
+   */
   getRegistered() {
-    return [...this.registry.values()].map((rec) => ({
-      id: rec.module.id,
-      name: rec.module.name,
-      description: rec.module.description,
-      hasAura: rec.module.hasAura,
-      settingsUI: rec.module.settingsUI,
-      page: rec.module.page,
-      settings: this.getSettings(rec.module.id),
-      disabled: rec.disabled,
-    }));
+    return this.discovered.map((d) => {
+      if (!d.id) return { file: d.file, error: d.error, enabled: false };
+      const rec = this.registry.get(d.id);
+      return {
+        id: d.id,
+        file: d.file,
+        name: d.name,
+        description: d.description,
+        hasAura: d.hasAura,
+        settingsUI: d.settingsUI,
+        page: rec ? rec.module.page : [],
+        settings: this.getSettings(d.id),
+        enabled: this._isEnabled(d.id),
+        // `disabled` (kept for back-compat) is the SLOW-STRIKE kill, a different thing from not
+        // being enabled.
+        disabled: rec ? rec.disabled : false,
+      };
+    });
   }
 
   getEntries(moduleId) {
     const rec = this.registry.get(moduleId);
-    if (!rec) return [];
+    if (!rec || !this._isEnabled(moduleId)) return [];
     const now = Date.now();
     return [...rec.entries.values()].map((e) => ({
       name: e.name,
@@ -363,4 +415,4 @@ class ModuleHost extends EventEmitter {
   }
 }
 
-module.exports = { ModuleHost, validateModule, defaultFor, API_VERSION, SLOW_CALL_MS, SLOW_STRIKES };
+module.exports = { ModuleHost, validateModule, defaultFor, API_VERSION, SLOW_CALL_MS, SLOW_STRIKES, BUNDLED_MODULE_IDS };

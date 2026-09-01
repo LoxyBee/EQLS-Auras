@@ -21,6 +21,8 @@ const html = read('renderer', 'main-window', 'index.html');
 const rendererSrc = read('renderer', 'main-window', 'main-window.js');
 const preloadMain = read('preload', 'preload-main.js');
 const preloadOverlay = read('preload', 'preload-overlay.js');
+const mainSrc = read('main', 'main.js');
+const moduleHostSrc = read('main', 'moduleHost.js');
 
 test('the sidebar and page-container keep injection slots for sidebar-mode modules, no "Modules" heading', () => {
   assert.match(html, /id="module-nav-slot"/);
@@ -42,7 +44,7 @@ test('one shared, hot-reloaded module registry feeds both the sidebar and the au
 
 test('initModules builds a sidebar page ONLY for settingsUI === "sidebar" modules', () => {
   assert.match(rendererSrc, /function initModules\(\)/);
-  assert.match(rendererSrc, /if \(mod\.settingsUI !== 'sidebar'\) continue;/);
+  assert.match(rendererSrc, /if \(!mod\.enabled \|\| mod\.settingsUI !== 'sidebar'\) continue;/, 'a sidebar page should only build for an ENABLED sidebar-mode module');
   assert.match(rendererSrc, /page-module-\$\{mod\.id\}/, 'module page id still namespaced');
   assert.match(rendererSrc, /onModuleRegistryChange\(render\);/);
 });
@@ -63,11 +65,31 @@ test('a module aura panel renders that module\'s controls, gated on it being aur
 });
 
 test('the module IPC is bridged in both preloads', () => {
-  for (const m of ['listModules', 'getModuleSettings', 'setModuleSetting', 'onModulesChanged', 'onModuleSettingsChanged']) {
+  for (const m of ['listModules', 'getModuleSettings', 'setModuleSetting', 'onModulesChanged', 'onModuleSettingsChanged', 'setModuleEnabled', 'onModuleError']) {
     assert.ok(preloadMain.includes(m), `preload-main missing ${m}`);
   }
   assert.match(preloadOverlay, /getModuleEntries/);
   assert.match(preloadOverlay, /onModuleEntries/);
+});
+
+test('the Setup-page Custom-modules list + consent gate are wired', () => {
+  assert.match(html, /id="modules-panel-card"/, 'no Custom-modules card on the Setup page');
+  assert.match(html, /id="modules-panel-list"/);
+  assert.match(rendererSrc, /function initModulesPanel\(\)/);
+  assert.match(rendererSrc, /initModulesPanel\(\);/);
+  // enabling a module goes through appConfirm before setModuleEnabled(id, true)
+  const fn = rendererSrc.slice(rendererSrc.indexOf('function initModulesPanel()'), rendererSrc.indexOf('function initModulesPanel()') + 3500);
+  assert.match(fn, /await appConfirm\(\{[\s\S]*?full access to your PC/, 'the consent dialog does not spell out the risk');
+  assert.match(fn, /window\.eqTracker\.setModuleEnabled\(m\.id, cb\.checked\)/);
+  assert.match(fn, /if \(!ok\) \{ cb\.checked = false; return; \}/, 'a cancelled consent should revert the checkbox');
+  assert.match(mainSrc, /ipcMain\.handle\('modules:setEnabled'/);
+});
+
+test('moduleHost: a discovered module is off until enabled, bundled ones default on', () => {
+  assert.match(moduleHostSrc, /const BUNDLED_MODULE_IDS = \['aggro-board'\]/);
+  assert.match(moduleHostSrc, /this\._isEnabled\(rec\.module\.id\)/, 'handleLine does not gate on the enable state');
+  assert.match(moduleHostSrc, /setModuleEnabled\(id, enabled\)/);
+  assert.match(moduleHostSrc, /saveJson\('enabledModuleIds'/);
 });
 
 module.exports = () => report('module-renderer-wiring');

@@ -1148,6 +1148,15 @@
              collapsed topic rows, sharing one border, like the aura panel's Configuration block.
              AA setup stays its own open "Character setup" card at the top - it's character config,
              not app config. Every element id is unchanged, so main-window.js's wiring is untouched. -->
+        <!-- Custom modules (feat/module-system). Hidden unless a .js is present in the install's
+             modules/ folder. Each is OFF until enabled here; the first enable asks for consent
+             (see initModulesPanel in main-window.js). Placed before the App-settings block so it
+             is not caught by the block's own markup tests. -->
+        <div class="card" id="modules-panel-card" hidden>
+          <h3 title="Extra aura types from a .js file in the app's modules/ folder. Each runs code with full access to your PC, so it is off until you enable it - only enable ones from someone you trust.">Custom modules</h3>
+          <ul id="modules-panel-list" class="module-list"></ul>
+        </div>
+
         <h3 class="settings-page-section-title">App settings</h3>
         <p class="hint">Things you set once. Click a row to open it.</p>
 

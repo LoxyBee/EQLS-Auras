@@ -269,7 +269,10 @@ moduleHost.setIconUrlForSpellFn((name) => {
 moduleHost.on('modulesChanged', (list) => broadcast('modules:changed', list));
 moduleHost.on('entriesChanged', (all) => broadcast('modules:entries', all));
 moduleHost.on('settingsChanged', (payload) => broadcast('modules:settingsChanged', payload));
-moduleHost.on('moduleError', ({ id, error }) => debugLog(`MODULE "${id}" - ${error}`));
+moduleHost.on('moduleError', ({ id, error }) => {
+  debugLog(`MODULE "${id}" - ${error}`);
+  broadcast('modules:error', { id, error });
+});
 moduleHost.loadModules();
 moduleHost.watchFolder();
 
@@ -2063,6 +2066,9 @@ ipcMain.handle('modules:list', () => moduleHost.getRegistered());
 ipcMain.handle('modules:entries', () => moduleHost.getAllEntries());
 ipcMain.handle('modules:getSettings', (_event, id) => moduleHost.getSettings(id));
 ipcMain.handle('modules:setSetting', (_event, { id, key, value }) => moduleHost.setSetting(id, key, value));
+// A discovered module is inert until the user enables it here (Setup page). The renderer shows a
+// consent dialog before the first enable - see moduleHost.js's header.
+ipcMain.handle('modules:setEnabled', (_event, { id, enabled }) => moduleHost.setModuleEnabled(id, enabled));
 
 ipcMain.handle('debug:getEnabled', () => debugLogEnabled);
 ipcMain.handle('debug:setEnabled', (_event, enabled) => {

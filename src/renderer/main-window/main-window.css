@@ -1120,6 +1120,18 @@ h4 {
   margin: 0 0 8px;
 }
 
+/* Setup page "Custom modules" list. */
+.module-list { list-style: none; margin: 0; padding: 0; }
+.module-list-item {
+  padding: 8px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.module-list-item:first-child { border-top: none; }
+.module-list-toggle { font-size: 13px; cursor: pointer; }
+.module-list-name { font-size: 13px; }
+.module-list-meta { margin: 3px 0 0 22px; }
+.module-list-error { font-size: 12px; color: var(--danger, #d66); margin-top: 2px; }
+
 /* About page "Good to know" list - reads like hint text but as bullets. */
 .about-notes {
   font-size: 12px;
