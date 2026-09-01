@@ -1638,7 +1638,8 @@ function initWidgetsPanel() {
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
   const mineOnlyCheckbox = document.getElementById('widget-mine-only-checkbox');
   const totalRowCheckbox = document.getElementById('widget-total-row-checkbox');
-  const damageValueModeSelect = document.getElementById('widget-damage-value-mode');
+  const damageShowDamageCb = document.getElementById('widget-damage-show-damage');
+  const damageShowRateCb = document.getElementById('widget-damage-show-rate');
   const bordersRowEl = document.getElementById('widget-borders-row');
   const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
@@ -2973,7 +2974,11 @@ function initWidgetsPanel() {
     // setting existed has no value at all, and treating that as "off" would silently remove the
     // total line from a meter that has always shown one.
     totalRowCheckbox.checked = widget.showTotalRow !== false;
-    if (damageValueModeSelect) damageValueModeSelect.value = widget.damageValueMode || (widget.damageShowDps ? 'dps' : 'total');
+    {
+      const mode = widget.damageValueMode || (widget.damageShowDps ? 'dps' : 'total');
+      if (damageShowDamageCb) damageShowDamageCb.checked = mode === 'total' || mode === 'both';
+      if (damageShowRateCb) damageShowRateCb.checked = mode === 'dps' || mode === 'both';
+    }
     allyAlertCheckbox.checked = !!widget.allyDebuffAlert;
     alwaysOnCheckbox.checked = !!widget.alwaysOn;
     // Reported live 24 Aug, and confirmed by directly comparing what was on screen against what
@@ -4687,10 +4692,17 @@ function initWidgetsPanel() {
   totalRowCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetDamageOptions(selectedId, { showTotalRow: totalRowCheckbox.checked });
   });
-  if (damageValueModeSelect) {
-    damageValueModeSelect.addEventListener('change', () => {
-      window.eqTracker.setWidgetDamageOptions(selectedId, { valueMode: damageValueModeSelect.value });
-    });
+  if (damageShowDamageCb && damageShowRateCb) {
+    const pushDamageValueMode = (justToggled) => {
+      // At least one must stay on - re-tick whichever the user just turned off if they'd both be off.
+      if (!damageShowDamageCb.checked && !damageShowRateCb.checked) justToggled.checked = true;
+      const d = damageShowDamageCb.checked;
+      const r = damageShowRateCb.checked;
+      const mode = d && r ? 'both' : r ? 'dps' : 'total';
+      window.eqTracker.setWidgetDamageOptions(selectedId, { valueMode: mode });
+    };
+    damageShowDamageCb.addEventListener('change', () => pushDamageValueMode(damageShowDamageCb));
+    damageShowRateCb.addEventListener('change', () => pushDamageValueMode(damageShowRateCb));
   }
 
   debuffCastByRadios.forEach((radio) => {

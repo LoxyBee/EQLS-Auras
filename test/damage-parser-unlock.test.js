@@ -112,13 +112,15 @@ test('the overlay hides the bar for a noBar row and colours per-attacker bars on
   assert.match(overlaySrc, /hash \* 31 \+ name\.charCodeAt\(i\)/);
 });
 
-test('the damage-value-mode picker (damage / rate / both) is wired end to end', () => {
+test('the two damage/rate checkboxes (both = "damage (rate)") are wired end to end', () => {
   const html = read('src', 'renderer', 'main-window', 'index.html');
   const manager = read('src', 'main', 'widgetManager.js');
-  assert.match(html, /id="widget-damage-value-mode"/);
-  assert.match(html, /value="both"/);
-  assert.match(rendererSrc, /setWidgetDamageOptions\(selectedId, \{ valueMode: damageValueModeSelect\.value \}\)/);
-  assert.match(rendererSrc, /damageValueModeSelect\.value = widget\.damageValueMode/);
+  assert.match(html, /id="widget-damage-show-damage"/);
+  assert.match(html, /id="widget-damage-show-rate"/);
+  // both on -> 'both', rate only -> 'dps', else 'total'; at least one stays on
+  assert.match(rendererSrc, /const mode = d && r \? 'both' : r \? 'dps' : 'total'/);
+  assert.match(rendererSrc, /if \(!damageShowDamageCb\.checked && !damageShowRateCb\.checked\) justToggled\.checked = true/);
+  assert.match(rendererSrc, /setWidgetDamageOptions\(selectedId, \{ valueMode: mode \}\)/);
   assert.match(manager, /DAMAGE_VALUE_MODES\.includes\(valueMode\)/);
   assert.match(read('src', 'main', 'widgetStore.js'), /'damageValueMode'/);
   // old boolean still migrates
