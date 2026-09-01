@@ -1716,7 +1716,12 @@ ipcMain.handle('overlay:getMasterState', () => ({
   allUnlocked: widgetManager.areAllUnlocked(),
   masterHidden: widgetManager.isMasterHidden(),
   soundsMuted: widgetManager.isSoundsMuted(),
+  previewAll: widgetManager.isPreviewAll(),
 }));
+ipcMain.handle('overlay:setPreviewAll', (_event, enabled) => {
+  widgetManager.setPreviewAll(!!enabled);
+  return widgetManager.isPreviewAll();
+});
 ipcMain.handle('overlay:setMasterHidden', (_event, hidden) => {
   actionBarManager.setMasterHidden(hidden);
   return widgetManager.setMasterHidden(hidden);
@@ -1773,6 +1778,7 @@ ipcMain.handle('spellbook:clearMemorized', () => buffEngine.clearMemorized());
 ipcMain.handle('widget:list', () => widgetManager.getAllWidgetConfigs());
 ipcMain.handle('widget:getConfig', (_event, id) => widgetManager.getWidgetConfig(id));
 ipcMain.handle('widget:preview', (_event, id) => widgetManager.previewWidget(id));
+ipcMain.handle('widget:isPreviewing', (_event, id) => widgetManager.isPreviewShown(id));
 // Note 6 - clicking an aura's name in its move box. Raises the settings window and tells it
 // which aura to open. Worth knowing: this pulls EverQuest out of focus, so with auto-hide on it
 // is also the moment your other auras vanish. The unlocked ones stay put, which is the only

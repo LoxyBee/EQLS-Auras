@@ -66,12 +66,16 @@ function loadOverlayLogic() {
     pick(/let mergeRule = '[a-z]+';/, 'mergeRule'),
     'let currentConfig = {};',
     'let widgetId = \'w1\';',
-    // QOL #1 preview mode - stubbed here; currentSourceBuffs references it but this suite never
-    // triggers a preview. The real previewSampleBuffs is exercised in preview-aura.test.js.
+    // "Show example content" preview mode - stubbed here; currentSourceBuffs references it but this
+    // suite never turns a preview on. The real previewSampleBuffs is exercised in preview-aura.test.js.
     'let previewActive = false;',
+    'let showingPreviewSample = false;',
     'function previewSampleBuffs() { return []; }',
     'let lastSelfBuffs = [];',
     'let lastAllyBuffs = [];',
+    'let lastBardSongs = [];',
+    'let lastRaidNamed = [];',
+    'let lastModuleEntries = {};',
     'let lastCustomTimers = [];',
     'let lastDamageRows = [];',
     'let lastTravelRoutes = {};',
@@ -84,6 +88,7 @@ function loadOverlayLogic() {
     pick(/function textFor\(buff\) \{[\s\S]*?\n\}/, 'textFor'),
     pick(/function visibleBuffs\(buffs, opts = \{\}\) \{[\s\S]*?\n\}/, 'visibleBuffs'),
     pick(/function currentSourceBuffs\(\) \{[\s\S]*?\n\}/, 'currentSourceBuffs'),
+    pick(/function realSourceBuffs\(\) \{[\s\S]*?\n\}/, 'realSourceBuffs'),
   ];
   // eslint-disable-next-line no-new-func
   return new Function(

@@ -238,7 +238,7 @@ test('text-stack is a field of every text shape, and no other', () => {
 test('render() hands a stacking text aura to its own feed path and returns', () => {
   assert.match(
     overlaySrc,
-    /if \(currentConfig\.displayMode === 'text' && currentConfig\.stackTextLines && !currentConfig\.alwaysOn && !previewActive\) \{\s*\n\s*renderTextFeed\(buffs\);\s*\n\s*return;/
+    /if \(currentConfig\.displayMode === 'text' && currentConfig\.stackTextLines && !currentConfig\.alwaysOn && !showingPreviewSample\) \{\s*\n\s*renderTextFeed\(buffs\);\s*\n\s*return;/
   );
 });
 

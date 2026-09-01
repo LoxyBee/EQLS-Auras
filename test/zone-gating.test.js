@@ -167,7 +167,7 @@ test('the store fails open too', () => {
 test('the zone clause sits beside the profile check and honours unlock', () => {
   const fn = managerSrc.match(/function shouldBeOnScreen\(config\) \{([\s\S]*?)\n\}/);
   assert.ok(fn, 'shouldBeOnScreen has been restructured');
-  assert.match(fn[1], /if \(!isVisibleInCurrentZone\(config\) && !forceShown\.has\(config\.id\)\) return false;/);
+  assert.match(fn[1], /if \(!isVisibleInCurrentZone\(config\) && !forceShown\.has\(config\.id\) && !previewShown\.has\(config\.id\)\) return false;/);
   // Same kind of rule as the profile one, so it belongs next to it.
   const at = (s) => fn[1].indexOf(s);
   assert.ok(at('isVisibleForActiveProfile') < at('isVisibleInCurrentZone'), 'zone check is above the profile check');
