@@ -49,8 +49,11 @@ const CHANGELOG = [
       'Type your character and server when the spellbook is not being found on its own',
       'Auras and timers stop when your character dies',
       'A heads-up on the Buff Tracker page when EQ is in exclusive full-screen (auras can\'t draw over it)',
+      'The tools that write to EverQuest\'s own log files - the weekly archive and the per-day split - are off by default now; turn them on if you want them',
+      'Evidence-based detection is on by default - fewer buffs get silently missed after a restart or a loadout swap. The Diagnostics section has the toggle to turn it back off',
     ],
     fixes: [
+      'The lockout grid reads just the current week from your live log, so turning the weekly archive off doesn\'t slow it down',
       'A groupmate\'s own melee procs no longer show up as buffs you cast on them',
       'Bard resist songs and caster resist spells no longer knock each other off',
       '"You feel smaller" resolves to Shrink without asking - Tiny Companion only lands on a pet',
