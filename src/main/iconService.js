@@ -49,8 +49,22 @@ class IconService {
     protocol.handle('eqicon', (request) => {
       const parts = new URL(request.url).pathname.split('/').filter(Boolean);
       const [iconSet, iconId] = [decodeURIComponent(parts[0] || ''), parts[1] || ''];
+
+      // Both halves of the URL end up in a filesystem path (the cache key below, and Textures/<set>
+      // inside extractIconPng), and a renderer can put anything it likes in an <img src>. Constrain
+      // both to exactly what a real request carries: one of the known set names, and a plain
+      // non-negative integer. A "../.." set name or a slashed id is rejected outright rather than
+      // sanitised - there is no legitimate request it would break.
+      if (!ICON_SETS.includes(iconSet) || !/^[0-9]+$/.test(iconId)) {
+        return new Response(null, { status: 404 });
+      }
       const cacheKey = `${iconSet.replace(/\s+/g, '_')}_${iconId}`;
       const cachedPath = path.join(this.cacheDir, `${cacheKey}.png`);
+      // Belt-and-suspenders: the two checks above already make traversal impossible, but assert the
+      // resolved path never leaves the cache dir so a future edit to the key format can't reopen it.
+      if (path.resolve(cachedPath) !== path.join(path.resolve(this.cacheDir), `${cacheKey}.png`)) {
+        return new Response(null, { status: 404 });
+      }
 
       if (!fs.existsSync(cachedPath)) {
         if (!this.eqFolder) return new Response(null, { status: 404 });

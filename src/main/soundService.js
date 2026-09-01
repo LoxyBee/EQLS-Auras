@@ -186,9 +186,21 @@ function getSoundInfo(id) {
 function registerProtocol() {
   protocol.handle('eqsound', (request) => {
     const id = new URL(request.url).pathname.split('/').filter(Boolean)[0] || '';
+    // The id is only ever a crypto.randomUUID() from pickAndImportSound. Reject anything with a
+    // path character in it before it is used as a registry key.
+    if (!/^[a-fA-F0-9-]+$/.test(id)) return new Response(null, { status: 404 });
     const info = getSoundInfo(id);
     if (!info) return new Response(null, { status: 404 });
+    // registry.json travels in an exported config bundle (configTransfer.js), so a poisoned import
+    // could carry a fileName like "../../secret". It is always written here as `${id}${ext}`, so a
+    // real one is a plain basename - anything else is rejected rather than read.
+    if (typeof info.fileName !== 'string' || info.fileName !== path.basename(info.fileName)) {
+      return new Response(null, { status: 404 });
+    }
     const filePath = path.join(soundsDir(), info.fileName);
+    if (path.resolve(filePath) !== path.join(path.resolve(soundsDir()), info.fileName)) {
+      return new Response(null, { status: 404 });
+    }
     let stat;
     try {
       stat = fs.statSync(filePath);
