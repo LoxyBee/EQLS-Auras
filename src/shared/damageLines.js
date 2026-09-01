@@ -44,12 +44,6 @@ const YOUR_MELEE =
 // "Baxa slashes a zol ghoul knight for 47 points of damage." - 242,600 lines, the single
 // largest damage wording in the logs. Names neither side as friend or foe; the engine settles
 // that by direction rather than by reading the names.
-//
-// The verb list was 14; cross-checking against known EQ melee wordings found 12 missing, and two
-// of them are common: `cleaves` (warrior) and `frenzies on` (berserker/monk) - together an
-// estimated ~5% of all melee, silently uncounted. The rest
-// (smites, stings, backstabs, shoots, reaves, slams, rends, gnaws, lashes, flurries) are rarer but
-// real. "frenzies on" carries its "on" as part of the verb.
 const OTHER_MELEE =
   new RegExp(`^(.+?) (?:hits|slashes|crushes|pierces|bashes|kicks|bites|claws|punches|slices|smashes|gores|mauls|strikes|cleaves|smites|stings|backstabs|shoots|reaves|slams|rends|gnaws|lashes|flurries|frenzies on) (.+?) for ([0-9]+) points? of damage\\.${CRIT_SUFFIX}$`);
 
