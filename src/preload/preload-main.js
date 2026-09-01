@@ -126,6 +126,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setOverlayMasterHidden: (hidden) => ipcRenderer.invoke('overlay:setMasterHidden', hidden),
   setOverlaySoundsMuted: (muted) => ipcRenderer.invoke('overlay:setSoundsMuted', muted),
   setOverlayPreviewAll: (enabled) => ipcRenderer.invoke('overlay:setPreviewAll', enabled),
+  resumeMove: () => ipcRenderer.invoke('move:resume'),
   onOverlayMasterStateChanged: (callback) => {
     ipcRenderer.on('overlay:masterStateChanged', () => callback());
   },

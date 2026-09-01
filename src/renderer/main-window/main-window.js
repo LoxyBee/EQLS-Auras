@@ -5052,6 +5052,7 @@ function initWidgetsPanel() {
   const masterPreviewAllBtn = document.getElementById('master-preview-all-btn');
   const masterHideAllBtn = document.getElementById('master-hide-all-btn');
   const masterMuteBtn = document.getElementById('master-mute-btn');
+  const resumeMoveBtn = document.getElementById('resume-move-btn');
 
 
   // =========================================================================
@@ -5527,6 +5528,10 @@ function initWidgetsPanel() {
       masterPreviewAllBtn.classList.toggle('active', state.previewAll);
       masterPreviewAllBtn.textContent = state.previewAll ? 'Hide example content' : 'Show example content';
     }
+    if (resumeMoveBtn) {
+      resumeMoveBtn.style.display = state.suspendedMove ? '' : 'none';
+      resumeMoveBtn.textContent = state.suspendedMove === 'all' ? '↩ Back to moving all auras' : '↩ Back to moving';
+    }
   }
   function refreshMasterButtons() {
     return window.eqTracker.getOverlayMasterState().then(renderMasterButtons);
@@ -5575,6 +5580,11 @@ function initWidgetsPanel() {
       window.eqTracker.getOverlayMasterState().then((state) =>
         window.eqTracker.setOverlaySoundsMuted(!state.soundsMuted).then(refreshMasterButtons)
       );
+    });
+  }
+  if (resumeMoveBtn) {
+    resumeMoveBtn.addEventListener('click', () => {
+      window.eqTracker.resumeMove().then(refreshMasterButtons);
     });
   }
   refreshMasterButtons();

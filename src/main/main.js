@@ -1718,10 +1718,26 @@ ipcMain.handle('overlay:getMasterState', () => ({
   masterHidden: widgetManager.isMasterHidden(),
   soundsMuted: widgetManager.isSoundsMuted(),
   previewAll: widgetManager.isPreviewAll(),
+  suspendedMove: suspendedMove ? suspendedMove.kind : null,
 }));
 ipcMain.handle('overlay:setPreviewAll', (_event, enabled) => {
   widgetManager.setPreviewAll(!!enabled);
   return widgetManager.isPreviewAll();
+});
+// "Back to moving auras" - the pad's centre button opened a settings page and stashed the move
+// session; put it back exactly as it was.
+ipcMain.handle('move:resume', () => {
+  const s = suspendedMove;
+  suspendedMove = null;
+  if (!s) { notifyMasterState(); return { resumed: false }; }
+  if (s.kind === 'all') {
+    widgetManager.setAllUnlocked(true);
+    enterUnlockAllMode({ keepSuspended: true });
+    notifyMasterState();
+  } else {
+    enterMoveMode(s.moveKind, s.id, { keepSuspended: true });
+  }
+  return { resumed: true };
 });
 ipcMain.handle('overlay:setMasterHidden', (_event, hidden) => {
   actionBarManager.setMasterHidden(hidden);
@@ -1736,11 +1752,12 @@ ipcMain.handle('overlay:setAllUnlocked', (_event, unlocked) => {
   if (unlocked) {
     if (hudMode === 'single') exitMoveMode();
     const res = widgetManager.setAllUnlocked(true);
-    enterUnlockAllMode();
+    enterUnlockAllMode(); // clears any suspended move - this is a fresh session
     return res;
   }
   const res = widgetManager.setAllUnlocked(false);
   if (hudMode === 'all') exitUnlockAllMode();
+  if (suspendedMove) { suspendedMove = null; notifyMasterState(); }
   return res;
 });
 ipcMain.handle('settings:getShowAurasWhenAppFocused', () => showAurasWhenAppFocused);
@@ -2044,6 +2061,15 @@ function targetSetLocked(kind, id, locked) {
 // carries its own nudge arrows, and the main window stays open.
 let hudMode = null;
 
+// When the pad's centre button opens an aura's settings, the move session that was open is torn
+// down but REMEMBERED here, so the "Back to moving" button (main window top bar) can put it back:
+// tweak one aura's settings, then resume moving all of them. null | { kind:'all' } |
+// { kind:'single', moveKind, id }.
+let suspendedMove = null;
+function notifyMasterState() {
+  getMainWindow()?.webContents.send('overlay:masterStateChanged');
+}
+
 function hudMeta() {
   const grid = positionSnap.get();
   return {
@@ -2063,8 +2089,9 @@ function onMoveTargetMoved(id, bounds) {
 widgetManager.setOnWidgetMovedFn(onMoveTargetMoved);
 actionBarManager.setOnMovedFn(onMoveTargetMoved);
 
-function enterMoveMode(kind, id) {
+function enterMoveMode(kind, id, { keepSuspended = false } = {}) {
   if (!targetName(kind, id) && !targetBounds(kind, id)) return { ok: false };
+  if (!keepSuspended && suspendedMove) { suspendedMove = null; notifyMasterState(); }
   moveTarget = { kind, id };
   hudMode = 'single';
   positionSnap.setActive(id);
@@ -2093,7 +2120,8 @@ function exitMoveMode() {
 
 // "Unlock all auras" - the shared HUD holds only the step/snap controls; every aura gets its own
 // nudge-pad window above its box. The main window stays open (unlike single move mode).
-function enterUnlockAllMode() {
+function enterUnlockAllMode({ keepSuspended = false } = {}) {
+  if (!keepSuspended && suspendedMove) { suspendedMove = null; notifyMasterState(); }
   hudMode = 'all';
   positionSnap.setActiveAll(true);
   moveHudWindow.open(null, hudMeta());
@@ -2110,7 +2138,13 @@ function exitUnlockAllMode() {
 
 // End whatever positioning session is open - a single "Move…" or "Unlock all auras" - re-locking
 // and closing the HUD + every pad. Shared by the HUD's Done button and the pad's centre button.
-function endMoveSession() {
+// `suspend: true` (from the pad centre button) remembers the mode so "Back to moving" can resume.
+function endMoveSession({ suspend = false } = {}) {
+  suspendedMove = suspend && hudMode === 'all'
+    ? { kind: 'all' }
+    : suspend && hudMode === 'single' && moveTarget
+      ? { kind: 'single', moveKind: moveTarget.kind, id: moveTarget.id }
+      : null;
   if (hudMode === 'all') {
     widgetManager.setAllUnlocked(false);
     exitUnlockAllMode();
@@ -2118,6 +2152,7 @@ function endMoveSession() {
   } else if (hudMode === 'single') {
     exitMoveMode();
   }
+  notifyMasterState();
 }
 
 ipcMain.handle('widget:enterMoveMode', (_event, id) => enterMoveMode('widget', id));
@@ -2138,7 +2173,7 @@ ipcMain.on('nudgePad:nudge', (_event, { id, kind, dx, dy } = {}) => {
 // Same freeze-safe shape as the old right-click path: nav message FIRST, show()/focus() deferred,
 // and it comes from the pad's own focusable:false window so the 24 Aug foreground-lock never bit.
 ipcMain.on('nudgePad:openSettings', (_event, id) => {
-  endMoveSession();
+  endMoveSession({ suspend: true }); // remembered, so "Back to moving" can resume it
   const win = getMainWindow();
   if (!win || win.isDestroyed()) return;
   win.webContents.send('widget:openSettings', id);

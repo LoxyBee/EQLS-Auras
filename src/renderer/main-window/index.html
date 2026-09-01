@@ -64,6 +64,15 @@
         id="master-mute-btn"
         title="Silences every aura's alert sounds. The tiles stay on screen. Changes no setting, and does not survive a restart."
       >Mute sounds</button>
+      <!-- Shown only after the nudge pad's centre button opened an aura's settings mid-move: it
+           closed the move UI and stashed it. This puts it back - tweak one aura, then carry on
+           moving them all. -->
+      <button
+        class="master-hide-btn active"
+        id="resume-move-btn"
+        style="display:none"
+        title="You opened this aura's settings from the move controls. Click to go back to moving your auras."
+      >&#8617; Back to moving</button>
       <span class="master-hide-hint" id="master-hide-hint"></span>
     </div>
 
