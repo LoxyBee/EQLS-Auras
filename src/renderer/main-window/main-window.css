@@ -468,8 +468,29 @@ body {
   text-align: center;
 }
 
+/* initModules() injects the custom-module nav buttons inside this wrapper. `display: contents`
+   drops the wrapper from layout so those buttons are real flex children of .sidebar - same gap,
+   same stretch, same everything as the hand-written nav buttons around them. Without it the
+   wrapper is one flex item and the button inside renders subtly unlike its siblings. */
+#module-nav-slot {
+  display: contents;
+}
+
 .nav-btn:hover {
   background: var(--panel);
+}
+
+/* A clicked nav button keeps focus; without an explicit rule Chromium draws its own ring, which
+   reads as a stray box on whichever page button was opened last (usually a module's). The active
+   page is already shown by the left accent bar, so the keyboard focus cue can be the same quiet
+   treatment the rest of the app's controls use. */
+.nav-btn:focus:not(:focus-visible) {
+  outline: none;
+}
+.nav-btn:focus-visible {
+  outline: none;
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
 }
 
 .nav-btn.active {
