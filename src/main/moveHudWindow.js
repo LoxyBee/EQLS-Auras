@@ -11,7 +11,7 @@ const { loadJson, saveJson } = require('./store');
 // by its background, -webkit-app-region:drag; controls are no-drag), so none of the click-through
 // juggling the earlier wrapping-frame version needed.
 const PANEL_W = 300;
-const PANEL_H = 140;
+const PANEL_H = 172;
 
 let win = null;
 

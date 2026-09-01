@@ -944,6 +944,22 @@ function nudgeWidget(id, dx, dy) {
   return getWidgetBounds(id);
 }
 
+// Put an aura's window at an explicit position - one or both axes; an axis left undefined is kept
+// where it is. Used by the move HUD's "centre on screen" buttons, so unlike nudgeWidget it does
+// NOT snap to grid (centre means centre). Persists the same canonical anchor a drag/nudge does.
+function placeWidget(id, { x, y } = {}) {
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) return null;
+  const [cx, cy] = win.getPosition();
+  const nx = typeof x === 'number' ? Math.round(x) : cx;
+  const ny = typeof y === 'number' ? Math.round(y) : cy;
+  win.setPosition(nx, ny);
+  const originX = originXByWidget.get(id) || 0;
+  widgetStore.savePosition(id, { x: nx + originX, y: ny });
+  onWidgetMoved(id, getWidgetBounds(id));
+  return getWidgetBounds(id);
+}
+
 function toggleLock(id) {
   return setLocked(id, !isLocked(id));
 }
@@ -1530,6 +1546,7 @@ module.exports = {
   isLocked,
   isUnlocked,
   nudgeWidget,
+  placeWidget,
   getWidgetBounds,
   setOnWidgetMovedFn,
   setDisplayMode,

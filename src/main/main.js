@@ -24,7 +24,7 @@ const path = require('path');
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
 const fs = require('fs');
-const { ipcMain, protocol, BrowserWindow, Menu, Tray, globalShortcut, shell } = require('electron');
+const { ipcMain, protocol, BrowserWindow, Menu, Tray, globalShortcut, shell, screen } = require('electron');
 const { buildTrayIcon } = require('./trayIcon');
 const { createMainWindow, getMainWindow } = require('./mainWindow');
 const { LogService } = require('./logService');
@@ -2201,6 +2201,20 @@ ipcMain.handle('moveHud:setSnap', (_event, { enabled, sizePx }) => {
 });
 ipcMain.handle('moveHud:resetPosition', () => {
   if (moveTarget) targetManager(moveTarget.kind).resetPosition(moveTarget.id);
+});
+// Centre the single-move target on its own display's work area. `axis` is 'h' | 'v' - one axis at
+// a time, the other kept where it is (owner's ask). Exact, so it ignores snap-to-grid.
+ipcMain.handle('moveHud:centre', (_event, axis) => {
+  if (!moveTarget || hudMode !== 'single') return null;
+  const b = targetBounds(moveTarget.kind, moveTarget.id);
+  if (!b) return null;
+  const wa = (screen.getDisplayMatching(b) || screen.getPrimaryDisplay()).workArea;
+  const pos = {};
+  if (axis === 'h') pos.x = Math.round(wa.x + (wa.width - b.width) / 2);
+  if (axis === 'v') pos.y = Math.round(wa.y + (wa.height - b.height) / 2);
+  return moveTarget.kind === 'actionBar'
+    ? actionBarManager.placeBar(moveTarget.id, pos)
+    : widgetManager.placeWidget(moveTarget.id, pos);
 });
 ipcMain.handle('moveHud:done', () => endMoveSession());
 

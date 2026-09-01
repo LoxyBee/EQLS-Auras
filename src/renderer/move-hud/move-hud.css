@@ -1,4 +1,4 @@
-/* PANEL_W (300) / PANEL_H (140) are set in moveHudWindow.js - keep the panel inside them. */
+/* PANEL_W (300) / PANEL_H (172) are set in moveHudWindow.js - keep the panel inside them. */
 :root {
   --accent: #f0a54a;
   --panel: rgba(18, 22, 34, 0.94);
@@ -90,3 +90,6 @@ button, select, input, .snap {
 }
 #snap-size option { background: #1b2133; color: var(--ink); }
 #snap-size option:checked { background: var(--accent); color: #1b1205; }
+
+/* Centring is a single-aura action - "Positioning all auras" has no one thing to centre. */
+#panel[data-mode="all"] .centre-row { display: none; }
