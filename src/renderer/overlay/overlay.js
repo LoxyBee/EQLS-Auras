@@ -376,6 +376,39 @@ function groupBySongType(buffs) {
   return out;
 }
 
+// A maintained debuff song (Largo's Melodic Binding and the like) has no cast line and re-lands
+// every ~6s on EVERY mob it is on, so the feed carries one entry per target - three mobs, three
+// near-identical tiles. On the aura it is one song: collapse every debuff song to a single tile
+// keyed by name, the soonest-expiring instance as the lead (its timer is the one worth watching),
+// with the merged badge showing how many enemies carry it. Buff songs are left exactly as they
+// are - a buff song on the player is genuinely one thing already.
+function collapseDebuffSongs(songs) {
+  const byName = new Map();
+  for (const s of songs) {
+    if (!s.isDebuff) continue;
+    const k = s.name.toLowerCase();
+    if (!byName.has(k)) byName.set(k, []);
+    byName.get(k).push(s);
+  }
+  if (!byName.size) return songs;
+
+  const out = songs.filter((b) => !b.isDebuff);
+  for (const [k, group] of byName) {
+    const lead = group.reduce((a, b) =>
+      ((b.remainingSec ?? Infinity) < (a.remainingSec ?? Infinity) ? b : a));
+    out.push({
+      ...lead,
+      allyName: null, // it is "the song", not "the song on mob X"
+      id: null, // so keyFor falls through to the stable mergedKey below, not a per-target id
+      mergedKey: `debuffsong::${k}`,
+      ...(group.length > 1
+        ? { mergedCount: group.length, mergedKeys: group.map(keyFor) }
+        : {}),
+    });
+  }
+  return out;
+}
+
 // Note 8's count, and deliberately ONE builder rather than two. Note 12 wants the identical badge
 // on a different kind of merged tile, and two copies of a thing described as "the same badge" is
 // how they end up not being the same badge.
@@ -398,7 +431,12 @@ function buildCountBadge(count, why) {
 // exist." Returning null in the ordinary case is what enforces it, once, rather than at each call
 // site.
 function countFor(buff) {
-  if (buff.mergedCount > 1) return { n: buff.mergedCount, why: buff.mergedCount + ' buffs merged into this one' };
+  if (buff.mergedCount > 1) {
+    const why = buff.isDebuff
+      ? `this song is on ${buff.mergedCount} enemies`
+      : `${buff.mergedCount} buffs merged into this one`;
+    return { n: buff.mergedCount, why };
+  }
   return null;
 }
 
@@ -1064,7 +1102,9 @@ function visibleBuffs(buffs, opts = {}) {
   // every single tile this aura has (every entry here has isBardSong true by construction).
   if (currentConfig.buffSource === 'bardSongs') {
     // #29 - debuff songs (on an enemy) ride the same feed but are opt-in.
-    return buffs.filter((b) => b.showOnOverlay !== false && (currentConfig.showDebuffSongs || !b.isDebuff));
+    const shown = buffs.filter((b) => b.showOnOverlay !== false && (currentConfig.showDebuffSongs || !b.isDebuff));
+    // One maintained debuff song on N mobs is one song - collapse it to a single tile.
+    return collapseDebuffSongs(shown);
   }
 
   let filtered;
