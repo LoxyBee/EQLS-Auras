@@ -1638,7 +1638,7 @@ function initWidgetsPanel() {
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
   const mineOnlyCheckbox = document.getElementById('widget-mine-only-checkbox');
   const totalRowCheckbox = document.getElementById('widget-total-row-checkbox');
-  const damageDpsCheckbox = document.getElementById('widget-damage-dps-checkbox');
+  const damageValueModeSelect = document.getElementById('widget-damage-value-mode');
   const bordersRowEl = document.getElementById('widget-borders-row');
   const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
@@ -2973,7 +2973,7 @@ function initWidgetsPanel() {
     // setting existed has no value at all, and treating that as "off" would silently remove the
     // total line from a meter that has always shown one.
     totalRowCheckbox.checked = widget.showTotalRow !== false;
-    if (damageDpsCheckbox) damageDpsCheckbox.checked = !!widget.damageShowDps;
+    if (damageValueModeSelect) damageValueModeSelect.value = widget.damageValueMode || (widget.damageShowDps ? 'dps' : 'total');
     allyAlertCheckbox.checked = !!widget.allyDebuffAlert;
     alwaysOnCheckbox.checked = !!widget.alwaysOn;
     // Reported live 24 Aug, and confirmed by directly comparing what was on screen against what
@@ -4687,9 +4687,9 @@ function initWidgetsPanel() {
   totalRowCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetDamageOptions(selectedId, { showTotalRow: totalRowCheckbox.checked });
   });
-  if (damageDpsCheckbox) {
-    damageDpsCheckbox.addEventListener('change', () => {
-      window.eqTracker.setWidgetDamageOptions(selectedId, { showDps: damageDpsCheckbox.checked });
+  if (damageValueModeSelect) {
+    damageValueModeSelect.addEventListener('change', () => {
+      window.eqTracker.setWidgetDamageOptions(selectedId, { valueMode: damageValueModeSelect.value });
     });
   }
 

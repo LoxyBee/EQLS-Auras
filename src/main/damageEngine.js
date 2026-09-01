@@ -336,20 +336,26 @@ class DamageEngine extends EventEmitter {
       .sort((a, b) => b.damage - a.damage);
     const top = rows.length ? rows[0].damage : 0;
 
-    const tiles = rows.map((r) => ({
-      name: r.name,
-      // Two readings of the same row, so an aura can show either without a second engine (same
-      // reasoning as showTotalRow - the choice is applied where the tile is drawn). `valueText` is
-      // cumulative damage + share; `dpsText` is that attacker's own rate (their damage / the fight
-      // length) + the same share.
-      valueText: `${formatDamage(r.damage)}  ${Math.round((r.damage / totalDamage) * 100)}%`,
-      dpsText: `${formatDamage(Math.round(r.damage / secs))}/s  ${Math.round((r.damage / totalDamage) * 100)}%`,
-      // Against the BIGGEST row, not against the total. A bar measured against the total leaves
-      // every bar short in a five-person group, with even the longest only a fifth of the way
-      // across - which reads as everybody doing badly rather than as a comparison.
-      barPercent: top > 0 ? Math.max(0, Math.min(100, (r.damage / top) * 100)) : 0,
-      ...INERT_TIMER_FIELDS,
-    }));
+    const tiles = rows.map((r) => {
+      const pct = `${Math.round((r.damage / totalDamage) * 100)}%`;
+      const dmg = formatDamage(r.damage);
+      const rate = `${formatDamage(Math.round(r.damage / secs))}/s`;
+      return {
+        name: r.name,
+        // Three readings of the same row - the aura picks one where the tile is drawn (see
+        // damageValueMode), so one engine feeds meters that differ on it. `valueText` is cumulative
+        // damage + share; `dpsText` is that attacker's own rate + the same share; `bothText` is
+        // "damage (rate)  share".
+        valueText: `${dmg}  ${pct}`,
+        dpsText: `${rate}  ${pct}`,
+        bothText: `${dmg} (${rate})  ${pct}`,
+        // Against the BIGGEST row, not against the total. A bar measured against the total leaves
+        // every bar short in a five-person group, with even the longest only a fifth of the way
+        // across - which reads as everybody doing badly rather than as a comparison.
+        barPercent: top > 0 ? Math.max(0, Math.min(100, (r.damage / top) * 100)) : 0,
+        ...INERT_TIMER_FIELDS,
+      };
+    });
 
     // Always emitted, at the BOTTOM (owner's call). An aura that does not want it drops it when it
     // draws - see the overlay - which is what lets one meter show it and another not, from one
@@ -359,7 +365,9 @@ class DamageEngine extends EventEmitter {
       name: 'Total',
       // `totalRow` is what the overlay's mine-only / hide-total filters key off, so the row keeps
       // being recognised as the total whatever its label reads. `sinceZone` marks the between-pulls
-      // view.
+      // view. The Total is the fight summary and always shows both its damage and its rate,
+      // whatever damageValueMode the attacker rows are set to - it carries only `valueText`, so the
+      // overlay's mode switch leaves it alone.
       totalRow: true,
       sinceZone: !!sinceZone,
       valueText: `${formatDamage(totalDamage)}  ${formatDamage(Math.round(totalDamage / secs))}/s`,

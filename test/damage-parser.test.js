@@ -300,15 +300,18 @@ test('the bar shows each row against the biggest, not against the total', () => 
   assert.ok(Math.abs(rows.find((r) => r.name === 'You').barPercent - 33.33) < 0.1);
 });
 
-test('each attacker row carries a dpsText alongside valueText, using the same fight length as the total', () => {
+test('each attacker row carries all three value readings, using the same fight length as the total', () => {
   const e = new DamageEngine();
   e.handleLine(`${T}a kobold has taken 100 damage from your Plague III.`, 1000);
   e.handleLine(`${T}Baxa slashes a kobold for 300 points of damage.`, 5000); // 4s span
   const rows = e.getActive(5000);
   const baxa = rows.find((r) => r.name === 'Baxa');
-  assert.match(baxa.valueText, /^300\s+75%$/);
-  assert.match(baxa.dpsText, /^75\/s\s+75%$/, 'DPS is the attacker damage / the fight span');
-  assert.equal(rows.find((r) => r.name === 'Total').dpsText, undefined, 'the total row has no dpsText');
+  assert.match(baxa.valueText, /^300\s+75%$/, "'total' - cumulative damage + share");
+  assert.match(baxa.dpsText, /^75\/s\s+75%$/, "'dps' - attacker damage / the fight span + share");
+  assert.match(baxa.bothText, /^300 \(75\/s\)\s+75%$/, "'both' - damage (rate) + share");
+  // the total row always shows both, so it only needs valueText
+  assert.equal(rows.find((r) => r.name === 'Total').dpsText, undefined);
+  assert.equal(rows.find((r) => r.name === 'Total').bothText, undefined);
 });
 
 test('an idle engine draws nothing at all', () => {

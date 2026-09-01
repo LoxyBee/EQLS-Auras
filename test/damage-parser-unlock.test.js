@@ -112,17 +112,20 @@ test('the overlay hides the bar for a noBar row and colours per-attacker bars on
   assert.match(overlaySrc, /hash \* 31 \+ name\.charCodeAt\(i\)/);
 });
 
-test('the "show rate (DPS)" toggle is wired end to end', () => {
+test('the damage-value-mode picker (damage / rate / both) is wired end to end', () => {
   const html = read('src', 'renderer', 'main-window', 'index.html');
-  const preload = read('src', 'preload', 'preload-main.js');
   const manager = read('src', 'main', 'widgetManager.js');
-  assert.match(html, /id="widget-damage-dps-checkbox"/);
-  assert.match(rendererSrc, /setWidgetDamageOptions\(selectedId, \{ showDps: damageDpsCheckbox\.checked \}\)/);
-  assert.match(rendererSrc, /damageDpsCheckbox\.checked = !!widget\.damageShowDps/);
-  assert.match(manager, /if \(typeof showDps === 'boolean'\) changes\.damageShowDps = showDps/);
-  assert.match(read('src', 'main', 'widgetStore.js'), /'damageShowDps'/);
-  // the overlay swaps valueText for dpsText only on a damage aura with the toggle on
-  assert.match(overlaySrc, /currentConfig\.buffSource === 'damage' && currentConfig\.damageShowDps && buff\.dpsText != null/);
+  assert.match(html, /id="widget-damage-value-mode"/);
+  assert.match(html, /value="both"/);
+  assert.match(rendererSrc, /setWidgetDamageOptions\(selectedId, \{ valueMode: damageValueModeSelect\.value \}\)/);
+  assert.match(rendererSrc, /damageValueModeSelect\.value = widget\.damageValueMode/);
+  assert.match(manager, /DAMAGE_VALUE_MODES\.includes\(valueMode\)/);
+  assert.match(read('src', 'main', 'widgetStore.js'), /'damageValueMode'/);
+  // old boolean still migrates
+  assert.match(read('src', 'main', 'widgetStore.js'), /damageShowDps \? 'dps' : 'total'/);
+  // the overlay picks the string the mode names, honouring the old boolean as a fallback
+  assert.match(overlaySrc, /currentConfig\.damageValueMode \|\| \(currentConfig\.damageShowDps \? 'dps' : 'total'\)/);
+  assert.match(overlaySrc, /mode === 'both' && buff\.bothText != null/);
 });
 
 module.exports = () => report('damage-parser-unlock');

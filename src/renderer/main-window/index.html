@@ -385,10 +385,12 @@
                       </label>
                     </div>
                     <div class="row">
-                      <label title="Show each attacker's per-second rate (their damage divided by the fight length) instead of their cumulative damage. The share % is the same either way.">
-                        <input type="checkbox" id="widget-damage-dps-checkbox" />
-                        Show rate (DPS) instead of total damage
-                      </label>
+                      <label for="widget-damage-value-mode" title="What each attacker row's number shows. &quot;Damage&quot; is their cumulative total; &quot;Rate&quot; is that divided by the fight length; &quot;Both&quot; shows damage (rate). The share % is the same either way, and the total line always shows both.">Attacker rows show</label>
+                      <select id="widget-damage-value-mode">
+                        <option value="total">Damage</option>
+                        <option value="dps">Rate (DPS)</option>
+                        <option value="both">Both &ndash; damage (rate)</option>
+                      </select>
                     </div>
                   </div>
                 </div></div>

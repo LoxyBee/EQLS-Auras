@@ -183,9 +183,10 @@ function defaultSelfBuffsWidget(overrides = {}) {
     mineOnly: false,
     // The leading row carrying the fight's total and its rate.
     showTotalRow: true,
-    // Note 19. Per-attacker rows can show each attacker's rate (their damage / the fight length)
-    // instead of cumulative damage - the same divide the Total rate already uses. Off by default.
-    damageShowDps: false,
+    // Note 19. What each per-attacker row's number reads as: 'total' cumulative damage (default),
+    // 'dps' that attacker's own rate (their damage / the fight length, the same divide the Total
+    // rate uses), or 'both' - "damage (rate)". The Total row always shows both regardless.
+    damageValueMode: 'total',
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -447,9 +448,10 @@ function defaultCustomWidget(name) {
     mineOnly: false,
     // The leading row carrying the fight's total and its rate.
     showTotalRow: true,
-    // Note 19. Per-attacker rows can show each attacker's rate (their damage / the fight length)
-    // instead of cumulative damage - the same divide the Total rate already uses. Off by default.
-    damageShowDps: false,
+    // Note 19. What each per-attacker row's number reads as: 'total' cumulative damage (default),
+    // 'dps' that attacker's own rate (their damage / the fight length, the same divide the Total
+    // rate uses), or 'both' - "damage (rate)". The Total row always shows both regardless.
+    damageValueMode: 'total',
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -655,7 +657,7 @@ const SHAREABLE_FIELDS = [
   'fightTimeoutSec',
   'mineOnly',
   'showTotalRow',
-  'damageShowDps',
+  'damageValueMode',
   'travelDestination',
   'showOnAllProfiles',
   'visibleInZones',
@@ -756,6 +758,11 @@ function normalizeWidget(widget) {
     // it, showing up as tiles that simply stop updating.
     buffNames: Array.isArray(widget.buffNames) ? widget.buffNames : [],
     customTimers: Array.isArray(widget.customTimers) ? widget.customTimers : [],
+    // Note 19. `damageShowDps` was the old on/off boolean before 'both' was added - carry a widget
+    // that only has the boolean over to the equivalent mode.
+    damageValueMode:
+      widget.damageValueMode ||
+      (typeof widget.damageShowDps === 'boolean' ? (widget.damageShowDps ? 'dps' : 'total') : 'total'),
     // A widget saved before this field existed still has its real duration sitting on its first
     // trigger (they were all in sync anyway on every real aura seen so far - see the field's own
     // comment) - read it from there rather than resetting everyone to the bare default. A widget

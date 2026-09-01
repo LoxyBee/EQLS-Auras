@@ -833,12 +833,17 @@ function updateRef(ref, buff, isIcon) {
   // and this is where its number goes. Two lines rather than a second renderer: every list
   // setting the aura already has (row height, text size, colours, anchor, drag, per-loadout
   // visibility) then applies to it for free. Inert for every other aura, which never sets it.
-  // Note 19. A damage aura set to "show rate" swaps each attacker row's cumulative total for its
-  // own per-second rate (`dpsText`); the Total row has no dpsText and is unaffected.
-  const damageText =
-    currentConfig.buffSource === 'damage' && currentConfig.damageShowDps && buff.dpsText != null
-      ? buff.dpsText
-      : buff.valueText;
+  // Note 19. A damage aura's per-attacker rows read as cumulative damage ('total'), their own
+  // per-second rate ('dps'), or "damage (rate)" ('both') - damageValueMode, applied here so one
+  // engine feeds meters that differ on it. The Total row only carries valueText (already both), so
+  // this leaves it alone. `damageShowDps` is the old boolean this replaced - still honoured if the
+  // mode was never set.
+  let damageText = buff.valueText;
+  if (currentConfig.buffSource === 'damage') {
+    const mode = currentConfig.damageValueMode || (currentConfig.damageShowDps ? 'dps' : 'total');
+    if (mode === 'dps' && buff.dpsText != null) damageText = buff.dpsText;
+    else if (mode === 'both' && buff.bothText != null) damageText = buff.bothText;
+  }
   ref.timeEl.textContent =
     damageText != null ? damageText : formatTime(buff.remainingSec, currentConfig.timerFormat);
   if (isIcon) {
