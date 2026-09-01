@@ -1010,6 +1010,16 @@ function closeZonePrompt() {
   zonePromptPopup.updateVisibility(null);
 }
 
+// P3-4, travel-guide half. The ambiguous-cast popup is `focusable: false` so it never takes focus
+// at all - the zone-prompt popup CAN'T be, because the user types a zone name into its search box,
+// which needs keyboard focus. So this is the equivalent: once the interaction is over and there's
+// nothing left to ask, hand focus back to EQ. Guarded on `pendingZonePrompt` so a chained
+// follow-up (destination picked -> "and where are you now?") doesn't flick focus out and back.
+// Best-effort and not awaited, same as the ambiguous popup's call.
+function returnFocusAfterZonePrompt() {
+  if (!pendingZonePrompt) focusGameWindow();
+}
+
 // Chained after a destination is set: the other half of a route is where you're coming from, and
 // nothing ever replays zone history at startup (same limitation as currentlyMemorized), so this is
 // the one moment - right after the player has shown they're actively using the travel aura - worth
@@ -1042,6 +1052,7 @@ logService.watcher.on('line', (line) => {
   if (pendingZonePrompt) {
     debugLog(`TRAVEL picker closed by /tell ${typed}`);
     closeZonePrompt();
+    returnFocusAfterZonePrompt();
     return;
   }
   // Reported live: after a restart (currentZone always resets - nothing replays log history) an
@@ -1525,8 +1536,12 @@ ipcMain.handle('travel:resolveZonePrompt', (_event, { mode, zone }) => {
     promptDestinationNext();
   }
   pushTravelRoutes();
+  returnFocusAfterZonePrompt();
 });
-ipcMain.handle('travel:dismissZonePrompt', () => closeZonePrompt());
+ipcMain.handle('travel:dismissZonePrompt', () => {
+  closeZonePrompt();
+  returnFocusAfterZonePrompt();
+});
 // Reported live: closing the destination popup without picking a new zone left the OLD
 // destination active, and there was no way to actually stop tracking one at all - "Stop tracking"
 // in the popup is that missing action, distinct from the dismiss button (cancel vs. clear).
@@ -1537,6 +1552,7 @@ ipcMain.handle('travel:stopTracking', () => {
   debugLog('TRAVEL destination cleared via "Stop tracking"');
   closeZonePrompt();
   pushTravelRoutes();
+  returnFocusAfterZonePrompt();
 });
 // Reported live: an accidentally-wrong current zone had no way back in short of walking to a real
 // zone line, because the /tell command only ever opens the currentZone picker when the zone is
