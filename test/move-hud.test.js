@@ -236,13 +236,30 @@ test('the pad centre button opens the aura settings (auras only), navigation bef
 test('opening an aura from the pad, or "Unlock all", ends any move session already open', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
   // one shared teardown, used by the HUD Done button and the pad centre button
-  assert.match(main, /function endMoveSession\(\) \{[\s\S]*?exitUnlockAllMode\(\)[\s\S]*?exitMoveMode\(\)[\s\S]*?\n\}/);
+  assert.match(main, /function endMoveSession\(\{ suspend = false \} = \{\}\) \{[\s\S]*?exitUnlockAllMode\(\)[\s\S]*?exitMoveMode\(\)[\s\S]*?\n\}/);
   assert.match(main, /ipcMain\.handle\('moveHud:done', \(\) => endMoveSession\(\)\)/);
-  assert.match(main, /ipcMain\.on\('nudgePad:openSettings', \(_event, id\) => \{\s*\n\s*endMoveSession\(\);/);
+  assert.match(main, /ipcMain\.on\('nudgePad:openSettings', \(_event, id\) => \{\s*\n\s*endMoveSession\(\{ suspend: true \}\);/);
   // "Unlock all" tears down a stuck single move first, then opens its own session unconditionally
   const h = main.match(/ipcMain\.handle\('overlay:setAllUnlocked'[\s\S]*?\n\}\);/)[0];
   assert.match(h, /if \(hudMode === 'single'\) exitMoveMode\(\);/);
   assert.match(h, /widgetManager\.setAllUnlocked\(true\);\s*\n\s*enterUnlockAllMode\(\);/);
+});
+
+test('"Back to moving" resumes the move session the pad centre button stashed', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  // endMoveSession({suspend:true}) remembers the mode
+  assert.match(main, /suspendedMove = suspend && hudMode === 'all'\s*\n\s*\? \{ kind: 'all' \}/);
+  // the resume IPC puts it back, keeping the (now-consumed) suspend flag from re-clearing
+  const r = main.match(/ipcMain\.handle\('move:resume'[\s\S]*?\n\}\);/)[0];
+  assert.match(r, /const s = suspendedMove;\s*\n\s*suspendedMove = null;/);
+  assert.match(r, /s\.kind === 'all'[\s\S]*?enterUnlockAllMode\(\{ keepSuspended: true \}\)/);
+  assert.match(r, /enterMoveMode\(s\.moveKind, s\.id, \{ keepSuspended: true \}\)/);
+  // master state carries it so the top-bar button can show
+  assert.match(main, /suspendedMove: suspendedMove \? suspendedMove\.kind : null/);
+  const renderer = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  assert.match(renderer, /resumeMoveBtn\.style\.display = state\.suspendedMove \? '' : 'none'/);
+  assert.match(renderer, /window\.eqTracker\.resumeMove\(\)\.then\(refreshMasterButtons\)/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'index.html'), 'utf8'), /id="resume-move-btn"/);
 });
 
 test('a drag drop of the active aura snaps to the grid; others are left alone', () => {
