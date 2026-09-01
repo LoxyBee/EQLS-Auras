@@ -122,8 +122,13 @@ class LogWatcher extends EventEmitter {
     }
 
     if (stat.size < this.offset) {
-      // File got truncated/replaced (e.g. log cleared) - restart from its new end.
-      this.offset = 0;
+      // File got truncated/replaced (external tool, hand-edit, another log utility). Restart from
+      // its NEW END - not byte 0. `offset = 0` here meant the very next read streamed the whole
+      // file and emitted every line of it as live: a flood of hours-old buffs, every alert sound
+      // at once, the damage meter filling with stale data. The never-replay-history rule is
+      // absolute; a shrink is not an exception to it.
+      this.offset = stat.size;
+      this.lineBuffer = ''; // a partial line held from before the shrink is meaningless now
     }
 
     if (stat.size === this.offset) return;

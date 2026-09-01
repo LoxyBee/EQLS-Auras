@@ -1157,11 +1157,15 @@ function visibleBuffs(buffs, opts = {}) {
       filtered = filtered.filter((b) => b.durationSec <= currentConfig.maxDurationFilterSec);
     }
     if (currentConfig.excludedBuffNames && currentConfig.excludedBuffNames.length > 0) {
-      const excludeSet = new Set(currentConfig.excludedBuffNames.map((n) => n.toLowerCase()));
+      // String() defensively - the main-process equivalents (widgetManager) all do, and a bad
+      // share code that slipped a non-string through would otherwise break this aura's render
+      // rather than just this one filter. widgetStore.normalizeWidget filters these now, so this
+      // is belt to that brace.
+      const excludeSet = new Set(currentConfig.excludedBuffNames.map((n) => String(n).toLowerCase()));
       filtered = filtered.filter((b) => !excludeSet.has(b.name.toLowerCase()));
     }
   } else {
-    const nameSet = new Set((currentConfig.buffNames || []).map((n) => n.toLowerCase()));
+    const nameSet = new Set((currentConfig.buffNames || []).map((n) => String(n).toLowerCase()));
     filtered = buffs.filter((b) => nameSet.has(b.name.toLowerCase()));
   }
   // SOMEBODY ELSE'S CAST - a warning, not a buff. This used to be one-directional (strip alerts
