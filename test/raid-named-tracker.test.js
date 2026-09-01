@@ -122,6 +122,14 @@ test('bosses sort ahead of minis', () => {
   assert.ok(lastBoss < firstMini, 'a mini appeared before a boss');
 });
 
+test("Nagafen's Lair is the group dungeon, not the moved-out Lord Nagafen raid", () => {
+  const { t } = make();
+  enter(t, "Nagafen's Lair 4 (Refined)");
+  const names = t.getActive().map((r) => r.name);
+  assert.ok(names.includes('Efreeti Lord Djarn'), 'the real dungeon boss is on the board');
+  assert.ok(!names.includes('Lord Nagafen'), 'the raid boss lives in his own Voidling instance now');
+});
+
 test('a kill in a zone the board does not know is ignored', () => {
   const { t } = make();
   enter(t, "Nagafen's Lair");
@@ -140,10 +148,10 @@ test('a trash mob death does not grey anything', () => {
 test('re-entering the zone is a fresh instance - the board resets', () => {
   const { t } = make();
   enter(t, "Nagafen's Lair");
-  slay(t, 'Lord Nagafen');
-  assert.equal(t.getActive().find((r) => r.name === 'Lord Nagafen').killed, true);
+  slay(t, 'Efreeti Lord Djarn');
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, true);
   enter(t, "Nagafen's Lair 2 (Adaptive)");
-  assert.equal(t.getActive().find((r) => r.name === 'Lord Nagafen').killed, false, 'a fresh instance kept the kill');
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, false, 'a fresh instance kept the kill');
 });
 
 test('leaving for an untracked zone clears the board', () => {
@@ -157,9 +165,9 @@ test('leaving for an untracked zone clears the board', () => {
 test('killing the same named twice does not double-fire', () => {
   const { t, log } = make();
   enter(t, "Nagafen's Lair");
-  slay(t, 'Lord Nagafen');
+  slay(t, 'Efreeti Lord Djarn');
   const changes = log.filter((m) => m.includes('killed')).length;
-  slay(t, 'Lord Nagafen'); // an echo, or the corpse re-reported
+  slay(t, 'Efreeti Lord Djarn'); // an echo, or the corpse re-reported
   assert.equal(log.filter((m) => m.includes('killed')).length, changes, 'a second kill line fired again');
 });
 
@@ -198,8 +206,8 @@ test('a respawning zone shows a countdown and brings the named back', () => {
 test('a non-respawning zone leaves the kill greyed with no countdown', () => {
   const { t } = make();
   enter(t, "Nagafen's Lair");
-  slay(t, 'Lord Nagafen');
-  const row = t.getActive().find((r) => r.name === 'Lord Nagafen');
+  slay(t, 'Efreeti Lord Djarn');
+  const row = t.getActive().find((r) => r.name === 'Efreeti Lord Djarn');
   assert.equal(row.killed, true);
   assert.equal(row.respawnRemainingSec, null);
 });

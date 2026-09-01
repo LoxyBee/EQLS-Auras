@@ -1774,9 +1774,9 @@ function previewSampleBuffs() {
       return [mk(currentConfig.name || 'Preview', 8, 12, { id: 'preview' })];
     case 'raidNamed':
       return [
-        mk('Lord Nagafen', null, null, { tier: 'boss', killed: false, infinite: true }),
-        mk('King Tranix', null, null, { tier: 'mini', killed: true, infinite: true }),
-        mk('Warlord Skarlon', null, null, { tier: 'mini', killed: false, infinite: true }),
+        mk('Cazic-Thule', null, null, { tier: 'boss', killed: false, infinite: true }),
+        mk('Dread', null, null, { tier: 'mini', killed: true, infinite: true }),
+        mk('Fright', null, null, { tier: 'mini', killed: false, infinite: true }),
       ];
     case 'module':
       return [mk(currentConfig.name || 'Module', 9, 12, { key: 'preview' })];

@@ -77,15 +77,19 @@ const RAID_ZONE_NAMEDS = {
       { name: 'A broken golem', tier: 'mini' },
     ],
   },
+  // The "Nagafen's Lair" zone string is only ever the GROUP DUNGEON on EQL. The Lord Nagafen RAID
+  // was moved into its own Voidling-entry instance (docs/EVIDENCE.md's "Potential of the Void -
+  // Lord Nagafen - Weekly" task; the raid-lockout tracker in lockoutCore.js owns that side). This
+  // board previously listed the classic Sol B raid targets - Lord Nagafen, King Tranix, Warlord
+  // Skarlon, Magus Rokyl, Zordak Ragefire - none of which appear in ANY of the owner's logs. The
+  // nameds below are the ones her own kill/cast lines actually show in the group instance.
   "Nagafen's Lair": {
     shortName: 'soldungb',
     respawns: false,
     nameds: [
-      { name: 'Lord Nagafen', tier: 'boss' },
-      { name: 'King Tranix', tier: 'mini' },
-      { name: 'Warlord Skarlon', tier: 'mini' },
-      { name: 'Magus Rokyl', tier: 'mini' },
-      { name: 'Zordak Ragefire', tier: 'mini' },
+      { name: 'Efreeti Lord Djarn', tier: 'boss' }, // log-confirmed (2,917 lines, farmed repeatedly)
+      { name: 'a kobold king', tier: 'mini' },      // log-confirmed
+      { name: 'a kobold noble', tier: 'mini' },     // log-confirmed
     ],
   },
   "Permafrost Keep": {
