@@ -30,8 +30,11 @@ const path = require('node:path');
 const { test, report } = require('./harness');
 const { LogSplitter, extractTimestampMs } = require('../src/main/logSplitter');
 
+// Splitting is OFF by default now (a first-public-release change - it maintains a parallel per-day
+// copy of the log, and nothing core needs it). These behaviour tests opt in, since they exist to
+// exercise the splitting itself; the 'off by default' test below builds its own bare store.
 const store = () => {
-  const saved = {};
+  const saved = { splitSettings: { enabled: true } };
   return { loadJson: (k, d) => (k in saved ? saved[k] : d), saveJson: (k, v) => { saved[k] = v; } };
 };
 
@@ -280,6 +283,15 @@ test('it reports how much of the log it has still to read', async () => {
 
   s.stop();
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('splitting is OFF by default - only a written-down opt-in turns it on', () => {
+  const bare = { loadJson: (k, d) => d, saveJson: () => {} };
+  assert.equal(new LogSplitter(bare).enabled, false, 'a fresh install does not split');
+  const legacy = { loadJson: (k, d) => (k === 'splitSettings' ? {} : d), saveJson: () => {} };
+  assert.equal(new LogSplitter(legacy).enabled, false, 'an old config with no key is off');
+  const on = { loadJson: (k, d) => (k === 'splitSettings' ? { enabled: true } : d), saveJson: () => {} };
+  assert.equal(new LogSplitter(on).enabled, true, 'a saved opt-in is honoured');
 });
 
 // Splitting off means there is no per-day folder to put a hole in, so the rotation must not be

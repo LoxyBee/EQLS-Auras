@@ -787,6 +787,9 @@ module.exports = {
   LogRotationService,
   resetBoundaryBefore,
   rotationCutBefore,
+  // The backward-scan offset finder. Also used by lockoutService.backfill() to read only the
+  // current lockout week off the live log instead of the whole file - "rotation without the cut".
+  findWeekStartOffset,
   boundaryKey,
   boundaryHour,
   archiveNameFor,

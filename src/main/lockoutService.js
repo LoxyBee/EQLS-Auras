@@ -16,18 +16,20 @@
 // grid that stops updating is a disappointment; a buff overlay that stops updating because the
 // lockout parser hit an unexpected line is a betrayal of the thing she already shipped.
 //
-// ONLY THE LIVE LOG
+// ONLY THE LIVE LOG, AND ONLY THIS WEEK OF IT
 //
-// The grid answers "what have I completed THIS lockout week". The weekly archive (logRotation.js)
-// empties the live log at the reset, so everything in it belongs to the current week - nothing has
-// to be inferred and nothing older must be read. So both `backfill()` (history before the app
-// opened) and `handleLine()` (live) work off the single file the tailer is on, and nothing else.
+// The grid answers "what have I completed THIS lockout week". `backfill()` seeks to the current
+// reset boundary (findWeekStartOffset, a ~one-week backward scan) and reads only from there - so
+// it works the same whether the weekly archive is on or off, and a months-old log doesn't drag
+// every startup and rescan. `handleLine()` (live) is fed by the tailer, which already only sees
+// new lines. This replaces the earlier design, which relied on the weekly archive emptying the
+// live log at the reset; that archive is now an opt-in tidiness feature, not a dependency.
 //
-// NOT `Logs/Split/` - that is an optional per-day-file feature of this app (logSplitter.js) that
-// has nothing to do with lockouts, and its files hold older weeks. NOT `Logs/Archive/` - the
-// weekly rotation's store, same reason. An earlier version scanned the whole folder; that was for
-// measuring the reset BOUNDARY across two files (project()/projectReset()), which the grid does
-// not use.
+// NOT `Logs/Split/` - an optional per-day-file feature of this app (logSplitter.js), unrelated to
+// lockouts, holding older weeks. NOT `Logs/Archive/` - the weekly archive's store, same reason. An
+// earlier version scanned the whole folder; that was for measuring the reset BOUNDARY across two
+// files (project()/projectReset()), which the grid does not use. ("Add log files" is the one
+// deliberate exception - a manual gap-fill, uncapped, see addLogs().)
 //
 // ONE STATE PER CHARACTER
 //
@@ -41,9 +43,15 @@ const path = require('path');
 const readline = require('readline');
 const core = require('./lockoutCore');
 const { easternResetBefore, easternResetAfter } = require('../shared/easternReset');
+const { findWeekStartOffset } = require('./logRotation');
 
 // Same shape logWatcher accepts, so a file this service reads is a file that service would watch.
 const LOG_FILE_PATTERN = /^eqlog_.+\.txt$/i;
+
+// backfill() reads only from here down when the live log is bigger than this - see _weekStartOffset.
+// 20 MB is ~150k lines, well under a second to parse whole; past it the backward seek to this
+// week's boundary is the clear win. A weekly-archived log rarely reaches this at all.
+const SEEK_WHEN_LARGER_THAN = 20 * 1024 * 1024;
 
 /**
  * The only place a real clock is read, and it is deliberately at the edge.
@@ -164,37 +172,66 @@ class LockoutService extends EventEmitter {
     this.lastError = err && err.message ? err.message : String(err);
   }
 
+  // The current lockout week's reset boundary, as an absolute instant. Same computation
+  // getProjection() uses for `boundaryCivil` - kept in sync via this.resetRule.
+  _weekCutMs(now = Date.now()) {
+    return easternResetBefore(now, this.resetRule.weekday, this.resetRule.hour);
+  }
+
+  // Seek to the byte offset where the current lockout week begins in `file`, so a months-old log
+  // is not re-parsed on every backfill. Backward scan, touches ~one week of the file whatever its
+  // total size. Returns 0 (read whole file - it is all this week, or the scan couldn't place the
+  // boundary) on any error, so a scan failure just means "read it all", never "read nothing".
+  //
+  // Only bothered for a file large enough that reading it whole would actually cost something -
+  // below the threshold the seek's own open+scan is more work than just streaming it, and a small
+  // log is by definition already close to just this week. (This also keeps test fixtures, which
+  // are a few hundred bytes of a fixed historical date, reading whole rather than being
+  // date-scoped against the real clock.)
+  _weekStartOffset(file) {
+    let fd;
+    try {
+      const size = fs.statSync(file).size;
+      if (size <= SEEK_WHEN_LARGER_THAN) return 0;
+      fd = fs.openSync(file, 'r');
+      const off = findWeekStartOffset(fd, size, this._weekCutMs());
+      return typeof off === 'number' && off >= 0 && off <= size ? off : 0;
+    } catch {
+      return 0;
+    } finally {
+      if (fd !== undefined) try { fs.closeSync(fd); } catch { /* ignore */ }
+    }
+  }
+
   /**
-   * Read the current live log once, from the top.
+   * Read a log file into its character's lockout state.
    *
-   * ONLY THE LIVE LOG - the one file the tailer is on. NOT a folder scan.
+   * ONLY THE LIVE LOG (or a hand-picked "Change log file"). NOT a folder scan - the per-day
+   * `Logs/Split/` files and the `Logs/Archive/` store hold older weeks the grid must not count.
    *
-   * The grid answers "what have I completed THIS lockout week". The weekly archive
-   * (logRotation.js) empties the live log at the reset, so everything left in it belongs to the
-   * current week and nothing has to be inferred. Reading the per-day `Logs/Split/` files, the
-   * `Logs/Archive/` store, or any other `eqlog_*.txt` in the folder pulls in older weeks the grid
-   * must not count. `Logs/Split/` in particular is an optional feature of this app (see
-   * logSplitter.js) that has nothing to do with lockouts.
+   * The grid answers "what have I completed THIS lockout week", so backfill only needs this week's
+   * lines. `capToWeek` seeks to the current reset boundary (findWeekStartOffset, a ~one-week
+   * backward scan) and streams from there - this is what lets the weekly archive be OFF by default
+   * without a months-old log dragging every startup and rescan to a crawl. `lockoutCore` also
+   * scopes kills to the period from `now` itself, so an over-read is corrected there anyway; the
+   * cap is purely about not parsing bytes that can't matter.
    *
-   * (Session C's first version scanned the whole folder. That was for measuring the reset
-   * BOUNDARY across two files - project()/projectReset() - which the grid does not use. The
-   * owner's design is live-log-only.)
+   * addLogs() ("Add log files" - the manual gap-fill) does NOT cap: those files are chosen
+   * precisely to cover a stretch the live log is missing.
    *
-   * STREAMED, not read whole - `readline` over a stream yields between chunks so the UI stays
-   * alive on a large log. Idempotent by the core's own contract (clause 6), so running it after
-   * the live tailer has already seen some of the same lines is safe.
+   * STREAMED - `readline` yields between chunks so the UI stays alive. Idempotent by the core's
+   * own contract (clause 6), so overlapping the live tailer or an earlier read is safe. Returns
+   * the line count, or -1 if the filename carried no character.
    */
-  // Stream one file into its character's state. Idempotent (core clause 6), so overlapping the
-  // live tailer or an earlier backfill is safe. Returns the line count, or -1 if the name carried
-  // no character.
-  async _readInto(file) {
+  async _readInto(file, { capToWeek = false } = {}) {
     const character = core.characterFromLogFilename(path.basename(file));
     if (!character) return -1;
     const state = this._stateFor(character);
     let lines = 0;
     try {
+      const start = capToWeek ? this._weekStartOffset(file) : 0;
       // crlfDelay: Infinity - EverQuest logs are CRLF but a copy or an editor can leave LF.
-      const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
+      const rl = readline.createInterface({ input: fs.createReadStream(file, { start }), crlfDelay: Infinity });
       for await (const line of rl) { lines += 1; core.applyLine(state, line); }
     } catch (err) {
       this._note(err); // a locked or half-written log is ordinary
@@ -264,7 +301,7 @@ class LockoutService extends EventEmitter {
     this.emit('backfillChanged', this.getStatus());
     const started = Date.now();
 
-    const lines = Math.max(0, await this._readInto(file));
+    const lines = Math.max(0, await this._readInto(file, { capToWeek: true }));
     const read = core.characterFromLogFilename(path.basename(file)) ? 1 : 0;
 
     this.backfillState = 'done';

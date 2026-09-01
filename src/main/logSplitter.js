@@ -146,7 +146,12 @@ class LogSplitter {
     this.progress = store.loadJson('splitProgress', {});
 
     const settings = store.loadJson('splitSettings', {});
-    this.enabled = settings.enabled !== false;
+    // OFF by default (changed for the first public release). It maintains a parallel per-day copy
+    // of the log - useful, but disk-doubling and unexpected on a fresh "buff overlay" install, and
+    // nothing core depends on it (lockouts read the live log directly - see lockoutService.js).
+    // Only `enabled: true` written down (the user ticking the box) turns it on; an install that had
+    // ticked it keeps its saved value.
+    this.enabled = settings.enabled === true;
     this.dayStartHour = clampDayStartHour(settings.splitDayStartHour);
     this.customOutputDir = settings.customOutputDir || null;
 
