@@ -18,3 +18,16 @@ Not on the page: Pull Timer panel (module — private, not advertised), share co
 
 The `## Screenshots`, `## Videos` and `## Writing copy from this file` sections at the bottom
 of HIGHLIGHTS.md are internal build notes — they do not render on the page.
+
+---
+
+## Install steps (page section — put near the download button)
+
+**Installing**
+
+1. Download the installer.
+2. Run it.
+3. Windows SmartScreen will warn about an unknown publisher. Click **More info**, then **Run anyway**.
+4. Open EQLS Auras. It finds your EverQuest install on its own — nothing to point it at.
+
+Windows only. Free.
