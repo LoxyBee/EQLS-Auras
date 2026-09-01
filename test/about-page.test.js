@@ -26,6 +26,18 @@ test('the identity card is the first card in #page-about', () => {
   assert.match(about.slice(idIdx, changelogIdx), /id="about-site-link"/);
 });
 
+test('a "Good to know" card names the real limitations, up near the top', () => {
+  const about = html.slice(html.indexOf('id="page-about"'));
+  const cardIdx = about.indexOf('id="about-limitations-card"');
+  const auraHelpIdx = about.indexOf('How auras work');
+  assert.ok(cardIdx > -1, 'no limitations card on the About page - strangers will file known tradeoffs as bugs');
+  assert.ok(cardIdx < auraHelpIdx, 'it should sit near the top, before the how-to cards');
+  const card = about.slice(cardIdx, cardIdx + 1200);
+  assert.match(card, /new.{0,20}log lines|before you opened|while it was closed/i, 'the never-replays-history limit is not mentioned');
+  assert.match(card, /restart/i, 'the restart-clears-timers limit is not mentioned');
+  assert.match(card, /damage meter/i, 'the damage-meter roughness is not mentioned');
+});
+
 test('the version span is filled from getVersionInfo, not hard-coded', () => {
   assert.match(rendererSrc, /getElementById\('about-version'\)/);
   assert.match(rendererSrc, /about-version.*\.textContent = `v\$\{info\.appVersion\}`/s);

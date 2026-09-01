@@ -1740,6 +1740,17 @@
           <p class="hint"><span id="about-version"></span> · <a href="#" id="about-site-link">eqlsource.com/tools</a></p>
         </div>
 
+        <div class="card" id="about-limitations-card">
+          <h3>Good to know</h3>
+          <ul class="about-notes">
+            <li>It only ever reads <em>new</em> log lines. Anything that happened before you opened the app, or while it was closed, it didn't see.</li>
+            <li>A restart clears running timers; they come back as each buff is recast (or are restored if you restart within about 5 minutes).</li>
+            <li>During a big multi-buff cast (Quick Buff and the like) a buff can occasionally show under the wrong name. Right-click a tile to correct or hide it.</li>
+            <li>The damage meter is a rough live readout, not a precise parser — it leaves out incoming damage and can't place a small share of a busy fight.</li>
+            <li>EQ must run windowed or borderless (not exclusive full-screen) for the overlay to draw over it.</li>
+          </ul>
+        </div>
+
         <div class="card" id="changelog-card">
           <h3>What's changed</h3>
           <div id="changelog-body" class="hint">Loading…</div>

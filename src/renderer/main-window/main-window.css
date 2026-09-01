@@ -1120,6 +1120,15 @@ h4 {
   margin: 0 0 8px;
 }
 
+/* About page "Good to know" list - reads like hint text but as bullets. */
+.about-notes {
+  font-size: 12px;
+  color: var(--ink);
+  margin: 0;
+  padding-left: 18px;
+}
+.about-notes li { margin: 4px 0; }
+
 /* An emptied hint must take no space at all, not an 8px gap where a paragraph used to be.
    Several of these are emptied deliberately - their text moved into a title= tooltip on the
    control it describes - and several others are filled in by script and are genuinely empty
