@@ -367,12 +367,9 @@ test('permanent buffs are an uncapped pool of their own, kept even when a temp b
 // ---------------------------------------------------------------------------
 
 test('the real roster: cleric/shaman/bard has every buff from the reference loadout as a candidate', () => {
-  let roster;
-  try {
-    roster = require(path.join('..', 'src', 'shared', 'data', 'buffs.json'));
-  } catch {
-    return;
-  }
+  // buffs.json is committed and always loads - a require failure is a real broken roster and
+  // should throw here, not be swallowed into a silent pass (finding #15).
+  let roster = require(path.join('..', 'src', 'shared', 'data', 'buffs.json'));
   roster = roster.buffs || roster;
   const plan = computePlan({ roster, classes: ['CLR', 'SHM', 'BRD'], level: 50 });
   const reference = [
@@ -386,12 +383,7 @@ test('the real roster: cleric/shaman/bard has every buff from the reference load
 });
 
 test('the real roster: a full 14 comes out, and Strength + Infusion of Spirit both survive', () => {
-  let roster;
-  try {
-    roster = require(path.join('..', 'src', 'shared', 'data', 'buffs.json'));
-  } catch {
-    return;
-  }
+  let roster = require(path.join('..', 'src', 'shared', 'data', 'buffs.json'));
   roster = roster.buffs || roster;
   const order = ['Strength', 'Infusion of Spirit'];
   const plan = computePlan({ roster, classes: ['CLR', 'SHM', 'BRD'], level: 50, priorityOrder: order });

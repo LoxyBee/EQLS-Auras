@@ -5,6 +5,10 @@
   "description": "Reads your EverQuest log file and shows a transparent overlay with countdown timers for your active buffs.",
   "main": "src/main/main.js",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LoxyBee/EQLS-Auras.git"
+  },
   "scripts": {
     "start": "electron .",
     "test": "node test/run.js",
