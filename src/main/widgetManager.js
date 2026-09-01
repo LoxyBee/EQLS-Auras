@@ -825,6 +825,13 @@ function isPreviewAll() {
   const all = widgetStore.getAll();
   return all.length > 0 && all.every((c) => previewShown.has(c.id));
 }
+// The button toggles on THIS: any aura previewing at all. isPreviewAll only reports "literally
+// every aura", which reads as OFF the moment one aura is created after the toggle or dropped from
+// preview individually - and then the button turns MORE on instead of clearing. "any" makes one
+// press always clear the lot.
+function isPreviewAny() {
+  return previewShown.size > 0;
+}
 
 function setPreview(id, enabled) {
   const config = widgetStore.getById(id);
@@ -1497,6 +1504,7 @@ module.exports = {
   setPreviewAll,
   isPreviewShown,
   isPreviewAll,
+  isPreviewAny,
   isSoundsMuted,
   setSoundsMuted,
   isMasterHidden,

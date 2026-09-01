@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onPreviewMode: (callback) => {
     ipcRenderer.on('widget:previewMode', (_event, opts) => callback(opts || {}));
   },
+  getPreviewMode: (widgetId) => ipcRenderer.invoke('widget:getPreviewMode', widgetId),
   reportContentSize: (widgetId, width, height, originX) => {
     ipcRenderer.send('widget:reportContentSize', { id: widgetId, width, height, originX });
   },
