@@ -42,6 +42,17 @@ test('validateModule accepts a minimal good module and normalises optionals', ()
   assert.deepEqual(r.module.page, []);
   assert.deepEqual(r.module.defaults, {});
   assert.equal(r.module.hasAura, false);
+  // No aura -> nowhere to put an aura-panel, so settings fall back to a sidebar page.
+  assert.equal(r.module.settingsUI, 'sidebar');
+});
+
+test('settingsUI defaults to "aura" for a module with an aura, and honours an explicit choice', () => {
+  const base = { id: 'x', name: 'X', apiVersion: API_VERSION, onLine: () => null, hasAura: true };
+  assert.equal(validateModule({ ...base }).module.settingsUI, 'aura');
+  assert.equal(validateModule({ ...base, settingsUI: 'sidebar' }).module.settingsUI, 'sidebar');
+  assert.equal(validateModule({ ...base, settingsUI: 'nonsense' }).module.settingsUI, 'aura');
+  // asks for 'aura' but has no aura -> can't honour it, falls back to sidebar
+  assert.equal(validateModule({ ...base, hasAura: false, settingsUI: 'aura' }).module.settingsUI, 'sidebar');
 });
 
 test('validateModule rejects the ways a module can be wrong', () => {
@@ -330,6 +341,8 @@ test('modules load from the install folder, not userData, and ship in the instal
 test('modules/aggro-board.js (shipped) is a valid v1 module, key-exclusive, self-clears on slain', () => {
   const mod = require('../modules/aggro-board.js');
   assert.equal(validateModule(mod).ok, true, validateModule(mod).error);
+  // Its two options live on the aura panel, not a sidebar page.
+  assert.equal(validateModule(mod).module.settingsUI, 'aura');
 
   const ctx = { stripTimestamp: (l) => l.replace(/^\[[^\]]+\]\s*/, ''), now: Date.now() };
   const s = { showMargin: true, staleSeconds: 12 };

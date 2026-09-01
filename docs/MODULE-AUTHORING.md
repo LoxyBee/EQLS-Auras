@@ -36,7 +36,10 @@ module.exports = {
   apiVersion: 1,             // required — must equal the app's module API version (currently 1).
   description: '',           // optional — one line, shown next to the aura in the Add-Aura list.
   hasAura: true,             // optional (default false) — does this module put tiles on the overlay?
-  page: [                    // optional — the module's own settings page.
+  settingsUI: 'aura',        // optional — where `page` renders. 'aura' (default) = on the module
+                             //   aura's own settings panel, no sidebar entry. 'sidebar' = a
+                             //   dedicated nav button + page. See "The settings page" below.
+  page: [                    // optional — the module's own settings.
     { section: 'Detection' },
     { key: 'threshold', type: 'slider',   label: 'Alert under', min: 0, max: 60, step: 1, default: 30 },
     { key: 'loud',      type: 'checkbox', label: 'Play a sound', default: false },
@@ -56,7 +59,8 @@ module.exports = {
 | `apiVersion` | yes | Exactly `1`. A mismatch is rejected with a reason in the debug log. |
 | `description` | no | One line. Default `''`. |
 | `hasAura` | no | `true` if the module renders overlay tiles from what `onLine` returns. Default `false`. A module without an aura still runs `onLine` but in v1 has no visible output — if it has no aura and no `page` it does nothing. |
-| `page` | no | Settings page spec. Default `[]`. A module with a non-empty `page` gets a nav button and a settings page in the app; a module without one has no page. |
+| `settingsUI` | no | `'aura'` (default) or `'sidebar'`. `'aura'` renders `page` on the module aura's own settings panel — no sidebar button. `'sidebar'` gives the module a dedicated nav button + page. **Best practice is `'aura'`;** reach for `'sidebar'` only when a module has enough *global* options that an aura panel would be cramped. A module with no aura can't use `'aura'` and falls back to `'sidebar'` whatever it asks for. |
+| `page` | no | Settings spec. Default `[]`. Renders where `settingsUI` says. A module with no `page` has no settings surface. |
 | `onLine` | yes | Turns log lines into aura entries. Must be a function. |
 
 ## `onLine(line, ctx, settings)`
@@ -119,8 +123,21 @@ on the next 1-second sweep.
 | `text` | `default` | string |
 
 Every control needs a `key` and should have a `label`. Changes are saved (`moduleSettings.json`,
-keyed by module `id`) and survive a restart. The page appears as a plain nav button at the bottom
-of the sidebar — it reads as an ordinary built-in page; there is no "Modules" heading.
+keyed by module `id` — **per module, not per aura**: every aura fed by one module shares the one
+set of values, matching the single `onLine` that feeds them) and survive a restart.
+
+**Where the controls appear** depends on `settingsUI`:
+
+- **`'aura'` (default, recommended).** The controls render as a *Module settings* card on the
+  module aura's own settings panel — the same panel where its position, size and alerts are set.
+  No sidebar button. This is the shape almost every module wants: keep the whole thing in one
+  place, inside the aura you added.
+- **`'sidebar'`.** The module gets its own nav button and page, reading as an ordinary built-in
+  page (no "Modules" heading). Use this only when a module genuinely has a lot of *global*
+  settings — ones that aren't about any single aura — and an aura panel would be cramped.
+
+A module with `hasAura: false` has no aura panel to use, so its `page` always renders as a
+sidebar page regardless of `settingsUI`.
 
 ## Your module's aura
 
@@ -135,8 +152,9 @@ module's `id` (internally a `kind: 'module-aura'` aura with `buffSource: 'module
 module file removes it from the Add-Aura list and its aura goes blank — the aura itself stays
 until you delete it.
 
-The module's **own** settings (`page`) are separate — they live on the module's nav page, not on
-this aura panel.
+With the default `settingsUI: 'aura'`, the module's own `page` controls render right here on this
+same panel, as a *Module settings* card — there is no separate page to hunt for. (This panel still
+has no buff picker and no "watching" source — the module *is* the source.)
 
 ## When a module doesn't appear
 
@@ -183,6 +201,7 @@ module.exports = {
   apiVersion: 1,
   description: 'A shared countdown started from a chat command.',
   hasAura: true,
+  settingsUI: 'aura',   // its three controls sit on the aura's own settings panel
   page: [
     { section: 'Timing' },
     { key: 'seconds', type: 'slider', label: 'Pull length', min: 3, max: 30, default: 10 },
@@ -211,14 +230,18 @@ module.exports = {
 
 The example module doubles as a smoke test. With the app running:
 
-- [ ] Drop `docs/modules/pull-timer.js` into `%APPDATA%\EQ Buff Tracker\modules\` → a **Pull
-      Timer** nav button and settings page appear within ~1s, no restart.
-- [ ] **Add Aura → Standalone tools** lists **Pull Timer**; adding it creates an overlay aura.
+- [ ] Drop `docs/modules/pull-timer.js` into `%APPDATA%\EQ Buff Tracker\modules\` → within ~1s,
+      no restart, **Add Aura → Standalone tools** lists **Pull Timer**. No sidebar button appears
+      (it's `settingsUI: 'aura'`).
+- [ ] Add it → an overlay aura is created. Open its settings → a **Module settings** card shows
+      the Pull length / Start word / Cancel word controls.
 - [ ] A group / guild / say chat line containing `pulling` starts a countdown tile on that aura;
       a line containing `hold` clears it.
 - [ ] Edit the file — change the pull-length `default` from `10` to `20`, save → the module
       reloads and the next pull runs 20s.
-- [ ] Delete the file → the nav button and the Add-Aura entry disappear; an aura you already
-      created stays but shows nothing.
+- [ ] Change `settingsUI` to `'sidebar'`, save → a **Pull Timer** nav button + page appear
+      instead, and the Module settings card on the aura panel is gone. Change it back.
+- [ ] Delete the file → the Add-Aura entry disappears; an aura you already created stays but
+      shows nothing.
 - [ ] Break the file (introduce a syntax error) → nothing crashes. With **Diagnostics →
       detection log** on, the log shows `MODULE "pull-timer.js" - failed to load: ...`.

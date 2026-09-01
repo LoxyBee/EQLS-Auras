@@ -13,6 +13,10 @@ module.exports = {
   apiVersion: 1,
   description: 'A shared countdown started from a chat command.',
   hasAura: true,
+  // 'aura' (the default) puts the three controls below on this module's aura settings panel, with
+  // no sidebar nav button. That is the recommended shape - reach for settingsUI: 'sidebar' only
+  // when a module has enough GLOBAL options that an aura panel would be cramped.
+  settingsUI: 'aura',
 
   page: [
     { section: 'Timing' },

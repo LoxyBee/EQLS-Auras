@@ -160,6 +160,10 @@ const FIELD_SHAPES = {
   'track-others': ['self-buffs'],
   'damage-settings': ['damage'],
   'travel-settings': ['travel'],
+  // feat/module-system - a module aura whose module keeps its controls on the aura panel
+  // (settingsUI 'aura', the default). Whether the card actually shows also depends on the loaded
+  // module declaring controls, but the shape always carries the slot.
+  'module-settings': ['module'],
 };
 // 'buff-source' is the one field with a real, deliberate exception baked into the design: an
 // ally-cast-alert aura's buffSource:'ally' is plumbing (see widgetShape's own comment history),

@@ -378,6 +378,14 @@
                     <p class="hint">If it does not know your current zone, it asks for that first.</p>
                   </div>
 
+                  <!-- feat/module-system. A module aura whose module keeps its settings on the aura
+                       panel (settingsUI 'aura', the default) - its declared controls are rendered
+                       into here by main-window.js. Empty and hidden for every other aura. -->
+                  <div id="widget-module-settings" style="display:none">
+                    <h4 class="settings-subsection-title">Module settings</h4>
+                    <div id="widget-module-settings-controls"></div>
+                  </div>
+
                   <!-- Note 19. Only ever shown on a damage meter - see the buffSource check in
                        main-window.js. -->
                   <div id="widget-damage-settings" style="display:none">

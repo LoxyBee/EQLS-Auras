@@ -112,6 +112,9 @@ module.exports = {
   apiVersion: 1,
   description: 'Who the mob is actually swinging at. Observed, not estimated.',
   hasAura: true,
+  // Its two options live on the aura's own settings panel, not a sidebar page - the recommended
+  // shape for a module without a lot of GLOBAL settings. See docs/MODULE-AUTHORING.md.
+  settingsUI: 'aura',
 
   page: [
     { section: 'Display' },

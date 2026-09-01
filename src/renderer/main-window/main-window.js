@@ -41,6 +41,11 @@ async function init() {
   initBugReport();
   initActionBarsPage();
   initModules();
+  // One fetch of the module list, fanned out to every subscriber registered above (initModules for
+  // sidebar pages, initWidgetsPanel for Add-Aura entries + the per-aura settings card). Kept fresh
+  // on hot-reload.
+  refreshModuleRegistry();
+  if (window.eqTracker.onModulesChanged) window.eqTracker.onModulesChanged(refreshModuleRegistry);
   initBuffPlanner();
   initLoggingWatch();
   initChangelog();
@@ -1752,6 +1757,8 @@ function initWidgetsPanel() {
   const damageShowRateCb = document.getElementById('widget-damage-show-rate');
   const damageScopeSelect = document.getElementById('widget-damage-scope');
   const damageCharmedPetsCb = document.getElementById('widget-damage-charmed-pets');
+  const moduleSettingsEl = document.getElementById('widget-module-settings');
+  const moduleSettingsControlsEl = document.getElementById('widget-module-settings-controls');
   const bordersRowEl = document.getElementById('widget-borders-row');
   const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
@@ -3023,9 +3030,9 @@ function initWidgetsPanel() {
     // controls that matter for a checklist ('list-format', same as travel).
     'raid-named': ['list-format', 'timer-text', 'opacity', 'position', 'alerts'],
     // feat/module-system. The module IS the source - no picker, no source choice, no spell-based
-    // controls. Just how it looks, where it sits, and the standard alerts. Its own settings live
-    // on the module's own page.
-    'module': ['display-choice', 'timer-text', 'opacity', 'position', 'alerts'],
+    // controls. Just how it looks, where it sits, the standard alerts, and (for a module that
+    // keeps its settings on the aura panel rather than a sidebar page) its own declared controls.
+    'module': ['display-choice', 'timer-text', 'opacity', 'position', 'alerts', 'module-settings'],
     'custom-buff': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'buff-source', 'buff-picker', 'ally-grouping'],
     'custom-debuff': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'debuff-cast-by', 'buff-picker', 'ally-grouping'],
     'ally-alert': ['text-fields', 'text-instant', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-picker'],
@@ -3191,6 +3198,14 @@ function initWidgetsPanel() {
     // fight timeout on a buff aura would be a live control that changes nothing.
     damageSettingsEl.style.display = has('damage-settings') ? '' : 'none';
     travelSettingsEl.style.display = has('travel-settings') ? '' : 'none';
+    // feat/module-system - a module aura whose module keeps its controls on the aura panel
+    // ('aura', the default) rather than a sidebar page. Hidden if the module isn't loaded yet
+    // (registry is async - the card appears on the re-render once it is) or declares no controls.
+    // Only visibility here; the controls themselves are (re)built in renderBuffFilter, once per
+    // selectWidget, so a display-mode toggle can't blow away a half-edited value.
+    if (moduleSettingsEl) {
+      moduleSettingsEl.style.display = has('module-settings') && moduleAuraHasPanelSettings(widget) ? '' : 'none';
+    }
     // Grouping is per-person, so it needs tiles that actually carry a person - shown for the Ally
     // Buffs builtin and any custom aura set to the ally source, hidden everywhere else rather than
     // offering a setting that could never do anything. A text aura draws no per-person tiles at
@@ -3421,6 +3436,12 @@ function initWidgetsPanel() {
     if (fields.has('travel-settings')) {
       showTravelDestination(widget.travelDestination);
       showTravelPickerCommand();
+    }
+
+    // feat/module-system - (re)build the module aura's own controls, once per selectWidget so a
+    // later shape re-check (a display-mode toggle) only flips visibility, never rebuilds mid-edit.
+    if (fields.has('module-settings') && moduleAuraHasPanelSettings(widget) && moduleSettingsControlsEl) {
+      renderModulePageControls(moduleSettingsControlsEl, moduleById(widget.moduleId));
     }
 
     if (fields.has('custom-timers')) {
@@ -4575,24 +4596,32 @@ function initWidgetsPanel() {
   }
 
   // feat/module-system - custom modules with `hasAura` become Standalone-tools entries in the Add
-  // Aura list. Kept fresh from the host (hot-reload) so a dropped-in module shows up without a
-  // restart. Synthesised into the same premade shape so renderPremadeChoice needs no special case.
+  // Aura list, synthesised into the same premade shape so renderPremadeChoice needs no special
+  // case. Fed off the shared module registry (hot-reload), which also re-renders an open module
+  // aura's settings panel so its controls appear the moment a module is dropped in.
   let moduleAuraChoices = [];
-  function refreshModuleAuraChoices() {
-    if (!window.eqTracker.listModules) return Promise.resolve();
-    return window.eqTracker.listModules().then((modules) => {
-      moduleAuraChoices = (modules || [])
-        .filter((m) => m.hasAura)
-        .map((m) => ({
-          name: m.name,
-          description: m.description || 'A custom module.',
-          group: 'standalone',
-          create: (n) => window.eqTracker.createModuleAuraWidget(n, m.id),
-        }));
+  onModuleRegistryChange((modules) => {
+    moduleAuraChoices = (modules || [])
+      .filter((m) => m.hasAura)
+      .map((m) => ({
+        name: m.name,
+        description: m.description || 'A custom module.',
+        group: 'standalone',
+        create: (n) => window.eqTracker.createModuleAuraWidget(n, m.id),
+      }));
+    renderPremadeList();
+    if (selectedId) {
+      const w = findWidget(selectedId);
+      if (w && w.kind === 'module-aura') selectWidget(selectedId);
+    }
+  });
+  if (window.eqTracker.onModuleSettingsChanged) {
+    window.eqTracker.onModuleSettingsChanged(() => {
+      if (!selectedId) return;
+      const w = findWidget(selectedId);
+      if (w && w.kind === 'module-aura') selectWidget(selectedId);
     });
   }
-  refreshModuleAuraChoices();
-  if (window.eqTracker.onModulesChanged) window.eqTracker.onModulesChanged(() => refreshModuleAuraChoices());
 
   function renderPremadeList() {
     premadeListEl.innerHTML = '';
@@ -4732,8 +4761,9 @@ function initWidgetsPanel() {
     importStatus.textContent = '';
     modalNewWidgetNameInput.value = '';
     renderPremadeList();
-    // Modules are fetched async; re-render once they're in so a dropped-in module shows up here.
-    refreshModuleAuraChoices().then(renderPremadeList);
+    // Re-pull the module list on open so a just-dropped module shows up here; the registry
+    // subscriber above rebuilds moduleAuraChoices and re-renders the list when it lands.
+    refreshModuleRegistry();
     addWidgetModalBackdrop.style.display = 'flex';
   }
 
@@ -7086,72 +7116,133 @@ function initBugReport() {
   });
 }
 
-// feat/module-system - custom modules that declare a `page` get their own settings page in the
-// sidebar, rendered from that declarative spec. No "Modules" heading, no folder link, no error
-// panel (owner's call) - a module page reads as an ordinary built-in page. Rebuilt whenever the
-// module set changes (hot-reload). A `hasAura` module's overlay aura is handled by the widget
-// system, not here.
+// feat/module-system - the renderer side of custom modules.
+//
+// A module's `page` controls render in ONE of two places, chosen by its `settingsUI` (see
+// moduleHost.js and docs/MODULE-AUTHORING.md): 'aura' (the default and the recommended shape)
+// puts them on the module aura's own settings panel - no sidebar entry at all; 'sidebar' gives
+// the module its own nav button + page, for the rare module with enough GLOBAL options that an
+// aura panel would be cramped. Either way the controls are built from the same declarative spec
+// by moduleControlRow() below.
+
+// One shared, hot-reloaded copy of the registered-module list. Both initModules() (sidebar pages)
+// and initWidgetsPanel() (Add-Aura entries + the per-aura settings card) read it, so there is one
+// fetch and one change subscription rather than several that could drift.
+let moduleRegistry = [];
+const moduleRegistrySubs = [];
+function onModuleRegistryChange(fn) {
+  moduleRegistrySubs.push(fn);
+  fn(moduleRegistry);
+}
+function refreshModuleRegistry() {
+  if (!window.eqTracker.listModules) return Promise.resolve([]);
+  return window.eqTracker.listModules().then((mods) => {
+    moduleRegistry = Array.isArray(mods) ? mods : [];
+    for (const fn of moduleRegistrySubs) fn(moduleRegistry);
+    return moduleRegistry;
+  });
+}
+function moduleById(id) {
+  return moduleRegistry.find((m) => m.id === id) || null;
+}
+
+// True when this aura is fed by a module that keeps its declared controls on the aura's own
+// settings panel (settingsUI 'aura', the default) AND actually declares some. False while the
+// module registry is still loading - the panel re-renders when it arrives.
+function moduleAuraHasPanelSettings(widget) {
+  if (!widget || widget.kind !== 'module-aura') return false;
+  const m = moduleById(widget.moduleId);
+  return !!(
+    m &&
+    m.settingsUI !== 'sidebar' &&
+    Array.isArray(m.page) &&
+    m.page.some((e) => 'key' in e)
+  );
+}
+
+// One control row from a module's page spec. Used by both the sidebar page and the aura settings
+// card. `setModuleSetting` is per-module (not per-aura) - every aura fed by one module shares the
+// one set of settings, matching the single onLine() that feeds them all.
+function moduleControlRow(moduleId, field, value) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = field.label || field.key;
+  row.appendChild(label);
+
+  let input;
+  const push = (v) => window.eqTracker.setModuleSetting(moduleId, field.key, v);
+
+  if (field.type === 'checkbox') {
+    label.remove();
+    const wrap = document.createElement('label');
+    input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = !!value;
+    input.addEventListener('change', () => push(input.checked));
+    wrap.append(input, document.createTextNode(' ' + (field.label || field.key)));
+    row.appendChild(wrap);
+  } else if (field.type === 'select') {
+    input = document.createElement('select');
+    input.className = 'text-input';
+    for (const opt of field.options || []) {
+      const o = document.createElement('option');
+      o.value = o.textContent = opt;
+      input.appendChild(o);
+    }
+    input.value = value;
+    input.addEventListener('change', () => push(input.value));
+    row.appendChild(input);
+  } else if (field.type === 'slider') {
+    input = document.createElement('input');
+    input.type = 'range';
+    input.min = field.min;
+    input.max = field.max;
+    input.step = typeof field.step === 'number' ? field.step : 1;
+    input.value = value;
+    const out = document.createElement('span');
+    out.className = 'slider-value';
+    out.textContent = value;
+    input.addEventListener('input', () => {
+      out.textContent = input.value;
+      push(Number(input.value));
+    });
+    row.append(input, out);
+  } else {
+    input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'text-input';
+    input.value = value == null ? '' : value;
+    input.addEventListener('change', () => push(input.value));
+    row.appendChild(input);
+  }
+  return row;
+}
+
+// Fill a container with a module's page controls (headings + rows). Shared by the sidebar page and
+// the aura settings card. Returns the number of control rows added.
+function renderModulePageControls(container, mod) {
+  container.innerHTML = '';
+  let controls = 0;
+  for (const entry of mod.page || []) {
+    if (entry.section) {
+      const h = document.createElement('h3');
+      h.className = 'settings-subsection-title';
+      h.textContent = entry.section;
+      container.appendChild(h);
+    } else {
+      container.appendChild(moduleControlRow(mod.id, entry, mod.settings[entry.key]));
+      controls++;
+    }
+  }
+  return controls;
+}
+
 function initModules() {
   const navSlot = document.getElementById('module-nav-slot');
   const pageSlot = document.getElementById('module-page-slot');
   if (!navSlot || !pageSlot || !window.eqTracker.listModules) return;
-
-  function controlRow(moduleId, field, value) {
-    const row = document.createElement('div');
-    row.className = 'row';
-    const label = document.createElement('span');
-    label.className = 'label';
-    label.textContent = field.label || field.key;
-    row.appendChild(label);
-
-    let input;
-    const push = (v) => window.eqTracker.setModuleSetting(moduleId, field.key, v);
-
-    if (field.type === 'checkbox') {
-      label.remove();
-      const wrap = document.createElement('label');
-      input = document.createElement('input');
-      input.type = 'checkbox';
-      input.checked = !!value;
-      input.addEventListener('change', () => push(input.checked));
-      wrap.append(input, document.createTextNode(' ' + (field.label || field.key)));
-      row.appendChild(wrap);
-    } else if (field.type === 'select') {
-      input = document.createElement('select');
-      input.className = 'text-input';
-      for (const opt of field.options || []) {
-        const o = document.createElement('option');
-        o.value = o.textContent = opt;
-        input.appendChild(o);
-      }
-      input.value = value;
-      input.addEventListener('change', () => push(input.value));
-      row.appendChild(input);
-    } else if (field.type === 'slider') {
-      input = document.createElement('input');
-      input.type = 'range';
-      input.min = field.min;
-      input.max = field.max;
-      input.step = typeof field.step === 'number' ? field.step : 1;
-      input.value = value;
-      const out = document.createElement('span');
-      out.className = 'slider-value';
-      out.textContent = value;
-      input.addEventListener('input', () => {
-        out.textContent = input.value;
-        push(Number(input.value));
-      });
-      row.append(input, out);
-    } else {
-      input = document.createElement('input');
-      input.type = 'text';
-      input.className = 'text-input';
-      input.value = value == null ? '' : value;
-      input.addEventListener('change', () => push(input.value));
-      row.appendChild(input);
-    }
-    return row;
-  }
 
   function buildPage(mod) {
     const section = document.createElement('section');
@@ -7172,17 +7263,7 @@ function initModules() {
 
     const card = document.createElement('div');
     card.className = 'card';
-    for (const entry of mod.page || []) {
-      if (entry.section) {
-        const h = document.createElement('h3');
-        h.className = 'settings-subsection-title';
-        h.textContent = entry.section;
-        card.appendChild(h);
-      } else {
-        card.appendChild(controlRow(mod.id, entry, mod.settings[entry.key]));
-      }
-    }
-    if (card.childElementCount) section.appendChild(card);
+    if (renderModulePageControls(card, mod)) section.appendChild(card);
     return section;
   }
 
@@ -7191,7 +7272,10 @@ function initModules() {
     navSlot.innerHTML = '';
     pageSlot.innerHTML = '';
     for (const mod of modules) {
-      if (!Array.isArray(mod.page) || !mod.page.length) continue; // only modules with settings get a page
+      // Only 'sidebar' modules get a nav button + page. The default ('aura') puts a module's
+      // controls on its aura's settings panel instead - see initWidgetsPanel().
+      if (mod.settingsUI !== 'sidebar') continue;
+      if (!Array.isArray(mod.page) || !mod.page.length) continue;
       const btn = document.createElement('button');
       btn.className = 'nav-btn';
       btn.dataset.page = `page-module-${mod.id}`;
@@ -7207,8 +7291,7 @@ function initModules() {
     }
   }
 
-  window.eqTracker.listModules().then(render);
-  window.eqTracker.onModulesChanged(render);
+  onModuleRegistryChange(render);
 }
 
 // The Action Bar overlay (CLAUDE.md's "Action bar cover replacements" backlog entry) - the

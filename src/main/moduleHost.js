@@ -96,6 +96,15 @@ function validateModule(raw, { knownIds } = {}) {
     if ('key' in entry) defaults[entry.key] = defaultFor(entry);
   }
 
+  const hasAura = raw.hasAura === undefined ? false : !!raw.hasAura;
+  // Where a module's `page` controls are shown. 'aura' (the default, and the recommended shape -
+  // see docs/MODULE-AUTHORING.md) puts them on the module aura's own settings panel, no sidebar
+  // entry. 'sidebar' gives the module a dedicated nav button + page, for the rare module with
+  // enough GLOBAL options that an aura panel would be cramped. A module with no aura has nowhere
+  // to put an aura panel, so it falls back to 'sidebar' regardless of what it asked for.
+  let settingsUI = raw.settingsUI === 'sidebar' ? 'sidebar' : 'aura';
+  if (settingsUI === 'aura' && !hasAura) settingsUI = 'sidebar';
+
   return {
     ok: true,
     module: {
@@ -103,7 +112,8 @@ function validateModule(raw, { knownIds } = {}) {
       name: raw.name.trim(),
       apiVersion: API_VERSION,
       description: typeof raw.description === 'string' ? raw.description : '',
-      hasAura: raw.hasAura === undefined ? false : !!raw.hasAura,
+      hasAura,
+      settingsUI,
       page,
       defaults,
       onLine: raw.onLine,
@@ -307,6 +317,7 @@ class ModuleHost extends EventEmitter {
       name: rec.module.name,
       description: rec.module.description,
       hasAura: rec.module.hasAura,
+      settingsUI: rec.module.settingsUI,
       page: rec.module.page,
       settings: this.getSettings(rec.module.id),
       disabled: rec.disabled,
