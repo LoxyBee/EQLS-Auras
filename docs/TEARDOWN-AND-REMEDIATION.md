@@ -467,18 +467,26 @@ the detection log
 *Touches:* `src/main/logZonePeek.js` (generalise) · `src/main/sessionSnapshot.js` · `src/main/main.js`
 wiring · `test/log-zone-peek.test.js`
 
-### P1-5 — Mark guessed attributions on the overlay — finding #8 — sev 6 — 1–2 days — owner confirms
-"Completeness over perfect naming" is a deliberate owner decision — keep it. But a tile resolved by
-burst-window or ambiguous-fallback guessing currently looks identical to a hard-confirmed one.
+### P1-5 — ~~Mark guessed attributions on the overlay~~ → **MOOT** — finding #8 — owner, 1 Sep
+The premise ("a tile resolved by burst-window or ambiguous-fallback *guessing* looks identical to a
+hard-confirmed one") does not match the engine. Owner: *"buffs should never be guessed. if it's
+guessed, it goes to the ambiguity popup — that's the whole point of the system."* And that is what
+`buffEngine.js` already does — its own header rule: *"no auto-guessing anywhere in this file -
+genuinely ambiguous always means a prompt, never a best-effort pick."* Every path that lands a tile
+without a prompt is either certain (named pending cast; landing text unique to one roster entry +
+gem check) or a single-possibility deduction (spellbook narrows to exactly one candidate; the
+6-second song-pulse where only one candidate *can* re-land on its own; a remembered resolution the
+user already answered). There is no "pick one of several" tier to mark.
 
-1. Thread the decision tier / confidence through to `overlay.js` alongside the buff (the engine
-   already knows it).
-2. Render low-confidence tiles with a distinct marker — dotted border or a small "?" — style to be
-   confirmed by the owner.
-3. Per-aura off switch if she finds it noisy. Do not re-open the underlying permissive rule.
+The **completeness** rule (#8, `kind:buff` burst context) is about *whose* cast and *how many*
+landed — never *which* spell; an ambiguous "which" inside a burst is still queued to the popup, not
+landed as a guess.
 
-*Touches:* `src/main/buffEngine.js` (emit confidence) · `src/renderer/overlay/overlay.js` ·
-`SHAREABLE_FIELDS` if it becomes a toggle
+The real adjacent concern is the opposite failure — an ambiguous landing getting silently `IGNORED`
+instead of prompted (the old early-return chain). That is **P1-2's** remaining work (delete the
+legacy tier chain; the evidence model already softened it), not a marking feature.
+
+*No work here.*
 
 ---
 
@@ -591,14 +599,15 @@ Both mechanisms mutation-checked in `test/foreground-watcher.test.js`.
 
 *Touches:* `src/main/configTransfer.js` · import modal in main-window · `test/config-transfer.test.js`
 
-### P3-4 — Make the ambiguous-cast popup non-activating — cross-cutting — sev 4 — half day
-1. Give the popup `BrowserWindow` `focusable:false` and the `WS_EX_NOACTIVATE` style so clicking a
-   candidate button never steals foreground from the game.
-2. Verify the buttons still receive clicks in that mode (they should — same as the click-through
-   overlay accepting drags in move mode).
-3. Keep `focusGameWindow()` as a fallback only.
-
-*Touches:* `src/main/ambiguousPopup.js` · `foregroundWatcher.js` (focusGameWindow call site)
+### P3-4 — Make the ambiguous-cast popup non-activating — cross-cutting — sev 4 — ✅ DONE (1 Sep, commit 29bdf5e)
+`ambiguousPopup.js` window is now `focusable: false` (Electron applies `WS_EX_NOACTIVATE` on
+Windows), so clicking a candidate button no longer pulls foreground off EQ. Same pattern
+`nudgePadWindow.js` already uses. Safe because the popup renderer is button-only — no text fields,
+no keyboard use (checked, and pinned by `test/ambiguous-popup.test.js`). `showInactive()` already
+covered the *appear* case; this covers *click*. `main.js`'s `focusGameWindow()` on queue-empty is
+kept as a belt-and-braces fallback.
+**Live-verify owed** (→ TESTING.md): with a real ambiguous cast queued, click a candidate while EQ
+is focused and confirm EQ keeps focus and the button still registered.
 
 ### P3-5 — Concept & copy pass; hide Diagnostics behind "Advanced" — finding #13 — sev 7 — 3–5 days — wording → Documentation
 1. Every aura panel gets a plain "Shown on: [all profiles ▾]" line that states the current

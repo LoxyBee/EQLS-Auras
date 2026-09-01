@@ -9,6 +9,15 @@ const { loadJson, saveJson } = require('./store');
 // there's actually something to resolve; hidden (not destroyed) the
 // instant the queue empties so re-showing it later doesn't need a fresh
 // window/reload.
+//
+// `focusable: false` (P3-4) - the popup appears mid-fight and clicking a
+// candidate button must NOT pull the foreground window away from EQ. Same
+// pattern as nudgePadWindow.js: a focusable:false window still receives
+// mouse clicks (the popup is button-only, no text fields, no keyboard use),
+// it just can't become the keyboard-focused window - so EQ keeps focus
+// through the whole answer. `showInactive()` already kept it from stealing
+// focus on *appear*; this closes the gap on *click*. focusGameWindow() in
+// main.js stays as a belt-and-braces fallback for the queue-emptied case.
 let win = null;
 
 function getDefaultPosition() {
@@ -33,6 +42,7 @@ function createWindow() {
     skipTaskbar: true,
     resizable: false,
     fullscreenable: false,
+    focusable: false,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload-ambiguous-popup.js'),
