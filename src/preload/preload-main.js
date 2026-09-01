@@ -125,6 +125,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setOverlayAllUnlocked: (unlocked) => ipcRenderer.invoke('overlay:setAllUnlocked', unlocked),
   setOverlayMasterHidden: (hidden) => ipcRenderer.invoke('overlay:setMasterHidden', hidden),
   setOverlaySoundsMuted: (muted) => ipcRenderer.invoke('overlay:setSoundsMuted', muted),
+  setOverlayPreviewAll: (enabled) => ipcRenderer.invoke('overlay:setPreviewAll', enabled),
   onOverlayMasterStateChanged: (callback) => {
     ipcRenderer.on('overlay:masterStateChanged', () => callback());
   },
@@ -309,6 +310,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getFullscreenState: () => ipcRenderer.invoke('overlay:fullscreenState'),
   onFullscreenWarning: (cb) => ipcRenderer.on('overlay:fullscreenWarning', (_e, active) => cb(active)),
   previewWidget: (id) => ipcRenderer.invoke('widget:preview', id),
+  isWidgetPreviewing: (id) => ipcRenderer.invoke('widget:isPreviewing', id),
   setWidgetListWidth: (id, width) => ipcRenderer.invoke('widget:setListWidth', { id, value: width }),
   setWidgetOpacity: (id, opacity) => ipcRenderer.invoke('widget:setOpacity', { id, value: opacity }),
   setWidgetBuffFilter: (id, mode, names) => ipcRenderer.invoke('widget:setBuffFilter', { id, mode, names }),

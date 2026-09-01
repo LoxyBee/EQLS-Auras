@@ -128,7 +128,7 @@ test('wired end to end, and only for real icon tiles', () => {
   assert.match(managerSrc, /function setExpiredLingerSec\(id, seconds\)/);
   assert.match(overlayCss, /\.buff-tile\.expired-linger/);
   // render() only lingers in icon mode, and never during a preview
-  assert.match(overlaySrc, /const lingerSec = isIcon && !previewActive \? currentConfig\.expiredLingerSec \|\| 0 : 0;/);
+  assert.match(overlaySrc, /const lingerSec = isIcon && !showingPreviewSample \? currentConfig\.expiredLingerSec \|\| 0 : 0;/);
   // the sound / "genuinely expired" sets still work off the real visible list, not tileBuffs
   assert.match(overlaySrc, /const visibleSet = new Set\(visible\.flatMap\(memberKeys\)\);/);
   assert.match(overlaySrc, /checkSoundWarnings\(visible\);/);

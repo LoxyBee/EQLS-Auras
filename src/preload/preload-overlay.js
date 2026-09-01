@@ -52,9 +52,10 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onConfigChanged: (callback) => {
     ipcRenderer.on('widget:configChanged', (_event, config) => callback(config));
   },
-  // QOL #1 - the settings panel asked to flash a sample tile on this aura.
-  onPreview: (callback) => {
-    ipcRenderer.on('widget:preview', (_event, opts) => callback(opts));
+  // "Show example content" - a persistent toggle (from the aura's own settings, or the Overlay
+  // page's all-auras control). While on, an empty aura fills with a sample tile.
+  onPreviewMode: (callback) => {
+    ipcRenderer.on('widget:previewMode', (_event, opts) => callback(opts || {}));
   },
   reportContentSize: (widgetId, width, height, originX) => {
     ipcRenderer.send('widget:reportContentSize', { id: widgetId, width, height, originX });

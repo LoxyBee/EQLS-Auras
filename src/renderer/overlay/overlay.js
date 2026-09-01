@@ -1482,14 +1482,15 @@ function render(buffs) {
   // The stacked-line text feed is its own render path - it keeps a short scrolling history of
   // recent firings instead of one live tile, so none of the tile-diffing / merge / grouping
   // machinery below applies. alwaysOn wins (nothing to stack when there is no event at all).
-  if (currentConfig.displayMode === 'text' && currentConfig.stackTextLines && !currentConfig.alwaysOn && !previewActive) {
+  if (currentConfig.displayMode === 'text' && currentConfig.stackTextLines && !currentConfig.alwaysOn && !showingPreviewSample) {
     renderTextFeed(buffs);
     return;
   }
 
-  // QOL #1 - a preview shows exactly the sample it was handed, past every filter: the point is to
-  // judge the tile's look, not to re-test the aura's own spell list.
-  const visible = previewActive ? buffs : visibleBuffs(buffs);
+  // The example sample is shown exactly as handed over, past every filter - the point is to judge
+  // the tile's look and placement, not to re-test the aura's own spell list. Real content while the
+  // toggle is on still filters normally (showingPreviewSample is false then).
+  const visible = showingPreviewSample ? buffs : visibleBuffs(buffs);
   const isText = currentConfig.displayMode === 'text';
   const isIcon = currentConfig.displayMode === 'icons';
   const modeKey = isText ? 'text' : isIcon ? 'icons' : 'list';
@@ -1499,7 +1500,7 @@ function render(buffs) {
   // sound / glow / "genuinely expired" set below still works from the real `visible`, so the
   // expire sound fires at the true expiry, not when the linger clears.
   let tileBuffs = visible;
-  const lingerSec = isIcon && !previewActive ? currentConfig.expiredLingerSec || 0 : 0;
+  const lingerSec = isIcon && !showingPreviewSample ? currentConfig.expiredLingerSec || 0 : 0;
   if (lingerSec > 0) {
     const { soonest } = trackExpiredLinger(visible, keyFor, lingerSec * 1000);
     if (expiredLinger.size) tileBuffs = [...visible, ...[...expiredLinger.values()].map((e) => e.buff)];
@@ -1785,15 +1786,29 @@ function previewSampleBuffs() {
   }
 }
 
-window.eqOverlay.onPreview(({ durationMs } = {}) => {
-  const ms = Number(durationMs) > 0 ? Number(durationMs) : 6000;
-  previewActive = true;
+window.eqOverlay.onPreviewMode(({ enabled } = {}) => {
+  previewActive = !!enabled;
   render(currentSourceBuffs());
-  setTimeout(() => { previewActive = false; render(currentSourceBuffs()); }, ms);
 });
 
+// QOL - "Show example content" is a persistent toggle now, not a timed flash. While it's on, an
+// aura with nothing real to show fills with sample tiles so you can see where to put it and how
+// big it is; the moment real content arrives it takes over (real always wins over the sample).
+// `showingPreviewSample` records which of the two the current render is showing, so filters/linger
+// are only bypassed for the actual sample.
+let showingPreviewSample = false;
+
 function currentSourceBuffs() {
-  if (previewActive) return previewSampleBuffs();
+  const real = realSourceBuffs();
+  if (previewActive && real.length === 0) {
+    showingPreviewSample = true;
+    return previewSampleBuffs();
+  }
+  showingPreviewSample = false;
+  return real;
+}
+
+function realSourceBuffs() {
   if (currentConfig.buffSource === 'ally') return lastAllyBuffs;
   // Backlog #15. Every bard song currently active on the player, already grouped-by-caster-ready
   // (see buffEngine.getActiveBardSongs - it emits `allyName` holding the CASTER here, reusing that

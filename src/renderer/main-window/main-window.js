@@ -2968,6 +2968,13 @@ function initWidgetsPanel() {
     const fightTimeout = typeof widget.fightTimeoutSec === 'number' ? widget.fightTimeoutSec : 10;
     fightTimeoutSlider.value = String(fightTimeout);
     fightTimeoutValueEl.textContent = `${fightTimeout}s`;
+    const previewBtnEl = document.getElementById('widget-preview-btn');
+    if (previewBtnEl && widget.id) {
+      window.eqTracker.isWidgetPreviewing(widget.id).then((on) => {
+        previewBtnEl.textContent = on ? 'Hide example content' : 'Show example content';
+        previewBtnEl.classList.toggle('unlocked', !!on);
+      });
+    }
     mineOnlyCheckbox.checked = !!widget.mineOnly;
     // Defaulted ON, so the check is against false rather than for true - an aura saved before this
     // setting existed has no value at all, and treating that as "off" would silently remove the
@@ -4508,12 +4515,13 @@ function initWidgetsPanel() {
   });
   const previewBtn = document.getElementById('widget-preview-btn');
   if (previewBtn) {
-    previewBtn.addEventListener('click', () => {
+    // A toggle now, not a timed flash: it stays on until pressed again (or the aura is closed).
+    previewBtn.addEventListener('click', async () => {
       if (!selectedId) return;
-      previewBtn.disabled = true;
-      window.eqTracker.previewWidget(selectedId).finally(() => {
-        setTimeout(() => { previewBtn.disabled = false; }, 6500);
-      });
+      const res = await window.eqTracker.previewWidget(selectedId);
+      const on = !!(res && res.previewing);
+      previewBtn.textContent = on ? 'Hide example content' : 'Show example content';
+      previewBtn.classList.toggle('unlocked', on);
     });
   }
   buffSourceRadios.forEach((radio) => {
@@ -5012,6 +5020,7 @@ function initWidgetsPanel() {
   // process rather than tracked here, so the button stays correct even when
   // something else changes it (unlocking a single aura, a profile switch).
   const masterUnlockAllBtn = document.getElementById('master-unlock-all-btn');
+  const masterPreviewAllBtn = document.getElementById('master-preview-all-btn');
   const masterHideAllBtn = document.getElementById('master-hide-all-btn');
   const masterMuteBtn = document.getElementById('master-mute-btn');
 
@@ -5485,6 +5494,10 @@ function initWidgetsPanel() {
       masterMuteBtn.classList.toggle('active', state.soundsMuted);
       masterMuteBtn.textContent = state.soundsMuted ? 'Sounds muted - unmute' : 'Mute sounds';
     }
+    if (masterPreviewAllBtn) {
+      masterPreviewAllBtn.classList.toggle('active', state.previewAll);
+      masterPreviewAllBtn.textContent = state.previewAll ? 'Hide example content' : 'Show example content';
+    }
   }
   function refreshMasterButtons() {
     return window.eqTracker.getOverlayMasterState().then(renderMasterButtons);
@@ -5504,6 +5517,22 @@ function initWidgetsPanel() {
       })
     );
   });
+  if (masterPreviewAllBtn) {
+    masterPreviewAllBtn.addEventListener('click', () => {
+      window.eqTracker.getOverlayMasterState().then((state) =>
+        window.eqTracker.setOverlayPreviewAll(!state.previewAll).then(() => {
+          refreshMasterButtons();
+          // The per-aura button shows the same state for whichever aura is open.
+          if (selectedId) {
+            window.eqTracker.isWidgetPreviewing(selectedId).then((on) => {
+              const b = document.getElementById('widget-preview-btn');
+              if (b) { b.textContent = on ? 'Hide example content' : 'Show example content'; b.classList.toggle('unlocked', !!on); }
+            });
+          }
+        })
+      );
+    });
+  }
   // The Pause hotkey toggles the same state from outside this window, so the button has to
   // re-read rather than assume it is the only thing that can change it.
   window.eqTracker.onOverlayMasterStateChanged(() => refreshMasterButtons());
