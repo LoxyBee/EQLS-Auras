@@ -10,6 +10,23 @@ const { EventEmitter } = require('events');
 // stays running and is fed one query per poll measured at ~18-20ms per round trip once warm, a
 // 10-15x drop, which is what makes a much shorter interval reasonable now.
 const POLL_INTERVAL_MS = 300;
+// Adaptive backoff. Auto-hide only has anything to DO while the user is moving between EQ and this
+// app's own windows - when neither has been foreground for a while (they're in a browser, a video,
+// another game), the overlay is already hidden and staying hidden, so polling 3x a second to
+// re-confirm "still not EQ" is pure idle cost (a resident powershell.exe, #7). After this many
+// consecutive "neither focused" polls the loop drops to SLOW_POLL_INTERVAL_MS; the very next poll
+// that sees EQ or this app snaps it straight back to POLL_INTERVAL_MS, so returning to the game
+// costs at most one slow interval of lag, once, and rapid EQ<->app swapping is unaffected.
+const IDLE_BACKOFF_AFTER = 25;
+const SLOW_POLL_INTERVAL_MS = 1200;
+// Circuit breaker. A single failed poll is normal (best-effort - the caller keeps its last state).
+// But if powershell.exe genuinely cannot run here - a broken PATH, an AV hook killing every child,
+// an execution-policy lockdown - PsProbe's respawn cooldown alone means one failed spawn every few
+// seconds forever. After this many consecutive failed polls the watcher stops entirely and emits
+// 'unavailable' so the UI can say "auto-hide isn't working" once, instead of retrying in silence
+// for the whole session. 20 fast polls (~6s) is well past a normal crash+cooldown+respawn recovery
+// (~3-4s), so a transient hiccup doesn't trip it.
+const MAX_CONSECUTIVE_FAILURES = 20;
 // A query that never comes back within this long is treated as a dead/hung process and the whole
 // thing is respawned - better than a poll silently never resolving again.
 const QUERY_TIMEOUT_MS = 1500;
@@ -239,10 +256,16 @@ class ForegroundWatcher extends EventEmitter {
     // independent, off-by-default option. Merging them here would make that
     // second setting impossible to express.
     this.lastState = null; // { eqFocused, ownAppFocused, foregroundFullscreen }
+    // Consecutive polls where neither EQ nor this app was foreground - drives the adaptive backoff.
+    this.idleStreak = 0;
+    // Consecutive failed polls - drives the circuit breaker. Reset by any successful poll.
+    this.failStreak = 0;
+    // Set once the breaker trips; the loop is stopped and 'unavailable' has been emitted.
+    this.unavailable = false;
   }
 
   start() {
-    if (this.running) return;
+    if (this.running || this.unavailable) return;
     this.running = true;
     this._pollLoop();
   }
@@ -254,22 +277,38 @@ class ForegroundWatcher extends EventEmitter {
       this.timer = null;
     }
     this.lastState = null;
+    this.idleStreak = 0;
     this.probe.stop();
   }
 
   // A self-rescheduling loop (setTimeout after each query resolves), not setInterval - the
   // process spawn/respawn path is now async, and setInterval firing again mid-respawn would pile
-  // queries up behind a process that isn't ready yet.
+  // queries up behind a process that isn't ready yet. The interval itself is adaptive: slow once
+  // the foreground has been irrelevant for IDLE_BACKOFF_AFTER polls in a row.
   async _pollLoop() {
     if (!this.running) return;
     await this._poll();
     if (!this.running) return;
-    this.timer = setTimeout(() => this._pollLoop(), POLL_INTERVAL_MS);
+    this.timer = setTimeout(() => this._pollLoop(), this._nextInterval());
+  }
+
+  _nextInterval() {
+    return this.idleStreak >= IDLE_BACKOFF_AFTER ? SLOW_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
   }
 
   async _poll() {
     const result = await this.probe.query();
-    if (result == null) return; // best-effort - a single failed poll just keeps the last known state
+    if (result == null) {
+      // best-effort - a single failed poll just keeps the last known state. But a sustained run of
+      // them means powershell.exe cannot run here at all; stop rather than retry forever.
+      if (++this.failStreak >= MAX_CONSECUTIVE_FAILURES && !this.unavailable) {
+        this.unavailable = true;
+        this.emit('unavailable');
+        this.stop();
+      }
+      return;
+    }
+    this.failStreak = 0;
     // "<name>|<quns>" since the fullscreen probe was added; a bare name (no pipe) still parses,
     // so an old fake response in a test, or a truncated line, degrades to "not fullscreen".
     const [rawName, rawState] = String(result).split('|');
@@ -277,6 +316,9 @@ class ForegroundWatcher extends EventEmitter {
     const eqFocused = processName === TARGET_PROCESS_NAME;
     const ownAppFocused = processName === OWN_PROCESS_NAME;
     const foregroundFullscreen = FULLSCREEN_QUNS.has(Number(rawState));
+    // Adaptive backoff: count how long the foreground has been irrelevant to auto-hide. A single
+    // relevant poll resets it, so the loop tightens again immediately on the user returning to EQ.
+    this.idleStreak = eqFocused || ownAppFocused ? 0 : this.idleStreak + 1;
     const prev = this.lastState;
     if (
       !prev ||
@@ -338,4 +380,13 @@ if ($p) {
   });
 }
 
-module.exports = { ForegroundWatcher, PsProbe, focusGameWindow, RESPONSE_DELIMITER };
+module.exports = {
+  ForegroundWatcher,
+  PsProbe,
+  focusGameWindow,
+  RESPONSE_DELIMITER,
+  POLL_INTERVAL_MS,
+  SLOW_POLL_INTERVAL_MS,
+  IDLE_BACKOFF_AFTER,
+  MAX_CONSECUTIVE_FAILURES,
+};

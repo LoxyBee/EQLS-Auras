@@ -386,6 +386,13 @@ foregroundWatcher.on('focusChanged', applyForegroundVisibility);
 foregroundWatcher.on('focusChanged', (state) => {
   broadcast('overlay:fullscreenWarning', !!(state && state.foregroundFullscreen));
 });
+// P3-2 circuit breaker - powershell.exe can't run here at all (broken PATH, an AV hook killing
+// every child, an execution-policy lockdown). The watcher has stopped itself; say so once instead
+// of the overlay silently never auto-hiding. The renderer also reads the current value on load.
+foregroundWatcher.on('unavailable', () => {
+  debugLog('[foreground] auto-hide unavailable - powershell probe failed repeatedly, watcher stopped');
+  broadcast('overlay:autoHideUnavailable', true);
+});
 if (autoHideOverlayEnabled) foregroundWatcher.start();
 
 // Permanent (not "remove before shipping" temp debug logging) - a running
@@ -1411,6 +1418,9 @@ ipcMain.handle('log:getState', () => logService.getState());
 ipcMain.handle('overlay:fullscreenState', () =>
   foregroundWatcher.lastState ? !!foregroundWatcher.lastState.foregroundFullscreen : null
 );
+// P3-2 - false once the foreground probe has failed repeatedly and the watcher stopped itself.
+// true otherwise (including while auto-hide is simply turned off - nothing is broken then).
+ipcMain.handle('overlay:autoHideAvailable', () => !foregroundWatcher.unavailable);
 // QOL #5 - the "is it working right now?" readout on the Buff Tracker page. Which file is being
 // tailed and how long since a line last arrived from it.
 ipcMain.handle('log:activity', () => {

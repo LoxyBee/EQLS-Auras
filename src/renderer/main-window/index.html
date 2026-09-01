@@ -151,6 +151,13 @@
             EverQuest is in exclusive full-screen — auras can't show over it. Switch EQ to
             Windowed or Borderless Windowed.
           </p>
+          <!-- P3-2 - shown only if the foreground check has failed repeatedly and given up
+               (powershell blocked by antivirus, execution policy, or a broken PATH). Overlay
+               auto-hide won't work; everything else is unaffected. -->
+          <p id="autohide-unavailable-line" class="hint warn" hidden>
+            Overlay auto-hide isn't working — Windows blocked the tool it uses to see which window
+            is in front. The auras still work; they just won't hide themselves when you tab away.
+          </p>
         </div>
 
         <!-- Front and centre on the landing page on purpose: an empty

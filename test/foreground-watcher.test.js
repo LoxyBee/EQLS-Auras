@@ -13,7 +13,15 @@
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { test, report } = require('./harness');
-const { PsProbe, ForegroundWatcher, RESPONSE_DELIMITER } = require('../src/main/foregroundWatcher');
+const {
+  PsProbe,
+  ForegroundWatcher,
+  RESPONSE_DELIMITER,
+  POLL_INTERVAL_MS,
+  SLOW_POLL_INTERVAL_MS,
+  IDLE_BACKOFF_AFTER,
+  MAX_CONSECUTIVE_FAILURES,
+} = require('../src/main/foregroundWatcher');
 
 /** A minimal stand-in for the object child_process.spawn() returns. stdin/stdout are real
  *  EventEmitters, matching child_process, so the 'error' listeners the probe attaches are valid. */
@@ -225,6 +233,100 @@ test('presentation mode (4) also counts; a bare name with no quns degrades to no
   respond(spawnFn.created[0], 'powerpnt', null); // old-style bare response, no pipe
   await p2;
   assert.equal(events.at(-1).foregroundFullscreen, false, 'a missing quns must not read as fullscreen');
+});
+
+// ---------------------------------------------------------------------------
+// Adaptive backoff (P3-2) - poll slower once the foreground has been irrelevant for a while
+// ---------------------------------------------------------------------------
+
+test('the poll interval backs off after a run of "neither EQ nor this app" polls, and snaps back on activity', async () => {
+  const spawnFn = makeSpawnFn();
+  const watcher = new ForegroundWatcher(spawnFn);
+  const proc = () => spawnFn.created[0];
+
+  assert.equal(watcher._nextInterval(), POLL_INTERVAL_MS, 'starts fast');
+
+  for (let i = 0; i < IDLE_BACKOFF_AFTER; i++) {
+    const p = watcher._poll();
+    respond(proc(), 'chrome'); // some other app, poll after poll
+    await p;
+  }
+  assert.equal(watcher.idleStreak, IDLE_BACKOFF_AFTER);
+  assert.equal(watcher._nextInterval(), SLOW_POLL_INTERVAL_MS, 'backed off after a long idle run');
+
+  const back = watcher._poll();
+  respond(proc(), 'eqgame'); // user returns to the game
+  await back;
+  assert.equal(watcher.idleStreak, 0, 'one relevant poll resets the streak');
+  assert.equal(watcher._nextInterval(), POLL_INTERVAL_MS, 'and the loop is fast again immediately');
+
+  watcher.stop();
+});
+
+test('this app being foregrounded counts as activity too, not just EQ', async () => {
+  const spawnFn = makeSpawnFn();
+  const watcher = new ForegroundWatcher(spawnFn);
+  watcher.idleStreak = IDLE_BACKOFF_AFTER + 5;
+  const p = watcher._poll();
+  // OWN_PROCESS_NAME is derived from process.execPath - in the test runner that's "node".
+  respond(spawnFn.created[0], require('path').basename(process.execPath, require('path').extname(process.execPath)).toLowerCase());
+  await p;
+  assert.equal(watcher.idleStreak, 0);
+  watcher.stop();
+});
+
+// ---------------------------------------------------------------------------
+// Circuit breaker (P3-2) - stop retrying forever if powershell.exe can't run at all
+// ---------------------------------------------------------------------------
+
+test('after MAX_CONSECUTIVE_FAILURES failed polls the watcher emits "unavailable" and stops itself', async () => {
+  // A spawnFn whose process dies immediately every time - mimics powershell blocked by AV / policy.
+  const spawnFn = () => {
+    const proc = makeFakeProc();
+    setImmediate(() => proc.emit('exit', 1));
+    return proc;
+  };
+  const watcher = new ForegroundWatcher(spawnFn);
+  // no cooldown, so each poll actually attempts a fresh (doomed) spawn
+  watcher.probe.respawnCooldownMs = 0;
+  let unavailableCount = 0;
+  watcher.on('unavailable', () => unavailableCount++);
+
+  for (let i = 0; i < MAX_CONSECUTIVE_FAILURES - 1; i++) {
+    await watcher._poll();
+    assert.equal(watcher.unavailable, false, `tripped early at poll ${i + 1}`);
+  }
+  await watcher._poll(); // the one that trips it
+  assert.equal(watcher.unavailable, true);
+  assert.equal(unavailableCount, 1);
+  assert.equal(watcher.running, false, 'the loop was stopped');
+
+  await watcher._poll(); // further polls must not re-emit
+  assert.equal(unavailableCount, 1, 'unavailable fired more than once');
+
+  watcher.start();
+  assert.equal(watcher.running, false, 'start() is a no-op once the breaker has tripped');
+});
+
+test('a single failed poll does not trip the breaker, and any success resets the streak', async () => {
+  const spawnFn = makeSpawnFn();
+  const watcher = new ForegroundWatcher(spawnFn);
+  watcher.probe.respawnCooldownMs = 0; // so the next poll actually spawns a replacement
+
+  // one death
+  const p1 = watcher._poll();
+  spawnFn.created[0].emit('exit', 1);
+  await p1;
+  assert.equal(watcher.failStreak, 1);
+  assert.equal(watcher.unavailable, false);
+
+  // then a good poll
+  const p2 = watcher._poll();
+  respond(spawnFn.created[1], 'eqgame');
+  await p2;
+  assert.equal(watcher.failStreak, 0, 'a success clears the failure streak');
+
+  watcher.stop();
 });
 
 test('ForegroundWatcher.stop() tears down the underlying probe (no orphaned powershell.exe on app quit)', () => {

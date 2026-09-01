@@ -7060,6 +7060,14 @@ function initLogActivityLine() {
     window.eqTracker.getFullscreenState?.().then((v) => setFs(v === true)).catch(() => {});
     window.eqTracker.onFullscreenWarning?.((active) => setFs(!!active));
   }
+
+  // P3-2 - the foreground probe gave up (powershell blocked). One-way: once it's unavailable it
+  // stays that way for the session, so there's nothing to un-hide.
+  const ahLine = document.getElementById('autohide-unavailable-line');
+  if (ahLine) {
+    window.eqTracker.getAutoHideAvailable?.().then((ok) => { ahLine.hidden = ok !== false; }).catch(() => {});
+    window.eqTracker.onAutoHideUnavailable?.(() => { ahLine.hidden = false; });
+  }
 }
 
 // QOL #49 - the body of the per-buff "Duration looks wrong" report. Pure so it can be tested

@@ -323,6 +323,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getLogActivity: () => ipcRenderer.invoke('log:activity'),
   getFullscreenState: () => ipcRenderer.invoke('overlay:fullscreenState'),
   onFullscreenWarning: (cb) => ipcRenderer.on('overlay:fullscreenWarning', (_e, active) => cb(active)),
+  getAutoHideAvailable: () => ipcRenderer.invoke('overlay:autoHideAvailable'),
+  onAutoHideUnavailable: (cb) => ipcRenderer.on('overlay:autoHideUnavailable', () => cb()),
   previewWidget: (id) => ipcRenderer.invoke('widget:preview', id),
   isWidgetPreviewing: (id) => ipcRenderer.invoke('widget:isPreviewing', id),
   setWidgetListWidth: (id, width) => ipcRenderer.invoke('widget:setListWidth', { id, value: width }),
