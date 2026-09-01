@@ -15,11 +15,12 @@ plugin system.
 
 ## Where the file goes
 
-    <userData>/modules/your-module.js
+    <install folder>\modules\your-module.js
 
-`<userData>` is the app's data folder — the same place `widgets.json`, `profiles.json` and your
-sounds live. On Windows: `%APPDATA%\EQ Buff Tracker\modules\` (the folder name is the app's old
-name, pinned deliberately — don't rename it).
+The `modules/` folder **inside the app's install directory**, next to the `.exe` — the same folder
+the bundled `aggro-board.js` module ships in. The default per-user install is writable, so dropping
+a `.js` in there needs no admin rights; it does get removed on an uninstall, like anything else in
+the install folder. (A dev build reads the repo's own `modules/` folder instead.)
 
 The app scans that folder on startup and **watches it while running** — drop a file in or delete
 one and it re-scans within a fraction of a second, no restart. Files load in alphabetical order. A
@@ -152,9 +153,8 @@ module's `id` (internally a `kind: 'module-aura'` aura with `buffSource: 'module
 module file removes it from the Add-Aura list and its aura goes blank — the aura itself stays
 until you delete it.
 
-With the default `settingsUI: 'aura'`, the module's own `page` controls render right here on this
-same panel, as a *Module settings* card — there is no separate page to hunt for. (This panel still
-has no buff picker and no "watching" source — the module *is* the source.)
+With the default `settingsUI: 'aura'`, the module's own `page` controls render right here on the
+same panel, as a *Module settings* card — there is no separate page to hunt for.
 
 ## When a module doesn't appear
 
@@ -188,10 +188,16 @@ A malformed file is skipped — never a crash, never affects another module.
 and old modules stop loading (with a reason in the debug log) rather than misbehaving. Current
 version: **1**.
 
-## A complete example
+## Worked examples
 
-See `docs/modules/pull-timer.js` — a maintainable, real example: it watches for a chat command,
-starts a countdown of a configurable length, and clears it if the pull is called off.
+Two real modules to read:
+
+- **`modules/aggro-board.js`** — ships with the app and loads automatically. A larger example:
+  it tracks who a mob is swinging at, renders a `page` of settings, and documents its own
+  reasoning at length.
+- **`docs/modules/pull-timer.js`** — source-only (not shipped), kept small on purpose. It watches
+  for a chat command, starts a countdown of a configurable length, and clears it if the pull is
+  called off. Reproduced below.
 
 ```js
 // docs/modules/pull-timer.js
@@ -230,9 +236,9 @@ module.exports = {
 
 The example module doubles as a smoke test. With the app running:
 
-- [ ] Drop `docs/modules/pull-timer.js` into `%APPDATA%\EQ Buff Tracker\modules\` → within ~1s,
-      no restart, **Add Aura → Standalone tools** lists **Pull Timer**. No sidebar button appears
-      (it's `settingsUI: 'aura'`).
+- [ ] Copy `docs/modules/pull-timer.js` into the install's `modules\` folder (next to the `.exe`,
+      alongside `aggro-board.js`) → within ~1s, no restart, **Add Aura → Standalone tools** lists
+      **Pull Timer**. No sidebar button appears (it's `settingsUI: 'aura'`).
 - [ ] Add it → an overlay aura is created. Open its settings → a **Module settings** card shows
       the Pull length / Start word / Cancel word controls.
 - [ ] A group / guild / say chat line containing `pulling` starts a countdown tile on that aura;

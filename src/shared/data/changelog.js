@@ -11,10 +11,11 @@
 
 const CHANGELOG = [
   {
-    version: 'Unreleased',
-    date: null,
+    version: '1.0.0',
+    date: '2026-09-02',
     new: [
       'The Damage parser is out of the lab and into Add Aura - a per-attacker readout for the current fight, biggest first, each with a coloured bar; the fight total sits at the bottom, and between fights it shows your running total since you zoned in',
+      'A new Aggro Board aura - shows which player your target is actually swinging at, and who is next in line behind them, read straight from the log',
       'Damage meter: scope it to your whole group or just yourself (shares are recalculated, not just hidden), charmed pets show as their own rows, and each row can read damage, rate (DPS), or both',
       'A depletion shade on icon-mode aura tiles - a shrinking dark overlay that shows how much time is left, since icon tiles have no countdown bar (per aura, off by default)',
       'Timer text can fade from amber down to the expiring-soon red as a buff runs out, instead of only flashing at the threshold (per aura, off by default)',
