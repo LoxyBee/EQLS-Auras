@@ -51,5 +51,7 @@ function pushSnap() {
 snapOnEl.addEventListener('change', pushSnap);
 snapSizeEl.addEventListener('change', pushSnap);
 
+document.getElementById('centre-h').addEventListener('click', () => window.eqMoveHud.centre('h'));
+document.getElementById('centre-v').addEventListener('click', () => window.eqMoveHud.centre('v'));
 resetEl.addEventListener('click', () => window.eqMoveHud.resetPosition());
 doneEl.addEventListener('click', () => window.eqMoveHud.done());

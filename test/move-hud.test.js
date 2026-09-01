@@ -245,6 +245,27 @@ test('opening an aura from the pad, or "Unlock all", ends any move session alrea
   assert.match(h, /widgetManager\.setAllUnlocked\(true\);\s*\n\s*enterUnlockAllMode\(\);/);
 });
 
+test('the move HUD centres the single-move target on its display, one axis at a time, no snap', () => {
+  const { config, win } = makeAura('Centred');
+  wm.setLocked(config.id, false);
+  win.setBounds({ x: 100, y: 100, width: 200, height: 100 });
+  // work area 1920x1080 (DISPLAY in this file)
+  wm.placeWidget(config.id, { x: Math.round((1920 - 200) / 2) }); // centre-h
+  assert.deepEqual(win.getPosition(), [860, 100], 'x centred, y kept');
+  wm.placeWidget(config.id, { y: Math.round((1080 - 100) / 2) }); // centre-v
+  assert.deepEqual(win.getPosition(), [860, 490], 'y centred, x kept');
+
+  // structural: the HUD wiring
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const h = main.match(/ipcMain\.handle\('moveHud:centre'[\s\S]*?\n\}\);/)[0];
+  assert.match(h, /hudMode !== 'single'\) return null/, 'centre is single-move only');
+  assert.match(h, /axis === 'h'\) pos\.x =/);
+  assert.match(h, /axis === 'v'\) pos\.y =/);
+  assert.match(h, /placeBar\(moveTarget\.id, pos\)[\s\S]*?placeWidget\(moveTarget\.id, pos\)/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'move-hud', 'index.html'), 'utf8'), /id="centre-h"[\s\S]*id="centre-v"/);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'move-hud', 'move-hud.css'), 'utf8'), /\[data-mode="all"\] \.centre-row \{ display: none/);
+});
+
 test('"Back to moving" resumes the move session the pad centre button stashed', () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
   // endMoveSession({suspend:true}) remembers the mode
