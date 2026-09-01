@@ -527,6 +527,7 @@ body {
   background: var(--accent-line);
   color: var(--ink);
 }
+.nav-folder-header.dragging { opacity: 0.4; }
 .nav-folder-chevron { font-size: 10px; width: 10px; }
 .nav-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Auras inside a folder sit indented under their header. */

@@ -88,6 +88,10 @@ test('wired renderer -> preload -> main, and folders are organise-only', () => {
   assert.match(renderer, /function buildFolderHeader\(folder\)/);
   assert.match(renderer, /window\.eqTracker\.setAuraFolderCollapsed/);
   assert.match(renderer, /window\.eqTracker\.setWidgetFolder/);
+  // folder headers are draggable to reorder folders
+  assert.match(renderer, /header\.draggable = true/);
+  assert.match(renderer, /window\.eqTracker\.reorderAuraFolders\(orderedIds\)/);
+  assert.match(preload, /reorderAuraFolders:/);
   // none of the folder handlers touch an overlay window
   assert.doesNotMatch(main, /auraFolders:[a-zA-Z]+', \(_event[^)]*\) => \{[\s\S]{0,120}(applyVisibility|pushConfigChanged|overlay)/);
 });
