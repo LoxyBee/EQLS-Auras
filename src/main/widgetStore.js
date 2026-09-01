@@ -588,6 +588,22 @@ function defaultRaidNamedWidget(name) {
   };
 }
 
+// feat/module-system - an aura fed by a custom module's onLine() entries. No picker, no source
+// choice (the module IS the source); same non-singleton "user adds it" shape as the others.
+function defaultModuleWidget(name, moduleId) {
+  return {
+    ...defaultCustomWidget(name),
+    kind: MODULE_KIND,
+    buffSource: 'module',
+    moduleId: moduleId || null,
+    displayMode: 'icons',
+    width: 270,
+    height: 54,
+    position: { x: 52, y: 480 },
+    iconsPerRow: 5,
+  };
+}
+
 function defaultBardSongsWidget(name) {
   return {
     ...defaultCustomWidget(name),
@@ -746,7 +762,12 @@ function normalizeWidget(widget) {
         ? 'ally'
         : widget.kind === RAID_NAMED_KIND
           ? 'raidNamed'
-          : widget.buffSource || 'self',
+          : widget.kind === MODULE_KIND
+            ? 'module'
+            : widget.buffSource || 'self',
+    // feat/module-system - which custom module feeds a module aura. Not shareable (a share code
+    // for it is useless on a machine without that module); just carried through.
+    moduleId: typeof widget.moduleId === 'string' ? widget.moduleId : null,
     // Coerced for the same reason customTimers and excludedBuffNames are, and it was the one
     // list field missing the guard. Share codes are pasted out of chat by design, and overlay.js
     // feeds this straight into a Set - a non-array throws there and takes the whole render with
@@ -880,6 +901,8 @@ const BARD_SONGS_KIND = 'bard-songs-builtin';
 // source choice (its content is fixed: the current zone's named list), so it reuses the same
 // settings-panel shape. Fed by raidNamedTracker.js, not buffEngine.
 const RAID_NAMED_KIND = 'raid-named-builtin';
+// feat/module-system - the kind for an aura fed by a custom module.
+const MODULE_KIND = 'module-aura';
 
 // The trigger modes customTimerEngine understands. Anything else is exact whole-line matching.
 // Kept beside the store rather than in the engine because this is the list the store validates
@@ -1130,6 +1153,7 @@ function defaultsForKind(kind, name) {
   if (kind === 'ally-buffs-builtin') return defaultAllyBuffsWidget(name);
   if (kind === BARD_SONGS_KIND) return defaultBardSongsWidget(name);
   if (kind === RAID_NAMED_KIND) return defaultRaidNamedWidget(name);
+  if (kind === MODULE_KIND) return defaultModuleWidget(name);
   return defaultCustomWidget(name);
 }
 
@@ -1307,6 +1331,16 @@ class WidgetStore {
   createRaidNamed(name, { activeProfileIds } = {}) {
     const widget = defaultRaidNamedWidget(name);
     widget.premadeOrigin = { kind: 'raidNamed' };
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
+  // feat/module-system - an aura bound to a custom module's id.
+  createModuleAura(name, { moduleId, activeProfileIds } = {}) {
+    const widget = defaultModuleWidget(name, moduleId);
+    widget.premadeOrigin = { kind: 'module', moduleId: moduleId || null };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -1945,6 +1979,7 @@ module.exports = {
   WidgetStore,
   LOADOUT_LABEL_KIND,
   BARD_SONGS_KIND,
+  MODULE_KIND,
   DISPLAY_MODES,
   TEXT_AURA_PRESETS,
   normalizeDisplayMode,

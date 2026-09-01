@@ -339,6 +339,13 @@ function createBardSongsWidget(name) {
   return config;
 }
 
+// feat/module-system - an aura bound to a custom module.
+function createModuleAuraWidget(name, moduleId) {
+  const config = widgetStore.createModuleAura(name, { moduleId, activeProfileIds: [getActiveProfileIdFn()] });
+  createWidgetWindow(config);
+  return config;
+}
+
 function createTextAuraWidget(name, preset) {
   const config = widgetStore.createTextAura(name, { preset, activeProfileIds: [getActiveProfileIdFn()] });
   createWidgetWindow(config);
@@ -1450,6 +1457,7 @@ module.exports = {
   createAllyBuffsWidget,
   createBardSongsWidget,
   createRaidNamedWidget,
+  createModuleAuraWidget,
   createDebuffWidget,
   createDamageMeterWidget,
   setDamageOptions,

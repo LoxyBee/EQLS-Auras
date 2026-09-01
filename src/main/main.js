@@ -36,6 +36,7 @@ const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
 const { RaidNamedTracker } = require('./raidNamedTracker');
+const { ModuleHost } = require('./moduleHost');
 const { readLastZoneEntry } = require('./logZonePeek');
 const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
@@ -218,6 +219,26 @@ customTimerEngine.setResolveSpellFn((name) => {
 });
 const iconService = new IconService();
 const spellbookService = new SpellbookService();
+
+// Drop-in custom-aura modules (feat/module-system). Additive and greenfield - the built-in aura
+// types are untouched. The host rides the same 'line' bus below as a pure observer; its entries
+// reach the overlay through one generic per-module channel. See moduleHost.js's header.
+const moduleHost = new ModuleHost(path.join(app.getPath('userData'), 'modules'), { loadJson, saveJson });
+moduleHost.setCurrentZoneFn(() => widgetManager.getCurrentZone());
+moduleHost.setGroupMembersFn(() => [...buffEngine.groupMembers.values()]);
+moduleHost.setIconUrlForSpellFn((name) => {
+  const known = buffStore.getByName(name);
+  return known && known.iconId != null ? iconService.buildIconUrl(known.iconId) : null;
+});
+// A module is invisible plumbing: no status UI, no error panel, no folder link. A load failure
+// goes only to the debug log; the module simply doesn't appear.
+moduleHost.on('modulesChanged', (list) => broadcast('modules:changed', list));
+moduleHost.on('entriesChanged', (all) => broadcast('modules:entries', all));
+moduleHost.on('settingsChanged', (payload) => broadcast('modules:settingsChanged', payload));
+moduleHost.on('moduleError', ({ id, error }) => debugLog(`MODULE "${id}" - ${error}`));
+moduleHost.loadModules();
+moduleHost.watchFolder();
+
 buffEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setSpellbookCheckFn((name) => spellbookService.has(name));
 // See buffEngine.setEnemyDebuffNamesFn - which spells any aura has asked to watch on enemies.
@@ -450,6 +471,9 @@ logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
 logService.watcher.on('line', (line) => damageEngine.handleLine(line));
 logService.watcher.on('line', (line) => raidNamedTracker.handleLine(line));
 logService.watcher.on('line', (line) => abilityGroupTracker.handleLine(line));
+// Custom modules ride the same bus as pure observers. Its handleLine catches per-module throws
+// internally (like lockoutService below) so a bad module can't take the buff overlay down.
+logService.watcher.on('line', (line) => moduleHost.handleLine(line));
 // Raid lockouts. Its handleLine swallows and counts its own errors rather than throwing, because
 // this bus is shared with buff detection and everything else on it - see the note at the top of
 // lockoutService.js. A lockout parser that stops working is a disappointment; one that takes the
@@ -1784,6 +1808,7 @@ ipcMain.handle('widget:create', (_event, { name, buffSource }) => widgetManager.
 ipcMain.handle('widget:createAlly', (_event, { name }) => widgetManager.createAllyBuffsWidget(name));
 ipcMain.handle('widget:createBardSongs', (_event, { name }) => widgetManager.createBardSongsWidget(name));
 ipcMain.handle('widget:createRaidNamed', (_event, { name }) => widgetManager.createRaidNamedWidget(name));
+ipcMain.handle('widget:createModuleAura', (_event, { name, moduleId }) => widgetManager.createModuleAuraWidget(name, moduleId));
 ipcMain.handle('widget:createDebuff', (_event, { name }) => widgetManager.createDebuffWidget(name));
 ipcMain.handle('widget:createDamageMeter', (_event, { name, mineOnly }) =>
   widgetManager.createDamageMeterWidget(name, mineOnly)
@@ -1952,6 +1977,13 @@ ipcMain.handle('debug:getRecentLogTail', (_event, maxChars = 4000) => {
     return '';
   }
 });
+// Custom modules (feat/module-system). No folder link, no reload button - dropping a file in
+// hot-reloads via moduleHost.watchFolder(); these reads feed the sidebar and the per-module pages.
+ipcMain.handle('modules:list', () => moduleHost.getRegistered());
+ipcMain.handle('modules:entries', () => moduleHost.getAllEntries());
+ipcMain.handle('modules:getSettings', (_event, id) => moduleHost.getSettings(id));
+ipcMain.handle('modules:setSetting', (_event, { id, key, value }) => moduleHost.setSetting(id, key, value));
+
 ipcMain.handle('debug:getEnabled', () => debugLogEnabled);
 ipcMain.handle('debug:setEnabled', (_event, enabled) => {
   debugLogEnabled = !!enabled;

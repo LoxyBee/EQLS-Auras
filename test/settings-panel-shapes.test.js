@@ -51,7 +51,7 @@ const { widgetShape, SHAPE_FIELDS } = loadShapeLogic();
 
 const ALL_SHAPES = [
   'self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff',
-  'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel',
+  'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'module',
 ];
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,7 @@ const REPRESENTATIVES = {
   'custom-timer': { kind: 'custom', buffSource: 'customTimer', displayMode: 'icons' },
   'damage': { kind: 'custom', buffSource: 'damage', displayMode: 'list' },
   'travel': { kind: 'custom', buffSource: 'travel', displayMode: 'list' },
+  'module': { kind: 'module-aura', buffSource: 'module', displayMode: 'icons' },
 };
 
 test('every shape has exactly one representative widget that resolves to it', () => {
@@ -125,17 +126,17 @@ const FIELD_SHAPES = {
   // "merge buffs sharing a duration" would collapse the whole route into one tile), no 'borders'
   // (a route leg has no spellCategory to colour - see category-borders.test.js). 'list-format'
   // below is travel's own replacement for the list-width/row-size sizing it still wants.
-  'display-choice': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer'],
+  'display-choice': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'module'],
   'sort': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage'],
   'merge': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage'],
   'borders': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage'],
   // 'raid-named' (backlog #33) reuses 'list-format' the same way travel does - a fixed-order
   // checklist with no icon mode, wanting only the list-width/row-size sizing.
   'list-format': ['raid-named', 'travel'],
-  'timer-text': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel'],
-  'opacity': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel'],
-  'position': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel'],
-  'alerts': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel'],
+  'timer-text': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel', 'module'],
+  'opacity': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'module'],
+  'position': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'module'],
+  'alerts': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'module'],
   'text-fields': ['ally-alert', 'text', 'text-customTimer'],
   'text-instant': ['ally-alert', 'text'],
   // "Stack multiple lines" + its "Lines visible" sub-slider - every text shape gets it, including

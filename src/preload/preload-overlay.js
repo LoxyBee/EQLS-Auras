@@ -31,6 +31,12 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onRaidNamedChanged: (callback) => {
     ipcRenderer.on('raidNamed:active', (_event, rows) => callback(rows));
   },
+  // feat/module-system - one channel carrying every custom module's live entries, keyed by
+  // module id. A module aura reads its own slice (see overlay.js currentSourceBuffs).
+  getModuleEntries: () => ipcRenderer.invoke('modules:entries'),
+  onModuleEntries: (callback) => {
+    ipcRenderer.on('modules:entries', (_event, all) => callback(all));
+  },
   getLockState: (widgetId) => ipcRenderer.invoke('widget:isLocked', widgetId),
   onLockChanged: (callback) => {
     ipcRenderer.on('widget:lockChanged', (_event, locked) => callback(locked));
