@@ -416,7 +416,9 @@ test('the reset setting is on both pages and names where the default came from',
     'the Lockouts page must carry the reset controls');
   assert.ok(html.includes('id="setup-reset-day"') && html.includes('id="setup-reset-hour"'),
     'the Setup page must carry the same reset controls');
-  const setup = SETUP_HTML.slice(SETUP_HTML.indexOf('Weekly archive at the raid reset'), SETUP_HTML.indexOf('Weekly archive at the raid reset') + 1200);
+  // 1600, not 1200 - the rotation checkbox's own explanatory title (added when rotation went
+  // opt-in for the public release) sits between the heading and the reset-day hint below it.
+  const setup = SETUP_HTML.slice(SETUP_HTML.indexOf('Weekly archive at the raid reset'), SETUP_HTML.indexOf('Weekly archive at the raid reset') + 1600);
   assert.match(setup, /same value|changing it there/i, 'the Setup card must say it is the same setting as the Lockouts page');
   assert.match(setup, /your own\s+reading of the in-game|in-game lockout timer/i,
     'the default must be attributed to the owner\'s in-game reading, not the log');

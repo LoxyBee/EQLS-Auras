@@ -51,9 +51,9 @@ function tempLogs(files) {
   }
   return dir;
 }
-// Rotation is ON by default now - see 'it is on by default, and an explicit off is honoured'.
-// These tests still opt in explicitly so the default cannot be switched back without the dedicated
-// test noticing. A test that wants the off state builds its own instance.
+// Rotation is OFF by default now (it rewrites the game's log file - see 'it is off by default...').
+// These behaviour tests opt in explicitly with setEnabled(true) so they exercise the real rotation
+// path; a test that wants the off state builds its own instance without this helper.
 const svc = (dir, opts) => {
   const s = new LogRotationService(opts);
   s.setEnabled(true);
@@ -312,25 +312,26 @@ test('turning it off means nothing is touched at all', () => {
   assert.deepEqual(archived(dir), []);
 });
 
-// ON BY DEFAULT (owner's call). The weekly archive is what keeps the live log scoped to the
-// current lockout week, so it should work out of the box - and it still copy-verifies before it
-// truncates and refuses a log played on since the reset. An explicit `enabled: false` is honoured.
-test('it is on by default, and an explicit off is honoured', () => {
+// OFF BY DEFAULT (changed for the first public release - it rewrites the game's own log file, so
+// it must be an opt-in). Only `enabled: true` written down turns it on; a fresh install, an old
+// config with no key, and an explicit false are all off. The truncate guardrails are unchanged.
+test('it is off by default, and only an explicit opt-in turns it on', () => {
   const fresh = new LogRotationService({ loadJson: (n, d) => d, saveJson: () => {} });
-  assert.equal(fresh.enabled, true, 'the constructor should arm it');
-  assert.equal(fresh.loadSettings().enabled, true, 'a fresh install has it on');
+  assert.equal(fresh.enabled, false, 'the constructor should NOT arm it');
+  assert.equal(fresh.loadSettings().enabled, false, 'a fresh install has it off');
 
-  // A settings file that predates this feature, with no key, is also the default (on).
+  // A settings file that predates this feature, with no key, is also off now.
   const legacy = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
-  assert.equal(legacy.loadSettings().enabled, true, 'an old config with no key is the default');
+  assert.equal(legacy.loadSettings().enabled, false, 'an old config with no key is off');
 
-  // Only an explicit false turns it off.
+  // An explicit false is of course still off.
   const off = new LogRotationService({ loadJson: () => ({ enabled: false }), saveJson: () => {} });
-  assert.equal(off.loadSettings().enabled, false, 'an explicit off must be honoured');
+  assert.equal(off.loadSettings().enabled, false);
 
-  // And her actual choice is honoured.
+  // Only a deliberate opt-in (the box ticked -> setEnabled writes { enabled: true }) turns it on,
+  // and an install that had done that through 1.0.0 keeps it.
   const chosen = new LogRotationService({ loadJson: () => ({ enabled: true }), saveJson: () => {} });
-  assert.equal(chosen.loadSettings().enabled, true, 'turning it on does not stick');
+  assert.equal(chosen.loadSettings().enabled, true, 'a saved opt-in is honoured');
 });
 
 test('no logs folder is a quiet no-op, not a throw', () => {

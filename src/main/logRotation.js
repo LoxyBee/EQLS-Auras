@@ -302,11 +302,13 @@ class LogRotationService {
     // Injected so this stays testable without Electron, same as every other service here.
     this.loadJson = loadJson || (() => ({}));
     this.saveJson = saveJson || (() => {});
-    // ON by default (owner's call). The weekly archive is what keeps the live log scoped to the
-    // current lockout week, which is what the Lockouts grid depends on - so it should work out of
-    // the box. It still refuses to touch a log that has been played on since the reset, and it
-    // copies-and-verifies before it truncates. An explicit off in the settings file is honoured.
-    this.enabled = true;
+    // OFF by default (changed for the first public release). This feature REWRITES the game's own
+    // eqlog_*.txt - moves everything before the week boundary into Archive/ and truncates the live
+    // file - which other log tools and the player's expectations don't account for. loadSettings()
+    // turns it on only if `enabled: true` is written down, i.e. the user ticked the box. (It still
+    // refuses to touch a log played on since the reset and copy-verifies before truncating - those
+    // guardrails are unchanged; this is only about not doing it unasked.)
+    this.enabled = false;
     // The reset day/hour. The SAME value the Lockouts grid uses - main.js loads it once and pushes
     // it to both. Defaulted here so the module works standalone in a test.
     this.resetRule = { ...DEFAULT_RESET };
@@ -367,10 +369,14 @@ class LogRotationService {
   }
 
   loadSettings() {
-    // ON unless the file explicitly says otherwise. A missing file, or a missing key, is the
-    // default (on); only `enabled: false` written down turns it off.
-    const cfg = this.loadJson('logRotation', { enabled: true });
-    this.enabled = cfg.enabled !== false;
+    // OFF unless the user has turned it on. This feature REWRITES the game's own eqlog_*.txt (moves
+    // everything before the week boundary to Archive/, then truncates the live file), which other
+    // log-reading tools and the player's own expectations don't account for - so it must be a
+    // deliberate opt-in, not a default a public install ships with. Only `enabled: true` written
+    // down (by setEnabled, i.e. the user ticking the box) turns it on. Was default-on through 1.0.0;
+    // an install that had ticked it keeps its saved `true`, one that never touched it flips to off.
+    const cfg = this.loadJson('logRotation', {});
+    this.enabled = cfg.enabled === true;
     return { enabled: this.enabled };
   }
 
