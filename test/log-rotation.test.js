@@ -44,10 +44,21 @@ const HOUR = 3600000;
 
 const LINE = '[Sat Aug 29 10:00:00 2026] You have slain Lady Vox!';
 
-function tempLogs(files) {
+// LANDMINE WARNING: many tests below pass a HARDCODED calendar date (e.g. `new Date(2026, 8, 2)`)
+// as the fake "now". The rotation code's quiet check compares that against each file's REAL
+// filesystem mtime - so a freshly-written fixture reads as "written to right now" the moment real
+// wall-clock time passes the hardcoded date, and the test silently flips from pass to fail. To
+// stop that, tempLogs() back-dates every file it writes to the year 2000 by default: any plausible
+// hardcoded "now" is then comfortably in the file's future. A test that needs a file to look
+// recent overrides this itself - `aged()` (mtime relative to the fake `now`) or an explicit
+// fs.utimesSync. Prefer `const now = new Date()` over a hardcoded date in any new test here.
+const ANCIENT = new Date('2000-01-01T00:00:00Z');
+function tempLogs(files, { mtime = ANCIENT } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-rot-'));
   for (const [name, body] of Object.entries(files)) {
-    fs.writeFileSync(path.join(dir, name), body, 'utf8');
+    const full = path.join(dir, name);
+    fs.writeFileSync(full, body, 'utf8');
+    if (mtime) fs.utimesSync(full, mtime, mtime);
   }
   return dir;
 }
