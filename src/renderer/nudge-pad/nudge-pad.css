@@ -1,0 +1,46 @@
+/* PAD_W (86) / PAD_H (52) are set in nudgePadWindow.js - keep #pad inside them. The window sits
+   centred over the aura's blue box. Amber arrows (the owner's "brown arrows like before"). */
+:root {
+  --accent: #f0a54a;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  font-family: Consolas, "Segoe UI", system-ui, sans-serif;
+}
+
+#pad {
+  position: absolute;
+  inset: 2px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 3px;
+}
+
+.nudge {
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: #1b1205;
+  background: var(--accent);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  border-radius: 5px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.nudge:hover { background: #f4b466; }
+.nudge:active { transform: translateY(1px); background: #ffc178; }
+
+/* Up spans the top-middle; the other three sit on the bottom row. */
+.nudge[data-dy="-1"] { grid-area: 1 / 2; }
+.nudge[data-dx="-1"] { grid-area: 2 / 1; }
+.nudge[data-dy="1"]  { grid-area: 2 / 2; }
+.nudge[data-dx="1"]  { grid-area: 2 / 3; }

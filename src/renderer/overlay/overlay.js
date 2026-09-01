@@ -16,6 +16,7 @@ dragOverlayEl.addEventListener('contextmenu', (e) => {
   window.eqOverlay.openSettings(widgetId);
 });
 
+
 // Used only until the real config arrives from getConfig() below - a
 // freshly created widget's window has to fully boot before that resolves,
 // and in that brief window this is what governs what renders. Defaults to

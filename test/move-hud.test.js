@@ -178,6 +178,45 @@ test('a nudge lands on the grid only for the aura that is active, only when snap
   snap.setActive(null);
 });
 
+test('"Unlock all auras" mode (setActiveAll) snaps every aura, not just one', () => {
+  const a = makeAura('AllA');
+  const b = makeAura('AllB');
+  wm.setLocked(a.config.id, false);
+  wm.setLocked(b.config.id, false);
+  snap.set({ enabled: true, sizePx: 10 });
+  snap.setActiveAll(true);
+  a.win.setPosition(103, 97);
+  b.win.setPosition(108, 92);
+  wm.nudgeWidget(a.config.id, 1, 1); // 104,98 -> 100,100
+  wm.nudgeWidget(b.config.id, 1, 1); // 109,93 -> 110,90
+  assert.deepEqual(a.win.getPosition(), [100, 100]);
+  assert.deepEqual(b.win.getPosition(), [110, 90], 'the second aura snapped too');
+  snap.setActiveAll(false);
+  snap.set({ enabled: false, sizePx: 8 });
+});
+
+test('the nudge pad is a separate window centred over the box, wired renderer -> preload -> main', () => {
+  const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
+  // it is its OWN window, not inside the clipped aura box, and not on the move HUD any more
+  assert.doesNotMatch(read('src', 'renderer', 'overlay', 'index.html'), /id="nudge-pad"/);
+  assert.doesNotMatch(read('src', 'renderer', 'move-hud', 'index.html'), /id="nudge-pad"/);
+  assert.match(read('src', 'renderer', 'nudge-pad', 'nudge-pad.js'), /window\.eqNudgePad\.nudge\(id, kind,/);
+  assert.match(read('src', 'preload', 'preload-nudge-pad.js'), /ipcRenderer\.send\('nudgePad:nudge'/);
+  const pad = read('src', 'main', 'nudgePadWindow.js');
+  assert.match(pad, /function showFor\(id, bounds, kind = 'widget'\)/);
+  assert.match(pad, /function updateFor\(id, bounds\)/); // follows the box on every move
+  // centred over the box, not offset above it
+  assert.match(pad, /let y = Math\.round\(by \+ \(bh - PAD_H\) \/ 2\)/);
+  const main = read('src', 'main', 'main.js');
+  assert.match(main, /ipcMain\.on\('nudgePad:nudge'/);
+  assert.match(main, /kind === 'actionBar'[\s\S]{0,80}actionBarManager\.nudgePosition\(id, dx, dy\)/);
+  assert.match(main, /widgetManager\.nudgeWidget\(id, dx, dy\)/);
+  assert.match(main, /nudgePadWindow\.showFor\(id, b, kind\)/); // single "Move…" (aura or bar)
+  assert.match(main, /getVisibleUnlockedBounds\(\)\) nudgePadWindow\.showFor/); // "Unlock all auras"
+  assert.match(main, /nudgePadWindow\.updateFor\(id, bounds\)/); // follow
+  assert.match(main, /broadcast\('widget:nudgeStep', moveStepPx\)/);
+});
+
 test('a drag drop of the active aura snaps to the grid; others are left alone', () => {
   const { config, win } = makeAura('DragSnap');
   wm.setLocked(config.id, false);
