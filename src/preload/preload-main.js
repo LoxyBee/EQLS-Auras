@@ -240,6 +240,10 @@ contextBridge.exposeInMainWorld('eqTracker', {
   onZoneChanged: (cb) => ipcRenderer.on('zone:changed', (_e, zone) => cb(zone)),
   setWidgetShowOnAllProfiles: (id, value) =>
     ipcRenderer.invoke('widget:setShowOnAllProfiles', { id, value }),
+  // The nudge pad's centre button asked to open an aura's settings - see main.js.
+  onOpenWidgetSettings: (callback) => {
+    ipcRenderer.on('widget:openSettings', (_event, id) => callback(id));
+  },
   exportWidget: (id) => ipcRenderer.invoke('widget:export', id),
   peekWidgetCode: (code) => ipcRenderer.invoke('widget:peekCode', code),
   importWidget: (code) => ipcRenderer.invoke('widget:import', code),

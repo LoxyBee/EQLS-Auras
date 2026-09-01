@@ -3772,6 +3772,11 @@ function initWidgetsPanel() {
     shareCodeOfferEl.style.display = 'flex';
   });
 
+  // The nudge pad's centre button (out on the overlay) asked to open this aura's settings.
+  // Registered in here rather than beside the other IPC listeners because focusWidget lives in
+  // this closure.
+  window.eqTracker.onOpenWidgetSettings((id) => focusWidget(id));
+
   // Refreshes the widget list, then selects+focuses a specific one - shared
   // by every path that ends with a brand-new (or overwritten) widget:
   // custom creation, premade creation, and both import outcomes below.
