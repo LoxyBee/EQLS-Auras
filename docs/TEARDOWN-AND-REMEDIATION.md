@@ -269,27 +269,46 @@ reversing it) are working as intended.
 Small, self-contained, no design debate. These remove the drive-by code-execution path and the two
 defaults that can damage a user's files. Ship as one branch.
 
-> **Status, 3 Sep — branch `fix/public-release-hardening` (PR #33 merged commits 1-4; more on top,
-> not yet merged).** P0-1 ✅ (with a documented residual), P0-2 ✅, P0-3 ✅, P0-4 ✅, P0-5 ✅.
+> **Status, 3 Sep — branch `fix/public-release-hardening` (PR #33 merged commits 1-4; ~23 more on
+> top, not yet merged).** P0-1 ✅ (reworked to two tiers - vouched core hidden, user-added
+> consent-gated; documented residual), P0-2 ✅, P0-3 ✅, P0-4 ✅, P0-5 ✅.
 > Beyond Phase 0 on the same branch: **evidence-based detection ON by default** (P1-2's flip half,
 > measured +241 landings / 0 lost - the legacy-chain deletion stays a later release), **lockout
 > backfill seeks to the current reset week** (a bounded-read cousin of P1-4), **daily log split
 > OFF by default**, a **CI workflow that runs `npm test`** on every push + PR (closes the
-> new-finding gap: CI never ran the tests), and a **zone-graph integrity test** (P4-3, data was
-> clean). Still genuinely open: P1-1, P1-2's rework, P1-3 (partly covered by the evidence model),
-> P2-*, P3-1/2/3/4/6/7, P4-1/2.
+> new-finding gap: CI never ran the tests), a **zone-graph integrity test** (P4-3, data was
+> clean), **P3-7 ✅** (test-date landmines de-fanged before they could red-light CI on release
+> week), and the **eqlsource app icon** wired into the build + main window.
+> Still genuinely open: P1-1, P1-2's rework, P1-3 (partly covered by the evidence model),
+> P1-4's general catch-up scan, P1-5, P2-*, P3-1/2/3/4/6, P4-1/2.
+>
+> **Re-ratings (a5, 2 Sep):** #8 → ~4 (narrow, bounded, never over-lands). #17 → 5 (auto
+> pre-import backup exists). #23 → ~3 (re-measured 85.75% credited / 9.92% held / 4.33% unresolved
+> - the original "misses 35%" misread incoming damage as dropped).
+>
+> **Minimum release-blocking set now:** nothing in code. Owner actions only — merge this branch to
+> master, rebuild the installer + eyeball the icon, decide `fix/module-watcher-eperm-crash`, and one
+> live session with the evidence model on.
 
 ### P0-1 — Close the module drive-by execution path — finding #1a — sev 9 — ✅ DONE (`fix/public-release-hardening`)
 The full sandbox is Phase 2; this phase removed the *automatic* execution and made modules visible.
 
-> **Shipped:** `enabledModuleIds` allow-list (persisted, defaults to the one bundled module). A
-> discovered `.js` is inert - `onLine` never runs, it's absent from Add Aura, its aura draws
-> nothing - until the user ticks Enable on the new **Log & Setup → Custom modules** list, and the
-> first enable shows a consent dialog. Load/validation *and* runtime errors show inline there
-> (`modules:error` broadcast). Config bundles already don't carry module files. **Residual, by
-> design:** the scan `require()` still runs a module file's top-level code once, before enable -
-> closing that means not `require()`ing until enable (losing the ability to show the module's real
-> name pre-enable) and is folded into P2-4's isolated-process work.
+> **Shipped, then reworked to two tiers (`fix/public-release-hardening`, 1 Sep):**
+> - **CORE (vouched)** — an id in `CORE_MODULE_IDS` (`moduleHost.js`; `aggro-board` + `pull-timer`).
+>   Folded in by a deliberate source edit + build, so trusted like app code: always enabled, no
+>   consent, and **filtered out of the Setup-page list entirely** so a vouched addition doesn't sit
+>   in the options taking up space. `_isEnabled` / `setModuleEnabled` short-circuit on a core id, so
+>   a hand-edited allow-list can't switch one off.
+> - **USER-ADDED** — any other `.js` the user drops in. Inert (`onLine` never runs, absent from Add
+>   Aura, aura draws nothing) until ticked on the **Log & Setup → Custom modules** list, first enable
+>   behind a consent dialog. That card stays **hidden until such a module exists**. Load/validation
+>   *and* runtime errors show inline (`modules:error` broadcast).
+>
+> Config bundles already don't carry module files. **Residual, by design:** the scan `require()`
+> still runs a module file's top-level code once, before enable - closing that means not
+> `require()`ing until enable (losing the pre-enable name) and is folded into P2-4's isolated-process
+> work. This tier's minimum-release bar (a5, 2 Sep): consent gate + config-bundle exclusion + the
+> enable page — all shipped. Full `utilityProcess` isolation (P2-4) is post-1.x.
 
 1. Remove the `fs.watch` auto-load. Folder scan still discovers files, but a discovered module is
    **disabled until explicitly enabled**.
@@ -559,7 +578,12 @@ session
 
 *Touches:* `src/main/main.js` · new `test/userdata-pin.test.js`
 
-### P3-7 — De-fang the hardcoded-future-date tests in `log-rotation.test.js` — finding #9's test-side twin — sev 5 — 1 day
+### P3-7 — De-fang the hardcoded-future-date tests in `log-rotation.test.js` — finding #9's test-side twin — sev 5 — ✅ DONE (`fix/public-release-hardening`, 1 Sep, commit 748d828)
+Took option 2: `tempLogs()` back-dates every fixture file to 2000-01-01 by default (optional `mtime`
+override), so any hardcoded "now" sits comfortably in the file's future. Tests needing a recent file
+still override (`aged()`, explicit `fs.utimesSync`). Landmine-warning comment added at the helper.
+Proven: swapping any rotation test's `now` to `new Date()` fails without the change, passes with it.
+
 Found 2 Sep, not in the original review: ~20 tests hardcode `new Date(2026, 8, 2, ...)` as a fake
 "now" while writing real files with real (current wall-clock) mtimes via `tempLogs()`. The rotation
 code's `QUIET_MS` check compares that fake "now" against the file's real mtime — fine while the
