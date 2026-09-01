@@ -18,7 +18,14 @@ const { ModuleHost, validateModule, defaultFor, API_VERSION } = require('../src/
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-modules-'));
 const write = (dir, file, body) => fs.writeFileSync(path.join(dir, file), body);
+// Seeds `enabledModuleIds: 'all'` so a loaded module is active - a user-added module is OFF by
+// default in production (core ids only), and the 'inert until enabled' test below builds its
+// own bare store to check that.
 const fakeStore = () => {
+  const data = { enabledModuleIds: 'all' };
+  return { data, loadJson: (k, f) => (k in data ? data[k] : f), saveJson: (k, v) => { data[k] = v; } };
+};
+const bareStore = () => {
   const data = {};
   return { data, loadJson: (k, f) => (k in data ? data[k] : f), saveJson: (k, v) => { data[k] = v; } };
 };
@@ -111,14 +118,84 @@ test('a good module loads; a bad one emits moduleError, not a crash', () => {
   host.on('moduleError', (e) => errs.push(e));
   host.loadModules();
 
+  // getRegistered() lists every discovered .js now (the Setup page shows failures too); the
+  // loaded ones carry an id, the failures carry an error.
   const reg = host.getRegistered();
-  assert.equal(reg.length, 1);
-  assert.equal(reg[0].id, 'test-mod');
-  assert.equal(reg[0].hasAura, true);
+  const loaded = reg.filter((m) => m.id);
+  const failed = reg.filter((m) => !m.id);
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].id, 'test-mod');
+  assert.equal(loaded[0].hasAura, true);
+  assert.equal(failed.length, 2);
+  assert.ok(failed.every((f) => f.file && f.error));
 
   assert.equal(errs.length, 2);
   assert.ok(errs.some((e) => e.id === 'bad.js' && /apiVersion|name/.test(e.error)));
   assert.ok(errs.some((e) => e.id === 'broken.js' && /failed to load/.test(e.error)));
+});
+
+test('a discovered module is INERT until enabled, and the first enable is the gate', () => {
+  const dir = tempDir();
+  write(dir, 'x.js', GOOD.replace("id: 'test-mod'", "id: 'x'"));
+  const host = new ModuleHost(dir, bareStore()); // no enabledModuleIds -> core only, x is not core
+  host.stop();
+  host.loadModules();
+
+  const [row] = host.getRegistered();
+  assert.equal(row.id, 'x');
+  assert.equal(row.enabled, false, 'off until the user turns it on');
+
+  // Inert: onLine does not run, no entries.
+  host.handleLine('PING');
+  assert.equal(host.getEntries('x').length, 0, 'a disabled module must not process lines');
+
+  // Enable it -> now active, and the choice is persisted (alongside the bundled default).
+  host.setModuleEnabled('x', true);
+  assert.equal(host.getRegistered()[0].enabled, true);
+  assert.ok(host.store.data.enabledModuleIds.includes('x'), 'the enable was persisted');
+  host.handleLine('PING');
+  assert.equal(host.getEntries('x').length, 1, 'an enabled module processes lines');
+
+  // Disable -> inert again, entries cleared.
+  host.setModuleEnabled('x', false);
+  assert.equal(host.getEntries('x').length, 0);
+});
+
+test('a core (vouched) module is enabled out of the box and flagged core; a user one is not', () => {
+  const { CORE_MODULE_IDS } = require('../src/main/moduleHost');
+  assert.ok(CORE_MODULE_IDS.includes('aggro-board'));
+  assert.ok(CORE_MODULE_IDS.includes('pull-timer'), 'pull-timer is pre-vouched even though it does not ship');
+
+  const dir = tempDir();
+  write(dir, 'aggro-board.js', fs.readFileSync(path.join(__dirname, '..', 'modules', 'aggro-board.js'), 'utf8'));
+  write(dir, 'mine.js', GOOD.replace("id: 'test-mod'", "id: 'mine'"));
+  const host = new ModuleHost(dir, bareStore());
+  host.stop();
+  host.loadModules();
+
+  const core = host.getRegistered().find((m) => m.id === 'aggro-board');
+  assert.equal(core.enabled, true);
+  assert.equal(core.core, true, 'the renderer filters the Custom-modules list on this flag');
+
+  const user = host.getRegistered().find((m) => m.id === 'mine');
+  assert.equal(user.enabled, false, 'a user-added module stays off');
+  assert.equal(user.core, false);
+});
+
+test('a core module stays on even if the persisted allow-list omits it (hand-edited JSON)', () => {
+  const dir = tempDir();
+  write(dir, 'aggro-board.js', fs.readFileSync(path.join(__dirname, '..', 'modules', 'aggro-board.js'), 'utf8'));
+  const store = bareStore();
+  store.data.enabledModuleIds = []; // someone cleared the list by hand
+  const host = new ModuleHost(dir, store);
+  host.stop();
+  host.loadModules();
+  assert.equal(host.getRegistered().find((m) => m.id === 'aggro-board').enabled, true);
+  assert.equal(host._isEnabled('aggro-board'), true, 'handleLine would skip it otherwise');
+
+  // and setModuleEnabled(false) can't switch it off
+  host.setModuleEnabled('aggro-board', false);
+  assert.equal(host.getRegistered().find((m) => m.id === 'aggro-board').enabled, true);
 });
 
 test('a missing modules folder is created, not an error', () => {

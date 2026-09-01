@@ -16,6 +16,7 @@ const CHANGELOG = [
     new: [
       'The Damage parser is out of the lab and into Add Aura - a per-attacker readout for the current fight, biggest first, each with a coloured bar; the fight total sits at the bottom, and between fights it shows your running total since you zoned in',
       'A new Aggro Board aura - shows which player your target is actually swinging at, and who is next in line behind them, read straight from the log',
+      'A .js module you drop into the app\'s folder yourself now stays off - and the Setup page shows nothing about it - until you add one, then switch it on and clear a one-time confirmation; the app\'s own built-in modules (like the Aggro Board) are unaffected',
       'Damage meter: scope it to your whole group or just yourself (shares are recalculated, not just hidden), charmed pets show as their own rows, and each row can read damage, rate (DPS), or both',
       'A depletion shade on icon-mode aura tiles - a shrinking dark overlay that shows how much time is left, since icon tiles have no countdown bar (per aura, off by default)',
       'Timer text can fade from amber down to the expiring-soon red as a buff runs out, instead of only flashing at the threshold (per aura, off by default)',
@@ -48,8 +49,12 @@ const CHANGELOG = [
       'Type your character and server when the spellbook is not being found on its own',
       'Auras and timers stop when your character dies',
       'A heads-up on the Buff Tracker page when EQ is in exclusive full-screen (auras can\'t draw over it)',
+      'The tools that write to EverQuest\'s own log files - the weekly archive and the per-day split - are off by default now; turn them on if you want them',
+      'Evidence-based detection is on by default - fewer buffs get silently missed after a restart or a loadout swap. The Diagnostics section has the toggle to turn it back off',
     ],
     fixes: [
+      'The lockout grid reads just the current week from your live log, so turning the weekly archive off doesn\'t slow it down',
+      'A groupmate\'s damage no longer drops to zero on the meter for the rest of the session after one stray hit lands on them',
       'A groupmate\'s own melee procs no longer show up as buffs you cast on them',
       'Bard resist songs and caster resist spells no longer knock each other off',
       '"You feel smaller" resolves to Shrink without asking - Tiny Companion only lands on a pet',

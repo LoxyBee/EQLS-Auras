@@ -18,12 +18,14 @@
     "appId": "com.eqlsource.eqlsauras",
     "productName": "EQLS Auras",
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     },
     "artifactName": "EQLS-Auras-Setup.exe",
     "files": [
       "src/**/*",
-      "package.json"
+      "package.json",
+      "build/icon.ico"
     ],
     "extraFiles": [
       {

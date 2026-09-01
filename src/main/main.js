@@ -21,6 +21,12 @@ const path = require('path');
 // widgets.json under the new "EQLS Auras" folder on first restart after
 // the rename, while everything else (buffs, profiles, spellbook) correctly
 // stayed in the old folder - a real split-brain, not a hypothetical.
+//
+// DO NOT edit this folder name to match a new product name. It is where every
+// existing user's data already lives; changing it orphans all of it. A real
+// rebrand needs a copy-the-folder-and-repoint migration, not a string edit.
+// `test/pin.test.js` is the project's first test and fails CI if this line's
+// folder name changes or a local require() ever creeps above it.
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
 const fs = require('fs');
@@ -67,9 +73,10 @@ const { ICON_SETS } = require('./iconExtractor');
 const { SpellbookService } = require('./spellbookService');
 const { resolveInstallRoot } = require('./eqLocator');
 const { tagBardSongs } = require('./bardSongTagger');
-// rosterBackfill is intentionally NOT wired up any more - see applyInstallRoot for why.
-// Kept as a require so the module stays discoverable rather than looking like dead code.
-const { backfillBardSongs: _unusedBackfillBardSongs } = require('./rosterBackfill');
+// rosterBackfill.js was deleted 1 Sep (teardown #14). It re-read the client spell file on every
+// launch and re-added other-expansion bard songs, which was right when the roster was mined and
+// wrong once it became the EQL-scoped set. A missing song goes in via tools/roster-overrides.json
+// now - see applyInstallRoot. test/roster.test.js fails if the module or a call to it comes back.
 const { saveSnapshot, loadSnapshot } = require('./sessionSnapshot');
 const gameSpellData = require('./gameSpellData');
 const spellStacking = require('./spellStacking');
@@ -269,7 +276,10 @@ moduleHost.setIconUrlForSpellFn((name) => {
 moduleHost.on('modulesChanged', (list) => broadcast('modules:changed', list));
 moduleHost.on('entriesChanged', (all) => broadcast('modules:entries', all));
 moduleHost.on('settingsChanged', (payload) => broadcast('modules:settingsChanged', payload));
-moduleHost.on('moduleError', ({ id, error }) => debugLog(`MODULE "${id}" - ${error}`));
+moduleHost.on('moduleError', ({ id, error }) => {
+  debugLog(`MODULE "${id}" - ${error}`);
+  broadcast('modules:error', { id, error });
+});
 moduleHost.loadModules();
 moduleHost.watchFolder();
 
@@ -376,6 +386,13 @@ foregroundWatcher.on('focusChanged', applyForegroundVisibility);
 // current value on load via the handler below.
 foregroundWatcher.on('focusChanged', (state) => {
   broadcast('overlay:fullscreenWarning', !!(state && state.foregroundFullscreen));
+});
+// P3-2 circuit breaker - powershell.exe can't run here at all (broken PATH, an AV hook killing
+// every child, an execution-policy lockdown). The watcher has stopped itself; say so once instead
+// of the overlay silently never auto-hiding. The renderer also reads the current value on load.
+foregroundWatcher.on('unavailable', () => {
+  debugLog('[foreground] auto-hide unavailable - powershell probe failed repeatedly, watcher stopped');
+  broadcast('overlay:autoHideUnavailable', true);
 });
 if (autoHideOverlayEnabled) foregroundWatcher.start();
 
@@ -1402,6 +1419,9 @@ ipcMain.handle('log:getState', () => logService.getState());
 ipcMain.handle('overlay:fullscreenState', () =>
   foregroundWatcher.lastState ? !!foregroundWatcher.lastState.foregroundFullscreen : null
 );
+// P3-2 - false once the foreground probe has failed repeatedly and the watcher stopped itself.
+// true otherwise (including while auto-hide is simply turned off - nothing is broken then).
+ipcMain.handle('overlay:autoHideAvailable', () => !foregroundWatcher.unavailable);
 // QOL #5 - the "is it working right now?" readout on the Buff Tracker page. Which file is being
 // tailed and how long since a line last arrived from it.
 ipcMain.handle('log:activity', () => {
@@ -2063,6 +2083,9 @@ ipcMain.handle('modules:list', () => moduleHost.getRegistered());
 ipcMain.handle('modules:entries', () => moduleHost.getAllEntries());
 ipcMain.handle('modules:getSettings', (_event, id) => moduleHost.getSettings(id));
 ipcMain.handle('modules:setSetting', (_event, { id, key, value }) => moduleHost.setSetting(id, key, value));
+// A discovered module is inert until the user enables it here (Setup page). The renderer shows a
+// consent dialog before the first enable - see moduleHost.js's header.
+ipcMain.handle('modules:setEnabled', (_event, { id, enabled }) => moduleHost.setModuleEnabled(id, enabled));
 
 ipcMain.handle('debug:getEnabled', () => debugLogEnabled);
 ipcMain.handle('debug:setEnabled', (_event, enabled) => {
@@ -2682,6 +2705,25 @@ app.on('will-quit', () => {
 // A renderer dying takes its window with it, which can cascade into
 // window-all-closed and look like a clean quit - `reason` distinguishes a
 // real crash ('crashed'/'oom') from an ordinary teardown ('clean-exit').
+// Navigation lockdown for EVERY window in the app, present and future - one registration covers
+// the main window, the overlay, every aura, and the little popup windows. These pages render
+// spell / zone / chat-derived strings and pasted share codes; nothing they contain should be able
+// to navigate the window somewhere else or open a new one. All content is loaded from local files,
+// so a navigation attempt is always either a bug or an injection - deny it and log it.
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-navigate', (e, url) => {
+    // about:blank / the page's own file reload are fine; anything else is denied.
+    if (url !== contents.getURL()) {
+      e.preventDefault();
+      debugLog(`BLOCKED navigation to ${url}`);
+    }
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    debugLog(`BLOCKED window.open / target=_blank to ${url}`);
+    return { action: 'deny' };
+  });
+});
+
 app.on('render-process-gone', (_event, _contents, details) => {
   debugLog(`SHUTDOWN: render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
 });

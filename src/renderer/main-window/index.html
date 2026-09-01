@@ -2,6 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <!-- Strict CSP: only this app's own scripts run, nothing connects out, and the only non-self
+       resources are the custom eqicon:// / eqsound:// protocols, data: URIs, and Google Fonts
+       (the one deliberate CDN - see the comment below). Renderer content includes spell / zone /
+       chat-derived strings and pasted share codes, so script-src 'self' + connect-src 'none' is
+       the guard that a bad string can't turn into code or exfiltration. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: eqicon:; media-src 'self' eqsound:; connect-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>EQLS Auras</title>
   <!-- Poppins for all UI/prose text (see --sans in main-window.css). Timer
        figures and other data values stay on the existing Consolas --mono -
@@ -144,6 +150,13 @@
           <p id="fullscreen-warning-line" class="hint warn" hidden>
             EverQuest is in exclusive full-screen — auras can't show over it. Switch EQ to
             Windowed or Borderless Windowed.
+          </p>
+          <!-- P3-2 - shown only if the foreground check has failed repeatedly and given up
+               (powershell blocked by antivirus, execution policy, or a broken PATH). Overlay
+               auto-hide won't work; everything else is unaffected. -->
+          <p id="autohide-unavailable-line" class="hint warn" hidden>
+            Overlay auto-hide isn't working — Windows blocked the tool it uses to see which window
+            is in front. The auras still work; they just won't hide themselves when you tab away.
           </p>
         </div>
 
@@ -1142,6 +1155,16 @@
              collapsed topic rows, sharing one border, like the aura panel's Configuration block.
              AA setup stays its own open "Character setup" card at the top - it's character config,
              not app config. Every element id is unchanged, so main-window.js's wiring is untouched. -->
+        <!-- Custom modules (feat/module-system). Hidden entirely unless the user has dropped their
+             OWN .js into the install's modules/ folder - the app's vouched "core" modules are
+             filtered out and never appear here. Each user module is OFF until enabled here; the
+             first enable asks for consent (see initModulesPanel in main-window.js). Placed before
+             the App-settings block so it is not caught by the block's own markup tests. -->
+        <div class="card" id="modules-panel-card" hidden>
+          <h3 title="Extra aura types from a .js file you added to the app's modules/ folder yourself. Each runs code with full access to your PC, so it is off until you enable it - only enable ones from someone you trust.">Custom modules</h3>
+          <ul id="modules-panel-list" class="module-list"></ul>
+        </div>
+
         <h3 class="settings-page-section-title">App settings</h3>
         <p class="hint">Things you set once. Click a row to open it.</p>
 
@@ -1732,6 +1755,17 @@
           <h3>EQLS Auras</h3>
           <p class="hint">Stop alt-tabbing to check your buffs. Reads your EverQuest Legends log and shows a countdown overlay on top of the game.</p>
           <p class="hint"><span id="about-version"></span> · <a href="#" id="about-site-link">eqlsource.com/tools</a></p>
+        </div>
+
+        <div class="card" id="about-limitations-card">
+          <h3>Good to know</h3>
+          <ul class="about-notes">
+            <li>It only ever reads <em>new</em> log lines. Anything that happened before you opened the app, or while it was closed, it didn't see.</li>
+            <li>A restart clears running timers; they come back as each buff is recast (or are restored if you restart within about 5 minutes).</li>
+            <li>During a big multi-buff cast (Quick Buff and the like) a buff can occasionally show under the wrong name. Right-click a tile to correct or hide it.</li>
+            <li>The damage meter is a rough live readout, not a precise parser — it leaves out incoming damage and can't place a small share of a busy fight.</li>
+            <li>EQ must run windowed or borderless (not exclusive full-screen) for the overlay to draw over it.</li>
+          </ul>
         </div>
 
         <div class="card" id="changelog-card">

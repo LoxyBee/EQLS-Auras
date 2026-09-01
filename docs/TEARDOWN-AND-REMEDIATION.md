@@ -45,9 +45,15 @@ differently, so read the two together rather than either alone):
   pitched at public-plugin-store severity for what was designed as a single-trusted-collaborator
   path. I'd keep it high (7–8), not top-of-scale.
 
-Everything else — the detection-engine early-return chain (#2), the roster-completeness false
-confidence (#3), the monolith files (#12), and the cruft/process items (#14/#15/#19/#21/#22) — I
-agree with essentially as stated; most are drawn directly from the project's own CLAUDE.md.
+Everything else — the detection-engine early-return chain (#2), the monolith files (#12), and the
+cruft/process items (#14/#15/#19/#21/#22) — I agree with essentially as stated; most are drawn
+directly from the project's own CLAUDE.md.
+
+**#3 correction (1 Sep, owner):** the finding treated the roster as an incomplete copy of the game
+file. It isn't — it is deliberately scoped to the spells EQ Legends actually has, and matching it
+against `spells_us.txt` (every spell from every EQ version) would import false ambiguity from
+spells nobody can cast here. Downgraded to ~4; P1-1's veto mechanism dropped and replaced with an
+ongoing "add the real missing EQL spell when one surfaces" data task. See the revised #3 and P1-1.
 
 ---
 
@@ -73,22 +79,45 @@ my code."
 - `delete require.cache` + re-`require()` on every file change leaks the old version's timers,
   closures and listeners. Editors that write-twice-on-save double every reload.
 
+> **⚠️ Auto-execution closed on `fix/public-release-hardening`.** A dropped module is now inert
+> until explicitly enabled (with a consent dialog) - see P0-1. What's NOT closed: an *enabled*
+> module still `require()`s into the main process with full Node, a `while(true)` still freezes
+> the app, and the require-cache leak on hot-reload of an enabled module is unchanged. That's the
+> sandbox (P2-4). Severity of what remains: 6-7 (enabled = the user consented), not 9.
+
 ## Severe (7–8)
 
 ### #2 — The detection engine is a graveyard of admitted-wrong heuristics — 8/10
 CLAUDE.md has **33 numbered "learned the hard way" gotchas** and a "P0 — architectural rework" that
 opens with "This is one problem with several symptoms." The known root cause — `handleLine()` is a
 chain of early `return`s, so a tier that matches-then-fails-confidence eats the line and the correct
-tier never runs — is **still what ships**. The fix (`useEvidenceModel`) is built, off by default,
-and "never run in a real session." Same for `useCastTimeFilter`, `useEvidenceModel`, the P0b
-attribution rework. You built the fixes and shipped the bugs.
+tier never runs — is **still what ships**. The fix (`useEvidenceModel`) is built.
 
-### #3 — The roster makes wrong answers look like high-confidence right ones — 8/10
-"Unique landing text" is the top auto-confirm tier, and "unique" is judged against a roster that was
-missing ~37,000 spells. Documented result: every "Cassindra's Chant of Clarity" the owner sang was
-**confidently logged as "Brilliance."** "You feel protected." offered four candidates, none of them
-the spell actually cast. The roster is now smaller-on-purpose and better, but the structural flaw —
-confidence derived from roster completeness — is untouched.
+> **⚠️ Partly addressed (2 Sep, `fix/public-release-hardening`).** `useEvidenceModel` was measured
+> against a real week (+241 landings, 0 lost, +6 prompts) and is now **ON by default**, with the
+> Diagnostics toggle as the one-click revert. `useCastTimeFilter` and `useStackingModel` were
+> measured too and deliberately left OFF (no benefit / unvalidated guess). The early-return tier
+> chain itself is not yet deleted - that stays a later release.
+
+### #3 — The roster makes wrong answers look like high-confidence right ones — 8/10 → **revised down to ~4, 1 Sep (owner)**
+"Unique landing text" is the top auto-confirm tier, and "unique" is judged by counting roster
+entries. The teardown framed the fix as: count against the game's `spells_us_str.txt` instead,
+since that has ~37,000 more spells. **The owner rejected that framing and is right to.** The
+roster (~1,067) is not an incomplete copy of the game file — it is deliberately scoped to the
+spells **EQ Legends actually has**. `spells_us.txt` carries every spell from every version of EQ
+ever shipped; the vast majority cannot be cast on this server. Vetoing a unique-text auto-confirm
+because some 2015-expansion spell shares that text would make the app prompt "which spell was
+that?" for buffs that were never ambiguous here — a permanent regression traded for a rare
+mislabel that finding #8 already documents as an accepted tradeoff.
+
+What's actually real is narrower: a spell that **is** castable on EQ Legends but was missed when
+the roster was built. That has happened (Armor of Protection, confirmed from a real log; 386 bard
+songs dropped by an early duration filter) and each was fixed by adding the one spell, after which
+the roster's own share-counting handles it correctly. The "Brilliance" case is an instance of
+this, not a structural flaw — if Cassindra's Chant of Clarity is a real EQL spell it belongs in
+the roster; once it is, `"Your mind clears."` is correctly a 2-way share and prompts with the
+right two candidates. This is an **ongoing data task** (report → check if the true spell is a
+castable EQL spell → `tools/roster-overrides.json` `add`), not an engine change. See revised P1-1.
 
 ### #8 — By-design mislabeling — 6→7/10
 "Completeness over perfect naming": the stated, written tolerance is "a possibly-mislabeled buff
@@ -116,11 +145,15 @@ verified," and still shipped in the bundle.
 controlled arbitrary `.png` write outside the cache dir. Sandbox limits the blast radius; it's still
 an unsanitized filesystem write in an IPC-reachable handler.
 
+> **✅ Fixed on `fix/public-release-hardening` (2 Sep).** Icon set is now whitelisted to the 3 known names, id must be plain digits, sound id must be uuid-shaped and its `fileName` must equal its own basename; a resolved-path containment assertion backs both. See P0-3.
+
 ### #6 — No CSP — 4/10
 Zero `Content-Security-Policy` in any of the 8 renderer HTMLs. No `will-navigate` /
 `setWindowOpenHandler` hardening. `sandbox:true` + `contextIsolation:true` are carrying the entire
 defense, with 79 `innerHTML` sinks across renderers rendering spell names, zone names, and
 chat-derived player names.
+
+> **✅ Fixed on `fix/public-release-hardening` (2 Sep).** Strict CSP meta on all 8 renderer HTMLs (`script-src 'self'`, `connect-src 'none'`), one app-wide `will-navigate` + `window.open` deny. The '79 innerHTML sinks' claim was checked and is overstated - dynamic spell/zone/name content already goes through `textContent`/`createElement`; the CSP is a backstop. See P0-4.
 
 ### #7 — A resident `powershell.exe`, polled every 300ms, forever — 4/10
 Every AV product on Windows will notice. The comment admits an earlier version was "a fork bomb that
@@ -152,6 +185,8 @@ Weekly log rotation is **ON by default** and truncates / rewrites the live `eqlo
 `skippedSpansBoundary` guard and a "verify the archive's size before rewriting" check because you
 know this is dangerous. Bold default for a buff overlay.
 
+> **✅ Fixed on `fix/public-release-hardening` (2 Sep).** Now OFF by default (opt-in). An install that had ticked it keeps its choice. The daily log-split feature is now OFF by default too, and `lockoutService.backfill()` seeks to the current reset week so the grid no longer needs the archive to have trimmed the file. See P0-2.
+
 ### #23 — Damage meter openly can't attribute a third of the log — 5/10
 "22% → 65%" credited, "the remaining 35% correctly excluded." Just unlocked as a premade. A DPS
 meter that misses 35% of damage is a DPS meter people will screenshot and argue with.
@@ -175,11 +210,18 @@ being an inferred number nobody can see without instrumenting the log by hand.
 ## Cruft & process rot (3–4)
 
 ### #14 — Dead code kept "to avoid a migration" — 4/10
-`enabled` field persisted but read nowhere; `rosterBackfill.js` present but wired out (with a test
-that fails if it runs); `zoneVisibility.js` only exists because an inline copy was inverted and
-passed four tests.
+`enabled` field persisted but read nowhere; ~~`rosterBackfill.js` present but wired out~~ (**deleted
+1 Sep**, commit 756aa6d — the guard test now checks the file stays gone, not just that it isn't
+called); `zoneVisibility.js` only exists because an inline copy was inverted and passed four tests.
+The `enabled`-field removal still wants a proper `widgets.json` migration — see P2-3.
 
 ### #15 — Tests prove little — 6/10
+
+> **New (3 Sep): it was worse than this - CI ran `npm test` *nowhere*.** The only workflow built
+> the installer and published it on every push to master, no test gate. A `.github/workflows/
+> test.yml` running `npm test` on push + PR, plus an `npm test` step before the installer build,
+> is now on `fix/public-release-hardening`. Mutation testing is still manual and the suite still
+> never launches Electron (`smoke-launch.js` / `smoke-render.js` exist but aren't in `npm test`).
 One session found "eight tests that passed while proving nothing." Mutation testing is manual. The
 suite never launches Electron, so a `globalShortcut.register('Pause')` that throws shipped past
 green.
@@ -208,7 +250,7 @@ a boat, one-way sinks hand-flagged. A hand-maintained MUD map that will rot.
 - **The ambiguous popup steals focus mid-fight** — `focusGameWindow` was added to shove EQ back to
   the front because clicking the popup drops you out of the game. A band-aid on a band-aid.
 
-## Verdict — Overall 7/10 bad
+## Verdict — Overall 7/10 bad *(as originally written; ~4/10 after the `fix/public-release-hardening` pass — see the Phase 0 status block and the corrections above)*
 
 The core detection engine — the entire reason the app exists — ships with a structural flaw its own
 docs call P0, with the fix sitting behind an off-by-default toggle nobody has tested live. Wrapped
@@ -216,6 +258,12 @@ around that is an unsandboxed auto-executing plugin loader, a 9,000-line setting
 someone who can't read code, and a habit of keeping known-broken code "to avoid a migration." It
 clearly *works* well enough that the owner uses it daily, and the honesty in CLAUDE.md is genuinely
 rare. But "we documented why it's broken" is not the same as "it's not broken."
+
+> **Update, 1 Sep.** The detection toggle (evidence model) is now ON by default and measured
+> (+241 landings / 0 lost on a real week); the plugin loader is consent-gated and the vouched tier
+> is hidden; the biggest structural claim, #3, was **overstated** — see its correction. What's left
+> of the detection work is a legacy-code deletion, small refinements, and an ongoing roster-data
+> task. "Broken" was too strong even when written; it is not the right word now.
 
 ---
 
@@ -247,9 +295,49 @@ reversing it) are working as intended.
 Small, self-contained, no design debate. These remove the drive-by code-execution path and the two
 defaults that can damage a user's files. Ship as one branch.
 
-### P0-1 — Close the module drive-by execution path — finding #1a — sev 9 — 1–2 days
-The full sandbox is Phase 2; this phase just removes the *automatic* execution and makes modules
-visible.
+> **Status, 3 Sep — branch `fix/public-release-hardening` (PR #33 merged commits 1-4; ~23 more on
+> top, not yet merged).** P0-1 ✅ (reworked to two tiers - vouched core hidden, user-added
+> consent-gated; documented residual), P0-2 ✅, P0-3 ✅, P0-4 ✅, P0-5 ✅.
+> Beyond Phase 0 on the same branch: **evidence-based detection ON by default** (P1-2's flip half,
+> measured +241 landings / 0 lost - the legacy-chain deletion stays a later release), **lockout
+> backfill seeks to the current reset week** (a bounded-read cousin of P1-4), **daily log split
+> OFF by default**, a **CI workflow that runs `npm test`** on every push + PR (closes the
+> new-finding gap: CI never ran the tests), a **zone-graph integrity test** (P4-3, data was
+> clean), **P3-7 ✅** (test-date landmines de-fanged before they could red-light CI on release
+> week), and the **eqlsource app icon** wired into the build + main window.
+> Still genuinely open: P1-2's rework, P1-3 (partly covered by the evidence model), P1-4's general
+> catch-up scan, P1-5, P2-*, P3-1/3/4, P4-1/2. (P3-6 already-done — `test/pin.test.js` predates the
+> review. P3-7 ✅. P3-2 ✅ — adaptive polling + circuit breaker. **P1-1's veto mechanism dropped**
+> 1 Sep — the roster is EQL-scoped by design, not incomplete; replaced with an ongoing data task,
+> #3 downgraded ~8 → ~4.)
+>
+> **Re-ratings (a5, 2 Sep):** #8 → ~4 (narrow, bounded, never over-lands). #17 → 5 (auto
+> pre-import backup exists). #23 → ~3 (re-measured 85.75% credited / 9.92% held / 4.33% unresolved
+> - the original "misses 35%" misread incoming damage as dropped).
+>
+> **Minimum release-blocking set now:** nothing in code. Owner actions only — merge this branch to
+> master, rebuild the installer + eyeball the icon, decide `fix/module-watcher-eperm-crash`, and one
+> live session with the evidence model on.
+
+### P0-1 — Close the module drive-by execution path — finding #1a — sev 9 — ✅ DONE (`fix/public-release-hardening`)
+The full sandbox is Phase 2; this phase removed the *automatic* execution and made modules visible.
+
+> **Shipped, then reworked to two tiers (`fix/public-release-hardening`, 1 Sep):**
+> - **CORE (vouched)** — an id in `CORE_MODULE_IDS` (`moduleHost.js`; `aggro-board` + `pull-timer`).
+>   Folded in by a deliberate source edit + build, so trusted like app code: always enabled, no
+>   consent, and **filtered out of the Setup-page list entirely** so a vouched addition doesn't sit
+>   in the options taking up space. `_isEnabled` / `setModuleEnabled` short-circuit on a core id, so
+>   a hand-edited allow-list can't switch one off.
+> - **USER-ADDED** — any other `.js` the user drops in. Inert (`onLine` never runs, absent from Add
+>   Aura, aura draws nothing) until ticked on the **Log & Setup → Custom modules** list, first enable
+>   behind a consent dialog. That card stays **hidden until such a module exists**. Load/validation
+>   *and* runtime errors show inline (`modules:error` broadcast).
+>
+> Config bundles already don't carry module files. **Residual, by design:** the scan `require()`
+> still runs a module file's top-level code once, before enable - closing that means not
+> `require()`ing until enable (losing the pre-enable name) and is folded into P2-4's isolated-process
+> work. This tier's minimum-release bar (a5, 2 Sep): consent gate + config-bundle exclusion + the
+> enable page — all shipped. Full `utilityProcess` isolation (P2-4) is post-1.x.
 
 1. Remove the `fs.watch` auto-load. Folder scan still discovers files, but a discovered module is
    **disabled until explicitly enabled**.
@@ -266,7 +354,7 @@ visible.
 *Touches:* `src/main/moduleHost.js` · `src/main/configTransfer.js` · `src/renderer/main-window`
 (new page) · `preload-main.js`
 
-### P0-2 — Weekly log rotation defaults to OFF — finding #18 — sev 6 — 2 hours
+### P0-2 — Weekly log rotation defaults to OFF — finding #18 — sev 6 — ✅ DONE (`fix/public-release-hardening`)
 1. Flip the store default for the rotation setting to off. Add a one-time migration so existing
    installs that never touched it also go off (version-gated, same pattern as the `widgets.json`
    bumps).
@@ -279,7 +367,7 @@ visible.
 *Touches:* `src/main/logRotation.js` · `src/main/store.js` · Setup page copy (→ Documentation for
 TESTING.md line)
 
-### P0-3 — Validate `eqicon://` / `eqsound://` paths — finding #5 — sev 5 — half day
+### P0-3 — Validate `eqicon://` / `eqsound://` paths — finding #5 — sev 5 — ✅ DONE (`fix/public-release-hardening`; icon set whitelisted to ICON_SETS, id must be digits, sound id must be uuid-shaped + fileName must be its own basename, resolved-path containment assert on both, `test/protocol-path-safety.test.js`)
 1. Reject `iconId` that is not a non-negative integer.
 2. Whitelist `iconSet` against the sets `countIconSheets` actually enumerates; reject anything else
    with a 404.
@@ -292,7 +380,7 @@ TESTING.md line)
 *Touches:* `src/main/iconService.js` · `src/main/soundService.js` · new
 `test/protocol-path-safety.test.js`
 
-### P0-4 — Add a CSP and navigation guards to every renderer — finding #6 — sev 4 — half day
+### P0-4 — Add a CSP and navigation guards to every renderer — finding #6 — sev 4 — ✅ DONE (`fix/public-release-hardening`; strict CSP meta on all 8 renderer HTMLs, one app-wide `web-contents-created` handler denying `will-navigate` + `window.open`, grid-guide's inline script extracted, `test/renderer-wiring.test.js`. Note: audited the innerHTML sites - the teardown's '~70 sinks rendering chat strings' was overstated, the only interpolation left is a formatted number)
 1. Add a strict CSP `<meta>` to all 8 renderer HTMLs:
    `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' eqicon: data:; media-src eqsound:; connect-src 'none'`.
 2. On every `BrowserWindow`: `contents.on('will-navigate', e => e.preventDefault())` and
@@ -304,7 +392,7 @@ TESTING.md line)
 *Touches:* all `src/renderer/*/index.html` · `src/main/*Window.js`, `widgetManager.js`,
 `ambiguousPopup.js`, `zonePromptPopup.js` · `test/renderer-wiring.test.js`
 
-### P0-5 — Commit or stash the dirty `integration` tree — finding #20 (part) — sev 3 — minutes
+### P0-5 — Commit or stash the dirty `integration` tree — finding #20 (part) — sev 3 — ✅ DONE (`integration` shipped as 1.0.0, PR #32)
 1. Review the six modified files (aggro-board.js, moduleHost.js, index.html, main-window.js, two
    tests), commit them with a real message or stash them.
 2. Confirm `npm test` is green on the committed tree, and `node tools/smoke-launch.js` starts clean.
@@ -316,19 +404,28 @@ TESTING.md line)
 The reason the app exists. The reworks are largely built and sitting behind off-by-default toggles;
 this phase is mostly validation and deletion of the old path, plus two small new pieces.
 
-### P1-1 — Veto "unique landing text" using raw game data, not the roster — finding #3 — sev 8 — 2–3 days
-1. On launch, parse `spells_us_str.txt` once and build `Map<landingText, count>` across **every**
-   game spell — reuse `gameSpellData.js`'s cached parse.
-2. In the unique-text auto-confirm tier: if the raw-data count for that text is > 1, demote from
-   auto-confirm to "candidate, needs corroboration" regardless of what the roster count says.
-3. No roster edits. Missing spells that get reported keep going in via `tools/roster-overrides.json`
-   `add` blocks as before.
-4. Add a replay-log assertion: the five baseline numbers must not move.
+### P1-1 — ~~Veto "unique landing text" using raw game data~~ → **Roster completeness as an ongoing data task** — finding #3 — sev ~4 — no engine change
+**Original mechanism dropped, 1 Sep (owner).** Vetoing a unique-text confirm against the full
+`spells_us.txt` would demote real, unambiguous EQ Legends buffs because a spell that doesn't exist
+on this server shares the text — permanent false prompts for a rare mislabel. The roster being
+EQL-scoped is the design, not the bug (see revised #3).
 
-*Touches:* `src/main/buffEngine.js` · `src/main/gameSpellData.js` · `src/main/buffStore.js` ·
-`test/detection.test.js`
+What to actually do:
+1. When a buff resolves to a **surprising** name in a real log (owner reports it, or it shows in the
+   detection log), check whether the true spell is a **castable EQL spell missing from the roster**.
+   The next line in the log often names it outright (a heal proc, a wear-off message).
+2. If so, add it via `tools/roster-overrides.json` `add` — the roster then knows the real share set
+   and prompts with the correct candidates. If the true spell is *not* an EQL spell, there is no bug
+   to fix (it can't be cast here).
+3. Optional, cheap, non-behavioural: have the detection log note when an auto-confirm fired on a
+   text that `gameSpellData.js` shows is shared in the raw file — purely a "worth a look" flag for
+   step 1, never a veto. Skip if it adds noise.
+4. No `buffEngine` logic change, no replay-log risk.
 
-### P1-2 — Validate the evidence model, flip it on, delete the early-return chain — finding #2 — sev 8 — ~1 week (mostly testing)
+*Touches:* `tools/roster-overrides.json` (data, as spells surface) · optionally a one-line note in
+the detection log
+
+### P1-2 — Validate the evidence model, flip it on, delete the early-return chain — finding #2 — sev 8 — ⚠️ PARTIAL (`fix/public-release-hardening`: measured on a real week (+241 landings, 0 lost, +6 prompts) and flipped ON by default with the Diagnostics toggle as the one-click escape hatch. Cast-time filter + stacking model measured and deliberately left OFF - see the Diagnostics-toggle evaluation in git history. Deleting the legacy tier chain stays a later release.)
 1. Force `useEvidenceModel` + `useCastTimeFilter` on in a local build; run `tools/replay-log.js`
    over the full 1.5M-line corpus; diff the five numbers. Any regression is a blocker — investigate,
    don't tune around it.
@@ -355,7 +452,7 @@ this phase is mostly validation and deletion of the old path, plus two small new
 *Touches:* `src/main/buffEngine.js` · `currentlyMemorized.json` shape · `test/gem-slots.test.js`,
 `memorized-*.test.js`
 
-### P1-4 — Launch catch-up scan for zone / death / group / gems — finding #11 — sev 5 — 2–3 days
+### P1-4 — Launch catch-up scan for zone / death / group / gems — finding #11 — sev 5 — ⚠️ RELATED WORK (`fix/public-release-hardening`: `lockoutService.backfill()` now seeks to the current reset week instead of re-parsing the whole live log - a bounded-read fix so the weekly archive can be off by default. The general zone/death/group/gem catch-up scan this item describes is still to do.)
 1. On launch, one upward scan of the last N KB for the most recent zone, own-death,
    group-composition, and `finished memorizing` lines; seed state from them with **no trigger
    side-effects** (same contract as `seedZone`).
@@ -413,10 +510,11 @@ leverage. Do the monolith split first so the rest has somewhere to land.
 
 *Touches:* `package.json` · `test/run.js` · new CI config · `tools/smoke-launch.js`
 
-### P2-3 — Do the deferred data migrations properly — finding #14 — sev 4 — 2–3 days
+### P2-3 — Do the deferred data migrations properly — finding #14 — sev 4 — 1–2 days (was 2–3)
 1. One branch, one `widgets.json` schema bump: drop `enabled` after confirming nothing reads it,
    with a one-time `_loadOrMigrate` step.
-2. Delete `rosterBackfill.js` and its wiring; keep or convert its guard test.
+2. ~~Delete `rosterBackfill.js` and its wiring; keep or convert its guard test.~~ **✅ done 1 Sep**
+   (commit 756aa6d) — the guard test was converted to "file must not exist + must not be required".
 3. Remove GCD-aura remnants and any duplicated `zoneVisibility` logic (import the extracted module
    everywhere).
 4. Each removal gets a migration so old installs upgrade cleanly. Hand the changelog + CLAUDE.md
@@ -466,16 +564,20 @@ Individually small, none blocking. Pick them up between larger work.
 *Touches:* `src/main/buffEngine.js` · `customTimerEngine.js` · `sessionSnapshot.js` · `main.js`
 (powerMonitor)
 
-### P3-2 — Adaptive foreground polling + circuit breaker — finding #7 — sev 4 — 1–2 days
-1. Adaptive interval: back off to ~1 s when neither EQ nor the app has been foreground for a while;
-   tighten again on activity.
-2. Circuit breaker: after N consecutive spawn failures, stop polling entirely and surface "auto-hide
-   unavailable" in the UI rather than retrying forever.
-3. Document that AV may flag the PowerShell child and how to allowlist it.
-4. Stretch: a tiny prebuilt helper `.exe` using `SetWinEventHook` (event-driven, no polling) shipped
-   in `extraFiles` — only if someone wants to build it.
+### P3-2 — Adaptive foreground polling + circuit breaker — finding #7 — sev 4 — ✅ DONE (`fix/public-release-hardening`, 1 Sep, commit 2826973)
+1. ✅ Adaptive interval — `IDLE_BACKOFF_AFTER` (25) consecutive "neither focused" polls → 1200 ms;
+   the first relevant poll snaps back to 300 ms. `_nextInterval()` is its own method so the
+   threshold is directly testable.
+2. ✅ Circuit breaker — `MAX_CONSECUTIVE_FAILURES` (20) failed polls → emit `unavailable`, stop the
+   loop, `start()` becomes a no-op for the session. `main.js` broadcasts `overlay:autoHideUnavailable`
+   + a new `overlay:autoHideAvailable` IPC for the on-load read; the Buff Tracker page shows a plain
+   "auto-hide isn't working, the auras still work" line next to the fullscreen warning.
+3. ⬜ AV-allowlist doc note — handed to Documentation (a `docs/TESTING.md` / known-issues line).
+4. ⬜ Stretch (`SetWinEventHook` helper `.exe`) — not done, still optional.
 
-*Touches:* `src/main/foregroundWatcher.js` · Setup page status line
+Both mechanisms mutation-checked in `test/foreground-watcher.test.js`.
+
+*Touches:* `src/main/foregroundWatcher.js` · `src/main/main.js` · `preload-main.js` · Buff Tracker page
 
 ### P3-3 — Rework the config import UI — finding #17 — sev 6 — 2 days
 1. Split the picker into two clearly labelled groups — never one merged list.
@@ -511,15 +613,26 @@ Individually small, none blocking. Pick them up between larger work.
 *Touches:* settings-panel copy · `index.html` Diagnostics section · all wording → Documentation
 session
 
-### P3-6 — Consolidate the userData-pin explanation into one guarded constant — finding #19 — sev 3 — 1 hour
-1. Single `LEGACY_USERDATA_DIR` constant with the full rationale in one comment block.
-2. A test asserting `app.getPath('userData')` ends in the pinned name — so a future rename fails CI
-   instead of shipping.
-3. If a real rebrand ever happens: a proper copy-and-pointer migration, not a string edit.
+### P3-6 — Consolidate the userData-pin explanation into one guarded constant — finding #19 — sev 3 — ✅ ALREADY DONE (pre-existing `test/pin.test.js`)
+The CI guard this asked for already exists and is more thorough than the proposal: `test/pin.test.js`
+is the project's **first** test — 7 cases. It extracts the folder-name literal straight out of the
+`setPath` call and asserts it equals `"EQ Buff Tracker"`, asserts no local `require()` sits above the
+pin (with a comment-stripping pass so the warning block's own example doesn't false-alarm), asserts
+nothing else in `src/` repoints userData, and has two behavioural cases with a stubbed Electron
+(old-folder data still loads after a rename; a decoy folder named after the current product doesn't
+win). A `LEGACY_USERDATA_DIR` constant was tried (1 Sep) and reverted — it broke the literal the
+guard reads for near-zero benefit, since the string only appears once anyway. Added a short "DO NOT
+edit / needs a real migration / pin.test.js guards this" note to the comment block; that's the whole
+residual.
 
-*Touches:* `src/main/main.js` · new `test/userdata-pin.test.js`
+*Touches:* `src/main/main.js` (comment only) · `test/pin.test.js` (already present)
 
-### P3-7 — De-fang the hardcoded-future-date tests in `log-rotation.test.js` — finding #9's test-side twin — sev 5 — 1 day
+### P3-7 — De-fang the hardcoded-future-date tests in `log-rotation.test.js` — finding #9's test-side twin — sev 5 — ✅ DONE (`fix/public-release-hardening`, 1 Sep, commit 748d828)
+Took option 2: `tempLogs()` back-dates every fixture file to 2000-01-01 by default (optional `mtime`
+override), so any hardcoded "now" sits comfortably in the file's future. Tests needing a recent file
+still override (`aged()`, explicit `fs.utimesSync`). Landmine-warning comment added at the helper.
+Proven: swapping any rotation test's `now` to `new Date()` fails without the change, passes with it.
+
 Found 2 Sep, not in the original review: ~20 tests hardcode `new Date(2026, 8, 2, ...)` as a fake
 "now" while writing real files with real (current wall-clock) mtimes via `tempLogs()`. The rotation
 code's `QUIET_MS` check compares that fake "now" against the file's real mtime — fine while the

@@ -52,9 +52,10 @@ async function init() {
   initBugReport();
   initActionBarsPage();
   initModules();
+  initModulesPanel();
   // One fetch of the module list, fanned out to every subscriber registered above (initModules for
-  // sidebar pages, initWidgetsPanel for Add-Aura entries + the per-aura settings card). Kept fresh
-  // on hot-reload.
+  // sidebar pages, initModulesPanel for the Setup-page list, initWidgetsPanel for Add-Aura entries
+  // + the per-aura settings card). Kept fresh on hot-reload.
   refreshModuleRegistry();
   if (window.eqTracker.onModulesChanged) window.eqTracker.onModulesChanged(refreshModuleRegistry);
   initBuffPlanner();
@@ -4613,7 +4614,7 @@ function initWidgetsPanel() {
   let moduleAuraChoices = [];
   onModuleRegistryChange((modules) => {
     moduleAuraChoices = (modules || [])
-      .filter((m) => m.hasAura)
+      .filter((m) => m.hasAura && m.enabled)
       .map((m) => ({
         name: m.name,
         description: m.description || 'A custom module.',
@@ -7059,6 +7060,14 @@ function initLogActivityLine() {
     window.eqTracker.getFullscreenState?.().then((v) => setFs(v === true)).catch(() => {});
     window.eqTracker.onFullscreenWarning?.((active) => setFs(!!active));
   }
+
+  // P3-2 - the foreground probe gave up (powershell blocked). One-way: once it's unavailable it
+  // stays that way for the session, so there's nothing to un-hide.
+  const ahLine = document.getElementById('autohide-unavailable-line');
+  if (ahLine) {
+    window.eqTracker.getAutoHideAvailable?.().then((ok) => { ahLine.hidden = ok !== false; }).catch(() => {});
+    window.eqTracker.onAutoHideUnavailable?.(() => { ahLine.hidden = false; });
+  }
 }
 
 // QOL #49 - the body of the per-buff "Duration looks wrong" report. Pure so it can be tested
@@ -7283,9 +7292,9 @@ function initModules() {
     navSlot.innerHTML = '';
     pageSlot.innerHTML = '';
     for (const mod of modules) {
-      // Only 'sidebar' modules get a nav button + page. The default ('aura') puts a module's
-      // controls on its aura's settings panel instead - see initWidgetsPanel().
-      if (mod.settingsUI !== 'sidebar') continue;
+      // Only ENABLED 'sidebar' modules get a nav button + page. The default ('aura') puts a
+      // module's controls on its aura's settings panel instead - see initWidgetsPanel().
+      if (!mod.enabled || mod.settingsUI !== 'sidebar') continue;
       if (!Array.isArray(mod.page) || !mod.page.length) continue;
       const btn = document.createElement('button');
       btn.className = 'nav-btn';
@@ -7299,6 +7308,94 @@ function initModules() {
     if (active && document.getElementById(active)) {
       const stillThere = document.querySelector(`.nav-btn[data-page="${active}"]`);
       if (stillThere) activateNavButton(stillThere);
+    }
+  }
+
+  onModuleRegistryChange(render);
+}
+
+// The Setup-page "Custom modules" list: one row per USER-ADDED .js in the modules/ folder, each
+// with an Enable toggle (off until the user turns it on) and any load/validation error shown
+// inline. The first time a module is enabled, a consent dialog spells out that it runs arbitrary
+// code. Vouched "core" modules (m.core) are filtered out - they're always on and shouldn't sit
+// here taking up space - so the whole card stays hidden until a user actually drops a file in.
+function initModulesPanel() {
+  const card = document.getElementById('modules-panel-card');
+  const list = document.getElementById('modules-panel-list');
+  if (!card || !list || !window.eqTracker.setModuleEnabled) return;
+
+  const runtimeErrors = new Map(); // id -> last runtime error string
+  if (window.eqTracker.onModuleError) {
+    window.eqTracker.onModuleError(({ id, error }) => {
+      if (id) runtimeErrors.set(id, error);
+      render(moduleRegistry);
+    });
+  }
+
+  function render(modules) {
+    // User-added only. A core (vouched) module is always on and never listed here.
+    const mods = (modules || []).filter((m) => !m.core);
+    card.hidden = mods.length === 0;
+    list.innerHTML = '';
+    for (const m of mods) {
+      const li = document.createElement('li');
+      li.className = 'module-list-item';
+
+      if (!m.id) {
+        // A file that failed to load - name it and show why, nothing to toggle.
+        const name = document.createElement('div');
+        name.className = 'module-list-name';
+        name.textContent = m.file || 'a module file';
+        const err = document.createElement('div');
+        err.className = 'module-list-error';
+        err.textContent = m.error || 'failed to load';
+        li.append(name, err);
+        list.appendChild(li);
+        continue;
+      }
+
+      const label = document.createElement('label');
+      label.className = 'module-list-toggle';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!m.enabled;
+      cb.addEventListener('change', async () => {
+        if (cb.checked) {
+          const ok = await appConfirm({
+            title: `Enable ${m.name}?`,
+            message: 'This module runs code from whoever wrote the file, with full access to your PC — the same as any program you install.',
+            detail: 'Only enable modules from someone you trust.',
+            okLabel: 'Enable',
+            cancelLabel: 'Cancel',
+            danger: true,
+          });
+          if (!ok) { cb.checked = false; return; }
+        }
+        await window.eqTracker.setModuleEnabled(m.id, cb.checked);
+        refreshModuleRegistry();
+      });
+      const text = document.createElement('span');
+      text.textContent = ` ${m.name}`;
+      label.append(cb, text);
+
+      const meta = document.createElement('div');
+      meta.className = 'module-list-meta';
+      if (m.description) {
+        const d = document.createElement('div');
+        d.className = 'hint';
+        d.textContent = m.description;
+        meta.appendChild(d);
+      }
+      const runtimeErr = runtimeErrors.get(m.id);
+      if (runtimeErr) {
+        const e = document.createElement('div');
+        e.className = 'module-list-error';
+        e.textContent = runtimeErr;
+        meta.appendChild(e);
+      }
+
+      li.append(label, meta);
+      list.appendChild(li);
     }
   }
 

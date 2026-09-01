@@ -21,6 +21,8 @@ const html = read('renderer', 'main-window', 'index.html');
 const rendererSrc = read('renderer', 'main-window', 'main-window.js');
 const preloadMain = read('preload', 'preload-main.js');
 const preloadOverlay = read('preload', 'preload-overlay.js');
+const mainSrc = read('main', 'main.js');
+const moduleHostSrc = read('main', 'moduleHost.js');
 
 test('the sidebar and page-container keep injection slots for sidebar-mode modules, no "Modules" heading', () => {
   assert.match(html, /id="module-nav-slot"/);
@@ -42,7 +44,7 @@ test('one shared, hot-reloaded module registry feeds both the sidebar and the au
 
 test('initModules builds a sidebar page ONLY for settingsUI === "sidebar" modules', () => {
   assert.match(rendererSrc, /function initModules\(\)/);
-  assert.match(rendererSrc, /if \(mod\.settingsUI !== 'sidebar'\) continue;/);
+  assert.match(rendererSrc, /if \(!mod\.enabled \|\| mod\.settingsUI !== 'sidebar'\) continue;/, 'a sidebar page should only build for an ENABLED sidebar-mode module');
   assert.match(rendererSrc, /page-module-\$\{mod\.id\}/, 'module page id still namespaced');
   assert.match(rendererSrc, /onModuleRegistryChange\(render\);/);
 });
@@ -63,11 +65,40 @@ test('a module aura panel renders that module\'s controls, gated on it being aur
 });
 
 test('the module IPC is bridged in both preloads', () => {
-  for (const m of ['listModules', 'getModuleSettings', 'setModuleSetting', 'onModulesChanged', 'onModuleSettingsChanged']) {
+  for (const m of ['listModules', 'getModuleSettings', 'setModuleSetting', 'onModulesChanged', 'onModuleSettingsChanged', 'setModuleEnabled', 'onModuleError']) {
     assert.ok(preloadMain.includes(m), `preload-main missing ${m}`);
   }
   assert.match(preloadOverlay, /getModuleEntries/);
   assert.match(preloadOverlay, /onModuleEntries/);
+});
+
+test('the Setup-page Custom-modules list + consent gate are wired', () => {
+  assert.match(html, /id="modules-panel-card"/, 'no Custom-modules card on the Setup page');
+  assert.match(html, /id="modules-panel-list"/);
+  assert.match(rendererSrc, /function initModulesPanel\(\)/);
+  assert.match(rendererSrc, /initModulesPanel\(\);/);
+  // enabling a module goes through appConfirm before setModuleEnabled(id, true)
+  const fn = rendererSrc.slice(rendererSrc.indexOf('function initModulesPanel()'), rendererSrc.indexOf('function initModulesPanel()') + 3500);
+  assert.match(fn, /await appConfirm\(\{[\s\S]*?full access to your PC/, 'the consent dialog does not spell out the risk');
+  assert.match(fn, /window\.eqTracker\.setModuleEnabled\(m\.id, cb\.checked\)/);
+  assert.match(fn, /if \(!ok\) \{ cb\.checked = false; return; \}/, 'a cancelled consent should revert the checkbox');
+  assert.match(mainSrc, /ipcMain\.handle\('modules:setEnabled'/);
+});
+
+test('the Custom-modules list shows ONLY user-added modules, not vouched core ones', () => {
+  const fn = rendererSrc.slice(rendererSrc.indexOf('function initModulesPanel()'), rendererSrc.indexOf('function initModulesPanel()') + 3500);
+  // the render filters core rows out, and the card is hidden when nothing user-added remains
+  assert.match(fn, /\.filter\(\(m\) => !m\.core\)/, 'core modules are not filtered out of the panel list');
+  assert.match(fn, /card\.hidden = mods\.length === 0/, 'the card is not hidden when the (filtered) list is empty');
+});
+
+test('moduleHost: a user-added module is off until enabled; core ones are always on', () => {
+  assert.match(moduleHostSrc, /const CORE_MODULE_IDS = \['aggro-board', 'pull-timer'\]/);
+  assert.match(moduleHostSrc, /this\._isEnabled\(rec\.module\.id\)/, 'handleLine does not gate on the enable state');
+  assert.match(moduleHostSrc, /CORE_MODULE_IDS\.includes\(id\) \|\| this\.enabledIds\.has\(id\)/, '_isEnabled does not treat core ids as always-on');
+  assert.match(moduleHostSrc, /setModuleEnabled\(id, enabled\) \{\s*\n\s*if \(CORE_MODULE_IDS\.includes\(id\)\) return true;/, 'setModuleEnabled can still toggle a core id');
+  assert.match(moduleHostSrc, /saveJson\('enabledModuleIds'/);
+  assert.match(moduleHostSrc, /core: CORE_MODULE_IDS\.includes\(d\.id\)/, 'getRegistered rows carry no core flag for the renderer to filter on');
 });
 
 module.exports = () => report('module-renderer-wiring');

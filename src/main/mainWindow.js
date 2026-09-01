@@ -17,6 +17,12 @@ app.on('before-quit', () => {
 
 const DEFAULT_BOUNDS = { width: 900, height: 650 };
 
+// The eqlsource app mark (gold hex + "="). electron-builder bakes it into the packaged .exe
+// resource from build.win.icon, so the taskbar icon is right there regardless of this; this line
+// is what makes the DEV run (`npm start`) and Linux builds show it too rather than the default
+// Electron diamond. `build/icon.ico` is bundled via build.files so the path resolves packed too.
+const APP_ICON = path.join(__dirname, '..', '..', 'build', 'icon.ico');
+
 // Restores the window to wherever it was last, but only if that position is
 // still on a screen that currently exists - otherwise a window saved on a
 // second monitor that's since been unplugged would reopen off-screen with no
@@ -65,6 +71,7 @@ function createMainWindow() {
     minWidth: 640,
     minHeight: 480,
     title: 'EQLS Auras',
+    icon: APP_ICON,
     // Frameless so the renderer can draw its own themed title bar (see
     // index.html's .title-bar) instead of the OS default, which can't be
     // recoloured to match the app's palette. backgroundColor matches
