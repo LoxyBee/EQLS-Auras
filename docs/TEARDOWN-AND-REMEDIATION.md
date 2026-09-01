@@ -210,9 +210,10 @@ being an inferred number nobody can see without instrumenting the log by hand.
 ## Cruft & process rot (3–4)
 
 ### #14 — Dead code kept "to avoid a migration" — 4/10
-`enabled` field persisted but read nowhere; `rosterBackfill.js` present but wired out (with a test
-that fails if it runs); `zoneVisibility.js` only exists because an inline copy was inverted and
-passed four tests.
+`enabled` field persisted but read nowhere; ~~`rosterBackfill.js` present but wired out~~ (**deleted
+1 Sep**, commit 756aa6d — the guard test now checks the file stays gone, not just that it isn't
+called); `zoneVisibility.js` only exists because an inline copy was inverted and passed four tests.
+The `enabled`-field removal still wants a proper `widgets.json` migration — see P2-3.
 
 ### #15 — Tests prove little — 6/10
 
@@ -509,10 +510,11 @@ leverage. Do the monolith split first so the rest has somewhere to land.
 
 *Touches:* `package.json` · `test/run.js` · new CI config · `tools/smoke-launch.js`
 
-### P2-3 — Do the deferred data migrations properly — finding #14 — sev 4 — 2–3 days
+### P2-3 — Do the deferred data migrations properly — finding #14 — sev 4 — 1–2 days (was 2–3)
 1. One branch, one `widgets.json` schema bump: drop `enabled` after confirming nothing reads it,
    with a one-time `_loadOrMigrate` step.
-2. Delete `rosterBackfill.js` and its wiring; keep or convert its guard test.
+2. ~~Delete `rosterBackfill.js` and its wiring; keep or convert its guard test.~~ **✅ done 1 Sep**
+   (commit 756aa6d) — the guard test was converted to "file must not exist + must not be required".
 3. Remove GCD-aura remnants and any duplicated `zoneVisibility` logic (import the extracted module
    everywhere).
 4. Each removal gets a migration so old installs upgrade cleanly. Hand the changelog + CLAUDE.md
