@@ -2127,11 +2127,18 @@ class WidgetStore {
     // update(), which deliberately does not normalize (it is also the setter every settings
     // control uses, and re-normalizing on every slider drag would be waste).
     //
-    // Only displayMode is guarded here rather than the whole patch, because it is the only
-    // shareable field where an unrecognised value has no sensible rendering. A foreign mode
-    // would leave Self Buffs drawing nothing with no visible reason why, and Self Buffs is the
-    // one aura that cannot be deleted and recreated to escape it.
+    // displayMode: an unrecognised value has no sensible rendering, and Self Buffs is the one aura
+    // that cannot be deleted and recreated to escape it.
     patch.displayMode = normalizeDisplayMode(patch.displayMode);
+    // The three list fields get the same door-sanitising normalizeWidget does. This IS an import
+    // (not a slider drag), so sanitising the imported patch is right - and a self-buffs-builtin
+    // code routes HERE specifically, because importCode() refuses that kind, so without this the
+    // hardened boundary is the one such a code never reaches. A `customTimers: [null]` here threw
+    // in customTimerEngine on the shared bus (contained by main.js's onLogLine wrapper now, and
+    // self-healed by load-time normalizeWidget on the next restart - but still worth not doing).
+    if ('customTimers' in patch) patch.customTimers = sanitizeCustomTimers(patch.customTimers);
+    if ('buffNames' in patch) patch.buffNames = stringList(patch.buffNames);
+    if ('excludedBuffNames' in patch) patch.excludedBuffNames = stringList(patch.excludedBuffNames);
     return this.update('self-buffs', patch);
   }
 }

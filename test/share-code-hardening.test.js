@@ -104,6 +104,34 @@ test('a zoneEnter trigger still fires after a hostile widget is present (not lef
   assert.ok(cte.getActive().some((t) => t.name === 'ZoneT'), 'the zone trigger was lost to the torn line');
 });
 
+test('applyCodeToSelfBuffs sanitises too (a self-buffs code routes THERE, not through importCode)', () => {
+  const store = makeStore();
+  const hostile = mkCode({
+    name: 'Looks Harmless', kind: 'self-buffs-builtin',
+    customTimers: [null], buffNames: [null, 42], excludedBuffNames: [{}],
+  });
+  // importCode refuses a self-buffs code by design, so the UI routes it to applyCodeToSelfBuffs -
+  // the path that used to bypass normalizeWidget entirely.
+  assert.equal(store.importCode(hostile, {}), null, 'importCode should still refuse a self-buffs code');
+
+  const w = store.applyCodeToSelfBuffs(hostile);
+  assert.deepEqual(w.customTimers, [], 'the null timer reached the un-deletable Self Buffs aura');
+  assert.deepEqual(w.buffNames, []);
+  assert.deepEqual(w.excludedBuffNames, []);
+
+  const cte = new CustomTimerEngine();
+  cte.stop();
+  cte.setGetWidgetsFn(() => store.getAll());
+  assert.doesNotThrow(() => cte.handleLine('[Wed Aug 19 20:15:02 2026] You have entered Befallen.'));
+});
+
+test('customTimerEngine skips a null timer element defensively, whichever store path fed it', () => {
+  const cte = new CustomTimerEngine();
+  cte.stop();
+  cte.setGetWidgetsFn(() => [{ id: 'x', customTimers: [null, { id: 't', triggerText: 'zap', triggerMatch: 'contains' }] }]);
+  assert.doesNotThrow(() => cte.handleLine('[ts] zap'));
+});
+
 // ---------------------------------------------------------------------------
 // P2 - logWatcher must not replay when the file shrinks
 // ---------------------------------------------------------------------------
