@@ -315,10 +315,13 @@ buffEngine.setBardSongDebuffsWantedFn(() =>
 customTimerEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setTrackOthersEnabled(loadJson('trackOthersEnabled', false));
 buffEngine.setBlockedNames(loadJson('blockedBuffs', []));
-// P0 rework, off by default - see buffEngine.js's constructor comment on useEvidenceModel for
-// exactly what this changes. A toggle rather than a straight replacement specifically so it can be
-// switched off again with one click if it misbehaves live, without a rebuild.
-buffEngine.setUseEvidenceModel(loadJson('useEvidenceModel', false));
+// P0 rework, ON by default from the first public release - see buffEngine.js's constructor comment
+// on useEvidenceModel for exactly what it changes. Measured against a real week-long log: +241 buff
+// landings recovered (buffs the old path silently dropped), 0 lost, +6 prompts. It stays a toggle
+// so it can be switched OFF again with one click if it ever misbehaves live - that IS the escape
+// hatch, no rebuild needed. Only an explicit `false` written down (the user unticking the box)
+// turns it off.
+buffEngine.setUseEvidenceModel(loadJson('useEvidenceModel', true));
 // P0c, off by default and independently switchable from useEvidenceModel above - see buffEngine.js's
 // constructor comment on useCastTimeFilter for exactly what this changes.
 buffEngine.setUseCastTimeFilter(loadJson('useCastTimeFilter', false));
@@ -1742,7 +1745,7 @@ ipcMain.handle('settings:setTrackOthers', (_event, enabled) => {
   return enabled;
 });
 
-ipcMain.handle('settings:getUseEvidenceModel', () => loadJson('useEvidenceModel', false));
+ipcMain.handle('settings:getUseEvidenceModel', () => loadJson('useEvidenceModel', true));
 ipcMain.handle('settings:setUseEvidenceModel', (_event, enabled) => {
   saveJson('useEvidenceModel', enabled);
   buffEngine.setUseEvidenceModel(enabled);

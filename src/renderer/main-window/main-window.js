@@ -915,8 +915,8 @@ function initDetectionSettingsPanel() {
     window.eqTracker.setDebugLogEnabled(debugLogEnabledCheckbox.checked);
   });
 
-  // Off by default - see buffEngine.js's constructor comment on useEvidenceModel. Reads back on
-  // every launch, same reasoning as the debug log checkbox just above.
+  // On by default from the first public release - see buffEngine.js's constructor comment on
+  // useEvidenceModel. Reads back on every launch, same reasoning as the debug log checkbox above.
   const useEvidenceModelCheckbox = document.getElementById('use-evidence-model-checkbox');
   window.eqTracker.getUseEvidenceModel().then((enabled) => {
     useEvidenceModelCheckbox.checked = !!enabled;

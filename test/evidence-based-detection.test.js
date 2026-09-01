@@ -29,13 +29,16 @@ function makeEngine() {
 
 const names = (engine) => engine.getActiveBuffs().map((b) => b.name).sort();
 
-test('off by default', () => {
+test('on by default now (first public release), off is one click away', () => {
   const { engine } = makeEngine();
-  assert.equal(engine.useEvidenceModel, false);
+  assert.equal(engine.useEvidenceModel, true, 'default flipped on for 1.0.x');
+  engine.setUseEvidenceModel(false);
+  assert.equal(engine.useEvidenceModel, false, 'the toggle is the escape hatch');
 });
 
 test('legacy behaviour (toggle off): a memorizable-but-not-currently-memorized unique buff is IGNORED, unchanged', () => {
   const { engine, buffStore, log } = makeEngine();
+  engine.setUseEvidenceModel(false); // this test pins the OLD path; it is no longer the default
   const puma = buffStore.getByName('Spirit of the Puma');
   assert.ok(puma, 'expected Spirit of the Puma in the roster');
 
@@ -118,6 +121,7 @@ test('toggle on, track others on: still lands directly - trackOthersEnabled make
 
 test('legacy (toggle off): an ally-burst unique landing still blind-lands as before, unchanged', () => {
   const { engine, buffStore, log } = makeEngine();
+  engine.setUseEvidenceModel(false); // this test pins the OLD path; it is no longer the default
   const puma = buffStore.getByName('Spirit of the Puma');
 
   engine.setTrackOthersEnabled(true);
