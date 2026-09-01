@@ -233,6 +233,18 @@ test('the pad centre button opens the aura settings (auras only), navigation bef
   assert.match(handler, /setImmediate\(/, 'show()/focus() deferred off the click');
 });
 
+test('opening an aura from the pad, or "Unlock all", ends any move session already open', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  // one shared teardown, used by the HUD Done button and the pad centre button
+  assert.match(main, /function endMoveSession\(\) \{[\s\S]*?exitUnlockAllMode\(\)[\s\S]*?exitMoveMode\(\)[\s\S]*?\n\}/);
+  assert.match(main, /ipcMain\.handle\('moveHud:done', \(\) => endMoveSession\(\)\)/);
+  assert.match(main, /ipcMain\.on\('nudgePad:openSettings', \(_event, id\) => \{\s*\n\s*endMoveSession\(\);/);
+  // "Unlock all" tears down a stuck single move first, then opens its own session unconditionally
+  const h = main.match(/ipcMain\.handle\('overlay:setAllUnlocked'[\s\S]*?\n\}\);/)[0];
+  assert.match(h, /if \(hudMode === 'single'\) exitMoveMode\(\);/);
+  assert.match(h, /widgetManager\.setAllUnlocked\(true\);\s*\n\s*enterUnlockAllMode\(\);/);
+});
+
 test('a drag drop of the active aura snaps to the grid; others are left alone', () => {
   const { config, win } = makeAura('DragSnap');
   wm.setLocked(config.id, false);
