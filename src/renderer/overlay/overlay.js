@@ -1555,6 +1555,12 @@ function render(buffs) {
   // recent firings instead of one live tile, so none of the tile-diffing / merge / grouping
   // machinery below applies. alwaysOn wins (nothing to stack when there is no event at all).
   if (currentConfig.displayMode === 'text' && currentConfig.stackTextLines && !currentConfig.alwaysOn && !showingPreviewSample) {
+    // The tile path and the feed path each track what they last drew independently (tileRefs /
+    // dataset.mode vs lastFeedSig). Coming BACK to the feed after the tile path drew something -
+    // most visibly the "Show example content" sample - the feed can compute an unchanged signature
+    // (both empty => same string) and skip its repaint, leaving that stale tile on screen. Force
+    // one repaint whenever the list isn't already in feed mode.
+    if (listEl.dataset.mode !== 'text-feed') lastFeedSig = null;
     renderTextFeed(buffs);
     return;
   }
