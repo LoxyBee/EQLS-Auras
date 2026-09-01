@@ -26,10 +26,11 @@ const EXCLUDE_JSON = new Set([
   'splitProgress.json', 'lockoutLogTarget.json', 'lastSoundPickerDir.json',
   'loadoutLabelAutoOffered.json',
 ]);
-// Non-JSON folders that DO travel. `modules` carries drop-in module .js files (feat/module-system)
-// so a config export moves a collaborator's custom auras between machines too; `moduleSettings.json`
-// rides along automatically as an ordinary non-excluded .json.
-const EXTRA_DIRS = ['customSounds', 'sounds', 'modules'];
+// Non-JSON folders that DO travel. Module .js files no longer live here - they moved to the
+// install's own `modules/` folder (owner's call, 1 Sep) and are shipped, so they come with the
+// install rather than a config bundle. `moduleSettings.json` still rides along as an ordinary
+// non-excluded .json, so a user's per-module tuning still moves between machines.
+const EXTRA_DIRS = ['customSounds', 'sounds'];
 
 function stamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);

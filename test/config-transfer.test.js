@@ -25,8 +25,6 @@ function makeUserData() {
   fs.writeFileSync(path.join(ud, 'currentlyMemorized.json'), '[]');                  // live state
   fs.mkdirSync(path.join(ud, 'customSounds'));
   fs.writeFileSync(path.join(ud, 'customSounds', 'registry.json'), '{}');
-  fs.mkdirSync(path.join(ud, 'modules'));
-  fs.writeFileSync(path.join(ud, 'modules', 'pull-timer.js'), 'module.exports = {};');
   fs.writeFileSync(path.join(ud, 'moduleSettings.json'), '{"pull-timer":{"seconds":20}}');
   fs.mkdirSync(path.join(ud, 'detection-logs'));
   fs.writeFileSync(path.join(ud, 'detection-logs', 'x.log'), 'x');
@@ -41,7 +39,7 @@ test('export carries the portable config, not machine-specific or live-state fil
     const got = fs.readdirSync(r.path).sort();
     assert.ok(got.includes('widgets.json') && got.includes('profiles.json') && got.includes('characterSettings.json'));
     assert.ok(got.includes('customSounds'));
-    assert.ok(got.includes('modules'), 'drop-in modules should travel with a config export');
+    assert.ok(!got.includes('modules'), 'module .js files no longer live in userData - they ship in the install');
     assert.ok(got.includes('moduleSettings.json'), 'module settings should travel');
     assert.ok(!got.includes('config.json'), 'the EQ install path leaked into the bundle');
     assert.ok(!got.includes('mainWindowBounds.json'), 'this screen\'s window bounds leaked');

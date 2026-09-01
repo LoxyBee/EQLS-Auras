@@ -29,6 +29,10 @@
       {
         "from": "sounds",
         "to": "sounds"
+      },
+      {
+        "from": "modules",
+        "to": "modules"
       }
     ]
   }

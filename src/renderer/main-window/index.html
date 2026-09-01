@@ -103,12 +103,13 @@
            planner-nav-btn back here (initBuffPlanner gates on that id). -->
 
       <button class="nav-btn" data-page="page-lockouts" id="lockouts-nav-btn">Lockouts</button>
+      <!-- Nav buttons for custom modules that declare a settings page are injected here by
+           initModules() - between Lockouts and Setup (owner's placement). No heading, no wrapper -
+           they read as ordinary pages. -->
+      <div id="module-nav-slot"></div>
       <button class="nav-btn" data-page="page-settings">Setup</button>
       <button class="nav-btn" data-page="page-log">Log</button>
       <button class="nav-btn" data-page="page-about">About</button>
-      <!-- Nav buttons for custom modules that declare a settings page are injected here by
-           initModules(). No heading, no wrapper - they read as ordinary pages (owner's call). -->
-      <div id="module-nav-slot"></div>
     </nav>
 
     <!-- Drag handle for the sidebar width. A real element rather than CSS `resize`, because

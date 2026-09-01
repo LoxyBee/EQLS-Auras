@@ -1,7 +1,7 @@
-// Aggro Board — a drop-in module for EQLS Auras. See docs/MODULE-AUTHORING.md.
+// Aggro Board — a bundled module for EQLS Auras. See docs/MODULE-AUTHORING.md.
 //
-// Copy this ONE file into  %APPDATA%\EQ Buff Tracker\modules\aggro-board.js
-// No dependencies, no require, nothing else to install.
+// This ships in the install's `modules/` folder (next to the .exe) and loads automatically.
+// A drop-in module written by hand goes in that same folder. No dependencies, no require.
 //
 // WHAT IT SHOWS: which player the mob you are fighting is ACTUALLY SWINGING AT, and who is closest
 // behind them. That is a direct observation of the consequence threat exists to produce — it is

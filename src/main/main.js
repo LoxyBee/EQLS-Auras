@@ -224,7 +224,16 @@ const spellbookService = new SpellbookService();
 // Drop-in custom-aura modules (feat/module-system). Additive and greenfield - the built-in aura
 // types are untouched. The host rides the same 'line' bus below as a pure observer; its entries
 // reach the overlay through one generic per-module channel. See moduleHost.js's header.
-const moduleHost = new ModuleHost(path.join(app.getPath('userData'), 'modules'), { loadJson, saveJson });
+//
+// Modules live in a `modules/` folder INSIDE the install (next to the .exe), shipped via
+// package.json's extraFiles and seeded with the bundled ones - same resolution as soundService's
+// bundledSoundsDir(). NOT userData: the owner's call, 1 Sep. Dev build reads the repo's own
+// modules/ folder. The default per-user NSIS install is writable, so a user can still drop their
+// own .js in there (it goes on an uninstall, like anything else in the install dir).
+const MODULES_DIR = app.isPackaged
+  ? path.join(path.dirname(app.getPath('exe')), 'modules')
+  : path.join(app.getAppPath(), 'modules');
+const moduleHost = new ModuleHost(MODULES_DIR, { loadJson, saveJson });
 moduleHost.setCurrentZoneFn(() => widgetManager.getCurrentZone());
 moduleHost.setGroupMembersFn(() => [...buffEngine.groupMembers.values()]);
 moduleHost.setIconUrlForSpellFn((name) => {

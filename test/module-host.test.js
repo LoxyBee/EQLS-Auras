@@ -316,8 +316,19 @@ test('docs/modules/pull-timer.js is a valid v1 module and its onLine works', () 
   assert.equal(example.onLine('[ts] a rat hits Baxa for 3 points of damage.', ctx, s), null);
 });
 
-test('docs/modules/aggro-board.js is a valid v1 module, key-exclusive, self-clears on slain', () => {
-  const mod = require('../docs/modules/aggro-board.js');
+test('modules load from the install folder, not userData, and ship in the installer', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.match(main, /const MODULES_DIR = app\.isPackaged\s*\n?\s*\? path\.join\(path\.dirname\(app\.getPath\('exe'\)\), 'modules'\)/);
+  assert.doesNotMatch(main, /new ModuleHost\(path\.join\(app\.getPath\('userData'\), 'modules'\)/);
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  assert.ok(pkg.build.extraFiles.some((e) => e.from === 'modules' && e.to === 'modules'), 'modules/ is not shipped');
+  // the shipped folder has aggro-board and NOT pull-timer (pull-timer is disabled, docs-only)
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'modules', 'aggro-board.js')));
+  assert.ok(!fs.existsSync(path.join(__dirname, '..', 'modules', 'pull-timer.js')));
+});
+
+test('modules/aggro-board.js (shipped) is a valid v1 module, key-exclusive, self-clears on slain', () => {
+  const mod = require('../modules/aggro-board.js');
   assert.equal(validateModule(mod).ok, true, validateModule(mod).error);
 
   const ctx = { stripTimestamp: (l) => l.replace(/^\[[^\]]+\]\s*/, ''), now: Date.now() };
