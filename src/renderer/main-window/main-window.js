@@ -4619,6 +4619,7 @@ function initWidgetsPanel() {
         name: m.name,
         description: m.description || 'A custom module.',
         group: 'standalone',
+        experimental: !!m.experimental,
         create: (n) => window.eqTracker.createModuleAuraWidget(n, m.id),
       }));
     renderPremadeList();
@@ -4669,6 +4670,13 @@ function initWidgetsPanel() {
       const badge = document.createElement('span');
       badge.className = 'planned-badge';
       badge.textContent = 'Planned';
+      strong.appendChild(badge);
+    } else if (premade.experimental) {
+      // Built and creatable, just flagged rough / known-incomplete (currently: a module that
+      // declares `experimental: true`, e.g. the Aggro Board while its raid parsing is reworked).
+      const badge = document.createElement('span');
+      badge.className = 'experimental-badge';
+      badge.textContent = 'Experimental';
       strong.appendChild(badge);
     }
     const span = document.createElement('span');

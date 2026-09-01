@@ -1656,6 +1656,11 @@ label.disabled {
   text-transform: uppercase;
 }
 
+/* Same base as the Diagnostics .experimental-badge; just the spacing the premade row needs. */
+.premade-widget-choice .experimental-badge {
+  margin-left: 6px;
+}
+
 .nav-add-widget-btn {
   width: 100%;
 }

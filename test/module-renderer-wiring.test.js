@@ -85,6 +85,19 @@ test('the Setup-page Custom-modules list + consent gate are wired', () => {
   assert.match(mainSrc, /ipcMain\.handle\('modules:setEnabled'/);
 });
 
+test('an experimental module is still creatable but badged "Experimental" in Add Aura', () => {
+  // the module-aura choice carries the flag through from getRegistered...
+  assert.match(rendererSrc, /experimental: !!m\.experimental/);
+  // ...and renderPremadeChoice renders the badge for a built (not planned) entry
+  const fn = rendererSrc.slice(rendererSrc.indexOf('function renderPremadeChoice('), rendererSrc.indexOf('function renderPremadeChoice(') + 1600);
+  assert.match(fn, /else if \(premade\.experimental\)/);
+  assert.match(fn, /badge\.className = 'experimental-badge'/);
+  assert.match(fn, /badge\.textContent = 'Experimental'/);
+  // moduleHost passes it through
+  assert.match(moduleHostSrc, /experimental: raw\.experimental === true/);
+  assert.match(moduleHostSrc, /experimental: !!d\.experimental/);
+});
+
 test('the Custom-modules list shows ONLY user-added modules, not vouched core ones', () => {
   const fn = rendererSrc.slice(rendererSrc.indexOf('function initModulesPanel()'), rendererSrc.indexOf('function initModulesPanel()') + 3500);
   // the render filters core rows out, and the card is hidden when nothing user-added remains
