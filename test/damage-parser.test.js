@@ -90,6 +90,48 @@ test('a line with no timestamp still parses', () => {
   assert.equal(parseDamageLine('You crush a wan ghoul knight for 60 points of damage.').amount, 60);
 });
 
+// The direct-nuke wording - ~21,000 lines the meter was blind to. A nuking loadout's whole
+// output arrives this way, so the caster was simply absent from the meter.
+test('the direct-damage-spell wording is read, first and third person', () => {
+  assert.deepEqual(
+    parseDamageLine(`${T}You hit a greater kobold for 943 points of magic damage by Energy Storm.`),
+    { attacker: 'You', target: 'a greater kobold', amount: 943, kind: 'spell' }
+  );
+  assert.deepEqual(
+    parseDamageLine(`${T}Gebektik hit Guard Xyxax for 42 points of magic damage by Lifebite.`),
+    { attacker: 'Gebektik', target: 'Guard Xyxax', amount: 42, kind: 'spell' }
+  );
+});
+
+test('a trailing " (Critical)" (or "(Riposte)") does not drop the hit', () => {
+  assert.equal(
+    parseDamageLine(`${T}You hit a lava guardian for 943 points of fire damage by Energy Storm. (Critical)`).amount,
+    943
+  );
+  assert.equal(
+    parseDamageLine(`${T}A zol ghoul knight has taken 32 damage from Ice Comet by Baxa. (Critical)`).attacker,
+    'Baxa'
+  );
+  assert.equal(
+    parseDamageLine(`${T}Baxa crushes a zol ghoul knight for 47 points of damage. (Riposte)`).amount,
+    47
+  );
+});
+
+test('"You hit yourself ... by Cannibalization" is NOT outgoing damage', () => {
+  // Cannibalize's HP->mana self-cost. Counting it would make the bootstrap tag "yourself" an enemy.
+  assert.equal(
+    parseDamageLine(`${T}You hit yourself for 1864 points of unresistable damage by Cannibalization Rk. II.`),
+    null
+  );
+});
+
+test('the direct-spell wording does not collide with melee or the "has taken" wordings', () => {
+  // melee has no "by <spell>", "has taken" has no " hit ... for N points of <type>"
+  assert.equal(parseDamageLine(`${T}Baxa slashes a zol ghoul knight for 47 points of damage.`).kind, 'melee');
+  assert.equal(parseDamageLine(`${T}Fright has taken 394 damage from your Envenomed Bolt IV.`).attacker, 'You');
+});
+
 // ---------------------------------------------------------------------------
 // The friend/enemy bootstrap
 // ---------------------------------------------------------------------------
