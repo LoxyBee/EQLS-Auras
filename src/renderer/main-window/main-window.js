@@ -1867,6 +1867,8 @@ function initWidgetsPanel() {
   let widgets = [];
   let auraFolders = []; // sidebar grouping only - see renderWidgetSubmenu
   const pendingFolderMoves = new Map(); // widgetId -> folderId, applied on drop of a sidebar drag
+  let draggedFolderId = null; // a folder header being dragged to reorder folders
+  let folderDragMoved = false; // suppress the header's click (collapse toggle) right after a drag
   let selectedId = null;
   let allKnownBuffs = [];
   // For the sidebar's per-widget profile-scope dot (see renderWidgetSubmenu)
@@ -2402,14 +2404,44 @@ function initWidgetsPanel() {
     header.append(chevron, name);
 
     header.addEventListener('click', () => {
+      if (folderDragMoved) { folderDragMoved = false; return; } // a drag, not a real click
       window.eqTracker.setAuraFolderCollapsed(folder.id, !folder.collapsed).then(refreshWidgets);
     });
     header.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       openFolderContextMenu(folder.id, e.clientX, e.clientY);
     });
-    // Drop an aura onto the header to file it in this folder (works on a collapsed one too).
+
+    // The header is also its own drag handle - reorders the folder among the other folders.
+    header.draggable = true;
+    header.addEventListener('dragstart', (e) => {
+      draggedFolderId = folder.id;
+      header.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', folder.id);
+    });
+    header.addEventListener('dragend', () => {
+      header.classList.remove('dragging');
+      if (draggedFolderId) {
+        folderDragMoved = true;
+        const orderedIds = [...submenuEl.querySelectorAll('.nav-folder-header')].map((h) => h.dataset.folderId);
+        window.eqTracker.reorderAuraFolders(orderedIds).then(refreshWidgets);
+      }
+      draggedFolderId = null;
+    });
+
+    // dragover: an AURA being dragged -> highlight as a file-here target. A FOLDER being dragged ->
+    // move this header past it for live reorder feedback.
     header.addEventListener('dragover', (e) => {
+      if (draggedFolderId && draggedFolderId !== folder.id) {
+        e.preventDefault();
+        const dragging = submenuEl.querySelector('.nav-folder-header.dragging');
+        if (!dragging) return;
+        const rect = header.getBoundingClientRect();
+        const before = e.clientY - rect.top < rect.height / 2;
+        submenuEl.insertBefore(dragging, before ? header : header.nextSibling);
+        return;
+      }
       if (!draggedWidgetId) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
