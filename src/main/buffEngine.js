@@ -493,15 +493,16 @@ class BuffEngine extends EventEmitter {
     this.blockedNames = new Map(); // lowercased name -> original-case name, see blockBuff()
     this.spellbookCheckFn = null; // (name) => boolean
     this.trackOthersEnabled = false;
-    // P0 rework, off by default and independently switchable - see setUseEvidenceModel. Changes
-    // exactly one thing: in the unique-landing-text tier, "not currently memorized"/"an ally's
-    // burst just fired" stop being able to silently IGNORE a match on their own. They still count
-    // against it, but the outcome becomes a queued prompt instead of a silent drop - a genuine
-    // spellbook absence (neverScribed) is untouched either way, since that one is real negative
-    // evidence, not just an absence of positive evidence. See CLAUDE.md's P0 section for the full
-    // reasoning; kept behind a toggle specifically so a live regression can be reverted with one
-    // click rather than a rebuild.
-    this.useEvidenceModel = false;
+    // P0 rework - ON by default from the first public release (main.js loads the persisted value,
+    // defaulting true; setUseEvidenceModel flips it). Changes exactly one thing: in the
+    // unique-landing-text tier, "not currently memorized"/"an ally's burst just fired" stop being
+    // able to silently IGNORE a match on their own. They still count against it, but the outcome
+    // becomes a queued prompt (or a direct land for a single candidate) instead of a silent drop -
+    // a genuine spellbook absence (neverScribed) is untouched either way, since that one is real
+    // negative evidence, not just an absence of positive evidence. Measured against a real week:
+    // +241 recovered landings, 0 lost, +6 prompts. Stays a toggle so a live regression reverts with
+    // one click. See CLAUDE.md's P0 section for the full reasoning.
+    this.useEvidenceModel = true;
     // P0c, off by default - its own switch, independent of useEvidenceModel above, so either can
     // be reverted without touching the other. See CAST_TIME_RATES/_scaledCastSec for what this
     // changes: the pendingCast timeout below (both the "confirmed by timeout fallback" branch and

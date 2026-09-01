@@ -1307,9 +1307,9 @@
 
           <h4 class="settings-subsection-title">Weekly archive at the raid reset</h4>
           <div class="row">
-            <label>
+            <label title="Off by default. It modifies the game's eqlog file: the old part is copied to Archive, then the live file is truncated to this week (after a lull, copy-verified first). Leave off if anything else reads your EQ log.">
               <input type="checkbox" id="log-rotation-checkbox" />
-              Archive last week's log after the raid reset
+              After the reset, move last week out of the game's eqlog file into the Archive folder
             </label>
           </div>
           <div class="row">
@@ -1360,16 +1360,17 @@
 
               <h4>Evidence-based detection</h4>
               <p class="hint">
-                When a buff's unique landing text turns up but the app thinks you don't have it
-                memorized (or an ally's burst just fired), it asks rather than silently drop it.
-                Off by default; safe to turn back off.
+                When a buff's unique landing text turns up but the app hasn't seen you memorize it
+                this session (or an ally's burst just fired), it lands it / asks rather than
+                silently dropping it. <strong>On by default</strong> — untick to go back to the
+                older, stricter behaviour if detection ever misbehaves.
               </p>
               <div class="row">
                 <label>
                   <input type="checkbox" id="use-evidence-model-checkbox" />
                   Use evidence-based detection
                 </label>
-                <span class="experimental-badge">Experimental</span>
+                <span class="experimental-badge">New default</span>
               </div>
 
               <h4>Cast-time-aware confirmation</h4>

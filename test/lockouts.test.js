@@ -158,6 +158,37 @@ test('only the live log is read, not the rest of the folder', async () => {
   assert.deepEqual(bosses, ['Lord Nagafen'], 'Lady Vox and Master Yael are in other files and must not appear');
 });
 
+// The reason the weekly archive can be OFF by default: backfill seeks to this lockout week's
+// boundary in the live log instead of re-parsing a months-old file every launch.
+test('backfill reads only the current week off a large multi-week live log', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-lockouts-big-'));
+  const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
+
+  // > 20 MB of last-year filler, so _weekStartOffset actually seeks rather than reading whole.
+  const old = `[Mon Jan 01 12:00:00 2024] filler line that is a whole year before this lockout week\n`;
+  const fd = fs.openSync(live, 'w');
+  const block = Buffer.from(old.repeat(4000)); // ~320 KB
+  for (let i = 0; i < 70; i++) fs.writeSync(fd, block); // ~22 MB
+  fs.closeSync(fd);
+
+  // One current-week task assignment at the very end.
+  const now = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const stamp = `[${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][now.getDay()]} ` +
+    `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][now.getMonth()]} ` +
+    `${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())} ${now.getFullYear()}]`;
+  fs.appendFileSync(live, `${stamp} You have been assigned the task 'Potential of the Void - Lord Nagafen - Weekly'.\n`);
+
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => live);
+  const r = await s.backfill();
+
+  assert.ok(r.lines < 1000, `read only the current-week tail, not the whole file (got ${r.lines} lines of ~270k)`);
+  const bosses = s.getProjection().characters[0].projection.bosses.map((b) => b.boss);
+  assert.deepEqual(bosses, ['Lord Nagafen'], 'the current-week task at the end of the file was still picked up');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a live file whose name is not an eqlog is handled without a crash', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eqls-lockouts-'));
   const odd = path.join(dir, 'dbg.txt');
@@ -416,7 +447,9 @@ test('the reset setting is on both pages and names where the default came from',
     'the Lockouts page must carry the reset controls');
   assert.ok(html.includes('id="setup-reset-day"') && html.includes('id="setup-reset-hour"'),
     'the Setup page must carry the same reset controls');
-  const setup = SETUP_HTML.slice(SETUP_HTML.indexOf('Weekly archive at the raid reset'), SETUP_HTML.indexOf('Weekly archive at the raid reset') + 1200);
+  // 1600, not 1200 - the rotation checkbox's own explanatory title (added when rotation went
+  // opt-in for the public release) sits between the heading and the reset-day hint below it.
+  const setup = SETUP_HTML.slice(SETUP_HTML.indexOf('Weekly archive at the raid reset'), SETUP_HTML.indexOf('Weekly archive at the raid reset') + 1600);
   assert.match(setup, /same value|changing it there/i, 'the Setup card must say it is the same setting as the Lockouts page');
   assert.match(setup, /your own\s+reading of the in-game|in-game lockout timer/i,
     'the default must be attributed to the owner\'s in-game reading, not the log');

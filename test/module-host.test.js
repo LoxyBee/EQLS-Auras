@@ -361,5 +361,32 @@ test('modules/aggro-board.js (shipped) is a valid v1 module, key-exclusive, self
   assert.equal(mod.onLine('[ts] You gain experience!', ctx, s), null);
 });
 
+// The folder watcher raises 'error' asynchronously on Windows (EPERM) when the watched dir moves
+// under it - a git branch switch while the dev app runs. An FSWatcher is an EventEmitter, so an
+// unhandled 'error' throws and, with no process-level handler, hard-crashed the main process with
+// a raw dialog. The watcher must handle its own 'error': close, forget, don't throw.
+test('a watcher error is handled - it does not throw, and the watch is dropped', () => {
+  const dir = tempDir();
+  const host = new ModuleHost(dir, fakeStore());
+  host.watchFolder();
+  assert.ok(host._watcher, 'expected a live watcher');
+  let emittedModuleError = null;
+  host.on('moduleError', (e) => { emittedModuleError = e; });
+
+  // Exactly the shape Node delivers on the real EPERM.
+  assert.doesNotThrow(() => host._watcher.emit('error', Object.assign(new Error('EPERM: operation not permitted, watch'), { code: 'EPERM' })));
+
+  assert.equal(host._watcher, null, 'the dead watcher was forgotten');
+  assert.ok(emittedModuleError && /folder watch stopped/.test(emittedModuleError.error), 'surfaced as a moduleError, not a crash');
+  host.stop();
+});
+
+test('main.js has a last-resort uncaughtException / unhandledRejection net', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.match(main, /process\.on\('uncaughtException'/, 'no uncaughtException handler - a stray async error would show a raw crash dialog');
+  assert.match(main, /process\.on\('unhandledRejection'/);
+  assert.match(main, /crash\.log/, 'the handler should write somewhere findable regardless of the debug-log setting');
+});
+
 module.exports = () => report('module-host');
 if (require.main === module) report('module-host').then((n) => process.exit(n ? 1 : 0));

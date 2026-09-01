@@ -24,6 +24,24 @@ const path = require('path');
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
 const fs = require('fs');
+
+// Last-resort net for a stray async error - a filesystem watcher raising EPERM after the dir it
+// watched moved (git branch switch, an AV lock), a socket error nothing listened for, that class
+// of thing. Without this, Electron shows the user a raw "Uncaught Exception" dialog and the app
+// exits: a genuinely bad first impression for something that is usually recoverable (the watcher
+// is dead, nothing else is). So: write it somewhere findable regardless of the debug-log setting,
+// mirror it into the debug log for when that IS on, and keep running. This is not a licence to
+// leave real bugs unfixed - the moduleHost watcher that prompted it is fixed at its source too.
+function recordCrash(kind, err) {
+  const line = `[${new Date().toISOString()}] ${kind}: ${(err && err.stack) || err}\n`;
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'crash.log'), line);
+  } catch { /* nothing more we can do */ }
+  try { console.error(line); } catch { /* ignore */ }
+  try { if (typeof debugLog === 'function') debugLog(`UNCAUGHT ${kind}: ${(err && err.message) || err}`); } catch { /* ignore */ }
+}
+process.on('uncaughtException', (err) => recordCrash('uncaughtException', err));
+process.on('unhandledRejection', (reason) => recordCrash('unhandledRejection', reason));
 const { ipcMain, protocol, BrowserWindow, Menu, Tray, globalShortcut, shell, screen } = require('electron');
 const { buildTrayIcon } = require('./trayIcon');
 const { createMainWindow, getMainWindow } = require('./mainWindow');
@@ -297,10 +315,13 @@ buffEngine.setBardSongDebuffsWantedFn(() =>
 customTimerEngine.setIconUrlFn((iconId) => iconService.buildIconUrl(iconId));
 buffEngine.setTrackOthersEnabled(loadJson('trackOthersEnabled', false));
 buffEngine.setBlockedNames(loadJson('blockedBuffs', []));
-// P0 rework, off by default - see buffEngine.js's constructor comment on useEvidenceModel for
-// exactly what this changes. A toggle rather than a straight replacement specifically so it can be
-// switched off again with one click if it misbehaves live, without a rebuild.
-buffEngine.setUseEvidenceModel(loadJson('useEvidenceModel', false));
+// P0 rework, ON by default from the first public release - see buffEngine.js's constructor comment
+// on useEvidenceModel for exactly what it changes. Measured against a real week-long log: +241 buff
+// landings recovered (buffs the old path silently dropped), 0 lost, +6 prompts. It stays a toggle
+// so it can be switched OFF again with one click if it ever misbehaves live - that IS the escape
+// hatch, no rebuild needed. Only an explicit `false` written down (the user unticking the box)
+// turns it off.
+buffEngine.setUseEvidenceModel(loadJson('useEvidenceModel', true));
 // P0c, off by default and independently switchable from useEvidenceModel above - see buffEngine.js's
 // constructor comment on useCastTimeFilter for exactly what this changes.
 buffEngine.setUseCastTimeFilter(loadJson('useCastTimeFilter', false));
@@ -1724,7 +1745,7 @@ ipcMain.handle('settings:setTrackOthers', (_event, enabled) => {
   return enabled;
 });
 
-ipcMain.handle('settings:getUseEvidenceModel', () => loadJson('useEvidenceModel', false));
+ipcMain.handle('settings:getUseEvidenceModel', () => loadJson('useEvidenceModel', true));
 ipcMain.handle('settings:setUseEvidenceModel', (_event, enabled) => {
   saveJson('useEvidenceModel', enabled);
   buffEngine.setUseEvidenceModel(enabled);

@@ -205,10 +205,22 @@ class ModuleHost extends EventEmitter {
     if (this._watcher || !this.modulesDir) return;
     try {
       if (!fs.existsSync(this.modulesDir)) fs.mkdirSync(this.modulesDir, { recursive: true });
-      this._watcher = fs.watch(this.modulesDir, { persistent: false }, () => {
+      const w = fs.watch(this.modulesDir, { persistent: false }, () => {
         clearTimeout(this._reloadTimer);
         this._reloadTimer = setTimeout(() => this.loadModules(), 300);
       });
+      // fs.watch on Windows raises 'error' ASYNCHRONOUSLY (EPERM) when the dir is replaced or locked
+      // underneath it - e.g. a git branch switch moving modules/ while the app runs. An FSWatcher is
+      // an EventEmitter, so an unhandled 'error' throws and, with no process-level handler, hard-
+      // crashes the main process with a dialog. A dropped watch just means no hot-reload until the
+      // next launch, which is fine - so close it, forget it, and let a later loadModules() call
+      // re-arm it if something wants to.
+      w.on('error', (err) => {
+        try { w.close(); } catch { /* already gone */ }
+        if (this._watcher === w) this._watcher = null;
+        this.emit('moduleError', { id: '(folder)', error: `folder watch stopped: ${err && err.message}` });
+      });
+      this._watcher = w;
     } catch {
       // fs.watch is best-effort (some filesystems don't support it) - startup scan still works.
     }
