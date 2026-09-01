@@ -345,7 +345,7 @@ function setupNudgeGaps({ log, spellbook, character, widgets }) {
   if (!log || !log.eqFolder) {
     items.push({ text: 'Point the app at your EverQuest folder', page: 'page-settings' });
   } else if (!spellbook || !spellbook.filePath) {
-    items.push({ text: 'Set your spellbook file — it resolves buffs that share a message', page: 'page-settings' });
+    items.push({ text: 'Set your spellbook file — it identifies buffs that share a message', page: 'page-settings' });
   }
   const c = character || {};
   if (!c.aaLevel && !c.exaltationLevel && !c.deftnessLevel) {
@@ -502,7 +502,7 @@ function initProfileBar() {
       deleteBtn.title = profiles.length <= 1 ? "Can't delete the only remaining profile" : `Delete "${profile.name}"`;
       deleteBtn.addEventListener('click', () => {
         const confirmed = window.confirm(
-          `Delete the loadout profile "${profile.name}"? This permanently discards its remembered ambiguous-cast answers. Auras aren't deleted or hidden - they just stop listing this profile as one they belong to.`
+          `Delete the loadout profile "${profile.name}"? Its remembered answers are discarded for good. Auras aren't deleted or hidden.`
         );
         if (!confirmed) return;
         window.eqTracker.deleteProfile(profile.id).then((removed) => {
@@ -1166,8 +1166,8 @@ function initLogPanel() {
       title: 'Your EQ log is getting large',
       message: `The log is about ${mb} MB. Trimming it to just the current lockout week keeps the app fast and the Lockouts tab accurate.`,
       detail: check.holdsCurrentWeek
-        ? 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first); the current week stays in the live log. EverQuest can stay running.'
-        : 'Everything before this week’s reset is copied to Logs\\Archive\\ (size-verified first), then the live log is rewritten to just the current week.',
+        ? 'Everything before this week’s reset is copied to Logs\\Archive\\; the current week stays in the live log. EverQuest can stay running.'
+        : 'Everything before this week’s reset is copied to Logs\\Archive\\, then the live log is rewritten to just the current week.',
       okLabel: 'Trim to this week',
       cancelLabel: 'Not now',
     });
@@ -1180,7 +1180,7 @@ function initLogPanel() {
     await appConfirm(
       rep.ok
         ? { title: 'Trimmed', message: `Archived ${(rep.archivedBytes / 1048576).toFixed(1)} MB.`, detail: rep.archivedTo, okLabel: 'OK', hideCancel: true }
-        : { title: 'Not trimmed', message: rep.reason || 'The log could not be trimmed right now - try the Lockouts tab in a moment.', okLabel: 'OK', hideCancel: true }
+        : { title: 'Not trimmed', message: rep.reason || 'The log could not be trimmed right now — try again in a moment.', okLabel: 'OK', hideCancel: true }
     );
     window.eqTracker.getLogState().then(renderState);
   }, 3500);
@@ -1213,7 +1213,7 @@ function initLogPanel() {
       title: 'Archive log now',
       message: 'Archive the current log and empty the live log file?',
       detail: holdsWeek
-        ? 'Your log currently holds this lockout week. Archiving it whole takes this week’s raid kills out of the file the Lockouts tab reads — the grid will show "not looked" until you play again. If you use the Lockouts tab, use "Trim log to this week" there instead.'
+        ? 'Your log holds this lockout week. Archiving it whole removes this week’s raid kills from what the Lockouts tab reads — the grid shows "not looked" until you play again. Use "Trim log to this week" instead if you use that tab.'
         : 'Copies the current log to a timestamped file, then empties the live log. Best done right after /log off.',
       okLabel: holdsWeek ? 'Archive anyway' : 'Archive',
       danger: holdsWeek,
@@ -1474,7 +1474,7 @@ function initAmbiguousPanel() {
   const resetBtn = document.getElementById('reset-ambiguous-btn');
   resetBtn.addEventListener('click', () => {
     const confirmed = window.confirm(
-      'Clear every remembered "this text means buff X" choice? Anything ambiguous will prompt you again from scratch.'
+      'Clear every remembered answer? Unclear casts will prompt you again from scratch.'
     );
     if (confirmed) {
       window.eqTracker.resetAmbiguousResolutions();
@@ -2273,7 +2273,7 @@ function initWidgetsPanel() {
       hideHotkeyHintEl.textContent =
         bound === choice
           ? ''
-          : 'Could not register that key (another app may already own it) - falling back to Alt+Shift+H.';
+          : 'Could not register that key — another app may own it. Falling back to Alt+Shift+H.';
     });
   }
   window.eqTracker.getHideHotkeyChoice().then((choice) => {
@@ -2374,9 +2374,8 @@ function initWidgetsPanel() {
     } else if (!currentZone) {
       warnEl.textContent =
         'This aura is limited to ' + zones.length + ' zone' + (zones.length === 1 ? '' : 's') +
-        ", but the app does not know where you are yet - it only finds out when you change zone. " +
-        'Until then the aura shows anyway, which is deliberate: a missing aura you cannot explain ' +
-        'is worse than one showing where you did not ask for it.';
+        ", but the app does not know where you are yet — it finds out when you change zone. " +
+        'Until then the aura shows anyway.';
       warnEl.style.display = '';
     } else if (!zones.includes(currentZone)) {
       warnEl.textContent =
@@ -3073,7 +3072,7 @@ function initWidgetsPanel() {
           expire: [' Play a sound when a buff expires', 'Plays a sound the moment the buff runs out.'],
           warn: [
             ' Warn me before a buff expires',
-            'Plays a sound a set time before the buff runs out, while there is still time to recast.',
+            'Plays a sound a set time before the buff runs out.',
           ],
         };
     [
@@ -4036,7 +4035,7 @@ function initWidgetsPanel() {
     const widget = findWidget(id);
     if (!widget) return;
     const confirmed = window.confirm(
-      `Reset "${widget.name}" to how it was when it was first built? Every setting changed since ` +
+      `Reset "${widget.name}" to how it was first built? Every setting changed since ` +
         "then is lost - its position and which profiles/zones it's limited to are the only things kept."
     );
     if (!confirmed) return;
