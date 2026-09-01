@@ -181,10 +181,11 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // 1,521,971 logged lines her character deals 2,712 damage lines against roughly 346,000 from
     // everyone else, so a meter defaulting to "just mine" would be an almost empty box for her.
     mineOnly: false,
-    // The leading row carrying the fight's total and its rate. The per-attacker rows below it
-    // cannot show a rate - each attacker's own share of the elapsed time is not something the log
-    // records - so this is where the number people actually quote comes from.
+    // The leading row carrying the fight's total and its rate.
     showTotalRow: true,
+    // Note 19. Per-attacker rows can show each attacker's rate (their damage / the fight length)
+    // instead of cumulative damage - the same divide the Total rate already uses. Off by default.
+    damageShowDps: false,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -444,10 +445,11 @@ function defaultCustomWidget(name) {
     // 1,521,971 logged lines her character deals 2,712 damage lines against roughly 346,000 from
     // everyone else, so a meter defaulting to "just mine" would be an almost empty box for her.
     mineOnly: false,
-    // The leading row carrying the fight's total and its rate. The per-attacker rows below it
-    // cannot show a rate - each attacker's own share of the elapsed time is not something the log
-    // records - so this is where the number people actually quote comes from.
+    // The leading row carrying the fight's total and its rate.
     showTotalRow: true,
+    // Note 19. Per-attacker rows can show each attacker's rate (their damage / the fight length)
+    // instead of cumulative damage - the same divide the Total rate already uses. Off by default.
+    damageShowDps: false,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -653,6 +655,7 @@ const SHAREABLE_FIELDS = [
   'fightTimeoutSec',
   'mineOnly',
   'showTotalRow',
+  'damageShowDps',
   'travelDestination',
   'showOnAllProfiles',
   'visibleInZones',

@@ -292,6 +292,17 @@ test('the bar shows each row against the biggest, not against the total', () => 
   assert.ok(Math.abs(rows.find((r) => r.name === 'You').barPercent - 33.33) < 0.1);
 });
 
+test('each attacker row carries a dpsText alongside valueText, using the same fight length as the total', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}a kobold has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Baxa slashes a kobold for 300 points of damage.`, 5000); // 4s span
+  const rows = e.getActive(5000);
+  const baxa = rows.find((r) => r.name === 'Baxa');
+  assert.match(baxa.valueText, /^300\s+75%$/);
+  assert.match(baxa.dpsText, /^75\/s\s+75%$/, 'DPS is the attacker damage / the fight span');
+  assert.equal(rows.find((r) => r.name === 'Total').dpsText, undefined, 'the total row has no dpsText');
+});
+
 test('an idle engine draws nothing at all', () => {
   assert.deepEqual(new DamageEngine().getActive(1000), []);
 });

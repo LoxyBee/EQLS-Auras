@@ -89,5 +89,18 @@ test('the overlay hides the bar for a noBar row and colours per-attacker bars on
   assert.match(overlaySrc, /hash \* 31 \+ name\.charCodeAt\(i\)/);
 });
 
+test('the "show rate (DPS)" toggle is wired end to end', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const preload = read('src', 'preload', 'preload-main.js');
+  const manager = read('src', 'main', 'widgetManager.js');
+  assert.match(html, /id="widget-damage-dps-checkbox"/);
+  assert.match(rendererSrc, /setWidgetDamageOptions\(selectedId, \{ showDps: damageDpsCheckbox\.checked \}\)/);
+  assert.match(rendererSrc, /damageDpsCheckbox\.checked = !!widget\.damageShowDps/);
+  assert.match(manager, /if \(typeof showDps === 'boolean'\) changes\.damageShowDps = showDps/);
+  assert.match(read('src', 'main', 'widgetStore.js'), /'damageShowDps'/);
+  // the overlay swaps valueText for dpsText only on a damage aura with the toggle on
+  assert.match(overlaySrc, /currentConfig\.buffSource === 'damage' && currentConfig\.damageShowDps && buff\.dpsText != null/);
+});
+
 module.exports = () => report('damage-parser-unlock');
 if (require.main === module) report('damage-parser-unlock').then((n) => process.exit(n ? 1 : 0));

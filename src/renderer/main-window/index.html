@@ -379,9 +379,15 @@
                       </label>
                     </div>
                     <div class="row">
-                      <label title="A line at the bottom with the fight's total damage and its per-second rate — the only rate shown, since the log doesn't record how long each person swung. Drawn as plain text, no bar.">
+                      <label title="A line at the bottom with the fight's total damage and its per-second rate. Drawn as plain text, no bar.">
                         <input type="checkbox" id="widget-total-row-checkbox" />
                         Show the total line
+                      </label>
+                    </div>
+                    <div class="row">
+                      <label title="Show each attacker's per-second rate (their damage divided by the fight length) instead of their cumulative damage. The share % is the same either way.">
+                        <input type="checkbox" id="widget-damage-dps-checkbox" />
+                        Show rate (DPS) instead of total damage
                       </label>
                     </div>
                   </div>

@@ -287,7 +287,12 @@ class DamageEngine extends EventEmitter {
 
     const tiles = rows.map((r) => ({
       name: r.name,
+      // Two readings of the same row, so an aura can show either without a second engine (same
+      // reasoning as showTotalRow - the choice is applied where the tile is drawn). `valueText` is
+      // cumulative damage + share; `dpsText` is that attacker's own rate (their damage / the fight
+      // length) + the same share.
       valueText: `${formatDamage(r.damage)}  ${Math.round((r.damage / this.totalDamage) * 100)}%`,
+      dpsText: `${formatDamage(Math.round(r.damage / secs))}/s  ${Math.round((r.damage / this.totalDamage) * 100)}%`,
       // Against the BIGGEST row, not against the total. A bar measured against the total leaves
       // every bar short in a five-person group, with even the longest only a fifth of the way
       // across - which reads as everybody doing badly rather than as a comparison.

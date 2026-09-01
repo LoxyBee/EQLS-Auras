@@ -830,8 +830,14 @@ function updateRef(ref, buff, isIcon) {
   // and this is where its number goes. Two lines rather than a second renderer: every list
   // setting the aura already has (row height, text size, colours, anchor, drag, per-loadout
   // visibility) then applies to it for free. Inert for every other aura, which never sets it.
+  // Note 19. A damage aura set to "show rate" swaps each attacker row's cumulative total for its
+  // own per-second rate (`dpsText`); the Total row has no dpsText and is unaffected.
+  const damageText =
+    currentConfig.buffSource === 'damage' && currentConfig.damageShowDps && buff.dpsText != null
+      ? buff.dpsText
+      : buff.valueText;
   ref.timeEl.textContent =
-    buff.valueText != null ? buff.valueText : formatTime(buff.remainingSec, currentConfig.timerFormat);
+    damageText != null ? damageText : formatTime(buff.remainingSec, currentConfig.timerFormat);
   if (isIcon) {
     updateTileIcon(ref, buff);
     updateTileShade(ref, buff);
