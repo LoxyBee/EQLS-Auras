@@ -316,8 +316,10 @@ defaults that can damage a user's files. Ship as one branch.
 > - the original "misses 35%" misread incoming damage as dropped).
 >
 > **Minimum release-blocking set now:** nothing in code. Owner actions only — merge this branch to
-> master, rebuild the installer + eyeball the icon, decide `fix/module-watcher-eperm-crash`, and one
-> live session with the evidence model on.
+> master, rebuild the installer + eyeball the icon, and one live session with the evidence model on.
+> (`fix/module-watcher-eperm-crash` turned out already-merged. MIT license + `LICENSE` file added
+> 1 Sep after a5's pre-release pass flagged the gap — `test/license.test.js` guards it. Two hollow
+> `buff-planner.test.js` try/catches and four stale `main-window.css` doc refs also fixed that pass.)
 
 ### P0-1 — Close the module drive-by execution path — finding #1a — sev 9 — ✅ DONE (`fix/public-release-hardening`)
 The full sandbox is Phase 2; this phase removed the *automatic* execution and made modules visible.

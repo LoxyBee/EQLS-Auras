@@ -1,7 +1,6 @@
-/* Design tokens - see UX_VISUAL_DESIGN.md at the project root for the full
-   rationale (measured against eqlsource.com's own documented palette
-   analysis of the game's texture archives, not picked by eye). Warm
-   umber/parchment, replacing the old cool blue-grey (#1b1e24/#24282f)
+/* Design tokens. The palette is measured against eqlsource.com's own
+   documented analysis of the game's texture archives, not picked by eye.
+   Warm umber/parchment, replacing the old cool blue-grey (#1b1e24/#24282f)
    which read as "generic dev tool" per two rounds of visual feedback.
    Every rule below is on this token set now - there is no remaining
    literal old-palette hex left in this file. */
@@ -733,8 +732,8 @@ body {
 }
 
 /* Was .settings-section - dead now that the widget panel moved to
-   .block/.topic (see UX_VISUAL_DESIGN.md); nothing in index.html
-   references it any more, so it's removed rather than recoloured. */
+   .block/.topic; nothing in index.html references it any more, so it's
+   removed rather than recoloured. */
 
 /* Lighter-weight grouping label - no bubble of its own, since nesting a
    bubble inside a bubble reads as one nesting level too many. */
@@ -750,8 +749,8 @@ body {
 }
 
 /* ================= Widget settings panel: blocks + topics =================
-   See UX_VISUAL_DESIGN.md for the full rationale. Gutter + flat blocks, not
-   nested cards: the panel sits directly on the page --bg, and each block is
+   Gutter + flat blocks, not nested cards: the panel sits directly on the
+   page --bg, and each block is
    a flat --panel-2 island (square corners, no border/shadow) separated from
    its neighbours by a 6px gap that reveals the gutter as a seam. Blocks
    never sit inside other blocks. */
@@ -1695,11 +1694,11 @@ label.disabled {
   word-break: break-all;
 }
 
-/* Flat rows, not boxed cards - UX_VISUAL_DESIGN.md's ".buff-list li today
-   gives every row its own background and border, inside a card that
-   already has both" fix. Separation comes from the dotted rule between
-   rows and a hover background shift, not a repeated border/background per
-   row - same reasoning as the widget-panel topics. */
+/* Flat rows, not boxed cards. Was: every .buff-list li gave itself a
+   background and border, inside a card that already had both. Separation
+   now comes from the dotted rule between rows and a hover background
+   shift, not a repeated border/background per row - same reasoning as the
+   widget-panel topics. */
 .buff-list {
   list-style: none;
   margin: 8px 0 0;
