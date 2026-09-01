@@ -1,4 +1,4 @@
-/* PANEL_W (300) / PANEL_H (172) are set in moveHudWindow.js - keep the panel inside them. */
+/* PANEL_W (320) / PANEL_H (150) are set in moveHudWindow.js - keep the panel inside them. */
 :root {
   --accent: #f0a54a;
   --panel: rgba(18, 22, 34, 0.94);
@@ -76,7 +76,7 @@ button, select, input, .snap {
   padding: 4px 12px;
 }
 
-.snap { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+.snap { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; margin-left: 12px; }
 .snap input { margin: 0; }
 #snap-size {
   font: inherit;

@@ -10,8 +10,8 @@ const { loadJson, saveJson } = require('./store');
 // Same "small always-on-top helper window" idea as zonePromptPopup.js. Fully interactive (drag it
 // by its background, -webkit-app-region:drag; controls are no-drag), so none of the click-through
 // juggling the earlier wrapping-frame version needed.
-const PANEL_W = 300;
-const PANEL_H = 172;
+const PANEL_W = 320;
+const PANEL_H = 150;
 
 let win = null;
 
