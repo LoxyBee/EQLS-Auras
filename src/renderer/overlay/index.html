@@ -13,14 +13,8 @@
     <div id="drag-overlay" class="drag-overlay">
       <span id="drag-name" class="drag-name"></span>
       <span class="drag-hint">Click and drag to move<br />Right-click for settings</span>
-      <!-- Per-aura nudge arrows, anchored to this box so "Unlock all auras" gives every aura its
-           own. The step size and snap live in the shared control panel (move HUD), not here. -->
-      <div id="nudge-pad" class="nudge-pad">
-        <button type="button" class="nudge" data-dx="0" data-dy="-1" title="Nudge up">&#9650;</button>
-        <button type="button" class="nudge" data-dx="-1" data-dy="0" title="Nudge left">&#9664;</button>
-        <button type="button" class="nudge" data-dx="1" data-dy="0" title="Nudge right">&#9654;</button>
-        <button type="button" class="nudge" data-dx="0" data-dy="1" title="Nudge down">&#9660;</button>
-      </div>
+      <!-- The nudge arrows are a separate always-on-top pad window anchored above this box
+           (nudgePadWindow.js) - an empty aura's box is too short to hold them without clipping. -->
     </div>
     <div id="buff-list" class="buff-list"></div>
   </div>

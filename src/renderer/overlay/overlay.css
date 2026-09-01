@@ -65,16 +65,7 @@ body {
 body.unlocked .drag-overlay {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 3px;
-  overflow: hidden;
-}
-
-/* On a very short aura box there isn't room for the name pill, the hint AND the pad - the pad is
-   what matters while positioning, so the hint gives way first. */
-body.unlocked .drag-hint {
-  font-size: 9px;
-  line-height: 1.2;
+  gap: 4px;
 }
 
 /* Deliberately a small pill rather than a full-width bar. The box around it is what you grab to
@@ -105,47 +96,6 @@ body.unlocked .drag-hint {
 .drag-hint {
   -webkit-app-region: drag;
 }
-
-/* Per-aura nudge arrows. Hidden until unlocked; a 3x3 grid with the four arrows on the cross so
-   they read as a d-pad. Each button is no-drag so a click nudges rather than starting a window
-   drag. Kept small so it still fits an empty aura's minimum box. */
-.nudge-pad {
-  display: none;
-}
-
-body.unlocked .nudge-pad {
-  display: grid;
-  grid-template-columns: repeat(3, 18px);
-  grid-template-rows: repeat(3, 18px);
-  gap: 2px;
-  -webkit-app-region: no-drag;
-}
-
-.nudge-pad .nudge {
-  -webkit-app-region: no-drag;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 4px;
-  background: rgba(20, 30, 70, 0.75);
-  color: #fff;
-  font-size: 9px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.nudge-pad .nudge:hover {
-  background: rgba(60, 90, 200, 0.9);
-}
-
-.nudge-pad .nudge:active {
-  background: rgba(90, 120, 230, 1);
-}
-
-/* Place the four arrows on the plus of the 3x3 grid. */
-.nudge-pad .nudge[data-dy="-1"] { grid-area: 1 / 2; }
-.nudge-pad .nudge[data-dx="-1"] { grid-area: 2 / 1; }
-.nudge-pad .nudge[data-dx="1"] { grid-area: 2 / 3; }
-.nudge-pad .nudge[data-dy="1"] { grid-area: 3 / 2; }
 
 .buff-list {
   display: flex;

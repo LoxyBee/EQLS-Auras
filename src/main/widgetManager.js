@@ -859,6 +859,18 @@ function isSoundsMuted() {
   return soundsMuted;
 }
 
+// On-screen unlocked auras and their current window rects - for hanging a nudge-pad window above
+// each one during "Unlock all auras" (see nudgePadWindow.js).
+function getVisibleUnlockedBounds() {
+  const out = [];
+  for (const config of widgetStore.getAll()) {
+    if (isLocked(config.id)) continue;
+    const win = windows.get(config.id);
+    if (win && !win.isDestroyed() && win.isVisible()) out.push({ id: config.id, bounds: getWidgetBounds(config.id) });
+  }
+  return out;
+}
+
 function areAllUnlocked() {
   const all = widgetStore.getAll();
   return all.length > 0 && all.every((c) => isUnlocked(c.id));
@@ -1490,6 +1502,7 @@ module.exports = {
   shouldIgnoreMouse,
   setAllUnlocked,
   areAllUnlocked,
+  getVisibleUnlockedBounds,
   setLocked,
   toggleLock,
   resetPosition,

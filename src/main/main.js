@@ -64,6 +64,7 @@ const ambiguousPopup = require('./ambiguousPopup');
 const zonePromptPopup = require('./zonePromptPopup');
 const moveHudWindow = require('./moveHudWindow');
 const gridGuideWindow = require('./gridGuideWindow');
+const nudgePadWindow = require('./nudgePadWindow');
 const positionSnap = require('./positionSnap');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
@@ -2072,6 +2073,8 @@ function hudMeta() {
 
 function onMoveTargetMoved(id, bounds) {
   if (moveTarget && id === moveTarget.id && bounds) moveHudWindow.update(bounds, hudMeta());
+  // Keep this aura's nudge pad glued above its box (no-op if it has no pad open).
+  if (bounds) nudgePadWindow.updateFor(id, bounds);
 }
 widgetManager.setOnWidgetMovedFn(onMoveTargetMoved);
 actionBarManager.setOnMovedFn(onMoveTargetMoved);
@@ -2085,6 +2088,8 @@ function enterMoveMode(kind, id) {
   const b = targetBounds(kind, id); // exists now that it is unlocked
   getMainWindow()?.hide();
   moveHudWindow.open(b || { x: 200, y: 200, width: 160, height: 80 }, hudMeta());
+  // Auras get a per-box nudge pad; an action bar is positioned from the HUD's own pad instead.
+  if (kind === 'widget') nudgePadWindow.showFor(id, b);
   if (positionSnap.get().enabled) gridGuideWindow.show(positionSnap.get().sizePx);
   return { ok: true };
 }
@@ -2095,6 +2100,7 @@ function exitMoveMode() {
   hudMode = null;
   positionSnap.setActive(null);
   moveHudWindow.close();
+  nudgePadWindow.hideAll();
   gridGuideWindow.hide();
   if (t) targetSetLocked(t.kind, t.id, true);
   const win = getMainWindow();
@@ -2102,18 +2108,20 @@ function exitMoveMode() {
   else createMainWindow();
 }
 
-// "Unlock all auras" - the shared HUD holds only the step/snap controls; every aura's own box
-// carries the nudge arrows. The main window stays open (unlike single move mode).
+// "Unlock all auras" - the shared HUD holds only the step/snap controls; every aura gets its own
+// nudge-pad window above its box. The main window stays open (unlike single move mode).
 function enterUnlockAllMode() {
   hudMode = 'all';
   positionSnap.setActiveAll(true);
   moveHudWindow.open(null, hudMeta());
+  for (const { id, bounds } of widgetManager.getVisibleUnlockedBounds()) nudgePadWindow.showFor(id, bounds);
   if (positionSnap.get().enabled) gridGuideWindow.show(positionSnap.get().sizePx);
 }
 function exitUnlockAllMode() {
   hudMode = null;
   positionSnap.setActiveAll(false);
   moveHudWindow.close();
+  nudgePadWindow.hideAll();
   gridGuideWindow.hide();
 }
 

@@ -195,17 +195,23 @@ test('"Unlock all auras" mode (setActiveAll) snaps every aura, not just one', ()
   snap.set({ enabled: false, sizePx: 8 });
 });
 
-test('the per-box nudge arrow is wired: overlay -> preload -> main -> nudgeWidget', () => {
+test('the per-aura nudge pad is a separate anchored window, wired renderer -> preload -> main', () => {
   const read = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
-  assert.match(read('src', 'renderer', 'overlay', 'index.html'), /id="nudge-pad"/);
-  assert.match(read('src', 'renderer', 'overlay', 'overlay.js'), /window\.eqOverlay\.nudge\(widgetId, dx, dy\)/);
-  assert.match(read('src', 'preload', 'preload-overlay.js'), /ipcRenderer\.send\('widget:nudgeSelf'/);
+  // it is its OWN window, not inside the clipped aura box
+  assert.doesNotMatch(read('src', 'renderer', 'overlay', 'index.html'), /id="nudge-pad"/);
+  assert.match(read('src', 'renderer', 'nudge-pad', 'nudge-pad.js'), /window\.eqNudgePad\.nudge\(widgetId,/);
+  assert.match(read('src', 'preload', 'preload-nudge-pad.js'), /ipcRenderer\.send\('widget:nudgeSelf'/);
+  const pad = read('src', 'main', 'nudgePadWindow.js');
+  assert.match(pad, /function showFor\(widgetId, bounds\)/);
+  assert.match(pad, /function updateFor\(widgetId, bounds\)/); // follows the box on every move
+  assert.match(pad, /y < wa\.y\) y = /); // flips below the box when there's no room above
   const main = read('src', 'main', 'main.js');
   assert.match(main, /ipcMain\.on\('widget:nudgeSelf'/);
   assert.match(main, /!widgetManager\.isLocked\(id\)\) widgetManager\.nudgeWidget\(id, dx, dy\)/);
-  // the step size is shared, pushed from the HUD and read back on load
-  assert.match(read('src', 'main', 'main.js'), /broadcast\('widget:nudgeStep', moveStepPx\)/);
-  assert.match(read('src', 'renderer', 'overlay', 'overlay.js'), /window\.eqOverlay\.getNudgeStep\(\)/);
+  assert.match(main, /nudgePadWindow\.showFor\(id, b\)/); // single "Move…"
+  assert.match(main, /getVisibleUnlockedBounds\(\)\) nudgePadWindow\.showFor/); // "Unlock all auras"
+  assert.match(main, /nudgePadWindow\.updateFor\(id, bounds\)/); // follow
+  assert.match(main, /broadcast\('widget:nudgeStep', moveStepPx\)/);
 });
 
 test('a drag drop of the active aura snaps to the grid; others are left alone', () => {
