@@ -181,10 +181,12 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // 1,521,971 logged lines her character deals 2,712 damage lines against roughly 346,000 from
     // everyone else, so a meter defaulting to "just mine" would be an almost empty box for her.
     mineOnly: false,
-    // The leading row carrying the fight's total and its rate. The per-attacker rows below it
-    // cannot show a rate - each attacker's own share of the elapsed time is not something the log
-    // records - so this is where the number people actually quote comes from.
+    // The leading row carrying the fight's total and its rate.
     showTotalRow: true,
+    // Note 19. What each per-attacker row's number reads as: 'total' cumulative damage (default),
+    // 'dps' that attacker's own rate (their damage / the fight length, the same divide the Total
+    // rate uses), or 'both' - "damage (rate)". The Total row always shows both regardless.
+    damageValueMode: 'total',
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -444,10 +446,12 @@ function defaultCustomWidget(name) {
     // 1,521,971 logged lines her character deals 2,712 damage lines against roughly 346,000 from
     // everyone else, so a meter defaulting to "just mine" would be an almost empty box for her.
     mineOnly: false,
-    // The leading row carrying the fight's total and its rate. The per-attacker rows below it
-    // cannot show a rate - each attacker's own share of the elapsed time is not something the log
-    // records - so this is where the number people actually quote comes from.
+    // The leading row carrying the fight's total and its rate.
     showTotalRow: true,
+    // Note 19. What each per-attacker row's number reads as: 'total' cumulative damage (default),
+    // 'dps' that attacker's own rate (their damage / the fight length, the same divide the Total
+    // rate uses), or 'both' - "damage (rate)". The Total row always shows both regardless.
+    damageValueMode: 'total',
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -669,6 +673,7 @@ const SHAREABLE_FIELDS = [
   'fightTimeoutSec',
   'mineOnly',
   'showTotalRow',
+  'damageValueMode',
   'travelDestination',
   'showOnAllProfiles',
   'visibleInZones',
@@ -774,6 +779,11 @@ function normalizeWidget(widget) {
     // it, showing up as tiles that simply stop updating.
     buffNames: Array.isArray(widget.buffNames) ? widget.buffNames : [],
     customTimers: Array.isArray(widget.customTimers) ? widget.customTimers : [],
+    // Note 19. `damageShowDps` was the old on/off boolean before 'both' was added - carry a widget
+    // that only has the boolean over to the equivalent mode.
+    damageValueMode:
+      widget.damageValueMode ||
+      (typeof widget.damageShowDps === 'boolean' ? (widget.damageShowDps ? 'dps' : 'total') : 'total'),
     // A widget saved before this field existed still has its real duration sitting on its first
     // trigger (they were all in sync anyway on every real aura seen so far - see the field's own
     // comment) - read it from there rather than resetting everyone to the bare default. A widget
@@ -1495,6 +1505,8 @@ class WidgetStore {
     // simply never run. Off explicitly rather than left on and inert, so the settings page does
     // not offer a switch that cannot do anything.
     widget.landingGlowEnabled = false;
+    widget.displayMode = 'list';
+    widget.premadeOrigin = { kind: 'damage', mineOnly: !!mineOnly };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -1775,6 +1787,18 @@ class WidgetStore {
       fresh = defaultAllyBuffsWidget(widget.name);
     } else if (origin.kind === 'bardSongs') {
       fresh = defaultBardSongsWidget(widget.name);
+    } else if (origin.kind === 'raidNamed') {
+      fresh = defaultRaidNamedWidget(widget.name);
+    } else if (origin.kind === 'damage') {
+      // Rebuild through the same path the premade uses, minus the push/save - resetToDefault
+      // handles persistence below. Keeps the sortOrder/listWidth/glow-off decisions in one place.
+      fresh = defaultCustomWidget(widget.name);
+      fresh.buffSource = 'damage';
+      fresh.displayMode = 'list';
+      fresh.sortOrder = 'default';
+      fresh.listWidth = 260;
+      fresh.landingGlowEnabled = false;
+      fresh.mineOnly = !!origin.mineOnly;
     } else if (origin.kind === 'textAura' && TEXT_AURA_PRESETS[origin.preset]) {
       fresh = defaultCustomWidget(widget.name);
       fresh.displayMode = 'text';

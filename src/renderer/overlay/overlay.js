@@ -308,6 +308,14 @@ function colorForName(name) {
   return `hsl(${hue}, 45%, 32%)`;
 }
 
+// Note 19. A translucent per-attacker bar fill for the damage meter - same stable hue as
+// colorForName, but lighter and see-through so the row's name and number stay readable over it.
+function damageBarColor(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return `hsla(${hash % 360}, 55%, 50%, 0.3)`;
+}
+
 function initials(name) {
   const words = name.split(/\s+/).filter(Boolean);
   if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
@@ -323,6 +331,9 @@ function initials(name) {
 // outright - repeating "Baxa:" on every tile in Baxa's own group is
 // just noise eating tile width.
 function displayName(buff) {
+  // The damage meter's total row, when it's showing the running tally between pulls rather than the
+  // last fight - see damageEngine.getActive.
+  if (buff.totalRow && buff.sinceZone) return 'Total (since zone)';
   if (!buff.allyName) return buff.name;
   if (currentConfig.hideAllyNameOnTile || currentConfig.groupAllyBuffs) return buff.name;
   return `${buff.allyName}: ${buff.name}`;
@@ -860,8 +871,19 @@ function updateRef(ref, buff, isIcon) {
   // and this is where its number goes. Two lines rather than a second renderer: every list
   // setting the aura already has (row height, text size, colours, anchor, drag, per-loadout
   // visibility) then applies to it for free. Inert for every other aura, which never sets it.
+  // Note 19. A damage aura's per-attacker rows read as cumulative damage ('total'), their own
+  // per-second rate ('dps'), or "damage (rate)" ('both') - damageValueMode, applied here so one
+  // engine feeds meters that differ on it. The Total row only carries valueText (already both), so
+  // this leaves it alone. `damageShowDps` is the old boolean this replaced - still honoured if the
+  // mode was never set.
+  let damageText = buff.valueText;
+  if (currentConfig.buffSource === 'damage') {
+    const mode = currentConfig.damageValueMode || (currentConfig.damageShowDps ? 'dps' : 'total');
+    if (mode === 'dps' && buff.dpsText != null) damageText = buff.dpsText;
+    else if (mode === 'both' && buff.bothText != null) damageText = buff.bothText;
+  }
   ref.timeEl.textContent =
-    buff.valueText != null ? buff.valueText : formatTime(buff.remainingSec, currentConfig.timerFormat);
+    damageText != null ? damageText : formatTime(buff.remainingSec, currentConfig.timerFormat);
   if (isIcon) {
     updateTileIcon(ref, buff);
     updateTileShade(ref, buff);
@@ -877,18 +899,29 @@ function updateRef(ref, buff, isIcon) {
       );
     }
   } else {
-    // A full bar for a buff that never depletes. An empty one would say the opposite of the truth.
-    // barPercent before the infinite check, or a damage row - which IS infinite, having no
-    // expiry - would draw every bar full and show nothing about who is doing what.
-    const pct =
-      typeof buff.barPercent === 'number'
-        ? Math.max(0, Math.min(100, buff.barPercent))
-        : buff.infinite
-          ? 100
-          : buff.durationSec > 0
-            ? Math.max(0, Math.min(100, (buff.remainingSec / buff.durationSec) * 100))
-            : 0;
-    ref.barEl.style.width = `${pct}%`;
+    // Note 19. The damage meter's Total row: a plain label + value line, no bar - it is not a
+    // comparison against anything.
+    if (buff.noBar) {
+      ref.barEl.style.display = 'none';
+    } else {
+      ref.barEl.style.display = '';
+      // A full bar for a buff that never depletes. An empty one would say the opposite of the
+      // truth. barPercent before the infinite check, or a damage row - which IS infinite, having
+      // no expiry - would draw every bar full and show nothing about who is doing what.
+      const pct =
+        typeof buff.barPercent === 'number'
+          ? Math.max(0, Math.min(100, buff.barPercent))
+          : buff.infinite
+            ? 100
+            : buff.durationSec > 0
+              ? Math.max(0, Math.min(100, (buff.remainingSec / buff.durationSec) * 100))
+              : 0;
+      ref.barEl.style.width = `${pct}%`;
+      // Note 19. Each attacker's bar gets a stable colour derived from the name (owner's call), so
+      // the same person keeps the same colour tick to tick. Only for a damage meter - every other
+      // aura's bar stays the one CSS fill.
+      ref.barEl.style.background = currentConfig.buffSource === 'damage' ? damageBarColor(buff.name) : '';
+    }
     // QOL #47 - list mode. Empty string clears the override so the row falls back to its CSS
     // colour (--timer-text-color, or the red .buff-row.low .time rule when low).
     ref.timeEl.style.color = rampAmber || '';
@@ -1090,8 +1123,8 @@ function visibleBuffs(buffs, opts = {}) {
     let rows = buffs;
     // Your row only. It hides the others rather than un-counting them, so the percentage still
     // reads as your share of the whole fight.
-    if (currentConfig.mineOnly) rows = rows.filter((b) => b.name === 'You' || b.name === 'Total');
-    if (currentConfig.showTotalRow === false) rows = rows.filter((b) => b.name !== 'Total');
+    if (currentConfig.mineOnly) rows = rows.filter((b) => b.name === 'You' || b.totalRow);
+    if (currentConfig.showTotalRow === false) rows = rows.filter((b) => !b.totalRow);
     return rows;
   }
 

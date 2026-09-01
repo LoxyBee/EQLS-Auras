@@ -1639,6 +1639,8 @@ function initWidgetsPanel() {
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
   const mineOnlyCheckbox = document.getElementById('widget-mine-only-checkbox');
   const totalRowCheckbox = document.getElementById('widget-total-row-checkbox');
+  const damageShowDamageCb = document.getElementById('widget-damage-show-damage');
+  const damageShowRateCb = document.getElementById('widget-damage-show-rate');
   const bordersRowEl = document.getElementById('widget-borders-row');
   const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
@@ -2723,7 +2725,12 @@ function initWidgetsPanel() {
     'text': ['text-fields', 'text-instant', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'buff-picker'],
     'text-customTimer': ['text-fields', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'custom-timers'],
     'custom-timer': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'custom-timers'],
-    'damage': ['sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'damage-settings'],
+    // A damage meter is a LIST of attacker rows, biggest first - not spells. No 'sort' (the engine
+    // hands the rows pre-sorted and any re-sort would only scramble a real meter, same as travel/
+    // raid-named), no 'merge'/'borders' (no duration, no spell category), no 'alerts' (nothing
+    // expires or lands). 'list-format' for row sizing, 'timer-text' because the row's number is
+    // drawn through that same element, plus its own damage-settings block.
+    'damage': ['list-format', 'timer-text', 'opacity', 'position', 'damage-settings'],
     // No 'sort' - the legs are fixed walking order and widgetStore.createTravelGuide hardcodes
     // sortOrder:'default' for exactly that reason; offering "Alphabetical"/"Time remaining" here
     // would let someone scramble their own directions. No 'merge' either - every leg carries the
@@ -2973,6 +2980,11 @@ function initWidgetsPanel() {
     // setting existed has no value at all, and treating that as "off" would silently remove the
     // total line from a meter that has always shown one.
     totalRowCheckbox.checked = widget.showTotalRow !== false;
+    {
+      const mode = widget.damageValueMode || (widget.damageShowDps ? 'dps' : 'total');
+      if (damageShowDamageCb) damageShowDamageCb.checked = mode === 'total' || mode === 'both';
+      if (damageShowRateCb) damageShowRateCb.checked = mode === 'dps' || mode === 'both';
+    }
     allyAlertCheckbox.checked = !!widget.allyDebuffAlert;
     alwaysOnCheckbox.checked = !!widget.alwaysOn;
     // Reported live 24 Aug, and confirmed by directly comparing what was on screen against what
@@ -3933,6 +3945,17 @@ function initWidgetsPanel() {
         'currently are the first time, and clears itself the moment you arrive.',
       create: (name) => window.eqTracker.createTravelGuideWidget(name, ''),
     },
+    {
+      id: 'damage-parser',
+      name: 'Damage parser',
+      group: 'standalone',
+      description:
+        'A live damage readout for the fight you are in - one row per attacker, biggest first, ' +
+        'with each one\'s share. Counts everyone hitting what you are fighting (a "just my row" ' +
+        'toggle hides the rest without un-counting them). A fight ends after a settable pause ' +
+        'with no damage.',
+      create: (name) => window.eqTracker.createDamageMeterWidget(name, false),
+    },
   ];
 
   // Not-yet-built/locked premade ideas - shown inline in their eventual category as
@@ -3942,19 +3965,12 @@ function initWidgetsPanel() {
   // reported live, 25 Aug: a separate "Not built yet" bucket at the bottom meant a planned Buff
   // timer/Debuff-on-enemy entry never read as belonging with the timers it was a preview of.
   const PLANNED_PREMADE_WIDGETS = [
-    // Locked at the owner's instruction, 2026-08-24: a "standalone tool" aura (a route, a fight
-    // readout) was given the same settings-panel shape as an ordinary buff aura - a "Buffs shown"
-    // card offering a source and a spell picker that mean nothing for either of them. Travel guide
-    // got its own shape (see SHAPE_FIELDS.travel above) and moved back into PREMADE_WIDGETS once
-    // that landed. Damage parser is still waiting on the same treatment.
-    {
-      name: 'Damage parser',
-      group: 'standalone',
-      description:
-        'A live damage readout for the fight you are in. Built, but its settings page still looks ' +
-        'like a buff aura\'s - offering a "Buffs shown" picker that does nothing for a damage row. ' +
-        'Locked until it gets its own layout.',
-    },
+    // Both the "standalone tool" auras that were locked 2026-08-24 for having a buff-aura settings
+    // shape (a "Buffs shown" source + spell picker that mean nothing for a route or a fight
+    // readout) are now unlocked: Travel guide got SHAPE_FIELDS.travel, and Damage parser got
+    // SHAPE_FIELDS.damage narrowed to just what a list of non-spell rows can use (no sort/merge/
+    // borders/alerts; list-format for sizing). Both are back in PREMADE_WIDGETS above.
+    //
     // The rest of the roadmap, shown in the app rather than only in docs/QOL-BACKLOG.md. Listing something
     // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
     // it looks to anyone using the app who did not write it.
@@ -4706,6 +4722,18 @@ function initWidgetsPanel() {
   totalRowCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetDamageOptions(selectedId, { showTotalRow: totalRowCheckbox.checked });
   });
+  if (damageShowDamageCb && damageShowRateCb) {
+    const pushDamageValueMode = (justToggled) => {
+      // At least one must stay on - re-tick whichever the user just turned off if they'd both be off.
+      if (!damageShowDamageCb.checked && !damageShowRateCb.checked) justToggled.checked = true;
+      const d = damageShowDamageCb.checked;
+      const r = damageShowRateCb.checked;
+      const mode = d && r ? 'both' : r ? 'dps' : 'total';
+      window.eqTracker.setWidgetDamageOptions(selectedId, { valueMode: mode });
+    };
+    damageShowDamageCb.addEventListener('change', () => pushDamageValueMode(damageShowDamageCb));
+    damageShowRateCb.addEventListener('change', () => pushDamageValueMode(damageShowRateCb));
+  }
 
   debuffCastByRadios.forEach((radio) => {
     radio.addEventListener('change', () => {

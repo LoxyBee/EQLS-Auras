@@ -90,6 +90,48 @@ test('a line with no timestamp still parses', () => {
   assert.equal(parseDamageLine('You crush a wan ghoul knight for 60 points of damage.').amount, 60);
 });
 
+// The direct-nuke wording - ~21,000 lines the meter was blind to. A nuking loadout's whole
+// output arrives this way, so the caster was simply absent from the meter.
+test('the direct-damage-spell wording is read, first and third person', () => {
+  assert.deepEqual(
+    parseDamageLine(`${T}You hit a greater kobold for 943 points of magic damage by Energy Storm.`),
+    { attacker: 'You', target: 'a greater kobold', amount: 943, kind: 'spell' }
+  );
+  assert.deepEqual(
+    parseDamageLine(`${T}Gebektik hit Guard Xyxax for 42 points of magic damage by Lifebite.`),
+    { attacker: 'Gebektik', target: 'Guard Xyxax', amount: 42, kind: 'spell' }
+  );
+});
+
+test('a trailing " (Critical)" (or "(Riposte)") does not drop the hit', () => {
+  assert.equal(
+    parseDamageLine(`${T}You hit a lava guardian for 943 points of fire damage by Energy Storm. (Critical)`).amount,
+    943
+  );
+  assert.equal(
+    parseDamageLine(`${T}A zol ghoul knight has taken 32 damage from Ice Comet by Baxa. (Critical)`).attacker,
+    'Baxa'
+  );
+  assert.equal(
+    parseDamageLine(`${T}Baxa crushes a zol ghoul knight for 47 points of damage. (Riposte)`).amount,
+    47
+  );
+});
+
+test('"You hit yourself ... by Cannibalization" is NOT outgoing damage', () => {
+  // Cannibalize's HP->mana self-cost. Counting it would make the bootstrap tag "yourself" an enemy.
+  assert.equal(
+    parseDamageLine(`${T}You hit yourself for 1864 points of unresistable damage by Cannibalization Rk. II.`),
+    null
+  );
+});
+
+test('the direct-spell wording does not collide with melee or the "has taken" wordings', () => {
+  // melee has no "by <spell>", "has taken" has no " hit ... for N points of <type>"
+  assert.equal(parseDamageLine(`${T}Baxa slashes a zol ghoul knight for 47 points of damage.`).kind, 'melee');
+  assert.equal(parseDamageLine(`${T}Fright has taken 394 damage from your Envenomed Bolt IV.`).attacker, 'You');
+});
+
 // ---------------------------------------------------------------------------
 // The friend/enemy bootstrap
 // ---------------------------------------------------------------------------
@@ -170,15 +212,23 @@ test('the shouted YOU is the same person as You', () => {
 // Fights
 // ---------------------------------------------------------------------------
 
-test('a fight ends after the timeout and the meter clears', () => {
+test('a fight ends after the timeout and the meter falls back to the since-zone tally', () => {
   const e = new DamageEngine();
   e.setOptions({ fightTimeoutSec: 10 });
   e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
   assert.equal(e.getActive(1000).length, 2); // Total + You
+  assert.equal(e.getActive(1000)[1].name, 'Total', 'labelled as the current fight');
   e.tick(5000);
   assert.equal(e.getActive(5000).length, 2, 'still inside the timeout');
   e.tick(20000);
-  assert.deepEqual(e.getActive(20000), [], 'cleared once the fight went quiet');
+  // The fight is over, but "since zone-in" keeps the number on screen between pulls.
+  const after = e.getActive(20000);
+  assert.equal(after.length, 2);
+  assert.equal(after[after.length - 1].name, 'Total');
+  assert.equal(after[after.length - 1].sinceZone, true);
+  // Only a zone line wipes it.
+  e.enterZone(21000);
+  assert.deepEqual(e.getActive(21000), []);
 });
 
 test('a new fight starts clean rather than adding to the last one', () => {
@@ -216,14 +266,17 @@ test('the timeout is clamped rather than trusted', () => {
 // The rows the overlay draws
 // ---------------------------------------------------------------------------
 
-test('rows are biggest first, with a total on top', () => {
+test('rows are biggest first, with the total LAST and bar-less', () => {
   const e = new DamageEngine();
   e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
   e.handleLine(`${T}Baxa slashes Fright for 300 points of damage.`, 1000);
   const rows = e.getActive(1000);
-  assert.deepEqual(rows.map((r) => r.name), ['Total', 'Baxa', 'You']);
-  assert.match(rows[1].valueText, /^300\s+75%$/);
-  assert.match(rows[2].valueText, /^100\s+25%$/);
+  assert.deepEqual(rows.map((r) => r.name), ['Baxa', 'You', 'Total'], 'total sits at the bottom now');
+  assert.match(rows[0].valueText, /^300\s+75%$/);
+  assert.match(rows[1].valueText, /^100\s+25%$/);
+  const total = rows[2];
+  assert.equal(total.noBar, true, 'the total is a plain label + value, no bar');
+  assert.equal(total.barPercent, null);
 });
 
 // The two fields that let a damage row reuse the buff renderer, and the reason no second renderer
@@ -247,6 +300,20 @@ test('the bar shows each row against the biggest, not against the total', () => 
   assert.ok(Math.abs(rows.find((r) => r.name === 'You').barPercent - 33.33) < 0.1);
 });
 
+test('each attacker row carries all three value readings, using the same fight length as the total', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}a kobold has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Baxa slashes a kobold for 300 points of damage.`, 5000); // 4s span
+  const rows = e.getActive(5000);
+  const baxa = rows.find((r) => r.name === 'Baxa');
+  assert.match(baxa.valueText, /^300\s+75%$/, "'total' - cumulative damage + share");
+  assert.match(baxa.dpsText, /^75\/s\s+75%$/, "'dps' - attacker damage / the fight span + share");
+  assert.match(baxa.bothText, /^300 \(75\/s\)\s+75%$/, "'both' - damage (rate) + share");
+  // the total row always shows both, so it only needs valueText
+  assert.equal(rows.find((r) => r.name === 'Total').dpsText, undefined);
+  assert.equal(rows.find((r) => r.name === 'Total').bothText, undefined);
+});
+
 test('an idle engine draws nothing at all', () => {
   assert.deepEqual(new DamageEngine().getActive(1000), []);
 });
@@ -255,7 +322,7 @@ test('an idle engine draws nothing at all', () => {
 test('the rate on the first hit of a fight is a number', () => {
   const e = new DamageEngine();
   e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
-  const total = e.getActive(1000)[0];
+  const total = e.getActive(1000).find((r) => r.name === 'Total');
   assert.match(total.valueText, /100\/s$/);
   assert.ok(!/Infinity|NaN/.test(total.valueText));
 });

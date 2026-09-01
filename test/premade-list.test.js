@@ -118,10 +118,9 @@ test('every roadmap entry says it is not built', () => {
     const name = (entry.match(/name: '([^']+)'/) || [])[1] || '(unnamed)';
     // Two reasons an entry sits here, greyed out and unclickable, and each has to say which:
     // never built ("not built yet"), or built and then deliberately taken back off the list
-    // ("Locked") - Travel guide and Damage parser, 2026-08-24, both built but shipping the wrong
-    // settings-panel shape for a standalone-tool aura. Either way the words have to carry the
-    // meaning the greyed-out styling only implies, or the entry reads as a feature that is simply
-    // broken rather than one that is not offered right now.
+    // ("Locked"). Travel guide and Damage parser were both here 2026-08-24 for the latter reason
+    // (a buff-aura settings shape) and both got their own shape and moved back to PREMADE_WIDGETS.
+    // Either way the words have to carry the meaning the greyed-out styling only implies.
     assert.match(entry, /not built yet|Not built yet|Locked/, `roadmap entry "${name}" does not say why it can't be picked`);
   }
 });

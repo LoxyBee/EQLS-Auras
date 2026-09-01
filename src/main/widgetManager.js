@@ -1058,13 +1058,16 @@ function isLoadoutLabelEnabled() {
 // The timeout is clamped HERE and not only in the slider's min/max: a share code is the one path
 // by which a number this app never wrote can arrive, and a fightTimeoutSec of zero would end every
 // fight the instant it started.
-function setDamageOptions(id, { fightTimeoutSec, mineOnly, showTotalRow } = {}) {
+const DAMAGE_VALUE_MODES = ['total', 'dps', 'both'];
+
+function setDamageOptions(id, { fightTimeoutSec, mineOnly, showTotalRow, valueMode } = {}) {
   const changes = {};
   if (typeof fightTimeoutSec === 'number' && Number.isFinite(fightTimeoutSec)) {
     changes.fightTimeoutSec = Math.min(600, Math.max(1, Math.round(fightTimeoutSec)));
   }
   if (typeof mineOnly === 'boolean') changes.mineOnly = mineOnly;
   if (typeof showTotalRow === 'boolean') changes.showTotalRow = showTotalRow;
+  if (DAMAGE_VALUE_MODES.includes(valueMode)) changes.damageValueMode = valueMode;
   const config = widgetStore.update(id, changes);
   pushConfigChanged(id);
   return config;

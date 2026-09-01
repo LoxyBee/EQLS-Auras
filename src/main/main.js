@@ -764,6 +764,8 @@ logService.watcher.on('line', (line) => {
   if (!zone) return;
   const changed = applyZoneChangeAndNotify(zone);
   debugLog(`ZONE now "${changed}"`);
+  // The damage meter's "since zone-in" tally starts over here - see damageEngine.enterZone.
+  damageEngine.enterZone();
   // Note 20. Where you are is half of every route, so a zone line is the main thing that makes a
   // travel aura redraw.
   pushTravelRoutes();
