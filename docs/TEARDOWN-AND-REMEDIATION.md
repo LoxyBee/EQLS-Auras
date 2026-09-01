@@ -45,9 +45,15 @@ differently, so read the two together rather than either alone):
   pitched at public-plugin-store severity for what was designed as a single-trusted-collaborator
   path. I'd keep it high (7–8), not top-of-scale.
 
-Everything else — the detection-engine early-return chain (#2), the roster-completeness false
-confidence (#3), the monolith files (#12), and the cruft/process items (#14/#15/#19/#21/#22) — I
-agree with essentially as stated; most are drawn directly from the project's own CLAUDE.md.
+Everything else — the detection-engine early-return chain (#2), the monolith files (#12), and the
+cruft/process items (#14/#15/#19/#21/#22) — I agree with essentially as stated; most are drawn
+directly from the project's own CLAUDE.md.
+
+**#3 correction (1 Sep, owner):** the finding treated the roster as an incomplete copy of the game
+file. It isn't — it is deliberately scoped to the spells EQ Legends actually has, and matching it
+against `spells_us.txt` (every spell from every EQ version) would import false ambiguity from
+spells nobody can cast here. Downgraded to ~4; P1-1's veto mechanism dropped and replaced with an
+ongoing "add the real missing EQL spell when one surfaces" data task. See the revised #3 and P1-1.
 
 ---
 
@@ -93,12 +99,25 @@ tier never runs — is **still what ships**. The fix (`useEvidenceModel`) is bui
 > measured too and deliberately left OFF (no benefit / unvalidated guess). The early-return tier
 > chain itself is not yet deleted - that stays a later release.
 
-### #3 — The roster makes wrong answers look like high-confidence right ones — 8/10
-"Unique landing text" is the top auto-confirm tier, and "unique" is judged against a roster that was
-missing ~37,000 spells. Documented result: every "Cassindra's Chant of Clarity" the owner sang was
-**confidently logged as "Brilliance."** "You feel protected." offered four candidates, none of them
-the spell actually cast. The roster is now smaller-on-purpose and better, but the structural flaw —
-confidence derived from roster completeness — is untouched.
+### #3 — The roster makes wrong answers look like high-confidence right ones — 8/10 → **revised down to ~4, 1 Sep (owner)**
+"Unique landing text" is the top auto-confirm tier, and "unique" is judged by counting roster
+entries. The teardown framed the fix as: count against the game's `spells_us_str.txt` instead,
+since that has ~37,000 more spells. **The owner rejected that framing and is right to.** The
+roster (~1,067) is not an incomplete copy of the game file — it is deliberately scoped to the
+spells **EQ Legends actually has**. `spells_us.txt` carries every spell from every version of EQ
+ever shipped; the vast majority cannot be cast on this server. Vetoing a unique-text auto-confirm
+because some 2015-expansion spell shares that text would make the app prompt "which spell was
+that?" for buffs that were never ambiguous here — a permanent regression traded for a rare
+mislabel that finding #8 already documents as an accepted tradeoff.
+
+What's actually real is narrower: a spell that **is** castable on EQ Legends but was missed when
+the roster was built. That has happened (Armor of Protection, confirmed from a real log; 386 bard
+songs dropped by an early duration filter) and each was fixed by adding the one spell, after which
+the roster's own share-counting handles it correctly. The "Brilliance" case is an instance of
+this, not a structural flaw — if Cassindra's Chant of Clarity is a real EQL spell it belongs in
+the roster; once it is, `"Your mind clears."` is correctly a 2-way share and prompts with the
+right two candidates. This is an **ongoing data task** (report → check if the true spell is a
+castable EQL spell → `tools/roster-overrides.json` `add`), not an engine change. See revised P1-1.
 
 ### #8 — By-design mislabeling — 6→7/10
 "Completeness over perfect naming": the stated, written tolerance is "a possibly-mislabeled buff
@@ -230,7 +249,7 @@ a boat, one-way sinks hand-flagged. A hand-maintained MUD map that will rot.
 - **The ambiguous popup steals focus mid-fight** — `focusGameWindow` was added to shove EQ back to
   the front because clicking the popup drops you out of the game. A band-aid on a band-aid.
 
-## Verdict — Overall 7/10 bad
+## Verdict — Overall 7/10 bad *(as originally written; ~4/10 after the `fix/public-release-hardening` pass — see the Phase 0 status block and the corrections above)*
 
 The core detection engine — the entire reason the app exists — ships with a structural flaw its own
 docs call P0, with the fix sitting behind an off-by-default toggle nobody has tested live. Wrapped
@@ -238,6 +257,12 @@ around that is an unsandboxed auto-executing plugin loader, a 9,000-line setting
 someone who can't read code, and a habit of keeping known-broken code "to avoid a migration." It
 clearly *works* well enough that the owner uses it daily, and the honesty in CLAUDE.md is genuinely
 rare. But "we documented why it's broken" is not the same as "it's not broken."
+
+> **Update, 1 Sep.** The detection toggle (evidence model) is now ON by default and measured
+> (+241 landings / 0 lost on a real week); the plugin loader is consent-gated and the vouched tier
+> is hidden; the biggest structural claim, #3, was **overstated** — see its correction. What's left
+> of the detection work is a legacy-code deletion, small refinements, and an ongoing roster-data
+> task. "Broken" was too strong even when written; it is not the right word now.
 
 ---
 
@@ -279,9 +304,11 @@ defaults that can damage a user's files. Ship as one branch.
 > new-finding gap: CI never ran the tests), a **zone-graph integrity test** (P4-3, data was
 > clean), **P3-7 ✅** (test-date landmines de-fanged before they could red-light CI on release
 > week), and the **eqlsource app icon** wired into the build + main window.
-> Still genuinely open: P1-1, P1-2's rework, P1-3 (partly covered by the evidence model),
-> P1-4's general catch-up scan, P1-5, P2-*, P3-1/3/4, P4-1/2. (P3-6 turned out already-done —
-> `test/pin.test.js` predates the review. P3-7 ✅. P3-2 ✅ — adaptive polling + circuit breaker.)
+> Still genuinely open: P1-2's rework, P1-3 (partly covered by the evidence model), P1-4's general
+> catch-up scan, P1-5, P2-*, P3-1/3/4, P4-1/2. (P3-6 already-done — `test/pin.test.js` predates the
+> review. P3-7 ✅. P3-2 ✅ — adaptive polling + circuit breaker. **P1-1's veto mechanism dropped**
+> 1 Sep — the roster is EQL-scoped by design, not incomplete; replaced with an ongoing data task,
+> #3 downgraded ~8 → ~4.)
 >
 > **Re-ratings (a5, 2 Sep):** #8 → ~4 (narrow, bounded, never over-lands). #17 → 5 (auto
 > pre-import backup exists). #23 → ~3 (re-measured 85.75% credited / 9.92% held / 4.33% unresolved
@@ -376,17 +403,26 @@ TESTING.md line)
 The reason the app exists. The reworks are largely built and sitting behind off-by-default toggles;
 this phase is mostly validation and deletion of the old path, plus two small new pieces.
 
-### P1-1 — Veto "unique landing text" using raw game data, not the roster — finding #3 — sev 8 — 2–3 days
-1. On launch, parse `spells_us_str.txt` once and build `Map<landingText, count>` across **every**
-   game spell — reuse `gameSpellData.js`'s cached parse.
-2. In the unique-text auto-confirm tier: if the raw-data count for that text is > 1, demote from
-   auto-confirm to "candidate, needs corroboration" regardless of what the roster count says.
-3. No roster edits. Missing spells that get reported keep going in via `tools/roster-overrides.json`
-   `add` blocks as before.
-4. Add a replay-log assertion: the five baseline numbers must not move.
+### P1-1 — ~~Veto "unique landing text" using raw game data~~ → **Roster completeness as an ongoing data task** — finding #3 — sev ~4 — no engine change
+**Original mechanism dropped, 1 Sep (owner).** Vetoing a unique-text confirm against the full
+`spells_us.txt` would demote real, unambiguous EQ Legends buffs because a spell that doesn't exist
+on this server shares the text — permanent false prompts for a rare mislabel. The roster being
+EQL-scoped is the design, not the bug (see revised #3).
 
-*Touches:* `src/main/buffEngine.js` · `src/main/gameSpellData.js` · `src/main/buffStore.js` ·
-`test/detection.test.js`
+What to actually do:
+1. When a buff resolves to a **surprising** name in a real log (owner reports it, or it shows in the
+   detection log), check whether the true spell is a **castable EQL spell missing from the roster**.
+   The next line in the log often names it outright (a heal proc, a wear-off message).
+2. If so, add it via `tools/roster-overrides.json` `add` — the roster then knows the real share set
+   and prompts with the correct candidates. If the true spell is *not* an EQL spell, there is no bug
+   to fix (it can't be cast here).
+3. Optional, cheap, non-behavioural: have the detection log note when an auto-confirm fired on a
+   text that `gameSpellData.js` shows is shared in the raw file — purely a "worth a look" flag for
+   step 1, never a veto. Skip if it adds noise.
+4. No `buffEngine` logic change, no replay-log risk.
+
+*Touches:* `tools/roster-overrides.json` (data, as spells surface) · optionally a one-line note in
+the detection log
 
 ### P1-2 — Validate the evidence model, flip it on, delete the early-return chain — finding #2 — sev 8 — ⚠️ PARTIAL (`fix/public-release-hardening`: measured on a real week (+241 landings, 0 lost, +6 prompts) and flipped ON by default with the Diagnostics toggle as the one-click escape hatch. Cast-time filter + stacking model measured and deliberately left OFF - see the Diagnostics-toggle evaluation in git history. Deleting the legacy tier chain stays a later release.)
 1. Force `useEvidenceModel` + `useCastTimeFilter` on in a local build; run `tools/replay-log.js`
