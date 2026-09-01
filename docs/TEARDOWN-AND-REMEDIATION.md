@@ -156,6 +156,22 @@ know this is dangerous. Bold default for a buff overlay.
 "22% → 65%" credited, "the remaining 35% correctly excluded." Just unlocked as a premade. A DPS
 meter that misses 35% of damage is a DPS meter people will screenshot and argue with.
 
+**Update, 2 Sep — re-measured against a real week-long log (17.8M total parsed damage points),
+this is now out of date and was also conflating two different things.** The "35%" in gotcha #20
+was never "missing wordings" - it was damage correctly classified as INCOMING (an enemy hitting a
+friend), which a damage meter should exclude, not a coverage gap. Wording coverage itself, measured
+separately: **98.6%** of lines that look like a damage event now parse (a loose independent text
+scan vs. the real parser) - the remaining 1.4% is almost entirely other things that only look like
+damage (a chat message, a proc-flavor line with no amount), not missed wordings. On the
+friend/enemy classification gotcha #20 was actually about: **credited 85.75%**, **9.92% correctly
+excluded as incoming**, **4.33% genuinely unresolved even with full-log hindsight** - so 95.67% is
+classified correctly one way or the other, and the honest "we don't know" share is under 5%, not
+35%. (First measurement, before a same-session fix, showed credited damage lower than this and a
+further 7.64% wrongly zeroed by an over-eager collision guard - a real regression, found by this
+measurement and fixed the same pass, see the damageEngine commit. The 85.75%/9.92%/4.33% numbers
+above are AFTER that fix.) Still worth a coverage readout on the aura per P4-2 below so this stops
+being an inferred number nobody can see without instrumenting the log by hand.
+
 ## Cruft & process rot (3–4)
 
 ### #14 — Dead code kept "to avoid a migration" — 4/10
