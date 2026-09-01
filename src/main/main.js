@@ -21,6 +21,12 @@ const path = require('path');
 // widgets.json under the new "EQLS Auras" folder on first restart after
 // the rename, while everything else (buffs, profiles, spellbook) correctly
 // stayed in the old folder - a real split-brain, not a hypothetical.
+//
+// DO NOT edit this folder name to match a new product name. It is where every
+// existing user's data already lives; changing it orphans all of it. A real
+// rebrand needs a copy-the-folder-and-repoint migration, not a string edit.
+// `test/pin.test.js` is the project's first test and fails CI if this line's
+// folder name changes or a local require() ever creeps above it.
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
 const fs = require('fs');

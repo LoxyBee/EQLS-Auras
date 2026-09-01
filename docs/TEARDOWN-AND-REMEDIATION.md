@@ -280,7 +280,8 @@ defaults that can damage a user's files. Ship as one branch.
 > clean), **P3-7 ✅** (test-date landmines de-fanged before they could red-light CI on release
 > week), and the **eqlsource app icon** wired into the build + main window.
 > Still genuinely open: P1-1, P1-2's rework, P1-3 (partly covered by the evidence model),
-> P1-4's general catch-up scan, P1-5, P2-*, P3-1/2/3/4/6, P4-1/2.
+> P1-4's general catch-up scan, P1-5, P2-*, P3-1/2/3/4, P4-1/2. (P3-6 turned out already-done —
+> `test/pin.test.js` predates the review.)
 >
 > **Re-ratings (a5, 2 Sep):** #8 → ~4 (narrow, bounded, never over-lands). #17 → 5 (auto
 > pre-import backup exists). #23 → ~3 (re-measured 85.75% credited / 9.92% held / 4.33% unresolved
@@ -570,13 +571,19 @@ Individually small, none blocking. Pick them up between larger work.
 *Touches:* settings-panel copy · `index.html` Diagnostics section · all wording → Documentation
 session
 
-### P3-6 — Consolidate the userData-pin explanation into one guarded constant — finding #19 — sev 3 — 1 hour
-1. Single `LEGACY_USERDATA_DIR` constant with the full rationale in one comment block.
-2. A test asserting `app.getPath('userData')` ends in the pinned name — so a future rename fails CI
-   instead of shipping.
-3. If a real rebrand ever happens: a proper copy-and-pointer migration, not a string edit.
+### P3-6 — Consolidate the userData-pin explanation into one guarded constant — finding #19 — sev 3 — ✅ ALREADY DONE (pre-existing `test/pin.test.js`)
+The CI guard this asked for already exists and is more thorough than the proposal: `test/pin.test.js`
+is the project's **first** test — 7 cases. It extracts the folder-name literal straight out of the
+`setPath` call and asserts it equals `"EQ Buff Tracker"`, asserts no local `require()` sits above the
+pin (with a comment-stripping pass so the warning block's own example doesn't false-alarm), asserts
+nothing else in `src/` repoints userData, and has two behavioural cases with a stubbed Electron
+(old-folder data still loads after a rename; a decoy folder named after the current product doesn't
+win). A `LEGACY_USERDATA_DIR` constant was tried (1 Sep) and reverted — it broke the literal the
+guard reads for near-zero benefit, since the string only appears once anyway. Added a short "DO NOT
+edit / needs a real migration / pin.test.js guards this" note to the comment block; that's the whole
+residual.
 
-*Touches:* `src/main/main.js` · new `test/userdata-pin.test.js`
+*Touches:* `src/main/main.js` (comment only) · `test/pin.test.js` (already present)
 
 ### P3-7 — De-fang the hardcoded-future-date tests in `log-rotation.test.js` — finding #9's test-side twin — sev 5 — ✅ DONE (`fix/public-release-hardening`, 1 Sep, commit 748d828)
 Took option 2: `tempLogs()` back-dates every fixture file to 2000-01-01 by default (optional `mtime`
