@@ -79,9 +79,13 @@ my code."
 CLAUDE.md has **33 numbered "learned the hard way" gotchas** and a "P0 — architectural rework" that
 opens with "This is one problem with several symptoms." The known root cause — `handleLine()` is a
 chain of early `return`s, so a tier that matches-then-fails-confidence eats the line and the correct
-tier never runs — is **still what ships**. The fix (`useEvidenceModel`) is built, off by default,
-and "never run in a real session." Same for `useCastTimeFilter`, `useEvidenceModel`, the P0b
-attribution rework. You built the fixes and shipped the bugs.
+tier never runs — is **still what ships**. The fix (`useEvidenceModel`) is built.
+
+> **⚠️ Partly addressed (2 Sep, `fix/public-release-hardening`).** `useEvidenceModel` was measured
+> against a real week (+241 landings, 0 lost, +6 prompts) and is now **ON by default**, with the
+> Diagnostics toggle as the one-click revert. `useCastTimeFilter` and `useStackingModel` were
+> measured too and deliberately left OFF (no benefit / unvalidated guess). The early-return tier
+> chain itself is not yet deleted - that stays a later release.
 
 ### #3 — The roster makes wrong answers look like high-confidence right ones — 8/10
 "Unique landing text" is the top auto-confirm tier, and "unique" is judged against a roster that was
@@ -116,11 +120,15 @@ verified," and still shipped in the bundle.
 controlled arbitrary `.png` write outside the cache dir. Sandbox limits the blast radius; it's still
 an unsanitized filesystem write in an IPC-reachable handler.
 
+> **✅ Fixed on `fix/public-release-hardening` (2 Sep).** Icon set is now whitelisted to the 3 known names, id must be plain digits, sound id must be uuid-shaped and its `fileName` must equal its own basename; a resolved-path containment assertion backs both. See P0-3.
+
 ### #6 — No CSP — 4/10
 Zero `Content-Security-Policy` in any of the 8 renderer HTMLs. No `will-navigate` /
 `setWindowOpenHandler` hardening. `sandbox:true` + `contextIsolation:true` are carrying the entire
 defense, with 79 `innerHTML` sinks across renderers rendering spell names, zone names, and
 chat-derived player names.
+
+> **✅ Fixed on `fix/public-release-hardening` (2 Sep).** Strict CSP meta on all 8 renderer HTMLs (`script-src 'self'`, `connect-src 'none'`), one app-wide `will-navigate` + `window.open` deny. The '79 innerHTML sinks' claim was checked and is overstated - dynamic spell/zone/name content already goes through `textContent`/`createElement`; the CSP is a backstop. See P0-4.
 
 ### #7 — A resident `powershell.exe`, polled every 300ms, forever — 4/10
 Every AV product on Windows will notice. The comment admits an earlier version was "a fork bomb that
@@ -151,6 +159,8 @@ executable code).
 Weekly log rotation is **ON by default** and truncates / rewrites the live `eqlog_*.txt`. There's a
 `skippedSpansBoundary` guard and a "verify the archive's size before rewriting" check because you
 know this is dangerous. Bold default for a buff overlay.
+
+> **✅ Fixed on `fix/public-release-hardening` (2 Sep).** Now OFF by default (opt-in). An install that had ticked it keeps its choice. The daily log-split feature is now OFF by default too, and `lockoutService.backfill()` seeks to the current reset week so the grid no longer needs the archive to have trimmed the file. See P0-2.
 
 ### #23 — Damage meter openly can't attribute a third of the log — 5/10
 "22% → 65%" credited, "the remaining 35% correctly excluded." Just unlocked as a premade. A DPS
@@ -247,6 +257,18 @@ reversing it) are working as intended.
 Small, self-contained, no design debate. These remove the drive-by code-execution path and the two
 defaults that can damage a user's files. Ship as one branch.
 
+> **Status, 2 Sep — branch `fix/public-release-hardening`, not yet merged.** P0-2 ✅, P0-3 ✅,
+> P0-4 ✅, P0-5 ✅ (done long ago - `integration` shipped as 1.0.0). P0-1 ⚠️ **partial**: the
+> specific `fs.watch` EPERM crash it caused is fixed at source (the watcher handles its own
+> `'error'`), and `main.js` now has a top-level `uncaughtException` net writing `crash.log` -
+> but the module system still auto-loads on discovery with no per-module enable and no consent
+> dialog. Config bundles already don't carry module files. The Modules settings page + consent
+> gate is still to do. Also on that branch, beyond Phase 0: **evidence-based detection flipped
+> ON by default** (P1-2's flip half, measured +241 landings/0 lost - the legacy-chain deletion
+> stays a later release), and **lockout backfill now seeks to the current reset week** so the
+> weekly archive being off no longer degrades the grid (a bounded-read cousin of P1-4), with the
+> **daily log split also OFF by default**.
+
 ### P0-1 — Close the module drive-by execution path — finding #1a — sev 9 — 1–2 days
 The full sandbox is Phase 2; this phase just removes the *automatic* execution and makes modules
 visible.
@@ -266,7 +288,7 @@ visible.
 *Touches:* `src/main/moduleHost.js` · `src/main/configTransfer.js` · `src/renderer/main-window`
 (new page) · `preload-main.js`
 
-### P0-2 — Weekly log rotation defaults to OFF — finding #18 — sev 6 — 2 hours
+### P0-2 — Weekly log rotation defaults to OFF — finding #18 — sev 6 — ✅ DONE (`fix/public-release-hardening`)
 1. Flip the store default for the rotation setting to off. Add a one-time migration so existing
    installs that never touched it also go off (version-gated, same pattern as the `widgets.json`
    bumps).
@@ -279,7 +301,7 @@ visible.
 *Touches:* `src/main/logRotation.js` · `src/main/store.js` · Setup page copy (→ Documentation for
 TESTING.md line)
 
-### P0-3 — Validate `eqicon://` / `eqsound://` paths — finding #5 — sev 5 — half day
+### P0-3 — Validate `eqicon://` / `eqsound://` paths — finding #5 — sev 5 — ✅ DONE (`fix/public-release-hardening`; icon set whitelisted to ICON_SETS, id must be digits, sound id must be uuid-shaped + fileName must be its own basename, resolved-path containment assert on both, `test/protocol-path-safety.test.js`)
 1. Reject `iconId` that is not a non-negative integer.
 2. Whitelist `iconSet` against the sets `countIconSheets` actually enumerates; reject anything else
    with a 404.
@@ -292,7 +314,7 @@ TESTING.md line)
 *Touches:* `src/main/iconService.js` · `src/main/soundService.js` · new
 `test/protocol-path-safety.test.js`
 
-### P0-4 — Add a CSP and navigation guards to every renderer — finding #6 — sev 4 — half day
+### P0-4 — Add a CSP and navigation guards to every renderer — finding #6 — sev 4 — ✅ DONE (`fix/public-release-hardening`; strict CSP meta on all 8 renderer HTMLs, one app-wide `web-contents-created` handler denying `will-navigate` + `window.open`, grid-guide's inline script extracted, `test/renderer-wiring.test.js`. Note: audited the innerHTML sites - the teardown's '~70 sinks rendering chat strings' was overstated, the only interpolation left is a formatted number)
 1. Add a strict CSP `<meta>` to all 8 renderer HTMLs:
    `default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' eqicon: data:; media-src eqsound:; connect-src 'none'`.
 2. On every `BrowserWindow`: `contents.on('will-navigate', e => e.preventDefault())` and
@@ -304,7 +326,7 @@ TESTING.md line)
 *Touches:* all `src/renderer/*/index.html` · `src/main/*Window.js`, `widgetManager.js`,
 `ambiguousPopup.js`, `zonePromptPopup.js` · `test/renderer-wiring.test.js`
 
-### P0-5 — Commit or stash the dirty `integration` tree — finding #20 (part) — sev 3 — minutes
+### P0-5 — Commit or stash the dirty `integration` tree — finding #20 (part) — sev 3 — ✅ DONE (`integration` shipped as 1.0.0, PR #32)
 1. Review the six modified files (aggro-board.js, moduleHost.js, index.html, main-window.js, two
    tests), commit them with a real message or stash them.
 2. Confirm `npm test` is green on the committed tree, and `node tools/smoke-launch.js` starts clean.
@@ -328,7 +350,7 @@ this phase is mostly validation and deletion of the old path, plus two small new
 *Touches:* `src/main/buffEngine.js` · `src/main/gameSpellData.js` · `src/main/buffStore.js` ·
 `test/detection.test.js`
 
-### P1-2 — Validate the evidence model, flip it on, delete the early-return chain — finding #2 — sev 8 — ~1 week (mostly testing)
+### P1-2 — Validate the evidence model, flip it on, delete the early-return chain — finding #2 — sev 8 — ⚠️ PARTIAL (`fix/public-release-hardening`: measured on a real week (+241 landings, 0 lost, +6 prompts) and flipped ON by default with the Diagnostics toggle as the one-click escape hatch. Cast-time filter + stacking model measured and deliberately left OFF - see the Diagnostics-toggle evaluation in git history. Deleting the legacy tier chain stays a later release.)
 1. Force `useEvidenceModel` + `useCastTimeFilter` on in a local build; run `tools/replay-log.js`
    over the full 1.5M-line corpus; diff the five numbers. Any regression is a blocker — investigate,
    don't tune around it.
@@ -355,7 +377,7 @@ this phase is mostly validation and deletion of the old path, plus two small new
 *Touches:* `src/main/buffEngine.js` · `currentlyMemorized.json` shape · `test/gem-slots.test.js`,
 `memorized-*.test.js`
 
-### P1-4 — Launch catch-up scan for zone / death / group / gems — finding #11 — sev 5 — 2–3 days
+### P1-4 — Launch catch-up scan for zone / death / group / gems — finding #11 — sev 5 — ⚠️ RELATED WORK (`fix/public-release-hardening`: `lockoutService.backfill()` now seeks to the current reset week instead of re-parsing the whole live log - a bounded-read fix so the weekly archive can be off by default. The general zone/death/group/gem catch-up scan this item describes is still to do.)
 1. On launch, one upward scan of the last N KB for the most recent zone, own-death,
    group-composition, and `finished memorizing` lines; seed state from them with **no trigger
    side-effects** (same contract as `seedZone`).
