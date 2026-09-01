@@ -24,6 +24,24 @@ const path = require('path');
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
 const fs = require('fs');
+
+// Last-resort net for a stray async error - a filesystem watcher raising EPERM after the dir it
+// watched moved (git branch switch, an AV lock), a socket error nothing listened for, that class
+// of thing. Without this, Electron shows the user a raw "Uncaught Exception" dialog and the app
+// exits: a genuinely bad first impression for something that is usually recoverable (the watcher
+// is dead, nothing else is). So: write it somewhere findable regardless of the debug-log setting,
+// mirror it into the debug log for when that IS on, and keep running. This is not a licence to
+// leave real bugs unfixed - the moduleHost watcher that prompted it is fixed at its source too.
+function recordCrash(kind, err) {
+  const line = `[${new Date().toISOString()}] ${kind}: ${(err && err.stack) || err}\n`;
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'crash.log'), line);
+  } catch { /* nothing more we can do */ }
+  try { console.error(line); } catch { /* ignore */ }
+  try { if (typeof debugLog === 'function') debugLog(`UNCAUGHT ${kind}: ${(err && err.message) || err}`); } catch { /* ignore */ }
+}
+process.on('uncaughtException', (err) => recordCrash('uncaughtException', err));
+process.on('unhandledRejection', (reason) => recordCrash('unhandledRejection', reason));
 const { ipcMain, protocol, BrowserWindow, Menu, Tray, globalShortcut, shell, screen } = require('electron');
 const { buildTrayIcon } = require('./trayIcon');
 const { createMainWindow, getMainWindow } = require('./mainWindow');
