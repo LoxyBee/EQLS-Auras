@@ -7,11 +7,12 @@
 
 A **module** is a single `.js` file that adds a new custom aura to EQLS Auras without touching the
 app's source, building it, or shipping a new version. You write the file, the owner drops it into a
-folder, and a new aura type appears in the app.
+folder, **turns it on in Log & Setup → Custom modules** (a dropped-in module starts off, and the
+first enable asks for confirmation), and a new aura type is available in Add Aura.
 
-Modules are a **trusted-collaborator** path — the file runs with full Node access in the app's main
-process, no sandbox (see [Trust and limits](#trust-and-limits)). It is deliberately not a public
-plugin system.
+Modules are a **trusted-collaborator** path — an enabled module runs with full Node access in the
+app's main process, no sandbox (see [Trust and limits](#trust-and-limits)). It is deliberately not
+a public plugin system.
 
 ## Where the file goes
 
@@ -23,8 +24,9 @@ a `.js` in there needs no admin rights; it does get removed on an uninstall, lik
 the install folder. (A dev build reads the repo's own `modules/` folder instead.)
 
 The app scans that folder on startup and **watches it while running** — drop a file in or delete
-one and it re-scans within a fraction of a second, no restart. Files load in alphabetical order. A
-filename starting with `.` is ignored.
+one and it re-scans within a fraction of a second, no restart (the file appears in the Custom
+modules list, still off, until enabled). Files load in alphabetical order. A filename starting
+with `.` is ignored.
 
 ## The contract
 
@@ -156,20 +158,20 @@ until you delete it.
 With the default `settingsUI: 'aura'`, the module's own `page` controls render right here on the
 same panel, as a *Module settings* card — there is no separate page to hunt for.
 
-## When a module doesn't appear
+## Enabling a module, and when one doesn't work
 
-There is **no error panel, reload button, or folder link** in the app — a deliberate choice. If a
-module doesn't show:
+Every `.js` in the `modules/` folder shows up on **Log & Setup → Custom modules** — the bundled
+`aggro-board` and anything you drop in. Each is **off until you tick Enable**, and the first time
+you enable one the app asks you to confirm ("runs code with full access to your PC"). Until it's
+enabled the module is completely inert: its `onLine` never runs, it isn't offered in Add Aura, and
+its aura draws nothing. `aggro-board` is on out of the box; a drop-in starts off.
 
-1. Turn on the debug log (**Log & Setup → Diagnostics → detection log**).
-2. Re-drop the file (or restart).
-3. Read the log. Load/validation failures are labelled by **filename**:
-   `MODULE "my-thing.js" - apiVersion 2 - this app speaks module apiVersion 1`
-   `MODULE "broken.js" - failed to load: Unexpected token )`
-   Registered-then-failed is labelled by **id**:
-   `MODULE "my-thing" - disabled - too slow (20+ calls over 50ms)`
-
-A malformed file is skipped — never a crash, never affects another module.
+A file that fails to load or validate still appears in that list, with the reason shown inline
+(e.g. `apiVersion 2 - this app speaks module apiVersion 1`, or `failed to load: Unexpected token )`).
+A runtime error — an `onLine` throw, or a module disabled for being too slow
+(`20+ calls over 50ms`) — shows there too. A malformed file is skipped; it never crashes the app
+or affects another module. The debug log (**Diagnostics → detection log**) carries the same lines
+with timestamps if you want a history.
 
 ## Trust and limits
 
@@ -237,8 +239,10 @@ module.exports = {
 The example module doubles as a smoke test. With the app running:
 
 - [ ] Copy `docs/modules/pull-timer.js` into the install's `modules\` folder (next to the `.exe`,
-      alongside `aggro-board.js`) → within ~1s, no restart, **Add Aura → Standalone tools** lists
-      **Pull Timer**. No sidebar button appears (it's `settingsUI: 'aura'`).
+      alongside `aggro-board.js`) → within ~1s, no restart, **Log & Setup → Custom modules** lists
+      **Pull Timer**, off, with its description. It is NOT yet in Add Aura.
+- [ ] Tick Enable → a consent dialog names the risk; confirm → **Add Aura → Standalone tools** now
+      lists **Pull Timer** (no sidebar button — it's `settingsUI: 'aura'`).
 - [ ] Add it → an overlay aura is created. Open its settings → a **Module settings** card shows
       the Pull length / Start word / Cancel word controls.
 - [ ] A group / guild / say chat line containing `pulling` starts a countdown tile on that aura;
@@ -247,7 +251,9 @@ The example module doubles as a smoke test. With the app running:
       reloads and the next pull runs 20s.
 - [ ] Change `settingsUI` to `'sidebar'`, save → a **Pull Timer** nav button + page appear
       instead, and the Module settings card on the aura panel is gone. Change it back.
-- [ ] Delete the file → the Add-Aura entry disappears; an aura you already created stays but
-      shows nothing.
-- [ ] Break the file (introduce a syntax error) → nothing crashes. With **Diagnostics →
-      detection log** on, the log shows `MODULE "pull-timer.js" - failed to load: ...`.
+- [ ] Untick Enable → the Add-Aura entry disappears and the countdown stops; an aura you already
+      created stays but shows nothing. Re-ticking does NOT re-prompt for consent... actually it
+      does (consent is shown on every off→on). Delete the file → it drops off the Custom modules
+      list entirely.
+- [ ] Break the file (introduce a syntax error) → nothing crashes; the Custom modules list shows
+      **pull-timer.js** with `failed to load: ...` inline.

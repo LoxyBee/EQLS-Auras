@@ -73,6 +73,12 @@ my code."
 - `delete require.cache` + re-`require()` on every file change leaks the old version's timers,
   closures and listeners. Editors that write-twice-on-save double every reload.
 
+> **⚠️ Auto-execution closed on `fix/public-release-hardening`.** A dropped module is now inert
+> until explicitly enabled (with a consent dialog) - see P0-1. What's NOT closed: an *enabled*
+> module still `require()`s into the main process with full Node, a `while(true)` still freezes
+> the app, and the require-cache leak on hot-reload of an enabled module is unchanged. That's the
+> sandbox (P2-4). Severity of what remains: 6-7 (enabled = the user consented), not 9.
+
 ## Severe (7–8)
 
 ### #2 — The detection engine is a graveyard of admitted-wrong heuristics — 8/10
@@ -190,6 +196,12 @@ that fails if it runs); `zoneVisibility.js` only exists because an inline copy w
 passed four tests.
 
 ### #15 — Tests prove little — 6/10
+
+> **New (3 Sep): it was worse than this - CI ran `npm test` *nowhere*.** The only workflow built
+> the installer and published it on every push to master, no test gate. A `.github/workflows/
+> test.yml` running `npm test` on push + PR, plus an `npm test` step before the installer build,
+> is now on `fix/public-release-hardening`. Mutation testing is still manual and the suite still
+> never launches Electron (`smoke-launch.js` / `smoke-render.js` exist but aren't in `npm test`).
 One session found "eight tests that passed while proving nothing." Mutation testing is manual. The
 suite never launches Electron, so a `globalShortcut.register('Pause')` that throws shipped past
 green.
@@ -257,21 +269,27 @@ reversing it) are working as intended.
 Small, self-contained, no design debate. These remove the drive-by code-execution path and the two
 defaults that can damage a user's files. Ship as one branch.
 
-> **Status, 2 Sep — branch `fix/public-release-hardening`, not yet merged.** P0-2 ✅, P0-3 ✅,
-> P0-4 ✅, P0-5 ✅ (done long ago - `integration` shipped as 1.0.0). P0-1 ⚠️ **partial**: the
-> specific `fs.watch` EPERM crash it caused is fixed at source (the watcher handles its own
-> `'error'`), and `main.js` now has a top-level `uncaughtException` net writing `crash.log` -
-> but the module system still auto-loads on discovery with no per-module enable and no consent
-> dialog. Config bundles already don't carry module files. The Modules settings page + consent
-> gate is still to do. Also on that branch, beyond Phase 0: **evidence-based detection flipped
-> ON by default** (P1-2's flip half, measured +241 landings/0 lost - the legacy-chain deletion
-> stays a later release), and **lockout backfill now seeks to the current reset week** so the
-> weekly archive being off no longer degrades the grid (a bounded-read cousin of P1-4), with the
-> **daily log split also OFF by default**.
+> **Status, 3 Sep — branch `fix/public-release-hardening` (PR #33 merged commits 1-4; more on top,
+> not yet merged).** P0-1 ✅ (with a documented residual), P0-2 ✅, P0-3 ✅, P0-4 ✅, P0-5 ✅.
+> Beyond Phase 0 on the same branch: **evidence-based detection ON by default** (P1-2's flip half,
+> measured +241 landings / 0 lost - the legacy-chain deletion stays a later release), **lockout
+> backfill seeks to the current reset week** (a bounded-read cousin of P1-4), **daily log split
+> OFF by default**, a **CI workflow that runs `npm test`** on every push + PR (closes the
+> new-finding gap: CI never ran the tests), and a **zone-graph integrity test** (P4-3, data was
+> clean). Still genuinely open: P1-1, P1-2's rework, P1-3 (partly covered by the evidence model),
+> P2-*, P3-1/2/3/4/6/7, P4-1/2.
 
-### P0-1 — Close the module drive-by execution path — finding #1a — sev 9 — 1–2 days
-The full sandbox is Phase 2; this phase just removes the *automatic* execution and makes modules
-visible.
+### P0-1 — Close the module drive-by execution path — finding #1a — sev 9 — ✅ DONE (`fix/public-release-hardening`)
+The full sandbox is Phase 2; this phase removed the *automatic* execution and made modules visible.
+
+> **Shipped:** `enabledModuleIds` allow-list (persisted, defaults to the one bundled module). A
+> discovered `.js` is inert - `onLine` never runs, it's absent from Add Aura, its aura draws
+> nothing - until the user ticks Enable on the new **Log & Setup → Custom modules** list, and the
+> first enable shows a consent dialog. Load/validation *and* runtime errors show inline there
+> (`modules:error` broadcast). Config bundles already don't carry module files. **Residual, by
+> design:** the scan `require()` still runs a module file's top-level code once, before enable -
+> closing that means not `require()`ing until enable (losing the ability to show the module's real
+> name pre-enable) and is folded into P2-4's isolated-process work.
 
 1. Remove the `fs.watch` auto-load. Folder scan still discovers files, but a discovered module is
    **disabled until explicitly enabled**.
