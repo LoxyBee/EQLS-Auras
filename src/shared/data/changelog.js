@@ -51,6 +51,7 @@ const CHANGELOG = [
       'A heads-up on the Buff Tracker page when EQ is in exclusive full-screen (auras can\'t draw over it)',
       'The tools that write to EverQuest\'s own log files - the weekly archive and the per-day split - are off by default now; turn them on if you want them',
       'Evidence-based detection is on by default - fewer buffs get silently missed after a restart or a loadout swap. The Diagnostics section has the toggle to turn it back off',
+      'The app has its own icon now - the eqlsource mark - on the window, the taskbar and the installer, instead of the default Electron one',
     ],
     fixes: [
       'The lockout grid reads just the current week from your live log, so turning the weekly archive off doesn\'t slow it down',
@@ -69,6 +70,7 @@ const CHANGELOG = [
       'The damage meter was dropping about a dozen melee verbs (cleaves, frenzies, backstab and more) - roughly a twentieth of all melee hits went uncounted',
       'The damage meter now reads a damage shield you are wearing yourself, not just other people\'s',
       'The damage meter stopped counting on the 1st to 9th of a month, from the way the game pads the date',
+      'Overlay auto-hide polls less often while you are not in EverQuest, and if Windows blocks the tool it uses to see the front window it now says so instead of retrying forever',
       'Every tooltip and hint reworded shorter and plainer',
     ],
   },

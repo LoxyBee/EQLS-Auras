@@ -1171,6 +1171,16 @@ The zone box offers the 66 zones seen in your logs and accepts anything you type
 - [ ] **Both auto-hide settings moved** off the Setup page into the "All auras" card on Overlay
       Auras. Check they still actually work from their new home — the wiring is by element id so it
       should be unaffected, but worth confirming rather than assuming.
+- [ ] **Idle back-off (P3-2).** Leave the app running but spend ~30s+ in another app (browser,
+      video) with neither EQ nor this app focused — the overlay stays hidden and CPU use from the
+      background `powershell` probe should drop (the poll goes 300ms → 1200ms). Alt-tab back to EQ;
+      the overlay reappears within about a second, once.
+- [ ] **Circuit breaker / blocked helper.** If overlay auto-hide never works at all, antivirus or
+      a Windows execution-policy lockdown may be blocking the small PowerShell helper the app uses
+      to see which window is in front. After ~6s of failures the Buff Tracker page shows a line
+      saying so, and the app stops retrying. The auras themselves are unaffected — only the
+      hide-when-you-tab-away behaviour. Allowlisting the app (or its `powershell.exe` child) in the
+      AV fixes it; restart afterwards.
 
 ## Exclusive-fullscreen warning (#9) — NEEDS LIVE VERIFICATION
 
@@ -2194,6 +2204,13 @@ starter sounds in it:
       point"). Should open the exact same folder as the per-aura button above - both call the same
       `sounds:openFolder` IPC handler. Smoke-launched clean with no console errors; not yet clicked
       in the real app.
+
+## App icon (`fix/public-release-hardening`) - needs a packaged build
+
+- [ ] **Rebuild the installer (`npm run dist`) and confirm the new eqlsource icon** (gold hexagon
+      with an `=`) shows on: the packaged `EQLS-Auras.exe`, the `EQLS-Auras-Setup.exe` installer,
+      and the app's taskbar button / Alt-Tab entry while running. The **tray icon is unchanged**
+      (still the drawn `=`+glow) - that's deliberate.
 
 ## AA-activated abilities now get the mote-tier duration bonus (25 Aug) - real bug, needs a live recheck
 
