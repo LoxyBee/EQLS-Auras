@@ -1461,6 +1461,8 @@ class WidgetStore {
     // simply never run. Off explicitly rather than left on and inert, so the settings page does
     // not offer a switch that cannot do anything.
     widget.landingGlowEnabled = false;
+    widget.displayMode = 'list';
+    widget.premadeOrigin = { kind: 'damage', mineOnly: !!mineOnly };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -1741,6 +1743,18 @@ class WidgetStore {
       fresh = defaultAllyBuffsWidget(widget.name);
     } else if (origin.kind === 'bardSongs') {
       fresh = defaultBardSongsWidget(widget.name);
+    } else if (origin.kind === 'raidNamed') {
+      fresh = defaultRaidNamedWidget(widget.name);
+    } else if (origin.kind === 'damage') {
+      // Rebuild through the same path the premade uses, minus the push/save - resetToDefault
+      // handles persistence below. Keeps the sortOrder/listWidth/glow-off decisions in one place.
+      fresh = defaultCustomWidget(widget.name);
+      fresh.buffSource = 'damage';
+      fresh.displayMode = 'list';
+      fresh.sortOrder = 'default';
+      fresh.listWidth = 260;
+      fresh.landingGlowEnabled = false;
+      fresh.mineOnly = !!origin.mineOnly;
     } else if (origin.kind === 'textAura' && TEXT_AURA_PRESETS[origin.preset]) {
       fresh = defaultCustomWidget(widget.name);
       fresh.displayMode = 'text';
