@@ -45,9 +45,9 @@ const YOUR_MELEE =
 // largest damage wording in the logs. Names neither side as friend or foe; the engine settles
 // that by direction rather than by reading the names.
 //
-// The verb list was 14; a cross-check against jmoyers/everquest-companion's parser + its EQ Legends
-// fixture corpus found 12 missing, and two of them are common: `cleaves` (warrior, 568 fixture
-// lines) and `frenzies on` (berserker/monk, 129) - ~5% of all melee, silently uncounted. The rest
+// The verb list was 14; cross-checking against known EQ melee wordings found 12 missing, and two
+// of them are common: `cleaves` (warrior) and `frenzies on` (berserker/monk) - together an
+// estimated ~5% of all melee, silently uncounted. The rest
 // (smites, stings, backstabs, shoots, reaves, slams, rends, gnaws, lashes, flurries) are rarer but
 // real. "frenzies on" carries its "on" as part of the verb.
 const OTHER_MELEE =
@@ -81,7 +81,7 @@ const DIRECT_SPELL =
 //
 // When the PLAYER holds the shield, EQ writes "YOUR" instead of a possessive:
 // "A rock golem is pierced by YOUR thorns for 5 points of non-melee damage." - almost every DS
-// line in the companion-repo fixtures is this form, so the old `(.+?)'s` matched ~1 in 20. The DS
+// line where the player holds the shield is this form, so the old `(.+?)'s` matched ~1 in 20. The DS
 // skill name is `(.+?)` non-greedy now, not one lowercase word, so a multi-word or capitalised
 // shield name still parses.
 const DAMAGE_SHIELD =
