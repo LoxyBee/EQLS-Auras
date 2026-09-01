@@ -2013,6 +2013,15 @@ ipcMain.handle('widget:duplicate', (_event, id) => widgetManager.duplicateWidget
 ipcMain.handle('widget:applyCodeToSelfBuffs', (_event, code) => widgetManager.applyCodeToSelfBuffs(code));
 ipcMain.handle('widget:delete', (_event, id) => widgetManager.deleteWidget(id));
 ipcMain.handle('widget:reorder', (_event, { orderedIds }) => widgetManager.reorderWidgets(orderedIds));
+// Sidebar folders (Overlay Auras list organisation - see the renderer). None of these touch an
+// overlay window; the renderer just re-fetches the list + folders after each.
+ipcMain.handle('auraFolders:list', () => widgetManager.getFolders());
+ipcMain.handle('auraFolders:create', (_event, name) => widgetManager.createFolder(name));
+ipcMain.handle('auraFolders:rename', (_event, { id, name }) => widgetManager.renameFolder(id, name));
+ipcMain.handle('auraFolders:delete', (_event, id) => widgetManager.deleteFolder(id));
+ipcMain.handle('auraFolders:setCollapsed', (_event, { id, collapsed }) => widgetManager.setFolderCollapsed(id, collapsed));
+ipcMain.handle('auraFolders:reorder', (_event, { orderedIds }) => widgetManager.reorderFolders(orderedIds));
+ipcMain.handle('widget:setFolder', (_event, { id, folderId }) => widgetManager.setWidgetFolder(id, folderId));
 ipcMain.handle('widget:resetToDefault', (_event, { id }) => widgetManager.resetWidgetToDefault(id));
 ipcMain.handle('widget:setName', (_event, { id, value }) => widgetManager.setName(id, value));
 ipcMain.handle('widget:toggleLock', (_event, id) => widgetManager.toggleLock(id));

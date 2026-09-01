@@ -41,8 +41,8 @@ const preloadSrc = read('src', 'preload', 'preload-main.js');
 // ---------------------------------------------------------------------------
 
 test('the dot is unconditional now - no longer only shown for a widget scoped to fewer than every profile', () => {
-  const fn = rendererSrc.match(/function renderWidgetSubmenu\(\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(fn, 'renderWidgetSubmenu has been restructured');
+  const fn = rendererSrc.match(/function buildAuraRow\(widget\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'buildAuraRow has been restructured');
   assert.doesNotMatch(
     fn[1],
     /if \(latestProfiles\.length > 0 && activeProfileIds\.length < latestProfiles\.length\)/,
@@ -53,7 +53,7 @@ test('the dot is unconditional now - no longer only shown for a widget scoped to
 });
 
 test('the dot colour reflects whether the widget is active for the CURRENT profile, not just scoped to some profile', () => {
-  const fn = rendererSrc.match(/function renderWidgetSubmenu\(\) \{([\s\S]*?)\n {2}\}/);
+  const fn = rendererSrc.match(/function buildAuraRow\(widget\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn);
   assert.match(
     fn[1],

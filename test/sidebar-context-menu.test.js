@@ -76,7 +76,9 @@ test('Rename pre-fills the current name and saves through the real setWidgetName
   assert.match(openFn[1], /renameWidgetInput\.select\(\)/);
   const saveFn = js.match(/function saveRename\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(saveFn, 'saveRename has been restructured');
-  assert.match(saveFn[1], /window\.eqTracker\.setWidgetName\(renameWidgetId, renameWidgetInput\.value\.trim\(\) \|\| 'Aura'\)/);
+  assert.match(saveFn[1], /window\.eqTracker\.setWidgetName\(renameWidgetId, value \|\| 'Aura'\)/);
+  // the same modal renames a folder when opened for one
+  assert.match(saveFn[1], /renamingFolderId\) \{[\s\S]*?window\.eqTracker\.renameAuraFolder\(renamingFolderId, value \|\| 'Folder'\)/);
 });
 
 test('Duplicate reuses the exact same call the settings-page button makes', () => {

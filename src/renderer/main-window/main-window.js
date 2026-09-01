@@ -1865,6 +1865,8 @@ function initWidgetsPanel() {
   const maxDurationValueEl = document.getElementById('widget-max-duration-value');
 
   let widgets = [];
+  let auraFolders = []; // sidebar grouping only - see renderWidgetSubmenu
+  const pendingFolderMoves = new Map(); // widgetId -> folderId, applied on drop of a sidebar drag
   let selectedId = null;
   let allKnownBuffs = [];
   // For the sidebar's per-widget profile-scope dot (see renderWidgetSubmenu)
@@ -2313,79 +2315,132 @@ function initWidgetsPanel() {
   }
 
   function refreshWidgets() {
-    return window.eqTracker.listWidgets().then((list) => {
+    return Promise.all([
+      window.eqTracker.listWidgets(),
+      window.eqTracker.listAuraFolders ? window.eqTracker.listAuraFolders() : Promise.resolve([]),
+    ]).then(([list, folders]) => {
       widgets = list;
+      auraFolders = Array.isArray(folders) ? folders : [];
       renderWidgetSubmenu();
     });
   }
 
-  // Widgets live as buttons in the sidebar submenu (under "Overlay
-  // Widgets"), not as page content - clicking one both navigates to the
-  // Overlay Widgets page and opens that widget's settings panel there.
+  // Widgets live as buttons in the sidebar submenu (under "Overlay Auras"), not as page content -
+  // clicking one both navigates to the Overlay Auras page and opens that widget's settings panel.
   // Delete lives inside the settings panel itself, not here.
+  //
+  // Folders (auraFolders) group the list in the sidebar only - they change nothing about what is
+  // on screen (loadout profiles own that). Layout: ungrouped auras first, then each folder as a
+  // collapsible header with its auras indented under it.
+  function buildAuraRow(widget) {
+    const row = document.createElement('div');
+    row.className = 'nav-sub-row';
+
+    const btn = document.createElement('button');
+    btn.className = 'nav-btn nav-sub-btn' + (widget.id === selectedId ? ' active' : '');
+    btn.dataset.page = 'page-overlay';
+    btn.dataset.widgetId = widget.id;
+    btn.addEventListener('click', () => {
+      activateNavButton(btn);
+      selectWidget(widget.id);
+    });
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'nav-sub-name';
+    nameSpan.textContent = widget.name;
+    btn.appendChild(nameSpan);
+
+    // green = active on the CURRENT profile right now; grey = not. See the long note that used to
+    // live here (git blame) - the dot needs only fields already on the widget, the tooltip's
+    // profile-name list waits on latestProfiles.
+    const activeProfileIds = widget.activeProfileIds || [];
+    const isActiveNow = !!widget.showOnAllProfiles || activeProfileIds.includes(currentActiveProfileId);
+    const dotWrap = document.createElement('span');
+    dotWrap.className = 'profile-dot-wrap';
+    const dot = document.createElement('span');
+    dot.className = 'profile-dot' + (isActiveNow ? ' profile-dot-on' : ' profile-dot-off');
+    const tooltip = document.createElement('span');
+    tooltip.className = 'tooltip-bubble';
+    if (widget.showOnAllProfiles) {
+      tooltip.textContent = 'Active now (every profile)';
+    } else {
+      const names = latestProfiles.filter((p) => activeProfileIds.includes(p.id)).map((p) => p.name);
+      const scopeText = names.length > 0 ? `scoped to: ${names.join(', ')}` : 'not scoped to any profile';
+      tooltip.textContent = isActiveNow ? `Active now (${scopeText})` : `Not active on the current profile (${scopeText})`;
+    }
+    dotWrap.append(dot, tooltip);
+    btn.appendChild(dotWrap);
+
+    row.dataset.widgetId = widget.id;
+    row.dataset.folderId = widget.folderId || '';
+    row.draggable = true;
+    row.addEventListener('dragstart', onSubRowDragStart);
+    row.addEventListener('dragover', onSubRowDragOver);
+    row.addEventListener('dragleave', onSubRowDragLeave);
+    row.addEventListener('drop', onSubRowDrop);
+    row.addEventListener('dragend', onSubRowDragEnd);
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openSidebarContextMenu(widget.id, e.clientX, e.clientY);
+    });
+
+    row.appendChild(btn);
+    return row;
+  }
+
+  function buildFolderHeader(folder) {
+    const header = document.createElement('div');
+    header.className = 'nav-folder-header' + (folder.collapsed ? ' collapsed' : '');
+    header.dataset.folderId = folder.id;
+
+    const chevron = document.createElement('span');
+    chevron.className = 'nav-folder-chevron';
+    chevron.textContent = folder.collapsed ? '▸' : '▾';
+    const name = document.createElement('span');
+    name.className = 'nav-folder-name';
+    name.textContent = folder.name;
+    header.append(chevron, name);
+
+    header.addEventListener('click', () => {
+      window.eqTracker.setAuraFolderCollapsed(folder.id, !folder.collapsed).then(refreshWidgets);
+    });
+    header.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openFolderContextMenu(folder.id, e.clientX, e.clientY);
+    });
+    // Drop an aura onto the header to file it in this folder (works on a collapsed one too).
+    header.addEventListener('dragover', (e) => {
+      if (!draggedWidgetId) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      header.classList.add('drop-target');
+    });
+    header.addEventListener('dragleave', () => header.classList.remove('drop-target'));
+    header.addEventListener('drop', (e) => {
+      e.preventDefault();
+      header.classList.remove('drop-target');
+      if (draggedWidgetId) pendingFolderMoves.set(draggedWidgetId, folder.id);
+    });
+    return header;
+  }
+
   function renderWidgetSubmenu() {
-    submenuEl.querySelectorAll('.nav-sub-row').forEach((row) => row.remove());
-    widgets.forEach((widget) => {
-      const row = document.createElement('div');
-      row.className = 'nav-sub-row';
+    submenuEl.querySelectorAll('.nav-sub-row, .nav-folder-header').forEach((el) => el.remove());
+    const folders = auraFolders;
+    const folderIds = new Set(folders.map((f) => f.id));
+    const inFolder = (w) => (w.folderId && folderIds.has(w.folderId) ? w.folderId : '');
 
-      const btn = document.createElement('button');
-      btn.className = 'nav-btn nav-sub-btn' + (widget.id === selectedId ? ' active' : '');
-      btn.dataset.page = 'page-overlay';
-      btn.dataset.widgetId = widget.id;
-      btn.addEventListener('click', () => {
-        activateNavButton(btn);
-        selectWidget(widget.id);
+    // Ungrouped first, in array order.
+    widgets.filter((w) => !inFolder(w)).forEach((w) => submenuEl.insertBefore(buildAuraRow(w), addRow));
+    // Then each folder, in folder order, its auras in array order.
+    folders.forEach((folder) => {
+      submenuEl.insertBefore(buildFolderHeader(folder), addRow);
+      if (folder.collapsed) return;
+      widgets.filter((w) => inFolder(w) === folder.id).forEach((w) => {
+        const row = buildAuraRow(w);
+        row.classList.add('in-folder');
+        submenuEl.insertBefore(row, addRow);
       });
-
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'nav-sub-name';
-      nameSpan.textContent = widget.name;
-      btn.appendChild(nameSpan);
-
-      // Always shown now, on every widget - reported live as liked but backwards: green means
-      // "this is actually on right now" (the current profile, not just scoped to some profile
-      // list), grey means it isn't. The old version only appeared for a widget scoped to fewer
-      // profiles than exist, and used a single colour regardless of whether that scoping
-      // actually included the CURRENT profile - so a widget correctly, deliberately disabled
-      // everywhere (like the reported case) showed the exact same dot as one merely restricted
-      // to two profiles out of three. latestProfiles.length === 0 before the initial fetch
-      // resolves means "unknown yet," not "zero profiles exist" (there's always at least the
-      // default one) - the dot itself only needs currentActiveProfileId/showOnAllProfiles/
-      // activeProfileIds, all already on the widget or fetched independently, so it renders
-      // regardless; only the tooltip's profile-name list waits on latestProfiles.
-      const activeProfileIds = widget.activeProfileIds || [];
-      const isActiveNow = !!widget.showOnAllProfiles || activeProfileIds.includes(currentActiveProfileId);
-      const dotWrap = document.createElement('span');
-      dotWrap.className = 'profile-dot-wrap';
-      const dot = document.createElement('span');
-      dot.className = 'profile-dot' + (isActiveNow ? ' profile-dot-on' : ' profile-dot-off');
-      const tooltip = document.createElement('span');
-      tooltip.className = 'tooltip-bubble';
-      if (widget.showOnAllProfiles) {
-        tooltip.textContent = 'Active now (every profile)';
-      } else {
-        const names = latestProfiles.filter((p) => activeProfileIds.includes(p.id)).map((p) => p.name);
-        const scopeText = names.length > 0 ? `scoped to: ${names.join(', ')}` : 'not scoped to any profile';
-        tooltip.textContent = isActiveNow ? `Active now (${scopeText})` : `Not active on the current profile (${scopeText})`;
-      }
-      dotWrap.append(dot, tooltip);
-      btn.appendChild(dotWrap);
-
-      row.dataset.widgetId = widget.id;
-      row.draggable = true;
-      row.addEventListener('dragstart', onSubRowDragStart);
-      row.addEventListener('dragover', onSubRowDragOver);
-      row.addEventListener('dragleave', onSubRowDragLeave);
-      row.addEventListener('drop', onSubRowDrop);
-      row.addEventListener('dragend', onSubRowDragEnd);
-      row.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        openSidebarContextMenu(widget.id, e.clientX, e.clientY);
-      });
-
-      row.appendChild(btn);
-      submenuEl.insertBefore(row, addRow);
     });
   }
 
@@ -2437,8 +2492,27 @@ function initWidgetsPanel() {
   function onSubRowDragEnd() {
     this.classList.remove('dragging');
     if (draggedWidgetId) {
-      const orderedIds = [...submenuEl.querySelectorAll('.nav-sub-row')].map((r) => r.dataset.widgetId);
-      window.eqTracker.reorderWidgets(orderedIds).then(refreshWidgets);
+      // The new visual order of the aura rows is the new array order.
+      const rows = [...submenuEl.querySelectorAll('.nav-sub-row')];
+      const orderedIds = rows.map((r) => r.dataset.widgetId);
+
+      // Which folder each aura now sits in: the nearest folder header ABOVE it in the list, or ''
+      // (ungrouped) if there's no header before it. Plus any explicit drop onto a folder header.
+      const moves = new Map(pendingFolderMoves);
+      pendingFolderMoves.clear();
+      let currentFolder = '';
+      for (const el of submenuEl.querySelectorAll('.nav-folder-header, .nav-sub-row')) {
+        if (el.classList.contains('nav-folder-header')) { currentFolder = el.dataset.folderId; continue; }
+        const id = el.dataset.widgetId;
+        if (!moves.has(id) && (el.dataset.folderId || '') !== currentFolder) moves.set(id, currentFolder);
+      }
+
+      const applyMoves = [...moves.entries()].map(([id, folderId]) =>
+        window.eqTracker.setWidgetFolder(id, folderId)
+      );
+      Promise.all(applyMoves)
+        .then(() => window.eqTracker.reorderWidgets(orderedIds))
+        .then(refreshWidgets);
     }
     draggedWidgetId = null;
   }
@@ -2467,6 +2541,31 @@ function initWidgetsPanel() {
     // Same rule resetWidgetBtn already uses on the settings page - only an aura built from a
     // premade has a recipe to reset back to.
     sidebarContextResetBtn.style.display = widget && widget.premadeOrigin ? '' : 'none';
+
+    // "Move to folder" items - rebuilt each open, one per folder plus "No folder" (only if the
+    // aura is currently in one). Inserted before the separator.
+    sidebarContextMenuEl.querySelectorAll('.ctx-move-folder').forEach((li) => li.remove());
+    const sep = document.getElementById('sidebar-context-folders-sep');
+    const curFolder = widget ? widget.folderId || '' : '';
+    const targets = [
+      ...(curFolder ? [{ id: '', name: 'No folder' }] : []),
+      ...auraFolders.filter((f) => f.id !== curFolder).map((f) => ({ id: f.id, name: f.name })),
+    ];
+    for (const t of targets) {
+      const li = document.createElement('li');
+      li.className = 'ctx-move-folder';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = t.id ? `Move to "${t.name}"` : 'Move out of folder';
+      b.addEventListener('click', () => {
+        closeSidebarContextMenu();
+        window.eqTracker.setWidgetFolder(widgetId, t.id).then(refreshWidgets);
+      });
+      li.appendChild(b);
+      sep.parentElement.insertBefore(li, sep);
+    }
+    sep.style.display = targets.length ? '' : 'none';
+
     sidebarContextMenuEl.style.display = 'block';
     // Positioned, then clamped - a menu opened by right-clicking a row near the bottom of the
     // window would otherwise draw itself partly off-screen, which on a frameless borderless window
@@ -2500,6 +2599,63 @@ function initWidgetsPanel() {
     if (sidebarContextMenuEl.style.display !== 'none' && !e.defaultPrevented) closeSidebarContextMenu();
   });
 
+  // --- Folder controls (sidebar grouping) ---------------------------------------------------
+  const folderContextMenuEl = document.getElementById('folder-context-menu');
+  const folderContextRenameBtn = document.getElementById('folder-context-rename');
+  const folderContextDeleteBtn = document.getElementById('folder-context-delete');
+  let folderContextId = null;
+
+  function openFolderContextMenu(folderId, x, y) {
+    folderContextId = folderId;
+    folderContextMenuEl.style.display = 'block';
+    const r = folderContextMenuEl.getBoundingClientRect();
+    folderContextMenuEl.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
+    folderContextMenuEl.style.top = `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`;
+  }
+  function closeFolderContextMenu() {
+    folderContextMenuEl.style.display = 'none';
+    folderContextId = null;
+  }
+  window.addEventListener('click', (e) => {
+    if (folderContextMenuEl.style.display !== 'none' && !folderContextMenuEl.contains(e.target)) closeFolderContextMenu();
+  });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFolderContextMenu(); });
+  window.addEventListener('contextmenu', (e) => {
+    if (folderContextMenuEl.style.display !== 'none' && !e.defaultPrevented) closeFolderContextMenu();
+  });
+
+  folderContextRenameBtn.addEventListener('click', () => {
+    const id = folderContextId;
+    closeFolderContextMenu();
+    const folder = auraFolders.find((f) => f.id === id);
+    if (folder) openFolderRenameModal(id, folder.name);
+  });
+  folderContextDeleteBtn.addEventListener('click', () => {
+    const id = folderContextId;
+    closeFolderContextMenu();
+    if (id) window.eqTracker.deleteAuraFolder(id).then(refreshWidgets);
+  });
+
+  const newFolderBtn = document.getElementById('new-aura-folder-btn');
+  if (newFolderBtn) {
+    newFolderBtn.addEventListener('click', () => {
+      window.eqTracker.createAuraFolder('New folder').then((folder) => {
+        refreshWidgets().then(() => { if (folder && folder.id) openFolderRenameModal(folder.id, folder.name); });
+      });
+    });
+  }
+
+  // Reuses the aura rename modal's own DOM/flow (see openRenameModal) but targets a folder.
+  let renamingFolderId = null;
+  function openFolderRenameModal(id, currentName) {
+    renamingFolderId = id;
+    renameWidgetId = null; // make sure saveRename below doesn't also fire the aura path
+    renameWidgetInput.value = currentName || '';
+    renameModalBackdrop.style.display = 'flex';
+    renameWidgetInput.focus();
+    renameWidgetInput.select();
+  }
+
   // Used to call the browser's built-in text-prompt dialog here, which Electron's renderer never
   // actually implements - it silently did nothing, with no error to notice. Reported live as
   // "rename does nothing". The next fix (opening the aura's own settings page and focusing its
@@ -2528,10 +2684,19 @@ function initWidgetsPanel() {
   function closeRenameModal() {
     renameModalBackdrop.style.display = 'none';
     renameWidgetId = null;
+    renamingFolderId = null;
   }
   function saveRename() {
+    const value = renameWidgetInput.value.trim();
+    if (renamingFolderId) {
+      window.eqTracker.renameAuraFolder(renamingFolderId, value || 'Folder').then(() => {
+        refreshWidgets();
+        closeRenameModal();
+      });
+      return;
+    }
     if (!renameWidgetId) return;
-    window.eqTracker.setWidgetName(renameWidgetId, renameWidgetInput.value.trim() || 'Aura').then(() => {
+    window.eqTracker.setWidgetName(renameWidgetId, value || 'Aura').then(() => {
       refreshWidgets();
       closeRenameModal();
     });

@@ -479,6 +479,16 @@ function reorderWidgets(orderedIds) {
   return widgetStore.reorderWidgets(orderedIds);
 }
 
+// Sidebar folders - organisation of the Overlay Auras list only; nothing here touches an overlay
+// window. Thin pass-throughs to widgetStore.
+function getFolders() { return widgetStore.getFolders(); }
+function createFolder(name) { return widgetStore.createFolder(name); }
+function renameFolder(id, name) { return widgetStore.renameFolder(id, name); }
+function deleteFolder(id) { return widgetStore.deleteFolder(id); }
+function setFolderCollapsed(id, collapsed) { return widgetStore.setFolderCollapsed(id, collapsed); }
+function reorderFolders(orderedIds) { return widgetStore.reorderFolders(orderedIds); }
+function setWidgetFolder(id, folderId) { return widgetStore.setWidgetFolder(id, folderId); }
+
 function resetWidgetToDefault(id) {
   const ok = widgetStore.resetToDefault(id);
   // The running overlay window (if any) has a stale config in its own renderer memory until told
@@ -1474,6 +1484,13 @@ module.exports = {
   applyCodeToSelfBuffs,
   deleteWidget,
   reorderWidgets,
+  getFolders,
+  createFolder,
+  renameFolder,
+  deleteFolder,
+  setFolderCollapsed,
+  reorderFolders,
+  setWidgetFolder,
   resetWidgetToDefault,
   applyProfileVisibility,
   setForegroundHidden,

@@ -76,6 +76,7 @@
       <div class="nav-submenu" id="widgets-submenu">
         <div class="nav-add-widget-row">
           <button id="open-add-widget-modal-btn" class="nav-add-widget-btn">+ Add aura</button>
+          <button id="new-aura-folder-btn" class="nav-add-widget-btn" title="Group auras in the sidebar. Folders only tidy this list - they don't change what's on screen.">+ Folder</button>
         </div>
       </div>
 
@@ -2489,8 +2490,16 @@
     <li><button type="button" id="sidebar-context-rename">Rename</button></li>
     <li><button type="button" id="sidebar-context-duplicate">Duplicate</button></li>
     <li><button type="button" id="sidebar-context-export">Export as code...</button></li>
+    <!-- "Move to folder" items are inserted here at open time, one per folder plus "No folder". -->
+    <li id="sidebar-context-folders-sep" class="context-menu-sep" style="display:none"></li>
     <li><button type="button" id="sidebar-context-reset" class="danger">Reset to default</button></li>
     <li><button type="button" id="sidebar-context-delete" class="danger">Delete</button></li>
+  </ul>
+
+  <!-- Right-click a folder header in the Overlay Auras list. -->
+  <ul id="folder-context-menu" class="context-menu" style="display:none">
+    <li><button type="button" id="folder-context-rename">Rename folder</button></li>
+    <li><button type="button" id="folder-context-delete" class="danger">Delete folder (keeps its auras)</button></li>
   </ul>
 
   <!-- Same right-click menu as an aura's sidebar row, scoped to what an action bar actually has
