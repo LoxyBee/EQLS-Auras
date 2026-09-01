@@ -485,13 +485,16 @@ test('unknown-owner charmed pets fold into one "Charmed pets" row', () => {
 
 test('name-collision guard: a name in both friends and enemies is dropped, not credited', () => {
   const e = new DamageEngine();
-  // A charmed "a spite golem" fights a mob you tagged, so rule 2 makes the name a friend.
+  // A charmed "a spite golem" fights a mob you tagged, so rule 2 makes the name a friend...
   e.handleLine(`${T}a zol ghoul knight has taken 5 damage from your Plague III.`, 1000);
   e.handleLine(`${T}a spite golem slashes a zol ghoul knight for 100 points of damage.`, 1000);
   assert.ok(e.friends.has('a spite golem'));
-  // Then you AoE and tag a DIFFERENT, identically-named add - rule 1 puts the same name in enemies.
-  e.handleLine(`${T}a spite golem has taken 5 damage from your Plague III.`, 1000);
-  assert.ok(e.enemies.has('a spite golem'));
+  // ...while a DIFFERENT, identically-named add is something you've mezzed/snared - a real
+  // same-name pet/mob collision (the scenario this guard exists for), fed the same way any other
+  // debuff target reaches the enemy set: via knownEnemiesFn, consulted through _isEnemy.
+  e.setKnownEnemiesFn(() => ['a spite golem']);
+  assert.ok(e._isEnemy('a spite golem'), 'seeded into e.enemies as a side effect');
+  assert.ok(e.enemies.has('a spite golem') && e.friends.has('a spite golem'), 'now in both sets');
   const credited = (e.byAttacker.get('a spite golem') || { damage: 0 }).damage;
   e.handleLine(`${T}a spite golem slashes a zol ghoul knight for 999 points of damage.`, 1000);
   assert.equal(
@@ -499,6 +502,29 @@ test('name-collision guard: a name in both friends and enemies is dropped, not c
     credited,
     'the ambiguous hit was not credited'
   );
+});
+
+// Found by measuring against a real week-long log: "You crush Zorrick for 37 points of damage." -
+// a real groupmate, hit by the player's own melee/AoE (friendly fire, a duel, a mistargeted click -
+// the log doesn't say which). Before this fix, rule 1 unconditionally added the target to
+// `enemies`, so one stray hit like that put a real ally in BOTH sets - and every one of their own
+// outgoing hits for the rest of the session then tripped the collision guard above and got
+// silently dropped. Measured impact on the real log: two groupmates, ~1.1 MILLION damage points
+// (over 6% of the whole log) zeroed out by a combined 3 friendly-fire lines.
+test('a friendly-fire hit on a known ally does not poison the enemy set', () => {
+  const e = new DamageEngine();
+  // Baxa is an established friend from ordinary group play.
+  e.handleLine(`${T}a zol ghoul knight has taken 5 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Baxa slashes a zol ghoul knight for 100 points of damage.`, 1000);
+  assert.ok(e.friends.has('baxa'));
+  // One stray hit lands on Baxa. It is still credited (it happened) - but Baxa must NOT become an
+  // enemy, or every later Baxa hit gets dropped by the collision guard.
+  e.handleLine(`${T}You crush Baxa for 37 points of damage.`, 1000);
+  assert.equal(e.byAttacker.get('You').damage, 42, 'the stray hit is still credited to You (5 earlier + 37)');
+  assert.equal(e.enemies.has('baxa'), false, 'a known friend is not silently made an enemy');
+  // Baxa's own damage keeps counting afterwards.
+  e.handleLine(`${T}Baxa slashes a zol ghoul knight for 200 points of damage.`, 1000);
+  assert.equal(e.byAttacker.get('Baxa').damage, 300);
 });
 
 module.exports = () => report('damage-parser');

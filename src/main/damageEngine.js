@@ -177,10 +177,16 @@ class DamageEngine extends EventEmitter {
     const a = hit.attacker.toLowerCase();
     const t = hit.target.toLowerCase();
 
-    // Rule 1. Unambiguous from grammar alone, so it is checked before anything that could have
-    // learned wrong.
+    // Rule 1. The damage itself is unambiguous - it happened, it was yours, credit it - but WHO
+    // it proves the target to be is not, quite: a real log has friendly fire in it ("You crush
+    // Zorrick for 37 points of damage." - measured, a real groupmate, not a mob). Blindly adding
+    // the target to `enemies` on a name that is ALREADY an established friend poisons the set for
+    // every future line from that person - the collision guard below would then start dropping
+    // their own outgoing damage for the rest of the session, which is a far worse loss than one
+    // stray hit being counted as an enemy would have been. So: credit the hit always, but only
+    // teach `enemies` when the target isn't already known as a person.
     if (hit.attacker === 'You') {
-      this.enemies.add(t);
+      if (!this.friends.has(t)) this.enemies.add(t);
       return 'out';
     }
 
