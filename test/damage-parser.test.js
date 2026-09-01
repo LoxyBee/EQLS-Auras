@@ -216,14 +216,17 @@ test('the timeout is clamped rather than trusted', () => {
 // The rows the overlay draws
 // ---------------------------------------------------------------------------
 
-test('rows are biggest first, with a total on top', () => {
+test('rows are biggest first, with the total LAST and bar-less', () => {
   const e = new DamageEngine();
   e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
   e.handleLine(`${T}Baxa slashes Fright for 300 points of damage.`, 1000);
   const rows = e.getActive(1000);
-  assert.deepEqual(rows.map((r) => r.name), ['Total', 'Baxa', 'You']);
-  assert.match(rows[1].valueText, /^300\s+75%$/);
-  assert.match(rows[2].valueText, /^100\s+25%$/);
+  assert.deepEqual(rows.map((r) => r.name), ['Baxa', 'You', 'Total'], 'total sits at the bottom now');
+  assert.match(rows[0].valueText, /^300\s+75%$/);
+  assert.match(rows[1].valueText, /^100\s+25%$/);
+  const total = rows[2];
+  assert.equal(total.noBar, true, 'the total is a plain label + value, no bar');
+  assert.equal(total.barPercent, null);
 });
 
 // The two fields that let a damage row reuse the buff renderer, and the reason no second renderer
@@ -255,7 +258,7 @@ test('an idle engine draws nothing at all', () => {
 test('the rate on the first hit of a fight is a number', () => {
   const e = new DamageEngine();
   e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
-  const total = e.getActive(1000)[0];
+  const total = e.getActive(1000).find((r) => r.name === 'Total');
   assert.match(total.valueText, /100\/s$/);
   assert.ok(!/Infinity|NaN/.test(total.valueText));
 });

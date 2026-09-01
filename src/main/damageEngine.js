@@ -295,12 +295,15 @@ class DamageEngine extends EventEmitter {
       ...INERT_TIMER_FIELDS,
     }));
 
-    // Always emitted. An aura that does not want it drops it when it draws - see the overlay -
-    // which is what lets one meter show it and another not, from one engine.
-    tiles.unshift({
+    // Always emitted, at the BOTTOM (owner's call). An aura that does not want it drops it when it
+    // draws - see the overlay - which is what lets one meter show it and another not, from one
+    // engine. `noBar` because the total is not a comparison against anything, so a full-width bar
+    // just adds noise; it draws as a plain label + value line.
+    tiles.push({
       name: 'Total',
       valueText: `${formatDamage(this.totalDamage)}  ${formatDamage(Math.round(this.totalDamage / secs))}/s`,
-      barPercent: 100,
+      barPercent: null,
+      noBar: true,
       ...INERT_TIMER_FIELDS,
     });
 

@@ -15,6 +15,8 @@ const { WidgetStore } = require('../src/main/widgetStore');
 const ROOT = path.join(__dirname, '..');
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 const rendererSrc = read('src', 'renderer', 'main-window', 'main-window.js');
+const overlaySrc = read('src', 'renderer', 'overlay', 'overlay.js');
+const engineSrc = read('src', 'main', 'damageEngine.js');
 
 function store() {
   let saved;
@@ -71,6 +73,20 @@ test('resetToDefault rebuilds a damage aura, keeping id / position / name', () =
   assert.equal(fresh.sortOrder, 'default', 'reset restored the row order guard');
   assert.equal(fresh.listWidth, 260);
   assert.equal(fresh.mineOnly, true, 'the origin remembered "just my row"');
+});
+
+test('the Total row is emitted last and bar-less', () => {
+  assert.match(engineSrc, /tiles\.push\(\{\s*\n\s*name: 'Total'/);
+  assert.ok(!engineSrc.includes("tiles.unshift"), 'the total must no longer be unshifted to the top');
+  assert.match(engineSrc, /noBar: true/);
+});
+
+test('the overlay hides the bar for a noBar row and colours per-attacker bars only on a damage meter', () => {
+  assert.match(overlaySrc, /if \(buff\.noBar\) \{\s*\n\s*ref\.barEl\.style\.display = 'none';/);
+  assert.match(overlaySrc, /currentConfig\.buffSource === 'damage' \? damageBarColor\(buff\.name\) : ''/);
+  assert.match(overlaySrc, /function damageBarColor\(name\)/);
+  // a stable hash of the name, so the same person keeps the same colour
+  assert.match(overlaySrc, /hash \* 31 \+ name\.charCodeAt\(i\)/);
 });
 
 module.exports = () => report('damage-parser-unlock');
