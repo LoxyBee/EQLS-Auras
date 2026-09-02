@@ -76,7 +76,7 @@ test('buffNames still has no migration of its own - the shape did not change', (
   // shape change, that change needs its own migration and this comment is where to notice it. The
   // array coercion below is the only thing between an object-shaped buffNames and every aura being
   // silently emptied.
-  assert.match(storeSrc, /version: 5, widgets: \[selfBuffs\]/, 'the store version moved again - if buffNames changed shape it needs its own migration');
+  assert.match(storeSrc, /version: 6, widgets: \[selfBuffs\]/, 'the store version moved again - if buffNames changed shape it needs its own migration');
   assert.match(
     storeSrc,
     /buffNames: Array\.isArray\(widget\.buffNames\) \? widget\.buffNames : \[\]/,

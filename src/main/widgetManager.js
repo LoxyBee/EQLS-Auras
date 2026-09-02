@@ -84,10 +84,9 @@ const forceShown = new Set(); // ids
 // no separate global "enabled" switch anymore. That was an explicit user
 // decision: two independent concepts (a global enable toggle AND per-profile
 // membership) meant two places to look when a widget didn't show up, so they
-// asked for one point of contact instead. The persisted `enabled` field is
-// intentionally left in widgetStore.js untouched (zero-risk to existing
-// saved data, see this project's userData-path incident) but is no longer
-// read for visibility anywhere - don't reintroduce it as a second gate.
+// asked for one point of contact instead. The old persisted `enabled` field
+// was finally removed by the widgets.json v5 -> v6 migration - don't
+// reintroduce it as a second gate.
 //
 // Empty activeProfileIds means HIDDEN EVERYWHERE. This reverses an earlier
 // choice (empty used to mean "show on every profile", as a guard against a
