@@ -6,7 +6,7 @@ What the app does today. Everything here is built and shipped. Backlog is in `do
 
 ## Pitch
 
-**One line.** Stop alt-tabbing to check your buffs. EQLS Auras reads your EverQuest Legends log and shows a countdown overlay on top of the game.
+**One line.** Stop alt-tabbing to check your buffs. Reads your EverQuest Legends log and shows a countdown overlay on top of the game.
 
 **Longer.** EQLS Auras watches your log while you play and puts a click-through overlay on screen with a timer for every buff you're running. Build as many overlays as you want, put them where you want, give them sounds. Point an aura at any line in your log, not just buffs the app knows. It hides when you tab out of EQ and comes back when you tab in. It tracks your weekly raid lockouts, which EQ never prints.
 

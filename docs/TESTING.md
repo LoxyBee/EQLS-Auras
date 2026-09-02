@@ -1768,14 +1768,15 @@ blocked-helper known issue are under "Overlay auto-hide".
       pulling you out; clicking a zone in it focuses the picker window itself but EQ isn't
       minimised or alt-tabbed away, and once you've picked (or dismissed) focus returns to EQ.
 
-## Aggro Board — named mobs and raid bosses (#39, #40)
+## Aggro Board — LOCKED (#39, #40, #48)
 
-- [ ] **In a real raid**, the Aggro Board actually populates. Before this it read nothing for
-      whole fights because every named/raid-boss name is article-less (`Lady Vox`, not
-      `a vis ghoul knight`). Watch that a groupmate's name never shows up as the *mob* being
-      swung at (the article-less discriminator should keep known players out of the mob slot).
-- [ ] The Add-Aura entry is badged **Experimental** if a module sets `experimental: true`
-      (the bundled Aggro Board may or may not — check against its source).
+- [ ] In Add Aura → Standalone tools, **Aggro Board shows as a "Planned" placeholder** and can't
+      be created (`LOCKED_MODULE_AURAS`, owner's call 2 Sep, while raid-boss-mob parsing is
+      reworked). The module still loads; `test/module-aura.test.js` covers the lock.
+- [ ] **A different module** that sets `experimental: true` gets an **Experimental** badge on its
+      Add-Aura entry.
+- (Deferred until the Aggro Board is unlocked: the real-raid populate check, and that a
+  groupmate's name never lands in the mob slot.)
 
 ## Damage meter row cap (#45)
 
