@@ -33,23 +33,57 @@ const {
 const SELF_JOINED = /^You have joined the group\.$/;
 const SELF_REMOVED = /^You have been removed from the group\.$/;
 
+// After a restart, a restored roster older than this is dropped rather than trusted - the app
+// can't see what happened while it was closed (regroup, camp, relog).
+const RESTORE_GRACE_MS = 20 * 60 * 1000;
+
 class GroupRoster {
   constructor() {
     this.members = new Set(); // lowercased, in group now
     this.admitted = new Set(); // lowercased, in group at some point this membership
+    this._persistFn = null;
+    this._lastChangeAt = 0;
+  }
+
+  // Persist on every change so a mid-session restart doesn't blank the roster (the app never
+  // replays log history, so a groupmate who joined before the restart would otherwise be treated
+  // as an outsider on the damage meter). Same shape as abilityGroupTracker.
+  setPersistFn(fn) {
+    this._persistFn = typeof fn === 'function' ? fn : null;
+  }
+
+  _save() {
+    this._lastChangeAt = Date.now();
+    if (this._persistFn) {
+      this._persistFn({ members: [...this.members], admitted: [...this.admitted], at: this._lastChangeAt });
+    }
+  }
+
+  // Restore at startup. A stale snapshot (older than the grace window, or a backwards clock) is
+  // ignored - better a blank roster the first group line refills than a wrong one.
+  restore(snap, now = Date.now()) {
+    if (!snap || typeof snap !== 'object') return;
+    const at = Number(snap.at) || 0;
+    if (at <= 0 || at > now || now - at > RESTORE_GRACE_MS) return;
+    for (const n of Array.isArray(snap.members) ? snap.members : []) this.members.add(String(n).toLowerCase());
+    for (const n of Array.isArray(snap.admitted) ? snap.admitted : []) this.admitted.add(String(n).toLowerCase());
+    this._lastChangeAt = at;
   }
 
   // Wiped when the PLAYER's own membership changes - a new group is a new roster.
   _reset() {
     this.members.clear();
     this.admitted.clear();
+    this._save();
   }
 
   _add(name) {
     if (!name) return;
     const key = String(name).toLowerCase();
+    const before = this.members.size + this.admitted.size;
     this.members.add(key);
     this.admitted.add(key);
+    if (this.members.size + this.admitted.size !== before) this._save();
   }
 
   handleLine(line) {
@@ -82,7 +116,7 @@ class GroupRoster {
     }
     const left = matchGroupMemberLeft(line);
     if (left) {
-      this.members.delete(String(left).toLowerCase());
+      if (this.members.delete(String(left).toLowerCase())) this._save();
       // Deliberately NOT removed from `admitted` - their damage from earlier in the session still
       // counts, and the owner wants someone who rejoins not to have vanished in between.
       return;

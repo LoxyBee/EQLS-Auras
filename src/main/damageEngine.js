@@ -62,6 +62,7 @@
 
 const EventEmitter = require('events');
 const { parseDamageLine } = require('../shared/damageLines');
+const { isPossessivePetName, petOwnerFromName, looksLikeGeneratedPetName } = require('../shared/petNames');
 
 // Seconds without counted damage before the fight is considered over. Ten is the conventional
 // answer and is as arbitrary as everyone else's ten; it is the per-aura default, not a constant
@@ -415,20 +416,50 @@ class DamageEngine extends EventEmitter {
         bump(petKey, r, { isPet: true });
         continue;
       }
+      // A possessive-named pet ("Chrysaetos`s pet") is unambiguously a pet whoever owns it - fold
+      // every one into a single "Pets" row, in every scope that shows other people at all. (Owner,
+      // 1-2 Sep: her + her group get their own rows; identifiable pets share a "Pets" row.)
+      if (isPossessivePetName(rawName)) {
+        if (scope === 'mine') continue;
+        const owner = (petOwnerFromName(rawName) || '').toLowerCase();
+        if (scope === 'group' && !admits(owner)) continue;
+        bump('Pets', r, { isPet: true });
+        continue;
+      }
+
       if (scope === 'mine') continue;
       if (scope === 'group') {
         if (allyLeader && admits(allyLeader)) bump(rawName, r, { isPet: true });
         else if (admits(key)) bump(rawName, r);
         continue;
       }
-      // scope 'all'
-      bump(rawName, r);
+
+      // scope 'all'. Her + anyone the group roster has admitted this session get their own row.
+      // Everyone else: a summoned-pet-shaped name (corroboration only - the roster is primary, so
+      // this only fires for a name the roster does NOT vouch for) goes to "Pets"; any other
+      // outsider goes to "Other". If the roster is empty (grouped before launch, or a restart) we
+      // can't tell an outsider from a groupmate, so everyone keeps their own row - the pre-existing
+      // behaviour - and only possessive pets (handled above, roster-independent) still fold.
+      if (admittedList.length === 0 || admits(key)) {
+        bump(rawName, r);
+      } else if (looksLikeGeneratedPetName(rawName)) {
+        bump('Pets', r, { isPet: true });
+      } else {
+        bump('Other', r, { isOther: true });
+      }
     }
 
     const totalDamage = [...agg.values()].reduce((s, r) => s + r.damage, 0);
     const rows = [...agg.entries()]
-      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits, isPet: !!r.isPet, unknownPets: !!r.unknownPets }))
-      .sort((a, b) => b.damage - a.damage);
+      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits, isPet: !!r.isPet, unknownPets: !!r.unknownPets, isOther: !!r.isOther }))
+      // biggest first, but the "Pets" and "Other" summary rows always sink to the bottom above the
+      // total, regardless of how much damage they carry.
+      .sort((a, b) => {
+        const aSummary = a.name === 'Pets' || a.name === 'Other';
+        const bSummary = b.name === 'Pets' || b.name === 'Other';
+        if (aSummary !== bSummary) return aSummary ? 1 : -1;
+        return b.damage - a.damage;
+      });
     const top = rows.length ? rows[0].damage : 0;
     if (totalDamage <= 0) return [];
 
@@ -454,6 +485,7 @@ class DamageEngine extends EventEmitter {
         // display hints for the overlay; nothing downstream needs them.
         isPet: r.isPet,
         unknownPets: r.unknownPets,
+        isOther: r.isOther,
         ...INERT_TIMER_FIELDS,
       };
     });

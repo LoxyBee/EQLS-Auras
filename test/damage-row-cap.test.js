@@ -53,8 +53,8 @@ test('damageRowCap is in SHAREABLE_FIELDS so it rides a share code', () => {
 
 test('the overlay keeps the top N attacker rows and never caps the Total', () => {
   assert.match(overlaySrc, /const cap = Number\(currentConfig\.damageRowCap\);/);
-  assert.match(overlaySrc, /rows = rows\.filter\(\(b\) => b\.totalRow \|\| \+\+kept <= cap\);/,
-    'the cap either miscounts the Total row or drops it');
+  assert.match(overlaySrc, /b\.totalRow \|\| b\.isOther \|\| b\.name === 'Pets' \|\| \+\+kept <= cap/,
+    'the cap must not count the Total / Pets / Other summary rows against N');
   // and it sits inside the damage branch, after the other row filters
   const dmgAt = overlaySrc.indexOf("if (currentConfig.buffSource === 'damage') {");
   const capAt = overlaySrc.indexOf('currentConfig.damageRowCap');

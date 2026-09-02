@@ -253,6 +253,11 @@ abilityGroupTracker.setOnChangeFn(() => broadcast('actionBar:abilityGroupChanged
 // restart (like the current zone), so persist it by name and restore it once the bars are known.
 abilityGroupTracker.setPersistFn((state) => saveJson('activeAbilityGroups', state));
 abilityGroupTracker.restore(loadJson('activeAbilityGroups', { stance: null, invocation: null }));
+// Restart protection for the damage meter's group scope + the Pets/Other bucketing - a groupmate
+// who joined before the restart would otherwise read as an outsider (the app never replays log
+// history). A snapshot older than the grace window is dropped by restore().
+groupRoster.setPersistFn((state) => saveJson('groupRoster', state));
+groupRoster.restore(loadJson('groupRoster', null));
 // See customTimerEngine._resolveCastName. getByName tries the exact name first and only then the
 // rank-stripped one, which is what tells a mote rank ("Cannibalize V" -> Cannibalize) apart from a
 // spell whose name merely ends in a numeral ("Yaulp III" -> itself).

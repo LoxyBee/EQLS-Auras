@@ -483,6 +483,36 @@ test('unknown-owner charmed pets fold into one "Charmed pets" row', () => {
   assert.match(pets[0].valueText, /^200/);
 });
 
+// Owner, 2 Sep: a mage pet ("Kobektik") showed as its own attacker row. In scope 'all', once the
+// group roster is known, only you + admitted members get their own row; a summoned-pet-shaped
+// name the roster does NOT vouch for folds into "Pets", any other outsider folds into "Other".
+test("scope 'all': with a roster, outsiders bucket into Pets / Other", () => {
+  const e = new DamageEngine();
+  e.setGroupFn(() => ['avenrae', 'shubthulu']);
+  e.handleLine(`${T}a zol ghoul knight has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 400 points of damage.`, 1000);
+  e.handleLine(`${T}Kobektik hit a zol ghoul knight for 200 points of magic damage by Fire Bolt.`, 1000);
+  e.handleLine(`${T}Kaerthos slashes a zol ghoul knight for 50 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'all');
+  assert.ok(rows.find((r) => r.name === 'Avenrae'), 'an admitted member keeps their own row');
+  const pets = rows.find((r) => r.name === 'Pets');
+  assert.ok(pets && pets.isPet, 'the mage pet folds into Pets');
+  assert.match(pets.valueText, /^200/);
+  const other = rows.find((r) => r.name === 'Other');
+  assert.ok(other && other.isOther, 'the non-group stranger folds into Other');
+  assert.match(other.valueText, /^50/);
+  assert.equal(rows.find((r) => r.name === 'Kobektik'), undefined, 'the pet is not its own row any more');
+});
+
+test("scope 'all': a possessive-named pet folds into Pets regardless of roster", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}a zol ghoul knight has taken 10 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}a zol ghoul knight has taken 300 damage from Ice Comet by Chrysaetos\`s pet.`, 1000);
+  // ^ "X has taken N damage from SPELL by ATTACKER" - attacker is Chrysaetos`s pet
+  const rows = e.getActive(1000, 'all');
+  assert.ok(rows.find((r) => r.name === 'Pets'), 'a possessive pet folds even with no group roster');
+});
+
 test('name-collision guard: a name in both friends and enemies is dropped, not credited', () => {
   const e = new DamageEngine();
   // A charmed "a spite golem" fights a mob you tagged, so rule 2 makes the name a friend...
