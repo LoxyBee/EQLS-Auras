@@ -108,14 +108,11 @@ test('the collapsed topic headers carry a value-preview summary that is actually
   );
   assert.match(js, /settingsPanel\.addEventListener\('input'[\s\S]{0,80}refreshPanelTopicSummaries/);
 
-  // App-settings topics (Setup page, workstream C) are filled by refreshAppSettingsSummaries.
-  for (const id of ['topic-icon-set-summary', 'topic-merge-rule-summary', 'topic-ui-scale-summary', 'topic-hide-hotkey-summary', 'topic-app-info-summary']) {
-    assert.match(html, new RegExp(`id="${id}"`), `${id} span is missing`);
-  }
-  assert.match(js, /function refreshAppSettingsSummaries\(\)/);
-  assert.match(js, /appSettingsBlock\.addEventListener\('change', refreshAppSettingsSummaries\)/);
-  // called after each async control load settles, or the previews are blank on first open
-  assert.ok((js.match(/refreshAppSettingsSummaries\(\)/g) || []).length >= 5, 'not called from every control load path');
+  // The App-settings rows on the Setup page are now flat cards (owner, Sep 1: "these settings
+  // don't need accordian, just put them seperatly") - no collapsed topic, so no value-preview
+  // summary span and no refreshAppSettingsSummaries.
+  assert.doesNotMatch(html, /id="topic-icon-set-summary"/, 'the old app-settings summary span is back');
+  assert.doesNotMatch(js, /refreshAppSettingsSummaries/, 'refreshAppSettingsSummaries should be gone with the accordion');
 });
 
 test('every getElementById the panel-topic map names actually exists in index.html', () => {

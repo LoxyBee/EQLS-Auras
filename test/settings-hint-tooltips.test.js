@@ -86,22 +86,24 @@ test('Setup: still-open cards carry their explanation in a title=', () => {
   }
 });
 
-test('workstream C - the set-once settings live in ONE "App settings" block of collapsed topics', () => {
+test('workstream C - the set-once App settings are flat, separate cards (accordion removed)', () => {
   const page = between('id="page-settings"', 'id="page-log"');
-  // one shared container, not six cards
   const block = page.indexOf('id="app-settings-block"');
   assert.ok(block !== -1, 'the App settings block is gone');
   const blockEnd = page.indexOf('</section>', block);
   const body = page.slice(block, blockEnd);
-  for (const id of ['topic-icon-set', 'topic-merge-rule', 'topic-ui-scale', 'topic-hide-hotkey', 'topic-app-info']) {
-    const at = body.indexOf(`id="${id}"`);
-    assert.ok(at !== -1, `${id} is not inside the App settings block`);
-    assert.doesNotMatch(body.slice(at - 20, at), /topic open/, `${id} should start collapsed`);
-    const head = body.slice(at, body.indexOf('</button>', at));
-    assert.ok(hasRealTitle(head), `${id} head has no explanation title`);
+  // owner, Sep 1: "these settings don't need accordian, just put them seperatly" - each row is
+  // now a plain card with an <h3>, no collapsing topic head.
+  assert.doesNotMatch(body, /data-topic|data-toggle|topic-head/, 'an accordion topic is still in App settings');
+  for (const heading of ['Icon set', 'Merged tiles', 'App text size', 'Hide-auras hotkey', 'Version &amp; app data']) {
+    const re = new RegExp(`<h3[^>]*>${heading}</h3>`);
+    assert.match(body, re, `"${heading}" is not a flat card heading in App settings`);
+    const at = body.search(re);
+    // the explanation moved from the topic-head button onto the h3's own title=
+    assert.ok(hasRealTitle(body.slice(at, at + 300)), `"${heading}" lost its explanation title`);
   }
-  // no per-item card wrapper inside the block - the whole point is one shared border
-  assert.doesNotMatch(body, /<div class="card"/, 'a per-topic card wrapper crept back into App settings');
+  // the icon-set body id must survive - initWidgetsPanel's iconSetCard lookup must not be null
+  assert.match(body, /id="icon-set-card"/, 'icon-set-card id was dropped in the flatten');
   // AA setup is CHARACTER config, not app config - stays its own open card, NOT in the block
   assert.doesNotMatch(body, /topic-aa-setup|>AA setup</, 'AA setup was bundled into App settings - it belongs under Character setup');
   const charSetup = page.indexOf('settings-page-section-title">Character setup');
