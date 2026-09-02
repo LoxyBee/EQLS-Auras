@@ -1104,13 +1104,16 @@
             <select id="spellbook-file-select" class="text-input" style="max-width:22em"></select>
             <button type="button" id="spellbook-file-reset" style="display:none">Back to auto</button>
           </div>
-          <div class="row">
+          <!-- Hidden while auto-detection from the log is working (the common case). Shown only when
+               the spellbook can't be found, or a manual override is already set - see
+               renderSpellbookState(). -->
+          <div class="row" id="spellbook-char-row" style="display:none">
             <span class="label" title="Only if the app can't find your spellbook. Builds the exact filename instead of guessing from your newest log.">Character:</span>
             <input type="text" id="spellbook-char-name" class="text-input" placeholder="name" autocomplete="off" style="width:9em" />
             <span>on</span>
             <input type="text" id="spellbook-char-server" class="text-input" placeholder="server" autocomplete="off" style="width:8em" />
           </div>
-          <p class="hint" id="spellbook-char-hint"></p>
+          <p class="hint" id="spellbook-char-hint" style="display:none"></p>
           <div id="spellbook-missing-hint" style="display:none">
             <p class="hint warn-hint" title="Without your spellbook the app can't tell which shared-text buffs were yours, so it ignores them (700+ in one session). The game does not write this file on its own — run the command below, and again whenever you scribe a spell.">
               <strong>This is worth fixing.</strong> Run this in game to generate your spellbook file:
@@ -1234,23 +1237,28 @@
             <p class="hint" id="hide-hotkey-hint"></p>
           </div>
 
-          <div class="card">
-            <h3 title="Build version, where your data lives, and the backup / move-to-another-PC tools.">Version &amp; app data</h3>
-            <p id="status">Checking...</p>
-            <dl id="version-info"></dl>
-            <p class="hint">Auras, profiles, buff fixes, sounds and settings all live in one folder — uninstalling never touches it.</p>
-            <div class="row">
-              <button type="button" id="backup-config-btn" class="btn-prominent" title="Copies your app data into a dated folder — a snapshot to fall back on before an update.">Back up now</button>
-              <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
-            </div>
-            <p class="hint" id="backup-config-status"></p>
-            <p class="hint"><strong>Move to another PC, or hand the app to someone:</strong></p>
-            <div class="row">
-              <button type="button" id="export-config-btn" title="Writes a bundle (auras, profiles, buff edits, sounds, settings) into a folder you can zip and send.">Export config…</button>
-              <button type="button" id="import-config-btn" title="Replaces this PC's config with a bundle. Your current config is backed up first; the app restarts.">Import config…</button>
-              <button type="button" id="open-exports-folder-btn">📁 Open exports folder</button>
-            </div>
-            <p class="hint" id="transfer-config-status"></p>
+          <div class="topic" id="topic-app-info" data-topic>
+            <button type="button" class="topic-head" data-toggle title="Build version, where your data lives, and the backup / move-to-another-PC tools.">
+              <span class="chev"></span>
+              <span class="topic-title">Version &amp; app data</span>
+            </button>
+            <div class="topic-body"><div class="topic-body-inner">
+              <p id="status">Checking...</p>
+              <dl id="version-info"></dl>
+              <p class="hint">Auras, profiles, buff fixes, sounds and settings all live in one folder — uninstalling never touches it.</p>
+              <div class="row">
+                <button type="button" id="backup-config-btn" class="btn-prominent" title="Copies your app data into a dated folder — a snapshot to fall back on before an update.">Back up now</button>
+                <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
+              </div>
+              <p class="hint" id="backup-config-status"></p>
+              <p class="hint"><strong>Move to another PC, or hand the app to someone:</strong></p>
+              <div class="row">
+                <button type="button" id="export-config-btn" title="Writes a bundle (auras, profiles, buff edits, sounds, settings) into a folder you can zip and send.">Export config…</button>
+                <button type="button" id="import-config-btn" title="Replaces this PC's config with a bundle. Your current config is backed up first; the app restarts.">Import config…</button>
+                <button type="button" id="open-exports-folder-btn">📁 Open exports folder</button>
+              </div>
+              <p class="hint" id="transfer-config-status"></p>
+            </div></div>
           </div>
         </div>
 
@@ -1792,8 +1800,9 @@
           <h3>Report a problem</h3>
           <p class="hint">
             Copies the app version and today's detection log (if Diagnostics is on, under the Log
-            page) to your clipboard, ready to paste where you report bugs. The detection log is
-            what makes a report diagnosable.
+            page) to your clipboard, then post it in the
+            <a href="#" id="report-discord-link">EQLsource Discord</a>. The detection log is what
+            makes a report diagnosable.
           </p>
           <div class="row">
             <button type="button" id="copy-bug-report-btn">📋 Copy bug report</button>

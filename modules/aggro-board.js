@@ -132,11 +132,14 @@ module.exports = {
   id: 'aggro-board',
   name: 'Aggro Board',
   apiVersion: 1,
-  description: 'Who the mob is actually swinging at. Observed, not estimated.',
+  description: 'Who the mob is swinging at, and who is next in line.',
   hasAura: true,
-  // Marked experimental in the Add Aura list: the melee-line parsing is being reworked to
-  // recognise article-less named / raid-boss mobs ("Lady Vox", "Unmoving"), which it currently
-  // misses entirely - so the board is unreliable in raid content until that lands.
+  // Marked experimental, and currently LOCKED out of the Add Aura list by the renderer
+  // (LOCKED_MODULE_AURAS in main-window.js) - shown as a "Planned" placeholder instead. The
+  // melee-line parsing is being reworked to recognise article-less named / raid-boss mobs
+  // ("Lady Vox", "Unmoving"), which it currently misses entirely, so the board is unreliable in
+  // raid content. The module stays loaded (its parsing is tested) but is not creatable until the
+  // rework lands.
   experimental: true,
   // Its two options live on the aura's own settings panel, not a sidebar page - the recommended
   // shape for a module without a lot of GLOBAL settings. See docs/MODULE-AUTHORING.md.

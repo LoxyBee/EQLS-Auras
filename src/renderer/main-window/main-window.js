@@ -16,12 +16,19 @@ async function init() {
     statusEl.textContent = 'Something is wrong: ' + err.message;
   }
 
-  // About-page site link - opens in the real browser via the main process, never navigates here.
+  // Links that open in the real browser via the main process, never navigate this window.
   const aboutSiteLink = document.getElementById('about-site-link');
   if (aboutSiteLink && window.eqTracker.openExternal) {
     aboutSiteLink.addEventListener('click', (e) => {
       e.preventDefault();
       window.eqTracker.openExternal('https://eqlsource.com/tools/');
+    });
+  }
+  const reportDiscordLink = document.getElementById('report-discord-link');
+  if (reportDiscordLink && window.eqTracker.openExternal) {
+    reportDiscordLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.eqTracker.openExternal('https://discord.gg/SxU3ZYxb');
     });
   }
 
@@ -626,6 +633,7 @@ function initDetectionSettingsPanel() {
   const spellbookCharNameEl = document.getElementById('spellbook-char-name');
   const spellbookCharServerEl = document.getElementById('spellbook-char-server');
   const spellbookCharHintEl = document.getElementById('spellbook-char-hint');
+  const spellbookCharRowEl = document.getElementById('spellbook-char-row');
 
   const spellbookFileRowEl = document.getElementById('spellbook-file-row');
   const spellbookFileSelectEl = document.getElementById('spellbook-file-select');
@@ -644,6 +652,15 @@ function initDetectionSettingsPanel() {
     // A pinned file that has since moved or been deleted: getFilePath() is null, so without this
     // the generic "not found, run /outputfile spellbook" block below would show - wrong advice,
     // since the fix is to pick another file or go back to auto, not to regenerate anything.
+    // The Character/server override is a fallback for when auto-detection from the log fails or
+    // picks the wrong character. It's hidden entirely while detection is working (the common case),
+    // so the card isn't asking for something already handled - shown only when there's no spellbook
+    // found, or the user has already pinned a character/file.
+    const showCharOverride =
+      !state.filePath || state.mode === 'manual' || state.mode === 'file';
+    if (spellbookCharRowEl) spellbookCharRowEl.style.display = showCharOverride ? '' : 'none';
+    if (spellbookCharHintEl) spellbookCharHintEl.style.display = showCharOverride ? '' : 'none';
+
     if (state.mode === 'file' && !state.filePath) {
       spellbookStatusEl.textContent = 'The pinned spellbook file is missing — pick another below, or go back to auto.';
       spellbookStatusEl.classList.add('warn');
@@ -4296,6 +4313,13 @@ function initWidgetsPanel() {
         'Shows who hit the boss first, or who it hit first. Not built yet — and it can only be as ' +
         'complete as your own log.',
     },
+    {
+      name: 'Aggro Board',
+      group: 'standalone',
+      description:
+        'Who the mob is swinging at, and who is next in line. Locked while its raid-boss mob ' +
+        'reading is reworked.',
+    },
   ];
 
   // ---- The buff-timer premade (note 14) --------------------------------------------------
@@ -4585,10 +4609,14 @@ function initWidgetsPanel() {
   // Aura list, synthesised into the same premade shape so renderPremadeChoice needs no special
   // case. Fed off the shared module registry (hot-reload), which also re-renders an open module
   // aura's settings panel so its controls appear the moment a module is dropped in.
+  // Modules that CAN be auras but are held back - shown as a "Planned" placeholder in the
+  // Standalone group (see PLANNED_PREMADE_WIDGETS) rather than offered for creation. The Aggro
+  // Board is here while its raid-mob parsing is reworked; it stays loaded, just not creatable.
+  const LOCKED_MODULE_AURAS = new Set(['aggro-board']);
   let moduleAuraChoices = [];
   onModuleRegistryChange((modules) => {
     moduleAuraChoices = (modules || [])
-      .filter((m) => m.hasAura && m.enabled)
+      .filter((m) => m.hasAura && m.enabled && !LOCKED_MODULE_AURAS.has(m.id))
       .map((m) => ({
         name: m.name,
         description: m.description || 'A custom module.',

@@ -92,16 +92,21 @@ test('workstream C - the set-once App settings are flat, separate cards (accordi
   assert.ok(block !== -1, 'the App settings block is gone');
   const blockEnd = page.indexOf('</section>', block);
   const body = page.slice(block, blockEnd);
-  // owner, Sep 1: "these settings don't need accordian, just put them seperatly" - each row is
-  // now a plain card with an <h3>, no collapsing topic head.
-  assert.doesNotMatch(body, /data-topic|data-toggle|topic-head/, 'an accordion topic is still in App settings');
-  for (const heading of ['Icon set', 'Merged tiles', 'App text size', 'Hide-auras hotkey', 'Version &amp; app data']) {
+  // owner, Sep 1: "these settings don't need accordian, just put them seperatly" - the four quick
+  // rows are now plain cards with an <h3>, no collapsing topic head.
+  for (const heading of ['Icon set', 'Merged tiles', 'App text size', 'Hide-auras hotkey']) {
     const re = new RegExp(`<h3[^>]*>${heading}</h3>`);
     assert.match(body, re, `"${heading}" is not a flat card heading in App settings`);
     const at = body.search(re);
     // the explanation moved from the topic-head button onto the h3's own title=
     assert.ok(hasRealTitle(body.slice(at, at + 300)), `"${heading}" lost its explanation title`);
   }
+  // Version & app data is the ONE exception - owner, Sep 2: "i never asked for that one to be
+  // changed." It stays a collapsible topic (it holds the rarely-touched backup/export tools).
+  const appInfo = body.indexOf('id="topic-app-info"');
+  assert.ok(appInfo !== -1, 'Version & app data should still be a collapsible topic');
+  assert.match(body.slice(appInfo - 40, appInfo + 260), /class="topic" id="topic-app-info" data-topic/);
+  assert.ok(hasRealTitle(body.slice(appInfo, appInfo + 300)), 'the app-info topic head lost its title');
   // the icon-set body id must survive - initWidgetsPanel's iconSetCard lookup must not be null
   assert.match(body, /id="icon-set-card"/, 'icon-set-card id was dropped in the flatten');
   // AA setup is CHARACTER config, not app config - stays its own open card, NOT in the block
