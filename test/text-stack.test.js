@@ -148,10 +148,37 @@ test('a Resist flash aura the user had already widened keeps its own "Lines visi
   assert.equal(w.maxStackTextLines, 4);
 });
 
-test('the store version lands on 5 after the migrations', () => {
+test('the store version lands on 6 after the migrations', () => {
   const store = loadWith([{ id: 'sb', kind: 'self-buffs-builtin', name: 'Self Buffs' }]);
   store.getById('sb'); // force load
-  assert.equal(store.data.version, 5);
+  assert.equal(store.data.version, 6);
+});
+
+test('v5 -> v6 strips the dead `enabled` field from every widget', () => {
+  const store = loadWith(
+    [
+      { id: 'sb', kind: 'self-buffs-builtin', name: 'Self Buffs', enabled: true },
+      { id: 'c1', kind: 'custom', name: 'One', enabled: false, buffFilterMode: 'explicit', buffNames: ['Mez'] },
+      { id: 'c2', kind: 'custom', name: 'Two' }, // never had the field
+    ],
+    5
+  );
+  store.getById('sb'); // force load + migrate
+  for (const w of store.getAll()) {
+    assert.ok(!('enabled' in w), `${w.id} still carries enabled`);
+  }
+  // and it stays gone across a reload (nothing re-adds it)
+  const reloaded = new WidgetStore({
+    loadJson: (n, f) => (n === 'widgets' ? JSON.parse(JSON.stringify(store.data)) : f),
+    saveJson: () => {},
+  });
+  for (const w of reloaded.getAll()) assert.ok(!('enabled' in w));
+});
+
+test('a fresh widget has no `enabled` field', () => {
+  const store = loadWith([{ id: 'sb', kind: 'self-buffs-builtin', name: 'Self Buffs' }]);
+  const w = store.create('New one');
+  assert.ok(!('enabled' in w));
 });
 
 test('v3->v4 drops a GCD-tracker aura and strips a stray anyCast timer', () => {
@@ -177,7 +204,7 @@ test('v3->v4 drops a GCD-tracker aura and strips a stray anyCast timer', () => {
   assert.ok(!store.getById('gcd'), 'the GCD aura survived the migration');
   const mixed = store.getById('mixed');
   assert.deepEqual(mixed.customTimers.map((t) => t.id), ['keep'], 'the stray anyCast timer was not stripped');
-  assert.equal(store.data.version, 5);
+  assert.equal(store.data.version, 6);
 });
 
 // ---------------------------------------------------------------------------

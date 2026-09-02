@@ -146,7 +146,6 @@ function defaultSelfBuffsWidget(overrides = {}) {
     folderId: '',
     name: 'Self Buffs',
     deletable: false,
-    enabled: true,
     displayMode: 'icons',
     timerFormat: 'rounded-minutes',
     textSize: 24,
@@ -370,7 +369,6 @@ function defaultCustomWidget(name) {
     name,
     folderId: '', // sidebar grouping only - see the renderer
     deletable: true,
-    enabled: true,
     displayMode: 'list',
     timerFormat: 'minutes-seconds',
     textSize: DEFAULT_TEXT_SIZE,
@@ -1342,6 +1340,16 @@ class WidgetStore {
         }
         data.version = 5;
       }
+      // v5 -> v6: drop the dead `enabled` field. It was the old global "show this aura" switch;
+      // `activeProfileIds` replaced it as the single visibility gate (see widgetManager's
+      // isVisibleForActiveProfile and CLAUDE.md gotcha #10). Nothing has read `enabled` for
+      // visibility since then - it was only left on disk to avoid a migration. This is that
+      // migration. Version-gated: runs once, and a widget re-saved afterward never carries it
+      // (normalizeWidget spreads the stored object, which no longer has the key).
+      if (data.version < 6) {
+        for (const widget of data.widgets) delete widget.enabled;
+        data.version = 6;
+      }
       this.store.saveJson('widgets', data);
       return data;
     }
@@ -1355,14 +1363,13 @@ class WidgetStore {
     // migration path silently reintroduce the old list/null layout it used to always pass here.
     const overrides = {};
     if (Object.keys(oldSettings).length > 0) {
-      overrides.enabled = oldSettings.enabled !== false;
       overrides.displayMode = oldSettings.displayMode === 'icons' ? 'icons' : 'list';
     }
     if (oldPosition) overrides.position = oldPosition;
 
     const selfBuffs = defaultSelfBuffsWidget(overrides);
 
-    const data = { version: 5, widgets: [selfBuffs], folders: [] };
+    const data = { version: 6, widgets: [selfBuffs], folders: [] };
     this.store.saveJson('widgets', data);
     return data;
   }
