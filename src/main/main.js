@@ -1283,6 +1283,8 @@ function pushLockoutBoard() {
   if (json !== lastLockoutBoardJSON) {
     lastLockoutBoardJSON = json;
     broadcast('lockout:board', board);
+    const summary = Object.entries(board).map(([id, rows]) => `${id.slice(0, 8)}:${rows.length}`).join(' ');
+    debugLog(`LOCKOUT board broadcast -> ${summary || '(no lockout auras)'}`);
   }
   // Re-arm a single timer for the soonest hide, so a board clears itself even with no further
   // log activity. One timer for all lockout auras - they rarely overlap and the recompute is tiny.
