@@ -392,5 +392,76 @@ test('the real roster: a full 14 comes out, and Strength + Infusion of Spirit bo
   assert.equal(plan.slots[1].name, 'Infusion of Spirit');
 });
 
+// ---------------------------------------------------------------------------
+// The 2 Sep bundle - Fix 7 (set comparison), Fix 3 (coverage), Fix 11 (playstyle)
+// ---------------------------------------------------------------------------
+
+// A combination line that blocks two individual lines, all with a score.
+const COMBO_LINES = [
+  { id: 'l.str', headings: ['h.str'], members: ['Str'] },
+  { id: 'l.dex', headings: ['h.dex'], members: ['Dex'] },
+  { id: 'l.combo', combination: true, headings: ['h.str', 'h.dex'], blocks: ['l.str', 'l.dex'], members: ['Combo'] },
+];
+
+test('Fix 7: a combination buff is dropped when the individuals it displaces outscore it', () => {
+  const roster = [
+    buff({ name: 'Combo', spellId: 1, category: 'C', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'Str', spellId: 2, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'Dex', spellId: 3, category: 'D', classes: 'SHM 50', level: 50 }),
+  ];
+  const spellData = fakeSpellData({ 1: [{ stat: 'STR', value: 60, order: 0 }], 2: [{ stat: 'STR', value: 40, order: 0 }], 3: [{ stat: 'DEX', value: 40, order: 1 }] });
+  withLines({}, COMBO_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['SHM'], lines, spellData });
+    // Combo 60 < Str 40 + Dex 40 = 80 -> individuals win
+    assert.deepEqual(plan.slots.map((s) => s.name).sort(), ['Dex', 'Str']);
+    const over = plan.overflow.find((o) => o.name === 'Combo');
+    assert.match(over.reason, /together are worth more \(80 vs 60\)/);
+    assert.ok(/Str/.test(over.reason) && /Dex/.test(over.reason));
+  });
+});
+
+test('Fix 7: the combination buff still wins when it outscores the set', () => {
+  const roster = [
+    buff({ name: 'Combo', spellId: 1, category: 'C', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'Str', spellId: 2, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'Dex', spellId: 3, category: 'D', classes: 'SHM 50', level: 50 }),
+  ];
+  const spellData = fakeSpellData({ 1: [{ stat: 'STR', value: 200, order: 0 }], 2: [{ stat: 'STR', value: 40, order: 0 }], 3: [{ stat: 'DEX', value: 40, order: 1 }] });
+  withLines({}, COMBO_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['SHM'], lines, spellData });
+    assert.deepEqual(plan.slots.map((s) => s.name), ['Combo']);
+  });
+});
+
+test('Fix 3: stackingCoverage counts slotted buffs that sat on a known line', () => {
+  const roster = [
+    buff({ name: 'Str', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'Mystery Buff', spellId: 2, category: 'M', classes: 'SHM 50', level: 50 }),
+  ];
+  const spellData = fakeSpellData({ 1: [{ stat: 'STR', value: 40, order: 0 }], 2: [{ stat: 'AC', value: 30, order: 1 }] });
+  withLines({}, COMBO_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['SHM'], lines, spellData });
+    assert.equal(plan.slots.length, 2);
+    assert.deepEqual(plan.stackingCoverage, { known: 1, total: 2 }); // Str is on l.str, Mystery Buff isn't
+  });
+});
+
+test('Fix 11: a playstyle preset reorders via weights, balanced is the default', () => {
+  const roster = [
+    buff({ name: 'BigStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'BigInt', spellId: 2, category: 'I', classes: 'SHM 50', level: 50 }),
+  ];
+  const byId = { 1: [{ stat: 'STR', value: 50, order: 0 }], 2: [{ stat: 'INT', value: 50, order: 1 }] };
+  const spellData = {
+    ...fakeSpellData(byId),
+    score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat]) || 1), 0),
+    weightScale: (style) => (style === 'melee' ? { STR: 2, INT: 0.35 } : style === 'caster' ? { STR: 0.35, INT: 2 } : {}),
+  };
+  const names = (style) => computePlan({ roster, classes: ['SHM'], spellData, playstyle: style }).candidates.map((c) => c.name);
+  assert.deepEqual(names('melee')[0], 'BigStr');
+  assert.deepEqual(names('caster')[0], 'BigInt');
+  assert.equal(computePlan({ roster, classes: ['SHM'], spellData }).playstyle, 'balanced');
+});
+
 module.exports = () => report('buff-planner');
 if (require.main === module) report('buff-planner').then((n) => process.exit(n ? 1 : 0));

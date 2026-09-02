@@ -138,16 +138,17 @@ test('planner:compute always uses the game stacking data when the spell file is 
 // the page
 // ---------------------------------------------------------------------------
 
-test('the Buff Planner is LOCKED - no nav button, but the page markup is kept intact', () => {
-  // The sidebar button is removed until the buff-loadout aura ships, so nothing can reach the
-  // page. The <section> and all its controls stay in the DOM so buffPlanner.js keeps its tests
-  // and re-enabling is a one-line change.
-  assert.doesNotMatch(html, /class="nav-btn"[^>]*data-page="page-planner"/, 'the Buff Planner nav button must not be live');
-  assert.doesNotMatch(html, /id="planner-nav-btn"/, 'the nav button id must be gone (initBuffPlanner gates on it)');
+test('the Buff Planner is UNLOCKED - the nav button is live (Fix 4, 2 Sep)', () => {
+  assert.match(html, /class="nav-btn" data-page="page-planner" id="planner-nav-btn"/, 'the Buff Planner nav button must be present');
   assert.match(html, /<section id="page-planner" class="page">/);
+  // Framing (Fix 4): a "loadout sheet", never "optimiser" / "best setup".
+  const page = html.slice(html.indexOf('id="page-planner"'), html.indexOf('id="page-about"'));
+  assert.doesNotMatch(page, /optimis|Best setup|best setup/, 'the planner must not claim to be an optimiser');
+  assert.match(page, /Your loadout/);
+  assert.match(page, /name="planner-playstyle"/, 'the playstyle preset control is missing');
 });
 
-test('initBuffPlanner bails when the (removed) nav button is absent', () => {
+test('initBuffPlanner still gates on the nav button (so a future re-lock is a one-liner)', () => {
   const fn = rendererSrc.match(/function initBuffPlanner\(\) \{[\s\S]*?\n\}\n/)[0];
   assert.match(fn, /if \(!document\.querySelector\('\.nav-btn\[data-page="page-planner"\]'\)\) return;/);
 });

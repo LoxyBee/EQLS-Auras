@@ -26,8 +26,11 @@ const STATS = [
   { name: 'AGI', effect: 6 },
   { name: 'DEX', effect: 5 },
   { name: 'WIS', effect: 9 },
-  { name: 'INT', effect: 10 },
-  { name: 'CHA', effect: 8 },
+  // Verified against the owner's real spells_us.txt (AEM, 2 Sep): 8 = INT, 9 = WIS, 10 = CHA.
+  // Charisma / Glamour (category Charisma) carry effect 10 at 100%, effect 8 at 0%; the two were
+  // swapped here, so every Charisma buff rendered "+40 INT".
+  { name: 'INT', effect: 8 },
+  { name: 'CHA', effect: 10 },
   { name: 'haste', effect: 11 }, // stored 100-based: 141 = +41%
   { name: 'cast speed', effect: 127 }, // reduces cast time. the owner, 27 Aug: same priority as haste.
   { name: 'HP regen', effect: 0 }, // per-tick on a duration buff (heals/HoTs are filtered out before this)
@@ -55,7 +58,11 @@ const MULTIPLIER_STATS = new Set(['haste', 'cast speed']); // 100-based, a bonus
 // one. Rough on purpose.
 const RESIST_STATS = new Set(['fire resist', 'cold resist', 'poison resist', 'disease resist', 'magic resist', 'all resists']);
 const STAT_WEIGHT = {
-  'max HP': 0.02, 'max mana': 0.02, rune: 0.05, 'spell rune': 0.05, 'damage shield': 0.5,
+  // 0.02 -> 0.25 (AEM/owner, 2 Sep). At 0.02 the largest max-HP buff in the game (Symbol of
+  // Naltron, +406) scored 8 - below a single point of any attribute. 0.25 puts 100 HP at 25 pts,
+  // just under exact parity with a median attribute buff (0.30 = parity). max mana affects exactly
+  // one spell (Gift of Magic) - matched for principle, not impact.
+  'max HP': 0.25, 'max mana': 0.25, rune: 0.05, 'spell rune': 0.05, 'damage shield': 0.5,
   // Regen is a top priority (the owner, 27 Aug: "mana and endurance regen should be a high priority").
   // A per-tick value is small (~10-15), so it needs a big multiplier to rank alongside a +40 stat.
   'HP regen': 4, 'mana regen': 4, 'endurance regen': 4,
@@ -64,6 +71,40 @@ const STAT_WEIGHT = {
   'fire resist': 0.1, 'cold resist': 0.1, 'poison resist': 0.1, 'disease resist': 0.1,
   'magic resist': 0.1, 'all resists': 0.15,
 };
+
+// A curated snapshot (like buffStore's CHARM_SPELL_NAMES) of combat-proc buffs the owner wants
+// treated as clearly slot-worthy. Effect 85's value is a SPELL ID, not a magnitude (Spirit of the
+// Puma's is 6908), so the proc can't be scored from the file - modelling proc rate + proc damage
+// is out of scope. A flat +50 in statScore() puts each of these level with Dexterity/Celerity:
+// worth a slot, not dominating. The owner drags to reorder within that. Excludes Spirit of
+// Inferno/Lightning/Blizzard/Scorpion/Vermin - same effect, but [Pet Misc Buffs] (the proc lands
+// on the pet). (AEM/owner, 2 Sep.)
+const PROC_SCORE_BOOST = new Set([
+  'Spirit of the Puma', 'Boon of the Garou', 'Call of Sky', 'Divine Might',
+  "Katta's Song of Sword Dancing", 'Scream of Death', 'Vampiric Embrace',
+  'Instrument of Nife', 'Ward of the Divine',
+]);
+const PROC_BOOST_POINTS = 50;
+
+// Fix 11 - a playstyle preset multiplies whole STAT_WEIGHT groups inside statScore(). NOT a filter:
+// a strongly-valuable off-style buff can still earn a slot. 'balanced' (the default) is all-1s.
+// CHA and max HP are in NEITHER group on purpose (both playstyles want HP; CHA is niche either
+// way). The proc boost stays flat regardless. Multipliers x2.0 up / x0.35 down (owner signed off -
+// x1.5/x0.5 moved nothing for her CLR/SHM/BRD combo). (AEM/owner, 2 Sep.)
+const PLAYSTYLE_UP = 2.0;
+const PLAYSTYLE_DOWN = 0.35;
+const MELEE_UP = ['STR', 'DEX', 'AGI', 'STA', 'ATK', 'haste', 'AC'];
+const MELEE_DOWN = ['WIS', 'INT', 'mana regen', 'cast speed', 'max mana'];
+const CASTER_UP = ['WIS', 'INT', 'mana regen', 'cast speed', 'HP regen', 'max mana'];
+const CASTER_DOWN = ['STR', 'DEX', 'AGI', 'ATK', 'haste'];
+function playstyleWeightScale(playstyle) {
+  const scale = {};
+  const up = playstyle === 'melee' ? MELEE_UP : playstyle === 'caster' ? CASTER_UP : [];
+  const down = playstyle === 'melee' ? MELEE_DOWN : playstyle === 'caster' ? CASTER_DOWN : [];
+  for (const s of up) scale[s] = PLAYSTYLE_UP;
+  for (const s of down) scale[s] = PLAYSTYLE_DOWN;
+  return scale;
+}
 
 const EFFECT_SLOTS = 12;
 const ASSUMED_LEVEL = 50;
@@ -81,6 +122,11 @@ function spellStats(installRoot, spellId, level = ASSUMED_LEVEL) {
     if (!known) continue;
     const value = effectValue(slot[2], slot[5], slot[4], level);
     if (!value) continue;
+    // Effect 0 is the generic hit-points effect, not "HP regen" - it's negative on 260 roster
+    // entries (damage / life-drain conversions like Lich). statScore does abs()*4x, which ranked
+    // Lich as the strongest regen buff in the game. A negative HP-regen entry is a drain; drop it
+    // here so it never reaches the score, the headline stat, or the totals card. (AEM/owner, 2 Sep.)
+    if (known.name === 'HP regen' && value < 0) continue;
     out.push({ stat: known.name, value, order: known.order });
   }
   return out.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
@@ -131,13 +177,20 @@ function categoryHeadline(installRoot, roster, spellId, category) {
 }
 
 // One number for ranking a buff against buffs of OTHER stats (fill order when slots run out).
-function statScore(installRoot, spellId) {
+// `name` is optional - only the curated proc list needs it. `weightScale` (Fix 11) multiplies a
+// stat's weight by playstyle: `{ 'STR': 2, 'WIS': 0.35, ... }`, defaulting to 1 for anything not
+// named. Proc boost is flat and playstyle-independent.
+function statScore(installRoot, spellId, name = null, weightScale = null) {
+  const scale = (stat) => (weightScale && weightScale[stat] != null ? weightScale[stat] : 1);
   let score = 0;
   for (const s of spellStats(installRoot, spellId)) {
-    if (s.stat === 'haste') score += Math.max(0, Math.abs(s.value) - 100); // 141 -> +41
-    else if (s.stat === 'cast speed') score += Math.abs(s.value) * 1.5; // raw %, top-priority like haste
-    else score += Math.abs(s.value) * (STAT_WEIGHT[s.stat] ?? 1);
+    if (s.stat === 'haste') score += Math.max(0, Math.abs(s.value) - 100) * scale('haste'); // 141 -> +41
+    // Raw %, not 100-based like haste - a +10% cast-speed buff is `10`, not `110`. x5.0 (was x1.5)
+    // puts Blessing of Faith level with Celerity, which is the owner's "same priority as haste".
+    else if (s.stat === 'cast speed') score += Math.abs(s.value) * 5.0 * scale('cast speed');
+    else score += Math.abs(s.value) * (STAT_WEIGHT[s.stat] ?? 1) * scale(s.stat);
   }
+  if (name && PROC_SCORE_BOOST.has(name)) score += PROC_BOOST_POINTS;
   return Math.round(score);
 }
 
@@ -145,4 +198,7 @@ function resetCache() {
   cache = null;
 }
 
-module.exports = { spellStats, categoryStatMap, categoryHeadline, statScore, MULTIPLIER_STATS, RESIST_STATS, resetCache };
+module.exports = {
+  spellStats, categoryStatMap, categoryHeadline, statScore, MULTIPLIER_STATS, RESIST_STATS,
+  resetCache, PROC_SCORE_BOOST, STAT_WEIGHT, playstyleWeightScale,
+};

@@ -78,6 +78,16 @@ class ProfileStore {
     return profile;
   }
 
+  // The buff-planner playstyle preset ('balanced' | 'melee' | 'caster'), per loadout profile.
+  // 'balanced' (the default, and anything unrecognised) is stored as-is; it does not change scoring.
+  setPlannerPlaystyle(id, playstyle) {
+    const profile = this.data.profiles.find((p) => p.id === id);
+    if (!profile) return null;
+    profile.plannerPlaystyle = ['melee', 'caster'].includes(playstyle) ? playstyle : 'balanced';
+    this._save();
+    return profile;
+  }
+
   getActiveId() {
     return this.data.activeProfileId;
   }

@@ -8984,9 +8984,18 @@ function initBuffPlanner() {
     const hasClasses = plan.classes.length > 0;
     emptyNoteEl.style.display = hasClasses ? 'none' : '';
     slotCountEl.textContent = String(plan.slots.length);
-    stackingStateEl.textContent = plan.stackingKnown
-      ? ''
-      : 'Set your EQ folder on the Setup page so the planner can tell buff tiers apart properly.';
+    if (!plan.stackingKnown) {
+      stackingStateEl.textContent =
+        'Set your EQ folder on the Setup page so the planner can tell buff tiers apart properly.';
+    } else if (plan.stackingCoverage && plan.stackingCoverage.total) {
+      const { known, total } = plan.stackingCoverage;
+      stackingStateEl.textContent =
+        known >= total
+          ? `Every one of the ${total} is on a stacking line we've mapped.`
+          : `${known} of the ${total} are on a stacking line we've mapped; the rest are a best guess.`;
+    } else {
+      stackingStateEl.textContent = '';
+    }
 
     // Total stats across every slotted buff.
     const totals = plan.totals || [];
@@ -9077,6 +9086,14 @@ function initBuffPlanner() {
     });
   }
 
+  const playstyleRadios = document.querySelectorAll('input[name="planner-playstyle"]');
+  playstyleRadios.forEach((r) =>
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      window.eqTracker.setPlannerPlaystyle(null, r.value).then(recompute);
+    })
+  );
+
   function loadInput() {
     return Promise.all([
       window.eqTracker.getPlannerInput(null),
@@ -9089,6 +9106,8 @@ function initBuffPlanner() {
         order = Array.isArray(input.buffPlanOrder) ? input.buffPlanOrder : [];
         hasManualOrder = order.length > 0;
         levelInputEl.value = String(level);
+        const style = input.playstyle || 'balanced';
+        playstyleRadios.forEach((r) => { r.checked = r.value === style; });
         const active = profiles.find((p) => p.id === activeId);
         activeProfileEl.textContent = active ? active.name : 'Default';
         buildClassSelects();

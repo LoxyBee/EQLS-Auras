@@ -102,11 +102,7 @@
         </div>
       </div>
 
-      <!-- Buff Planner is LOCKED until the "buff-loadout" overlay aura is built (see
-           CLAUDE.md). The page section (id page-planner) and all of
-           buffPlanner.js stay in place; only the sidebar button is removed, so nothing in the app
-           can reach it. To re-enable: add a nav-btn with data-page of page-planner and the id
-           planner-nav-btn back here (initBuffPlanner gates on that id). -->
+      <button class="nav-btn" data-page="page-planner" id="planner-nav-btn">Buff Planner</button>
 
       <button class="nav-btn" data-page="page-lockouts" id="lockouts-nav-btn">Lockouts</button>
       <!-- Nav buttons for custom modules that declare a settings page are injected here by
@@ -1682,6 +1678,12 @@
             <span class="label">Classes:</span>
             <!-- three class selects injected by main-window.js -->
           </div>
+          <div class="row planner-playstyle-row">
+            <span class="label" title="Nudges the default order toward melee stats or caster stats. Not a filter - a strong off-style buff still earns a slot, and your dragged order always wins.">Lean toward:</span>
+            <label><input type="radio" name="planner-playstyle" value="balanced" checked /> Balanced</label>
+            <label><input type="radio" name="planner-playstyle" value="melee" /> Melee</label>
+            <label><input type="radio" name="planner-playstyle" value="caster" /> Caster</label>
+          </div>
         </div>
 
         <div class="card" id="planner-totals-card" style="display:none">
@@ -1694,13 +1696,14 @@
         </div>
 
         <div class="card">
-          <h3>Best setup — <span id="planner-slot-count">0</span> of 14 buff slots</h3>
+          <h3>Your loadout — <span id="planner-slot-count">0</span> of 14 buff slots</h3>
           <p class="hint">
-            Every stat/combat buff your classes can cast, ranked by the stat number (not level or
-            duration), with the weaker tier of a buff line removed using the game's own stacking
-            data. Bard songs and never-expiring buffs get their own sections. You arrange the 14 -
-            drag the priority list below. <span id="planner-stacking-state"></span> Heals and pure
-            utility (levitate, vision, illusions) are left out.
+            Every stat/combat buff your classes can cast, grouped by stacking line and ordered by
+            the numbers we can read from the game's spell file - not level or duration. The weaker
+            tier of a line is folded into the stronger one. Bard songs and never-expiring buffs get
+            their own sections. You arrange the 14 - drag the priority list below.
+            <span id="planner-stacking-state"></span> Heals and pure utility (levitate, vision,
+            illusions) are left out.
           </p>
           <ol class="planner-slot-list" id="planner-slot-list"></ol>
           <p class="hint" id="planner-empty-note" style="display:none">
@@ -1730,7 +1733,7 @@
           <div class="planner-priority-head">
             <h3>Priority order</h3>
             <button type="button" id="planner-priority-reset" style="display:none">
-              Reset to recommended
+              Reset to default order
             </button>
           </div>
           <p class="hint">
