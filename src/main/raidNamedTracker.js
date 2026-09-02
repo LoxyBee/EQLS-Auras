@@ -8,13 +8,12 @@ const { RAID_ZONE_NAMEDS } = require('../shared/data/raidZoneNameds');
 // "up"; a "<name> has been slain by ..." line greys it out. For a zone flagged `respawns`, a greyed
 // named with a `respawnMinutes` shows a countdown and comes back when it elapses.
 //
-// TWO kinds of tracked zone (see raidZoneNameds.js):
-//   - a DUNGEON entry (no `raid` flag) lights up on a plain "You have entered X." line.
-//   - a RAID entry (`raid: true` - the Planes, the classic raid-boss lists) lights up ONLY after
-//     the player's own "You say, 'danger'" to the Voidling armed this zone change. A raid instance
-//     and a group instance of the same zone share the zone string AND the "- Group"/difficulty
-//     suffix (measured), so the dialogue is the only thing that tells them apart - the same signal
-//     lockoutCore keys its weekly-attempt event on.
+// EVERY tracked zone shows the board on a plain "You have entered X." line. Owner, 2 Sep:
+// "anything that is a RAID is also a separate DUNGEON" - a Voidling raid instance and an ordinary
+// group/dungeon run of the same zone show the same board. The `raid: true` flag in
+// raidZoneNameds.js no longer gates visibility; the Voidling "danger" hail (`viaVoidling` /
+// `this.viaVoidling`) is kept only as metadata for whoever needs to tell a raid-lockout instance
+// from a group run (lockoutCore keys its weekly-attempt event on the same signal).
 //
 // Its own small engine rather than a mode on customTimerEngine or a hook in damageEngine: the
 // state is per-zone and resets wholesale on a zone line, which is nothing like a trigger timer or
@@ -50,6 +49,10 @@ class RaidNamedTracker extends EventEmitter {
     // consumes it (the raid instance you land in). Same signal lockoutCore keys its weekly-attempt
     // event on. Cleared on any zone change, raid or not.
     this._raidEntryArmed = false;
+    // True when the current tracked zone was entered right after the player's own Voidling
+    // "danger" hail - i.e. it's the raid-lockout instance, not a plain group run. Metadata only;
+    // the board shows either way now.
+    this.viaVoidling = false;
     this.tickTimer = setInterval(() => this._tick(), 1000);
   }
 
@@ -94,38 +97,38 @@ class RaidNamedTracker extends EventEmitter {
   // is true only when the raid-entry dialogue (hail the Voidling, say "danger") immediately
   // preceded this zone change.
   _enterZone(rawZone, viaVoidling) {
-    const isInstance = INSTANCE_SUFFIX.test(rawZone);
     const baseZone = stripInstanceSuffix(rawZone);
     const entry = RAID_ZONE_NAMEDS[baseZone];
 
-    // A `raid: true` entry (the Planes, and the classic raid-boss lists) is a private Voidling
-    // instance - it shows ONLY when the player's own "You say, 'danger'" armed this zone change.
-    // The "- Group"/suffix grammar does NOT tell a raid apart from a group instance (measured: the
-    // owner's real Plane of Fear raid entered as "... - Group 4 (Refined)"), so the dialogue is the
-    // only gate. Every other entry (the dungeons, the open-world zones) shows on plain entry -
-    // that's backlog #33's "every tracked zone, not just raids".
-    const gated = entry && entry.raid === true;
-
-    // For a gated raid that's already up: another instance-tagged line for the same base zone with
-    // no fresh Voidling entry is a zone-line echo (reconnect, client reload) - keep the board and
-    // its kills. A bare same-name line is dropping to the open version and falls through to clear.
-    if (gated && this.currentZone === baseZone && isInstance && !viaVoidling) return;
-
-    const data = entry && (!gated || viaVoidling) ? entry : null;
-    if (!data) {
+    // Owner, 2 Sep: "anything that is a RAID is also a separate DUNGEON." The board shows on ANY
+    // entry to a tracked zone - a plain group/dungeon run, or a Voidling raid instance. The
+    // `raid: true` flag no longer gates VISIBILITY; `viaVoidling` is kept only as metadata (it's
+    // what tells a raid-lockout instance from a group run, the same signal lockoutCore keys on).
+    if (!entry) {
       if (this.currentZone !== null) {
         this.currentZone = null;
+        this.viaVoidling = false;
         this.board = new Map();
         this._debugLog(`RAID BOARD - left tracked zone, board cleared`);
         this.emit('changed', this.getActive());
       }
       return;
     }
+
+    // Already in this base zone and got another line for it - the instance line right after the
+    // entrance line ("The Ruins of Old Paineel" then "... 1 (Awakened)"), or a reconnect echo.
+    // Keep the board and its kills. EXCEPT a fresh Voidling "danger" hail into the same zone: that
+    // is a brand-new raid instance, so it resets (a fresh instance = a fresh board).
+    if (this.currentZone === baseZone && !viaVoidling) return;
+
     this.currentZone = baseZone;
+    this.viaVoidling = !!viaVoidling;
     this.board = new Map(
-      data.nameds.map((n) => [bareName(n.name), { name: n.name, tier: n.tier || 'mini', killedAt: null, respawnAt: null }])
+      entry.nameds.map((n) => [bareName(n.name), { name: n.name, tier: n.tier || 'mini', killedAt: null, respawnAt: null }])
     );
-    this._debugLog(`RAID BOARD - entered "${baseZone}", ${this.board.size} named up`);
+    this._debugLog(
+      `RAID BOARD - entered "${baseZone}"${viaVoidling ? ' (via Voidling)' : ''}, ${this.board.size} named up`
+    );
     this.emit('changed', this.getActive());
   }
 
