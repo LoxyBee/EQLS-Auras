@@ -1124,6 +1124,14 @@ function visibleBuffs(buffs, opts = {}) {
     if (currentConfig.showTotalRow === false) rows = rows.filter((b) => !b.totalRow);
     // Line C - the combined owner-unknown charmed-pet row, hidden if the aura asked.
     if (currentConfig.showCharmedPetsRow === false) rows = rows.filter((b) => !b.unknownPets);
+    // Top-N attacker rows only (owner's call, default 6). The engine sends every row sorted
+    // biggest-first; this keeps the meter from running off the screen in a raid. The Total row is
+    // never counted against the cap - it draws last and is a summary, not an attacker.
+    const cap = Number(currentConfig.damageRowCap);
+    if (Number.isFinite(cap) && cap > 0) {
+      let kept = 0;
+      rows = rows.filter((b) => b.totalRow || ++kept <= cap);
+    }
     return rows;
   }
 
