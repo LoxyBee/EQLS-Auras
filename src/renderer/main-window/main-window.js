@@ -5767,7 +5767,11 @@ function initWidgetsPanel() {
     head.appendChild(document.createElement('th'));
     for (const t of tiers) {
       const th = document.createElement('th');
-      th.textContent = t;
+      // Show the difficulty number alongside the label - "D0 - Normal", "D1 - Awakened" ... The
+      // number is on every cell of that column; `tiers` is already in ascending-difficulty order.
+      const anyCell = cells.find((c) => c.difficultyLabel === t);
+      const d = anyCell && Number.isInteger(anyCell.difficulty) ? anyCell.difficulty : null;
+      th.textContent = d != null ? `D${d} - ${t}` : t;
       head.appendChild(th);
     }
     lockoutGridEl.appendChild(head);

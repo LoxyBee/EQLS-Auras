@@ -57,3 +57,20 @@ The observation that would separate the two models is a run that clears only
 *some* of a zone's bosses followed by evidence about the rest. Our corpus is not
 known to contain one. If the models ever diverge in play, a single cell would
 hide it — this is a known limitation, not a settled fact.
+
+## Kedge Keep (added 2 Sep 2026)
+
+`Split/eqlog_Shara_rivervale_2026-08-18.txt` — the only Kedge raid in the
+21-file split corpus:
+
+```
+[Tue Aug 18 22:20:35 2026] You say, 'danger'
+[Tue Aug 18 22:20:51 2026] You have entered Kedge Keep - Group 4 (Refined).
+[Tue Aug 18 22:27:08 2026] Phinigel Autropos has been slain by Jonarer!
+```
+
+`bosses: ['Phinigel Autropos']` is the kill-line spelling, verified exact.
+`singleBoss` / `alsoDies` are unmeasured (one visit). `weeklyTaskObserved: false`
+— no `Potential of the Void - … - Weekly` line near the raid; the three weekly
+tokens that night went to Lord Nagafen (20:41), Innoruuk (20:58) and Master Yael
+(21:56), so Kedge granted nothing. A Kedge weekly grant has never been observed.
