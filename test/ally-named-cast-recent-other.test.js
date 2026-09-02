@@ -1,0 +1,88 @@
+'use strict';
+/**
+ * Live bug (owner, Sep 1 20:30, found by Log Scanner): she cast Spirit of the Puma on Orlando;
+ * Ally Buffs showed it on Chrysaetos, and her real cast (which failed on Orlando 1s later) showed
+ * nothing. Chrysaetos self-cast his OWN Spirit of the Puma 2s earlier, and
+ * "Chrysaetos growls with the spirit of the puma." (his landing on himself) was attributed to her
+ * pending cast.
+ *
+ * The "ALLY LANDED ... named cast, confirmed by third-person landing text" path never checked
+ * recentOtherCasts. The burst-context ally path already had that skip. It now does too - via a
+ * LOCAL rank-aware check (_allySelfCastRecently), because recentOtherCasts is keyed by the raw
+ * cast-line name and keying it rank-stripped globally regressed the player's own maintained bard
+ * songs (a groupmate singing "Selo's ... VI" would suppress her own Selo's re-lands).
+ */
+
+const assert = require('node:assert/strict');
+const { test, report } = require('./harness');
+const { BuffStore } = require('../src/main/buffStore');
+const { BuffEngine } = require('../src/main/buffEngine');
+
+const TS = (s) => `[Mon Sep 01 20:30:${String(s).padStart(2, '0')} 2026] `;
+
+function makeEngine() {
+  const data = {};
+  const store = {
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  };
+  const engine = new BuffEngine(new BuffStore(store), store);
+  engine.stop();
+  const log = [];
+  engine.setDebugLogFn((m) => log.push(m));
+  engine.setTrackOthersEnabled(true);
+  return { engine, log };
+}
+const allyBuffs = (engine) => engine.getActiveAllyBuffs().map((b) => `${b.name}@${b.allyName}`);
+
+test("a groupmate's own RANKED self-cast is not attributed to her pending cast on someone else", () => {
+  const { engine, log } = makeEngine();
+  engine.handleLine(`${TS(7)}Chrysaetos begins casting Spirit of the Puma VIII.`);
+  engine.handleLine(`${TS(9)}You begin casting Spirit of the Puma VII.`);
+  engine.handleLine(`${TS(9)}Chrysaetos growls with the spirit of the puma.`);
+
+  assert.ok(!allyBuffs(engine).some((s) => s.startsWith('Spirit of the Puma@Chrysaetos')),
+    'his own self-cast landing was grabbed for her cast');
+  assert.ok(log.some((m) => /ALLY IGNORED "Spirit of the Puma" on "Chrysaetos"[\s\S]*just seen self-casting/.test(m)));
+});
+
+test('her cast landing on the ACTUAL target still registers', () => {
+  const { engine } = makeEngine();
+  engine.handleLine(`${TS(7)}Chrysaetos begins casting Spirit of the Puma VIII.`);
+  engine.handleLine(`${TS(9)}You begin casting Spirit of the Puma VII.`);
+  engine.handleLine(`${TS(9)}Orlando growls with the spirit of the puma.`);
+  assert.ok(allyBuffs(engine).some((s) => s.startsWith('Spirit of the Puma@Orlando')),
+    'a genuine ally-cast on her real target must still land');
+});
+
+test('the skip is bounded - a groupmate cast >60s ago no longer suppresses', () => {
+  const { engine } = makeEngine();
+  engine.handleLine(`${TS(7)}Chrysaetos begins casting Spirit of the Puma VIII.`);
+  // age the stored other-cast past the 60s window
+  for (const k of engine.recentOtherCastAt.keys()) engine.recentOtherCastAt.set(k, Date.now() - 120000);
+  engine.handleLine(`${TS(9)}You begin casting Spirit of the Puma VII.`);
+  engine.handleLine(`${TS(9)}Chrysaetos growls with the spirit of the puma.`);
+  assert.ok(allyBuffs(engine).some((s) => s.startsWith('Spirit of the Puma@Chrysaetos')));
+});
+
+test('a DIFFERENT groupmate casting it does not suppress the real recipient', () => {
+  const { engine } = makeEngine();
+  engine.handleLine(`${TS(7)}Chrysaetos begins casting Spirit of the Puma VIII.`);
+  engine.handleLine(`${TS(9)}You begin casting Spirit of the Puma VII.`);
+  // Horse got hers - Horse never self-cast, so this is her cast landing on Horse
+  engine.handleLine(`${TS(9)}Horse growls with the spirit of the puma.`);
+  assert.ok(allyBuffs(engine).some((s) => s.startsWith('Spirit of the Puma@Horse')));
+});
+
+test('recentOtherCasts is still keyed RAW (rank kept) - the global keying was not changed', () => {
+  const { engine } = makeEngine();
+  engine.handleLine(`${TS(7)}Chrysaetos begins casting Spirit of the Puma VIII.`);
+  assert.ok(engine.recentOtherCasts.has('spirit of the puma viii'), 'the raw key is gone');
+  assert.ok(!engine.recentOtherCasts.has('spirit of the puma'), 'a rank-stripped key was added globally - that regressed maintained songs');
+  // but the local rank-aware check still finds it
+  assert.equal(engine._allySelfCastRecently('Spirit of the Puma', 'Chrysaetos'), true);
+  assert.equal(engine._allySelfCastRecently('Spirit of the Puma', 'Someone Else'), false);
+});
+
+module.exports = () => report('ally-named-cast-recent-other');
+if (require.main === module) report('ally-named-cast-recent-other').then((n) => process.exit(n ? 1 : 0));
