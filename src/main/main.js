@@ -1229,8 +1229,10 @@ function hasLockoutWidget() {
   return widgetManager.getAllWidgetConfigs().some((w) => w.buffSource === 'lockout');
 }
 
-// One board row -> an infinite, buff-shaped tile the overlay can draw. Zone/character headers are
-// flagged so overlay.js can style them; a tier row's `name` is "d3 · Adaptive".
+// One board row -> a buff-shaped tile the overlay can draw. Same field shape as a travel-guide
+// leg (travelRowsFor's row()): no spell category (so no coloured border), a blank valueText (so
+// no infinity glyph on the right), no bar. Zone/character headers are flagged so overlay.js can
+// style them bold; a tier row's `name` is "d3 · Adaptive".
 function lockoutTile(row, i) {
   return {
     name: row.label,
@@ -1238,21 +1240,26 @@ function lockoutTile(row, i) {
     // list is a fixed zone-then-tier order rebuilt wholesale each push, so a positional id is
     // stable enough and unique.
     id: `lockout-${i}`,
+    valueText: '',
+    barPercent: 0,
+    remainingSec: null,
+    durationSec: 0,
+    infinite: true,
+    instant: false,
+    landedAt: null,
+    showOnOverlay: true,
+    iconUrl: null,
+    isBardSong: false,
+    spellCategory: null,
     lockoutHeader: row.kind === 'zone' || row.kind === 'character',
     lockoutKind: row.kind,
-    infinite: true,
-    remainingSec: null,
-    durationSec: null,
-    iconUrl: null,
-    showOnOverlay: true,
-    spellCategory: 'buff',
   };
 }
 
 function lockoutBoardRoutes() {
   const now = Date.now();
-  // getProjection() just reads the parsed states - cheap. It's empty until backfill has run
-  // (lazy, same as the Lockouts page); popLockoutBoard kicks that off.
+  // getProjection() just reads the parsed states. It's only called when a board is actually shown
+  // (an unshown aura short-circuits to [] first), so the 1s heartbeat below costs nothing at idle.
   let projection = null;
   const out = {};
   for (const w of widgetManager.getAllWidgetConfigs()) {
@@ -1266,8 +1273,17 @@ function lockoutBoardRoutes() {
   return out;
 }
 
+// The board only ever reaches the overlay through here, and only when it has actually changed -
+// the 1s heartbeat and the lockoutService 'changed' event both call this, and without the dedupe
+// the overlay would rebuild its tile list every second (a visible flash). Reported live.
+let lastLockoutBoardJSON = null;
 function pushLockoutBoard() {
-  broadcast('lockout:board', lockoutBoardRoutes());
+  const board = lockoutBoardRoutes();
+  const json = JSON.stringify(board);
+  if (json !== lastLockoutBoardJSON) {
+    lastLockoutBoardJSON = json;
+    broadcast('lockout:board', board);
+  }
   // Re-arm a single timer for the soonest hide, so a board clears itself even with no further
   // log activity. One timer for all lockout auras - they rarely overlap and the recompute is tiny.
   if (lockoutHideTimer) { clearTimeout(lockoutHideTimer); lockoutHideTimer = null; }
@@ -1278,32 +1294,40 @@ function pushLockoutBoard() {
 
 function popLockoutBoard(word) {
   const now = Date.now();
-  let matched = false;
-  let anyShown = false;
-  for (const w of widgetManager.getAllWidgetConfigs()) {
-    if (w.buffSource !== 'lockout') continue;
-    if ((w.lockoutTriggerWord || 'eqrlm') !== word) continue;
-    matched = true;
-    if ((lockoutShownUntil.get(w.id) || 0) > now) { anyShown = true; continue; }
-    lockoutShownUntil.set(w.id, now + (w.lockoutAutoHideSec || 20) * 1000);
-  }
-  if (!matched) return false;
-  // A second `/tell <word>` while it's up is "never mind" - same one-command-both-ways rule the
-  // travel picker uses.
-  if (anyShown) {
-    for (const w of widgetManager.getAllWidgetConfigs()) {
-      if (w.buffSource === 'lockout' && (w.lockoutTriggerWord || 'eqrlm') === word) lockoutShownUntil.delete(w.id);
-    }
+  const mine = widgetManager.getAllWidgetConfigs()
+    .filter((w) => w.buffSource === 'lockout' && (w.lockoutTriggerWord || 'eqrlm') === word);
+  if (!mine.length) return false;
+
+  // A second `/tell <word>` while it's up is "never mind" - one command both ways, like the
+  // travel picker.
+  if (mine.some((w) => (lockoutShownUntil.get(w.id) || 0) > now)) {
+    for (const w of mine) lockoutShownUntil.delete(w.id);
     debugLog(`LOCKOUT board dismissed by /tell ${word}`);
     pushLockoutBoard();
     return true;
   }
-  debugLog(`LOCKOUT board opened by /tell ${word}`);
-  // Kick off the grid scan the first time, exactly like the Lockouts page does.
-  if (lockoutService.backfillState === 'idle') {
-    Promise.resolve(lockoutService.backfill()).then(pushLockoutBoard).catch(() => {});
+
+  // Reveal only once the grid scan has FINISHED. Showing it mid-scan renders a half-parsed board
+  // (every tier looks owed) that then visibly shrinks as backfill marks tiers completed - reported
+  // live as "it flashes with every single lockout before truncating the list". One push, final
+  // content.
+  const reveal = () => {
+    const t = Date.now();
+    for (const w of mine) lockoutShownUntil.set(w.id, t + (w.lockoutAutoHideSec || 20) * 1000);
+    debugLog(`LOCKOUT board opened by /tell ${word}`);
+    pushLockoutBoard();
+  };
+  if (lockoutService.backfillState === 'done') {
+    reveal();
+  } else if (lockoutService.backfillState === 'running') {
+    const waitDone = () => {
+      if (lockoutService.backfillState === 'running') lockoutService.once('backfillChanged', waitDone);
+      else reveal();
+    };
+    lockoutService.once('backfillChanged', waitDone);
+  } else {
+    lockoutService.backfill().then(reveal, reveal);
   }
-  pushLockoutBoard();
   return true;
 }
 
