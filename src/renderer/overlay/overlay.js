@@ -861,6 +861,11 @@ function updateRef(ref, buff, isIcon) {
   // remainingSec, which the countdown line below shows.
   ref.root.classList.toggle('raid-killed', !!buff.killed);
   if (currentConfig.buffSource === 'raidNamed') ref.root.classList.toggle('raid-boss', buff.tier === 'boss');
+  // The raid-lockout aura: a zone/character line is a header, the owed tiers under it are indented.
+  if (currentConfig.buffSource === 'lockout') {
+    ref.root.classList.toggle('lockout-header', !!buff.lockoutHeader);
+    ref.root.classList.toggle('lockout-tier', buff.lockoutKind === 'tier');
+  }
   // A text aura has no countdown to update - it says its piece and disappears when whatever it is
   // watching ends. Checked rather than assumed, because it is the first tile without one.
   if (!ref.timeEl) return;
@@ -1106,6 +1111,11 @@ function visibleBuffs(buffs, opts = {}) {
   // not spells, so there is no buff list to match them against and no duration to cap. The main
   // process has already decided what this aura shows.
   if (currentConfig.buffSource === 'travel') return buffs;
+
+  // The raid-lockout aura. The main process built the whole list (zone headers + owed tiers, or a
+  // single "nothing owed" line) and clears it to [] when the pop-up's time is up - the overlay
+  // just draws what it's handed, same as travel.
+  if (currentConfig.buffSource === 'lockout') return buffs;
 
   // Backlog #33. The board already IS the current zone's whole named list - every row is meant to
   // show, killed ones just dimmed (see the .killed class in render). No picker, no duration cap,
@@ -1843,6 +1853,8 @@ let lastRaidNamed = [];
 // Note 20. Keyed by aura id - one broadcast carries every travel aura's route and each window
 // takes its own. See pushTravelRoutes in main.js for why it is shaped that way.
 let lastTravelRoutes = {};
+// The raid-lockout aura. Same keyed-by-aura-id shape as travel; empty array for an aura = hidden.
+let lastLockoutBoard = {};
 // feat/module-system. One broadcast carries every custom module's live entries, keyed by module
 // id; a module aura reads its own slice by currentConfig.moduleId.
 let lastModuleEntries = {};
@@ -1870,6 +1882,14 @@ function previewSampleBuffs() {
         mk('Cazic-Thule', null, null, { tier: 'boss', killed: false, infinite: true }),
         mk('Dread', null, null, { tier: 'mini', killed: true, infinite: true }),
         mk('Fright', null, null, { tier: 'mini', killed: false, infinite: true }),
+      ];
+    case 'lockout':
+      return [
+        mk('Plane of Fear', null, null, { id: 'lp0', lockoutHeader: true, lockoutKind: 'zone', infinite: true }),
+        mk('d2 · Awakened', null, null, { id: 'lp1', lockoutKind: 'tier', infinite: true }),
+        mk('d3 · Adaptive', null, null, { id: 'lp2', lockoutKind: 'tier', infinite: true }),
+        mk('Plane of Hate', null, null, { id: 'lp3', lockoutHeader: true, lockoutKind: 'zone', infinite: true }),
+        mk('d1 · Normal', null, null, { id: 'lp4', lockoutKind: 'tier', infinite: true }),
       ];
     case 'module':
       return [mk(currentConfig.name || 'Module', 9, 12, { key: 'preview' })];
@@ -1945,6 +1965,7 @@ function realSourceBuffs() {
     return lastDamageViews[scope] || lastDamageViews.all || [];
   }
   if (currentConfig.buffSource === 'travel') return lastTravelRoutes[widgetId] || [];
+  if (currentConfig.buffSource === 'lockout') return lastLockoutBoard[widgetId] || [];
   // Backlog #33. One shared board (the current zone's named list), not per-widget - like damage,
   // unlike travel/customTimer.
   if (currentConfig.buffSource === 'raidNamed') return lastRaidNamed;
@@ -2198,6 +2219,17 @@ window.eqOverlay.onTravelRoutesChanged((routes) => {
   lastTravelRoutes = routes;
   render(currentSourceBuffs());
 });
+
+if (window.eqOverlay.getLockoutBoard) {
+  window.eqOverlay.getLockoutBoard().then((board) => {
+    lastLockoutBoard = board || {};
+    render(currentSourceBuffs());
+  });
+  window.eqOverlay.onLockoutBoardChanged((board) => {
+    lastLockoutBoard = board || {};
+    render(currentSourceBuffs());
+  });
+}
 
 // feat/module-system - every custom module's live entries, keyed by module id.
 if (window.eqOverlay.getModuleEntries) {
