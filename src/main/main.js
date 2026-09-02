@@ -1317,7 +1317,11 @@ onLogLine('lockoutCommand', (line) => {
       .filter((w) => w.buffSource === 'lockout')
       .map((w) => (w.lockoutTriggerWord || 'eqrlm'))
   );
-  if (wanted.has(word)) popLockoutBoard(word);
+  if (wanted.has(word)) {
+    popLockoutBoard(word);
+  } else {
+    debugLog(`LOCKOUT /tell "${word}" seen but no lockout aura uses it (words in use: ${[...wanted].join(', ') || 'none'})`);
+  }
 });
 // The longest timeout any damage aura asks for - see setOptions for why the longest and not the
 // shortest. Recomputed on any widget change rather than read per line, because it changes when
@@ -1347,6 +1351,10 @@ setInterval(() => {
   // scribing a travel spell. Cheap: a breadth-first search over 104 nodes, only for auras that are
   // actually travel guides, and almost always zero of them.
   pushTravelRoutes();
+  // The raid-lockout aura is transient (a shown board clears itself when its timer lapses), so it
+  // needs a heartbeat to notice that lapse and to give a freshly-created aura window its first
+  // (empty) push. Same cost profile as the travel push - a handful of small maps.
+  pushLockoutBoard();
 }, 1000);
 buffEngine.on('unknownBuffsChanged', (buffs) => broadcast('buffs:unknown', buffs));
 buffEngine.on('ambiguousCastsChanged', (casts) => {
