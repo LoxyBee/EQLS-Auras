@@ -8888,11 +8888,20 @@ function initBuffPlanner() {
   let level = PLANNER_MAX_LEVEL; // the one shared character level
   let order = []; // buff names, the dragged priority order
   let hasManualOrder = false; // true once the user has dragged (a non-empty saved buffPlanOrder)
+  let syncingClasses = false; // true while syncClassSelects pushes values in - suppresses commitClasses
 
   // One row, three class dropdowns - it's one multiclass character, not three mains, so there is
   // one level (the input above this row) and it applies to all three.
+  //
+  // Built exactly ONCE. search-dropdown.js enhances each <select> by wrapping it in a .sd-wrap and
+  // drawing a button + popup beside it; destroying and recreating the <select> (an earlier version
+  // did, on every loadInput) orphans that wrapper and leaves a duplicate control on screen. On a
+  // reload we only push new values in - syncClassSelects().
   function buildClassSelects() {
-    classRowEl.querySelectorAll('.planner-class-select').forEach((el) => el.remove());
+    if (classRowEl.querySelector('.planner-class-select')) {
+      syncClassSelects();
+      return;
+    }
     for (let i = 0; i < 3; i++) {
       const sel = document.createElement('select');
       sel.className = 'text-input planner-class-select';
@@ -8905,6 +8914,24 @@ function initBuffPlanner() {
     }
   }
 
+  // Push the current `classes` into the three selects without recreating them, and let the
+  // enhanced display catch up (search-dropdown re-syncs on the select's own 'change' event).
+  function syncClassSelects() {
+    const sels = classRowEl.querySelectorAll('.planner-class-select');
+    syncingClasses = true;
+    try {
+      sels.forEach((sel, i) => {
+        const want = classes[i] || '';
+        if (sel.value !== want) {
+          sel.value = want;
+          sel.dispatchEvent(new Event('change', { bubbles: false }));
+        }
+      });
+    } finally {
+      syncingClasses = false;
+    }
+  }
+
   function readClassSelects() {
     const out = [];
     for (const sel of classRowEl.querySelectorAll('.planner-class-select')) {
@@ -8914,6 +8941,7 @@ function initBuffPlanner() {
   }
 
   function commitClasses() {
+    if (syncingClasses) return; // a programmatic value push, not a user pick
     classes = readClassSelects();
     window.eqTracker.setPlannerClasses(null, classes).then(recompute);
   }
