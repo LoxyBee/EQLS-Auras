@@ -1745,6 +1745,10 @@ function initWidgetsPanel() {
   const travelSettingsEl = document.getElementById('widget-travel-settings');
   const travelDestinationCurrentEl = document.getElementById('widget-travel-destination-current');
   const travelCommandInputEl = document.getElementById('widget-travel-command-input');
+  const lockoutSettingsEl = document.getElementById('widget-lockout-settings');
+  const lockoutTriggerWordInput = document.getElementById('widget-lockout-command-input');
+  const lockoutAutoHideSlider = document.getElementById('widget-lockout-autohide-slider');
+  const lockoutAutoHideValueEl = document.getElementById('widget-lockout-autohide-value');
   const damageSettingsEl = document.getElementById('widget-damage-settings');
   const fightTimeoutSlider = document.getElementById('widget-fight-timeout-slider');
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
@@ -1778,7 +1782,7 @@ function initWidgetsPanel() {
     'topic-panel-this-aura': [
       'widget-text-message-row', 'widget-always-on-row', 'widget-ally-alert-row',
       'widget-text-instant-row', 'widget-text-stack-row', 'widget-travel-settings',
-      'widget-damage-settings',
+      'widget-damage-settings', 'widget-lockout-settings',
     ],
     'topic-panel-size': ['widget-list-only-settings', 'widget-icon-only-settings'],
     'topic-panel-text': ['widget-text-size-row', 'widget-text-justify-row'],
@@ -2949,6 +2953,7 @@ function initWidgetsPanel() {
     if (widget.kind === 'raid-named-builtin') return 'Raid named';
     if (widget.buffSource === 'damage') return 'Damage parser';
     if (widget.buffSource === 'travel') return 'Travel guide';
+    if (widget.buffSource === 'lockout') return 'Raid lockouts';
     if (widget.displayMode === 'text') return 'Custom text';
     if (widget.buffSource === 'customTimer') return 'Custom timer';
     if (widget.buffSource === 'ally' && widget.trackOnEnemies) return 'Custom debuff';
@@ -3004,6 +3009,7 @@ function initWidgetsPanel() {
     if (widget.kind === 'module-aura') return 'module';
     if (widget.buffSource === 'damage') return 'damage';
     if (widget.buffSource === 'travel') return 'travel';
+    if (widget.buffSource === 'lockout') return 'lockout';
     if (widget.displayMode === 'text') {
       if (widget.allyDebuffAlert) return 'ally-alert';
       return widget.buffSource === 'customTimer' ? 'text-customTimer' : 'text';
@@ -3052,6 +3058,10 @@ function initWidgetsPanel() {
     // 'display-choice', since a travel aura never offers icon mode at all) gives the two controls
     // that actually shape how a multi-line route reads: list width and row size.
     'travel': ['list-format', 'timer-text', 'opacity', 'position', 'alerts', 'travel-settings'],
+    // The raid-lockout aura. Same reasoning as raid-named (fixed zone-then-tier list, no picker, no
+    // sort/merge/borders) with no 'alerts' either - it pops on a macro and clears itself, nothing
+    // lands or expires - plus its own settings block: the trigger word and the auto-hide time.
+    'lockout': ['list-format', 'timer-text', 'opacity', 'position', 'lockout-settings'],
   };
 
   // Applies one shape's field set to every optional row/card, and returns the Set so
@@ -3196,6 +3206,7 @@ function initWidgetsPanel() {
     // fight timeout on a buff aura would be a live control that changes nothing.
     damageSettingsEl.style.display = has('damage-settings') ? '' : 'none';
     travelSettingsEl.style.display = has('travel-settings') ? '' : 'none';
+    if (lockoutSettingsEl) lockoutSettingsEl.style.display = has('lockout-settings') ? '' : 'none';
     // feat/module-system - a module aura whose module keeps its controls on the aura panel
     // ('aura', the default) rather than a sidebar page. Hidden if the module isn't loaded yet
     // (registry is async - the card appears on the re-render once it is) or declares no controls.
@@ -3439,6 +3450,13 @@ function initWidgetsPanel() {
     if (fields.has('travel-settings')) {
       showTravelDestination(widget.travelDestination);
       showTravelPickerCommand();
+    }
+
+    if (fields.has('lockout-settings') && lockoutTriggerWordInput) {
+      lockoutTriggerWordInput.value = widget.lockoutTriggerWord || 'eqrlm';
+      const sec = typeof widget.lockoutAutoHideSec === 'number' ? widget.lockoutAutoHideSec : 20;
+      lockoutAutoHideSlider.value = sec;
+      lockoutAutoHideValueEl.textContent = `${sec}s`;
     }
 
     // feat/module-system - (re)build the module aura's own controls, once per selectWidget so a
@@ -4288,6 +4306,16 @@ function initWidgetsPanel() {
         'each one\'s share. A "just my row" toggle hides the rest without un-counting them.',
       create: (name) => window.eqTracker.createDamageMeterWidget(name, false),
     },
+    {
+      id: 'lockout-board',
+      name: 'Raid lockouts',
+      group: 'standalone',
+      description:
+        'Which weekly raids you still have left, grouped by zone with the difficulty tiers under ' +
+        'each. In game, type /tell eqrlm to pop it; it hides itself after 20 seconds. Cleared ' +
+        'raids are not shown.',
+      create: (name) => window.eqTracker.createLockoutBoardWidget(name),
+    },
   ];
 
   // Not-yet-built/locked premade ideas - shown inline in their eventual category as
@@ -5077,6 +5105,19 @@ function initWidgetsPanel() {
     fightTimeoutValueEl.textContent = `${sec}s`;
     window.eqTracker.setWidgetDamageOptions(selectedId, { fightTimeoutSec: sec });
   });
+
+  if (lockoutTriggerWordInput) {
+    lockoutTriggerWordInput.addEventListener('change', () => {
+      window.eqTracker.setWidgetLockoutOptions(selectedId, { triggerWord: lockoutTriggerWordInput.value }).then((cfg) => {
+        if (cfg && document.activeElement !== lockoutTriggerWordInput) lockoutTriggerWordInput.value = cfg.lockoutTriggerWord;
+      });
+    });
+    lockoutAutoHideSlider.addEventListener('input', () => {
+      const sec = Number(lockoutAutoHideSlider.value);
+      lockoutAutoHideValueEl.textContent = `${sec}s`;
+      window.eqTracker.setWidgetLockoutOptions(selectedId, { autoHideSec: sec });
+    });
+  }
   if (damageRowCapSlider) {
     damageRowCapSlider.addEventListener('input', () => {
       const n = Number(damageRowCapSlider.value);

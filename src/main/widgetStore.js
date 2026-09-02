@@ -132,6 +132,23 @@ function clampDamageRowCap(value) {
   return Math.min(20, Math.max(1, Math.round(n)));
 }
 
+// The raid-lockout aura pops on a macro and hides itself after this many seconds.
+const DEFAULT_LOCKOUT_AUTO_HIDE_SEC = 20;
+function clampLockoutAutoHideSec(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_LOCKOUT_AUTO_HIDE_SEC;
+  return Math.min(120, Math.max(3, Math.round(n)));
+}
+
+// The word the player's macro sends via `/tell <word>` to pop the board. Lowercased, letters and
+// digits only (a `/tell` target can't contain punctuation or spaces), capped so a paste can't
+// make it unusable. Empty falls back to the default.
+const DEFAULT_LOCKOUT_TRIGGER_WORD = 'eqrlm';
+function cleanLockoutTriggerWord(value) {
+  const w = String(value == null ? '' : value).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24);
+  return w || DEFAULT_LOCKOUT_TRIGGER_WORD;
+}
+
 function isTextAura(widget) {
   return !!widget && widget.displayMode === 'text';
 }
@@ -743,6 +760,8 @@ const SHAREABLE_FIELDS = [
   'damageScope',
   'showCharmedPetsRow',
   'damageRowCap',
+  'lockoutTriggerWord',
+  'lockoutAutoHideSec',
   'travelDestination',
   'showOnAllProfiles',
   'visibleInZones',
@@ -870,6 +889,10 @@ function normalizeWidget(widget) {
     damageScope: ['all', 'group', 'mine'].includes(widget.damageScope) ? widget.damageScope : 'all',
     showCharmedPetsRow: widget.showCharmedPetsRow !== false,
     damageRowCap: clampDamageRowCap(widget.damageRowCap),
+    // Raid-lockout aura. Carried through for every aura (cheap, and normalizeWidget spreads first)
+    // but only read when buffSource === 'lockout'.
+    lockoutTriggerWord: cleanLockoutTriggerWord(widget.lockoutTriggerWord),
+    lockoutAutoHideSec: clampLockoutAutoHideSec(widget.lockoutAutoHideSec),
     // A widget saved before this field existed still has its real duration sitting on its first
     // trigger (they were all in sync anyway on every real aura seen so far - see the field's own
     // comment) - read it from there rather than resetting everyone to the bare default. A widget
@@ -1585,6 +1608,30 @@ class WidgetStore {
     return widget;
   }
 
+  // The raid-lockout aura (owner request, 2 Sep 2026).
+  //
+  // Another plain custom aura, buffSource 'lockout'. Like the travel guide it draws a fixed-order
+  // list fed from a main-process service (lockoutService) rather than the buff engine, and like a
+  // text alert it is transient - it appears when the player's macro sends `/tell <triggerWord>`
+  // and hides itself after `lockoutAutoHideSec`. No buff picker, no source choice.
+  createLockoutBoard(name, { activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name || 'Raid lockouts');
+    widget.buffSource = 'lockout';
+    // Zone-then-tier order, exactly like the travel route and the raid-named board. Any sort would
+    // scramble a checklist that is meant to read top to bottom.
+    widget.sortOrder = 'default';
+    // Rows read "Plane of Fear" / "d3 · Adaptive" - a little wider than a spell name.
+    widget.listWidth = 240;
+    // Nothing lands and nothing expires on this aura, so the landing glow has no event.
+    widget.landingGlowEnabled = false;
+    widget.lockoutTriggerWord = DEFAULT_LOCKOUT_TRIGGER_WORD;
+    widget.lockoutAutoHideSec = DEFAULT_LOCKOUT_AUTO_HIDE_SEC;
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
   // Note 19. The damage meter.
   //
   // A plain custom aura with buffSource 'damage', not a new kind. That is the whole reason this
@@ -2181,6 +2228,10 @@ module.exports = {
   clampInstantSec,
   clampSoundCooldownSec,
   clampDamageRowCap,
+  clampLockoutAutoHideSec,
+  cleanLockoutTriggerWord,
+  DEFAULT_LOCKOUT_AUTO_HIDE_SEC,
+  DEFAULT_LOCKOUT_TRIGGER_WORD,
   MAX_INSTANT_DISPLAY_SEC,
   clampStackTextLines,
   MIN_STACK_TEXT_LINES,

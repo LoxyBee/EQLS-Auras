@@ -74,6 +74,7 @@ const { ModuleHost } = require('./moduleHost');
 const { readLastZoneEntry } = require('./logZonePeek');
 const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
+const { lockoutBoardRows } = require('../shared/lockoutBoard');
 const { matchShareCodeInChat, splitReason } = require('../shared/shareCodeChat');
 const { TRAVEL_SPELLS } = require('../shared/data/zoneGraph');
 const { IconService } = require('./iconService');
@@ -797,6 +798,9 @@ lockoutService.on('changed', () => {
   lockoutPushTimer = setTimeout(() => {
     lockoutPushTimer = null;
     broadcast('lockouts:changed', lockoutService.getStatus());
+    // If a raid-lockout aura is on screen right now, a kill that just landed should drop off it
+    // live rather than waiting for the 20s to lapse. Cheap no-op when nothing is shown.
+    pushLockoutBoard();
   }, 400);
 });
 lockoutService.on('backfillChanged', (status) => broadcast('lockouts:backfill', status));
@@ -1211,6 +1215,114 @@ function travelRowsFor(widget, zone, scribed) {
 function pushTravelRoutes() {
   broadcast('travel:routes', travelRoutes());
 }
+
+// -------------------------------------------------------------------------------------------------
+// The raid-lockout aura (owner request, 2 Sep 2026). Transient: the player's macro sends
+// `/tell <word>`, the board pops for `lockoutAutoHideSec`, then it clears itself. Same broadcast
+// shape as travel routes - one { widgetId: rows } map, each overlay picks its own id out - and the
+// same reasoning for living in the main process: the overlay can't require lockoutBoard.js
+// (lockoutBoardRows is required at the top of this file).
+const lockoutShownUntil = new Map(); // widget id -> ms timestamp to hide at
+let lockoutHideTimer = null;
+
+function hasLockoutWidget() {
+  return widgetManager.getAllWidgetConfigs().some((w) => w.buffSource === 'lockout');
+}
+
+// One board row -> an infinite, buff-shaped tile the overlay can draw. Zone/character headers are
+// flagged so overlay.js can style them; a tier row's `name` is "d3 · Adaptive".
+function lockoutTile(row, i) {
+  return {
+    name: row.label,
+    // "d1 · Normal" repeats across zones, so a name-only identity would collide (gotcha #13). The
+    // list is a fixed zone-then-tier order rebuilt wholesale each push, so a positional id is
+    // stable enough and unique.
+    id: `lockout-${i}`,
+    lockoutHeader: row.kind === 'zone' || row.kind === 'character',
+    lockoutKind: row.kind,
+    infinite: true,
+    remainingSec: null,
+    durationSec: null,
+    iconUrl: null,
+    showOnOverlay: true,
+    spellCategory: 'buff',
+  };
+}
+
+function lockoutBoardRoutes() {
+  const now = Date.now();
+  // getProjection() just reads the parsed states - cheap. It's empty until backfill has run
+  // (lazy, same as the Lockouts page); popLockoutBoard kicks that off.
+  let projection = null;
+  const out = {};
+  for (const w of widgetManager.getAllWidgetConfigs()) {
+    if (w.buffSource !== 'lockout') continue;
+    if ((lockoutShownUntil.get(w.id) || 0) <= now) { out[w.id] = []; continue; }
+    if (!projection) {
+      try { projection = lockoutService.getProjection(); } catch { projection = { characters: [] }; }
+    }
+    out[w.id] = lockoutBoardRows(projection).map((row, i) => lockoutTile(row, i));
+  }
+  return out;
+}
+
+function pushLockoutBoard() {
+  broadcast('lockout:board', lockoutBoardRoutes());
+  // Re-arm a single timer for the soonest hide, so a board clears itself even with no further
+  // log activity. One timer for all lockout auras - they rarely overlap and the recompute is tiny.
+  if (lockoutHideTimer) { clearTimeout(lockoutHideTimer); lockoutHideTimer = null; }
+  const now = Date.now();
+  const next = [...lockoutShownUntil.values()].filter((t) => t > now).sort((a, b) => a - b)[0];
+  if (next) lockoutHideTimer = setTimeout(pushLockoutBoard, Math.max(250, next - now));
+}
+
+function popLockoutBoard(word) {
+  const now = Date.now();
+  let matched = false;
+  let anyShown = false;
+  for (const w of widgetManager.getAllWidgetConfigs()) {
+    if (w.buffSource !== 'lockout') continue;
+    if ((w.lockoutTriggerWord || 'eqrlm') !== word) continue;
+    matched = true;
+    if ((lockoutShownUntil.get(w.id) || 0) > now) { anyShown = true; continue; }
+    lockoutShownUntil.set(w.id, now + (w.lockoutAutoHideSec || 20) * 1000);
+  }
+  if (!matched) return false;
+  // A second `/tell <word>` while it's up is "never mind" - same one-command-both-ways rule the
+  // travel picker uses.
+  if (anyShown) {
+    for (const w of widgetManager.getAllWidgetConfigs()) {
+      if (w.buffSource === 'lockout' && (w.lockoutTriggerWord || 'eqrlm') === word) lockoutShownUntil.delete(w.id);
+    }
+    debugLog(`LOCKOUT board dismissed by /tell ${word}`);
+    pushLockoutBoard();
+    return true;
+  }
+  debugLog(`LOCKOUT board opened by /tell ${word}`);
+  // Kick off the grid scan the first time, exactly like the Lockouts page does.
+  if (lockoutService.backfillState === 'idle') {
+    Promise.resolve(lockoutService.backfill()).then(pushLockoutBoard).catch(() => {});
+  }
+  pushLockoutBoard();
+  return true;
+}
+
+onLogLine('lockoutCommand', (line) => {
+  if (!hasLockoutWidget()) return;
+  const typed = matchOfflineTell(line);
+  if (!typed) return;
+  const word = typed.toLowerCase();
+  const wanted = new Set(
+    widgetManager.getAllWidgetConfigs()
+      .filter((w) => w.buffSource === 'lockout')
+      .map((w) => (w.lockoutTriggerWord || 'eqrlm'))
+  );
+  if (wanted.has(word)) {
+    popLockoutBoard(word);
+  } else {
+    debugLog(`LOCKOUT /tell "${word}" seen but no lockout aura uses it (words in use: ${[...wanted].join(', ') || 'none'})`);
+  }
+});
 // The longest timeout any damage aura asks for - see setOptions for why the longest and not the
 // shortest. Recomputed on any widget change rather than read per line, because it changes when
 // someone edits a setting and at no other time.
@@ -1239,6 +1351,10 @@ setInterval(() => {
   // scribing a travel spell. Cheap: a breadth-first search over 104 nodes, only for auras that are
   // actually travel guides, and almost always zero of them.
   pushTravelRoutes();
+  // The raid-lockout aura is transient (a shown board clears itself when its timer lapses), so it
+  // needs a heartbeat to notice that lapse and to give a freshly-created aura window its first
+  // (empty) push. Same cost profile as the travel push - a handful of small maps.
+  pushLockoutBoard();
 }, 1000);
 buffEngine.on('unknownBuffsChanged', (buffs) => broadcast('buffs:unknown', buffs));
 buffEngine.on('ambiguousCastsChanged', (casts) => {
@@ -1550,6 +1666,7 @@ ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffE
 ipcMain.handle('damage:getActive', () => damageViews());
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
 ipcMain.handle('travel:getRoutes', () => travelRoutes());
+ipcMain.handle('lockout:getBoard', () => lockoutBoardRoutes());
 ipcMain.handle('travel:getZones', () => allZoneNames());
 // Used only by the zone-prompt popup's pick list - no instance-tier variants (" (Awakened)",
 // " (Fused)"), at the owner's request. `travel:getZones` above is untouched for anything that
@@ -1977,6 +2094,9 @@ ipcMain.handle('widget:createModuleAura', (_event, { name, moduleId }) => widget
 ipcMain.handle('widget:createDebuff', (_event, { name }) => widgetManager.createDebuffWidget(name));
 ipcMain.handle('widget:createDamageMeter', (_event, { name, mineOnly }) =>
   widgetManager.createDamageMeterWidget(name, mineOnly)
+);
+ipcMain.handle('widget:createLockoutBoard', (_event, { name }) =>
+  widgetManager.createLockoutBoardWidget(name)
 );
 ipcMain.handle('widget:createTravelGuide', (_event, { name, destination }) =>
   widgetManager.createTravelGuideWidget(name, destination)
@@ -2545,6 +2665,11 @@ ipcMain.handle('app:backupConfig', () => {
   }
 });
 ipcMain.handle('widget:setListWidth', (_event, { id, value }) => widgetManager.setListWidth(id, value));
+ipcMain.handle('widget:setLockoutOptions', (_event, { id, ...opts }) => {
+  const config = widgetManager.setLockoutOptions(id, opts);
+  pushLockoutBoard(); // a shown board picks up the new word / hide time right away
+  return config;
+});
 ipcMain.on('widget:reportContentSize', (_event, { id, width, height, originX }) => widgetManager.fitToContent(id, width, height, originX));
 ipcMain.handle('widget:setOpacity', (_event, { id, value }) => widgetManager.setOpacity(id, value));
 ipcMain.handle('widget:setBuffFilter', (_event, { id, mode, names }) => widgetManager.setBuffFilter(id, mode, names));

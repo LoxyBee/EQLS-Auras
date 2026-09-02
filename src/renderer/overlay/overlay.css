@@ -296,6 +296,19 @@ body.unlocked .drag-overlay {
   letter-spacing: 0.03em;
 }
 
+/* The raid-lockout aura: a zone/character line is a heading, the owed tiers under it are indented
+   and a touch dimmer so the zone groupings read at a glance. */
+.lockout-header .name,
+.lockout-header .tile-label {
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.lockout-tier .name,
+.lockout-tier .tile-label {
+  padding-left: 1.1em;
+  opacity: 0.85;
+}
+
 .text-tile {
   width: max-content;
   max-width: 100%;

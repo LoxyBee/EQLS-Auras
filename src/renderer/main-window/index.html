@@ -391,6 +391,21 @@
                     <p class="hint">If it does not know your current zone, it asks for that first.</p>
                   </div>
 
+                  <!-- The raid-lockout aura. Pops on a /tell macro, hides itself after a set time.
+                       Shown only on a lockout aura - see the SHAPE_FIELDS check in main-window.js. -->
+                  <div id="widget-lockout-settings" style="display:none">
+                    <h4 class="settings-subsection-title" title="Which weekly raids you still have left, grouped by zone with the difficulty tiers under each. Cleared raids are never shown.">Raid lockouts</h4>
+                    <div class="row">
+                      <span class="label" title="Typed as /tell <word> in game, from a macro. A second /tell with the same word hides the board again.">Command word:</span>
+                      <input type="text" id="widget-lockout-command-input" maxlength="24" style="width:140px" />
+                    </div>
+                    <div class="row">
+                      <label for="widget-lockout-autohide-slider" title="How long the board stays on screen after the macro pops it.">Hide after</label>
+                      <input type="range" id="widget-lockout-autohide-slider" min="3" max="120" step="1" />
+                      <span id="widget-lockout-autohide-value" class="slider-value"></span>
+                    </div>
+                  </div>
+
                   <!-- feat/module-system. A module aura whose module keeps its settings on the aura
                        panel (settingsUI 'aura', the default) - its declared controls are rendered
                        into here by main-window.js. Empty and hidden for every other aura. -->

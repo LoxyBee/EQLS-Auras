@@ -51,7 +51,7 @@ const { widgetShape, SHAPE_FIELDS } = loadShapeLogic();
 
 const ALL_SHAPES = [
   'self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff',
-  'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'module',
+  'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'lockout', 'module',
 ];
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,7 @@ const REPRESENTATIVES = {
   'custom-timer': { kind: 'custom', buffSource: 'customTimer', displayMode: 'icons' },
   'damage': { kind: 'custom', buffSource: 'damage', displayMode: 'list' },
   'travel': { kind: 'custom', buffSource: 'travel', displayMode: 'list' },
+  'lockout': { kind: 'custom', buffSource: 'lockout', displayMode: 'list' },
   'module': { kind: 'module-aura', buffSource: 'module', displayMode: 'icons' },
 };
 
@@ -133,10 +134,10 @@ const FIELD_SHAPES = {
   // 'raid-named' (#33) and 'damage' (note 19) reuse 'list-format' the same way travel does - a
   // list of non-spell rows with no icon mode, wanting only the list-width/row-size sizing and none
   // of the sort/merge/borders that only make sense for spell tiles.
-  'list-format': ['raid-named', 'travel', 'damage'],
-  'timer-text': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel', 'module'],
-  'opacity': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'module'],
-  'position': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'module'],
+  'list-format': ['raid-named', 'travel', 'lockout', 'damage'],
+  'timer-text': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel', 'lockout', 'module'],
+  'opacity': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'lockout', 'module'],
+  'position': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'lockout', 'module'],
   'alerts': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'travel', 'module'],
   'text-fields': ['ally-alert', 'text', 'text-customTimer'],
   'text-instant': ['ally-alert', 'text'],
@@ -160,6 +161,8 @@ const FIELD_SHAPES = {
   'track-others': ['self-buffs'],
   'damage-settings': ['damage'],
   'travel-settings': ['travel'],
+  // The raid-lockout aura's own block: the /tell trigger word and the auto-hide time.
+  'lockout-settings': ['lockout'],
   // feat/module-system - a module aura whose module keeps its controls on the aura panel
   // (settingsUI 'aura', the default). Whether the card actually shows also depends on the loaded
   // module declaring controls, but the shape always carries the slot.
