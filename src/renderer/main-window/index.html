@@ -1174,111 +1174,83 @@
         <h3 class="settings-page-section-title">App settings</h3>
         <p class="hint">Things you set once. Click a row to open it.</p>
 
-        <div class="block" id="app-settings-block">
-          <div class="topic" id="topic-icon-set" data-topic>
-            <button type="button" class="topic-head" data-toggle title="EQ ships a few icon art styles. If icons look wrong, match this to how a buff looks on your hotbar. Applies to every aura.">
-              <span class="chev"></span>
-              <span class="topic-title">Icon set</span>
-              <span class="topic-summary" id="topic-icon-set-summary"></span>
-            </button>
+        <div id="app-settings-block">
+          <div class="card">
+            <h3 title="EQ ships a few icon art styles. If icons look wrong, match this to how a buff looks on your hotbar. Applies to every aura.">Icon set</h3>
             <!-- id kept for initWidgetsPanel's iconSetCard lookup (a legacy Overlay-page display
                  toggle - a no-op now that Icon set lives here on Setup, but it must not be null). -->
-            <div class="topic-body" id="icon-set-card"><div class="topic-body-inner">
+            <div id="icon-set-card">
               <div class="row">
                 <span class="label">Icon set:</span>
                 <select id="icon-set-select"></select>
               </div>
-            </div></div>
+            </div>
           </div>
 
-          <div class="topic" id="topic-merge-rule" data-topic>
-            <button type="button" class="topic-head" data-toggle title="Applies to every aura with &quot;Merge buffs that share a duration&quot; turned on.">
-              <span class="chev"></span>
-              <span class="topic-title">Merged tiles</span>
-              <span class="topic-summary" id="topic-merge-rule-summary"></span>
-            </button>
-            <div class="topic-body"><div class="topic-body-inner">
-              <div class="row">
-                <span class="label">Treat as the same:</span>
-                <label title="Simple, but many spells last 24 minutes, so unrelated buffs merge too."><input type="radio" name="merge-rule" value="duration" /> Same length</label>
-                <label title="Only merges buffs that landed together — a group buff merges, unrelated ones don't."><input type="radio" name="merge-rule" value="burst" /> Same length, cast together</label>
-              </div>
-            </div></div>
+          <div class="card">
+            <h3 title="Applies to every aura with &quot;Merge buffs that share a duration&quot; turned on.">Merged tiles</h3>
+            <div class="row">
+              <span class="label">Treat as the same:</span>
+              <label title="Simple, but many spells last 24 minutes, so unrelated buffs merge too."><input type="radio" name="merge-rule" value="duration" /> Same length</label>
+              <label title="Only merges buffs that landed together — a group buff merges, unrelated ones don't."><input type="radio" name="merge-rule" value="burst" /> Same length, cast together</label>
+            </div>
           </div>
 
-          <div class="topic" id="topic-ui-scale" data-topic>
-            <button type="button" class="topic-head" data-toggle title="Scales this window only — text, spacing and controls. Auras are unaffected.">
-              <span class="chev"></span>
-              <span class="topic-title">App text size</span>
-              <span class="topic-summary" id="topic-ui-scale-summary"></span>
-            </button>
-            <div class="topic-body"><div class="topic-body-inner">
-              <!-- A dropdown, deliberately not a slider - changing this rescales the whole window,
-                   including the control being dragged. A dropdown commits one value on release. -->
-              <div class="row">
-                <span class="label">Size:</span>
-                <select id="ui-scale-select" class="text-input">
-                  <option value="80">80%</option>
-                  <option value="90">90%</option>
-                  <option value="100" selected>100% (default)</option>
-                  <option value="110">110%</option>
-                  <option value="120">120%</option>
-                  <option value="130">130%</option>
-                  <option value="140">140%</option>
-                  <option value="150">150%</option>
-                  <option value="160">160%</option>
-                </select>
-                <button type="button" id="ui-scale-reset-btn">Reset</button>
-              </div>
-            </div></div>
+          <div class="card">
+            <h3 title="Scales this window only — text, spacing and controls. Auras are unaffected.">App text size</h3>
+            <!-- A dropdown, deliberately not a slider - changing this rescales the whole window,
+                 including the control being dragged. A dropdown commits one value on release. -->
+            <div class="row">
+              <span class="label">Size:</span>
+              <select id="ui-scale-select" class="text-input">
+                <option value="80">80%</option>
+                <option value="90">90%</option>
+                <option value="100" selected>100% (default)</option>
+                <option value="110">110%</option>
+                <option value="120">120%</option>
+                <option value="130">130%</option>
+                <option value="140">140%</option>
+                <option value="150">150%</option>
+                <option value="160">160%</option>
+              </select>
+              <button type="button" id="ui-scale-reset-btn">Reset</button>
+            </div>
           </div>
 
-          <div class="topic" id="topic-hide-hotkey" data-topic>
-            <button type="button" class="topic-head" data-toggle title="Same as the top-bar &quot;Hide auras&quot; button. Captured OS-wide (EQ never sees it), so pick a key you don't use in game. If another app owns it, the button still works — the line below shows what took.">
-              <span class="chev"></span>
-              <span class="topic-title">Hide-auras hotkey</span>
-              <span class="topic-summary" id="topic-hide-hotkey-summary"></span>
-            </button>
-            <div class="topic-body"><div class="topic-body-inner">
-              <div class="row">
-                <span class="label">Key:</span>
-                <select id="hide-hotkey-select" class="text-input">
-                  <option value="ScrollLock">Scroll Lock</option>
-                  <option value="F13">F13</option>
-                  <option value="F14">F14</option>
-                  <option value="F15">F15</option>
-                  <option value="F16">F16</option>
-                  <option value="Alt+Shift+H">Alt+Shift+H</option>
-                  <option value="none">None (button only)</option>
-                </select>
-              </div>
-              <p class="hint" id="hide-hotkey-hint"></p>
-            </div></div>
+          <div class="card">
+            <h3 title="Same as the top-bar &quot;Hide auras&quot; button. Captured OS-wide (EQ never sees it), so pick a key you don't use in game. If another app owns it, the button still works — the line below shows what took.">Hide-auras hotkey</h3>
+            <div class="row">
+              <span class="label">Key:</span>
+              <select id="hide-hotkey-select" class="text-input">
+                <option value="ScrollLock">Scroll Lock</option>
+                <option value="F13">F13</option>
+                <option value="F14">F14</option>
+                <option value="F15">F15</option>
+                <option value="F16">F16</option>
+                <option value="Alt+Shift+H">Alt+Shift+H</option>
+                <option value="none">None (button only)</option>
+              </select>
+            </div>
+            <p class="hint" id="hide-hotkey-hint"></p>
           </div>
 
-          <div class="topic" id="topic-app-info" data-topic>
-            <button type="button" class="topic-head" data-toggle title="Build version, where your data lives, and the backup / move-to-another-PC tools.">
-              <span class="chev"></span>
-              <span class="topic-title">Version &amp; app data</span>
-              <span class="topic-summary" id="topic-app-info-summary"></span>
-            </button>
-            <div class="topic-body"><div class="topic-body-inner">
-              <p id="status">Checking...</p>
-              <dl id="version-info"></dl>
-              <p class="hint">Auras, profiles, buff fixes, sounds and settings all live in one folder — uninstalling never touches it.</p>
-              <div class="row">
-                <button type="button" id="backup-config-btn" class="btn-prominent" title="Copies your app data into a dated folder — a snapshot to fall back on before an update.">Back up now</button>
-                <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
-              </div>
-              <p class="hint" id="backup-config-status"></p>
-              <p class="hint"><strong>Move to another PC, or hand the app to someone:</strong></p>
-              <div class="row">
-                <button type="button" id="export-config-btn" title="Writes a bundle (auras, profiles, buff edits, sounds, settings) into a folder you can zip and send.">Export config…</button>
-                <button type="button" id="import-config-btn" title="Replaces this PC's config with a bundle. Your current config is backed up first; the app restarts.">Import config…</button>
-                <button type="button" id="open-exports-folder-btn">📁 Open exports folder</button>
-              </div>
-              <p class="hint" id="transfer-config-status"></p>
-            </div></div>
+          <div class="card">
+            <h3 title="Build version, where your data lives, and the backup / move-to-another-PC tools.">Version &amp; app data</h3>
+            <p id="status">Checking...</p>
+            <dl id="version-info"></dl>
+            <p class="hint">Auras, profiles, buff fixes, sounds and settings all live in one folder — uninstalling never touches it.</p>
+            <div class="row">
+              <button type="button" id="backup-config-btn" class="btn-prominent" title="Copies your app data into a dated folder — a snapshot to fall back on before an update.">Back up now</button>
+              <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
+            </div>
+            <p class="hint" id="backup-config-status"></p>
+            <p class="hint"><strong>Move to another PC, or hand the app to someone:</strong></p>
+            <div class="row">
+              <button type="button" id="export-config-btn" title="Writes a bundle (auras, profiles, buff edits, sounds, settings) into a folder you can zip and send.">Export config…</button>
+              <button type="button" id="import-config-btn" title="Replaces this PC's config with a bundle. Your current config is backed up first; the app restarts.">Import config…</button>
+              <button type="button" id="open-exports-folder-btn">📁 Open exports folder</button>
+            </div>
+            <p class="hint" id="transfer-config-status"></p>
           </div>
         </div>
 

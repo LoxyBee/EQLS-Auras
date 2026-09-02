@@ -25,9 +25,6 @@ async function init() {
     });
   }
 
-  const appSettingsBlock = document.getElementById('app-settings-block');
-  if (appSettingsBlock) appSettingsBlock.addEventListener('change', refreshAppSettingsSummaries);
-
   initTitleBar();
   initNavigation();
   initTopicToggles();
@@ -61,35 +58,6 @@ async function init() {
   initBuffPlanner();
   initLoggingWatch();
   initChangelog();
-  refreshAppSettingsSummaries();
-}
-
-// Workstream B/C follow-up: the collapsed topic rows on the Setup page's "App settings" block
-// each carry a summary span showing their current value, so you can see what a row is set to
-// without opening it. Called after each control's async load settles, on any change inside the
-// block, and once at the end of init(). Module scope so the per-control init functions can call
-// it without a closure. Idempotent - reads the live DOM, writes the spans, nothing else.
-function refreshAppSettingsSummaries() {
-  const selText = (id) => {
-    const el = document.getElementById(id);
-    return el && el.selectedIndex >= 0
-      ? el.options[el.selectedIndex].text.replace(/\s*\(default\)$/, '')
-      : '';
-  };
-  const radioLabel = (name) => {
-    const hit = document.querySelector(`input[name="${name}"]:checked`);
-    return hit && hit.closest('label') ? hit.closest('label').textContent.trim() : '';
-  };
-  const set = (id, text) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = text || '';
-  };
-  set('topic-icon-set-summary', selText('icon-set-select'));
-  set('topic-merge-rule-summary', radioLabel('merge-rule'));
-  set('topic-ui-scale-summary', selText('ui-scale-select'));
-  set('topic-hide-hotkey-summary', selText('hide-hotkey-select'));
-  const ver = document.querySelector('#version-info dd');
-  set('topic-app-info-summary', ver ? `v${ver.textContent}` : '');
 }
 
 // Backlog #18 - the "What's changed" list on the About page, from src/shared/data/changelog.js
@@ -2302,7 +2270,6 @@ function initWidgetsPanel() {
   window.eqTracker.getHideHotkeyChoice().then((choice) => {
     hideHotkeySelect.value = choice || 'ScrollLock';
     refreshHideHotkeyHelp(hideHotkeySelect.value);
-    refreshAppSettingsSummaries();
   });
   hideHotkeySelect.addEventListener('change', () => {
     window.eqTracker.setHideHotkeyChoice(hideHotkeySelect.value).then(() => {
@@ -6255,7 +6222,6 @@ function initWidgetsPanel() {
       opt.selected = set === current;
       iconSetSelect.appendChild(opt);
     }
-    refreshAppSettingsSummaries();
   });
   iconSetSelect.addEventListener('change', () => {
     window.eqTracker.setIconSet(iconSetSelect.value);
@@ -6793,7 +6759,6 @@ function initUiScale() {
 
   window.eqTracker.getUiScale().then((pct) => {
     show(pct || 100);
-    refreshAppSettingsSummaries();
   });
 
   select.addEventListener('change', () => {
@@ -6925,7 +6890,6 @@ function initMergeRule() {
     radios.forEach((radio) => {
       radio.checked = radio.value === rule;
     });
-    refreshAppSettingsSummaries();
   });
   radios.forEach((radio) => {
     radio.addEventListener('change', () => {
