@@ -139,6 +139,9 @@ function validateModule(raw, { knownIds } = {}) {
       apiVersion: API_VERSION,
       description: typeof raw.description === 'string' ? raw.description : '',
       hasAura,
+      // Optional. When true, the Add Aura list badges this entry "Experimental" - still creatable,
+      // just flagged as rough / known-incomplete so nobody relies on it blind.
+      experimental: raw.experimental === true,
       settingsUI,
       page,
       defaults,
@@ -230,7 +233,7 @@ class ModuleHost extends EventEmitter {
         continue;
       }
       const m = result.module;
-      this.discovered.push({ file, id: m.id, name: m.name, description: m.description, hasAura: m.hasAura, settingsUI: m.settingsUI });
+      this.discovered.push({ file, id: m.id, name: m.name, description: m.description, hasAura: m.hasAura, settingsUI: m.settingsUI, experimental: m.experimental });
       // Registered, but only ACTIVE (onLine runs, aura works, offered in Add Aura) when enabled.
       this.registry.set(m.id, { module: m, entries: new Map(), slowStrikes: 0, disabled: false });
     }
@@ -398,6 +401,7 @@ class ModuleHost extends EventEmitter {
         description: d.description,
         hasAura: d.hasAura,
         settingsUI: d.settingsUI,
+        experimental: !!d.experimental,
         page: rec ? rec.module.page : [],
         settings: this.getSettings(d.id),
         core: CORE_MODULE_IDS.includes(d.id),

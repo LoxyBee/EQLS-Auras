@@ -112,6 +112,10 @@ module.exports = {
   apiVersion: 1,
   description: 'Who the mob is actually swinging at. Observed, not estimated.',
   hasAura: true,
+  // Marked experimental in the Add Aura list: the melee-line parsing is being reworked to
+  // recognise article-less named / raid-boss mobs ("Lady Vox", "Unmoving"), which it currently
+  // misses entirely - so the board is unreliable in raid content until that lands.
+  experimental: true,
   // Its two options live on the aura's own settings panel, not a sidebar page - the recommended
   // shape for a module without a lot of GLOBAL settings. See docs/MODULE-AUTHORING.md.
   settingsUI: 'aura',
