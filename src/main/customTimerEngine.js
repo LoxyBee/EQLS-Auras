@@ -10,6 +10,18 @@ const {
 } = require('./buffParser');
 
 const TICK_INTERVAL_MS = 1000;
+const DEFAULT_TRIGGER_DURATION_SEC = 5;
+
+// Defence in depth: widgetStore.normalizeWidget already clamps every timer's durationSec /
+// cooldownSec (0..3600, non-finite -> a sane default) on every store path - import, share code,
+// UI, disk load. But a caller that hands a widget object straight to setGetWidgetsFn, bypassing
+// the store, could still get a NaN / Infinity / string in here, and `now + NaN * 1000` makes a
+// timer that never expires. So the engine clamps again at the point it reads the value. Same
+// semantics as widgetStore.clampTimerSeconds.
+function clampSec(value, fallback) {
+  const n = typeof value === 'string' ? Number(value) : value;
+  return Number.isFinite(n) ? Math.max(0, Math.min(3600, Math.round(n))) : fallback;
+}
 
 // Much simpler sibling to BuffEngine, for user-defined timers keyed off
 // arbitrary log text rather than mined spell data - no ambiguity tiers, no
@@ -416,7 +428,7 @@ class CustomTimerEngine extends EventEmitter {
         continue;
       }
 
-      const durSec = def.durationSec;
+      const durSec = clampSec(def.durationSec, DEFAULT_TRIGGER_DURATION_SEC);
 
       // Reverse detection. See the class's own header comment on the 'hidden' phase for the full
       // shape - this is the other half, seeing the trigger for the first time. `reverse` came from
@@ -463,7 +475,7 @@ class CustomTimerEngine extends EventEmitter {
         // line reported. cooldownSec rides along so _tick does not have to look the definition up
         // again, and so a restored snapshot can transition without one.
         phase: 'duration',
-        cooldownSec: def.cooldownSec || 0,
+        cooldownSec: clampSec(def.cooldownSec, 0),
         // Whatever a "contains" trigger's own text left over on this specific line - see
         // _findTriggerMatches. undefined for exact/castOf triggers, which have nothing left over
         // by definition.

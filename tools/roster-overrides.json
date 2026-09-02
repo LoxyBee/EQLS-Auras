@@ -276,5 +276,17 @@
     "set": {
       "durationSec": 12
     }
+  },
+  "Chant of Battle": {
+    "why": "QOL #51, surfaced by the PR #42 full-corpus replay. Bard-only in the client data (spell id 700, only the Bard class-level slot is non-255), so bardSongTagger.js flags it at runtime once the EQ folder is set - but the shipped roster carries no isBardSong flag at all, so the Bard Songs aura's song filters miss it on a fresh install or in any context without the client file. Ships the flag so it is right regardless.",
+    "set": {
+      "isBardSong": true
+    }
+  },
+  "Verses of Victory": {
+    "why": "QOL #51, same as Chant of Battle - bard-only in the client data (spell id 747), tagged correctly at runtime, but the shipped roster carries no isBardSong flag. Ships it.",
+    "set": {
+      "isBardSong": true
+    }
   }
 }
