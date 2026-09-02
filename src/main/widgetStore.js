@@ -90,6 +90,13 @@ function clampSoundCooldownSec(value) {
   return Math.min(60, Math.max(0, Math.round(n)));
 }
 
+// Damage-meter top-N attacker rows. 1..20; a non-number (an old aura, a share code) -> the default 6.
+function clampDamageRowCap(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 6;
+  return Math.min(20, Math.max(1, Math.round(n)));
+}
+
 function isTextAura(widget) {
   return !!widget && widget.displayMode === 'text';
 }
@@ -197,6 +204,9 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // Note 19 / line C. A combined "Charmed pets" row for charmed mobs whose owner can't be
     // determined. On by default; it never attributes to a person and can be hidden here.
     showCharmedPetsRow: true,
+    // Top-N attacker rows on the meter (owner's call, default 6). The Total row is never counted
+    // against it. 1-20 - a raid with a dozen attackers doesn't need every one on screen.
+    damageRowCap: 6,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -472,6 +482,9 @@ function defaultCustomWidget(name) {
     // Note 19 / line C. A combined "Charmed pets" row for charmed mobs whose owner can't be
     // determined. On by default; it never attributes to a person and can be hidden here.
     showCharmedPetsRow: true,
+    // Top-N attacker rows on the meter (owner's call, default 6). The Total row is never counted
+    // against it. 1-20 - a raid with a dozen attackers doesn't need every one on screen.
+    damageRowCap: 6,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -696,6 +709,7 @@ const SHAREABLE_FIELDS = [
   'damageValueMode',
   'damageScope',
   'showCharmedPetsRow',
+  'damageRowCap',
   'travelDestination',
   'showOnAllProfiles',
   'visibleInZones',
@@ -822,6 +836,7 @@ function normalizeWidget(widget) {
     // fight, the pre-existing behaviour.
     damageScope: ['all', 'group', 'mine'].includes(widget.damageScope) ? widget.damageScope : 'all',
     showCharmedPetsRow: widget.showCharmedPetsRow !== false,
+    damageRowCap: clampDamageRowCap(widget.damageRowCap),
     // A widget saved before this field existed still has its real duration sitting on its first
     // trigger (they were all in sync anyway on every real aura seen so far - see the field's own
     // comment) - read it from there rather than resetting everyone to the bare default. A widget
@@ -2112,6 +2127,7 @@ module.exports = {
   isTextAura,
   clampInstantSec,
   clampSoundCooldownSec,
+  clampDamageRowCap,
   MAX_INSTANT_DISPLAY_SEC,
   clampStackTextLines,
   MIN_STACK_TEXT_LINES,

@@ -1122,7 +1122,7 @@ const DAMAGE_SCOPES = ['all', 'group', 'mine'];
 
 function setDamageOptions(
   id,
-  { fightTimeoutSec, mineOnly, showTotalRow, valueMode, scope, showCharmedPetsRow } = {}
+  { fightTimeoutSec, mineOnly, showTotalRow, valueMode, scope, showCharmedPetsRow, rowCap } = {}
 ) {
   const changes = {};
   if (typeof fightTimeoutSec === 'number' && Number.isFinite(fightTimeoutSec)) {
@@ -1133,6 +1133,9 @@ function setDamageOptions(
   if (DAMAGE_VALUE_MODES.includes(valueMode)) changes.damageValueMode = valueMode;
   if (DAMAGE_SCOPES.includes(scope)) changes.damageScope = scope;
   if (typeof showCharmedPetsRow === 'boolean') changes.showCharmedPetsRow = showCharmedPetsRow;
+  if (typeof rowCap === 'number' && Number.isFinite(rowCap)) {
+    changes.damageRowCap = Math.min(20, Math.max(1, Math.round(rowCap)));
+  }
   const config = widgetStore.update(id, changes);
   pushConfigChanged(id);
   return config;

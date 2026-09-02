@@ -423,6 +423,12 @@
                       <span id="widget-fight-timeout-value" class="slider-value"></span>
                     </div>
                     <div class="row">
+                      <label for="widget-damage-row-cap-slider" title="How many attacker rows to show, biggest first. The total line doesn't count toward this.">Show at most</label>
+                      <input type="range" id="widget-damage-row-cap-slider" min="1" max="20" step="1" />
+                      <span id="widget-damage-row-cap-value" class="slider-value"></span>
+                      <span>rows</span>
+                    </div>
+                    <div class="row">
                       <label title="Your % still counts everyone in the fight — they're just not shown.">
                         <input type="checkbox" id="widget-mine-only-checkbox" />
                         Only show my own row

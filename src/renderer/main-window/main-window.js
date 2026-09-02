@@ -1763,6 +1763,8 @@ function initWidgetsPanel() {
   const damageSettingsEl = document.getElementById('widget-damage-settings');
   const fightTimeoutSlider = document.getElementById('widget-fight-timeout-slider');
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
+  const damageRowCapSlider = document.getElementById('widget-damage-row-cap-slider');
+  const damageRowCapValueEl = document.getElementById('widget-damage-row-cap-value');
   const mineOnlyCheckbox = document.getElementById('widget-mine-only-checkbox');
   const totalRowCheckbox = document.getElementById('widget-total-row-checkbox');
   const damageShowDamageCb = document.getElementById('widget-damage-show-damage');
@@ -3332,6 +3334,11 @@ function initWidgetsPanel() {
         : 'all';
     }
     if (damageCharmedPetsCb) damageCharmedPetsCb.checked = widget.showCharmedPetsRow !== false;
+    if (damageRowCapSlider) {
+      const cap = typeof widget.damageRowCap === 'number' ? widget.damageRowCap : 6;
+      damageRowCapSlider.value = String(cap);
+      damageRowCapValueEl.textContent = String(cap);
+    }
     allyAlertCheckbox.checked = !!widget.allyDebuffAlert;
     alwaysOnCheckbox.checked = !!widget.alwaysOn;
     // Reported live 24 Aug, and confirmed by directly comparing what was on screen against what
@@ -5067,6 +5074,13 @@ function initWidgetsPanel() {
     fightTimeoutValueEl.textContent = `${sec}s`;
     window.eqTracker.setWidgetDamageOptions(selectedId, { fightTimeoutSec: sec });
   });
+  if (damageRowCapSlider) {
+    damageRowCapSlider.addEventListener('input', () => {
+      const n = Number(damageRowCapSlider.value);
+      damageRowCapValueEl.textContent = String(n);
+      window.eqTracker.setWidgetDamageOptions(selectedId, { rowCap: n });
+    });
+  }
   mineOnlyCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetDamageOptions(selectedId, { mineOnly: mineOnlyCheckbox.checked });
   });
