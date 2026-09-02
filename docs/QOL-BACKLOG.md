@@ -2,7 +2,7 @@
 
 **This is the live backlog — what's still to do.** Shipped and dropped work is not kept here;
 git history and `src/shared/data/changelog.js` hold the record of what changed. The item numbers
-run 1–50 from earlier batches and are kept so cross-references (CLAUDE.md, `docs/TESTING.md`)
+run 1–51 from earlier batches and are kept so cross-references (CLAUDE.md, `docs/TESTING.md`)
 don't dangle — the gaps are completed or dropped items removed 31 Aug.
 
 The owner's original 40-note list is complete except original-note #2, the first-aggro premade,
@@ -31,6 +31,12 @@ against (an aggro line vs. first damage).
 ### 42. Chat-read command and/or hotkey for macro-driven profile swap — folds into #6
 A profile-cycle hotkey, and/or an in-game `/tell` command word your macros can fire (same pattern
 as `/tell eqtm`). Still needs the owner's call: hotkey, chat command, or both.
+
+### 51. "Verses of Victory" and "Chant of Battle" not flagged as bard songs — DATA
+Both function as bard songs but carry no `isBardSong` flag in `buffs.json`, so the Bard Songs
+aura's song filters miss them. Surfaced by the PR #42 full-corpus replay. Fix is a
+`tools/roster-overrides.json` `set` on each (or confirm the class-level parse should already
+catch them and there's a data gap in `spells_us.txt`).
 
 ---
 

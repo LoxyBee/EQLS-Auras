@@ -6,13 +6,20 @@
 > under `docs/`; do not move it into `src/`.
 
 A **module** is a single `.js` file that adds a new custom aura to EQLS Auras without touching the
-app's source, building it, or shipping a new version. You write the file, the owner drops it into a
-folder, **turns it on in Log & Setup → Custom modules** (a dropped-in module starts off, and the
-first enable asks for confirmation), and a new aura type is available in Add Aura.
+app's source, building it, or shipping a new version. You write the file; how it reaches a running
+app depends on who is adding it:
 
-Modules are a **trusted-collaborator** path — an enabled module runs with full Node access in the
-app's main process, no sandbox (see [Trust and limits](#trust-and-limits)). It is deliberately not
-a public plugin system.
+- **The owner is vouching for your module** (shipping it to everyone). The owner adds your module's
+  `id` to `CORE_MODULE_IDS` in `src/main/moduleHost.js` and cuts a build. From then on it's a
+  *core* module: always on, no consent prompt, and it never appears on the Custom modules list —
+  it's treated as part of the app. This is the path for the bundled `aggro-board`.
+- **An end user is adding your module for themselves.** They drop the `.js` into the `modules/`
+  folder, then turn it on in **Log & Setup → Custom modules** — it starts off, and each enable
+  asks them to confirm. Only then does its aura type appear in Add Aura.
+
+Modules are a **trusted-collaborator** path — a running module has full Node access in the app's
+main process, no sandbox (see [Trust and limits](#trust-and-limits)). It is deliberately not a
+public plugin system.
 
 ## Where the file goes
 
@@ -160,11 +167,15 @@ same panel, as a *Module settings* card — there is no separate page to hunt fo
 
 ## Enabling a module, and when one doesn't work
 
-Every `.js` in the `modules/` folder shows up on **Log & Setup → Custom modules** — the bundled
-`aggro-board` and anything you drop in. Each is **off until you tick Enable**, and the first time
-you enable one the app asks you to confirm ("runs code with full access to your PC"). Until it's
-enabled the module is completely inert: its `onLine` never runs, it isn't offered in Add Aura, and
-its aura draws nothing. `aggro-board` is on out of the box; a drop-in starts off.
+**Core modules** (id in `CORE_MODULE_IDS` — `aggro-board`, and `pull-timer` if it's ever copied in)
+are on the moment the app starts. They don't appear on the Custom modules list and there's no
+prompt — they're vouched-for, so they're treated like built-in code.
+
+**User-added modules** — any other `.js` in the `modules/` folder — show up on **Log & Setup →
+Custom modules**, each **off until you tick Enable**. Enabling one pops a confirm dialog every time
+("runs code from whoever wrote the file, with full access to your PC"). Until enabled the module is
+completely inert: its `onLine` never runs, it isn't offered in Add Aura, and its aura draws
+nothing. The whole Custom modules card stays hidden until at least one user-added file exists.
 
 A file that fails to load or validate still appears in that list, with the reason shown inline
 (e.g. `apiVersion 2 - this app speaks module apiVersion 1`, or `failed to load: Unexpected token )`).
@@ -183,6 +194,11 @@ with timestamps if you want a history.
   restart. Keep `onLine` cheap and obviously terminating.
 - **Pure observer.** Can't consume a line, can't change what the built-ins see, can't call into
   the rest of the app.
+- **Config bundles don't carry module files.** Export/import moves `moduleSettings.json` (your
+  per-module tuning) but not the `.js` itself — the module file has to be present on each machine
+  (core modules come with the install; a user-added one has to be copied over).
+- **Top-level code runs on scan.** The file is `require()`d when the folder is scanned, before any
+  enable, so its top-level statements execute even while it's off. Keep that to declarations.
 
 ## Versioning
 
@@ -236,10 +252,12 @@ module.exports = {
 
 ## Trying it out
 
-The example module doubles as a smoke test. With the app running:
+The example module doubles as a smoke test. Copy `docs/modules/pull-timer.js` into the install's
+`modules\` folder (next to the `.exe`, alongside `aggro-board.js`), then — because `pull-timer` is
+in `CORE_MODULE_IDS` and would just load silently — **change its `id` to `pull-timer-test`** so it
+goes through the user-added path. With the app running:
 
-- [ ] Copy `docs/modules/pull-timer.js` into the install's `modules\` folder (next to the `.exe`,
-      alongside `aggro-board.js`) → within ~1s, no restart, **Log & Setup → Custom modules** lists
+- [ ] Save the file → within ~1s, no restart, **Log & Setup → Custom modules** lists
       **Pull Timer**, off, with its description. It is NOT yet in Add Aura.
 - [ ] Tick Enable → a consent dialog names the risk; confirm → **Add Aura → Standalone tools** now
       lists **Pull Timer** (no sidebar button — it's `settingsUI: 'aura'`).
@@ -252,8 +270,9 @@ The example module doubles as a smoke test. With the app running:
 - [ ] Change `settingsUI` to `'sidebar'`, save → a **Pull Timer** nav button + page appear
       instead, and the Module settings card on the aura panel is gone. Change it back.
 - [ ] Untick Enable → the Add-Aura entry disappears and the countdown stops; an aura you already
-      created stays but shows nothing. Re-ticking does NOT re-prompt for consent... actually it
-      does (consent is shown on every off→on). Delete the file → it drops off the Custom modules
-      list entirely.
+      created stays but shows nothing. Re-tick → consent is asked again (it's shown on every
+      off→on). Delete the file → it drops off the Custom modules list entirely.
 - [ ] Break the file (introduce a syntax error) → nothing crashes; the Custom modules list shows
-      **pull-timer.js** with `failed to load: ...` inline.
+      **pull-timer-test.js** with `failed to load: ...` inline.
+- [ ] Set the `id` back to `pull-timer` → it stops appearing on the Custom modules list and loads
+      automatically with no prompt (that's the core tier).

@@ -1171,6 +1171,16 @@ The zone box offers the 66 zones seen in your logs and accepts anything you type
 - [ ] **Both auto-hide settings moved** off the Setup page into the "All auras" card on Overlay
       Auras. Check they still actually work from their new home — the wiring is by element id so it
       should be unaffected, but worth confirming rather than assuming.
+- [ ] **Idle back-off (P3-2).** Leave the app running but spend ~30s+ in another app (browser,
+      video) with neither EQ nor this app focused — the overlay stays hidden and CPU use from the
+      background `powershell` probe should drop (the poll goes 300ms → 1200ms). Alt-tab back to EQ;
+      the overlay reappears within about a second, once.
+- [ ] **Circuit breaker / blocked helper.** If overlay auto-hide never works at all, antivirus or
+      a Windows execution-policy lockdown may be blocking the small PowerShell helper the app uses
+      to see which window is in front. After ~6s of failures the Buff Tracker page shows a line
+      saying so, and the app stops retrying. The auras themselves are unaffected — only the
+      hide-when-you-tab-away behaviour. Allowlisting the app (or its `powershell.exe` child) in the
+      AV fixes it; restart afterwards.
 
 ## Exclusive-fullscreen warning (#9) — NEEDS LIVE VERIFICATION
 
@@ -1744,6 +1754,43 @@ suites green, clean smoke. None confirmed on a real display.
 
 ---
 
+# 14 — Public-release hardening batch (Sep, PRs #37–#46)
+
+The app-icon check lives under "App icon" further down; overlay auto-hide idle back-off + the
+blocked-helper known issue are under "Overlay auto-hide".
+
+## Mid-fight popups don't steal focus (#37)
+
+- [ ] **Unclear-cast popup while EQ has focus.** Trigger an ambiguous cast in game — the popup
+      appears without EQ losing focus; you can keep playing. Answering it doesn't yank focus
+      either (see "Refocus EverQuest after answering an ambiguous cast").
+- [ ] **Travel zone picker while EQ has focus.** Fire the picker from in game — it appears without
+      pulling you out; clicking a zone in it focuses the picker window itself but EQ isn't
+      minimised or alt-tabbed away, and once you've picked (or dismissed) focus returns to EQ.
+
+## Aggro Board — named mobs and raid bosses (#39, #40)
+
+- [ ] **In a real raid**, the Aggro Board actually populates. Before this it read nothing for
+      whole fights because every named/raid-boss name is article-less (`Lady Vox`, not
+      `a vis ghoul knight`). Watch that a groupmate's name never shows up as the *mob* being
+      swung at (the article-less discriminator should keep known players out of the mob slot).
+- [ ] The Add-Aura entry is badged **Experimental** if a module sets `experimental: true`
+      (the bundled Aggro Board may or may not — check against its source).
+
+## Damage meter row cap (#45)
+
+- [ ] Damage aura settings has **"Show at most N rows"** (default 6, range 1–20). Set it to 3 in a
+      fight with more than 3 attackers → only the top 3 attacker rows draw; the **Total** row still
+      shows (it's exempt from the cap) unless you've turned the total off separately.
+
+## Evidence-based detection default (P0 rework)
+
+- [ ] A session with evidence-based detection **on** (now the default): after an app restart or a
+      loadout swap mid-session, buffs that were being silently missed before now land. The
+      Diagnostics toggle turns it back off.
+
+---
+
 # Confirmed
 
 Kept as regression guards — each of these was broken once.
@@ -2194,6 +2241,13 @@ starter sounds in it:
       point"). Should open the exact same folder as the per-aura button above - both call the same
       `sounds:openFolder` IPC handler. Smoke-launched clean with no console errors; not yet clicked
       in the real app.
+
+## App icon (`fix/public-release-hardening`) - needs a packaged build
+
+- [ ] **Rebuild the installer (`npm run dist`) and confirm the new eqlsource icon** (gold hexagon
+      with an `=`) shows on: the packaged `EQLS-Auras.exe`, the `EQLS-Auras-Setup.exe` installer,
+      and the app's taskbar button / Alt-Tab entry while running. The **tray icon is unchanged**
+      (still the drawn `=`+glow) - that's deliberate.
 
 ## AA-activated abilities now get the mote-tier duration bonus (25 Aug) - real bug, needs a live recheck
 

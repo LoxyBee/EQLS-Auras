@@ -551,7 +551,7 @@ Even with the Phase-0 perimeter, an enabled module has full main-process Node ac
 
 ### P2-5 — Branch per session, merge through one owner, CI on push — finding #20 — sev 6 — setup 1 day — owner decision
 1. Each session works on its own branch / worktree and commits there. The designated session still
-   owns the merge into `integration` — but now it is a real git merge with real conflict markers.
+   owns the merge into `master` — but now it is a real git merge with real conflict markers.
 2. Stand up CI (test + smoke) on every branch push.
 3. After P2-1 shrinks the hot files, most contention disappears; a short `LOCKS.md` convention covers
    whatever's left.
