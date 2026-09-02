@@ -60,6 +60,7 @@ const CHANGELOG = [
       'A groupmate\'s own melee procs no longer show up as buffs you cast on them',
       'A groupmate casting a spell on themselves no longer shows up on your Ally Buffs as a buff you cast on them (common with rangers and beastlords spamming the same spell you use)',
       'Bard resist songs and caster resist spells no longer knock each other off',
+      'Chant of Battle and Verses of Victory are recognised as bard songs now, so the Bard Songs aura\'s song filters catch them',
       '"You feel smaller" resolves to Shrink without asking - Tiny Companion only lands on a pet',
       'The weekly log archive is named for the US Eastern reset day, not your PC\'s calendar day',
       'Spellbook picker: a clearer message when a pinned file has moved, and it no longer re-scans the folder while you type',
