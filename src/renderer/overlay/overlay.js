@@ -1883,14 +1883,16 @@ function previewSampleBuffs() {
         mk('Dread', null, null, { tier: 'mini', killed: true, infinite: true }),
         mk('Fright', null, null, { tier: 'mini', killed: false, infinite: true }),
       ];
-    case 'lockout':
+    case 'lockout': {
+      const lk = (name, extra) => mk(name, null, 0, { valueText: '', infinite: true, spellCategory: null, ...extra });
       return [
-        mk('Plane of Fear', null, null, { id: 'lp0', lockoutHeader: true, lockoutKind: 'zone', infinite: true }),
-        mk('d2 · Awakened', null, null, { id: 'lp1', lockoutKind: 'tier', infinite: true }),
-        mk('d3 · Adaptive', null, null, { id: 'lp2', lockoutKind: 'tier', infinite: true }),
-        mk('Plane of Hate', null, null, { id: 'lp3', lockoutHeader: true, lockoutKind: 'zone', infinite: true }),
-        mk('d1 · Normal', null, null, { id: 'lp4', lockoutKind: 'tier', infinite: true }),
+        lk('Plane of Fear', { id: 'lp0', lockoutHeader: true, lockoutKind: 'zone' }),
+        lk('d2 · Awakened', { id: 'lp1', lockoutKind: 'tier' }),
+        lk('d3 · Adaptive', { id: 'lp2', lockoutKind: 'tier' }),
+        lk('Plane of Hate', { id: 'lp3', lockoutHeader: true, lockoutKind: 'zone' }),
+        lk('d1 · Normal', { id: 'lp4', lockoutKind: 'tier' }),
       ];
+    }
     case 'module':
       return [mk(currentConfig.name || 'Module', 9, 12, { key: 'preview' })];
     default:
