@@ -999,7 +999,28 @@ class BuffEngine extends EventEmitter {
         // seconds, and the game printed its third-person landing text. The
         // name in front is whoever received it, group-tracked or not.
         const allyName = stripped.slice(0, -known.othersLandingSuffix.length);
-        if (this._isValidRecipient(allyName, known)) {
+        // The recipient is the same person the log just showed casting THIS spell, recently - so
+        // it's their own self-buff landing on themselves, not the player's cast landing on them.
+        // Reported live: she cast Spirit of the Puma on Orlando; a groupmate (Chrysaetos) self-cast
+        // his own 2s earlier, and "Chrysaetos growls with the spirit of the puma." (his own
+        // landing) was grabbed for her pending cast - Ally Buffs showed it on him, her real cast
+        // (which failed on Orlando 1s later) showed nothing. The burst-context ally path already
+        // has this skip; the named-cast path didn't.
+        //
+        // Rank-aware and LOCAL: recentOtherCasts is keyed by the raw cast-line name ("...Puma VIII")
+        // and is deliberately left that way - keying it rank-stripped globally made
+        // _hasRecentOtherCast fire for ranked ally casts across the self tiers too, which suppressed
+        // the player's own maintained bard songs when a groupmate sang the same one (measured:
+        // -1851 Selo's, -986 Amplification on a full replay). So this one check strips ranks itself.
+        if (this._allySelfCastRecently(known.name, allyName)) {
+          this._debugLog(`ALLY IGNORED "${known.name}" on "${allyName}" - "${allyName}" was just seen self-casting it, not your cast landing on them`);
+          // Consume the line. Falling through lets a later ally path (the burst-context one, with a
+          // Quick Buff window open - constant in a raid) re-land this same third-person landing on
+          // the same groupmate: measured +5761 landings of one maintained group song on one person
+          // across the corpus.
+          this._checkForEndedBuffs(line);
+          return;
+        } else if (this._isValidRecipient(allyName, known)) {
           this._debugLog(`ALLY LANDED "${known.name}" on "${allyName}" - named cast, confirmed by third-person landing text`);
           this._landOnAlly(known, allyName);
           this._checkForEndedBuffs(line);
@@ -1975,6 +1996,21 @@ class BuffEngine extends EventEmitter {
   }
 
   /** Who was last seen casting it, or null. For explaining a decision, never for making one. */
+  // True if `allyName` was seen casting a spell whose rank-stripped name is `canonicalName`, within
+  // the self-cast window. Its own rank-aware pass over recentOtherCasts (raw-keyed - see the
+  // named-cast ally path for why that's deliberate). The map is small (distinct spells groupmates
+  // have cast this session), so the loop is cheap and only runs on a matched third-person landing.
+  _allySelfCastRecently(canonicalName, allyName) {
+    const wanted = stripRankSuffix(canonicalName).toLowerCase();
+    const cutoff = Date.now() - OTHER_SELF_CAST_WINDOW_MS;
+    for (const [key, caster] of this.recentOtherCasts) {
+      if (caster !== allyName) continue;
+      if (stripRankSuffix(key).toLowerCase() !== wanted) continue;
+      return (this.recentOtherCastAt.get(key) || 0) >= cutoff;
+    }
+    return false;
+  }
+
   _recentOtherCaster(name) {
     return this.recentOtherCasts.get(name.toLowerCase()) || null;
   }
