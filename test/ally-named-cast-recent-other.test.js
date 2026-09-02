@@ -84,5 +84,18 @@ test('recentOtherCasts is still keyed RAW (rank kept) - the global keying was no
   assert.equal(engine._allySelfCastRecently('Spirit of the Puma', 'Someone Else'), false);
 });
 
+test('the IGNORE branch consumes the line - it does not fall through and pollute recentOtherCasts with an unranked key', () => {
+  const { engine, log } = makeEngine();
+  engine.handleLine(`${TS(7)}Chrysaetos begins casting Spirit of the Puma VIII.`);
+  engine.handleLine(`${TS(9)}You begin casting Spirit of the Puma VII.`);
+  engine.handleLine(`${TS(9)}Chrysaetos growls with the spirit of the puma.`);
+  assert.ok(log.some((m) => /ALLY IGNORED "Spirit of the Puma" on "Chrysaetos"/.test(m)));
+  // Falling through to the "unexplained third-person" recorder (further down handleLine) would
+  // set recentOtherCasts['spirit of the puma'] (rank-stripped) - the exact key shape that
+  // regressed the player's own maintained songs. The raw ranked key is fine; the bare one is not.
+  assert.ok(!engine.recentOtherCasts.has('spirit of the puma'),
+    'the IGNORE branch fell through and a rank-stripped key leaked into recentOtherCasts');
+});
+
 module.exports = () => report('ally-named-cast-recent-other');
 if (require.main === module) report('ally-named-cast-recent-other').then((n) => process.exit(n ? 1 : 0));

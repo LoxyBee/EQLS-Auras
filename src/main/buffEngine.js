@@ -1014,6 +1014,12 @@ class BuffEngine extends EventEmitter {
         // -1851 Selo's, -986 Amplification on a full replay). So this one check strips ranks itself.
         if (this._allySelfCastRecently(known.name, allyName)) {
           this._debugLog(`ALLY IGNORED "${known.name}" on "${allyName}" - "${allyName}" was just seen self-casting it, not your cast landing on them`);
+          // Consume the line. Falling through lets a later ally path (the burst-context one, with a
+          // Quick Buff window open - constant in a raid) re-land this same third-person landing on
+          // the same groupmate: measured +5761 landings of one maintained group song on one person
+          // across the corpus.
+          this._checkForEndedBuffs(line);
+          return;
         } else if (this._isValidRecipient(allyName, known)) {
           this._debugLog(`ALLY LANDED "${known.name}" on "${allyName}" - named cast, confirmed by third-person landing text`);
           this._landOnAlly(known, allyName);
