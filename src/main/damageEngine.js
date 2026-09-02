@@ -297,6 +297,53 @@ class DamageEngine extends EventEmitter {
     this.emit('activeChanged', this.getActive(now));
   }
 
+  // --- session restore (see sessionRestore.js) ------------------------------------------------
+  // A quick restart mid-fight otherwise blanks the meter until the next hit re-bootstraps from
+  // your own first attack, losing the opening of the pull. Captured: the friend/enemy sets (the
+  // valuable bootstrap - the same mobs and group are still there a minute later), both tallies,
+  // and their absolute timestamps. Nothing here needs clock math on the way back: a fight whose
+  // last hit is now older than the timeout is dropped by _expireIfIdle, exactly as it would be
+  // mid-session, and the since-zone tally (which has no timeout) carries the meter until the next
+  // real fight. The registry only offers this back within a short window (2 min) - a damage total
+  // minutes out of date reads as current in a way an empty meter doesn't.
+  captureState() {
+    if (this.totalDamage === 0 && this.sinceZoneTotal === 0) return null;
+    return {
+      enemies: [...this.enemies],
+      friends: [...this.friends],
+      byAttacker: [...this.byAttacker],
+      fightStartedAt: this.fightStartedAt,
+      lastDamageAt: this.lastDamageAt,
+      totalDamage: this.totalDamage,
+      sinceZoneByAttacker: [...this.sinceZoneByAttacker],
+      sinceZoneTotal: this.sinceZoneTotal,
+      sinceZoneStartedAt: this.sinceZoneStartedAt,
+      sinceZoneLastAt: this.sinceZoneLastAt,
+    };
+  }
+
+  restoreState(s, _gapMs, now = Date.now()) {
+    if (!s || typeof s !== 'object') return 0;
+    for (const n of Array.isArray(s.enemies) ? s.enemies : []) this.enemies.add(n);
+    for (const n of Array.isArray(s.friends) ? s.friends : []) this.friends.add(n);
+    for (const pair of Array.isArray(s.byAttacker) ? s.byAttacker : []) {
+      if (Array.isArray(pair)) this.byAttacker.set(pair[0], pair[1]);
+    }
+    for (const pair of Array.isArray(s.sinceZoneByAttacker) ? s.sinceZoneByAttacker : []) {
+      if (Array.isArray(pair)) this.sinceZoneByAttacker.set(pair[0], pair[1]);
+    }
+    if (typeof s.fightStartedAt === 'number') this.fightStartedAt = s.fightStartedAt;
+    if (typeof s.lastDamageAt === 'number') this.lastDamageAt = s.lastDamageAt;
+    if (typeof s.totalDamage === 'number') this.totalDamage = s.totalDamage;
+    if (typeof s.sinceZoneStartedAt === 'number') this.sinceZoneStartedAt = s.sinceZoneStartedAt;
+    if (typeof s.sinceZoneLastAt === 'number') this.sinceZoneLastAt = s.sinceZoneLastAt;
+    if (typeof s.sinceZoneTotal === 'number') this.sinceZoneTotal = s.sinceZoneTotal;
+    this._expireIfIdle(now); // a fight that timed out during the gap ends here, sets kept
+    const rows = this.byAttacker.size + this.sinceZoneByAttacker.size;
+    if (rows) this.emit('activeChanged', this.getActive(now));
+    return rows;
+  }
+
   _expireIfIdle(now) {
     if (this.lastDamageAt === null) return false;
     if (now - this.lastDamageAt < this.timeoutSec * 1000) return false;

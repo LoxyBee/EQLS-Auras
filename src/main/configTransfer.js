@@ -22,7 +22,8 @@ const EXCLUDE_JSON = new Set([
   'config.json', // holds the EQ install path
   'mainWindowBounds.json', 'sidebarWidth.json', 'uiScale.json',
   'overlayPosition.json', 'ambiguousPopupPosition.json', 'zonePromptPopupPosition.json',
-  'currentlyMemorized.json', 'currentlyMemorizedByProfile.json', 'sessionSnapshot.json',
+  'currentlyMemorized.json', 'currentlyMemorizedByProfile.json',
+  'sessionRestore.json', 'sessionSnapshot.json', 'groupRoster.json', // live per-session engine state
   'splitProgress.json', 'lockoutLogTarget.json', 'lastSoundPickerDir.json',
   'loadoutLabelAutoOffered.json',
 ]);

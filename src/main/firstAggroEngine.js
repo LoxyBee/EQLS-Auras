@@ -42,6 +42,24 @@ class FirstAggroEngine extends EventEmitter {
     if (had) this.emit('changed', this.getActive());
   }
 
+  // --- session restore (see sessionRestore.js) -------------------------------
+  // One line, held for the fight. A quick restart mid-fight keeps it; the registry only offers it
+  // back within a short window (2 min) because "X pulled" goes stale fast. `at`/`lastCombatAt` are
+  // absolute, so the next genuinely fresh hit (> FIGHT_GAP_MS after lastCombatAt) still correctly
+  // replaces a restored line rather than being folded into it.
+  captureState() {
+    if (!this.current) return null;
+    return { current: this.current, lastCombatAt: this.lastCombatAt };
+  }
+
+  restoreState(s) {
+    if (!s || !s.current) return 0;
+    this.current = s.current;
+    this.lastCombatAt = typeof s.lastCombatAt === 'number' ? s.lastCombatAt : 0;
+    this.emit('changed', this.getActive());
+    return 1;
+  }
+
   handleLine(line, now = Date.now()) {
     if (typeof line !== 'string') return;
 

@@ -67,7 +67,7 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
-const { GroupRoster } = require('./groupRoster');
+const { GroupRoster, RESTORE_GRACE_MS: GROUP_ROSTER_GRACE_MS } = require('./groupRoster');
 const { PetTracker } = require('./petTracker');
 const { RaidNamedTracker } = require('./raidNamedTracker');
 const { FirstAggroEngine } = require('./firstAggroEngine');
@@ -87,7 +87,7 @@ const { tagBardSongs } = require('./bardSongTagger');
 // launch and re-added other-expansion bard songs, which was right when the roster was mined and
 // wrong once it became the EQL-scoped set. A missing song goes in via tools/roster-overrides.json
 // now - see applyInstallRoot. test/roster.test.js fails if the module or a call to it comes back.
-const { saveSnapshot, loadSnapshot } = require('./sessionSnapshot');
+const { SessionRestore } = require('./sessionRestore');
 const gameSpellData = require('./gameSpellData');
 const spellStacking = require('./spellStacking');
 const spellEffects = require('./spellEffects');
@@ -223,6 +223,64 @@ const groupRoster = new GroupRoster();
 const petTracker = new PetTracker();
 const raidNamedTracker = new RaidNamedTracker();
 const firstAggroEngine = new FirstAggroEngine();
+
+// One place for "put back what was live when the app last closed" - see sessionRestore.js. Every
+// engine that holds live session state registers a capture/restore pair and its own staleness
+// limit here; this owns the single snapshot file, the debounced save, and the startup pass.
+const sessionRestore = new SessionRestore();
+sessionRestore.setStore({ loadJson, saveJson });
+sessionRestore.setDebugLogFn((m) => debugLog(m));
+const MIN = 60 * 1000;
+
+// Buffs / ally buffs / bard songs / custom timers - 5 minutes. A buff that "hasn't expired" may
+// still be gone (death, camp, zone) and a wrong countdown reads as authoritative, but 5 min
+// covers a crash or accidental close. Entries store an absolute expiresAt, so restore is just a
+// filter: anything already past its expiry is dropped here.
+sessionRestore.register('timers', {
+  maxGapMs: 5 * MIN,
+  capture() {
+    const { selfBuffs, allyBuffs, bardSongs } = buffEngine.getSnapshotState();
+    const customTimers = customTimerEngine.getSnapshotState();
+    if (!selfBuffs.length && !allyBuffs.length && !bardSongs.length && !customTimers.length) return null;
+    return { selfBuffs, allyBuffs, bardSongs, customTimers };
+  },
+  restore(d) {
+    const now = Date.now();
+    const alive = (xs) => (Array.isArray(xs) ? xs : []).filter((e) => e && e.expiresAt > now);
+    const n = buffEngine.restoreSnapshot({
+      selfBuffs: alive(d.selfBuffs),
+      allyBuffs: alive(d.allyBuffs),
+      bardSongs: alive(d.bardSongs),
+    });
+    return n + customTimerEngine.restoreSnapshot(alive(d.customTimers));
+  },
+});
+
+// Damage meter - 2 minutes (the owner's call). A running total minutes out of date reads as
+// current where an empty meter obviously doesn't; 2 min only covers a crash/restart mid-fight.
+sessionRestore.register('damage', {
+  maxGapMs: 2 * MIN,
+  capture: () => damageEngine.captureState(),
+  restore: (d) => damageEngine.restoreState(d),
+});
+
+// First-aggro line - 2 minutes, same reasoning ("X pulled" goes stale fast).
+sessionRestore.register('firstAggro', {
+  maxGapMs: 2 * MIN,
+  capture: () => firstAggroEngine.captureState(),
+  restore: (d) => firstAggroEngine.restoreState(d),
+});
+
+// Group roster - 20 minutes (its own RESTORE_GRACE_MS). A groupmate who joined before the restart
+// would otherwise read as an outsider on the damage meter's group scope and Pets/Other bucketing.
+sessionRestore.register('groupRoster', {
+  maxGapMs: GROUP_ROSTER_GRACE_MS,
+  capture: () => groupRoster.capture(),
+  restore: (d) => {
+    groupRoster.restore(d);
+    return groupRoster.getAdmitted().length;
+  },
+});
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
 // widgetManager pulls in Electron's screen/BrowserWindow. Action bar gem cooldowns ride along as
@@ -251,13 +309,14 @@ abilityGroupTracker.setGetGroupSlotsFn((group) => {
 abilityGroupTracker.setOnChangeFn(() => broadcast('actionBar:abilityGroupChanged', abilityGroupTracker.getAllActiveStates()));
 // QOL #16 - the active stance/invocation is a character state the player is still in after a
 // restart (like the current zone), so persist it by name and restore it once the bars are known.
+// Kept on its own store key rather than folded into sessionRestore: it has no staleness at all (a
+// stance stays whatever you set until you change it) and its restore must run against the loaded
+// bar layout, which is ready here at module load, before sessionRestore's startup pass.
 abilityGroupTracker.setPersistFn((state) => saveJson('activeAbilityGroups', state));
 abilityGroupTracker.restore(loadJson('activeAbilityGroups', { stance: null, invocation: null }));
-// Restart protection for the damage meter's group scope + the Pets/Other bucketing - a groupmate
-// who joined before the restart would otherwise read as an outsider (the app never replays log
-// history). A snapshot older than the grace window is dropped by restore().
-groupRoster.setPersistFn((state) => saveJson('groupRoster', state));
-groupRoster.restore(loadJson('groupRoster', null));
+// The group roster is one part of the sessionRestore snapshot now (registered above); a change
+// just pings the shared debounced save, and restore happens in sessionRestore.restoreAll().
+groupRoster.setPersistFn(() => sessionRestore.scheduleSave());
 // See customTimerEngine._resolveCastName. getByName tries the exact name first and only then the
 // rank-stripped one, which is what tells a mote rank ("Cannibalize V" -> Cannibalize) apart from a
 // spell whose name merely ends in a numeral ("Yaulp III" -> itself).
@@ -904,32 +963,20 @@ logService.watcher.on('status', (status) => {
     spellbookService.setCharacterBaseName(baseName);
   }
 });
-// Persist live timers so a restart doesn't wipe everything currently running
-// - see sessionSnapshot.js for why this exists and why it's time-limited.
-// Debounced because these events fire on every tick of every buff (once a
-// second) and this writes to disk; 2s is far below the 5 minute grace window,
-// so nothing meaningful is lost even if the app dies between writes.
-let snapshotTimer = null;
-function saveSessionSnapshotSoon() {
-  if (snapshotTimer) return;
-  snapshotTimer = setTimeout(() => {
-    snapshotTimer = null;
-    const { selfBuffs, allyBuffs, bardSongs } = buffEngine.getSnapshotState();
-    saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, bardSongs, customTimers: customTimerEngine.getSnapshotState() });
-  }, 2000);
-}
-
+// Persist live engine state so a restart doesn't wipe everything currently running - see
+// sessionRestore.js for why this exists and why each part is time-limited. The save is debounced
+// (2s) because these events fire on every tick of every active thing and it writes to disk.
 buffEngine.on('buffsChanged', (buffs) => {
   broadcast('buffs:active', buffs);
-  saveSessionSnapshotSoon();
+  sessionRestore.scheduleSave();
 });
 buffEngine.on('allyBuffsChanged', (buffs) => {
   broadcast('buffs:activeAllies', buffs);
-  saveSessionSnapshotSoon();
+  sessionRestore.scheduleSave();
 });
 buffEngine.on('bardSongsChanged', (songs) => {
   broadcast('buffs:activeBardSongs', songs);
-  saveSessionSnapshotSoon();
+  sessionRestore.scheduleSave();
 });
 // Where the EQ install actually lives, once known - kept module-level so
 // lookups against the game's own spell data (gameSpellData.js) can happen
@@ -1000,7 +1047,7 @@ function memorizedWithIcons() {
 buffEngine.on('memorizedChanged', () => broadcast('spellbook:memorized', memorizedWithIcons()));
 customTimerEngine.on('activeChanged', (timers) => {
   broadcast('customTimers:active', timers);
-  saveSessionSnapshotSoon();
+  sessionRestore.scheduleSave();
 });
 // Note 19. One engine, but a damage aura can be scoped to the whole fight, just the player's
 // group, or just the player (+ their charmed pets), and 'group'/'mine' recompute the % denominator
@@ -1013,11 +1060,17 @@ function damageViews() {
     mine: damageEngine.getActive(Date.now(), 'mine'),
   };
 }
-damageEngine.on('activeChanged', () => broadcast('damage:active', damageViews()));
+damageEngine.on('activeChanged', () => {
+  broadcast('damage:active', damageViews());
+  sessionRestore.scheduleSave();
+});
 // Backlog #33 - the named-kill board. Each row becomes an infinite buff-shaped tile (killed ones
 // flagged so overlay.js can dim them); a row with a live respawn countdown carries remainingSec.
 raidNamedTracker.on('changed', (rows) => broadcast('raidNamed:active', rows.map(raidNamedTile)));
-firstAggroEngine.on('changed', (rows) => broadcast('firstAggro:active', rows.map(firstAggroTile)));
+firstAggroEngine.on('changed', (rows) => {
+  broadcast('firstAggro:active', rows.map(firstAggroTile));
+  sessionRestore.scheduleSave();
+});
 // One line - who took the first hit of the fight. An infinite, buff-shaped tile styled
 // like a travel-guide leg (no category border, no countdown). `side` lets overlay.js
 // colour a body-pull ('mob') differently from a clean pull.
@@ -1494,19 +1547,12 @@ app.whenReady().then(() => {
 
   applyInstallRoot(logService.getState().eqFolder);
 
-  // Put back whatever was still running when the app last closed - see
-  // sessionSnapshot.js. Deliberately after applyInstallRoot so the roster is
-  // fully backfilled/tagged first: a restored buff is looked up by name for
-  // its icon, and doing this earlier would restore entries the roster doesn't
-  // know about yet.
-  const { restored, gapMs, reason } = loadSnapshot({ loadJson, saveJson });
-  if (restored) {
-    const count =
-      buffEngine.restoreSnapshot(restored) + customTimerEngine.restoreSnapshot(restored.customTimers);
-    if (count) debugLog(`Restored ${count} running timers after a ${Math.round(gapMs / 1000)}s restart`);
-  } else if (reason && reason !== 'no snapshot') {
-    debugLog(`Did not restore timers: ${reason}`);
-  }
+  // Put back whatever was still running when the app last closed - see sessionRestore.js. Every
+  // registered part (timers, damage meter, first-aggro, group roster) restores here, each within
+  // its own staleness limit. Deliberately after applyInstallRoot so the roster is fully
+  // backfilled/tagged first: a restored buff is looked up by name for its icon, and doing this
+  // earlier would restore entries the roster doesn't know about yet.
+  sessionRestore.restoreAll();
 
   // Recover the current zone from the log tail. logWatcher started at EOF and will never see the
   // "You have entered X." line if the player zoned while the app was down, which otherwise leaves
@@ -2946,11 +2992,9 @@ ipcMain.handle('icons:getCount', () => iconService.getIconCount());
 // second, not another pass over these same four ruled-out in-app paths.
 app.on('before-quit', () => {
   debugLog('SHUTDOWN: before-quit fired');
-  // Flush immediately - the debounced save above may still be pending, and
-  // this is exactly the moment the snapshot matters most.
-  if (snapshotTimer) clearTimeout(snapshotTimer);
-  const { selfBuffs, allyBuffs, bardSongs } = buffEngine.getSnapshotState();
-  saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, bardSongs, customTimers: customTimerEngine.getSnapshotState() });
+  // Flush immediately - the debounced save may still be pending, and this is exactly the moment
+  // the snapshot matters most.
+  sessionRestore.saveNow();
 });
 app.on('will-quit', () => {
   debugLog('SHUTDOWN: will-quit fired');

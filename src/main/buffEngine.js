@@ -2971,7 +2971,7 @@ class BuffEngine extends EventEmitter {
   }
 
   // Puts saved entries back without re-running any detection. Anything past
-  // its expiry has already been filtered out by sessionSnapshot.loadSnapshot,
+  // its expiry has already been filtered out by the sessionRestore 'timers' part,
   // and a blocked buff is dropped here in case the user blocked it between
   // sessions.
   restoreSnapshot({ selfBuffs = [], allyBuffs = [], bardSongs = [] }) {

@@ -59,8 +59,16 @@ class GroupRoster {
     }
   }
 
+  // For the session-restore registry (sessionRestore.js). Returns null when there's nothing worth
+  // saving so the snapshot stays small.
+  capture() {
+    if (!this.members.size && !this.admitted.size) return null;
+    return { members: [...this.members], admitted: [...this.admitted], at: this._lastChangeAt || Date.now() };
+  }
+
   // Restore at startup. A stale snapshot (older than the grace window, or a backwards clock) is
-  // ignored - better a blank roster the first group line refills than a wrong one.
+  // ignored - better a blank roster the first group line refills than a wrong one. The registry
+  // also gates on RESTORE_GRACE_MS; this internal check stays as the authority.
   restore(snap, now = Date.now()) {
     if (!snap || typeof snap !== 'object') return;
     const at = Number(snap.at) || 0;
@@ -138,4 +146,4 @@ class GroupRoster {
   }
 }
 
-module.exports = { GroupRoster };
+module.exports = { GroupRoster, RESTORE_GRACE_MS };

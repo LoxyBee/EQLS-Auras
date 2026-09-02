@@ -557,5 +557,37 @@ test('a friendly-fire hit on a known ally does not poison the enemy set', () => 
   assert.equal(e.byAttacker.get('Baxa').damage, 300);
 });
 
+test('captureState / restoreState carries the tallies and the friend/enemy sets across a restart', () => {
+  const a = new DamageEngine();
+  a.handleLine(`${T}You slash a zol ghoul knight for 100 points of damage.`, 1000);
+  a.handleLine(`${T}Baxa slashes a zol ghoul knight for 60 points of damage.`, 2000);
+  const snap = a.captureState();
+  assert.ok(snap);
+
+  const b = new DamageEngine();
+  const n = b.restoreState(snap, 30_000, 5000); // 5s later, well inside the fight timeout
+  assert.ok(n > 0);
+  assert.equal(b.byAttacker.get('You').damage, 100);
+  assert.equal(b.byAttacker.get('Baxa').damage, 60);
+  assert.ok(b.enemies.has('a zol ghoul knight'));
+  assert.ok(b.friends.has('baxa'), 'Baxa was proved a friend by hitting a known enemy - that survives');
+});
+
+test('a fight that timed out during the gap is dropped on restore, but the sets are kept', () => {
+  const a = new DamageEngine();
+  a.handleLine(`${T}You slash a zol ghoul knight for 100 points of damage.`, 1000);
+  const snap = a.captureState();
+
+  const b = new DamageEngine();
+  // 90s later - past the 10s default fight timeout
+  b.restoreState(snap, 90_000, 1000 + 90_000);
+  assert.equal(b.fightStartedAt, null, 'the stale fight is gone');
+  assert.ok(b.enemies.has('a zol ghoul knight'), 'the bootstrap set is kept so the next pull is not lost');
+});
+
+test('nothing counted -> captureState is null', () => {
+  assert.equal(new DamageEngine().captureState(), null);
+});
+
 module.exports = () => report('damage-parser');
 if (require.main === module) report('damage-parser').then((n) => process.exit(n ? 1 : 0));
