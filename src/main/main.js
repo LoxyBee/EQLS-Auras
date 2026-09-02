@@ -38,10 +38,18 @@ const fs = require('fs');
 // is dead, nothing else is). So: write it somewhere findable regardless of the debug-log setting,
 // mirror it into the debug log for when that IS on, and keep running. This is not a licence to
 // leave real bugs unfixed - the moduleHost watcher that prompted it is fixed at its source too.
+const CRASH_LOG_MAX_BYTES = 2 * 1024 * 1024;
 function recordCrash(kind, err) {
   const line = `[${new Date().toISOString()}] ${kind}: ${(err && err.stack) || err}\n`;
   try {
-    fs.appendFileSync(path.join(app.getPath('userData'), 'crash.log'), line);
+    const p = path.join(app.getPath('userData'), 'crash.log');
+    // Roll at 2 MB, keeping one previous file. Without this, a fault that repeats every log line
+    // (a torn engine on a bad share code, before that was fixed) grew crash.log into gigabytes -
+    // a real log day is 1.5M lines.
+    try {
+      if (fs.statSync(p).size > CRASH_LOG_MAX_BYTES) fs.renameSync(p, `${p}.1`);
+    } catch { /* no file yet, or rename raced - append anyway */ }
+    fs.appendFileSync(p, line);
   } catch { /* nothing more we can do */ }
   try { console.error(line); } catch { /* ignore */ }
   try { if (typeof debugLog === 'function') debugLog(`UNCAUGHT ${kind}: ${(err && err.message) || err}`); } catch { /* ignore */ }
@@ -527,24 +535,54 @@ function broadcast(channel, payload) {
   }
 }
 
-logService.watcher.on('line', (line) => buffEngine.handleLine(line));
-logService.watcher.on('line', (line) => customTimerEngine.handleLine(line));
+// One log-line consumer throwing must not stop the others. They are all listeners on Node's single
+// 'line' EventEmitter, and emit() propagates a throw synchronously - a null customTimers element
+// from a bad share code took out ten downstream engines this way (damage meter, raid board,
+// lockouts, ...), silently, once per line. Each handler runs isolated now.
+//
+// GUARANTEE, and the edge it does NOT cover: this stops one fault reaching the OTHER handlers -
+// they recover completely. It does NOT make the faulting engine whole: an engine that commits
+// state before the work that throws (customTimerEngine advances currentZone before its trigger
+// loop) is left with a torn line, and that transition is lost. The real fix for that is validating
+// input at the door (widgetStore.normalizeWidget); this is containment.
+//
+// A distinct error signature is reported ONCE per session (not per line) via recordCrash, so it
+// reaches crash.log + the debug log + a Diagnostics broadcast - a built-in engine can't be
+// disabled like a slow module, so a silent forever-fault would be worse than a loud one-time one.
+const _lineHandlerFaults = new Set();
+function onLogLine(label, fn) {
+  logService.watcher.on('line', (line) => {
+    try {
+      fn(line);
+    } catch (err) {
+      const sig = `${label}:${(err && err.message) || err}`;
+      if (!_lineHandlerFaults.has(sig)) {
+        _lineHandlerFaults.add(sig);
+        recordCrash(`lineHandler[${label}]`, err);
+        broadcast('diagnostics:lineHandlerFault', { label, message: (err && err.message) || String(err) });
+      }
+    }
+  });
+}
+
+onLogLine('buffEngine', (line) => buffEngine.handleLine(line));
+onLogLine('customTimerEngine', (line) => customTimerEngine.handleLine(line));
 // Note 19. A fourth listener for the same reason as the third: damage is not a buff, and giving
 // buffEngine a second job would mean every future change to either having to think about both.
-logService.watcher.on('line', (line) => damageEngine.handleLine(line));
+onLogLine('damageEngine', (line) => damageEngine.handleLine(line));
 // Note 19. Group membership and charmed-pet ownership - two small trackers the damage meter reads.
-logService.watcher.on('line', (line) => groupRoster.handleLine(line));
-logService.watcher.on('line', (line) => petTracker.handleLine(line));
-logService.watcher.on('line', (line) => raidNamedTracker.handleLine(line));
-logService.watcher.on('line', (line) => abilityGroupTracker.handleLine(line));
-// Custom modules ride the same bus as pure observers. Its handleLine catches per-module throws
-// internally (like lockoutService below) so a bad module can't take the buff overlay down.
-logService.watcher.on('line', (line) => moduleHost.handleLine(line));
+onLogLine('groupRoster', (line) => groupRoster.handleLine(line));
+onLogLine('petTracker', (line) => petTracker.handleLine(line));
+onLogLine('raidNamedTracker', (line) => raidNamedTracker.handleLine(line));
+onLogLine('abilityGroupTracker', (line) => abilityGroupTracker.handleLine(line));
+// Custom modules ride the same bus as pure observers. Its handleLine already catches per-module
+// throws internally (like lockoutService); the wrapper is a second layer for the host itself.
+onLogLine('moduleHost', (line) => moduleHost.handleLine(line));
 // Raid lockouts. Its handleLine swallows and counts its own errors rather than throwing, because
 // this bus is shared with buff detection and everything else on it - see the note at the top of
 // lockoutService.js. A lockout parser that stops working is a disappointment; one that takes the
 // buff overlay down with it is not acceptable.
-logService.watcher.on('line', (line) => lockoutService.handleLine(line));
+onLogLine('lockoutService', (line) => lockoutService.handleLine(line));
 
 // Both pulled from the watcher rather than pushed, so neither can go stale when the tailer rolls
 // to a new file. The current FILE is how a live line is attributed to a character - the 'line'
@@ -595,7 +633,7 @@ let lastLogLineAt = Date.now();
 // meaningless until at least one real line has arrived - this flag is the guard for the QOL #5
 // "is it working right now?" readout.
 let sawFirstLogLine = false;
-logService.watcher.on('line', () => { lastLogLineAt = Date.now(); sawFirstLogLine = true; });
+onLogLine('logActivity', () => { lastLogLineAt = Date.now(); sawFirstLogLine = true; });
 logRotationService.setIsQuietFn(() => Date.now() - lastLogLineAt > 10000);
 
 // IS EVERQUEST LOGGING? The tracker is dead in the water without `/log on`, and EQ Legends writes
@@ -758,7 +796,7 @@ lockoutService.on('backfillChanged', (status) => broadcast('lockouts:backfill', 
 // the detection log both make tedious to verify since they're dominated by unrelated buff/combat
 // noise. This makes "did anything actually fire when I swapped" a one-glance answer instead of a
 // log search, for this and any future swap-adjacent question.
-logService.watcher.on('line', (line) => {
+onLogLine('memorizedFeed', (line) => {
   if (matchForgetSpell(line) || matchMemorizeFinished(line)) broadcast('memorized:line', line);
 });
 
@@ -787,7 +825,7 @@ const RECENT_SHARE_CODE_CAP = 20;
 
 ipcMain.handle('shareCode:recent', () => recentShareCodes.slice().reverse());
 
-logService.watcher.on('line', (line) => {
+onLogLine('shareCodeChat', (line) => {
   const found = matchShareCodeInChat(line);
   if (!found) return;
   if (offeredShareCodes.has(found.code)) return;
@@ -825,7 +863,7 @@ function applyZoneChangeAndNotify(zone) {
 
 // Note 38. A third listener rather than a hook inside one of the engines - neither of them is
 // about where you are, and a zone is not a buff.
-logService.watcher.on('line', (line) => {
+onLogLine('zoneChange', (line) => {
   const zone = matchZoneChange(line);
   if (!zone) return;
   const changed = applyZoneChangeAndNotify(zone);
@@ -1010,6 +1048,16 @@ function closeZonePrompt() {
   zonePromptPopup.updateVisibility(null);
 }
 
+// P3-4, travel-guide half. The ambiguous-cast popup is `focusable: false` so it never takes focus
+// at all - the zone-prompt popup CAN'T be, because the user types a zone name into its search box,
+// which needs keyboard focus. So this is the equivalent: once the interaction is over and there's
+// nothing left to ask, hand focus back to EQ. Guarded on `pendingZonePrompt` so a chained
+// follow-up (destination picked -> "and where are you now?") doesn't flick focus out and back.
+// Best-effort and not awaited, same as the ambiguous popup's call.
+function returnFocusAfterZonePrompt() {
+  if (!pendingZonePrompt) focusGameWindow();
+}
+
 // Chained after a destination is set: the other half of a route is where you're coming from, and
 // nothing ever replays zone history at startup (same limitation as currentlyMemorized), so this is
 // the one moment - right after the player has shown they're actively using the travel aura - worth
@@ -1030,7 +1078,7 @@ function promptDestinationNext() {
   openZonePrompt('destination');
 }
 
-logService.watcher.on('line', (line) => {
+onLogLine('travelCommand', (line) => {
   const typed = matchOfflineTell(line);
   if (!typed) return;
   // Anything but the exact fixed word is an ORDINARY /tell - to a real person, who is really
@@ -1042,6 +1090,7 @@ logService.watcher.on('line', (line) => {
   if (pendingZonePrompt) {
     debugLog(`TRAVEL picker closed by /tell ${typed}`);
     closeZonePrompt();
+    returnFocusAfterZonePrompt();
     return;
   }
   // Reported live: after a restart (currentZone always resets - nothing replays log history) an
@@ -1525,8 +1574,12 @@ ipcMain.handle('travel:resolveZonePrompt', (_event, { mode, zone }) => {
     promptDestinationNext();
   }
   pushTravelRoutes();
+  returnFocusAfterZonePrompt();
 });
-ipcMain.handle('travel:dismissZonePrompt', () => closeZonePrompt());
+ipcMain.handle('travel:dismissZonePrompt', () => {
+  closeZonePrompt();
+  returnFocusAfterZonePrompt();
+});
 // Reported live: closing the destination popup without picking a new zone left the OLD
 // destination active, and there was no way to actually stop tracking one at all - "Stop tracking"
 // in the popup is that missing action, distinct from the dismiss button (cancel vs. clear).
@@ -1537,6 +1590,7 @@ ipcMain.handle('travel:stopTracking', () => {
   debugLog('TRAVEL destination cleared via "Stop tracking"');
   closeZonePrompt();
   pushTravelRoutes();
+  returnFocusAfterZonePrompt();
 });
 // Reported live: an accidentally-wrong current zone had no way back in short of walking to a real
 // zone line, because the /tell command only ever opens the currentZone picker when the zone is

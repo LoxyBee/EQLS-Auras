@@ -90,6 +90,48 @@ function clampSoundCooldownSec(value) {
   return Math.min(60, Math.max(0, Math.round(n)));
 }
 
+// Share codes are pasted out of chat by design (shareCodeChat's "Look at it" prompt), and the only
+// guard before this was on WHO applies a code, never on WHAT is in it. normalizeWidget checked
+// `Array.isArray(customTimers)` but never the ELEMENTS - a `[null]` from a hostile or corrupt
+// payload reached customTimerEngine, threw `Cannot read properties of null (reading 'triggerText')`
+// on the shared log-line bus, and silently took out every consumer downstream of it (damage meter,
+// raid board, lockouts, ...). These two helpers make the list fields safe at the door.
+
+// A number field on a custom timer, clamped the same way setTriggerDurationSec does (0..3600, 0 is
+// a legitimate "just make a noise" timer). A string, NaN, or Infinity becomes the caller's default.
+function clampTimerSeconds(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(3600, Math.round(n))) : fallback;
+}
+
+// Keep only plain non-null objects that carry a string id; coerce their known numeric fields.
+// Anything else in the array is dropped rather than trusted.
+function sanitizeCustomTimers(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const t of value) {
+    if (!t || typeof t !== 'object' || Array.isArray(t) || typeof t.id !== 'string' || !t.id) continue;
+    const clean = { ...t };
+    if ('durationSec' in clean) clean.durationSec = clampTimerSeconds(clean.durationSec, DEFAULT_TRIGGER_DURATION_SEC);
+    if ('cooldownSec' in clean) clean.cooldownSec = clampTimerSeconds(clean.cooldownSec, 0);
+    out.push(clean);
+  }
+  return out;
+}
+
+// buffNames / excludedBuffNames feed Sets and `.toLowerCase()` in several places; a non-string
+// element throws there. Keep only non-empty strings.
+function stringList(value) {
+  return Array.isArray(value) ? value.filter((n) => typeof n === 'string' && n.length > 0) : [];
+}
+
+// Damage-meter top-N attacker rows. 1..20; a non-number (an old aura, a share code) -> the default 6.
+function clampDamageRowCap(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 6;
+  return Math.min(20, Math.max(1, Math.round(n)));
+}
+
 function isTextAura(widget) {
   return !!widget && widget.displayMode === 'text';
 }
@@ -111,7 +153,6 @@ function defaultSelfBuffsWidget(overrides = {}) {
     folderId: '',
     name: 'Self Buffs',
     deletable: false,
-    enabled: true,
     displayMode: 'icons',
     timerFormat: 'rounded-minutes',
     textSize: 24,
@@ -197,6 +238,9 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // Note 19 / line C. A combined "Charmed pets" row for charmed mobs whose owner can't be
     // determined. On by default; it never attributes to a person and can be hidden here.
     showCharmedPetsRow: true,
+    // Top-N attacker rows on the meter (owner's call, default 6). The Total row is never counted
+    // against it. 1-20 - a raid with a dozen attackers doesn't need every one on screen.
+    damageRowCap: 6,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -335,7 +379,6 @@ function defaultCustomWidget(name) {
     name,
     folderId: '', // sidebar grouping only - see the renderer
     deletable: true,
-    enabled: true,
     displayMode: 'list',
     timerFormat: 'minutes-seconds',
     textSize: DEFAULT_TEXT_SIZE,
@@ -472,6 +515,9 @@ function defaultCustomWidget(name) {
     // Note 19 / line C. A combined "Charmed pets" row for charmed mobs whose owner can't be
     // determined. On by default; it never attributes to a person and can be hidden here.
     showCharmedPetsRow: true,
+    // Top-N attacker rows on the meter (owner's call, default 6). The Total row is never counted
+    // against it. 1-20 - a raid with a dozen attackers doesn't need every one on screen.
+    damageRowCap: 6,
     // Note 21's Risk, and it is the whole feature. An aura's visibility IS its profile membership,
     // so a label telling you WHICH profile is active would vanish the moment you switched to a
     // profile it was not a member of - exactly the situation it exists to help with. This makes it
@@ -696,6 +742,7 @@ const SHAREABLE_FIELDS = [
   'damageValueMode',
   'damageScope',
   'showCharmedPetsRow',
+  'damageRowCap',
   'travelDestination',
   'showOnAllProfiles',
   'visibleInZones',
@@ -811,8 +858,8 @@ function normalizeWidget(widget) {
     // list field missing the guard. Share codes are pasted out of chat by design, and overlay.js
     // feeds this straight into a Set - a non-array throws there and takes the whole render with
     // it, showing up as tiles that simply stop updating.
-    buffNames: Array.isArray(widget.buffNames) ? widget.buffNames : [],
-    customTimers: Array.isArray(widget.customTimers) ? widget.customTimers : [],
+    buffNames: stringList(widget.buffNames),
+    customTimers: sanitizeCustomTimers(widget.customTimers),
     // Note 19. `damageShowDps` was the old on/off boolean before 'both' was added - carry a widget
     // that only has the boolean over to the equivalent mode.
     damageValueMode:
@@ -822,6 +869,7 @@ function normalizeWidget(widget) {
     // fight, the pre-existing behaviour.
     damageScope: ['all', 'group', 'mine'].includes(widget.damageScope) ? widget.damageScope : 'all',
     showCharmedPetsRow: widget.showCharmedPetsRow !== false,
+    damageRowCap: clampDamageRowCap(widget.damageRowCap),
     // A widget saved before this field existed still has its real duration sitting on its first
     // trigger (they were all in sync anyway on every real aura seen so far - see the field's own
     // comment) - read it from there rather than resetting everyone to the bare default. A widget
@@ -840,7 +888,7 @@ function normalizeWidget(widget) {
       typeof widget.andWindowSec === 'number' && Number.isFinite(widget.andWindowSec)
         ? Math.max(0, Math.min(MAX_AND_WINDOW_SEC, Math.round(widget.andWindowSec)))
         : DEFAULT_AND_WINDOW_SEC,
-    excludedBuffNames: Array.isArray(widget.excludedBuffNames) ? widget.excludedBuffNames : [],
+    excludedBuffNames: stringList(widget.excludedBuffNames),
     sortOrder: widget.sortOrder || 'default',
     lowTimeThresholdSec: typeof widget.lowTimeThresholdSec === 'number' ? widget.lowTimeThresholdSec : 30,
     landingGlowEnabled: widget.landingGlowEnabled !== false,
@@ -1307,6 +1355,16 @@ class WidgetStore {
         }
         data.version = 5;
       }
+      // v5 -> v6: drop the dead `enabled` field. It was the old global "show this aura" switch;
+      // `activeProfileIds` replaced it as the single visibility gate (see widgetManager's
+      // isVisibleForActiveProfile and CLAUDE.md gotcha #10). Nothing has read `enabled` for
+      // visibility since then - it was only left on disk to avoid a migration. This is that
+      // migration. Version-gated: runs once, and a widget re-saved afterward never carries it
+      // (normalizeWidget spreads the stored object, which no longer has the key).
+      if (data.version < 6) {
+        for (const widget of data.widgets) delete widget.enabled;
+        data.version = 6;
+      }
       this.store.saveJson('widgets', data);
       return data;
     }
@@ -1320,14 +1378,13 @@ class WidgetStore {
     // migration path silently reintroduce the old list/null layout it used to always pass here.
     const overrides = {};
     if (Object.keys(oldSettings).length > 0) {
-      overrides.enabled = oldSettings.enabled !== false;
       overrides.displayMode = oldSettings.displayMode === 'icons' ? 'icons' : 'list';
     }
     if (oldPosition) overrides.position = oldPosition;
 
     const selfBuffs = defaultSelfBuffsWidget(overrides);
 
-    const data = { version: 5, widgets: [selfBuffs], folders: [] };
+    const data = { version: 6, widgets: [selfBuffs], folders: [] };
     this.store.saveJson('widgets', data);
     return data;
   }
@@ -2092,17 +2149,28 @@ class WidgetStore {
     // update(), which deliberately does not normalize (it is also the setter every settings
     // control uses, and re-normalizing on every slider drag would be waste).
     //
-    // Only displayMode is guarded here rather than the whole patch, because it is the only
-    // shareable field where an unrecognised value has no sensible rendering. A foreign mode
-    // would leave Self Buffs drawing nothing with no visible reason why, and Self Buffs is the
-    // one aura that cannot be deleted and recreated to escape it.
+    // displayMode: an unrecognised value has no sensible rendering, and Self Buffs is the one aura
+    // that cannot be deleted and recreated to escape it.
     patch.displayMode = normalizeDisplayMode(patch.displayMode);
+    // The three list fields get the same door-sanitising normalizeWidget does. This IS an import
+    // (not a slider drag), so sanitising the imported patch is right - and a self-buffs-builtin
+    // code routes HERE specifically, because importCode() refuses that kind, so without this the
+    // hardened boundary is the one such a code never reaches. A `customTimers: [null]` here threw
+    // in customTimerEngine on the shared bus (contained by main.js's onLogLine wrapper now, and
+    // self-healed by load-time normalizeWidget on the next restart - but still worth not doing).
+    if ('customTimers' in patch) patch.customTimers = sanitizeCustomTimers(patch.customTimers);
+    if ('buffNames' in patch) patch.buffNames = stringList(patch.buffNames);
+    if ('excludedBuffNames' in patch) patch.excludedBuffNames = stringList(patch.excludedBuffNames);
     return this.update('self-buffs', patch);
   }
 }
 
 module.exports = {
   WidgetStore,
+  normalizeWidget,
+  sanitizeCustomTimers,
+  stringList,
+  SHARE_CODE_PREFIX,
   LOADOUT_LABEL_KIND,
   BARD_SONGS_KIND,
   MODULE_KIND,
@@ -2112,6 +2180,7 @@ module.exports = {
   isTextAura,
   clampInstantSec,
   clampSoundCooldownSec,
+  clampDamageRowCap,
   MAX_INSTANT_DISPLAY_SEC,
   clampStackTextLines,
   MIN_STACK_TEXT_LINES,

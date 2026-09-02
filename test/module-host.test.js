@@ -62,6 +62,13 @@ test('settingsUI defaults to "aura" for a module with an aura, and honours an ex
   assert.equal(validateModule({ ...base, hasAura: false, settingsUI: 'aura' }).module.settingsUI, 'sidebar');
 });
 
+test('experimental is an opt-in boolean, default false', () => {
+  const base = { id: 'x', name: 'X', apiVersion: API_VERSION, onLine: () => null };
+  assert.equal(validateModule({ ...base }).module.experimental, false);
+  assert.equal(validateModule({ ...base, experimental: true }).module.experimental, true);
+  assert.equal(validateModule({ ...base, experimental: 1 }).module.experimental, false, 'only literal true counts');
+});
+
 test('validateModule rejects the ways a module can be wrong', () => {
   const bad = [
     [{}, /id/],
@@ -436,6 +443,21 @@ test('modules/aggro-board.js (shipped) is a valid v1 module, key-exclusive, self
 
   // an unrelated line is ignored
   assert.equal(mod.onLine('[ts] You gain experience!', ctx, s), null);
+
+  // flagged experimental while its raid (article-less mob) parsing is being reworked
+  assert.equal(validateModule(mod).module.experimental, true);
+});
+
+test('getRegistered surfaces the experimental flag for the renderer to badge', () => {
+  const dir = tempDir();
+  write(dir, 'aggro-board.js', fs.readFileSync(path.join(__dirname, '..', 'modules', 'aggro-board.js'), 'utf8'));
+  write(dir, 'plain.js', GOOD.replace("id: 'test-mod'", "id: 'plain'"));
+  const host = new ModuleHost(dir, fakeStore());
+  host.stop();
+  host.loadModules();
+  const rows = host.getRegistered();
+  assert.equal(rows.find((r) => r.id === 'aggro-board').experimental, true);
+  assert.equal(rows.find((r) => r.id === 'plain').experimental, false);
 });
 
 // The folder watcher raises 'error' asynchronously on Windows (EPERM) when the watched dir moves

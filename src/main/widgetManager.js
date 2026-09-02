@@ -84,10 +84,9 @@ const forceShown = new Set(); // ids
 // no separate global "enabled" switch anymore. That was an explicit user
 // decision: two independent concepts (a global enable toggle AND per-profile
 // membership) meant two places to look when a widget didn't show up, so they
-// asked for one point of contact instead. The persisted `enabled` field is
-// intentionally left in widgetStore.js untouched (zero-risk to existing
-// saved data, see this project's userData-path incident) but is no longer
-// read for visibility anywhere - don't reintroduce it as a second gate.
+// asked for one point of contact instead. The old persisted `enabled` field
+// was finally removed by the widgets.json v5 -> v6 migration - don't
+// reintroduce it as a second gate.
 //
 // Empty activeProfileIds means HIDDEN EVERYWHERE. This reverses an earlier
 // choice (empty used to mean "show on every profile", as a guard against a
@@ -1122,7 +1121,7 @@ const DAMAGE_SCOPES = ['all', 'group', 'mine'];
 
 function setDamageOptions(
   id,
-  { fightTimeoutSec, mineOnly, showTotalRow, valueMode, scope, showCharmedPetsRow } = {}
+  { fightTimeoutSec, mineOnly, showTotalRow, valueMode, scope, showCharmedPetsRow, rowCap } = {}
 ) {
   const changes = {};
   if (typeof fightTimeoutSec === 'number' && Number.isFinite(fightTimeoutSec)) {
@@ -1133,6 +1132,9 @@ function setDamageOptions(
   if (DAMAGE_VALUE_MODES.includes(valueMode)) changes.damageValueMode = valueMode;
   if (DAMAGE_SCOPES.includes(scope)) changes.damageScope = scope;
   if (typeof showCharmedPetsRow === 'boolean') changes.showCharmedPetsRow = showCharmedPetsRow;
+  if (typeof rowCap === 'number' && Number.isFinite(rowCap)) {
+    changes.damageRowCap = Math.min(20, Math.max(1, Math.round(rowCap)));
+  }
   const config = widgetStore.update(id, changes);
   pushConfigChanged(id);
   return config;

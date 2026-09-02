@@ -39,12 +39,21 @@ const STAMP_RE = /^\[[^\]]+\]\s*/;
 
 // Mob melee against a player. The verbs are a closed set: 19 stems established by fixpoint over
 // 642,043 damage lines with residual 0, cross-checked against an independent EQL parser.
-const MOB_HIT = new RegExp(
-  '^(?<mob>(?:a|an|the) [^.]+?) ' +
+//
+// The mob name used to require "a/an/the " in front - which meant every NAMED mob and raid boss
+// ("Lady Vox", "Unmoving", "Muck covered elemental") was invisible, so the board sat on "nothing
+// swinging" for entire raid fights (reported live). The article is optional now; article-less
+// names are disambiguated from a PLAYER meleeing something (`Korv crushes Unmoving for 300`) by a
+// player set - see PLAYERS below. The (?<who>...) target capture is a single bare token followed
+// by " for N", which already rejects multi-word mob targets ("Lady Vox for" fails) and pet targets
+// ("Gaboku`s pet for" fails), so a mob-hits-mob line can't be mistaken for a hit on a player.
+const VERBS =
   '(?:hits|punches|kicks|cleaves|slashes|bashes|pierces|stings|claws|crushes|strikes|' +
-  'backstabs|bites|smashes|slices|smites|shoots|reaves|frenzies|gores|mauls|rends|gouges|slams|burns) ' +
-  '(?<who>[A-Za-z`\'"]+) for \\d+ points? of',
+  'backstabs|bites|smashes|slices|smites|shoots|reaves|frenzies|gores|mauls|rends|gouges|slams|burns)';
+const MOB_HIT = new RegExp(
+  `^(?<mob>(?:(?:a|an|the) )?[^.]+?) ${VERBS} (?<who>[A-Za-z\`'"]+) for \\d+ points? of`,
   'i');
+const HAS_ARTICLE = /^(?:a|an|the) /i;
 
 // The game naming the holder outright. Two endings, and anchoring on `attention!` missed the
 // second — 25 of 537 events read "...'s attention with an unparalleled approach!".
@@ -62,6 +71,19 @@ const KEY_STALE = 'aggro-stale';
 // as "A vis ghoul knight" and "a vis ghoul knight". Keying on the raw string makes two mobs — that
 // single bug hid 255 of 600 ground-truth events until it was found and fixed.
 function key(name) { return String(name).trim().toLowerCase(); }
+
+// Names seen to be PLAYERS this session - the discriminator for an article-less melee line.
+// Bootstrapped the same bidirectional way damageEngine derives friend/enemy:
+//   * anyone who "has captured <mob>'s attention" (CAPTURE_3P) - and raidmates outside her group
+//     fire that too, so a raid board is not limited to her own group;
+//   * the target of any ARTICLE-prefixed mob hit ("a vis ghoul knight hits Korv" => Korv);
+//   * ctx.groupMembers, and "you".
+// Then: article present => always a mob. Article absent => a mob only if the name is NOT a known
+// player ("Korv crushes Unmoving for 300" => "korv" is a player => not a mob hit).
+// MOBS is the mirror (SLAIN / CAPTURE targets) - not required for the rule, but lets an
+// article-less name be trusted immediately if it was already seen dying or being taunted.
+const PLAYERS = new Set(['you']);
+const MOBS = new Set();
 
 const state = {
   mob: null,          // canonical key of the mob we are tracking
@@ -112,6 +134,10 @@ module.exports = {
   apiVersion: 1,
   description: 'Who the mob is actually swinging at. Observed, not estimated.',
   hasAura: true,
+  // Marked experimental in the Add Aura list: the melee-line parsing is being reworked to
+  // recognise article-less named / raid-boss mobs ("Lady Vox", "Unmoving"), which it currently
+  // misses entirely - so the board is unreliable in raid content until that lands.
+  experimental: true,
   // Its two options live on the aura's own settings panel, not a sidebar page - the recommended
   // shape for a module without a lot of GLOBAL settings. See docs/MODULE-AUTHORING.md.
   settingsUI: 'aura',
@@ -132,13 +158,28 @@ module.exports = {
     const msg = ctx.stripTimestamp ? ctx.stripTimestamp(line) : line.replace(STAMP_RE, '');
     const now = ctx.now;
 
+    // Cheap: the group roster is a handful of names, and Set.add of an existing key is a no-op.
+    if (Array.isArray(ctx.groupMembers)) for (const m of ctx.groupMembers) PLAYERS.add(key(m));
+
     // Ordered by frequency: mob-hit lines vastly outnumber the rest, and `onLine` runs on every
     // line in the log. Over 50ms on 20+ calls disables the module for the session.
     const h = MOB_HIT.exec(msg);
     if (h) {
       const k = key(h.groups.mob);
-      if (k !== state.mob) reset(k, h.groups.mob, now);
+      const hasArticle = HAS_ARTICLE.test(h.groups.mob);
       const who = h.groups.who === 'YOU' || h.groups.who === 'you' ? 'You' : h.groups.who;
+
+      // Article-less "<name> <verb> <player> for N" is ambiguous: a real named mob, OR a player
+      // meleeing something. Trust it as a mob unless the name is a known player (that we haven't
+      // also seen as a mob - a mob whose name collides with a player's loses the tie to MOBS), or
+      // it's the target's own name (a self-referential misparse). An article is unambiguous.
+      if (!hasArticle && ((PLAYERS.has(k) && !MOBS.has(k)) || k === key(who))) return null;
+
+      // The target of a real (article) mob hit is a player - unless we've already seen that name
+      // being killed / taunting, i.e. a mob hitting another mob.
+      if (hasArticle && !MOBS.has(key(who))) PLAYERS.add(key(who));
+
+      if (k !== state.mob) reset(k, h.groups.mob, now);
       state.hits.set(who, (state.hits.get(who) || 0) + 1);
       state.lastSeen = now;
       return emit(board(settings, now));
@@ -147,6 +188,7 @@ module.exports = {
     const c1 = CAPTURE_1P.exec(msg);
     if (c1) {
       const k = key(c1.groups.mob);
+      MOBS.add(k);
       if (k !== state.mob) reset(k, c1.groups.mob, now);
       // The game has told us outright. Seed it strongly so the board agrees immediately rather
       // than waiting for the mob to swing.
@@ -158,6 +200,8 @@ module.exports = {
     const c3 = CAPTURE_3P.exec(msg);
     if (c3) {
       const k = key(c3.groups.mob);
+      MOBS.add(k);
+      PLAYERS.add(key(c3.groups.who));
       if (k !== state.mob) reset(k, c3.groups.mob, now);
       state.hits.set(c3.groups.who, (state.hits.get(c3.groups.who) || 0) + 3);
       state.lastSeen = now;
@@ -167,6 +211,9 @@ module.exports = {
     const s = SLAIN.exec(msg);
     if (s) {
       const dead = key(s.groups.mob || s.groups.mob2 || '');
+      // Only "You have slain X" (mob2) is a safe mob signal - "X has been slain by Y" could just
+      // as well be a groupmate dying to a mob, so it must not add X to the mob set.
+      if (s.groups.mob2) MOBS.add(key(s.groups.mob2));
       if (dead && dead === state.mob) {
         state.mob = null;
         state.hits = new Map();

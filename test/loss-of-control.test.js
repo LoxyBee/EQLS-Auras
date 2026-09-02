@@ -125,7 +125,7 @@ test('the v4 -> v5 migration adds CONTROLLED to a Loss of control aura that pred
 
   const s2 = new WidgetStore(io); // reload -> migrate
   const migrated = s2.getAll().find((x) => x.id === w.id);
-  assert.equal(data.widgets.version, 5);
+  assert.equal(data.widgets.version, 6);
   assert.ok(
     migrated.customTimers.some((t) => t.triggerText === 'You lose control of yourself!'),
     'the migration did not add the catch-all'

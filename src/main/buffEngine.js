@@ -74,6 +74,13 @@ const DEBUFF_SONG_CATEGORIES = new Set(['debuff', 'charm', 'dot']);
 // allowlist so a custom entry with no `targets` set is still considered a candidate.
 const NON_PLAYER_TARGETS = new Set(['Pet', 'Animal', 'Undead', 'Construct', 'Corpse', 'Plant']);
 
+// Abilities that grant a flood of buffs at once with NO per-spell cast line (gotcha #12). When an
+// ALLY activates one of these, a shared-text landing that narrows to a single self-cast on gem /
+// spellbook membership is suspect - it is very likely the ally's raid-wide version, not the
+// player's. Snapshot, same convention as CHARM_SPELL_NAMES in widgetStore - add another here only
+// if a real log shows another no-cast-line group-grant ability.
+const MULTI_GRANT_ABILITIES = new Set(['Quick Buff']);
+
 // Notes 11/17. Extra duration per mote tier, as a fraction of BASE - linear, not compounding. See
 // _scaledDuration for the measurements behind each one and for which of them are still the
 // spreadsheet's word rather than established fact.
@@ -1406,6 +1413,38 @@ class BuffEngine extends EventEmitter {
     const candidates = this._collapseRankVariants(this.buffStore.findAllByLandingText(stripped));
     if (candidates.length > 0) {
       const inBurst = Date.now() < this.burstUntil;
+      // Reported live 1 Sep: during a raid cleric's Quick Buff, her own Self Buffs picked up
+      // Dexterity / Augmentation / Talisman of Altuna / Resist Magic - the ally's raid-wide version
+      // prints the identical shared landing line, and "it's in my gems" says nothing about who cast
+      // the landing that hit her. So during an ally's instant multi-grant, the two narrow-to-one
+      // shortcuts below must not auto-land - the line falls through to the genuinely-ambiguous
+      // handling instead (a queued prompt with track-others on, a silent IGNORE with it off).
+      //
+      // The owner's framing: an ally Quick Buff is easy to spot - one exact line,
+      // "<Name> activates Quick Buff." - and its window is short. During it, an ambiguous landing
+      // is theirs, not hers. If she ALSO Quick Buffs in the same window it's unsolvable, so her own
+      // burst wins (inBurst) and the landing is credited to her.
+      //
+      // Scoped tight, from the owner's domain knowledge + a full-corpus replay:
+      //  - only a KNOWN multi-grant ability (Quick Buff), by its exact "<Name> activates Quick
+      //    Buff." line - not "any ally activate" (a raid keeps that 5s window basically always
+      //    open, and the first version cost -60k landings by suppressing her own buffs' first land);
+      //  - only when SHE isn't also bursting (`inBurst`) - if both Quick Buff in the same window
+      //    it's unsolvable, so her own burst wins;
+      //  - NOT a bard song: Quick Buff cannot grant songs, so a song landing in the window is
+      //    hers regardless. This also structurally protects her maintained Psalm/Selo's/Hymn,
+      //    which are exactly what the broad version broke;
+      //  - only a candidate not already active - a renewal of something she's running is hers.
+      // A remembered self-resolution is deliberately NOT honoured here: it answers "which of MY
+      // spells is this shared text", not "is this landing even mine" - and an ally's raid-wide
+      // Quick Buff printing that text is exactly the case where the answer is no.
+      const allyMultiGrant =
+        !inBurst &&
+        Date.now() < this.allyBurstUntil &&
+        this.allyBurstOpenedBy &&
+        MULTI_GRANT_ABILITIES.has(this.allyBurstOpenedBy.ability);
+      const suppressNarrow = (candidate) =>
+        allyMultiGrant && !candidate.isBardSong && !this.activeBuffs.has(candidate.name.toLowerCase());
       // A debuff/dot/charm/nuke-category candidate is never self-targeted - these are always
       // cast AT something, never landed on the caster. Reported live: "You slow down." is shared
       // by three Slow debuffs (Languid Pace, Shiftless Deeds, Tepid Deeds); the player had
@@ -1477,11 +1516,11 @@ class BuffEngine extends EventEmitter {
       // exactly one is in a gem would have stopped resolving itself and started asking. Measured
       // against 1.6 million lines before touching anything: the gem check decides 24 landings and
       // the spellbook check 6, so that is a real cost for no gain. Order changed; nothing lost.
-      if (!otherCastMatch && selfCandidates.length === 1) {
+      if (!otherCastMatch && selfCandidates.length === 1 && !suppressNarrow(selfCandidates[0])) {
         // Spellbook narrows it to exactly one thing I actually know, with
         // no sign anyone else just cast any of the candidates either - safe
         // to treat as my own cast even with no cast-begin/activate line at
-        // all.
+        // all. (Suppressed only during an ally Quick Buff - see suppressNarrow above.)
         if (inBurst && !selfCandidates[0].isBardSong) this.burstUntil = Date.now() + BURST_WINDOW_MS;
         this._debugLog(`LANDED "${selfCandidates[0].name}" - ambiguous text "${stripped}" narrowed to 1 by spellbook`);
         this._land(selfCandidates[0]);
@@ -1493,7 +1532,7 @@ class BuffEngine extends EventEmitter {
       // cannot, and after a loadout swap it is wrong rather than useless - it just cannot be
       // trusted OVER the spellbook when the two disagree.
       const memorizedCandidates = selfPlausible.filter((c) => this.currentlyMemorized.has(c.name.toLowerCase()));
-      if (!otherCastMatch && memorizedCandidates.length === 1) {
+      if (!otherCastMatch && memorizedCandidates.length === 1 && !suppressNarrow(memorizedCandidates[0])) {
         if (inBurst && !memorizedCandidates[0].isBardSong) this.burstUntil = Date.now() + BURST_WINDOW_MS;
         this._debugLog(
           `LANDED "${memorizedCandidates[0].name}" - ambiguous text "${stripped}" narrowed to 1 by currently-memorized gem`
@@ -1501,6 +1540,18 @@ class BuffEngine extends EventEmitter {
         this._land(memorizedCandidates[0]);
         this._checkForEndedBuffs(line);
         return;
+      }
+
+      // An ally Quick Buff is live and one of the above would otherwise have narrowed this to a
+      // single self-cast on gem/spellbook membership alone. Say so in the log, then fall through to
+      // the genuinely-ambiguous handling below (queue with track-others on, IGNORE with it off).
+      const suppressedOnly =
+        (selfCandidates.length === 1 && suppressNarrow(selfCandidates[0]) && selfCandidates[0]) ||
+        (memorizedCandidates.length === 1 && suppressNarrow(memorizedCandidates[0]) && memorizedCandidates[0]);
+      if (suppressedOnly && !otherCastMatch) {
+        this._debugLog(
+          `SUSPECT "${suppressedOnly.name}" - ambiguous "${stripped}" narrows to it, but "${this.allyBurstOpenedBy.ability}" by an ally just fired - not auto-landing`
+        );
       }
 
       if (!otherCastMatch && selfCandidates.length > 1) {

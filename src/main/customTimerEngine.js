@@ -217,7 +217,10 @@ class CustomTimerEngine extends EventEmitter {
     this.lastCapturedPrefixByTimerId = new Map();
     for (const widget of this.getWidgetsFn()) {
       for (const timer of widget.customTimers || []) {
-        if (!timer.triggerText) continue;
+        // `!timer` guards a bad element (a null from a malformed share code) regardless of which
+        // store path fed it - cheap insurance so the engine is safe even if a writer skips the
+        // door-sanitiser. See widgetStore's sanitizeCustomTimers.
+        if (!timer || !timer.triggerText) continue;
         const trigger = timer.triggerText.toLowerCase();
         // Exact by default, and that default is why this stayed exact for so long: a trigger of
         // "hi" matching every line with "hi" anywhere in it is a timer that fires constantly.
@@ -547,7 +550,7 @@ class CustomTimerEngine extends EventEmitter {
   _findDefinitionById(id) {
     for (const widget of this.getWidgetsFn()) {
       for (const timer of widget.customTimers || []) {
-        if (timer.id === id) return timer;
+        if (timer && timer.id === id) return timer;
       }
     }
     return null;

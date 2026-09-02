@@ -41,6 +41,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const readline = require('node:readline');
 const { BuffStore } = require('../src/main/buffStore');
 const { BuffEngine } = require('../src/main/buffEngine');
 const { FALLBACK_CONFIRM_WINDOW_MS } = require('../src/main/buffParser');
@@ -155,10 +156,20 @@ async function replay(files, spellbookPath = null, enemyNames = null) {
     return origUnknown(name);
   };
 
+  // Streamed line by line, NOT fs.readFileSync + split. A live eqlog_*.txt that has never been
+  // rotated (rotation is off by default now) routinely runs past V8's ~512 MB max string length,
+  // and readFileSync('utf8') on such a file throws "Cannot create a string longer than..." -
+  // which is the "replay-log crashes, unusable" report. Even below that limit, holding the whole
+  // file plus a 1.5M-element split array is ~1 GB and trips the default heap. createReadStream +
+  // readline is bounded memory regardless of file size. `crlfDelay: Infinity` matches the old
+  // /\r?\n/ split (treat a lone \r\n as one break); readline already strips the trailing newline.
   let lineCount = 0;
   for (const file of files) {
-    const text = fs.readFileSync(file, 'utf8');
-    for (const line of text.split(/\r?\n/)) {
+    const rl = readline.createInterface({
+      input: fs.createReadStream(file, { encoding: 'utf8' }),
+      crlfDelay: Infinity,
+    });
+    for await (const line of rl) {
       if (!line.trim()) continue;
       lineCount++;
       engine.handleLine(line);

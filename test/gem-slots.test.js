@@ -73,19 +73,16 @@ test('buffNames is still a flat array of names', () => {
 test('buffNames still has no migration of its own - the shape did not change', () => {
   // The store version is now 5 (v4->v5 added the CONTROLLED catch-all to existing Loss of control
   // auras - nothing to do with buffNames). If a version bump ever DOES coincide with a buffNames
-  // shape change, that change needs its own migration and this comment is where to notice it. The
-  // array coercion below is the only thing between an object-shaped buffNames and every aura being
-  // silently emptied.
-  assert.match(storeSrc, /version: 5, widgets: \[selfBuffs\]/, 'the store version moved again - if buffNames changed shape it needs its own migration');
-  assert.match(
-    storeSrc,
-    /buffNames: Array\.isArray\(widget\.buffNames\) \? widget\.buffNames : \[\]/,
-    'the array coercion is gone - a non-array now reaches the overlay'
-  );
+  // shape change, that change needs its own migration and this comment is where to notice it.
+  assert.match(storeSrc, /version: 6, widgets: \[selfBuffs\]/, 'the store version moved again - if buffNames changed shape it needs its own migration');
+  // normalizeWidget sanitises the list at the door now (share-code hardening) - a non-array, and
+  // any non-string element, is dropped before it can reach the overlay.
+  assert.match(storeSrc, /buffNames: stringList\(widget\.buffNames\)/, 'the buffNames sanitiser is gone - a bad value now reaches the overlay');
+  assert.match(storeSrc, /function stringList\(value\) \{[\s\S]*?filter\(\(n\) => typeof n === 'string'/, 'stringList no longer filters to strings');
 });
 
-test('the overlay still reads it the same way', () => {
-  assert.match(overlaySrc, /new Set\(\(currentConfig\.buffNames \|\| \[\]\)\.map\(\(n\) => n\.toLowerCase\(\)\)\)/);
+test('the overlay reads it defensively (String() each element)', () => {
+  assert.match(overlaySrc, /new Set\(\(currentConfig\.buffNames \|\| \[\]\)\.map\(\(n\) => String\(n\)\.toLowerCase\(\)\)\)/);
 });
 
 test('an aura saved before this change still works', () => {
