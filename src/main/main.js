@@ -550,13 +550,24 @@ function broadcast(channel, payload) {
 // reaches crash.log + the debug log + a Diagnostics broadcast - a built-in engine can't be
 // disabled like a slow module, so a silent forever-fault would be worse than a loud one-time one.
 const _lineHandlerFaults = new Set();
+const _LINE_HANDLER_FAULT_CAP = 50;
+// A stable signature for "the same fault", so a distinct one is reported once per session and the
+// set stays bounded. Deliberately NOT the error message: a message that interpolates data (a
+// position, a zone/mob/spell name, a JSON offset) is different on every throw, which would both
+// grow this set without bound AND re-report - re-churning crash.log, the exact thing its 2MB roll
+// exists to stop. label + error type + the first stack frame identifies the throw site instead.
+function _faultSig(label, err) {
+  const type = (err && err.constructor && err.constructor.name) || 'Error';
+  const frame = ((err && err.stack) || '').split('\n')[1]?.trim() || 'no-frame';
+  return `${label}:${type}:${frame}`;
+}
 function onLogLine(label, fn) {
   logService.watcher.on('line', (line) => {
     try {
       fn(line);
     } catch (err) {
-      const sig = `${label}:${(err && err.message) || err}`;
-      if (!_lineHandlerFaults.has(sig)) {
+      const sig = _faultSig(label, err);
+      if (!_lineHandlerFaults.has(sig) && _lineHandlerFaults.size < _LINE_HANDLER_FAULT_CAP) {
         _lineHandlerFaults.add(sig);
         recordCrash(`lineHandler[${label}]`, err);
         broadcast('diagnostics:lineHandlerFault', { label, message: (err && err.message) || String(err) });

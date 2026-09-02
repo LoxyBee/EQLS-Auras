@@ -2184,7 +2184,8 @@
   "manaCost": 0,
   "castSec": 3,
   "targets": "Group",
-  "landingTextSharedBy": 2
+  "landingTextSharedBy": 2,
+  "isBardSong": true
  },
  {
   "name": "Chaos Flux",
@@ -16681,7 +16682,8 @@
   "manaCost": 0,
   "castSec": 3,
   "targets": "Group",
-  "landingTextSharedBy": 2
+  "landingTextSharedBy": 2,
+  "isBardSong": true
  },
  {
   "name": "Vigilant Spirit",
