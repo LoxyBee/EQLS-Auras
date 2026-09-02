@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onLockoutBoardChanged: (callback) => {
     ipcRenderer.on('lockout:board', (_event, board) => callback(board));
   },
+  // First aggro - one shared row (not keyed by widget id), like the raid-named board.
+  getFirstAggro: () => ipcRenderer.invoke('firstAggro:getActive'),
+  onFirstAggroChanged: (callback) => {
+    ipcRenderer.on('firstAggro:active', (_event, rows) => callback(rows));
+  },
   getActiveDamage: () => ipcRenderer.invoke('damage:getActive'),
   onActiveDamageChanged: (callback) => {
     ipcRenderer.on('damage:active', (_event, rows) => callback(rows));

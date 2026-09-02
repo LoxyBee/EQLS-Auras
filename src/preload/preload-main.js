@@ -170,6 +170,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createDamageMeterWidget: (name, mineOnly) => ipcRenderer.invoke('widget:createDamageMeter', { name, mineOnly }),
   createTravelGuideWidget: (name, destination) => ipcRenderer.invoke('widget:createTravelGuide', { name, destination }),
   createLockoutBoardWidget: (name) => ipcRenderer.invoke('widget:createLockoutBoard', { name }),
+  createFirstAggroWidget: (name) => ipcRenderer.invoke('widget:createFirstAggro', { name }),
   setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
   // Raid lockouts. Read-only from the renderer's side: it asks for a projection and is told when

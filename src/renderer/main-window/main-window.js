@@ -2954,6 +2954,7 @@ function initWidgetsPanel() {
     if (widget.buffSource === 'damage') return 'Damage parser';
     if (widget.buffSource === 'travel') return 'Travel guide';
     if (widget.buffSource === 'lockout') return 'Raid lockouts';
+    if (widget.buffSource === 'firstAggro') return 'First aggro';
     if (widget.displayMode === 'text') return 'Custom text';
     if (widget.buffSource === 'customTimer') return 'Custom timer';
     if (widget.buffSource === 'ally' && widget.trackOnEnemies) return 'Custom debuff';
@@ -3010,6 +3011,7 @@ function initWidgetsPanel() {
     if (widget.buffSource === 'damage') return 'damage';
     if (widget.buffSource === 'travel') return 'travel';
     if (widget.buffSource === 'lockout') return 'lockout';
+    if (widget.buffSource === 'firstAggro') return 'first-aggro';
     if (widget.displayMode === 'text') {
       if (widget.allyDebuffAlert) return 'ally-alert';
       return widget.buffSource === 'customTimer' ? 'text-customTimer' : 'text';
@@ -3062,6 +3064,9 @@ function initWidgetsPanel() {
     // sort/merge/borders) with no 'alerts' either - it pops on a macro and clears itself, nothing
     // lands or expires - plus its own settings block: the trigger word and the auto-hide time.
     'lockout': ['list-format', 'timer-text', 'opacity', 'position', 'lockout-settings'],
+    // First aggro - one engine-decided line. No picker, no sort/merge; a sound on a body pull
+    // is worth having, so 'alerts' stays.
+    'first-aggro': ['list-format', 'timer-text', 'opacity', 'position', 'alerts'],
   };
 
   // Applies one shape's field set to every optional row/card, and returns the Set so
@@ -4316,6 +4321,16 @@ function initWidgetsPanel() {
         'raids are not shown.',
       create: (name) => window.eqTracker.createLockoutBoardWidget(name),
     },
+    {
+      id: 'first-aggro',
+      name: 'First aggro',
+      group: 'standalone',
+      description:
+        'One line at the start of a fight: who took the first hit - a groupmate pulling, or the ' +
+        'mob hitting one of yours first (the body-pull tell). Clears when the mob dies or you zone. ' +
+        'Only as complete as your own log.',
+      create: (name) => window.eqTracker.createFirstAggroWidget(name),
+    },
   ];
 
   // Not-yet-built/locked premade ideas - shown inline in their eventual category as
@@ -4334,13 +4349,6 @@ function initWidgetsPanel() {
     // The rest of the roadmap, shown in the app rather than only in docs/QOL-BACKLOG.md. Listing something
     // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
     // it looks to anyone using the app who did not write it.
-    {
-      name: 'First aggro',
-      group: 'standalone',
-      description:
-        'Shows who hit the boss first, or who it hit first. Not built yet — and it can only be as ' +
-        'complete as your own log.',
-    },
     {
       name: 'Aggro Board',
       group: 'standalone',

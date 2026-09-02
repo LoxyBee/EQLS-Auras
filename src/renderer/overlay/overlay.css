@@ -309,6 +309,13 @@ body.unlocked .drag-overlay {
   opacity: 0.85;
 }
 
+/* First aggro - a body pull (the mob hit one of yours first) reads red; a clean pull is normal. */
+.first-aggro-bodypull .name,
+.first-aggro-bodypull .tile-label {
+  color: #ff6b6b;
+  font-weight: 700;
+}
+
 .text-tile {
   width: max-content;
   max-width: 100%;

@@ -51,7 +51,7 @@ const { widgetShape, SHAPE_FIELDS } = loadShapeLogic();
 
 const ALL_SHAPES = [
   'self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff',
-  'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'lockout', 'module',
+  'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'lockout', 'first-aggro', 'module',
 ];
 
 // ---------------------------------------------------------------------------
@@ -72,6 +72,7 @@ const REPRESENTATIVES = {
   'damage': { kind: 'custom', buffSource: 'damage', displayMode: 'list' },
   'travel': { kind: 'custom', buffSource: 'travel', displayMode: 'list' },
   'lockout': { kind: 'custom', buffSource: 'lockout', displayMode: 'list' },
+  'first-aggro': { kind: 'custom', buffSource: 'firstAggro', displayMode: 'list' },
   'module': { kind: 'module-aura', buffSource: 'module', displayMode: 'icons' },
 };
 
@@ -134,11 +135,11 @@ const FIELD_SHAPES = {
   // 'raid-named' (#33) and 'damage' (note 19) reuse 'list-format' the same way travel does - a
   // list of non-spell rows with no icon mode, wanting only the list-width/row-size sizing and none
   // of the sort/merge/borders that only make sense for spell tiles.
-  'list-format': ['raid-named', 'travel', 'lockout', 'damage'],
-  'timer-text': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel', 'lockout', 'module'],
-  'opacity': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'lockout', 'module'],
-  'position': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'lockout', 'module'],
-  'alerts': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'travel', 'module'],
+  'list-format': ['raid-named', 'travel', 'lockout', 'first-aggro', 'damage'],
+  'timer-text': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'custom-timer', 'damage', 'travel', 'lockout', 'first-aggro', 'module'],
+  'opacity': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'lockout', 'first-aggro', 'module'],
+  'position': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'damage', 'travel', 'lockout', 'first-aggro', 'module'],
+  'alerts': ['self-buffs', 'ally-buffs', 'bard-songs', 'raid-named', 'custom-buff', 'custom-debuff', 'ally-alert', 'text', 'text-customTimer', 'custom-timer', 'travel', 'first-aggro', 'module'],
   'text-fields': ['ally-alert', 'text', 'text-customTimer'],
   'text-instant': ['ally-alert', 'text'],
   // "Stack multiple lines" + its "Lines visible" sub-slider - every text shape gets it, including

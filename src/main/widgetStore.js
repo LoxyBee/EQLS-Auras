@@ -1632,6 +1632,22 @@ class WidgetStore {
     return widget;
   }
 
+  // The "First aggro" aura (owner's original note #2).
+  //
+  // A plain custom aura, buffSource 'firstAggro'. One line fed from firstAggroEngine: who took the
+  // first hit of the current fight. No settings of its own - it just shows or it doesn't.
+  createFirstAggroBoard(name, { activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name || 'First aggro');
+    widget.buffSource = 'firstAggro';
+    widget.sortOrder = 'default';
+    widget.listWidth = 220;
+    widget.landingGlowEnabled = false;
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
   // Note 19. The damage meter.
   //
   // A plain custom aura with buffSource 'damage', not a new kind. That is the whole reason this

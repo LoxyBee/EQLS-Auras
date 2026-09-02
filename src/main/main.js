@@ -70,6 +70,7 @@ const { DamageEngine } = require('./damageEngine');
 const { GroupRoster } = require('./groupRoster');
 const { PetTracker } = require('./petTracker');
 const { RaidNamedTracker } = require('./raidNamedTracker');
+const { FirstAggroEngine } = require('./firstAggroEngine');
 const { ModuleHost } = require('./moduleHost');
 const { readLastZoneEntry } = require('./logZonePeek');
 const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
@@ -221,6 +222,7 @@ const damageEngine = new DamageEngine();
 const groupRoster = new GroupRoster();
 const petTracker = new PetTracker();
 const raidNamedTracker = new RaidNamedTracker();
+const firstAggroEngine = new FirstAggroEngine();
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
 // widgetManager pulls in Electron's screen/BrowserWindow. Action bar gem cooldowns ride along as
@@ -494,6 +496,7 @@ function debugLog(message) {
 buffEngine.setDebugLogFn(debugLog);
 customTimerEngine.setDebugLogFn(debugLog);
 raidNamedTracker.setDebugLogFn(debugLog);
+firstAggroEngine.setDebugLogFn(debugLog);
 
 // AA "Spell Casting Reinforcement" (4 ranks) and Exaltation "Extended
 // Enhancement" (3 ranks) both extend buff durations by a flat percentage,
@@ -586,6 +589,7 @@ onLogLine('damageEngine', (line) => damageEngine.handleLine(line));
 onLogLine('groupRoster', (line) => groupRoster.handleLine(line));
 onLogLine('petTracker', (line) => petTracker.handleLine(line));
 onLogLine('raidNamedTracker', (line) => raidNamedTracker.handleLine(line));
+onLogLine('firstAggro', (line) => firstAggroEngine.handleLine(line));
 onLogLine('abilityGroupTracker', (line) => abilityGroupTracker.handleLine(line));
 // Custom modules ride the same bus as pure observers. Its handleLine already catches per-module
 // throws internally (like lockoutService); the wrapper is a second layer for the host itself.
@@ -1008,6 +1012,28 @@ damageEngine.on('activeChanged', () => broadcast('damage:active', damageViews())
 // Backlog #33 - the named-kill board. Each row becomes an infinite buff-shaped tile (killed ones
 // flagged so overlay.js can dim them); a row with a live respawn countdown carries remainingSec.
 raidNamedTracker.on('changed', (rows) => broadcast('raidNamed:active', rows.map(raidNamedTile)));
+firstAggroEngine.on('changed', (rows) => broadcast('firstAggro:active', rows.map(firstAggroTile)));
+// One line - who took the first hit of the fight. An infinite, buff-shaped tile styled
+// like a travel-guide leg (no category border, no countdown). `side` lets overlay.js
+// colour a body-pull ('mob') differently from a clean pull.
+function firstAggroTile(row) {
+  return {
+    name: row.text,
+    id: 'first-aggro',
+    valueText: '',
+    barPercent: 0,
+    remainingSec: null,
+    durationSec: 0,
+    infinite: true,
+    instant: false,
+    landedAt: null,
+    showOnOverlay: true,
+    iconUrl: null,
+    isBardSong: false,
+    spellCategory: null,
+    firstAggroSide: row.side,
+  };
+}
 function raidNamedTile(row) {
   return {
     name: row.name,
@@ -1691,6 +1717,7 @@ ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffE
 
 ipcMain.handle('damage:getActive', () => damageViews());
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
+ipcMain.handle('firstAggro:getActive', () => firstAggroEngine.getActive().map(firstAggroTile));
 ipcMain.handle('travel:getRoutes', () => travelRoutes());
 ipcMain.handle('lockout:getBoard', () => lockoutBoardRoutes());
 ipcMain.handle('travel:getZones', () => allZoneNames());
@@ -2123,6 +2150,9 @@ ipcMain.handle('widget:createDamageMeter', (_event, { name, mineOnly }) =>
 );
 ipcMain.handle('widget:createLockoutBoard', (_event, { name }) =>
   widgetManager.createLockoutBoardWidget(name)
+);
+ipcMain.handle('widget:createFirstAggro', (_event, { name }) =>
+  widgetManager.createFirstAggroWidget(name)
 );
 ipcMain.handle('widget:createTravelGuide', (_event, { name, destination }) =>
   widgetManager.createTravelGuideWidget(name, destination)
@@ -2917,6 +2947,7 @@ app.on('will-quit', () => {
   // orphaned process after the app closes instead of exiting with it.
   foregroundWatcher.stop();
   raidNamedTracker.stop();
+  firstAggroEngine.stop();
 });
 // A renderer dying takes its window with it, which can cascade into
 // window-all-closed and look like a clean quit - `reason` distinguishes a

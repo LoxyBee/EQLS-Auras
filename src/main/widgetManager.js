@@ -419,6 +419,14 @@ function createLockoutBoardWidget(name) {
   return config;
 }
 
+function createFirstAggroWidget(name) {
+  const config = widgetStore.createFirstAggroBoard(name, {
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
 function exportWidget(id) {
   return widgetStore.exportCode(id);
 }
@@ -1551,6 +1559,7 @@ module.exports = {
   createDebuffWidget,
   createDamageMeterWidget,
   createLockoutBoardWidget,
+  createFirstAggroWidget,
   setDamageOptions,
   createTravelGuideWidget,
   setTravelDestination,
