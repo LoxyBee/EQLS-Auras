@@ -1754,6 +1754,43 @@ suites green, clean smoke. None confirmed on a real display.
 
 ---
 
+# 14 — Public-release hardening batch (Sep, PRs #37–#46)
+
+The app-icon check lives under "App icon" further down; overlay auto-hide idle back-off + the
+blocked-helper known issue are under "Overlay auto-hide".
+
+## Mid-fight popups don't steal focus (#37)
+
+- [ ] **Unclear-cast popup while EQ has focus.** Trigger an ambiguous cast in game — the popup
+      appears without EQ losing focus; you can keep playing. Answering it doesn't yank focus
+      either (see "Refocus EverQuest after answering an ambiguous cast").
+- [ ] **Travel zone picker while EQ has focus.** Fire the picker from in game — it appears without
+      pulling you out; clicking a zone in it focuses the picker window itself but EQ isn't
+      minimised or alt-tabbed away, and once you've picked (or dismissed) focus returns to EQ.
+
+## Aggro Board — named mobs and raid bosses (#39, #40)
+
+- [ ] **In a real raid**, the Aggro Board actually populates. Before this it read nothing for
+      whole fights because every named/raid-boss name is article-less (`Lady Vox`, not
+      `a vis ghoul knight`). Watch that a groupmate's name never shows up as the *mob* being
+      swung at (the article-less discriminator should keep known players out of the mob slot).
+- [ ] The Add-Aura entry is badged **Experimental** if a module sets `experimental: true`
+      (the bundled Aggro Board may or may not — check against its source).
+
+## Damage meter row cap (#45)
+
+- [ ] Damage aura settings has **"Show at most N rows"** (default 6, range 1–20). Set it to 3 in a
+      fight with more than 3 attackers → only the top 3 attacker rows draw; the **Total** row still
+      shows (it's exempt from the cap) unless you've turned the total off separately.
+
+## Evidence-based detection default (P0 rework)
+
+- [ ] A session with evidence-based detection **on** (now the default): after an app restart or a
+      loadout swap mid-session, buffs that were being silently missed before now land. The
+      Diagnostics toggle turns it back off.
+
+---
+
 # Confirmed
 
 Kept as regression guards — each of these was broken once.
