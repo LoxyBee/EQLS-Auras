@@ -66,7 +66,7 @@ test('the create path is bridged end to end', () => {
 
 test('hasAura modules are folded into the Add-Aura Standalone group with no per-module code', () => {
   assert.match(rendererSrc, /onModuleRegistryChange\(\(modules\) =>/);
-  assert.match(rendererSrc, /\.filter\(\(m\) => m\.hasAura && m\.enabled\)/, 'Add-Aura should only offer ENABLED hasAura modules');
+  assert.match(rendererSrc, /\.filter\(\(m\) => m\.hasAura && m\.enabled && !LOCKED_MODULE_AURAS\.has\(m\.id\)\)/, 'Add-Aura should only offer ENABLED, non-locked hasAura modules');
   assert.match(rendererSrc, /createModuleAuraWidget\(n, m\.id\)/);
   assert.match(rendererSrc, /group\.id === 'standalone' \? moduleAuraChoices : \[\]/);
 });
