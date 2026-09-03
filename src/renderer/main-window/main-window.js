@@ -1873,9 +1873,9 @@ function initWidgetsPanel() {
   const openAddWidgetBtn = document.getElementById('open-add-widget-modal-btn');
   const addWidgetModalBackdrop = document.getElementById('add-widget-modal-backdrop');
   const closeAddWidgetModalBtn = document.getElementById('close-add-widget-modal');
-  // The Add Aura modal is one scrolling view (#add-widget-main) with three headed categories.
-  // #add-widget-buff-timer-panel is the only real sub-view - it asks a question before building.
-  const addWidgetMainEl = document.getElementById('add-widget-main');
+  // Add Aura: a choices screen (five buttons under three headed categories) and one panel per
+  // button. #add-widget-buff-timer-panel is a step further in - reached from a premade-list row.
+  const addWidgetChoicesEl = document.getElementById('add-widget-choices');
   const addWidgetPanels = document.querySelectorAll('.add-widget-panel');
   const addWidgetBackBtns = document.querySelectorAll('.add-widget-back');
   const importCodeInput = document.getElementById('modal-import-widget-code-input');
@@ -4126,9 +4126,12 @@ function initWidgetsPanel() {
     hideShareCodeOffer();
     if (!code) return;
     openAddWidgetModal();
+    addWidgetChoicesEl.style.display = 'none';
+    addWidgetPanels.forEach((panel) => {
+      panel.style.display = panel.id === 'add-widget-import-panel' ? '' : 'none';
+    });
     importCodeInput.value = code;
     importCodeInput.focus();
-    importCodeInput.scrollIntoView({ block: 'center' });
   });
 
   window.eqTracker.onShareCodeOffered((offer) => {
@@ -4742,18 +4745,18 @@ function initWidgetsPanel() {
     targetEl.appendChild(li);
   }
 
-  // The modal's default view - the one scrolling page of all three categories.
   function showAddWidgetChoices() {
-    addWidgetPanels.forEach((panel) => (panel.style.display = panel.id === 'add-widget-main' ? '' : 'none'));
-    addWidgetMainEl.scrollTop = 0;
+    addWidgetChoicesEl.style.display = '';
+    addWidgetPanels.forEach((panel) => (panel.style.display = 'none'));
   }
 
-  // The buff-timer panel (Buff timer / Cooldown timer / Debuff on an enemy) is the one sub-view -
-  // it's reached by clicking one of those from the premade list, and its own Back button returns
-  // to the main page rather than closing the modal. Kept as a named function because a test pins
-  // that the buff-timer back button is singled out from every other .add-widget-back.
+  // The buff-timer panel (Buff timer / Cooldown timer / Debuff on an enemy) is reached FROM the
+  // premade list, one screen further in, so its Back button returns to that list, not to Choices.
   function showAddWidgetPremadePanel() {
-    showAddWidgetChoices();
+    addWidgetChoicesEl.style.display = 'none';
+    addWidgetPanels.forEach((panel) => {
+      panel.style.display = panel.id === 'add-widget-premade-panel' ? '' : 'none';
+    });
   }
 
   // Codes seen in chat this session. Read-only by construction: the only thing picking one does is
@@ -4784,8 +4787,10 @@ function initWidgetsPanel() {
         span.textContent = `from ${entry.sender} in ${entry.channel}, ${when}`;
         btn.append(strong, span);
         btn.addEventListener('click', () => {
-          // The chat list lives in the Import panel now - just fill the box above it.
           importCodeInput.value = entry.code;
+          addWidgetPanels.forEach((panel) => {
+            panel.style.display = panel.id === 'add-widget-import-panel' ? '' : 'none';
+          });
           importCodeInput.focus();
         });
         li.appendChild(btn);
@@ -4811,7 +4816,6 @@ function initWidgetsPanel() {
     importStatus.textContent = '';
     modalNewWidgetNameInput.value = '';
     renderPremadeList();
-    renderChatShareCodeList();
     // Re-pull the module list on open so a just-dropped module shows up here; the registry
     // subscriber above rebuilds moduleAuraChoices and re-renders the list when it lands.
     refreshModuleRegistry();
@@ -4827,11 +4831,23 @@ function initWidgetsPanel() {
   addWidgetModalBackdrop.addEventListener('click', (e) => {
     if (e.target === addWidgetModalBackdrop) closeAddWidgetModal();
   });
-  // The buff-timer panel is the one sub-view, reached from a premade-list row; its Back button
-  // returns to the main page. Every other .add-widget-back (there are none right now) would too.
+  // Every .add-widget-back goes to Choices, except the buff-timer panel's - that one was reached
+  // from the premade list, so it goes back there.
   const buffTimerBackBtn = document.querySelector('#add-widget-buff-timer-panel .add-widget-back');
   addWidgetBackBtns.forEach((btn) => {
     btn.addEventListener('click', () => (btn === buffTimerBackBtn ? showAddWidgetPremadePanel() : showAddWidgetChoices()));
+  });
+
+  addWidgetChoicesEl.querySelectorAll('.add-widget-choice').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      addWidgetChoicesEl.style.display = 'none';
+      addWidgetPanels.forEach((panel) => {
+        panel.style.display = panel.id === `add-widget-${btn.dataset.choice}-panel` ? '' : 'none';
+      });
+      if (btn.dataset.choice === 'custom') modalNewWidgetNameInput.focus();
+      else if (btn.dataset.choice === 'import') importCodeInput.focus();
+      else if (btn.dataset.choice === 'chat') renderChatShareCodeList();
+    });
   });
 
   // The name box is optional, and that is a fix rather than a relaxation.

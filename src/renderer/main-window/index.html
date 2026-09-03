@@ -2111,43 +2111,27 @@
         <button id="close-add-widget-modal" class="modal-close">✕</button>
       </div>
 
-      <!-- One scrolling view, three headed categories (owner, 3 Sep - "headed categories, not
-           extra menus to click through"). The buff-timer panel below is the only real sub-view,
-           because it asks a question before it builds. -->
-      <div id="add-widget-main" class="add-widget-panel">
+      <!-- Five buttons under three headed categories (owner, 3 Sep). Each opens its own panel. -->
+      <div id="add-widget-choices">
         <h4 class="add-widget-cat">Standalone tools</h4>
-        <ul id="add-widget-tools-list" class="plain-list"></ul>
+        <button type="button" class="add-widget-choice" data-choice="tools"><strong>Standalone tools</strong></button>
 
         <h4 class="add-widget-cat">Premade &amp; custom</h4>
-        <ul id="add-widget-premade-list" class="plain-list"></ul>
-        <p class="add-widget-subhead">Or build one from scratch</p>
-        <div class="row">
-          <input type="text" id="modal-new-widget-name" class="text-input" placeholder="Aura name..." />
-        </div>
-        <button type="button" class="add-widget-choice" id="modal-add-buff-widget-btn">
-          <strong>Custom buff aura</strong>
-          <span>Pick exactly which of your own or allies' buffs it shows.</span>
-        </button>
-        <button type="button" class="add-widget-choice" id="modal-add-debuff-widget-btn">
-          <strong>Custom debuff aura</strong>
-          <span>
-            Tracks mez, charm, snare and the like on what you cast them at, with each target's
-            name. Pick the spells once it's made.
-          </span>
-        </button>
-        <button type="button" class="add-widget-choice" id="modal-add-timer-widget-btn">
-          <strong>Custom timer aura</strong>
-          <span>Define your own countdown timers, triggered by exact lines of log text.</span>
-        </button>
-        <button type="button" class="add-widget-choice" id="modal-add-text-widget-btn">
-          <strong>Custom text aura</strong>
-          <span>
-            One thing in large words — no icon, no countdown. Point it at a buff or your own line
-            of log text.
-          </span>
-        </button>
+        <button type="button" class="add-widget-choice" data-choice="premade"><strong>Premade aura</strong></button>
+        <button type="button" class="add-widget-choice" data-choice="custom"><strong>Custom aura</strong></button>
 
         <h4 class="add-widget-cat">Import</h4>
+        <button type="button" class="add-widget-choice" data-choice="import"><strong>Import from code</strong></button>
+        <button type="button" class="add-widget-choice" data-choice="chat"><strong>Import from chat</strong></button>
+      </div>
+
+      <div id="add-widget-tools-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <ul id="add-widget-tools-list" class="plain-list scroll-list"></ul>
+      </div>
+
+      <div id="add-widget-import-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
         <div class="row">
           <input
             type="text"
@@ -2158,11 +2142,39 @@
           <button id="modal-import-widget-btn">Import</button>
         </div>
         <p class="hint" id="modal-import-widget-status"></p>
-        <!-- Note 30's other half. The offer strip is easy to dismiss and appears while she is
-             playing; this is where you come looking for it afterwards. Read-only: picking one
-             fills the box above, and nothing is applied without pressing Import. -->
-        <p class="hint">Or an aura code someone pasted in chat since the app started - picking one fills the box above.</p>
-        <ul id="add-widget-chat-list" class="plain-list"></ul>
+      </div>
+
+      <div id="add-widget-chat-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <ul id="add-widget-chat-list" class="plain-list scroll-list"></ul>
+      </div>
+
+      <div id="add-widget-premade-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <ul id="add-widget-premade-list" class="plain-list scroll-list"></ul>
+      </div>
+
+      <div id="add-widget-custom-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <div class="row">
+          <input type="text" id="modal-new-widget-name" class="text-input" placeholder="Aura name..." />
+        </div>
+        <button type="button" class="add-widget-choice" id="modal-add-buff-widget-btn">
+          <strong>Custom buff aura</strong>
+          <span>Pick exactly which of your own or allies' buffs it shows.</span>
+        </button>
+        <button type="button" class="add-widget-choice" id="modal-add-debuff-widget-btn">
+          <strong>Custom debuff aura</strong>
+          <span>Tracks mez, charm, snare and the like on what you cast them at, with each target's name.</span>
+        </button>
+        <button type="button" class="add-widget-choice" id="modal-add-timer-widget-btn">
+          <strong>Custom timer aura</strong>
+          <span>Your own countdown timers, triggered by exact lines of log text.</span>
+        </button>
+        <button type="button" class="add-widget-choice" id="modal-add-text-widget-btn">
+          <strong>Custom text aura</strong>
+          <span>One thing in large words. Point it at a buff or a line of log text.</span>
+        </button>
       </div>
 
       <!-- The first premade that asks a question before it builds anything. Deliberately its own
