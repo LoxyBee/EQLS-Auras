@@ -4339,13 +4339,12 @@ function initWidgetsPanel() {
     // The rest of the roadmap, shown in the app rather than only in docs/QOL-BACKLOG.md. Listing something
     // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
     // it looks to anyone using the app who did not write it.
-    {
-      name: 'Aggro Board',
-      group: 'standalone',
-      description:
-        'Who the mob is swinging at, and who is next in line. Locked while its raid-boss mob ' +
-        'reading is reworked.',
-    },
+    //
+    // Aggro Board: pulled from the list entirely (owner, 3 Sep) - not even a "Planned" placeholder
+    // while its raid-mob parsing is reworked. The module (modules/aggro-board.js) stays loaded and
+    // parsing so its tests run; it's just unreachable from Add Aura (also still in
+    // LOCKED_MODULE_AURAS). Restore this entry to bring the placeholder back.
+    //   { name: 'Aggro Board', group: 'standalone', description: '...' },
   ];
 
   // ---- The buff-timer premade (note 14) --------------------------------------------------

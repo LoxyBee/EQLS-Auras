@@ -2524,10 +2524,12 @@ body.sidebar-resizing .sidebar {
 .planner-slot-list .planner-buff-row {
   margin-left: 2px;
 }
-/* A pinned "special" song (Amplification) - a reminder, not a scored slot. */
+/* A pinned "special" song (Amplification) - not one of the 5, so it gets its own look: a solid
+   accent border and a left accent bar. */
 .planner-buff-special {
-  border-style: dashed;
-  opacity: 0.85;
+  border: 1px solid var(--accent);
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel-2));
 }
 .planner-buff-special .planner-buff-meta {
   font-style: italic;
