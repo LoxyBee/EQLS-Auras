@@ -266,6 +266,22 @@ function main() {
     for (const k of DERIVED_KEYS) delete e[k];
     const cs = e.spellId != null ? spellById.get(Number(e.spellId)) : null;
     if (cs) Object.assign(e, stackFields(cs), ov && ov.set ? pick(ov.set, STACK_KEYS) : {});
+    // Buff duration formula 50 = permanent-until-cancelled. EQEmu CalcBuffDuration_formula case 50
+    // returns the -1 "doesn't tick" sentinel BEFORE field 12 is ever consulted, and amerzel's EQL
+    // data renders every formula-50 spell as "permanent" (field 12 there is only a PvP cap). The
+    // old mining read field 12 x 6 and gave these ~0s, so 45 real long buffs - Armor of the
+    // Faithful, the whole Shielding line, the damage-shield "coat" line, permanent wolf/vision
+    // forms - vanished from the overlay ~1 min after landing (owner watched Armor of the Faithful
+    // still blocking casts long after the app had dropped it). Short Con research, 3 Sep.
+    // Conservative on the two entries that carry a real field-12 value (Dark Temptation 3600,
+    // Phantom Plate 4320): left finite pending a live "it didn't expire" report - flip them here
+    // by dropping the `&& !e.buffDuration` if that ever comes in.
+    if (!(ov && ov.set && 'infiniteDuration' in ov.set) && !(ov && ov.set && 'durationSec' in ov.set)) {
+      if (e.buffDurationFormula === 50 && e.goodEffect >= 1 && !e.buffDuration) {
+        e.infiniteDuration = true;
+        delete e.durationSec;
+      }
+    }
     for (const k of Object.keys(e)) if (e[k] == null) delete e[k];
     roster.push(e);
   }

@@ -334,7 +334,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Allure of the Wild",
@@ -576,7 +577,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Aria of Asceticism",
@@ -652,7 +654,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Armor of the Faithful",
@@ -678,7 +681,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Assiduous Vision",
@@ -938,7 +942,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Barbcoat",
@@ -963,7 +968,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Barrier of Combustion",
@@ -1916,7 +1922,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Bravery",
@@ -1968,7 +1975,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Breeze",
@@ -2397,7 +2405,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Call of Earth",
@@ -2473,7 +2482,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Calm",
@@ -3371,7 +3381,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Chilling Embrace",
@@ -4794,7 +4805,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Dark Soul",
@@ -4953,7 +4965,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Defensive Stance",
@@ -5466,7 +5479,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Divine Purpose",
@@ -5490,7 +5504,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Divine Vigor",
@@ -5931,7 +5946,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Elemental Maelstrom",
@@ -6008,7 +6024,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Elemental: Air",
@@ -7333,7 +7350,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Fade",
@@ -7662,7 +7680,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Firestorm",
@@ -8093,7 +8112,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Force Snap",
@@ -8298,7 +8318,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Frenzied Spirit",
@@ -8374,7 +8395,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Frost Bolt",
@@ -9186,7 +9208,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Greater Summoning: Air",
@@ -9300,7 +9323,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Grim Aura",
@@ -9326,7 +9350,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Group Resist Magic",
@@ -9818,7 +9843,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Haze",
@@ -11892,7 +11918,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Intellectual Advancement",
@@ -12848,7 +12875,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Lesser Succor",
@@ -13064,7 +13092,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Life Leech",
@@ -13547,7 +13576,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Malaise",
@@ -14686,7 +14716,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Minor Summoning: Air",
@@ -14914,7 +14945,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Nature's Renewal",
@@ -15334,7 +15366,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "O`Keil's Radiation",
@@ -15717,7 +15750,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Phantom Leather",
@@ -15742,7 +15776,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Phantom Plate",
@@ -17171,7 +17206,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Resolution",
@@ -18175,7 +18211,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Scream of Hate",
@@ -18749,7 +18786,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Shadow Step",
@@ -19238,7 +19276,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Shieldskin",
@@ -20385,7 +20424,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Spirit Armor",
@@ -23598,7 +23638,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Thorncoat",
@@ -23623,7 +23664,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Thunder of Karana",
@@ -24506,7 +24548,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Vampiric Curse",
@@ -24556,7 +24599,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Vengeance of the Wild",
@@ -25414,7 +25458,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0
+  "bardCastable": 0,
+  "infiniteDuration": true
  },
  {
   "name": "Word Divine",
