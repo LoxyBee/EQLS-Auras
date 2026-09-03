@@ -33,6 +33,7 @@
     "wis.primary": "Wisdom (primary)",
     "haste.primary": "Melee haste (primary global slot)",
     "haste.ervaj": "Melee haste (bard Ervaj - additive)",
+    "haste.bard": "Melee haste (bard songs - private; both icons show, only the higher % applies)",
     "spellhaste": "Spell haste",
     "ds.slot1": "Damage shield (slot 1)",
     "ds.slot3": "Damage shield (slot 3 - druid coat)",
@@ -53,6 +54,7 @@
     "resist.magic": "Magic resistance (primary)",
     "resist.magicShield": "Magic resistance (caster Shielding line)",
     "speed.primary": "Movement speed (primary global slot)",
+    "speed.bard": "Movement speed (bard Selo's - private; both icons show, only the higher applies)",
     "atk.primary": "Attack (primary)",
     "proc.pageheal": "Melee proc heal (Blessing of the Page)"
   },
@@ -211,7 +213,8 @@
       "classes": ["SHM"],
       "headings": ["haste.primary"],
       "members": ["Quickness", "Alacrity", "Celerity"],
-      "conflictsWith": ["enchanter.haste", "bard.haste-group", "bard.haste-self"]
+      "conflictsWith": ["enchanter.haste"],
+      "stacksWith": ["bard.haste-group", "bard.haste-self"]
     },
     {
       "id": "shaman.regen",
@@ -251,7 +254,8 @@
       "name": "Shaman movement",
       "classes": ["SHM"],
       "headings": ["speed.primary"],
-      "members": ["Spirit of Wolf", "Scale of Wolf", "Spirit of Cheetah"]
+      "members": ["Spirit of Wolf", "Scale of Wolf", "Spirit of Cheetah"],
+      "stacksWith": ["bard.selos"]
     },
 
     {
@@ -260,7 +264,8 @@
       "classes": ["ENC"],
       "headings": ["haste.primary"],
       "members": ["Quickness", "Alacrity", "Celerity", "Swift Like the Wind", "Aanya's Quickening", "Wonderous Rapidity"],
-      "conflictsWith": ["shaman.haste", "enchanter.augment", "bard.haste-group", "bard.haste-self"]
+      "conflictsWith": ["shaman.haste", "enchanter.augment"],
+      "stacksWith": ["bard.haste-group", "bard.haste-self"]
     },
     {
       "id": "enchanter.augment",
@@ -268,7 +273,8 @@
       "classes": ["ENC"],
       "headings": ["haste.primary", "ac.slot3", "agi.augment"],
       "members": ["Augmentation", "Augment", "Visions of Grandeur"],
-      "conflictsWith": ["enchanter.haste", "shaman.haste"]
+      "conflictsWith": ["enchanter.haste", "shaman.haste"],
+      "stacksWith": ["bard.haste-group", "bard.haste-self"]
     },
     {
       "id": "enchanter.ac",
@@ -385,7 +391,8 @@
       "name": "Druid movement",
       "classes": ["DRU"],
       "headings": ["speed.primary"],
-      "members": ["Spirit of Wolf", "Scale of Wolf", "Spirit of Cheetah"]
+      "members": ["Spirit of Wolf", "Scale of Wolf", "Spirit of Cheetah"],
+      "stacksWith": ["bard.selos"]
     },
     {
       "id": "druid.firefist",
@@ -400,17 +407,17 @@
       "id": "bard.haste-group",
       "name": "Bard group haste",
       "classes": ["BRD"],
-      "headings": ["haste.primary"],
+      "headings": ["haste.bard"],
       "members": ["Anthem de Arms", "Vilia's Verses of Celerity", "Verses of Victory", "McVaxius' Rousing Rondo"],
-      "conflictsWith": ["enchanter.haste", "shaman.haste", "bard.haste-self"]
+      "stacksWith": ["enchanter.haste", "shaman.haste"]
     },
     {
       "id": "bard.haste-self",
       "name": "Bard self haste (Jonthan's)",
       "classes": ["BRD"],
-      "headings": ["haste.primary"],
+      "headings": ["haste.bard"],
       "members": ["Jonthan's Whistling Warsong", "Jonthan's Provocation", "Jonthan's Inspiration"],
-      "conflictsWith": ["enchanter.haste", "shaman.haste", "bard.haste-group"]
+      "stacksWith": ["enchanter.haste", "shaman.haste"]
     },
     {
       "id": "bard.ervaj",
@@ -423,8 +430,9 @@
       "id": "bard.selos",
       "name": "Selo's run speed",
       "classes": ["BRD"],
-      "headings": ["speed.primary"],
-      "members": ["Selo's Accelerando", "Selo's Accelerating Chorus", "Selo's Song of Travel"]
+      "headings": ["speed.bard"],
+      "members": ["Selo's Accelerando", "Selo's Accelerating Chorus", "Selo's Song of Travel"],
+      "stacksWith": ["shaman.movement", "druid.movement"]
     },
     {
       "id": "bard.regen",
