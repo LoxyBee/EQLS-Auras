@@ -28,6 +28,7 @@ const {
   BURST_HARD_CAP_MS,
 } = require('./buffParser');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
+const { isArticlePrefixedMobName } = require('../shared/petNames');
 
 const TICK_INTERVAL_MS = 1000;
 
@@ -358,6 +359,9 @@ class BuffEngine extends EventEmitter {
     // Worth having: this veto is the app's most consequential decision, and until now it was
     // made on anonymous evidence. One day's log carries 3,934 third-person cast lines against
     // 15 party-change lines to clear them, so "why did my buff not appear" was unanswerable.
+    //
+    // A monster (an "a/an/the ..." caster name) is never written here - see the matchOtherCastBegin
+    // handler for why. So every caster in this map is a real-person name.
     this.recentOtherCasts = new Map();
     // Parallel to recentOtherCasts: lowercased spell name -> Date.now() when that other-cast was
     // last seen. recentOtherCasts itself is deliberately unbounded (its bard-song caster-attribution
@@ -911,8 +915,22 @@ class BuffEngine extends EventEmitter {
     // maintaining it, which in practice means "still in the group."
     const otherCast = matchOtherCastBegin(line);
     if (otherCast) {
-      this.recentOtherCasts.set(otherCast.spellName.toLowerCase(), otherCast.casterName);
-      this.recentOtherCastAt.set(otherCast.spellName.toLowerCase(), Date.now());
+      // A monster (an "a/an/the ..." name) is never recorded as a caster here. recentOtherCasts is
+      // only ever consulted to withhold or re-attribute a BENEFICIAL buff landing - "someone else
+      // cast this, so it isn't yours / isn't your ally's" - and a monster does not cast beneficial
+      // buffs onto the player or the group. Recording one was a real live bug: a charmed
+      // "a Teir`Dal rogue" seen casting Center made the player's OWN Center (proven one line later
+      // by "You healed Shara ... by Center") get silently IGNORED. Every downstream consumer - the
+      // self unique-text veto, the ambiguous-self otherCastMatch, _allySelfCastRecently, and bard
+      // song caster attribution - reads this map, so filtering here fixes all of them at once. The
+      // ally-cast debuff warning still fires (a mob mezzing a groupmate is exactly what it warns
+      // about); a mob's DEBUFF landing on the player is unaffected because that path never reads
+      // this map. Mob names that look like a player ("Enro", "Kahaptra Z`Taj") are out of scope -
+      // the article is the only shape-based tell the log gives (see buffEngine gotcha #20).
+      if (!isArticlePrefixedMobName(otherCast.casterName)) {
+        this.recentOtherCasts.set(otherCast.spellName.toLowerCase(), otherCast.casterName);
+        this.recentOtherCastAt.set(otherCast.spellName.toLowerCase(), Date.now());
+      }
       this._alertAllyCast(otherCast);
       this._checkForEndedBuffs(line);
       return;
@@ -1724,6 +1742,26 @@ class BuffEngine extends EventEmitter {
               `${SONG_PULSE_CONFIRM_HITS}x; a bard song is the only thing that does that on its own`
           );
           this._land(pulsedSong);
+        } else if (this.burstOpenedBy && Date.now() < this.burstUntil && selfPlausible.length > 0) {
+          // The player themselves triggered a burst ("You activate Quick Buff.") and it is still
+          // open - so a self-plausible landing right now is very likely one of theirs, even though a
+          // groupmate was also seen casting one of the candidates (otherCastMatch), which is the
+          // only way control reaches here during the player's own burst. Genuinely undecidable
+          // between the two, so it goes to a prompt rather than a silent IGNORE. Owner, 3 Sep:
+          // "there should be ways to tell, and when not it should go to me." A remembered choice
+          // still applies straight away.
+          if (!strictSongBuff) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+          const remembered = this.selfAmbiguousResolutions.get(stripped);
+          const rememberedBuff = remembered ? this.buffStore.getByName(remembered) : null;
+          if (rememberedBuff) {
+            this._debugLog(`LANDED "${rememberedBuff.name}" - remembered choice for "${stripped}" (your cast, burst; a groupmate also cast a candidate)`);
+            this._land(rememberedBuff);
+          } else {
+            this._debugLog(
+              `QUEUED "${stripped}" for you - your own burst, but a groupmate also cast one of: ${selfPlausible.map((c) => c.name).join(', ')}`
+            );
+            this._queueAmbiguousCast(stripped, selfPlausible, true);
+          }
         } else {
           this._debugLog(`IGNORED "${stripped}" - ambiguous, not your spellbook, track others OFF`);
         }

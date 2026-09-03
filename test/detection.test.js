@@ -271,14 +271,42 @@ test('a second caster of the same spell does not break the veto', () => {
   assert.deepEqual(names(engine), []);
 });
 
-test('a caster whose name is not one plain word still vetoes', () => {
-  // Only about half of the caster names in the real logs are a single alphabetic word.
-  // Anything that filtered them by shape - Cazic-Thule, A Teir`Dal something, someone's pet -
-  // would silently stop vetoing for the rest.
+test('an article-prefixed monster is NOT recorded as a caster (owner, 3 Sep)', () => {
+  // recentOtherCasts only ever withholds a beneficial buff - "someone else cast this, so it isn't
+  // yours". A monster does not cast beneficial buffs onto the player. A charmed "a Teir`Dal rogue"
+  // seen casting Center was making the player's own Center get silently IGNORED. So an "a/an/the ..."
+  // caster is dropped on the way in; every downstream consumer is a buff path and benefits.
   const { engine } = makeEngine();
   engine.handleLine('a greater kobold begins casting Spirit of the Puma.');
+  assert.equal(engine._hasRecentOtherCast('Spirit of the Puma'), false, 'a monster is not a veto source');
+  engine.handleLine('You begin to snarl as your features become feline.');
+  assert.deepEqual(names(engine), ['Spirit of the Puma'], "the player's own buff lands");
+});
+
+test('a non-article multi-word caster (a real mob boss, a possessive pet) still vetoes', () => {
+  // The article is the ONLY shape-based tell the log gives (gotcha #20). A proper-noun mob name
+  // or a possessive pet name is left alone - still real evidence someone else's spell is in play.
+  const { engine } = makeEngine();
+  engine.handleLine("Cazic-Thule begins casting Spirit of the Puma.");
   assert.equal(engine._hasRecentOtherCast('Spirit of the Puma'), true);
-  assert.equal(engine._recentOtherCaster('Spirit of the Puma'), 'a greater kobold');
+  assert.equal(engine._recentOtherCaster('Spirit of the Puma'), 'Cazic-Thule');
+});
+
+test('your own Quick Buff: an unresolvable ambiguous landing is queued, not silently dropped (owner, 3 Sep)', () => {
+  // "there should be ways to tell, and when not it should go to me." A groupmate was seen casting
+  // one of the candidates for a shared landing text, AND the player's own Quick Buff burst is open.
+  // Genuinely undecidable - so a prompt, not a silent IGNORE (track-others is off, the default).
+  const { engine, buffStore, log } = makeEngine();
+  const shared = buffStore.getAll().filter((b) => b.landingText === 'You feel the favor of the gods upon you.');
+  assert.ok(shared.length > 1, 'fixture: the landing text is shared by several buffs');
+  engine.handleLine(`Baxa begins casting ${shared[0].name}.`); // a real groupmate, not a mob
+  engine.handleLine('You activate Quick Buff.');
+  engine.handleLine('You feel the favor of the gods upon you.');
+  assert.ok(
+    log.some((l) => l.startsWith('QUEUED') && l.includes('your own burst')),
+    'the landing is queued for the player, not dropped'
+  );
+  assert.ok(engine.getAmbiguousCasts().length >= 1, 'a prompt is actually pending');
 });
 
 test('a party change still clears the veto', () => {
