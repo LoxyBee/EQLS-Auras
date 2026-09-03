@@ -62,7 +62,12 @@
 
 const EventEmitter = require('events');
 const { parseDamageLine } = require('../shared/damageLines');
-const { isPossessivePetName, petOwnerFromName, looksLikeGeneratedPetName } = require('../shared/petNames');
+const {
+  isPossessivePetName,
+  petOwnerFromName,
+  looksLikeGeneratedPetName,
+  isArticlePrefixedMobName,
+} = require('../shared/petNames');
 
 // Seconds without counted damage before the fight is considered over. Ten is the conventional
 // answer and is as arbitrary as everyone else's ten; it is the per-aura default, not a constant
@@ -471,6 +476,18 @@ class DamageEngine extends EventEmitter {
         const owner = (petOwnerFromName(rawName) || '').toLowerCase();
         if (scope === 'group' && !admits(owner)) continue;
         bump('Pets', r, { isPet: true });
+        continue;
+      }
+
+      // An article-prefixed name ("a Teir`Dal rogue", "an ancient sarnak") that has been classified
+      // as a friendly attacker is a charmed monster fighting on your side - no player is named this
+      // way (gotcha #20). petTracker catches the ones with a visible charm line (handled above via
+      // unknownPets); this is the fallback for a charm cast before launch, or by someone else
+      // off-log, or a wild charm. Fold into the one "Charmed pets" row rather than letting a
+      // monster name sit next to the players. Safe even with an empty group roster - it can never
+      // be the "outsider vs groupmate" ambiguity the admittedList.length===0 fallback exists for.
+      if (isArticlePrefixedMobName(rawName)) {
+        if (scope !== 'mine') bump('Charmed pets', r, { unknownPets: true });
         continue;
       }
 

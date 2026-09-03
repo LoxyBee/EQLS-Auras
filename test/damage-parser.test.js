@@ -513,6 +513,30 @@ test("scope 'all': a possessive-named pet folds into Pets regardless of roster",
   assert.ok(rows.find((r) => r.name === 'Pets'), 'a possessive pet folds even with no group roster');
 });
 
+// Owner, 3 Sep: "a Teir`Dal rogue" (a wild-charmed mob fighting alongside the group) showed as its
+// own attacker row. An article-prefixed name that reaches the meter has already been classified as
+// a friendly attacker - it can only be a charmed monster, never a player - so it folds into the one
+// "Charmed pets" row even when the group roster is empty and petTracker never saw the charm line.
+test("scope 'all': an article-prefixed friendly attacker folds into Charmed pets", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000); // enemy established
+  e.handleLine(`${T}a Teir\`Dal rogue backstabs a zol ghoul knight for 400 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'all');
+  assert.equal(rows.find((r) => /Teir/i.test(r.name)), undefined, 'the mob is not its own row');
+  const charmed = rows.find((r) => r.name === 'Charmed pets');
+  assert.ok(charmed && charmed.unknownPets, 'it folds into the Charmed pets row');
+  assert.match(charmed.valueText, /^400/);
+});
+
+test("scope 'mine': an article-prefixed friendly attacker is dropped, not shown", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000);
+  e.handleLine(`${T}a Teir\`Dal rogue backstabs a zol ghoul knight for 400 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'mine');
+  assert.equal(rows.find((r) => r.name === 'Charmed pets'), undefined, 'not in the mine scope');
+  assert.equal(rows.find((r) => /Teir/i.test(r.name)), undefined);
+});
+
 test('name-collision guard: a name in both friends and enemies is dropped, not credited', () => {
   const e = new DamageEngine();
   // A charmed "a spite golem" fights a mob you tagged, so rule 2 makes the name a friend...
