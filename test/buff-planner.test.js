@@ -198,6 +198,29 @@ test('a line collapses to its highest castable tier', () => {
   });
 });
 
+test('a slotted buff carries `beat` - the buffs it displaced for its slot, with reasons', () => {
+  const roster = [
+    buff({ name: 'Strengthen', spellId: 1, category: 'Strength', classes: 'SHM 1', level: 1 }),
+    buff({ name: 'Strength', spellId: 2, category: 'Strength', classes: 'SHM 46', level: 46 }),
+    buff({ name: 'Guardian', spellId: 3, category: 'Armor Class', classes: 'SHM 42', level: 42 }),
+    buff({ name: 'Shield of Words', spellId: 4, category: 'Armor Class', classes: 'CLR 45', level: 45 }),
+  ];
+  const spellData = fakeSpellData({
+    1: [stat('STR', 10, 0)], 2: [stat('STR', 40, 0)],
+    3: [stat('AC', 30, 0)], 4: [stat('AC', 45, 0)],
+  });
+  withLines({}, HEADING_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['CLR', 'SHM'], lines, spellData });
+    const str = plan.slots.find((s) => s.name === 'Strength');
+    assert.ok(str.beat.some((b) => b.name === 'Strengthen'), 'Strength beat the lower tier Strengthen');
+    assert.match(str.beat.find((b) => b.name === 'Strengthen').reason, /higher tier/);
+    const sow = plan.slots.find((s) => s.name === 'Shield of Words');
+    assert.ok(sow.beat.some((b) => b.name === 'Guardian'), 'Shield of Words beat Guardian for the AC slot');
+    // an uncontested buff has an empty beat list, not undefined
+    assert.ok(Array.isArray(str.beat));
+  });
+});
+
 test('a line collapses to its best tier ACROSS the permanent/temp split (Frenzy vs Rage)', () => {
   // shm.frenzy = Frenzy (finite) -> temp pool, Fury/Rage (permanent) -> permanent pool. Each pool
   // used to collapse only its own members, leaving Frenzy AND Rage both on screen. Reported by the

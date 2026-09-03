@@ -9017,6 +9017,24 @@ function initBuffPlanner() {
       r.className = 'planner-buff-reason';
       r.textContent = reason;
       li.appendChild(r);
+      li.title = reason; // the full text on hover - the visible one ellipsizes if it's long
+    } else if (Array.isArray(cand.beat) && cand.beat.length) {
+      // A slotted buff: hovering shows why it's in - the buffs it beat for the slot, and why. The
+      // dropped buff's own reason names THIS buff ("conflicts with Verses of Victory" / "Verses of
+      // Victory is the higher tier"), so reframe it from the winner's side.
+      const why = (r) => {
+        const s = String(r || '');
+        if (/is the higher tier$/.test(s)) return 'lower tier of the same line';
+        if (/^conflicts with /.test(s)) return 'both want the same slot';
+        if (/^wouldn't take hold past /.test(s)) return "wouldn't have taken hold";
+        if (/^(shares an effect slot with|wants the same slot as) /.test(s)) return 'same effect slot';
+        if (/together are worth more/.test(s)) return 'these stacked give more';
+        return s.replace(new RegExp('\\b' + cand.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g'), 'this').trim();
+      };
+      li.title = 'Picked over ' + cand.beat.map((b) => `${b.name} (${why(b.reason)})`).join('; ');
+      li.classList.add('planner-buff-has-why');
+    } else if (opts.slotted) {
+      li.title = 'Nothing else competes for this slot.';
     }
     return li;
   }
@@ -9055,18 +9073,18 @@ function initBuffPlanner() {
       totalsEl.appendChild(chip);
     });
 
-    fillList(slotListEl, plan.slots);
+    fillList(slotListEl, plan.slots, { slotted: true });
 
     // Bard songs - their own 5-slot pool, only when Bard is one of the classes.
     songCardEl.style.display = plan.hasBard ? '' : 'none';
     songCountEl.textContent = String((plan.songSlots || []).length);
-    fillList(songListEl, plan.songSlots || []);
+    fillList(songListEl, plan.songSlots || [], { slotted: true });
 
     // Permanent buffs (Yaulp/Fury) - shown whenever any qualify.
     const perm = plan.permanentSlots || [];
     permCardEl.style.display = perm.length ? '' : 'none';
     permCountEl.textContent = String(perm.length);
-    fillList(permListEl, perm);
+    fillList(permListEl, perm, { slotted: true });
 
     // One priority list covering the buff slots AND the song slots (both are capped, so order
     // matters for both); permanent buffs are uncapped so they aren't in it.

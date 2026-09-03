@@ -467,6 +467,20 @@ body {
   text-align: center;
 }
 
+/* A small "still finding its feet" marker on a nav button (Buff Planner). */
+.nav-exp-tag {
+  margin-left: auto;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 14px;
+}
+
 /* initModules() injects the custom-module nav buttons inside this wrapper. `display: contents`
    drops the wrapper from layout so those buttons are real flex children of .sidebar - same gap,
    same stretch, same everything as the hand-written nav buttons around them. Without it the
@@ -2497,11 +2511,22 @@ body.sidebar-resizing .sidebar {
   color: var(--ink-dim);
   font-size: 11px;
 }
+/* Was `flex: 0 0 auto`, which let a long "conflicts with A + B + C ..." reason demand its full
+   width and crush the name column to one word per line. Now it shrinks and ellipsizes; the full
+   text is on the row's title (hover). */
 .planner-buff-reason {
   color: var(--ink-faint);
   font-size: 11px;
   font-style: italic;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+.planner-buff-has-why {
+  cursor: help;
 }
 .planner-song-list,
 .planner-permanent-list {

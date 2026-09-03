@@ -257,7 +257,7 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
     const cIsBetter = lines.tierOf(line, c.name) > lines.tierOf(line, existing.name);
     const better = cIsBetter ? c : existing;
     const worse = cIsBetter ? existing : c;
-    dropped.push({ ...worse, reason: `${better.name} is the higher tier` });
+    dropped.push({ ...worse, reason: `${better.name} is the higher tier`, beatenBy: [better.name] });
     byLine.set(line.id, better);
   }
 
@@ -287,12 +287,14 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
         dropped.push({
           ...c,
           reason: `${displaced.map((d) => d.name).join(' + ')} together are worth more (${displacedScore} vs ${c.score || 0})`,
+          beatenBy: displaced.map((d) => d.name),
         });
         continue;
       }
     }
 
     let clash = null;
+    let clashKind = 'conflicts with';
     for (const placed of kept) {
       const dec = lines.stackDecision(c.name, placed.name);
       if (dec === 'blocked' || dec === 'overwrites') {
@@ -305,14 +307,21 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
         const v = checkStack(placed.spellId, c.spellId);
         if (v && v.conflict) {
           clash = placed.name;
+          clashKind = v.blocked ? "wouldn't take hold past" : 'shares an effect slot with';
           break;
         }
       }
     }
-    if (!clash) clash = headings.map((h) => occupied.get(h)).find(Boolean)?.name || null;
+    if (!clash) {
+      const held = headings.map((h) => occupied.get(h)).find(Boolean);
+      if (held) {
+        clash = held.name;
+        clashKind = 'wants the same slot as';
+      }
+    }
 
     if (clash) {
-      dropped.push({ ...c, reason: `conflicts with ${clash}` });
+      dropped.push({ ...c, reason: `${clashKind} ${clash}`, beatenBy: [clash] });
       continue;
     }
     // Fix 3: tag whether the LINE model placed this (vs a buff with no line data that only got in
@@ -442,7 +451,8 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     pooledRaw = raw.filter((c) => {
       const line = lines.lineForName(c.name);
       if (!line || bestByLine.get(line.id) === c) return true;
-      lineDrops.push({ ...c, reason: `${bestByLine.get(line.id).name} is the higher tier` });
+      const best = bestByLine.get(line.id).name;
+      lineDrops.push({ ...c, reason: `${best} is the higher tier`, beatenBy: [best] });
       return false;
     });
   }
@@ -474,9 +484,32 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   const buffs = fillSlots(buffCands, SLOT_COUNT);
   const songs = fillSlots(songCands, SONG_SLOT_COUNT);
 
+  // "Why this one?" - for the tooltip on a slotted buff. Every dropped buff carries `beatenBy` (the
+  // name(s) of the buff(s) that displaced it) + a `reason`; invert that so each winner knows the
+  // buffs it beat. VoV keeping the haste slot over Alacrity shows up here as VoV.beat = [Alacrity].
+  const allDrops = [
+    ...resolved.dropped,
+    ...resolvedPerm.dropped,
+    ...lineDrops,
+    ...buffs.overflow,
+    ...songs.overflow,
+  ];
+  const beatMap = new Map(); // winner name (lower) -> [{ name, reason }]
+  for (const d of allDrops) {
+    for (const winner of d.beatenBy || []) {
+      const key = winner.toLowerCase();
+      if (!beatMap.has(key)) beatMap.set(key, []);
+      beatMap.get(key).push({ name: d.name, reason: d.reason });
+    }
+  }
+  const withBeat = (list) => list.map((c) => ({ ...c, beat: beatMap.get(c.name.toLowerCase()) || [] }));
+  buffs.slots = withBeat(buffs.slots);
+  songs.slots = withBeat(songs.slots);
+  const permSlots = withBeat(permCands);
+
   // Fix 3 - coverage over the buffs that actually take a slot. `lineKnown` was tagged in
   // resolveByHeadings. Null when the fallback path ran (no `lines`), which `stackingKnown` covers.
-  const slotted = [...buffs.slots, ...songs.slots, ...permCands];
+  const slotted = [...buffs.slots, ...songs.slots, ...permSlots];
   const stackingCoverage =
     lines && slotted.length
       ? { known: slotted.filter((c) => c.lineKnown).length, total: slotted.length }
@@ -497,9 +530,9 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     songSlots: songs.slots,
     songOverflow: [...songs.overflow, ...dropped('song')],
     songCandidates: songCands,
-    permanentSlots: permCands,
+    permanentSlots: permSlots,
     permanentOverflow: dropped('permanent'),
-    totals: sumStats([buffs.slots, songs.slots, permCands], spellData && spellData.multiplierStats),
+    totals: sumStats([buffs.slots, songs.slots, permSlots], spellData && spellData.multiplierStats),
   };
 }
 
