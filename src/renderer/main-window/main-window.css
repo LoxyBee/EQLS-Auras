@@ -1018,6 +1018,40 @@ dd::after {
   margin-top: 6px;
 }
 
+/* Buff Planner result sections - each a <details class="card planner-acc">, closed by default. */
+.planner-acc > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+.planner-acc > summary::-webkit-details-marker {
+  display: none;
+}
+.planner-acc > summary::before {
+  content: '▸';
+  color: var(--accent);
+  font-size: 12px;
+  transition: transform 0.12s ease;
+}
+.planner-acc[open] > summary::before {
+  transform: rotate(90deg);
+}
+.planner-acc > summary h3 {
+  margin: 0;
+}
+.planner-acc > summary:hover h3 {
+  color: var(--accent);
+}
+.planner-acc[open] > summary {
+  margin-bottom: 10px;
+}
+.planner-acc > summary .planner-priority-head {
+  flex: 1;
+}
+
 .row {
   display: flex;
   align-items: center;

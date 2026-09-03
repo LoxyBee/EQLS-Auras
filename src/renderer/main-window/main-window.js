@@ -9173,7 +9173,9 @@ function initBuffPlanner() {
   }
 
   if (priorityResetEl) {
-    priorityResetEl.addEventListener('click', () => {
+    priorityResetEl.addEventListener('click', (e) => {
+      e.preventDefault(); // it lives inside the accordion's <summary> - don't toggle the section
+      e.stopPropagation();
       hasManualOrder = false;
       window.eqTracker.setPlannerOrder(null, []).then(recompute);
     });
