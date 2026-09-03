@@ -2190,7 +2190,7 @@
         </div>
         <div class="row" id="buff-timer-source-row" style="display:none">
           <span class="label">On:</span>
-          <label><input type="radio" name="buff-timer-source" value="self" checked /> Yourself</label>
+          <label id="buff-timer-self-label"><input type="radio" name="buff-timer-source" value="self" checked /> Yourself</label>
           <label id="buff-timer-ally-label">
             <input type="radio" name="buff-timer-source" value="ally" /> Someone you cast it on
           </label>
@@ -2198,6 +2198,7 @@
             <input type="radio" name="buff-timer-source" value="enemy" /> Something you cast it at
           </label>
         </div>
+        <p class="hint" id="buff-timer-self-warning" style="display:none"></p>
         <p class="hint" id="buff-timer-ally-warning" style="display:none"></p>
         <p class="hint" id="buff-timer-enemy-warning" style="display:none"></p>
         <!-- Only shown when the picked spell also has a known recast time AND "Yourself" is

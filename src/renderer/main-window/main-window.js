@@ -4326,6 +4326,8 @@ function initWidgetsPanel() {
   // and should reuse this rather than each growing their own picker.
   const buffTimerSelect = document.getElementById('buff-timer-select');
   const buffTimerSourceRow = document.getElementById('buff-timer-source-row');
+  const buffTimerSelfLabel = document.getElementById('buff-timer-self-label');
+  const buffTimerSelfWarning = document.getElementById('buff-timer-self-warning');
   const buffTimerAllyLabel = document.getElementById('buff-timer-ally-label');
   const buffTimerAllyWarning = document.getElementById('buff-timer-ally-warning');
   const buffTimerEnemyLabel = document.getElementById('buff-timer-enemy-label');
@@ -4381,8 +4383,10 @@ function initWidgetsPanel() {
       return `${buff.name} - ${buff.reuseSec}s recast + ${buff.castSec}s cast = ${buff.cooldownSec}s`;
     }
     const howLong = buff.infinite ? 'lasts until dispelled' : buff.durationSec ? `${buff.durationSec}s` : 'no duration';
+    // self and enemy are mutually exclusive (a detrimental spell is cast AT something, never a
+    // buff on you); ally only ever pairs with self.
     const where = buff.enemy
-      ? 'on you, an ally, or something you cast it at'
+      ? 'on something you cast it at'
       : buff.ally
         ? 'on you or on an ally'
         : 'on you only';
@@ -4454,43 +4458,51 @@ function initWidgetsPanel() {
     // so it reads as "not possible for this spell" instead of the choice having moved. A heal has
     // third-person landing text and so passes the ally test, but watching it "on an enemy" would
     // build an aura that never lights up.
-    const enemyRadio = buffTimerEnemyLabel.querySelector('input');
-    enemyRadio.disabled = !buff.enemy;
-    buffTimerEnemyLabel.classList.toggle('disabled', !buff.enemy);
-    if (!buff.enemy) {
-      if (enemyRadio.checked) {
-        enemyRadio.checked = false;
-        buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
-      }
-      buffTimerEnemyWarning.textContent =
-        `"${buff.name}" is not something you cast at an enemy, so it can only be watched on you ` +
-        'or on someone in your group.';
-      buffTimerEnemyWarning.style.display = '';
-    } else {
-      buffTimerEnemyWarning.style.display = 'none';
-    }
-
+    const selfRadio = buffTimerSelfLabel.querySelector('input');
     const allyRadio = buffTimerAllyLabel.querySelector('input');
+    const enemyRadio = buffTimerEnemyLabel.querySelector('input');
+    selfRadio.disabled = !buff.self;
     allyRadio.disabled = !buff.ally;
+    enemyRadio.disabled = !buff.enemy;
+    buffTimerSelfLabel.classList.toggle('disabled', !buff.self);
     buffTimerAllyLabel.classList.toggle('disabled', !buff.ally);
-    if (!buff.ally) {
-      if (allyRadio.checked) {
-        allyRadio.checked = false;
-        buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
-      }
+    buffTimerEnemyLabel.classList.toggle('disabled', !buff.enemy);
+
+    // Exactly one warning shows, naming what the spell CAN be watched on. A detrimental spell
+    // (Affliction, a DoT) is `self:false, ally:false, enemy:true` - it is cast AT a target, so
+    // "Yourself" and "Someone you cast it on" are both off and the self-warning is the message.
+    buffTimerSelfWarning.style.display = 'none';
+    buffTimerAllyWarning.style.display = 'none';
+    buffTimerEnemyWarning.style.display = 'none';
+    if (!buff.self && !buff.ally && buff.enemy) {
+      buffTimerSelfWarning.textContent =
+        `"${buff.name}" is cast at a target, not on you - watch it on "something you cast it at".`;
+      buffTimerSelfWarning.style.display = '';
+    } else if (!buff.ally && !buff.enemy) {
       buffTimerAllyWarning.textContent =
         `The app has no message for "${buff.name}" landing on someone else, so it can only be ` +
         'watched on you. An aura set to watch it on an ally would never light up.';
       buffTimerAllyWarning.style.display = '';
-    } else {
-      buffTimerAllyWarning.style.display = 'none';
+    } else if (!buff.enemy) {
+      buffTimerEnemyWarning.textContent =
+        `"${buff.name}" is not something you cast at an enemy, so it can only be watched on you ` +
+        'or on someone in your group.';
+      buffTimerEnemyWarning.style.display = '';
     }
 
-    // Applied after both options know whether they are available, so a premade asking for the
-    // enemy option on a spell that cannot use it falls back to a working choice rather than
-    // leaving a disabled radio selected.
-    const preferred = buffTimerSourceRow.querySelector(`input[value="${buffTimerPreferredSource}"]`);
-    if (preferred && !preferred.disabled) preferred.checked = true;
+    // Land on a working radio: the premade's preferred option if this spell allows it, otherwise
+    // the first enabled one (self, then enemy, then ally). Runs after every disabled state is set
+    // so a disabled radio is never left selected.
+    const order = ['self', 'enemy', 'ally'];
+    const radioFor = (v) => buffTimerSourceRow.querySelector(`input[value="${v}"]`);
+    const wanted = radioFor(buffTimerPreferredSource);
+    const pick =
+      wanted && !wanted.disabled
+        ? wanted
+        : order.map(radioFor).find((r) => r && !r.disabled);
+    buffTimerSourceRow.querySelectorAll('input[name="buff-timer-source"]').forEach((r) => {
+      r.checked = r === pick;
+    });
     // After the source radio has its final value for this spell, so the row's visibility matches
     // what's actually selected rather than whatever was left over from the previous spell.
     syncBuffTimerAlsoCooldownRow();

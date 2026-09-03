@@ -141,6 +141,10 @@ test('each spell says whether it can be watched on an ally - and a detrimental o
   const handler = mainSrc.match(/ipcMain\.handle\('buffs:trackable'[\s\S]*?\n\);/);
   assert.match(handler[0], /hasThirdPersonText = !!\(e\.othersLandingSuffix && String\(e\.othersLandingSuffix\)\.trim\(\)\)/);
   assert.match(handler[0], /ally: hasThirdPersonText && !isDetrimental/, 'a debuff/charm/dot/nuke can still be offered as "ally"');
+  // 3 Sep: Affliction (a DoT) offered "Yourself". A detrimental spell carries a second-person
+  // landing text only because an enemy casting it on you produces one - it is not a self-buff.
+  assert.match(handler[0], /self: !isDetrimental/, 'a detrimental spell must not be offered "on yourself"');
+  assert.match(handler[0], /e\.kind === 'det'/, 'kind:"det" (Affliction) is caught even if scaleCategory misses it');
 
   // The gap is real: some trackable spells have no third-person text at all.
   const trackable = roster.filter((e) => e.landingText && String(e.landingText).trim());
@@ -158,16 +162,23 @@ test('each spell says whether it can be watched on an ally - and a detrimental o
   assert.ok(allure.othersLandingSuffix, 'Allure has no third-person text - the case this guards cannot occur');
 });
 
-test('the ally option is disabled, with a reason, for a spell that cannot use it', () => {
-  // Note 14's stated risk. Disabled rather than hidden, so it reads as "not possible for this
-  // spell" instead of the option having mysteriously moved.
+test('each "On:" option is disabled with a reason for a spell that cannot use it', () => {
+  // Note 14's stated risk, plus the 3 Sep report: Affliction (a DoT, `self:false`) was offering
+  // "Yourself". Disabled rather than hidden, so it reads as "not possible for this spell" instead
+  // of the option having mysteriously moved, and the panel always lands on a working radio.
   const fn = rendererSrc.match(/function chooseBuffTimerSpell\(buff\) \{([\s\S]*?)\n  \}/);
   assert.ok(fn, 'chooseBuffTimerSpell has been renamed or restructured');
   const body = fn[1];
+  assert.match(body, /selfRadio\.disabled = !buff\.self/);
   assert.match(body, /allyRadio\.disabled = !buff\.ally/);
-  assert.match(body, /allyRadio\.checked = false/, 'a spell picked while ally was selected would keep it');
+  assert.match(body, /enemyRadio\.disabled = !buff\.enemy/);
+  // A disabled radio can never be left selected: after every disabled state is set, one pass
+  // re-checks exactly the picked (enabled) one.
+  assert.match(body, /r\.checked = r === pick/, 'a disabled radio could stay selected');
+  assert.match(body, /\.find\(\(r\) => r && !r\.disabled\)/, 'no fallback to the first enabled option');
   assert.match(body, /buffTimerAllyWarning\.textContent =/, 'it disables the option without saying why');
-  assert.match(body, /never light up/, 'the warning does not say what would go wrong');
+  assert.match(body, /never light up/, 'the ally warning does not say what would go wrong');
+  assert.match(body, /cast at a target, not on you/, 'a detrimental spell gets no "watch it on you" message');
 });
 
 // ---------------------------------------------------------------------------

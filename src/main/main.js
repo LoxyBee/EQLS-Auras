@@ -2307,9 +2307,15 @@ ipcMain.handle('buffs:trackable', () =>
       // on an ally, it is not" - Allure is a charm (roster: kind 'det', scaleCategory 'charm') and
       // does carry third-person text ("<Name> has been charmed."), so before this fix `ally` was
       // true purely because the text existed, with nothing checking what KIND of landing it was.
-      const isDetrimental = ['debuff', 'charm', 'dot', 'nuke'].includes(e.scaleCategory);
+      const isDetrimental =
+        e.kind === 'det' || ['debuff', 'charm', 'dot', 'nuke'].includes(e.scaleCategory);
       return {
         name: e.name,
+        // "On yourself" - a beneficial buff you cast on yourself. A detrimental spell (Affliction,
+        // a DoT: kind 'det') carries a second-person landing text only because an ENEMY casting it
+        // on you produces one ("You feel feverish.") - that is the Loss-of-control / debuff-on-me
+        // case, not a "buff timer". Reported live: Affliction offered "Yourself" as the default.
+        self: !isDetrimental,
         ally: hasThirdPersonText && !isDetrimental,
         // Whether "on something you cast it at" can be offered. Needs the same third-person
         // landing text ally tracking needs, plus a category that means the spell is cast at

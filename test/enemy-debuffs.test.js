@@ -428,15 +428,16 @@ test('the enemy option is disabled, with a reason, where it cannot apply', () =>
 });
 
 test('picking an unsupported spell does not leave a disabled radio selected', () => {
-  // Both branches clear their own radio only if it was the one selected. An earlier version reset
-  // to "self" unconditionally, so choosing the enemy option and then a spell without ally text
-  // silently threw the choice away.
+  // After every "On:" option's disabled state is set for this spell, one pass re-checks exactly
+  // the picked radio - the premade's preferred option if this spell allows it, otherwise the first
+  // enabled one (self > enemy > ally). So a disabled radio can never stay selected, whichever
+  // combination of self/ally/enemy this spell supports (Affliction supports enemy only).
   const renderer = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
   const fn = renderer.match(/function chooseBuffTimerSpell\(buff\) \{([\s\S]*?)\n {2}\}/)[1];
-  assert.match(fn, /if \(enemyRadio\.checked\) \{/);
-  assert.match(fn, /if \(allyRadio\.checked\) \{/);
-  // And the premade's preference is applied last, once both know whether they are available.
-  assert.match(fn, /if \(preferred && !preferred\.disabled\) preferred\.checked = true;/);
+  assert.match(fn, /const wanted = radioFor\(buffTimerPreferredSource\)/);
+  assert.match(fn, /wanted && !wanted\.disabled\s*\?\s*wanted/, 'the premade preference is honoured when it is available');
+  assert.match(fn, /order\.map\(radioFor\)\.find\(\(r\) => r && !r\.disabled\)/, 'no fallback to the first enabled option');
+  assert.match(fn, /r\.checked = r === pick/, 'the picked radio is not the only one set - others could stay checked');
 });
 
 test('every spell-picking premade shares one panel', () => {
