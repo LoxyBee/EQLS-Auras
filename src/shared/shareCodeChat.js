@@ -13,17 +13,15 @@
  * player-typed message in her logs is 403 characters, which makes 403 the floor - the real limit
  * is at least that and possibly higher. Against that, real share codes measure:
  *
- *     79   an untouched Self Buffs aura
- *    119   the debuff template
- *    131   a damage meter
- *    167   a travel guide
- *    231   a cooldown timer
- *    651   a deliberately heavy aura - 40 buff names, 6 timers with conditions, 3 zone limits
+ *     79   an untouched Self Buffs aura   } these were the v2 'EQLSAURAS1-' sizes; v3 'EQa1' is
+ *    231   a cooldown timer               } dramatically smaller - a bare aura is ~6 characters,
+ *    651   a deliberately heavy aura      } and only the diff from defaults is encoded at all.
  *
- * So ordinary auras fit in one chat line with room to spare, and an elaborate one does not. That
- * is a real limit and it is handled by saying so (see splitReason) rather than by pretending: a
- * truncated code fails to decode, and "that code was cut off by the chat line limit" is something
- * a person can act on where "invalid code" is not.
+ * v3 (owner, 3 Sep): the prefix is 'EQa1' not 'EQLSAURAS1-', the aura kind is one byte not a
+ * string, field names are indices, position/size are never encoded. An elaborate aura can still
+ * run past a chat line; that is still handled by saying so (see splitReason) rather than by
+ * pretending - a truncated code fails to decode, and "that code was cut off by the chat line
+ * limit" is something a person can act on where "invalid code" is not.
  *
  * NOTHING HERE IMPORTS ANYTHING. This module only recognises. A code arriving from chat is text
  * another player typed, and applying it would let someone else reconfigure the app by talking -
@@ -33,12 +31,17 @@
 // Must match widgetStore's SHARE_CODE_PREFIX. Not imported from there on purpose: widgetStore
 // pulls in the profile store and the filesystem, and this has to be usable from a plain parser.
 // The test suite asserts the two are the same string, which is the part that would actually break.
-const SHARE_CODE_PREFIX = 'EQLSAURAS1-';
+const SHARE_CODE_PREFIX = 'EQa1';
+// The v2 prefix, still decodable by widgetStore - recognised here so a code a friend sent last
+// week is still spotted in chat rather than read past.
+const V2_SHARE_CODE_PREFIX = 'EQLSAURAS1-';
 
-// Base64 alphabet only. Deliberately NOT a lazy ".+" - a code sits inside a chat message that can
-// have words after it ("EQLSAURAS1-abc123 try this one"), and anything looser would swallow them
-// and turn a valid code into an invalid one.
-const CODE_PATTERN = new RegExp(`${SHARE_CODE_PREFIX}[A-Za-z0-9+/=]+`);
+// A code sits inside a chat message that can have words after it ("EQa1abc123 try this one"), so
+// the pattern stops at the first character outside the alphabet - anything looser would swallow
+// the following words and turn a valid code into an invalid one. v3 is base64url (adds - and _,
+// drops + / =); the legacy v2 form is plain base64. The {6,} floor keeps a bare "EQa1" plus a
+// stray word from looking like a code.
+const CODE_PATTERN = new RegExp(`(?:${SHARE_CODE_PREFIX}[A-Za-z0-9_-]{6,}|${V2_SHARE_CODE_PREFIX}[A-Za-z0-9+/=]+)`);
 
 /**
  * The chat wordings the game uses, measured from the owner's logs rather than listed from memory:
@@ -75,13 +78,18 @@ function matchShareCodeInChat(line) {
  */
 function splitReason(code) {
   if (typeof code !== 'string') return null;
-  const body = code.slice(SHARE_CODE_PREFIX.length);
-  // Base64 arrives in groups of four. A length that is not a multiple of four, on a code long
-  // enough to have run into a line limit, is the signature of a message cut short.
-  if (body.length >= 300 && body.length % 4 !== 0) {
+  const v2 = code.startsWith(V2_SHARE_CODE_PREFIX);
+  const prefix = v2 ? V2_SHARE_CODE_PREFIX : SHARE_CODE_PREFIX;
+  if (!code.startsWith(prefix)) return null;
+  const body = code.slice(prefix.length);
+  // v2 base64 arrives in groups of four; a length that is not a multiple of four on a long code is
+  // the signature of a message cut short. v3 is base64url with no padding, so length alone is the
+  // only tell - a code near the observed chat-line floor (~403) is the likely-truncated case.
+  const looksTruncated = v2 ? body.length >= 300 && body.length % 4 !== 0 : body.length >= 380;
+  if (looksTruncated) {
     return 'It looks like the message was cut off - the aura may be too big to send in one line.';
   }
   return null;
 }
 
-module.exports = { matchShareCodeInChat, splitReason, SHARE_CODE_PREFIX };
+module.exports = { matchShareCodeInChat, splitReason, SHARE_CODE_PREFIX, V2_SHARE_CODE_PREFIX };
