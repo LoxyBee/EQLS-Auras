@@ -132,14 +132,13 @@ function spellStats(entry, level = ASSUMED_LEVEL) {
     if (!known) continue;
     let value = calcSpellValue(base, formula, max, level);
     // EQ stores spell AC (effect 1) at 4x the value the client actually applies - it divides it back
-    // down (floored) when folding spell AC into the mitigation pool. amerzel's eql-info renders
-    // Yaulp III's raw AC 40 as "+10" and Verses of Victory's raw 50 as "+12" (floor(50/4)), both
-    // matching the owner's in-game readings. Every other stat in STATS is stored 1:1 (spot-checked
-    // against amerzel's spells.json: ATK, the resists, the attribute block, HP/mana/endurance regen,
-    // max HP/mana, rune/stoneskin, damage shield; haste and cast speed have their own handling in
-    // statScore). A level-scaling ramp on top of this (Yaulp's "+1 at L1 to +4 at L50") and the
-    // character's own AC soft cap are both out of scope - the planner ranks buffs, it is not a
-    // character sheet.
+    // down (floored) when folding spell AC into the mitigation pool. floor(raw/4) matches the
+    // owner's in-game readings (Yaulp III raw 40 -> +10, Verses of Victory raw 50 -> +12) and the
+    // published EQL spell references. Every other stat in STATS is stored 1:1 (ATK, the resists, the
+    // attribute block, HP/mana/endurance regen, max HP/mana, rune, damage shield; haste and cast
+    // speed have their own handling in statScore). A level-scaling ramp on top of this (Yaulp's
+    // "+1 at L1 to +4 at L50") and the character's own AC soft cap are both out of scope - the
+    // planner ranks buffs, it is not a character sheet.
     const div = STAT_DIVISOR[known.name];
     if (div) value = value < 0 ? Math.ceil(value / div) : Math.floor(value / div);
     if (!value) continue;

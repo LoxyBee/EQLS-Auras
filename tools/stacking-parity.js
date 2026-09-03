@@ -2,9 +2,10 @@
 /**
  * 100%-parity gate for the ported stacking engine (src/shared/spellStackingEngine.js).
  *
- * Runs our port and the ORIGINAL reference engine (amerzel.github.io/eql-info's stacking.js, ESM)
- * over every ordered pair of the 1061 EQL spells and asserts identical verdicts. This is the
- * centrepiece test for the port - "port every branch" only means something if it matches.
+ * Runs our port and the ORIGINAL reference engine (the published client-side EQL stacking engine
+ * this was ported from, as ESM) over every ordered pair of the 1061 EQL spells and asserts
+ * identical verdicts. This is the centrepiece test for the port - "port every branch" only means
+ * something if it matches.
  *
  * NOT a unit test (needs the reference engine + the 1061-spell data file, neither in the repo -
  * same reason replay-log.js can't be). A measuring instrument for a human.
@@ -12,13 +13,13 @@
  *   node tools/stacking-parity.js --ref <dir> --data <spells.json> [--levels]
  *
  *   --ref    a directory holding the reference `stacking.mjs` / `data.mjs` / `stacking_rules.mjs`
- *            (ESM copies of the site's stacking.js / data.js / stacking_rules.js).
- *   --data   the spells JSON: either the site's wrapper `{ spells: [...] }` or a bare array.
+ *            (ESM copies of the reference engine's stacking.js / data.js / stacking_rules.js).
+ *   --data   the spells JSON: either a `{ spells: [...] }` wrapper or a bare array.
  *   --levels also check L1/10/25/32/40/50 (default: L50 only).
  *
  * Exit 0 = 100% parity. Exit 1 = mismatches (first 40 printed). Exit 2 = setup problem.
  *
- * LAST RUN: 2026-09-03, reference @ site commit of that date, spells.json md5
+ * LAST RUN: 2026-09-03, reference @ its commit of that date, spells.json md5
  * fee399f2bd318acc9575471d4e2681db - 6,754,326 verdicts across 6 levels, 0 mismatches.
  */
 

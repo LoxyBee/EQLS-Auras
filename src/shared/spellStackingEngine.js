@@ -9,11 +9,11 @@
  * ~90-entry IGNORED_IN_STACKING set, the group-vs-single tie - not just the parts the older
  * `spellStacking.js` modelled.
  *
- * SOURCE. `amerzel.github.io/eql-info`'s client-side stacking engine (`stacking.js` +
- * `stacking_rules.js` + `calcSpellValue` from its `data.js`), which is itself a parity-gated port
- * of EQEmu `zone/spells.cpp` Mob::CheckStackConflict @ b69fa9cbcd75. Ported ESM -> CJS with no
- * other changes; `test/spell-stacking-parity.test.js` asserts identical verdicts against the
- * reference over every ordered pair of the EQL spell set.
+ * SOURCE. A published client-side EQL stacking-engine implementation (its `stacking.js` +
+ * `stacking_rules.js` + `calcSpellValue`), itself a parity-gated port of EQEmu `zone/spells.cpp`
+ * Mob::CheckStackConflict @ b69fa9cbcd75. Ported ESM -> CJS with no other changes;
+ * `test/spell-stacking-parity.test.js` asserts identical verdicts against that reference over every
+ * ordered pair of the EQL spell set.
  *
  * EQL DEVIATION (carried from the source): the stacking-directive target slot is 1-BASED in the
  * effect's `limit` field, not Live's formula-201 encoding. `directiveSlot(e) = e.limit - 1`.
@@ -152,7 +152,7 @@ function calcSpellValue(base, formula, max, level) {
 //      as named fields, plus `stackEffects` - one coded string of the sparse 0-indexed non-blank
 //      slots, `"slot,spa,base,limit,formula,max;slot,..."` (build-roster.js writes it; there's no
 //      readable form of raw effect data). A sparse array of the same 6-tuples is also accepted.
-//   2. The amerzel spells.json record shape (parity test): `good_effect` etc. snake_case, and
+//   2. The reference spells.json record shape (parity test): `good_effect` etc. snake_case, and
 //      `effects` as objects with an explicit `slot` (or a dense 12-array of the 5-tuples).
 function spellView(sp) {
   const effects = Array.from({ length: EFFECT_COUNT }, () => BLANK_EFFECT);

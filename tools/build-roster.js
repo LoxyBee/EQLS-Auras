@@ -54,8 +54,8 @@ const F_CAST_MS = 8;
 const F_RECAST_MS = 10;
 const F_ICON = 75;
 // Fields the buff-stacking engine (src/shared/spellStackingEngine.js) needs, all confirmed against
-// amerzel/eql-info's authoritative _field_catalog.json AND verified 1061/1061 against its parsed
-// values (see memory: project_full_stacking_engine_port).
+// a published EQL field catalog AND verified 1061/1061 against its parsed values (see memory:
+// project_full_stacking_engine_port).
 const F_BUFF_DUR_FORMULA = 11;
 const F_BUFF_DUR = 12;
 const F_GOOD_EFFECT = 28;
@@ -68,7 +68,7 @@ const STACK_EFFECT_COUNT = 12;
 const SPA_BLANK = 254;
 
 // The trailing effect block: `slot|spa|base|limit|formula|max` segments, `$`-separated, and the
-// slot numbers are 1-INDEXED here (amerzel / the engine are 0-indexed - shift down). Returns the
+// slot numbers are 1-INDEXED here (the stacking engine is 0-indexed - shift down). Returns the
 // sparse non-blank slots as ONE string `"slot0,spa,base,limit,formula,max;slot0,..."` - a coded
 // string because there's no readable form of raw effect data (slot / effect-id / magnitude /
 // formula) that isn't 20+ pretty-printed lines per spell, and no human edits this. The seven
@@ -267,12 +267,12 @@ function main() {
     const cs = e.spellId != null ? spellById.get(Number(e.spellId)) : null;
     if (cs) Object.assign(e, stackFields(cs), ov && ov.set ? pick(ov.set, STACK_KEYS) : {});
     // Buff duration formula 50 = permanent-until-cancelled. EQEmu CalcBuffDuration_formula case 50
-    // returns the -1 "doesn't tick" sentinel BEFORE field 12 is ever consulted, and amerzel's EQL
-    // data renders every formula-50 spell as "permanent" (field 12 there is only a PvP cap). The
-    // old mining read field 12 x 6 and gave these ~0s, so 45 real long buffs - Armor of the
-    // Faithful, the whole Shielding line, the damage-shield "coat" line, permanent wolf/vision
-    // forms - vanished from the overlay ~1 min after landing (owner watched Armor of the Faithful
-    // still blocking casts long after the app had dropped it). Short Con research, 3 Sep.
+    // returns the -1 "doesn't tick" sentinel BEFORE field 12 is ever consulted, and the published
+    // EQL spell references render every formula-50 spell as "permanent" (field 12 there is only a
+    // PvP cap). The old mining read field 12 x 6 and gave these ~0s, so 45 real long buffs - Armor
+    // of the Faithful, the whole Shielding line, the damage-shield "coat" line, permanent wolf/
+    // vision forms - vanished from the overlay ~1 min after landing (owner watched Armor of the
+    // Faithful still blocking casts long after the app had dropped it). Research, 3 Sep.
     // Conservative on the two entries that carry a real field-12 value (Dark Temptation 3600,
     // Phantom Plate 4320): left finite pending a live "it didn't expire" report - flip them here
     // by dropping the `&& !e.buffDuration` if that ever comes in.
