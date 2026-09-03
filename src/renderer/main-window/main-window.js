@@ -4375,7 +4375,14 @@ function initWidgetsPanel() {
   }
 
   function buffTimerPool() {
-    return buffTimerMode === 'cooldown' ? castableBuffs : trackableBuffs;
+    if (buffTimerMode === 'cooldown') return castableBuffs;
+    // Two different lists share this panel. "Debuff on an enemy" opens it with defaultSource
+    // 'enemy'; "Buff timer" with 'self'. A detrimental spell (Affliction, a DoT) belongs ONLY in
+    // the enemy list - owner, 3 Sep: "they should never be in the buff picker. there is a separate
+    // debuff picker for det spells." (`b.ally` implies `b.self`, so `b.self` alone is the buff set.)
+    return buffTimerPreferredSource === 'enemy'
+      ? trackableBuffs.filter((b) => b.enemy)
+      : trackableBuffs.filter((b) => b.self);
   }
 
   function buffTimerOptionLabel(buff) {

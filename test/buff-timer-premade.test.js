@@ -204,6 +204,21 @@ test('the dropdown is populated fresh whenever the pool or the mode changes', ()
   assert.match(fn[1], /\.sort\(/, 'an unsorted 720-entry dropdown is as hard to use as no dropdown at all');
 });
 
+test('the Buff timer picker holds only buffs, the Debuff picker only detrimental spells', () => {
+  // Owner, 3 Sep: "they should never be in the buff picker. there is a separate debuff picker for
+  // det spells." buffTimerPool splits trackableBuffs by which premade opened the panel.
+  const fn = rendererSrc.match(/function buffTimerPool\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(fn, 'buffTimerPool has been renamed or restructured');
+  assert.match(fn[1], /buffTimerPreferredSource === 'enemy'/, 'the two lists are not split by premade');
+  assert.match(fn[1], /trackableBuffs\.filter\(\(b\) => b\.enemy\)/, 'the enemy list is not filtered to enemy spells');
+  assert.match(fn[1], /trackableBuffs\.filter\(\(b\) => b\.self\)/, 'the buff list still shows detrimental spells');
+
+  // Against the real roster: Affliction (a DoT) is in the enemy set and NOT the buff set.
+  const roster = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'shared', 'data', 'buffs.json'), 'utf8'));
+  const a = roster.find((e) => e.name === 'Affliction');
+  assert.ok(a && (a.kind === 'det' || a.scaleCategory === 'dot'), 'Affliction is no longer a detrimental spell - pick another');
+});
+
 test('picking an option resolves back to the real buff object', () => {
   // The <select>'s value is only ever a name (an option cannot hold a whole object), so the
   // change handler has to look the buff back up in the current pool rather than trust the string.
