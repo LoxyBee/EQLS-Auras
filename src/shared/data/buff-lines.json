@@ -1,11 +1,12 @@
 {
-  "_comment": "Buff stacking model - see docs/BUFF-STACKING.md. A 'heading' is a slot: two buffs on the same heading are mutually exclusive, different headings stack. A 'line' is an upgrade ladder that shares a heading; members are low->high tier. blockedPairs are directional ground-truth from real logs. Covers CLR/SHM/BRD/ENC/DRU + universal lines; anything not here falls back to spellStacking.checkOverwrite.",
+  "_comment": "Buff stacking model - see docs/BUFF-STACKING.md. A 'heading' is a slot: two buffs on the same heading are mutually exclusive, different headings stack. A 'line' is an upgrade ladder that shares a heading; members are low->high tier. blockedPairs are directional ground-truth from real logs. Covers CLR/SHM/BRD/ENC/DRU + universal lines; anything not here falls back to the full ported EQEmu engine (src/main/stackingService.js).",
 
   "headings": {
     "ac.slot1": "Armor Class (slot 1 - Heroism/Skin)",
-    "ac.slot2": "Armor Class (slot 2 - Shielding/Yaulp)",
+    "ac.slot2": "Armor Class (slot 2 - Shielding line / coats / Armor of Protection)",
     "ac.slot3": "Armor Class (slot 3 - Frenzy/Augment)",
     "ac.slot4": "Armor Class (slot 4 - Aegis/Umbra)",
+    "ac.yaulp": "Armor Class (Yaulp - its own effect slot; owner-confirmed in-game to stack with Arch Shielding and Bramblecoat, so private, not slot 2. Yaulp vs Guard/Aegis untested - add a conflictsWith if it turns out not to stack there)",
     "hp.primary": "Hit points (primary - Heroism/Skin)",
     "hp.symbol": "Hit points (Symbol line - requires gem)",
     "hp.talisman": "Hit points (Shielding/Talisman)",
@@ -33,6 +34,7 @@
     "wis.primary": "Wisdom (primary)",
     "haste.primary": "Melee haste (primary global slot)",
     "haste.ervaj": "Melee haste (bard Ervaj - additive)",
+    "haste.bard": "Melee haste (bard songs - private; both icons show, only the higher % applies)",
     "spellhaste": "Spell haste",
     "ds.slot1": "Damage shield (slot 1)",
     "ds.slot3": "Damage shield (slot 3 - druid coat)",
@@ -53,6 +55,7 @@
     "resist.magic": "Magic resistance (primary)",
     "resist.magicShield": "Magic resistance (caster Shielding line)",
     "speed.primary": "Movement speed (primary global slot)",
+    "speed.bard": "Movement speed (bard Selo's - private; both icons show, only the higher applies)",
     "atk.primary": "Attack (primary)",
     "proc.pageheal": "Melee proc heal (Blessing of the Page)"
   },
@@ -87,15 +90,14 @@
       "classes": ["CLR"],
       "headings": ["ac.slot2", "hp.talisman"],
       "members": ["Armor of Protection", "Armor of the Faithful"],
-      "conflictsWith": ["cleric.yaulp", "enchanter.shielding", "shaman.talisman"]
+      "conflictsWith": ["enchanter.shielding", "shaman.talisman"]
     },
     {
       "id": "cleric.yaulp",
       "name": "Yaulp line",
       "classes": ["CLR"],
-      "headings": ["ac.slot2", "atk.primary"],
-      "members": ["Yaulp", "Yaulp II", "Yaulp III", "Yaulp IV"],
-      "conflictsWith": ["cleric.armor-of-protection", "enchanter.shielding"]
+      "headings": ["ac.yaulp", "atk.primary"],
+      "members": ["Yaulp", "Yaulp II", "Yaulp III", "Yaulp IV"]
     },
     {
       "id": "cleric.blessing-piety",
@@ -211,7 +213,8 @@
       "classes": ["SHM"],
       "headings": ["haste.primary"],
       "members": ["Quickness", "Alacrity", "Celerity"],
-      "conflictsWith": ["enchanter.haste", "bard.haste-group", "bard.haste-self"]
+      "conflictsWith": ["enchanter.haste"],
+      "stacksWith": ["bard.haste-group", "bard.haste-self"]
     },
     {
       "id": "shaman.regen",
@@ -251,7 +254,8 @@
       "name": "Shaman movement",
       "classes": ["SHM"],
       "headings": ["speed.primary"],
-      "members": ["Spirit of Wolf", "Scale of Wolf", "Spirit of Cheetah"]
+      "members": ["Spirit of Wolf", "Scale of Wolf", "Spirit of Cheetah"],
+      "stacksWith": ["bard.selos"]
     },
 
     {
@@ -260,7 +264,8 @@
       "classes": ["ENC"],
       "headings": ["haste.primary"],
       "members": ["Quickness", "Alacrity", "Celerity", "Swift Like the Wind", "Aanya's Quickening", "Wonderous Rapidity"],
-      "conflictsWith": ["shaman.haste", "enchanter.augment", "bard.haste-group", "bard.haste-self"]
+      "conflictsWith": ["shaman.haste", "enchanter.augment"],
+      "stacksWith": ["bard.haste-group", "bard.haste-self"]
     },
     {
       "id": "enchanter.augment",
@@ -268,7 +273,8 @@
       "classes": ["ENC"],
       "headings": ["haste.primary", "ac.slot3", "agi.augment"],
       "members": ["Augmentation", "Augment", "Visions of Grandeur"],
-      "conflictsWith": ["enchanter.haste", "shaman.haste"]
+      "conflictsWith": ["enchanter.haste", "shaman.haste"],
+      "stacksWith": ["bard.haste-group", "bard.haste-self"]
     },
     {
       "id": "enchanter.ac",
@@ -284,7 +290,7 @@
       "classes": ["ENC", "MAG", "NEC", "WIZ"],
       "headings": ["ac.slot2", "hp.talisman", "resist.magicShield"],
       "members": ["Minor Shielding", "Lesser Shielding", "Shielding", "Major Shielding", "Greater Shielding", "Arch Shielding", "Shield of the Magi"],
-      "conflictsWith": ["shaman.talisman", "cleric.armor-of-protection", "cleric.yaulp"]
+      "conflictsWith": ["shaman.talisman", "cleric.armor-of-protection"]
     },
     {
       "id": "enchanter.charisma",
@@ -355,7 +361,7 @@
       "classes": ["DRU"],
       "headings": ["ac.slot2", "ds.slot3"],
       "members": ["Thistlecoat", "Barbcoat", "Bramblecoat", "Spikecoat", "Thorncoat", "Bladecoat"],
-      "conflictsWith": ["enchanter.shielding", "cleric.yaulp"]
+      "conflictsWith": ["enchanter.shielding"]
     },
     {
       "id": "druid.shield-of-thistles",
@@ -385,7 +391,8 @@
       "name": "Druid movement",
       "classes": ["DRU"],
       "headings": ["speed.primary"],
-      "members": ["Spirit of Wolf", "Scale of Wolf", "Spirit of Cheetah"]
+      "members": ["Spirit of Wolf", "Scale of Wolf", "Spirit of Cheetah"],
+      "stacksWith": ["bard.selos"]
     },
     {
       "id": "druid.firefist",
@@ -400,17 +407,17 @@
       "id": "bard.haste-group",
       "name": "Bard group haste",
       "classes": ["BRD"],
-      "headings": ["haste.primary"],
+      "headings": ["haste.bard"],
       "members": ["Anthem de Arms", "Vilia's Verses of Celerity", "Verses of Victory", "McVaxius' Rousing Rondo"],
-      "conflictsWith": ["enchanter.haste", "shaman.haste", "bard.haste-self"]
+      "stacksWith": ["enchanter.haste", "shaman.haste"]
     },
     {
       "id": "bard.haste-self",
       "name": "Bard self haste (Jonthan's)",
       "classes": ["BRD"],
-      "headings": ["haste.primary"],
+      "headings": ["haste.bard"],
       "members": ["Jonthan's Whistling Warsong", "Jonthan's Provocation", "Jonthan's Inspiration"],
-      "conflictsWith": ["enchanter.haste", "shaman.haste", "bard.haste-group"]
+      "stacksWith": ["enchanter.haste", "shaman.haste"]
     },
     {
       "id": "bard.ervaj",
@@ -423,8 +430,9 @@
       "id": "bard.selos",
       "name": "Selo's run speed",
       "classes": ["BRD"],
-      "headings": ["speed.primary"],
-      "members": ["Selo's Accelerando", "Selo's Accelerating Chorus", "Selo's Song of Travel"]
+      "headings": ["speed.bard"],
+      "members": ["Selo's Accelerando", "Selo's Accelerating Chorus", "Selo's Song of Travel"],
+      "stacksWith": ["shaman.movement", "druid.movement"]
     },
     {
       "id": "bard.regen",

@@ -1195,6 +1195,11 @@ function visibleBuffs(buffs, opts = {}) {
     const nameSet = new Set((currentConfig.buffNames || []).map((n) => String(n).toLowerCase()));
     filtered = buffs.filter((b) => nameSet.has(b.name.toLowerCase()));
   }
+  // Infinite-duration buffs (Yaulp, Fury, the permanent Shielding / coat / wolf-form line) never
+  // count down - a static tile. An aura can opt to leave them off (owner, 3 Sep). Off by default.
+  if (currentConfig.hideInfiniteBuffs) {
+    filtered = filtered.filter((b) => !b.infinite);
+  }
   // SOMEBODY ELSE'S CAST - a warning, not a buff. This used to be one-directional (strip alerts
   // from an aura that did not ask for them) and nothing stripped the other way, so an aura built
   // FROM the "Someone else cast a mez" premade - buffSource 'ally', buffNames full of mez/charm

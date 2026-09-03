@@ -89,7 +89,7 @@ const { tagBardSongs } = require('./bardSongTagger');
 // now - see applyInstallRoot. test/roster.test.js fails if the module or a call to it comes back.
 const { SessionRestore } = require('./sessionRestore');
 const gameSpellData = require('./gameSpellData');
-const spellStacking = require('./spellStacking');
+const { makeStackingService } = require('./stackingService');
 const spellEffects = require('./spellEffects');
 const buffLines = require('../shared/buffLines');
 const buffPlanner = require('./buffPlanner');
@@ -135,6 +135,9 @@ const lockoutService = new LockoutService();
 const { LogRotationService } = require('./logRotation');
 const logRotationService = new LogRotationService({ loadJson, saveJson });
 const buffStore = new BuffStore({ loadJson, saveJson });
+// The buff-stacking engine, bound to the roster's per-spell stacking data (build-roster.js writes
+// it onto every buffs.json entry).
+const stackingService = makeStackingService(buffStore);
 const buffEngine = new BuffEngine(buffStore, { loadJson, saveJson });
 const profileStore = new ProfileStore({ loadJson, saveJson });
 // Makes sure the engine starts out pointed at whichever profile was last
@@ -410,15 +413,25 @@ buffEngine.setUseEvidenceModel(loadJson('useEvidenceModel', true));
 // P0c, off by default and independently switchable from useEvidenceModel above - see buffEngine.js's
 // constructor comment on useCastTimeFilter for exactly what this changes.
 buffEngine.setUseCastTimeFilter(loadJson('useCastTimeFilter', false));
-// Note 26, off by default - see buffEngine.js's constructor comment on stackVerdictFn/
-// useStackingModel. currentInstallRoot is read live on every call (not captured here) since it
-// starts null and is only set once applyInstallRoot runs - see that function, further down.
-buffEngine.setStackVerdictFn((activeSpellId, incomingSpellId) =>
-  currentInstallRoot ? spellStacking.stackVerdict(currentInstallRoot, activeSpellId, incomingSpellId) : null
+// Note 26. The full ported stacking engine decides self-buff tile removal for pairs the curated
+// line data doesn't cover. No toggle - it's a verified 1:1 port of the reference engine, and it
+// only ever removes a stale tile on a clean one-way overwrite (stackingService.wouldOverwriteLive).
+// The live engine has no character level, so it assumes 50 (see stackingService's header).
+buffEngine.setStackConflictFn((activeSpellId, incomingSpellId) =>
+  stackingService.wouldOverwriteLive(activeSpellId, incomingSpellId)
 );
-buffEngine.setUseStackingModel(loadJson('useStackingModel', false));
-// The heading model / measured blocked-pairs (docs/BUFF-STACKING.md) - always on, no toggle.
+// ...and the same engine gets a veto over a curated 'overwrites': the curated line data proposes
+// removing the stale tile, but if the ported engine says the two actually stack, the tile stays.
+// Raw verdict (1 / 0 / -1 / null) - active buff is "worn", the incoming landing is "cast".
+buffEngine.setStackVetoFn((activeSpellId, incomingSpellId) =>
+  stackingService.verdict(activeSpellId, incomingSpellId, 50, 50)
+);
+// The heading model / measured blocked-pairs (docs/BUFF-STACKING.md) - the first authority, always
+// on. The stacking engine above only answers what this returns 'unknown' for.
 buffEngine.setLineStackFn((incomingName, activeName) => buffLines.stackDecision(incomingName, activeName));
+// ...and which curated 'coexist' verdicts are a deliberate stacksWith (engine must not override
+// those) vs just "no recorded conflict" (engine may). See buffEngine._land().
+buffEngine.setLineStacksExplicitlyFn((a, b) => buffLines.stacksExplicitly(a, b));
 
 // Auto-hide overlay widgets while EQ isn't the focused window (backlog #6)
 // - on by default per explicit user request. The watcher itself only ever
@@ -990,6 +1003,7 @@ function applyInstallRoot(eqFolder) {
   iconService.setEqFolder(currentInstallRoot);
   spellbookService.setInstallRoot(currentInstallRoot);
   spellEffects.resetCache(); // its per-category stat map is built from the roster, which is about to change
+  stackingService.invalidate(); // its spellView cache is built from roster entries
   // Tagging is cheap and idempotent - it only writes when it actually changes something - so
   // running it every launch costs nothing after the first, and it self-heals after a re-seed.
   //
@@ -2065,13 +2079,6 @@ ipcMain.handle('settings:setUseCastTimeFilter', (_event, enabled) => {
   return enabled;
 });
 
-ipcMain.handle('settings:getUseStackingModel', () => loadJson('useStackingModel', false));
-ipcMain.handle('settings:setUseStackingModel', (_event, enabled) => {
-  saveJson('useStackingModel', enabled);
-  buffEngine.setUseStackingModel(enabled);
-  return enabled;
-});
-
 ipcMain.handle('settings:getAutoHideOverlay', () => autoHideOverlayEnabled);
 ipcMain.handle('settings:setAutoHideOverlay', (_event, enabled) => {
   autoHideOverlayEnabled = enabled;
@@ -2325,6 +2332,9 @@ ipcMain.handle('widget:setCategoryBorderWidth', (_event, { id, px }) =>
 );
 ipcMain.handle('widget:setTrackOnEnemies', (_event, { id, value }) =>
   widgetManager.setTrackOnEnemies(id, value)
+);
+ipcMain.handle('widget:setHideInfiniteBuffs', (_event, { id, value }) =>
+  widgetManager.setHideInfiniteBuffs(id, value)
 );
 ipcMain.handle('widget:setDebuffCastBy', (_event, { id, value }) =>
   widgetManager.setDebuffCastBy(id, value)
@@ -2867,23 +2877,34 @@ ipcMain.handle('profiles:setActive', (_event, id) => {
 // priority order - lives on the active loadout profile (profileStore). The plan itself is always
 // recomputed here from the live roster and the real stacking model, never stored: the roster is
 // rebuilt every launch (see buffStore's header) so a cached plan could silently drift.
+// The ignored-stats list, folding in a profile from before the Balanced/Melee/Caster buttons
+// became stat presets: an old `plannerPlaystyle` of melee/caster with no explicit exclusions
+// resolves to that preset's un-tick list. Once the renderer saves an exclusion set it wins.
+function plannerExcludedFor(profile) {
+  const explicit = profile && profile.plannerExcludedStats;
+  if (Array.isArray(explicit) && explicit.length) return explicit;
+  const legacy = profile && profile.plannerPlaystyle;
+  if (legacy === 'melee' || legacy === 'caster') return spellEffects.PRESET_EXCLUDES[legacy].slice();
+  return Array.isArray(explicit) ? explicit : [];
+}
 ipcMain.handle('planner:getInput', (_event, profileId) => {
   const profile = profileStore.getProfile(profileId || profileStore.getActiveId());
   return {
     classes: (profile && profile.plannerClasses) || [],
     level: (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL,
     buffPlanOrder: (profile && profile.buffPlanOrder) || [],
-    playstyle: (profile && profile.plannerPlaystyle) || 'balanced',
-    excludedStats: (profile && profile.plannerExcludedStats) || [],
-    allStats: spellEffects.STAT_NAMES, // for the "ignore this stat" toggles
+    excludedStats: plannerExcludedFor(profile),
+    excludedBuffs: (profile && profile.plannerExcludedBuffs) || [],
+    allStats: spellEffects.EXCLUDABLE_STATS, // the stats that get a toggle chip (no resists / rune)
+    presetExcludes: spellEffects.PRESET_EXCLUDES, // Balanced/Melee/Caster -> which stats they un-tick
   };
-});
-ipcMain.handle('planner:setPlaystyle', (_event, { profileId, playstyle }) => {
-  profileStore.setPlannerPlaystyle(profileId || profileStore.getActiveId(), playstyle);
-  return true;
 });
 ipcMain.handle('planner:setExcludedStats', (_event, { profileId, stats }) => {
   profileStore.setPlannerExcludedStats(profileId || profileStore.getActiveId(), stats);
+  return true;
+});
+ipcMain.handle('planner:setExcludedBuffs', (_event, { profileId, names }) => {
+  profileStore.setPlannerExcludedBuffs(profileId || profileStore.getActiveId(), names);
   return true;
 });
 ipcMain.handle('planner:setClasses', (_event, { profileId, classes }) => {
@@ -2903,29 +2924,26 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
   const classes = (profile && profile.plannerClasses) || [];
   const level = (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL;
   const priorityOrder = (profile && profile.buffPlanOrder) || [];
-  const playstyle = (profile && profile.plannerPlaystyle) || 'balanced';
-  const excludedStats = (profile && profile.plannerExcludedStats) || [];
-  // The planner ALWAYS uses the game's stacking data when the spell file is reachable - it's how it
-  // tells a weaker tier of a buff line from a different buff that stacks. (Independent of the
-  // `useStackingModel` diagnostic toggle, which gates the live detection engine, a riskier place.)
-  const checkStack = currentInstallRoot
-    ? (activeId, incomingId) => spellStacking.checkOverwrite(currentInstallRoot, activeId, incomingId)
-    : null;
-  // The real stat numbers - only available once the EQ folder is set (spells_us.txt). Without it
-  // the planner ranks by name alone and says so (statsKnown: false).
+  const excludedStats = plannerExcludedFor(profile);
+  const excludedBuffs = (profile && profile.plannerExcludedBuffs) || [];
+  // The planner uses the full stacking engine (roster stacking data - always present now, not
+  // gated on the EQ folder) for pairs the curated line model returns 'unknown' for. It passes the
+  // real character level, so a not-yet-capped low-level spell resolves correctly here (unlike the
+  // live engine, which has to assume 50).
+  const checkStack = (activeId, incomingId) => stackingService.planConflict(activeId, incomingId, level);
+  // The real +STR / +AC / haste numbers - read straight off the roster now (each entry carries its
+  // `stackEffects`), so the planner has them whether or not the EQ folder is set.
   const roster = buffStore.getAll();
-  const spellData = currentInstallRoot
-    ? {
-        stats: (spellId) => spellEffects.spellStats(currentInstallRoot, spellId, level),
-        headline: (spellId, category) =>
-          spellEffects.categoryHeadline(currentInstallRoot, roster, spellId, category),
-        score: (spellId, name, weightScale) =>
-          spellEffects.statScore(currentInstallRoot, spellId, name, weightScale),
-        weightScale: (style, excluded) => spellEffects.combinedWeightScale(style, excluded),
-        multiplierStats: spellEffects.MULTIPLIER_STATS,
-      }
-    : null;
-  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines, playstyle, excludedStats });
+  const byId = new Map(roster.filter((e) => e.spellId != null).map((e) => [Number(e.spellId), e]));
+  const entryFor = (spellId) => byId.get(Number(spellId)) || null;
+  const spellData = {
+    stats: (spellId) => spellEffects.spellStats(entryFor(spellId), level),
+    headline: (spellId, category) => spellEffects.categoryHeadline(roster, entryFor(spellId), category),
+    score: (spellId, weightScale) => spellEffects.statScore(entryFor(spellId), weightScale),
+    weightScale: (excluded) => spellEffects.combinedWeightScale(excluded),
+    multiplierStats: spellEffects.MULTIPLIER_STATS,
+  };
+  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines, excludedStats, excludedBuffs });
   // Attach a served icon url to everything the page will draw, same shape buffs:known uses.
   const withIcons = (list) =>
     list.map((c) => ({ ...c, iconUrl: c.iconId != null ? iconService.buildIconUrl(c.iconId) : null }));
@@ -2941,12 +2959,15 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
     songSlots: withIcons(plan.songSlots),
     songOverflow: withIcons(plan.songOverflow),
     songCandidates: withIcons(plan.songCandidates),
+    specialSongs: withIcons(plan.specialSongs || []),
     permanentSlots: withIcons(plan.permanentSlots),
     permanentOverflow: withIcons(plan.permanentOverflow),
+    combatSlots: withIcons(plan.combatSlots || []),
+    combatOverflow: withIcons(plan.combatOverflow || []),
     stackingKnown: plan.stackingKnown,
     stackingCoverage: plan.stackingCoverage,
-    playstyle: plan.playstyle,
     excludedStats: plan.excludedStats,
+    excludedBuffs: plan.excludedBuffs,
   };
 });
 
@@ -3081,5 +3102,3 @@ ipcMain.handle('app:getVersionInfo', () => {
     nodeVersion: process.versions.node,
   };
 });
-// Backlog #18 - the in-app changelog shown on the About page.
-ipcMain.handle('app:getChangelog', () => require('../shared/data/changelog').CHANGELOG);

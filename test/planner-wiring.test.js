@@ -103,11 +103,13 @@ test('every planner IPC channel is handled in main and exposed in preload', () =
 
 test('the "ignore stats" toggles are wired: markup, stat list from main, and it feeds computePlan', () => {
   const page = read('src', 'renderer', 'main-window', 'index.html').match(/<section id="page-planner"[\s\S]*?<\/section>/)[0];
-  assert.match(page, /id="planner-exclude-chips"/, 'the ignore-stats chip container is missing');
-  assert.match(mainSrc, /allStats: spellEffects\.STAT_NAMES/, 'getInput must hand the renderer the stat list');
+  assert.match(page, /id="planner-exclude-chips"/, 'the stat-toggle chip container is missing');
+  assert.match(mainSrc, /allStats: spellEffects\.EXCLUDABLE_STATS/, 'getInput must hand the renderer the toggle stat list');
+  assert.match(mainSrc, /presetExcludes: spellEffects\.PRESET_EXCLUDES/, 'getInput must hand over the Balanced/Melee/Caster preset lists');
   const fn = mainSrc.match(/ipcMain\.handle\('planner:compute'[\s\S]*?\n\}\);/)[0];
   assert.match(fn, /excludedStats/, 'planner:compute must read and pass the ignored stats');
   assert.match(rendererSrc, /setPlannerExcludedStats\(null, excludedStats\)/, 'a chip click must persist and recompute');
+  assert.doesNotMatch(mainSrc, /planner:setPlaystyle|setPlannerPlaystyle/, 'the old playstyle IPC is gone - presets are stat toggles now');
 });
 
 test('planner:compute recomputes from the live roster and never persists a plan', () => {
@@ -123,10 +125,11 @@ test('the planner and the detection engine both use the heading model (buffLines
   assert.match(mainSrc, /buffEngine\.setLineStackFn\(\(incomingName, activeName\) => buffLines\.stackDecision/);
 });
 
-test('planner:compute only reads the real stat numbers when the EQ folder is set', () => {
+test('planner:compute reads the real stat numbers straight off the roster (no EQ folder needed)', () => {
   const fn = mainSrc.match(/ipcMain\.handle\('planner:compute'[\s\S]*?\n\}\);/)[0];
-  assert.match(fn, /currentInstallRoot\s*\?\s*\{[\s\S]*?spellEffects\.spellStats/);
-  assert.match(fn, /spellData/);
+  // spellData is built unconditionally now - the stat data is on every roster entry (stackEffects).
+  assert.match(fn, /const spellData = \{[\s\S]*?stats: \(spellId\) => spellEffects\.spellStats\(entryFor\(spellId\), level\)/);
+  assert.doesNotMatch(fn, /spellEffects\.spellStats\(currentInstallRoot/, 'no longer takes an install root');
 });
 
 test('nothing in the planner pipeline exposes the game\'s internal effect numbers ("SPA")', () => {
@@ -136,12 +139,12 @@ test('nothing in the planner pipeline exposes the game\'s internal effect number
   }
 });
 
-test('planner:compute always uses the game stacking data when the spell file is reachable', () => {
+test('planner:compute uses the full stacking engine, not gated on the EQ folder or any toggle', () => {
   const fn = mainSrc.match(/ipcMain\.handle\('planner:compute'[\s\S]*?\n\}\);/)[0];
-  // NOT gated on the useStackingModel diagnostic toggle - the planner needs it to tell buff tiers
-  // apart (Vaela's 27 Aug reference loadout).
-  assert.doesNotMatch(fn, /loadJson\('useStackingModel'/);
-  assert.match(fn, /const checkStack = currentInstallRoot\s*\n?\s*\?\s*\(activeId, incomingId\) => spellStacking\.checkOverwrite\(currentInstallRoot/);
+  assert.doesNotMatch(mainSrc, /useStackingModel/, 'the useStackingModel toggle is gone');
+  assert.doesNotMatch(mainSrc, /spellStacking\.(checkOverwrite|stackVerdict)/, 'the old narrow engine is gone');
+  // stackingService.planConflict, with the real character level.
+  assert.match(fn, /const checkStack = \(activeId, incomingId\) => stackingService\.planConflict\(activeId, incomingId, level\)/);
 });
 
 // ---------------------------------------------------------------------------

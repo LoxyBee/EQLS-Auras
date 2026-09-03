@@ -102,7 +102,7 @@
         </div>
       </div>
 
-      <button class="nav-btn" data-page="page-planner" id="planner-nav-btn">Buff Planner</button>
+      <button class="nav-btn" data-page="page-planner" id="planner-nav-btn">Buff Planner<span class="nav-exp-tag">exp</span></button>
 
       <button class="nav-btn" data-page="page-lockouts" id="lockouts-nav-btn">Lockouts</button>
       <!-- Nav buttons for custom modules that declare a settings page are injected here by
@@ -557,6 +557,12 @@
                     </label>
                   </div>
                   <p class="hint" id="widget-merge-hint"></p>
+                  <div class="row" id="widget-hide-infinite-row">
+                    <label title="Yaulp, Fury, the Shielding / coat / wolf-form line and the like.">
+                      <input type="checkbox" id="widget-hide-infinite-checkbox" />
+                      Hide permanent buffs
+                    </label>
+                  </div>
                   <!-- The "Also watch these spells on enemies" toggle that used to live here is
                        gone - enemy tracking is a property of which button built the aura now, not
                        a switch either kind can flip afterward. -->
@@ -1407,20 +1413,6 @@
                 <span class="experimental-badge">Experimental</span>
               </div>
 
-              <h4>Self-buff overwrite detection</h4>
-              <p class="hint">
-                EQ says when someone else's buff is overwritten, but not one of yours — so two
-                spells with the same fade text can leave a stale timer. When on, a new buff the
-                game's stacking rules would replace clears the old one at once. Same-slot rule
-                only. Off by default; safe to turn back off.
-              </p>
-              <div class="row">
-                <label>
-                  <input type="checkbox" id="use-stacking-model-checkbox" />
-                  Use self-buff overwrite detection
-                </label>
-                <span class="experimental-badge">Experimental</span>
-              </div>
             </div></div>
           </div>
         </div>
@@ -1679,67 +1671,78 @@
             <!-- three class selects injected by main-window.js -->
           </div>
           <div class="row planner-playstyle-row">
-            <span class="label" title="Nudges the default order toward melee stats or caster stats. Not a filter - a strong off-style buff still earns a slot, and your dragged order always wins.">Lean toward:</span>
+            <span class="label" title="A shortcut for the toggles below. Melee un-ticks the caster stats; Caster un-ticks the melee stats; Balanced ticks them all. Adjust any of them by hand afterwards.">Preset:</span>
             <label><input type="radio" name="planner-playstyle" value="balanced" checked /> Balanced</label>
             <label><input type="radio" name="planner-playstyle" value="melee" /> Melee</label>
             <label><input type="radio" name="planner-playstyle" value="caster" /> Caster</label>
           </div>
           <div class="row planner-exclude-row">
-            <span class="label" title="Click a stat to stop it counting toward the ranking (its weight becomes zero) - e.g. dump Charisma so no CHA buff takes a slot. Your dragged order still wins, and the totals still show what a slotted buff actually gives.">Ignore stats:</span>
+            <span class="label" title="A ticked stat counts toward the ranking; un-tick one to drop it (e.g. dump Charisma so no CHA buff takes a slot). Resists and rune aren't here - they're always low priority. Your dragged order still wins, and the totals still show what a slotted buff actually gives.">Count stats:</span>
             <div class="planner-exclude-chips" id="planner-exclude-chips"></div>
           </div>
         </div>
 
-        <div class="card" id="planner-totals-card" style="display:none">
-          <h3>Total stats</h3>
+        <!-- Every result section is a collapsible accordion, closed by default (owner, 3 Sep). -->
+        <details class="card planner-acc" open id="planner-totals-card" style="display:none">
+          <summary><h3>Total stats</h3></summary>
           <p class="hint" id="planner-stats-unknown" style="display:none">
             Set your EQ folder on the Setup page and the planner can read the real +STR / +AC /
             haste numbers from the game's spell file. Until then it can only sort by name.
           </p>
           <div class="planner-totals" id="planner-totals"></div>
-        </div>
+        </details>
 
-        <div class="card">
-          <h3>Your loadout — <span id="planner-slot-count">0</span> of 14 buff slots</h3>
-          <p class="hint">
-            Every stat/combat buff your classes can cast, grouped by stacking line and ordered by
-            the numbers we can read from the game's spell file - not level or duration. The weaker
-            tier of a line is folded into the stronger one. Bard songs and never-expiring buffs get
-            their own sections. You arrange the 14 - drag the priority list below.
-            <span id="planner-stacking-state"></span> Heals and pure utility (levitate, vision,
-            illusions) are left out.
-          </p>
+        <details class="card planner-acc" open>
+          <summary>
+            <div class="planner-priority-head">
+              <h3>Your loadout — <span id="planner-slot-count">0</span> of 14 buff slots</h3>
+              <button type="button" id="planner-buff-reset" style="display:none">Reset removed</button>
+            </div>
+          </summary>
+          <p class="hint" id="planner-stacking-state"></p>
           <ol class="planner-slot-list" id="planner-slot-list"></ol>
           <p class="hint" id="planner-empty-note" style="display:none">
             Pick at least one class above to see a plan.
           </p>
-        </div>
+        </details>
 
-        <div class="card" id="planner-song-card" style="display:none">
-          <h3>Symphonic — <span id="planner-song-count">0</span> of 5 song slots</h3>
+        <details class="card planner-acc" open id="planner-song-card" style="display:none">
+          <summary><h3>Symphonic — <span id="planner-song-count">0</span> of 5 song slots</h3></summary>
           <p class="hint">
             Bard songs run in their own pool, separate from the 14 buff slots. Only shown when Bard
             is one of your classes.
           </p>
           <ol class="planner-song-list" id="planner-song-list"></ol>
-        </div>
+        </details>
 
-        <div class="card" id="planner-permanent-card" style="display:none">
-          <h3>Permanent buffs — <span id="planner-permanent-count">0</span></h3>
+        <details class="card planner-acc" open id="planner-permanent-card" style="display:none">
+          <summary><h3>Permanent buffs — <span id="planner-permanent-count">0</span></h3></summary>
           <p class="hint">
             Buffs that never wear off (Yaulp, Fury). Cast once and forget - kept out of the 14 so
             they don't crowd the slots you actually re-cast.
           </p>
           <ol class="planner-permanent-list" id="planner-permanent-list"></ol>
-        </div>
+        </details>
 
-        <div class="card">
-          <div class="planner-priority-head">
-            <h3>Priority order</h3>
-            <button type="button" id="planner-priority-reset" style="display:none">
-              Reset to default order
-            </button>
-          </div>
+        <details class="card planner-acc" open id="planner-combat-card" style="display:none">
+          <summary><h3>Combat buffs — <span id="planner-combat-count">0</span></h3></summary>
+          <p class="hint">
+            Short buffs (under 5 minutes) and limited-use combat innates (Spirit of the Puma, Ward
+            of the Divine). The 14 above are your pre-fight burst; these are the loadout you swap to
+            for the fight itself, so they're kept separate.
+          </p>
+          <ol class="planner-permanent-list" id="planner-combat-list"></ol>
+        </details>
+
+        <details class="card planner-acc">
+          <summary>
+            <div class="planner-priority-head">
+              <h3>Priority order</h3>
+              <button type="button" id="planner-priority-reset" style="display:none">
+                Reset to default order
+              </button>
+            </div>
+          </summary>
           <p class="hint">
             Drag to reorder. The planner fills the buff slots (and the 5 song slots) from the top
             of this list down, taking each that doesn't clash with one already in. Anything it
@@ -1747,13 +1750,13 @@
             order and ranks by stat value again.
           </p>
           <ul class="planner-priority-list" id="planner-priority-list"></ul>
-        </div>
+        </details>
 
-        <div class="card" id="planner-overflow-card" style="display:none">
-          <h3>Won't fit — <span id="planner-overflow-count">0</span></h3>
+        <details class="card planner-acc" id="planner-overflow-card" style="display:none">
+          <summary><h3>Won't fit — <span id="planner-overflow-count">0</span></h3></summary>
           <p class="hint">More than the slots' worth, or a stacking clash. Reorder above to swap one in.</p>
           <ul class="planner-overflow-list" id="planner-overflow-list"></ul>
-        </div>
+        </details>
       </section>
 
       <section id="page-about" class="page">
@@ -1774,11 +1777,6 @@
             <li>The damage meter is a rough live readout, not a precise parser — it leaves out incoming damage and can't place a small share of a busy fight.</li>
             <li>EQ must run windowed or borderless (not exclusive full-screen) for the overlay to draw over it.</li>
           </ul>
-        </div>
-
-        <div class="card" id="changelog-card">
-          <h3>What's changed</h3>
-          <div id="changelog-body" class="hint">Loading…</div>
         </div>
 
         <div class="card">
@@ -2106,19 +2104,23 @@
         <button id="close-add-widget-modal" class="modal-close">✕</button>
       </div>
 
+      <!-- Five buttons under three headed categories (owner, 3 Sep). Each opens its own panel. -->
       <div id="add-widget-choices">
-        <button type="button" class="add-widget-choice" data-choice="premade">
-          <strong>Premade aura</strong>
-        </button>
-        <button type="button" class="add-widget-choice" data-choice="custom">
-          <strong>Custom aura</strong>
-        </button>
-        <button type="button" class="add-widget-choice" data-choice="import">
-          <strong>Import from code</strong>
-        </button>
-        <button type="button" class="add-widget-choice" data-choice="chat">
-          <strong>Import from chat</strong>
-        </button>
+        <h4 class="add-widget-cat">Standalone tools</h4>
+        <button type="button" class="add-widget-choice" data-choice="tools"><strong>Standalone tools</strong></button>
+
+        <h4 class="add-widget-cat">Premade &amp; custom</h4>
+        <button type="button" class="add-widget-choice" data-choice="premade"><strong>Premade aura</strong></button>
+        <button type="button" class="add-widget-choice" data-choice="custom"><strong>Custom aura</strong></button>
+
+        <h4 class="add-widget-cat">Import</h4>
+        <button type="button" class="add-widget-choice" data-choice="import"><strong>Import from code</strong></button>
+        <button type="button" class="add-widget-choice" data-choice="chat"><strong>Import from chat</strong></button>
+      </div>
+
+      <div id="add-widget-tools-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <ul id="add-widget-tools-list" class="plain-list scroll-list"></ul>
       </div>
 
       <div id="add-widget-import-panel" class="add-widget-panel" style="display:none">
@@ -2135,21 +2137,34 @@
         <p class="hint" id="modal-import-widget-status"></p>
       </div>
 
-      <!-- Note 30's other half. The offer strip is easy to dismiss and appears while she is
-           playing; this is where you come looking for it afterwards. Read-only: picking one fills
-           the import box on the panel above, and nothing is applied without pressing Import. -->
       <div id="add-widget-chat-panel" class="add-widget-panel" style="display:none">
         <button type="button" class="add-widget-back">&larr; Back</button>
-        <p class="hint">
-          Aura codes people have pasted into chat since the app started. Picking one fills the
-          import box — nothing is applied until you press Import.
-        </p>
         <ul id="add-widget-chat-list" class="plain-list scroll-list"></ul>
       </div>
 
       <div id="add-widget-premade-panel" class="add-widget-panel" style="display:none">
         <button type="button" class="add-widget-back">&larr; Back</button>
         <ul id="add-widget-premade-list" class="plain-list scroll-list"></ul>
+      </div>
+
+      <div id="add-widget-custom-panel" class="add-widget-panel" style="display:none">
+        <button type="button" class="add-widget-back">&larr; Back</button>
+        <button type="button" class="add-widget-choice" id="modal-add-buff-widget-btn">
+          <strong>Custom buff aura</strong>
+          <span>Pick exactly which of your own or allies' buffs it shows.</span>
+        </button>
+        <button type="button" class="add-widget-choice" id="modal-add-debuff-widget-btn">
+          <strong>Custom debuff aura</strong>
+          <span>Tracks mez, charm, snare and the like on what you cast them at, with each target's name.</span>
+        </button>
+        <button type="button" class="add-widget-choice" id="modal-add-timer-widget-btn">
+          <strong>Custom timer aura</strong>
+          <span>Your own countdown timers, triggered by exact lines of log text.</span>
+        </button>
+        <button type="button" class="add-widget-choice" id="modal-add-text-widget-btn">
+          <strong>Custom text aura</strong>
+          <span>One thing in large words. Point it at a buff or a line of log text.</span>
+        </button>
       </div>
 
       <!-- The first premade that asks a question before it builds anything. Deliberately its own
@@ -2205,34 +2220,6 @@
         </div>
       </div>
 
-      <div id="add-widget-custom-panel" class="add-widget-panel" style="display:none">
-        <button type="button" class="add-widget-back">&larr; Back</button>
-        <div class="row">
-          <input type="text" id="modal-new-widget-name" class="text-input" placeholder="Aura name..." />
-        </div>
-        <button type="button" class="add-widget-choice" id="modal-add-buff-widget-btn">
-          <strong>Custom buff aura</strong>
-          <span>Pick exactly which of your own or allies' buffs it shows.</span>
-        </button>
-        <button type="button" class="add-widget-choice" id="modal-add-debuff-widget-btn">
-          <strong>Custom debuff aura</strong>
-          <span>
-            Tracks mez, charm, snare and the like on what you cast them at, with each target's
-            name. Pick the spells once it's made.
-          </span>
-        </button>
-        <button type="button" class="add-widget-choice" id="modal-add-timer-widget-btn">
-          <strong>Custom timer aura</strong>
-          <span>Define your own countdown timers, triggered by exact lines of log text.</span>
-        </button>
-        <button type="button" class="add-widget-choice" id="modal-add-text-widget-btn">
-          <strong>Custom text aura</strong>
-          <span>
-            One thing in large words — no icon, no countdown. Point it at a buff or your own line
-            of log text.
-          </span>
-        </button>
-      </div>
     </div>
   </div>
 

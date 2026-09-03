@@ -525,23 +525,29 @@ class BuffEngine extends EventEmitter {
     // Puma VII, before this existed) and the real in-game value (1.94s) seen on that character. See
     // setCastTimeMultiplierFn.
     this.castTimeMultiplierFn = () => 1;
-    // Note 26, off by default - see setStackVerdictFn and _land()'s use of it. EQ prints an
-    // explicit "has been overwritten" line for a buff overwritten on someone ELSE, but nothing at
-    // all for one overwritten on the player's own self - so when a newly-landed self-buff would, by
-    // the game's own stacking rule, silently replace one already active (see src/main/
-    // spellStacking.js), this removes the stale one immediately instead of leaving it to time out
-    // on its own or be misattributed later by a shared fade-text line. Injected as a function, same
-    // DI reasoning as spellbookCheckFn - this engine has to keep running in a plain Node test and in
-    // tools/replay-log.js, neither of which has the game's install files to read.
-    this.stackVerdictFn = null; // (activeSpellId, incomingSpellId) => { overwrites, why } | null
-    this.useStackingModel = false;
+    // EQ prints an explicit "has been overwritten" line for a buff overwritten on someone ELSE, but
+    // nothing at all for one overwritten on the player's own self - so when a newly-landed self-buff
+    // would, by the game's own stacking rule, silently replace one already active, this removes the
+    // stale tile immediately instead of leaving it to time out or be misattributed by a shared
+    // fade-text line. `lineStackFn` (curated, real-log) decides first; `stackConflictFn` (the full
+    // ported EQEmu engine, src/main/stackingService.js) answers what it returns 'unknown' for.
+    // Both injected as functions - this engine runs in a plain Node test and in tools/replay-log.js,
+    // neither of which has the game files. A verdict here only ever REMOVES a stale entry under a
+    // DIFFERENT name; the incoming landing always proceeds regardless.
+    this.stackConflictFn = null; // (activeSpellId, incomingSpellId) => boolean (incoming cleanly overwrites active)
+    // Raw ported-engine verdict, used ONLY to veto a curated 'overwrites' - the curated line data
+    // proposes removing the stale tile, this must also agree before it happens. AEM's full parse of
+    // every curated 'overwrites' pair found ~104 where curated said "replace" but the game engine
+    // says the two stack fine, so the tile was vanishing while the buff was still up. Curated
+    // proposes, engine vetoes. Returns 1 (incoming overwrites active) / 0 (stack) / -1 (blocked) /
+    // null (no roster stack data - then the veto abstains and curated stands).
+    this.stackVetoFn = null; // (activeSpellId, incomingSpellId) => 1 | 0 | -1 | null
     // The heading model (docs/BUFF-STACKING.md, src/shared/buffLines.js). (incomingName, activeName)
     // => 'overwrites' | 'blocked' | 'coexist' | 'unknown'. Runs UNCONDITIONALLY in _land() for the
     // 'overwrites' verdict - those come from a measured "did not take hold" pair in a real log, or a
-    // strict same-line tier bump (Yaulp III over Yaulp II), neither of which is a guess. The
-    // effect-slot heuristic above stays behind useStackingModel for the pairs the line data does not
-    // cover ('unknown').
+    // strict same-line tier bump (Yaulp III over Yaulp II), neither of which is a guess.
     this.lineStackFn = null; // set by main.js from buffLines.stackDecision
+    this.lineStacksExplicitlyFn = null; // set by main.js from buffLines.stacksExplicitly - see setLineStacksExplicitlyFn
     this.durationMultiplierFn = () => 1;
     this.iconUrlFn = (iconId) => `eqicon://icon/Alternate%201/${iconId}`;
     this.debugLogFn = null; // (message) => void - see setDebugLogFn
@@ -563,14 +569,23 @@ class BuffEngine extends EventEmitter {
     this.castTimeMultiplierFn = fn;
   }
 
-  // fn(activeSpellId, incomingSpellId) => { overwrites, why } | null - see the constructor comment
-  // on stackVerdictFn and _land()'s use of it.
-  setStackVerdictFn(fn) {
-    this.stackVerdictFn = fn;
+  // fn(activeSpellId, incomingSpellId) => boolean - true when the incoming buff cleanly and
+  // unambiguously replaces the active one. See the constructor comment on stackConflictFn.
+  setStackConflictFn(fn) {
+    this.stackConflictFn = fn;
   }
 
-  setUseStackingModel(enabled) {
-    this.useStackingModel = enabled;
+  // fn(activeSpellId, incomingSpellId) => 1 | 0 | -1 | null - raw engine verdict that vetoes a
+  // curated 'overwrites'. See the constructor comment on stackVetoFn.
+  setStackVetoFn(fn) {
+    this.stackVetoFn = fn;
+  }
+
+  // fn(nameA, nameB) => boolean - true only when the curated data carries an EXPLICIT stacksWith
+  // link for the pair (a deliberate "these coexist"). A plain 'coexist' otherwise just means "no
+  // recorded conflict", which the ported engine is allowed to overrule. See _land().
+  setLineStacksExplicitlyFn(fn) {
+    this.lineStacksExplicitlyFn = fn;
   }
 
   // fn(incomingName, activeName) => 'overwrites' | 'blocked' | 'coexist' | 'unknown'. See the
@@ -1481,6 +1496,42 @@ class BuffEngine extends EventEmitter {
       );
       const selfCandidates = this.spellbookCheckFn ? selfPlausible.filter((c) => this.spellbookCheckFn(c.name)) : [];
 
+      // EXACTLY one bard song vs one non-song buff (owner, 3 Sep): the 6s song pulse is the only
+      // thing that tells them apart, so track it HERE - above the renewal / spellbook / gem tiers -
+      // and let it auto-resolve. Without this, a non-song candidate one of those tiers grabs
+      // (Frenzy, now permanent, sharing "You go berserk." with McVaxius' Berserker Crescendo)
+      // absorbs every pulse below as its own renewal and the pulse detector never sees the cadence.
+      // On confirm the song wins outright, no prompt, and a tile an earlier tier had provisionally
+      // landed for the non-song candidate is dropped. On a first sighting / broken cadence this
+      // holds and the tiers below make the provisional call.
+      const strictSongBuff = this._songVsSingleBuff(selfPlausible);
+      if (strictSongBuff) {
+        const pulsed = this._pulsedAmbiguousSong(stripped, selfPlausible);
+        if (pulsed) {
+          // Clear a prompt an earlier pulse may have queued for this same text (burst / track-
+          // others path) - the cadence has now answered it.
+          if (this.ambiguousCasts.has(stripped)) {
+            this.ambiguousCasts.delete(stripped);
+            this.emit('ambiguousCastsChanged', this.getAmbiguousCasts());
+          }
+          const otherKey = strictSongBuff.buff.name.toLowerCase();
+          if (this.activeBuffs.has(otherKey)) {
+            this._debugLog(
+              `ENDED "${strictSongBuff.buff.name}" - "${stripped}" kept re-landing on the 6s song cadence; ` +
+                `it is "${pulsed.name}", not "${strictSongBuff.buff.name}"`
+            );
+            this.activeBuffs.delete(otherKey);
+          }
+          this._debugLog(
+            `LANDED "${pulsed.name}" - "${stripped}" on the 6s song cadence ${SONG_PULSE_CONFIRM_HITS}x ` +
+              '(one song vs one buff - auto-resolved, no prompt)'
+          );
+          this._land(pulsed);
+          this._checkForEndedBuffs(line);
+          return;
+        }
+      }
+
       // A recent third-person cast-begin line naming one of these
       // candidates is concrete evidence someone else is the actual source
       // (most likely a group-targeted spell landing on everyone) - overrides
@@ -1663,7 +1714,10 @@ class BuffEngine extends EventEmitter {
       } else {
         // Before giving up: is this a maintained bard song pulsing on its 6s cadence? That is the
         // one thing that re-lands on its own, and it needs no spellbook to recognise (layer 2).
-        const pulsedSong = this._pulsedAmbiguousSong(stripped, selfPlausible);
+        // The strict one-song-one-buff case is already tracked at the top of this block - calling
+        // _pulsedAmbiguousSong again here would advance its watch twice for the same line and break
+        // the cadence maths, so skip it (the top route owns that case, confirm or not).
+        const pulsedSong = strictSongBuff ? null : this._pulsedAmbiguousSong(stripped, selfPlausible);
         if (pulsedSong) {
           this._debugLog(
             `LANDED "${pulsedSong.name}" - ambiguous text "${stripped}" re-landed on the 6s song cadence ` +
@@ -2221,37 +2275,48 @@ class BuffEngine extends EventEmitter {
     // reaching into cases nothing has confirmed. A verdict here only ever REMOVES a stale entry
     // still sitting in activeBuffs under a DIFFERENT name - the buff about to land below always
     // proceeds regardless, so a wrong or missing verdict never blocks the landing itself.
-    // The heading model / measured blocked-pairs (docs/BUFF-STACKING.md) - runs unconditionally,
-    // these are observed conflicts or strict tier bumps, not a guess. Only ever removes a stale
-    // tile still sitting under a DIFFERENT name; the incoming landing always proceeds below.
-    if (this.lineStackFn && known.scaleCategory === 'buff') {
+    // One pass over every active buff under a DIFFERENT name. The curated heading model
+    // (docs/BUFF-STACKING.md) decides first; where it says 'unknown' - or a WEAK 'coexist' (no
+    // recorded conflict, but no explicit stacksWith either) - the full ported EQEmu engine
+    // (stackingService.wouldOverwriteLive) decides. Where curated says 'overwrites', the engine
+    // gets a veto - a curated "replace" only removes the stale tile if the engine agrees the two
+    // don't stack (verdict is not 0 and not -1). AEM's full parse found ~104 curated 'overwrites'
+    // pairs the game engine stacks fine, where the tile was vanishing mid-buff. And curated has
+    // been caught the other way too (Cantata of Soothing / Cassindra's Chorus of Clarity: different
+    // curated bard-regen headings so 'coexist', but the engine and the owner in-game agree Chorus
+    // blocks Cantata). The incoming landing always proceeds regardless; a verdict here only ever
+    // REMOVES a stale entry.
+    if (known.scaleCategory === 'buff') {
       for (const [activeKey, activeEntry] of [...this.activeBuffs]) {
-        if (activeKey === known.name.toLowerCase()) continue;
-        if (this.lineStackFn(known.name, activeEntry.name) === 'overwrites') {
+        if (activeKey === known.name.toLowerCase()) continue; // a recast of the same spell, not a conflict
+        const curated = this.lineStackFn ? this.lineStackFn(known.name, activeEntry.name) : 'unknown';
+        if (curated === 'blocked') continue;
+        if (
+          curated === 'coexist' &&
+          this.lineStacksExplicitlyFn &&
+          this.lineStacksExplicitlyFn(known.name, activeEntry.name)
+        ) {
+          continue; // a deliberate "these coexist" - the engine does not override it
+        }
+
+        const activeKnown = this.buffStore.getByName(activeEntry.name);
+        const haveEngine =
+          this.stackConflictFn && known.spellId && activeKnown && activeKnown.spellId && activeKnown.scaleCategory === 'buff';
+
+        if (curated === 'overwrites') {
+          // Curated proposes removal; the engine vetoes if it has data and says the two stack.
+          if (haveEngine && this.stackVetoFn) {
+            const v = this.stackVetoFn(activeKnown.spellId, known.spellId);
+            if (v === 0 || v === -1) continue; // engine: these stack (or the incoming is blocked) - keep the tile
+          }
           this._debugLog(`ENDED "${activeEntry.name}" - replaced by "${known.name}" (same buff line / known conflict)`);
           this.activeBuffs.delete(activeKey);
+          continue;
         }
-      }
-    }
-    // The effect-slot heuristic, for pairs the line data does not cover - still behind the toggle.
-    if (this.useStackingModel && this.stackVerdictFn && known.spellId && known.scaleCategory === 'buff') {
-      for (const [activeKey, activeEntry] of this.activeBuffs) {
-        if (activeKey === known.name.toLowerCase()) continue; // a recast of the same spell, not a conflict
-        if (this.lineStackFn && this.lineStackFn(known.name, activeEntry.name) !== 'unknown') continue;
-        const activeKnown = this.buffStore.getByName(activeEntry.name);
-        if (!activeKnown || !activeKnown.spellId || activeKnown.scaleCategory !== 'buff') continue;
-        // Never let the effect-slot heuristic rule across the bard-song boundary. We only get here
-        // when the heading model returned 'unknown' - i.e. the two are not both members of the same
-        // modelled line - so the real song exclusions (bard haste vs Alacrity, Selo's vs SoW) were
-        // already decided by lineStackFn above and never reach this loop. Everything left with a
-        // song on either side coexists: resist songs stack with resist spells, with each other, and
-        // with cleric AC lines - measured across 26-31 Aug, every AC-SPA-1 "overwrite" the heuristic
-        // produced was a bard song being wrongly killed, zero of them correct
-        // (docs/research/bard-song-stacking.md).
-        if (known.isBardSong || activeKnown.isBardSong) continue;
-        const verdict = this.stackVerdictFn(activeKnown.spellId, known.spellId);
-        if (verdict) {
-          this._debugLog(`ENDED "${activeKnown.name}" - overwritten by "${known.name}" (${verdict.why})`);
+
+        // curated 'unknown', or a weak 'coexist' - the ported engine decides on its own.
+        if (haveEngine && this.stackConflictFn(activeKnown.spellId, known.spellId)) {
+          this._debugLog(`ENDED "${activeKnown.name}" - overwritten by "${known.name}" (stacking engine)`);
           this.activeBuffs.delete(activeKey);
         }
       }
@@ -2674,6 +2739,19 @@ class BuffEngine extends EventEmitter {
     if (songs.length !== 1) return null;
     if (songs.length === candidates.length) return null;
     return songs[0];
+  }
+
+  // Owner, 3 Sep: an ambiguous landing text whose candidates are EXACTLY one bard song and one
+  // non-song buff is told apart by the 6s song pulse alone - nothing else re-lands on its own.
+  // Returns { song, buff } for that case so handleLine can route it to the pulse detector ahead
+  // of the renewal / spellbook / gem tiers (a non-song candidate one of those would grab - e.g. a
+  // now-permanent Frenzy sharing "You go berserk." with McVaxius' Berserker Crescendo - would
+  // otherwise absorb every pulse as its own renewal and the song would never be recognised).
+  _songVsSingleBuff(candidates) {
+    if (candidates.length !== 2) return null;
+    const songs = candidates.filter((c) => c.isBardSong);
+    if (songs.length !== 1) return null;
+    return { song: songs[0], buff: candidates.find((c) => !c.isBardSong) };
   }
 
   // Layer 2 of the 31 Aug report. Watches an ambiguous self landing that is about to be IGNORED:

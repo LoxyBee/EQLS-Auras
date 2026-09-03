@@ -112,6 +112,15 @@ test('text fields, where present, are strings', () => {
   assert.deepEqual(bad.slice(0, 5), [], `${bad.length} non-string text fields, e.g. ${bad.slice(0, 5).join(', ')}`);
 });
 
+test('songInstrument, where present, is one of the five valid instrument types', () => {
+  const ok = new Set(['Brass', 'Singing', 'Stringed', 'Wind', 'Percussion']);
+  const bad = roster.filter((e) => e.songInstrument != null && !ok.has(e.songInstrument)).map((e) => `${e.name}=${e.songInstrument}`);
+  assert.deepEqual(bad, [], `bad songInstrument values: ${bad.join(', ')}`);
+  // It's a bard thing - it should only sit on bard-castable entries.
+  const misplaced = roster.filter((e) => e.songInstrument != null && !e.bardCastable).map((e) => e.name);
+  assert.deepEqual(misplaced, [], `songInstrument on non-bard entries: ${misplaced.join(', ')}`);
+});
+
 // Known, understood exceptions to the rule below. Anything added here needs a reason.
 const NO_SELF_LANDING_TEXT = new Set([
   // Summons a scouting eye rather than buffing the caster, so the game prints no

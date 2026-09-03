@@ -1522,7 +1522,7 @@ client and, for the trim/rotation checks, a real log that spans more than one lo
 # 11 — Backlog batch (30 Aug)
 
 `feat/backlog-batch-2`. All unverified in a real session. The automated suite covers the code
-paths (death-clears, config-transfer, config-backup, sound-cooldown, preview-aura, changelog,
+paths (death-clears, config-transfer, config-backup, sound-cooldown, preview-aura,
 zone-aliases, spellbook-diagnostic). A clean fresh-start smoke was **not** possible — the owner's
 dev build + a live `eqgame` held the single-instance lock, so a second launch exits 0 (guard
 working as designed). Record: single-instance guard verified; fresh-start smoke deferred.
@@ -2313,3 +2313,60 @@ reproduces `'Enro' !== 'You'` exactly), but not yet re-confirmed against the rea
       recently.
 - [ ] **Sing an UNRANKED bard song too**, to confirm that case (which already worked before this
       fix) is still unaffected.
+
+## Stacking-engine port + Buff Planner rework + Add Aura restructure (3 Sep) — none clicked in a live session
+
+The full EQEmu `CheckStackConflict` port replaced the old effect-slot heuristic; the Buff Planner
+was reworked; the Add Aura choices screen was restructured. All green in tests + smoke-clean; the
+Planner page is still LOCKED (no nav button) so its checks need the button re-added first.
+
+### Self Buffs overlay — stale-tile removal
+- [ ] **Cast Yaulp, then a Shielding-line buff / an armor coat / Armor of Protection.** *Expect*:
+      Yaulp stays on the overlay — it now sits on its own AC slot and stacks (owner confirmed
+      in-game). Before this it was being dropped as a "known conflict".
+- [ ] **Cast two buffs the app used to think collided but the game stacks** (AEM found ~104 such
+      pairs). *Expect*: both tiles stay up for their full duration, no tile vanishing a few
+      seconds after the second lands.
+- [ ] **Cassindra's Chorus of Clarity while Cantata of Soothing is up.** *Expect*: Cantata's tile
+      is removed (Chorus blocks it — engine + owner agree), even though the curated data alone
+      would let them coexist.
+
+### Permanent buffs stay permanent
+- [ ] **Cast Armor of the Faithful (or any Shielding-line / damage-shield-coat / permanent
+      wolf-form buff).** *Expect*: its tile stays on the overlay indefinitely — no disappearing
+      ~1 minute after it lands. Cross-check in-game that it's still active (still blocking casts /
+      still on your buff bar) when the app shows it.
+- [ ] **"Hide permanent buffs" toggle** — Overlay Auras → a Self Buffs aura's settings → tick it.
+      *Expect*: Yaulp, Fury, the Shielding line etc. drop off that aura's list immediately;
+      untick brings them back. Other auras unaffected.
+
+### Buff Planner (re-add the nav button to test)
+- [ ] **Balanced / Melee / Caster presets** — picking Melee un-ticks the caster stats (WIS, INT,
+      mana regen, cast speed, max mana, spell damage %); Caster un-ticks the melee ones (STR, DEX,
+      AGI, ATK, haste, HP on hit); Balanced re-ticks everything. A buff whose every stat is
+      un-ticked drops to "Won't fit" with "every stat it gives is turned off for this preset".
+- [ ] **Individual stat toggle chips** override the preset; resists and rune have no chip.
+- [ ] **AC numbers** — Verses of Victory should show ~+12 AC (not +50); Yaulp III ~+10 (not +40).
+      Compare against the in-game spell tooltip / the published EQL references.
+- [ ] **X on a slotted row** removes that buff and the next-best pulls up into the slot. **"Reset
+      removed"** in the loadout header (appears only after you've X'd something) restores them.
+- [ ] **"why this one?" hover** on a slotted buff lists the buffs it beat, their stats, and any
+      blocked-pair reason.
+- [ ] **Amplification** appears as a pinned dashed row at the top of the song list ("Shown for
+      reference"), only when a bard class that can cast it is selected, and is not counted against
+      the 5 song slots.
+- [ ] **Song rows show the instrument type** (Brass / Singing / Stringed / Wind / Percussion).
+- [ ] **Combat buffs card** — short buffs (≤5 min) and proc innates (Spirit of the Puma, Ward of
+      the Divine) land here, not in the 14, and are not in the totals sheet.
+- [ ] **Accordions** — every section starts open except "Priority order" and "Won't fit".
+- [ ] **Rizlona's Embers** scores as a real caster buff (spell-damage focus) under the
+      Caster / Balanced presets.
+
+### Add Aura choices screen
+- [ ] **Five buttons under three headings** — "Standalone tools" / "Premade & custom" (Premade
+      aura, Custom aura) / "Import" (Import from code, Import from chat). Each opens its own panel.
+- [ ] **Back from every panel** returns to the five-button screen — except Back from the
+      buff-timer panel, which returns to the premade list (one level, not two).
+- [ ] **No aura-name field** anywhere in Add Aura (custom panel included).
+- [ ] **Standalone-tool premades** (Ally Buffs, Bard Songs, Travel guide, Damage parser) appear
+      under "Standalone tools"; everything else under "Premade & custom".

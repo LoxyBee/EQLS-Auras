@@ -2,7 +2,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('eqTracker', {
   getVersionInfo: () => ipcRenderer.invoke('app:getVersionInfo'),
-  getChangelog: () => ipcRenderer.invoke('app:getChangelog'),
 
   getUiScale: () => ipcRenderer.invoke('ui:getScale'),
   setUiScale: (pct) => ipcRenderer.invoke('ui:setScale', pct),
@@ -118,8 +117,6 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setUseEvidenceModel: (enabled) => ipcRenderer.invoke('settings:setUseEvidenceModel', enabled),
   getUseCastTimeFilter: () => ipcRenderer.invoke('settings:getUseCastTimeFilter'),
   setUseCastTimeFilter: (enabled) => ipcRenderer.invoke('settings:setUseCastTimeFilter', enabled),
-  getUseStackingModel: () => ipcRenderer.invoke('settings:getUseStackingModel'),
-  setUseStackingModel: (enabled) => ipcRenderer.invoke('settings:setUseStackingModel', enabled),
   getAutoHideOverlayEnabled: () => ipcRenderer.invoke('settings:getAutoHideOverlay'),
   getShowAurasWhenAppFocused: () => ipcRenderer.invoke('settings:getShowAurasWhenAppFocused'),
   setShowAurasWhenAppFocused: (enabled) => ipcRenderer.invoke('settings:setShowAurasWhenAppFocused', enabled),
@@ -227,6 +224,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetCategoryBorders: (id, value) => ipcRenderer.invoke('widget:setCategoryBorders', { id, value }),
   setWidgetCategoryBorderWidth: (id, px) => ipcRenderer.invoke('widget:setCategoryBorderWidth', { id, px }),
   setWidgetTrackOnEnemies: (id, value) => ipcRenderer.invoke('widget:setTrackOnEnemies', { id, value }),
+  setWidgetHideInfiniteBuffs: (id, value) => ipcRenderer.invoke('widget:setHideInfiniteBuffs', { id, value }),
   setWidgetDebuffCastBy: (id, value) => ipcRenderer.invoke('widget:setDebuffCastBy', { id, value }),
   setWidgetAllyDebuffAlert: (id, value) => ipcRenderer.invoke('widget:setAllyDebuffAlert', { id, value }),
   setWidgetDamageOptions: (id, options) => ipcRenderer.invoke('widget:setDamageOptions', { id, options }),
@@ -365,8 +363,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setPlannerClasses: (profileId, classes) => ipcRenderer.invoke('planner:setClasses', { profileId, classes }),
   setPlannerLevel: (profileId, level) => ipcRenderer.invoke('planner:setLevel', { profileId, level }),
   setPlannerOrder: (profileId, order) => ipcRenderer.invoke('planner:setOrder', { profileId, order }),
-  setPlannerPlaystyle: (profileId, playstyle) => ipcRenderer.invoke('planner:setPlaystyle', { profileId, playstyle }),
   setPlannerExcludedStats: (profileId, stats) => ipcRenderer.invoke('planner:setExcludedStats', { profileId, stats }),
+  setPlannerExcludedBuffs: (profileId, names) => ipcRenderer.invoke('planner:setExcludedBuffs', { profileId, names }),
   computePlan: (profileId) => ipcRenderer.invoke('planner:compute', profileId),
 
   getIconSets: () => ipcRenderer.invoke('icons:getSets'),

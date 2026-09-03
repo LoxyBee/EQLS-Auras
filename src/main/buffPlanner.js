@@ -7,8 +7,8 @@
 // Pure and dependency-free on purpose - it takes the roster, the three classes + one character
 // level, an optional priority order, a stacking-check function, and a `spellData` reader (the real
 // stat numbers), and returns a plan. `main.js` wires the real roster (buffStore), the real
-// spellStacking.checkOverwrite, and spellEffects.js into it; tests wire fakes. Nothing here reads
-// a file or knows an install path.
+// stacking engine (stackingService), and spellEffects.js into it; tests wire fakes. Nothing here
+// reads a file or knows an install path.
 //
 // HOW IT DECIDES:
 //   - Candidates: every kind:'buff' roster entry one of the three classes can cast at the
@@ -18,8 +18,8 @@
 //     file is available, a fine check that the buff carries at least one recognised stat.
 //   - "One per slot line" is the roster's own `category` column. The planner keeps the ONE buff
 //     per category with the biggest headline-stat number - not the highest level, not the longest
-//     duration. Where spellStacking has a real verdict for a pair it overrides that grouping (a
-//     cross-category conflict it names is collapsed); it never invents one.
+//     duration. Where the stacking engine has a real verdict for a pair it overrides that grouping
+//     (a cross-category conflict it names is collapsed); it never invents one.
 //   - Three pools: the 14 spell-buff slots, a 5-slot bard-song pool (only when Bard is picked),
 //     and an uncapped permanent-buff pool (Yaulp/Fury). Songs and buffs are reconciled together;
 //     permanents keep their own listing even when a temp buff shares their stat.
@@ -29,8 +29,8 @@
 //   - `totals` is the summed stat sheet across every slotted buff.
 
 const SLOT_COUNT = 14;
-// Bard songs occupy a separate pool from spell buffs in EQ (see spellStacking.js's own header), so
-// they get their own slots on top of the 14. Only computed when Bard is one of the chosen classes.
+// Bard songs occupy a separate buff pool from spell buffs in EQ (the stacking engine models it),
+// so they get their own slots on top of the 14. Only computed when Bard is one of the chosen classes.
 const SONG_SLOT_COUNT = 5;
 
 // EQ Legends caps at level 50 (the owner, 26 Aug). One character level applies to all three classes -
@@ -124,9 +124,44 @@ function enrichCandidate(cand, spellData, weightScale) {
     magnitude: headline ? headline.value : null,
     stat: headline ? headline.stat : null,
     stats,
-    // name + weightScale feed the curated proc boost (Fix 10) and the playstyle preset (Fix 11).
-    score: spellData.score(cand.spellId, cand.name, weightScale) || 0,
+    // weightScale zeroes a stat the user turned off; otherwise a plain sum of the character stats.
+    score: spellData.score(cand.spellId, weightScale) || 0,
   };
+}
+
+// Songs the planner can't score but wants to surface anyway (owner, 3 Sep). Amplification is a
+// multiplier on every OTHER bard song running, so its value depends on the whole loadout - not a
+// character stat and not something to math out here. Shown at the top of the song list, flagged,
+// not counted against the 5 slots.
+const SPECIAL_SONGS = {
+  Amplification: 'Boosts your Singing songs. Shown for reference.',
+};
+
+// The SPECIAL_SONGS a chosen (bard) class can actually cast at the character level, as pinned
+// song-list entries.
+function specialSongsFor(roster, classes) {
+  const wantLevel = new Map(classes.map((c) => [c.code, c.level]));
+  const out = [];
+  for (const [name, note] of Object.entries(SPECIAL_SONGS)) {
+    const entry = (roster || []).find((e) => e.name === name);
+    if (!entry) continue;
+    const castable = parseSpellClasses(entry.classes).some(
+      (sc) => wantLevel.has(sc.code) && sc.level <= wantLevel.get(sc.code)
+    );
+    if (!castable) continue;
+    out.push({
+      name,
+      spellId: entry.spellId,
+      iconId: entry.iconId != null ? entry.iconId : null,
+      isSong: true,
+      special: true,
+      note,
+      stats: [],
+      score: null,
+      beat: [],
+    });
+  }
+  return out;
 }
 
 // Every castable candidate, one object per roster entry, NOT yet collapsed by category. classes
@@ -159,6 +194,7 @@ function candidatesFor(roster, classes, spellData, weightScale) {
           targets: entry.targets,
           castByClasses: casters.map((c) => c.code),
           isSong: isBardSongEntry(entry),
+          songInstrument: entry.songInstrument || null,
         },
         spellData,
         weightScale
@@ -197,9 +233,9 @@ function hasUniqueStat(a, b) {
   return (a.stats || []).some((s) => s.value && !bStats.has(s.stat));
 }
 
-// FALLBACK collapse for when the line data isn't wired in (`lines` is null). Uses the game's own
-// effect-slot data (spellStacking.checkOverwrite) for a same-category tier collapse; without even
-// that, only merges shared base names. Imperfect - the real answer is resolveByHeadings below.
+// FALLBACK collapse for when the line data isn't wired in (`lines` is null). Uses the stacking
+// engine's verdict (checkStack) for a same-category tier collapse; without even that, only merges
+// shared base names. Imperfect - the real answer is resolveByHeadings below.
 function collapseByStacking(cands, checkStack) {
   if (!checkStack) return collapseByCategory(cands);
   const droppedBy = new Map();
@@ -232,7 +268,7 @@ function collapseByStacking(cands, checkStack) {
 //   3. Walking that order, each buff claims the effect "headings" its line occupies. A buff whose
 //      heading is already taken, or that a placed combination buff blocks, or that a placed buff is
 //      recorded as blocking (measured pairs), goes to overflow with the reason.
-//   4. A buff with no line data falls back to spellStacking.checkOverwrite against the placed set.
+//   4. A buff with no line data falls back to the stacking engine (checkStack) against the placed set.
 // Nothing is dropped just for sharing a stat: Strength + Infusion of Spirit + Fury all stack
 // because they sit on different headings.
 function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
@@ -257,7 +293,7 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
     const cIsBetter = lines.tierOf(line, c.name) > lines.tierOf(line, existing.name);
     const better = cIsBetter ? c : existing;
     const worse = cIsBetter ? existing : c;
-    dropped.push({ ...worse, reason: `${better.name} is the higher tier` });
+    dropped.push({ ...worse, reason: `${better.name} is the higher tier`, beatenBy: [better.name] });
     byLine.set(line.id, better);
   }
 
@@ -273,45 +309,77 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
     // Fix 7 (owner, 2 Sep): "the buff line research should naturally exclude it, and then the
     // weights should realise that the two stacked is better stats." A combination buff (Aegolism,
     // Harnessing of Spirit) claims its headings only if it scores at least as much as the sum of
-    // the candidates it would displace. No buff-specific code - it's a score comparison over the
-    // real numbers, so it moves with the weights and the playstyle preset. Compared against the
-    // whole ordered set (placed AND still-pending), because a high-scoring individual walked first
-    // is already in `kept` and the combo must still be measured against it.
+    // the candidates it genuinely SUBSUMES. Subsumes = it's on the combo's authored `blocks` list.
+    // NOT a stackDecision('overwrites') sweep - that also catches buffs which REPLACE the combo
+    // (Armor of the Faithful, Talisman of Altuna both overwrite Harnessing of Spirit), which the
+    // combo does not displace at all. Owner, 3 Sep: "it's actually REPLACED by armour of the
+    // faithful ... this is exactly the kind of nuance the new model was supposed to fix".
     const cLine = lines.lineForName(c.name);
     if (cLine && cLine.combination) {
-      const displaced = ordered.filter(
-        (o) => o !== c && lines.stackDecision(c.name, o.name) === 'overwrites'
-      );
+      const blockIds = new Set(cLine.blocks || []);
+      const displaced = ordered.filter((o) => {
+        if (o === c) return false;
+        const oL = lines.lineForName(o.name);
+        return oL && blockIds.has(oL.id);
+      });
       const displacedScore = displaced.reduce((s, o) => s + (o.score || 0), 0);
       if (displaced.length && (c.score || 0) < displacedScore) {
         dropped.push({
           ...c,
           reason: `${displaced.map((d) => d.name).join(' + ')} together are worth more (${displacedScore} vs ${c.score || 0})`,
+          beatenBy: displaced.map((d) => d.name),
+          // The combination-buff breakdown, for the "why this one?" tooltip: what this combo would
+          // have blocked, and the score comparison that kept the individuals.
+          combo: {
+            blocks: displaced.map((d) => ({ name: d.name, stats: d.stats || [], score: d.score || 0 })),
+            comboScore: c.score || 0,
+            sumScore: displacedScore,
+          },
         });
         continue;
       }
     }
 
     let clash = null;
+    let clashKind = 'conflicts with';
+    let clashWhy = null; // buffLines.stackReason tag: 'blocked-pair' | 'same-line' | 'shared-slot' | 'cross-class' | ...
     for (const placed of kept) {
       const dec = lines.stackDecision(c.name, placed.name);
       if (dec === 'blocked' || dec === 'overwrites') {
         clash = placed.name;
+        clashWhy = lines.stackReason ? lines.stackReason(c.name, placed.name) : null;
         break;
       }
-      if (dec === 'unknown' && checkStack && c.spellId != null && placed.spellId != null) {
-        const a = checkStack(placed.spellId, c.spellId);
-        const b = checkStack(c.spellId, placed.spellId);
-        if ((a && a.overwrites) || (b && b.overwrites)) {
+      // The ported engine decides pairs the curated data returns 'unknown' for, AND it can veto a
+      // WEAK 'coexist' (one that just means "no shared heading, no recorded conflict" - not an
+      // explicit stacksWith). Cantata of Soothing vs Cassindra's Chorus of Clarity is the case:
+      // curated puts them on different bard-regen headings and says coexist, but the engine (and
+      // the owner in-game) says Chorus blocks Cantata. An explicit stacksWith is left alone.
+      const engineMayDecide =
+        dec === 'unknown' || (dec === 'coexist' && !(lines.stacksExplicitly && lines.stacksExplicitly(c.name, placed.name)));
+      if (engineMayDecide && checkStack && c.spellId != null && placed.spellId != null) {
+        // checkStack (stackingService.planConflict) checks both directions itself and returns
+        // { overwrites, blocked, conflict } | null. `conflict` = they collide either way.
+        const v = checkStack(placed.spellId, c.spellId);
+        if (v && v.conflict) {
           clash = placed.name;
+          clashKind = v.blocked ? "wouldn't take hold past" : 'shares an effect slot with';
+          clashWhy = 'effect-slot';
           break;
         }
       }
     }
-    if (!clash) clash = headings.map((h) => occupied.get(h)).find(Boolean)?.name || null;
+    if (!clash) {
+      const held = headings.map((h) => occupied.get(h)).find(Boolean);
+      if (held) {
+        clash = held.name;
+        clashKind = 'wants the same slot as';
+        clashWhy = 'shared-slot';
+      }
+    }
 
     if (clash) {
-      dropped.push({ ...c, reason: `conflicts with ${clash}` });
+      dropped.push({ ...c, reason: `${clashKind} ${clash}`, beatenBy: [clash], stackWhy: clashWhy });
       continue;
     }
     // Fix 3: tag whether the LINE model placed this (vs a buff with no line data that only got in
@@ -322,6 +390,39 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
   }
 
   return { kept, dropped, approximate: false };
+}
+
+// A haste / cast-speed buff only helps if it is the STRONGEST source of that multiplier. EQ applies
+// one haste source at a time - the owner, 3 Sep: "alacrities 40% haste beats verses of victories
+// 30% haste, so only 1 applies, even though only 1 is active ... verses still stacks with
+// strength/everything else". A bard haste song and a spell-haste buff sit on different headings, so
+// both land in the plan, but only the higher one's haste counts. Without this the weaker one's
+// wasted haste inflates its `score`, and score decides slot competition (orderCandidates) and
+// combination displacement (Fix 7) - so a genuinely useful buff could be pushed out by a song
+// whose haste does nothing. Mutates `score` on the losers and tags `redundantMultiplier` for the
+// "why" tooltip. Movement speed is not a scored stat, so Selo's vs SoW needs nothing here.
+function discountRedundantMultipliers(cands, multiplierStats, weightScale) {
+  if (!multiplierStats || !multiplierStats.size) return cands;
+  const scale = (stat) => (weightScale && weightScale[stat] != null ? weightScale[stat] : 1);
+  // Mirror spellEffects.statScore's per-stat weighting so the subtraction lines up.
+  const contribution = (stat, value) => {
+    if (stat === 'haste') return Math.max(0, Math.abs(value) - 100) * scale('haste');
+    if (stat === 'cast speed') return Math.abs(value) * 5.0 * scale('cast speed');
+    return 0;
+  };
+  for (const stat of multiplierStats) {
+    const providers = cands
+      .map((c) => ({ c, s: (c.stats || []).find((x) => x.stat === stat) }))
+      .filter((p) => p.s && p.s.value);
+    if (providers.length < 2) continue;
+    const best = providers.reduce((a, b) => (Math.abs(b.s.value) > Math.abs(a.s.value) ? b : a));
+    for (const p of providers) {
+      if (p === best) continue;
+      p.c.score = Math.max(0, Math.round((p.c.score || 0) - contribution(stat, p.s.value)));
+      p.c.redundantMultiplier = [...(p.c.redundantMultiplier || []), { stat, coveredBy: best.c.name }];
+    }
+  }
+  return cands;
 }
 
 // The order the candidate list is shown in AND the order the slots are filled in. The user's own
@@ -367,17 +468,29 @@ function fillSlots(ordered, count) {
   };
 }
 
-// Which of the three pools a candidate belongs to.
-//   'permanent' - never runs out (infiniteDuration: Yaulp, Fury), its own uncapped pool. Checked
-//                 FIRST: a permanent buff is "cast once and forget" regardless of what else it is,
-//                 and it is NOT collapsed against a temp buff of the same category (so Fury, a
-//                 permanent shaman Strength buff, still shows even when Infusion of Spirit -
-//                 higher-tier temp Strength - is in the 14).
+// The owner's mental model (3 Sep): the 14 are the PRE-COMBAT loadout - long buffs you cast in one
+// burst before a fight, then swap loadout to your combat spells. A short buff like Spirit of the
+// Puma (60s) or a limited-proc one like Ward of the Divine belongs with THAT set, not the 14.
+const COMBAT_BUFF_MAX_SEC = 300; // "something like 5 minutes" (the owner)
+const COMBAT_CATEGORIES = new Set(['Combat Innates']);
+function isCombatBuff(cand) {
+  if (cand.infiniteDuration || cand.isSong) return false;
+  if (COMBAT_CATEGORIES.has(cand.category)) return true;
+  return typeof cand.durationSec === 'number' && cand.durationSec > 0 && cand.durationSec <= COMBAT_BUFF_MAX_SEC;
+}
+
+// Which pool a candidate belongs to.
+//   'permanent' - never runs out (infiniteDuration: Yaulp, Fury), its own uncapped pool. NOT
+//                 collapsed against a temp buff of the same category (so Fury still shows even when
+//                 a higher-tier temp Strength buff is in the 14).
 //   'song'      - a bard song (only when Bard is one of the classes), 5-slot symphonic pool
-//   'buff'      - everything else, the 14 spell-buff slots
+//   'combat'    - a short buff (<= 5 min) or a limited-proc combat innate (Puma, Ward of the
+//                 Divine). Cast in a fight, not part of the standing loadout. Own uncapped pool.
+//   'buff'      - everything else, the 14 pre-combat slots
 function poolFor(cand, hasBard) {
   if (cand.infiniteDuration) return 'permanent';
   if (hasBard && cand.isSong) return 'song';
+  if (isCombatBuff(cand)) return 'combat';
   return 'buff';
 }
 
@@ -387,37 +500,44 @@ function poolFor(cand, hasBard) {
 //     songSlots, songOverflow, songCandidates,   // the 5 bard-song slots (empty unless Bard picked)
 //     permanentSlots, permanentOverflow }        // permanent buffs (Yaulp/Fury), no cap
 // `classes` is a list of codes (or {code} objects); `level` is the one shared character level.
-const VALID_PLAYSTYLES = ['balanced', 'melee', 'caster'];
-
-function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines, playstyle, excludedStats } = {}) {
+function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines, excludedStats, excludedBuffs } = {}) {
   const normClasses = normalizeClasses(classes, level);
-  const style = VALID_PLAYSTYLES.includes(playstyle) ? playstyle : 'balanced';
   const excluded = Array.isArray(excludedStats) ? excludedStats.filter((s) => typeof s === 'string') : [];
+  const removed = Array.isArray(excludedBuffs) ? excludedBuffs.filter((s) => typeof s === 'string') : [];
+  const removedSet = new Set(removed.map((n) => n.toLowerCase()));
   const empty = {
     classes: [],
     level: clampLevel(level == null ? DEFAULT_LEVEL : level),
     hasBard: false,
-    playstyle: style,
+    excludedBuffs: [],
     statsKnown: !!spellData,
     stackingKnown: !!(lines || checkStack),
     stackingCoverage: null,
     slots: [], overflow: [], candidates: [],
-    songSlots: [], songOverflow: [], songCandidates: [],
+    songSlots: [], songOverflow: [], songCandidates: [], specialSongs: [],
     permanentSlots: [], permanentOverflow: [],
+    combatSlots: [], combatOverflow: [],
     totals: [],
   };
   if (normClasses.length === 0) return empty;
 
   const hasBard = normClasses.some((c) => c.code === 'BRD');
-  // Fix 11 - the playstyle preset, plus the user's ignored-stats list (hard 0). A per-stat weight
-  // multiplier the injected spellData builds (spellEffects.combinedWeightScale). null when there is
-  // nothing to change - 'balanced' with no ignored stats => all 1s, byte-identical scoring.
+  // The user's ignored-stats list, turned into a per-stat weight of 0 by the injected spellData
+  // (spellEffects.combinedWeightScale). null when nothing is excluded => scoring path untouched,
+  // byte-identical to before. The Balanced/Melee/Caster buttons are presets that write this list
+  // in the renderer, not a separate weighting any more.
   const weightScale =
-    spellData && spellData.weightScale && (style !== 'balanced' || excluded.length)
-      ? spellData.weightScale(style, excluded)
-      : null;
+    spellData && spellData.weightScale && excluded.length ? spellData.weightScale(excluded) : null;
 
-  const raw = candidatesFor(roster || [], normClasses, spellData, weightScale);
+  const rawAll = candidatesFor(roster || [], normClasses, spellData, weightScale);
+  // Buffs the user X'd off the plan (owner, 3 Sep). Dropped from the candidate pool entirely, so
+  // the next-best moves into the freed slot. The Reset button clears the list.
+  const manualDrops = [];
+  const raw = rawAll.filter((c) => {
+    if (!removedSet.has(c.name.toLowerCase())) return true;
+    manualDrops.push({ ...c, reason: 'you removed it', beatenBy: [] });
+    return false;
+  });
   const pool = (c) => poolFor(c, hasBard);
 
   // Collapse each stacking LINE to its single best castable tier BEFORE the permanent/temp split.
@@ -441,8 +561,34 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     pooledRaw = raw.filter((c) => {
       const line = lines.lineForName(c.name);
       if (!line || bestByLine.get(line.id) === c) return true;
-      lineDrops.push({ ...c, reason: `${bestByLine.get(line.id).name} is the higher tier` });
+      const best = bestByLine.get(line.id).name;
+      lineDrops.push({ ...c, reason: `${best} is the higher tier`, beatenBy: [best] });
       return false;
+    });
+  }
+
+  // A haste / cast-speed buff that isn't the strongest source loses that stat's weight (EQ applies
+  // one haste source at a time). Runs on the whole pooled set BEFORE the pool split and every
+  // resolve/order pass, so the discounted score is what slot competition and Fix 7 see.
+  if (spellData && spellData.multiplierStats) {
+    discountRedundantMultipliers(pooledRaw, spellData.multiplierStats, weightScale);
+  }
+
+  // A buff/song whose every SCORED stat is one the user turned off is doing nothing for this build
+  // (owner, 3 Sep: "frenzied strength is showing under caster buffs, even though it's a melee buff
+  // only"). Drop it - re-ticking the stat brings it back. Resist / rune stats can't be excluded, so
+  // a resist buff always keeps a live stat; a buff with no scored stat at all (a pure proc) is left
+  // alone here - the Combat pool is uncapped and score is only its display order there.
+  const excludedSet = new Set(excluded);
+  const zeroedDrops = [];
+  if (excludedSet.size) {
+    pooledRaw = pooledRaw.filter((c) => {
+      const scored = (c.stats || []).filter((s) => s.value);
+      if (scored.length && scored.every((s) => excludedSet.has(s.stat))) {
+        zeroedDrops.push({ ...c, reason: 'every stat it gives is turned off for this preset', beatenBy: [] });
+        return false;
+      }
+      return true;
     });
   }
 
@@ -452,30 +598,106 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   // the 14). Resolving them in the same heading walk as the temp buffs was throwing Fury away as
   // "Rage is the higher tier".
   const permRaw = pooledRaw.filter((c) => pool(c) === 'permanent');
-  const tempRaw = pooledRaw.filter((c) => pool(c) !== 'permanent');
+  const combatRaw = pooledRaw.filter((c) => pool(c) === 'combat');
+  const tempRaw = pooledRaw.filter((c) => pool(c) !== 'permanent' && pool(c) !== 'combat');
 
-  // ONE resolution across the temp spell-buff + bard-song pools together (bard songs claim the same
-  // shared headings as spell buffs where they overlap - haste, run speed - and their own private
-  // headings elsewhere), THEN split into pools for the slot caps.
+  // ONE resolution across the pre-combat spell-buff + bard-song pools together (bard songs claim
+  // the same shared headings where they overlap - haste, run speed - and their own private
+  // headings elsewhere), THEN split for the slot caps. Permanent and combat buffs are resolved on
+  // their OWN - they're a different loadout you swap to, so a short combat Strength proc does not
+  // fight the standing Strength buff for a slot.
   const resolved = resolveByHeadings(tempRaw, priorityOrder, lines, checkStack);
   const resolvedPerm = resolveByHeadings(permRaw, priorityOrder, lines, checkStack);
+  const resolvedCombat = resolveByHeadings(combatRaw, priorityOrder, lines, checkStack);
+  const crossPoolDrops = [];
   const dropped = (which) =>
     (which === 'permanent'
       ? resolvedPerm.dropped
-      : resolved.dropped.filter((c) => pool(c) === which)
-    ).concat(lineDrops.filter((c) => pool(c) === which));
+      : which === 'combat'
+        ? resolvedCombat.dropped
+        : resolved.dropped.filter((c) => pool(c) === which)
+    )
+      .concat(lineDrops.filter((c) => pool(c) === which))
+      .concat(zeroedDrops.filter((c) => pool(c) === which))
+      .concat(crossPoolDrops.filter((c) => pool(c) === which))
+      .concat(manualDrops.filter((c) => pool(c) === which));
   const keptOrdered = orderCandidates(resolved.kept, priorityOrder);
 
   const songCands = keptOrdered.filter((c) => pool(c) === 'song');
   const buffCands = keptOrdered.filter((c) => pool(c) === 'buff');
-  const permCands = orderCandidates(resolvedPerm.kept, priorityOrder);
 
   const buffs = fillSlots(buffCands, SLOT_COUNT);
   const songs = fillSlots(songCands, SONG_SLOT_COUNT);
 
+  // The permanent and combat pools are resolved on their own so a Puma-style PROC still shows next
+  // to a standing stat buff - a proc does not conflict in the stacking model. But a REAL same-slot
+  // clash with a buff that took one of the 14 does matter (owner, 3 Sep: Frenzied Strength shows in
+  // the combat pool while the log says "did not take hold. (Blocked by Strength.)"). Drop a
+  // permanent/combat buff the model says is blocked by, or would overwrite, a slotted-14 buff.
+  const clashWith14 = (c) => {
+    for (const placed of buffs.slots) {
+      if (lines) {
+        const d = lines.stackDecision(c.name, placed.name);
+        if (d === 'blocked' || d === 'overwrites') return placed.name;
+      }
+      if (checkStack && c.spellId != null && placed.spellId != null) {
+        const v = checkStack(placed.spellId, c.spellId);
+        if (v && v.conflict) return placed.name;
+      }
+    }
+    return null;
+  };
+  const dropClashes = (cands) =>
+    cands.filter((c) => {
+      const clash = clashWith14(c);
+      if (clash) {
+        crossPoolDrops.push({ ...c, reason: `blocked by ${clash}, which is in your 14`, beatenBy: [clash] });
+        return false;
+      }
+      return true;
+    });
+  const permCands = dropClashes(orderCandidates(resolvedPerm.kept, priorityOrder));
+  const combatCands = dropClashes(orderCandidates(resolvedCombat.kept, priorityOrder));
+
+  // "Why this one?" - for the tooltip on a slotted buff. Every dropped buff carries `beatenBy` (the
+  // name(s) of the buff(s) that displaced it) + a `reason`; invert that so each winner knows the
+  // buffs it beat. VoV keeping the haste slot over Alacrity shows up here as VoV.beat = [Alacrity].
+  const allDrops = [
+    ...resolved.dropped,
+    ...resolvedPerm.dropped,
+    ...resolvedCombat.dropped,
+    ...lineDrops,
+    ...zeroedDrops,
+    ...crossPoolDrops,
+    ...manualDrops,
+    ...buffs.overflow,
+    ...songs.overflow,
+  ];
+  const beatMap = new Map(); // winner name (lower) -> [{ name, reason, stats, score, combo }]
+  for (const d of allDrops) {
+    for (const winner of d.beatenBy || []) {
+      const key = winner.toLowerCase();
+      if (!beatMap.has(key)) beatMap.set(key, []);
+      beatMap.get(key).push({
+        name: d.name,
+        reason: d.reason,
+        stats: d.stats || [],
+        score: d.score,
+        combo: d.combo || null,
+        stackWhy: d.stackWhy || null,
+        redundantMultiplier: d.redundantMultiplier || null,
+      });
+    }
+  }
+  const withBeat = (list) => list.map((c) => ({ ...c, beat: beatMap.get(c.name.toLowerCase()) || [] }));
+  buffs.slots = withBeat(buffs.slots);
+  songs.slots = withBeat(songs.slots);
+  const permSlots = withBeat(permCands);
+  const combatSlots = withBeat(combatCands);
+
   // Fix 3 - coverage over the buffs that actually take a slot. `lineKnown` was tagged in
   // resolveByHeadings. Null when the fallback path ran (no `lines`), which `stackingKnown` covers.
-  const slotted = [...buffs.slots, ...songs.slots, ...permCands];
+  const slotted = [...buffs.slots, ...songs.slots, ...permSlots];
   const stackingCoverage =
     lines && slotted.length
       ? { known: slotted.filter((c) => c.lineKnown).length, total: slotted.length }
@@ -485,10 +707,11 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     classes: normClasses,
     level: normClasses[0].level,
     hasBard,
-    playstyle: style,
+    specialSongs: hasBard ? specialSongsFor(roster || [], normClasses) : [],
     excludedStats: excluded,
+    excludedBuffs: removed,
     statsKnown: !!spellData,
-    stackingKnown: !resolved.approximate && !resolvedPerm.approximate,
+    stackingKnown: !resolved.approximate && !resolvedPerm.approximate && !resolvedCombat.approximate,
     stackingCoverage,
     slots: buffs.slots,
     overflow: [...buffs.overflow, ...dropped('buff')],
@@ -496,14 +719,19 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     songSlots: songs.slots,
     songOverflow: [...songs.overflow, ...dropped('song')],
     songCandidates: songCands,
-    permanentSlots: permCands,
+    permanentSlots: permSlots,
     permanentOverflow: dropped('permanent'),
-    totals: sumStats([buffs.slots, songs.slots, permCands], spellData && spellData.multiplierStats),
+    // The combat / burst-swap loadout - short buffs (<= 5 min) and limited-proc combat innates
+    // (Puma, Ward of the Divine). Own uncapped pool; NOT in `totals` (not part of the standing 14).
+    combatSlots,
+    combatOverflow: dropped('combat'),
+    totals: sumStats([buffs.slots, songs.slots, permSlots], spellData && spellData.multiplierStats),
   };
 }
 
 module.exports = {
   computePlan,
+  discountRedundantMultipliers,
   normalizeClasses,
   normalizeClassCodes,
   parseSpellClasses,
@@ -514,6 +742,5 @@ module.exports = {
   DEFAULT_LEVEL,
   MAX_CHARACTER_LEVEL,
   VALID_CLASSES,
-  VALID_PLAYSTYLES,
   PLAYER_TARGETS,
 };

@@ -262,24 +262,6 @@ body {
   font-weight: 600;
 }
 
-/* About > What's changed (QOL #18). */
-.changelog-version {
-  margin: 14px 0 4px;
-  color: var(--ink);
-  font-size: 13px;
-}
-.changelog-version:first-child { margin-top: 0; }
-.changelog-label {
-  margin: 6px 0 2px;
-  font-weight: 600;
-  color: var(--ink-mut);
-}
-.changelog-list {
-  margin: 0 0 6px;
-  padding-left: 18px;
-}
-.changelog-list li { margin: 2px 0; }
-
 .master-hide-btn {
   margin-left: auto;
   flex-shrink: 0;
@@ -465,6 +447,20 @@ body {
   font-weight: 700;
   line-height: 16px;
   text-align: center;
+}
+
+/* A small "still finding its feet" marker on a nav button (Buff Planner). */
+.nav-exp-tag {
+  margin-left: auto;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 14px;
 }
 
 /* initModules() injects the custom-module nav buttons inside this wrapper. `display: contents`
@@ -1004,6 +1000,40 @@ dd::after {
   margin-top: 6px;
 }
 
+/* Buff Planner result sections - each a <details class="card planner-acc">, closed by default. */
+.planner-acc > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+.planner-acc > summary::-webkit-details-marker {
+  display: none;
+}
+.planner-acc > summary::before {
+  content: '▸';
+  color: var(--accent);
+  font-size: 12px;
+  transition: transform 0.12s ease;
+}
+.planner-acc[open] > summary::before {
+  transform: rotate(90deg);
+}
+.planner-acc > summary h3 {
+  margin: 0;
+}
+.planner-acc > summary:hover h3 {
+  color: var(--accent);
+}
+.planner-acc[open] > summary {
+  margin-bottom: 10px;
+}
+.planner-acc > summary .planner-priority-head {
+  flex: 1;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -1152,12 +1182,6 @@ h4 {
   color: var(--accent);
 }
 
-#add-widget-choices {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .add-widget-choice {
   display: flex;
   flex-direction: column;
@@ -1201,6 +1225,23 @@ h4 {
   overflow-y: auto;
   min-height: 0;
   flex: 1;
+}
+
+#add-widget-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Category headings on the Add Aura choices screen (owner, 3 Sep - five buttons, three headings). */
+.add-widget-cat {
+  margin: 12px 0 2px;
+  font-size: 12px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.add-widget-cat:first-child {
+  margin-top: 0;
 }
 
 .add-widget-back {
@@ -2412,9 +2453,11 @@ body.sidebar-resizing .sidebar {
   flex-wrap: wrap;
   gap: 5px;
 }
+/* "Count stats" toggles: the default (counted) state is a filled brass pill; un-ticking one
+   (`.excluded` - it scores nothing) drops it to a dashed, struck-through, dimmed outline. */
 .planner-stat-chip {
-  background: transparent;
-  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid var(--accent);
   color: var(--ink);
   padding: 2px 9px;
   border-radius: 999px;
@@ -2427,12 +2470,12 @@ body.sidebar-resizing .sidebar {
   border-color: var(--accent);
   color: var(--accent);
 }
-/* Ignored: this stat scores nothing. Struck through + dimmed - the opposite signal to the brass
-   "active" fill used elsewhere, because here the highlighted state is the OFF state. */
 .planner-stat-chip.excluded {
+  background: transparent;
+  border-color: var(--line);
+  border-style: dashed;
   text-decoration: line-through;
   opacity: 0.45;
-  border-style: dashed;
 }
 .planner-stat-chip.excluded:hover {
   opacity: 0.7;
@@ -2474,6 +2517,33 @@ body.sidebar-resizing .sidebar {
 .planner-slot-list .planner-buff-row {
   margin-left: 2px;
 }
+/* The X on a slotted row - removes that buff from the plan. */
+.planner-buff-x {
+  margin-left: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--ink-dim);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.planner-buff-x:hover {
+  color: var(--bad, #e06c6c);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+/* A pinned "special" song (Amplification) - not one of the 5, so it gets its own look: a solid
+   accent border and a left accent bar. */
+.planner-buff-special {
+  border: 1px solid var(--accent);
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel-2));
+}
+.planner-buff-special .planner-buff-meta {
+  font-style: italic;
+}
 .planner-draggable {
   cursor: grab;
 }
@@ -2497,11 +2567,22 @@ body.sidebar-resizing .sidebar {
   color: var(--ink-dim);
   font-size: 11px;
 }
+/* Was `flex: 0 0 auto`, which let a long "conflicts with A + B + C ..." reason demand its full
+   width and crush the name column to one word per line. Now it shrinks and ellipsizes; the full
+   text is on the row's title (hover). */
 .planner-buff-reason {
   color: var(--ink-faint);
   font-size: 11px;
   font-style: italic;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+.planner-buff-has-why {
+  cursor: help;
 }
 .planner-song-list,
 .planner-permanent-list {

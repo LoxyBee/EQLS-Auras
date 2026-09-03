@@ -64,43 +64,8 @@ async function init() {
   if (window.eqTracker.onModulesChanged) window.eqTracker.onModulesChanged(refreshModuleRegistry);
   initBuffPlanner();
   initLoggingWatch();
-  initChangelog();
 }
 
-// Backlog #18 - the "What's changed" list on the About page, from src/shared/data/changelog.js
-// (Documentation maintains the content; this just renders it).
-function initChangelog() {
-  const el = document.getElementById('changelog-body');
-  if (!el) return;
-  window.eqTracker.getChangelog().then((entries) => {
-    el.textContent = '';
-    if (!Array.isArray(entries) || !entries.length) {
-      el.textContent = 'Nothing recorded yet.';
-      return;
-    }
-    for (const entry of entries) {
-      const h = document.createElement('h4');
-      h.className = 'changelog-version';
-      h.textContent = entry.date ? `${entry.version} — ${entry.date}` : entry.version;
-      el.appendChild(h);
-      for (const [label, items] of [['New', entry.new], ['Fixes', entry.fixes]]) {
-        if (!Array.isArray(items) || !items.length) continue;
-        const lbl = document.createElement('p');
-        lbl.className = 'changelog-label';
-        lbl.textContent = label;
-        el.appendChild(lbl);
-        const ul = document.createElement('ul');
-        ul.className = 'changelog-list';
-        for (const it of items) {
-          const li = document.createElement('li');
-          li.textContent = it;
-          ul.appendChild(li);
-        }
-        el.appendChild(ul);
-      }
-    }
-  }).catch(() => { el.textContent = 'Could not load the changelog.'; });
-}
 
 // "EverQuest is running but not writing to its log" - main decides, this shows the in-app modal.
 function initLoggingWatch() {
@@ -919,16 +884,6 @@ function initDetectionSettingsPanel() {
   });
   useCastTimeFilterCheckbox.addEventListener('change', () => {
     window.eqTracker.setUseCastTimeFilter(useCastTimeFilterCheckbox.checked);
-  });
-
-  // Off by default - see buffEngine.js's constructor comment on useStackingModel. Independent
-  // toggle from the two above, so any of the three can be reverted without touching the others.
-  const useStackingModelCheckbox = document.getElementById('use-stacking-model-checkbox');
-  window.eqTracker.getUseStackingModel().then((enabled) => {
-    useStackingModelCheckbox.checked = !!enabled;
-  });
-  useStackingModelCheckbox.addEventListener('change', () => {
-    window.eqTracker.setUseStackingModel(useStackingModelCheckbox.checked);
   });
 
   const loadoutLabelCheckbox = document.getElementById('loadout-label-checkbox');
@@ -1766,6 +1721,8 @@ function initWidgetsPanel() {
   const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
   const mergeRowEl = document.getElementById('widget-merge-row');
+  const hideInfiniteCheckbox = document.getElementById('widget-hide-infinite-checkbox');
+  const hideInfiniteRowEl = document.getElementById('widget-hide-infinite-row');
   const mergeHintEl = document.getElementById('widget-merge-hint');
   const sortOrderRowEl = document.getElementById('widget-sort-order-row');
   const opacityRowEl = document.getElementById('widget-opacity-row');
@@ -1881,6 +1838,8 @@ function initWidgetsPanel() {
   const openAddWidgetBtn = document.getElementById('open-add-widget-modal-btn');
   const addWidgetModalBackdrop = document.getElementById('add-widget-modal-backdrop');
   const closeAddWidgetModalBtn = document.getElementById('close-add-widget-modal');
+  // Add Aura: a choices screen (five buttons under three headed categories) and one panel per
+  // button. #add-widget-buff-timer-panel is a step further in - reached from a premade-list row.
   const addWidgetChoicesEl = document.getElementById('add-widget-choices');
   const addWidgetPanels = document.querySelectorAll('.add-widget-panel');
   const addWidgetBackBtns = document.querySelectorAll('.add-widget-back');
@@ -1888,8 +1847,8 @@ function initWidgetsPanel() {
   const importBtn = document.getElementById('modal-import-widget-btn');
   const importStatus = document.getElementById('modal-import-widget-status');
   const premadeListEl = document.getElementById('add-widget-premade-list');
+  const toolsListEl = document.getElementById('add-widget-tools-list');
   const modalAddTextWidgetBtn = document.getElementById('modal-add-text-widget-btn');
-  const modalNewWidgetNameInput = document.getElementById('modal-new-widget-name');
   const modalAddBuffWidgetBtn = document.getElementById('modal-add-buff-widget-btn');
   const modalAddTimerWidgetBtn = document.getElementById('modal-add-timer-widget-btn');
 
@@ -3176,6 +3135,8 @@ function initWidgetsPanel() {
     // so there is never anything to merge.
     mergeRowEl.style.display = has('merge') ? '' : 'none';
     mergeHintEl.style.display = has('merge') ? '' : 'none';
+    // Same set of auras as merge (a countdown buff list) - a permanent buff is only ever a tile here.
+    hideInfiniteRowEl.style.display = has('merge') ? '' : 'none';
     // A sound aura draws no tile to put an edge on. A text aura draws one, but it is a plate of
     // words rather than a spell tile, and giving it a spell-type edge would be the first thing on
     // screen the mode promised never to draw.
@@ -3304,6 +3265,7 @@ function initWidgetsPanel() {
     landingGlowCheckbox.checked = widget.landingGlowEnabled !== false;
     if (timerColorRampCheckbox) timerColorRampCheckbox.checked = !!widget.timerColorRamp;
     mergeCheckbox.checked = !!widget.mergeSameDuration;
+    hideInfiniteCheckbox.checked = !!widget.hideInfiniteBuffs;
     categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
     const borderWidth = typeof widget.categoryBorderWidthPx === 'number' ? widget.categoryBorderWidthPx : 1;
     borderWidthSlider.value = String(borderWidth);
@@ -4349,13 +4311,12 @@ function initWidgetsPanel() {
     // The rest of the roadmap, shown in the app rather than only in docs/QOL-BACKLOG.md. Listing something
     // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
     // it looks to anyone using the app who did not write it.
-    {
-      name: 'Aggro Board',
-      group: 'standalone',
-      description:
-        'Who the mob is swinging at, and who is next in line. Locked while its raid-boss mob ' +
-        'reading is reworked.',
-    },
+    //
+    // Aggro Board: pulled from the list entirely (owner, 3 Sep) - not even a "Planned" placeholder
+    // while its raid-mob parsing is reworked. The module (modules/aggro-board.js) stays loaded and
+    // parsing so its tests run; it's just unreachable from Add Aura (also still in
+    // LOCKED_MODULE_AURAS). Restore this entry to bring the placeholder back.
+    //   { name: 'Aggro Board', group: 'standalone', description: '...' },
   ];
 
   // ---- The buff-timer premade (note 14) --------------------------------------------------
@@ -4630,7 +4591,7 @@ function initWidgetsPanel() {
     { id: 'standalone', title: 'Standalone tools', hint: 'Their own kind of aura, with behaviour the custom settings cannot produce.' },
   ];
 
-  function renderPremadeGroupHeading(group) {
+  function renderPremadeGroupHeading(group, targetEl) {
     const li = document.createElement('li');
     li.className = 'premade-group-heading';
     const title = document.createElement('strong');
@@ -4638,7 +4599,7 @@ function initWidgetsPanel() {
     const hint = document.createElement('span');
     hint.textContent = group.hint;
     li.append(title, hint);
-    premadeListEl.appendChild(li);
+    targetEl.appendChild(li);
   }
 
   // feat/module-system - custom modules with `hasAura` become Standalone-tools entries in the Add
@@ -4682,21 +4643,26 @@ function initWidgetsPanel() {
     // to PREMADE_WIDGETS and it was easy to forget to remove the matching PLANNED one. Filtered
     // rather than merely tested, so the app is right even if someone adds a premade without
     // reading the test.
+    toolsListEl.innerHTML = '';
     const builtNames = new Set(PREMADE_WIDGETS.map((p) => p.name));
     const stillPlanned = PLANNED_PREMADE_WIDGETS.filter((p) => !builtNames.has(p.name));
+    // "Standalone tools" is its own top-level Add Aura category now (owner, 3 Sep) - it renders
+    // into #add-widget-tools-list, the Timers / Event alerts groups into #add-widget-premade-list.
     for (const group of PREMADE_GROUPS) {
+      const targetEl = group.id === 'standalone' ? toolsListEl : premadeListEl;
+      const withHeading = group.id !== 'standalone'; // the tools panel is already all one category
       const built = PREMADE_WIDGETS.filter((p) => p.group === group.id);
       const modChoices = group.id === 'standalone' ? moduleAuraChoices : [];
       const planned = stillPlanned.filter((p) => p.group === group.id);
       if (!built.length && !modChoices.length && !planned.length) continue;
-      renderPremadeGroupHeading(group);
-      for (const premade of built) renderPremadeChoice(premade);
-      for (const premade of modChoices) renderPremadeChoice(premade);
-      for (const premade of planned) renderPremadeChoice(premade, true);
+      if (withHeading) renderPremadeGroupHeading(group, targetEl);
+      for (const premade of built) renderPremadeChoice(premade, false, targetEl);
+      for (const premade of modChoices) renderPremadeChoice(premade, false, targetEl);
+      for (const premade of planned) renderPremadeChoice(premade, true, targetEl);
     }
   }
 
-  function renderPremadeChoice(premade, planned = false) {
+  function renderPremadeChoice(premade, planned = false, targetEl = premadeListEl) {
     const li = document.createElement('li');
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -4740,7 +4706,7 @@ function initWidgetsPanel() {
       });
     }
     li.appendChild(btn);
-    premadeListEl.appendChild(li);
+    targetEl.appendChild(li);
   }
 
   function showAddWidgetChoices() {
@@ -4748,13 +4714,8 @@ function initWidgetsPanel() {
     addWidgetPanels.forEach((panel) => (panel.style.display = 'none'));
   }
 
-  // Reported live 25 Aug: "when on this menu and hitting back, it sends you two screens back
-  // instead of 1." Root cause - every .add-widget-back button, no matter which panel it lives in,
-  // called the SAME showAddWidgetChoices() above. That's correct for a panel reached directly from
-  // Choices (import/chat/premade-list/custom), but the buff-timer panel (Buff timer/Cooldown
-  // timer/Debuff on an enemy - reached by clicking one of THOSE from the premade list, one screen
-  // further in) has its own back button too, and it was skipping the premade list entirely and
-  // jumping straight to Choices. This is that panel's real "one step back."
+  // The buff-timer panel (Buff timer / Cooldown timer / Debuff on an enemy) is reached FROM the
+  // premade list, one screen further in, so its Back button returns to that list, not to Choices.
   function showAddWidgetPremadePanel() {
     addWidgetChoicesEl.style.display = 'none';
     addWidgetPanels.forEach((panel) => {
@@ -4817,7 +4778,6 @@ function initWidgetsPanel() {
     showAddWidgetChoices();
     importCodeInput.value = '';
     importStatus.textContent = '';
-    modalNewWidgetNameInput.value = '';
     renderPremadeList();
     // Re-pull the module list on open so a just-dropped module shows up here; the registry
     // subscriber above rebuilds moduleAuraChoices and re-renders the list when it lands.
@@ -4834,10 +4794,8 @@ function initWidgetsPanel() {
   addWidgetModalBackdrop.addEventListener('click', (e) => {
     if (e.target === addWidgetModalBackdrop) closeAddWidgetModal();
   });
-  // The buff-timer panel's own back button goes to the premade list it was opened from, not all
-  // the way to Choices - see showAddWidgetPremadePanel's own comment. Every other panel (import,
-  // chat, premade list, custom) was reached directly from Choices, so Choices is correctly their
-  // one step back.
+  // Every .add-widget-back goes to Choices, except the buff-timer panel's - that one was reached
+  // from the premade list, so it goes back there.
   const buffTimerBackBtn = document.querySelector('#add-widget-buff-timer-panel .add-widget-back');
   addWidgetBackBtns.forEach((btn) => {
     btn.addEventListener('click', () => (btn === buffTimerBackBtn ? showAddWidgetPremadePanel() : showAddWidgetChoices()));
@@ -4849,21 +4807,15 @@ function initWidgetsPanel() {
       addWidgetPanels.forEach((panel) => {
         panel.style.display = panel.id === `add-widget-${btn.dataset.choice}-panel` ? '' : 'none';
       });
-      if (btn.dataset.choice === 'custom') modalNewWidgetNameInput.focus();
-      else if (btn.dataset.choice === 'import') importCodeInput.focus();
+      if (btn.dataset.choice === 'import') importCodeInput.focus();
       else if (btn.dataset.choice === 'chat') renderChatShareCodeList();
     });
   });
 
-  // The name box is optional, and that is a fix rather than a relaxation.
-  //
-  // Every one of these buttons used to begin `if (!name) return;`, so clicking any aura type
-  // without first typing a name did nothing at all - no aura, no error, no hint that the empty
-  // box above was the reason. Reported as "cannot select any custom debuff; clicking a menu icon
-  // does not create an aura", which is exactly what it looked like from outside. The type is
-  // already a perfectly good name, and every aura can be renamed afterwards.
+  // No name box on the Add Aura panels (owner, 3 Sep) - a new aura is named after its type and
+  // renamed afterward on its settings panel.
   function widgetName(fallback) {
-    return modalNewWidgetNameInput.value.trim() || fallback;
+    return fallback;
   }
 
   // buffSource is undefined here for a plain buff widget (backend defaults
@@ -4893,9 +4845,6 @@ function initWidgetsPanel() {
       closeAddWidgetModal();
       focusWidget(config.id);
     });
-  });
-  modalNewWidgetNameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') addWidget(undefined, 'Custom buff aura');
   });
 
   nameInput.addEventListener('change', () => {
@@ -5200,6 +5149,9 @@ function initWidgetsPanel() {
 
   mergeCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetMergeSameDuration(selectedId, mergeCheckbox.checked).then(refreshWidgets);
+  });
+  hideInfiniteCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetHideInfiniteBuffs(selectedId, hideInfiniteCheckbox.checked).then(refreshWidgets);
   });
   soundLandCheckbox.addEventListener('change', () => {
     syncSoundDisclosure();
@@ -8878,6 +8830,9 @@ function initBuffPlanner() {
   const permCardEl = document.getElementById('planner-permanent-card');
   const permListEl = document.getElementById('planner-permanent-list');
   const permCountEl = document.getElementById('planner-permanent-count');
+  const combatCardEl = document.getElementById('planner-combat-card');
+  const combatListEl = document.getElementById('planner-combat-list');
+  const combatCountEl = document.getElementById('planner-combat-count');
   const priorityListEl = document.getElementById('planner-priority-list');
   const overflowCardEl = document.getElementById('planner-overflow-card');
   const overflowListEl = document.getElementById('planner-overflow-list');
@@ -8886,6 +8841,7 @@ function initBuffPlanner() {
   const stackingStateEl = document.getElementById('planner-stacking-state');
   const activeProfileEl = document.getElementById('planner-active-profile');
   const priorityResetEl = document.getElementById('planner-priority-reset');
+  const buffResetEl = document.getElementById('planner-buff-reset');
   const excludeChipsEl = document.getElementById('planner-exclude-chips');
   if (!classRowEl) return;
 
@@ -8894,8 +8850,24 @@ function initBuffPlanner() {
   let order = []; // buff names, the dragged priority order
   let hasManualOrder = false; // true once the user has dragged (a non-empty saved buffPlanOrder)
   let syncingClasses = false; // true while syncClassSelects pushes values in - suppresses commitClasses
-  let excludedStats = []; // stat names the user has toggled off - weight 0 in the ranking
-  let allStats = []; // every stat name, from the main process (spellEffects.STAT_NAMES)
+  let excludedStats = []; // stat names the user has toggled OFF - weight 0 in the ranking
+  let excludedBuffs = []; // individual buffs the user X'd off the plan
+  let allStats = []; // the stats that get a toggle chip (spellEffects.EXCLUDABLE_STATS - no resists/rune)
+  let presetExcludes = { balanced: [], melee: [], caster: [] }; // Balanced/Melee/Caster -> which stats they un-tick
+
+  // Which preset radio (if any) the current exclusion set matches - Balanced only when nothing is
+  // off. Order-insensitive.
+  function matchingPreset() {
+    const cur = [...excludedStats].sort().join('|');
+    for (const name of ['balanced', 'melee', 'caster']) {
+      if ([...(presetExcludes[name] || [])].sort().join('|') === cur) return name;
+    }
+    return null; // a hand-tweaked set matches no preset
+  }
+  function syncPresetRadio() {
+    const m = matchingPreset();
+    document.querySelectorAll('input[name="planner-playstyle"]').forEach((r) => { r.checked = r.value === m; });
+  }
 
   // One row, three class dropdowns - it's one multiclass character, not three mains, so there is
   // one level (the input above this row) and it applies to all three.
@@ -8947,21 +8919,24 @@ function initBuffPlanner() {
     return out;
   }
 
-  // One toggle chip per stat. Clicking one adds/removes it from `excludedStats` (weight 0 in the
-  // planner's ranking) and recomputes. Rebuilt whenever the stat list or the saved set changes.
+  // One toggle chip per excludable stat (no resists / rune - those always count, at low weight).
+  // A ticked chip counts toward the ranking; clicking un-ticks it (weight 0) and recomputes. The
+  // Balanced/Melee/Caster radios above are shortcuts that set the whole set. Rebuilt whenever the
+  // stat list or the exclusion set changes.
   function buildExcludeChips() {
     if (!excludeChipsEl) return;
     excludeChipsEl.innerHTML = '';
     for (const stat of allStats) {
+      const off = excludedStats.includes(stat);
       const chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = 'planner-stat-chip' + (excludedStats.includes(stat) ? ' excluded' : '');
+      chip.className = 'planner-stat-chip' + (off ? ' excluded' : '');
       chip.textContent = stat;
-      chip.title = excludedStats.includes(stat) ? `${stat} is ignored - click to count it again` : `Ignore ${stat}`;
+      chip.title = off ? `${stat} is not counted - click to count it` : `${stat} counts - click to drop it`;
       chip.addEventListener('click', () => {
-        if (excludedStats.includes(stat)) excludedStats = excludedStats.filter((s) => s !== stat);
-        else excludedStats = [...excludedStats, stat];
+        excludedStats = off ? excludedStats.filter((s) => s !== stat) : [...excludedStats, stat];
         buildExcludeChips();
+        syncPresetRadio();
         window.eqTracker.setPlannerExcludedStats(null, excludedStats).then(recompute);
       });
       excludeChipsEl.appendChild(chip);
@@ -8992,6 +8967,61 @@ function initBuffPlanner() {
     return `${value >= 0 ? '+' : ''}${Math.round(value)} ${label}`;
   }
 
+  // A stat list -> "+50 STR, +45 STA, +55 DEX", strongest first, capped so the tooltip stays sane.
+  function statSummary(stats) {
+    return (stats || [])
+      .slice()
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+      .slice(0, 4)
+      .map((s) => fmtStat(s.stat, s.value))
+      .join(', ');
+  }
+
+  // The full "why is this one in the plan" breakdown, shown on hover over a slotted buff. Lists
+  // every buff it displaced, each with its own stats + score, and - for a combination buff like
+  // Harnessing of Spirit - the blocked-pair breakdown and the score maths that kept the individuals.
+  function whyKeptTooltip(cand) {
+    const mine = statSummary(cand.stats);
+    const head =
+      cand.name +
+      (mine ? ` — ${mine}` : '') +
+      (cand.score != null ? `  (score ${cand.score})` : '');
+    const lines = [head];
+    for (const rm of cand.redundantMultiplier || []) {
+      lines.push(`  ${rm.stat} not counted — ${rm.coveredBy} already gives more (only one ${rm.stat} source applies)`);
+    }
+    lines.push('', 'Kept over:');
+    for (const b of cand.beat) {
+      const bs = statSummary(b.stats);
+      const num = [bs, b.score != null ? `score ${b.score}` : ''].filter(Boolean).join('  ·  ');
+      lines.push(`• ${b.name}${num ? ` — ${num}` : ''}`);
+      for (const rm of b.redundantMultiplier || []) {
+        lines.push(`    ${rm.stat} doesn't count here — ${rm.coveredBy} gives more`);
+      }
+      if (b.combo) {
+        const blocked = b.combo.blocks
+          .map((x) => `${x.name}${x.score != null ? ` (${x.score})` : ''}`)
+          .join(', ');
+        lines.push(`    a combination buff - it would block ${blocked}`);
+        lines.push(
+          `    but those together score ${b.combo.sumScore} vs its ${b.combo.comboScore}, so they stay`
+        );
+      } else {
+        const s = String(b.reason || '');
+        let why;
+        if (b.stackWhy === 'blocked-pair') why = 'confirmed in-game: it did not take hold with this one up';
+        else if (b.stackWhy === 'same-line' || /is the higher tier$/.test(s)) why = 'a lower tier of the same buff line';
+        else if (b.stackWhy === 'cross-class') why = 'a different class’s version of the same buff';
+        else if (b.stackWhy === 'effect-slot') why = 'the same effect slot - only the stronger holds';
+        else if (b.stackWhy === 'shared-slot' || /^(conflicts with|wants the same slot as) /.test(s)) why = 'the same buff slot';
+        else if (/^wouldn't take hold past /.test(s)) why = "it wouldn't take hold with this one up";
+        else why = s;
+        lines.push(`    ${why}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
   function buffRow(cand, opts) {
     opts = opts || {};
     const li = document.createElement('li');
@@ -9004,6 +9034,16 @@ function initBuffPlanner() {
     const name = document.createElement('span');
     name.className = 'planner-buff-name';
     name.textContent = cand.name;
+    // A pinned "special" song (Amplification): no stats, no score - just the name + a note.
+    if (cand.special) {
+      li.classList.add('planner-buff-special');
+      const note = document.createElement('span');
+      note.className = 'planner-buff-meta';
+      note.textContent = cand.note || 'Not scored.';
+      main.append(name, note);
+      li.appendChild(main);
+      return li;
+    }
     const meta = document.createElement('span');
     meta.className = 'planner-buff-meta';
     // Lead with the stat this buff is ranked on (its category's headline), then its other stats in
@@ -9018,7 +9058,10 @@ function initBuffPlanner() {
       .slice(0, 3)
       .map((s) => fmtStat(s.stat, s.value))
       .join('  ');
-    meta.textContent = [statBit, cand.castByClasses.join('/'), extra].filter(Boolean).join(' · ');
+    // No class label per row (owner, 3 Sep) - the classes you picked are at the top of the page.
+    // A bard song leads with its instrument type instead.
+    const instr = cand.songInstrument ? (cand.songInstrument === 'Singing' ? 'Singing' : `${cand.songInstrument} instrument`) : null;
+    meta.textContent = [instr, statBit, extra].filter(Boolean).join(' · ');
     main.append(name, meta);
     li.appendChild(main);
     const reason = opts.reason || (opts.reasonFromItem ? cand.reason : null);
@@ -9027,6 +9070,26 @@ function initBuffPlanner() {
       r.className = 'planner-buff-reason';
       r.textContent = reason;
       li.appendChild(r);
+      li.title = reason; // the full text on hover - the visible one ellipsizes if it's long
+    } else if (Array.isArray(cand.beat) && cand.beat.length) {
+      li.title = whyKeptTooltip(cand);
+      li.classList.add('planner-buff-has-why');
+    } else if (opts.slotted) {
+      li.title = 'Nothing else competes for this slot.';
+    }
+    // An X on every slotted row - removes that buff from the plan and pulls the next one in.
+    if (opts.slotted && !cand.special) {
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'planner-buff-x';
+      x.textContent = '✕';
+      x.title = `Remove ${cand.name}`;
+      x.addEventListener('click', (e) => {
+        e.stopPropagation();
+        excludedBuffs = [...new Set([...excludedBuffs, cand.name])];
+        window.eqTracker.setPlannerExcludedBuffs(null, excludedBuffs).then(recompute);
+      });
+      li.appendChild(x);
     }
     return li;
   }
@@ -9040,18 +9103,9 @@ function initBuffPlanner() {
     const hasClasses = plan.classes.length > 0;
     emptyNoteEl.style.display = hasClasses ? 'none' : '';
     slotCountEl.textContent = String(plan.slots.length);
-    if (!plan.stackingKnown) {
-      stackingStateEl.textContent =
-        'Set your EQ folder on the Setup page so the planner can tell buff tiers apart properly.';
-    } else if (plan.stackingCoverage && plan.stackingCoverage.total) {
-      const { known, total } = plan.stackingCoverage;
-      stackingStateEl.textContent =
-        known >= total
-          ? `Every one of the ${total} is on a stacking line we've mapped.`
-          : `${known} of the ${total} are on a stacking line we've mapped; the rest are a best guess.`;
-    } else {
-      stackingStateEl.textContent = '';
-    }
+    // Only surfaces the one thing the user can act on: point the app at the EQ folder.
+    stackingStateEl.textContent = plan.stackingKnown ? '' : 'Set your EQ folder on the Setup page.';
+    stackingStateEl.style.display = stackingStateEl.textContent ? '' : 'none';
 
     // Total stats across every slotted buff.
     const totals = plan.totals || [];
@@ -9065,18 +9119,27 @@ function initBuffPlanner() {
       totalsEl.appendChild(chip);
     });
 
-    fillList(slotListEl, plan.slots);
+    fillList(slotListEl, plan.slots, { slotted: true });
 
-    // Bard songs - their own 5-slot pool, only when Bard is one of the classes.
+    // Bard songs - their own 5-slot pool, only when Bard is one of the classes. Pinned "special"
+    // songs (Amplification) sit on top and don't count toward the 5.
     songCardEl.style.display = plan.hasBard ? '' : 'none';
     songCountEl.textContent = String((plan.songSlots || []).length);
-    fillList(songListEl, plan.songSlots || []);
+    songListEl.innerHTML = '';
+    (plan.specialSongs || []).forEach((c) => songListEl.appendChild(buffRow(c, { slotted: true })));
+    (plan.songSlots || []).forEach((c) => songListEl.appendChild(buffRow(c, { slotted: true })));
 
     // Permanent buffs (Yaulp/Fury) - shown whenever any qualify.
     const perm = plan.permanentSlots || [];
     permCardEl.style.display = perm.length ? '' : 'none';
     permCountEl.textContent = String(perm.length);
-    fillList(permListEl, perm);
+    fillList(permListEl, perm, { slotted: true });
+
+    // Combat / burst-swap buffs (Puma, Ward of the Divine, anything under 5 min) - their own list.
+    const combat = plan.combatSlots || [];
+    combatCardEl.style.display = combat.length ? '' : 'none';
+    combatCountEl.textContent = String(combat.length);
+    fillList(combatListEl, combat, { slotted: true });
 
     // One priority list covering the buff slots AND the song slots (both are capped, so order
     // matters for both); permanent buffs are uncapped so they aren't in it.
@@ -9092,10 +9155,23 @@ function initBuffPlanner() {
     overflowCountEl.textContent = String(allOverflow.length);
 
     if (priorityResetEl) priorityResetEl.style.display = hasManualOrder ? '' : 'none';
+    excludedBuffs = Array.isArray(plan.excludedBuffs) ? plan.excludedBuffs : excludedBuffs;
+    if (buffResetEl) buffResetEl.style.display = excludedBuffs.length ? '' : 'none';
+  }
+
+  if (buffResetEl) {
+    buffResetEl.addEventListener('click', (e) => {
+      e.preventDefault(); // it lives inside the accordion's <summary>
+      e.stopPropagation();
+      excludedBuffs = [];
+      window.eqTracker.setPlannerExcludedBuffs(null, []).then(recompute);
+    });
   }
 
   if (priorityResetEl) {
-    priorityResetEl.addEventListener('click', () => {
+    priorityResetEl.addEventListener('click', (e) => {
+      e.preventDefault(); // it lives inside the accordion's <summary> - don't toggle the section
+      e.stopPropagation();
       hasManualOrder = false;
       window.eqTracker.setPlannerOrder(null, []).then(recompute);
     });
@@ -9142,11 +9218,15 @@ function initBuffPlanner() {
     });
   }
 
+  // The Balanced/Melee/Caster radios are stat-toggle presets: picking one replaces the whole
+  // exclusion set with that preset's list, then it's just the chips (which the user can adjust).
   const playstyleRadios = document.querySelectorAll('input[name="planner-playstyle"]');
   playstyleRadios.forEach((r) =>
     r.addEventListener('change', () => {
       if (!r.checked) return;
-      window.eqTracker.setPlannerPlaystyle(null, r.value).then(recompute);
+      excludedStats = [...(presetExcludes[r.value] || [])];
+      buildExcludeChips();
+      window.eqTracker.setPlannerExcludedStats(null, excludedStats).then(recompute);
     })
   );
 
@@ -9162,11 +9242,12 @@ function initBuffPlanner() {
         order = Array.isArray(input.buffPlanOrder) ? input.buffPlanOrder : [];
         hasManualOrder = order.length > 0;
         levelInputEl.value = String(level);
-        const style = input.playstyle || 'balanced';
-        playstyleRadios.forEach((r) => { r.checked = r.value === style; });
         excludedStats = Array.isArray(input.excludedStats) ? input.excludedStats : [];
+        excludedBuffs = Array.isArray(input.excludedBuffs) ? input.excludedBuffs : [];
         allStats = Array.isArray(input.allStats) ? input.allStats : [];
+        if (input.presetExcludes) presetExcludes = input.presetExcludes;
         buildExcludeChips();
+        syncPresetRadio();
         const active = profiles.find((p) => p.id === activeId);
         activeProfileEl.textContent = active ? active.name : 'Default';
         buildClassSelects();

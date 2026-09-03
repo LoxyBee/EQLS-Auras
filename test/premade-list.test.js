@@ -69,13 +69,10 @@ test('both lists are found and neither is empty', () => {
   // already asserts the array itself was found, so this is guarding against a bracket scan that
   // finds the array and then extracts no names from it.
   assert.ok(namesIn('PREMADE_WIDGETS').length >= 4, 'no built premades found');
-  // Deliberately 1 and not a larger floor. The roadmap SHRINKS as things get built - Damage parser
-  // and Travel guide both left it on 23 August, taking it from five entries to three - so any
-  // number above one is a countdown to a test that fails for the good reason that the work got
-  // done. If it ever reaches zero, delete this line rather than raising the floor: an empty
-  // roadmap is a real state, and the vacuous-pass risk it guards is handled by namesIn's own
-  // assertion that the array exists.
-  assert.ok(namesIn('PLANNED_PREMADE_WIDGETS').length >= 1, 'no planned premades found');
+  // The roadmap (PLANNED_PREMADE_WIDGETS) is now EMPTY - Aggro Board, its last entry, was pulled
+  // 3 Sep at the owner's request. An empty roadmap is a real state (the comment that used to be
+  // here always said so); namesIn already asserts the array exists, so there's no vacuous-pass
+  // risk to floor against.
 });
 
 test('nothing appears in both the built list and the roadmap', () => {
@@ -105,10 +102,9 @@ test('no premade name is duplicated within its own list', () => {
 
 test('every roadmap entry says it is not built', () => {
   // The greyed-out styling carries the meaning on screen; the words have to carry it too, or a
-  // roadmap entry reads as a feature that is simply not working.
+  // roadmap entry reads as a feature that is simply not working. (The roadmap is empty right now -
+  // this check applies to whatever gets added back to it.)
   const entries = entriesIn('PLANNED_PREMADE_WIDGETS');
-  // Same reasoning as the floor above - the roadmap shrinks as the roadmap gets built.
-  assert.ok(entries.length >= 1, `only split the roadmap into ${entries.length} entries`);
   assert.equal(
     entries.length,
     namesIn('PLANNED_PREMADE_WIDGETS').length,

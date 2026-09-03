@@ -1,13 +1,17 @@
 # Buff stacking rules — reference for the Buff Planner
 
-**Status: wired into code (26 Aug).** The heading model in this doc is implemented as
-`src/shared/data/buff-lines.json` (the data) + `src/shared/buffLines.js` (the module,
-`stackDecision`). Both the Buff Planner (`buffPlanner.js`'s `resolveByHeadings`) and the Self Buffs
-overlay stale-tile removal (`buffEngine.js`'s `lineStackFn` path) resolve conflicts through it,
-falling back to `spellStacking.checkOverwrite` only for pairs no line covers (`'unknown'`).
-`buff-lines.json` currently defines CLR / SHM / BRD / ENC / DRU lines plus the universal resist
-lines; other classes still fall through to `checkOverwrite`. This doc stays the spec for filling
-in the rest.
+**Status: wired into code (26 Aug); fallback rebuilt on the ported engine (2 Sep).** The heading
+model in this doc is implemented as `src/shared/data/buff-lines.json` (the data) +
+`src/shared/buffLines.js` (the module, `stackDecision`). Both the Buff Planner (`buffPlanner.js`'s
+`resolveByHeadings`) and the Self Buffs overlay stale-tile removal (`buffEngine.js`'s `lineStackFn`
+path) resolve conflicts through it, falling back — for pairs no line covers (`'unknown'`), and for
+a weak `coexist` with no explicit `stacksWith` link — to the full EQEmu `CheckStackConflict` port
+(`src/shared/spellStackingEngine.js`, bound to the roster by `src/main/stackingService.js`,
+parity-verified 100% over 6.75M verdicts). This replaced the old `spellStacking.checkOverwrite`
+effect-slot heuristic, which is deleted. `buff-lines.json` currently defines CLR / SHM / BRD / ENC
+/ DRU lines plus the universal resist lines; other classes fall through to the ported engine. This
+doc stays the spec for filling in the rest. **The mentions of `spellStacking.checkOverwrite`
+further down are historical design notes — read "the ported engine" for them.**
 
 Grounded in the **EQ Legends** spell data and one of the owner's own gameplay logs, cross-checked
 against classic-EQ community documentation. Corrections from the owner (27 Aug) are marked **[OWNER]**.

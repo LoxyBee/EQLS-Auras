@@ -53,6 +53,83 @@ const F_NAME = 1;
 const F_CAST_MS = 8;
 const F_RECAST_MS = 10;
 const F_ICON = 75;
+// Fields the buff-stacking engine (src/shared/spellStackingEngine.js) needs, all confirmed against
+// a published EQL field catalog AND verified 1061/1061 against its parsed values (see memory:
+// project_full_stacking_engine_port).
+const F_BUFF_DUR_FORMULA = 11;
+const F_BUFF_DUR = 12;
+const F_GOOD_EFFECT = 28;
+const F_TARGET_TYPE = 30;
+const F_UNSTACKABLE_DOT = 79;
+const F_IS_DISCIPLINE = 98;
+const F_CLASSES = 36; // 16-wide; bard's own required level is at 36+7 = 43 (< 255 => bard can cast)
+const F_BARD_LEVEL = F_CLASSES + 7;
+// Field 32 is the EQ skill enum. For a bard song its value is the instrument type (verified against
+// the owner's real spells_us.txt - EQL's assignments differ from classic EQ, so this is READ, not
+// hand-mapped from memory). All 61 bard-castable songs land on one of these five.
+const F_SKILL = 32;
+const SONG_INSTRUMENT = { 12: 'Brass', 41: 'Singing', 49: 'Stringed', 54: 'Wind', 70: 'Percussion' };
+const STACK_EFFECT_COUNT = 12;
+const SPA_BLANK = 254;
+
+// The trailing effect block: `slot|spa|base|limit|formula|max` segments, `$`-separated, and the
+// slot numbers are 1-INDEXED here (the stacking engine is 0-indexed - shift down). Returns the
+// sparse non-blank slots as ONE string `"slot0,spa,base,limit,formula,max;slot0,..."` - a coded
+// string because there's no readable form of raw effect data (slot / effect-id / magnitude /
+// formula) that isn't 20+ pretty-printed lines per spell, and no human edits this. The seven
+// SCALARS beside it (goodEffect, targetType, ...) stay as their own named fields so the roster is
+// still legible. spellStackingEngine.spellView parses this shape.
+function parseStackEffects(fields) {
+  const tail = Array.isArray(fields) ? fields[fields.length - 1] : null;
+  if (typeof tail !== 'string' || tail.indexOf('|') === -1) return '';
+  const out = [];
+  for (const seg of tail.split('$')) {
+    const e = seg.split('|').map(Number);
+    if (e.length !== 6 || !Number.isFinite(e[0])) continue;
+    const slot0 = e[0] - 1;
+    if (slot0 < 0 || slot0 >= STACK_EFFECT_COUNT) continue;
+    // Blank (SPA 254) and the CHA "spacer" (SPA 10, base 0, formula 100) carry no effect - the
+    // engine's isBlankSlot ignores them anyway, so leave them out. The 148/149 stacking directives
+    // ARE kept: the engine's directive branch needs them present.
+    if (e[1] === SPA_BLANK) continue;
+    if (e[1] === 10 && e[2] === 0 && e[4] === 100) continue;
+    out.push([slot0, e[1], e[2], e[3], e[4], e[5]].join(','));
+  }
+  return out.join(';');
+}
+
+// The per-spell stacking fields, written onto every roster entry that matches a client spell. The
+// seven scalars are their own NAMED fields so the roster stays legible; `stackEffects` is the one
+// coded string (raw slot data - no readable form, see parseStackEffects). `bardCastable` is
+// "bard can cast this at all" (field 43 < 255), which is NOT the same as the roster's tagged
+// `isBardSong` (bard-ONLY) - the engine needs the wider one for its bard-pool branch.
+const STACK_KEYS = [
+  'stackEffects', 'goodEffect', 'targetType', 'buffDurationFormula',
+  'buffDuration', 'unstackableDot', 'isDiscipline', 'bardCastable', 'songInstrument',
+];
+// Fields build-roster re-derives every run - cleared off each entry first so a rename or format
+// change doesn't strand the old ones on entries carried over from the previous buffs.json.
+const DERIVED_KEYS = [...STACK_KEYS, 'stack'];
+function stackFields(fields) {
+  return {
+    stackEffects: parseStackEffects(fields) || undefined,
+    goodEffect: Number(fields[F_GOOD_EFFECT]) || 0,
+    targetType: Number(fields[F_TARGET_TYPE]) || 0,
+    buffDurationFormula: Number(fields[F_BUFF_DUR_FORMULA]) || 0,
+    buffDuration: Number(fields[F_BUFF_DUR]) || 0,
+    unstackableDot: Number(fields[F_UNSTACKABLE_DOT]) ? 1 : 0,
+    isDiscipline: Number(fields[F_IS_DISCIPLINE]) ? 1 : 0,
+    bardCastable: Number(fields[F_BARD_LEVEL]) < 255 ? 1 : 0,
+    // Instrument type - only meaningful for a bard song, so only set when the bard can cast it.
+    songInstrument:
+      Number(fields[F_BARD_LEVEL]) < 255 ? SONG_INSTRUMENT[Number(fields[F_SKILL])] || undefined : undefined,
+  };
+}
+const pick = (obj, keys) => {
+  const out = {};
+  for (const k of keys) if (k in obj) out[k] = obj[k];
+  return out;
+};
 
 // spells_us_str.txt - the file names these itself in its header row.
 const S_ID = 0;
@@ -118,6 +195,7 @@ function buildAddedEntries(overrides, { spellByName, strById }, existingNames = 
       iconId: g ? Number(g[F_ICON]) || null : null,
       castSec: g ? Number(g[F_CAST_MS] || 0) / 1000 || null : null,
       reuseSec: g ? Number(g[F_RECAST_MS] || 0) / 1000 || null : null,
+      ...(g ? stackFields(g) : {}),
       scaleCategory: 'none',
       ...rosterFields(ov.add),
     };
@@ -140,6 +218,7 @@ function main() {
 
   // ---- client data, indexed by lowercase name and by id
   const spellByName = new Map();
+  const spellById = new Map();
   const nameById = new Map();
   for (const line of fs.readFileSync(path.join(eq, 'spells_us.txt'), 'utf8').split(/\r?\n/)) {
     if (!line) continue;
@@ -148,6 +227,7 @@ function main() {
     const n = (f[F_NAME] || '').trim();
     if (!n) continue;
     nameById.set(f[F_ID], n);
+    spellById.set(Number(f[F_ID]), f);
     if (!spellByName.has(n.toLowerCase())) spellByName.set(n.toLowerCase(), f);
   }
 
@@ -188,6 +268,27 @@ function main() {
       const n = sharedByText.get(e.landingText) || 1;
       if (n >= 2) e.landingTextSharedBy = n;
       else delete e.landingTextSharedBy;
+    }
+    // The stacking-engine `stack` field, straight from the client spell (by id, exact). Re-derived
+    // every run: clear the previous value(s) first, then an override can still pin it.
+    for (const k of DERIVED_KEYS) delete e[k];
+    const cs = e.spellId != null ? spellById.get(Number(e.spellId)) : null;
+    if (cs) Object.assign(e, stackFields(cs), ov && ov.set ? pick(ov.set, STACK_KEYS) : {});
+    // Buff duration formula 50 = permanent-until-cancelled. EQEmu CalcBuffDuration_formula case 50
+    // returns the -1 "doesn't tick" sentinel BEFORE field 12 is ever consulted, and the published
+    // EQL spell references render every formula-50 spell as "permanent" (field 12 there is only a
+    // PvP cap). The old mining read field 12 x 6 and gave these ~0s, so 45 real long buffs - Armor
+    // of the Faithful, the whole Shielding line, the damage-shield "coat" line, permanent wolf/
+    // vision forms - vanished from the overlay ~1 min after landing (owner watched Armor of the
+    // Faithful still blocking casts long after the app had dropped it). Research, 3 Sep.
+    // Conservative on the two entries that carry a real field-12 value (Dark Temptation 3600,
+    // Phantom Plate 4320): left finite pending a live "it didn't expire" report - flip them here
+    // by dropping the `&& !e.buffDuration` if that ever comes in.
+    if (!(ov && ov.set && 'infiniteDuration' in ov.set) && !(ov && ov.set && 'durationSec' in ov.set)) {
+      if (e.buffDurationFormula === 50 && e.goodEffect >= 1 && !e.buffDuration) {
+        e.infiniteDuration = true;
+        delete e.durationSec;
+      }
     }
     for (const k of Object.keys(e)) if (e[k] == null) delete e[k];
     roster.push(e);

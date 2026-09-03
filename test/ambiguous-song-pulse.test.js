@@ -64,7 +64,24 @@ test('three pulses on the 6s cadence land the song, with no spellbook and no bur
   rewind();
   engine.handleLine(TEXT);            // hit 3 -> land
   assert.deepEqual(active(engine), ['Test Psalm of Purity']);
-  assert.ok(log.some((m) => m.includes('re-landed on the 6s song cadence')));
+  assert.ok(log.some((m) => m.includes('6s song cadence')));
+});
+
+test('one song vs one now-active buff: the cadence auto-corrects to the song', () => {
+  // The Frenzy (permanent, sharing "You go berserk.") vs McVaxius' Berserker Crescendo shape.
+  // The buff is already active - the "renews an already-active buff" tier would grab every pulse
+  // as its own renewal. The pulse route, tracked above that tier, overrides it and drops the
+  // wrong tile once the cadence confirms.
+  const { engine, log } = makeEngine();
+  // pretend the non-song buff was landed by an earlier (wrong) narrowing
+  engine._land(engine.buffStore.getByName('Test Endure Poison'));
+  assert.deepEqual(active(engine), ['Test Endure Poison']);
+  const rewind = () => { const w = engine._songPulseWatch.get(TEXT); if (w) w.lastAt -= 6000; };
+  engine.handleLine(TEXT); rewind();   // hit 1 - still shows the buff (renewal tier)
+  engine.handleLine(TEXT); rewind();   // hit 2
+  engine.handleLine(TEXT);             // hit 3 -> song wins, buff tile dropped
+  assert.deepEqual(active(engine), ['Test Psalm of Purity']);
+  assert.ok(log.some((m) => m.includes('kept re-landing on the 6s song cadence')));
 });
 
 test('a broken cadence resets the count', () => {

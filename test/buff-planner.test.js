@@ -198,6 +198,43 @@ test('a line collapses to its highest castable tier', () => {
   });
 });
 
+test('short buffs (<= 5 min) and Combat Innates go to their own pool, out of the 14', () => {
+  const roster = [
+    buff({ name: 'Standing STR', spellId: 1, category: 'Strength', classes: 'SHM 20', level: 20, durationSec: 3600 }),
+    buff({ name: 'Puma', spellId: 2, category: 'Attack', classes: 'SHM 20', level: 20, durationSec: 60 }),
+    buff({ name: 'Ward', spellId: 3, category: 'Combat Innates', classes: 'CLR 20', level: 20, durationSec: 1200 }),
+  ];
+  const spellData = fakeSpellData({ 1: [stat('STR', 40, 0)], 2: [stat('ATK', 30, 0)], 3: [stat('AC', 20, 0)] });
+  const plan = computePlan({ roster, classes: ['SHM', 'CLR'], spellData });
+  assert.deepEqual(plan.slots.map((s) => s.name), ['Standing STR'], 'only the long buff is in the 14');
+  assert.deepEqual(plan.combatSlots.map((s) => s.name).sort(), ['Puma', 'Ward'], 'short + Combat Innates -> combat pool');
+  // combat buffs are NOT in the standing totals
+  assert.equal(plan.totals.find((t) => t.stat === 'ATK'), undefined);
+});
+
+test('a slotted buff carries `beat` - the buffs it displaced for its slot, with reasons', () => {
+  const roster = [
+    buff({ name: 'Strengthen', spellId: 1, category: 'Strength', classes: 'SHM 1', level: 1 }),
+    buff({ name: 'Strength', spellId: 2, category: 'Strength', classes: 'SHM 46', level: 46 }),
+    buff({ name: 'Guardian', spellId: 3, category: 'Armor Class', classes: 'SHM 42', level: 42 }),
+    buff({ name: 'Shield of Words', spellId: 4, category: 'Armor Class', classes: 'CLR 45', level: 45 }),
+  ];
+  const spellData = fakeSpellData({
+    1: [stat('STR', 10, 0)], 2: [stat('STR', 40, 0)],
+    3: [stat('AC', 30, 0)], 4: [stat('AC', 45, 0)],
+  });
+  withLines({}, HEADING_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['CLR', 'SHM'], lines, spellData });
+    const str = plan.slots.find((s) => s.name === 'Strength');
+    assert.ok(str.beat.some((b) => b.name === 'Strengthen'), 'Strength beat the lower tier Strengthen');
+    assert.match(str.beat.find((b) => b.name === 'Strengthen').reason, /higher tier/);
+    const sow = plan.slots.find((s) => s.name === 'Shield of Words');
+    assert.ok(sow.beat.some((b) => b.name === 'Guardian'), 'Shield of Words beat Guardian for the AC slot');
+    // an uncontested buff has an empty beat list, not undefined
+    assert.ok(Array.isArray(str.beat));
+  });
+});
+
 test('a line collapses to its best tier ACROSS the permanent/temp split (Frenzy vs Rage)', () => {
   // shm.frenzy = Frenzy (finite) -> temp pool, Fury/Rage (permanent) -> permanent pool. Each pool
   // used to collapse only its own members, leaving Frenzy AND Rage both on screen. Reported by the
@@ -311,7 +348,7 @@ test('the dragged priority order decides which buffs win the slots', () => {
 test('best of a stat = the bigger number, not level or duration', () => {
   const roster = [
     buff({ name: 'Weak Haste', spellId: 1, category: 'Haste', classes: 'ENC 50', level: 50, durationSec: 9999 }),
-    buff({ name: 'Strong Haste', spellId: 2, category: 'Haste', classes: 'ENC 10', level: 10, durationSec: 60 }),
+    buff({ name: 'Strong Haste', spellId: 2, category: 'Haste', classes: 'ENC 10', level: 10, durationSec: 9999 }),
   ];
   // same line (one overwrites the other), so only one survives - the one with the bigger haste
   const checkStack = (a, b) => (a === 1 && b === 2 ? { overwrites: true } : a === 2 && b === 1 ? null : null);
@@ -320,12 +357,72 @@ test('best of a stat = the bigger number, not level or duration', () => {
   assert.deepEqual(plan.candidates.map((c) => c.name), ['Strong Haste']);
 });
 
+test('a haste buff that is not the strongest source loses its haste weight from its score', () => {
+  // A bard haste song and a spell-haste buff both land (different headings), but EQ applies only
+  // one haste source - the higher. The song still keeps its other stats. So the song's score must
+  // not count its wasted haste (or it could push a real buff out of a slot). Owner, 3 Sep.
+  const roster = [
+    buff({ name: 'Spell Haste', spellId: 1, category: 'Haste', classes: 'ENC 50', level: 50 }),
+    buff({ name: 'Song Haste', spellId: 2, category: 'Song', classes: 'BRD 50', level: 50 }),
+  ];
+  const spellData = fakeSpellData({
+    1: [stat('haste', 141, 9)], // +41%
+    2: [stat('haste', 130, 9), stat('STR', 50, 2)], // +30% and +50 STR
+  });
+  const plan = computePlan({ roster, classes: ['ENC', 'BRD'], spellData });
+  const spell = plan.slots.find((c) => c.name === 'Spell Haste');
+  const song = plan.songSlots.find((c) => c.name === 'Song Haste');
+  assert.equal(spell.score, 141, 'the strongest haste source is untouched');
+  assert.equal(song.score, 150, 'raw 180 minus the wasted (130-100) haste weight');
+  assert.equal(song.redundantMultiplier[0].stat, 'haste');
+  assert.equal(song.redundantMultiplier[0].coveredBy, 'Spell Haste');
+});
+
+test('excludedBuffs: an X-ed buff drops out and the next candidate takes the slot', () => {
+  const roster = [];
+  for (let i = 0; i < 16; i++) {
+    roster.push(buff({ name: `B${i}`, spellId: i + 1, category: `C${i}`, classes: 'CLR 10', level: 10 }));
+  }
+  const byId = Object.fromEntries(roster.map((e, i) => [e.spellId, [{ stat: 'STR', value: 100 - i, order: 0 }]]));
+  const spellData = { ...fakeSpellData(byId), score: (id) => (byId[id][0] || {}).value || 0 };
+  const base = computePlan({ roster, classes: ['CLR'], spellData });
+  assert.equal(base.slots.length, 14);
+  const dropped = base.slots[0].name;
+  const after = computePlan({ roster, classes: ['CLR'], spellData, excludedBuffs: [dropped] });
+  assert.ok(!after.slots.some((s) => s.name === dropped), 'the removed buff is gone from the 14');
+  assert.equal(after.slots.length, 14, 'a fresh candidate filled the freed slot');
+  assert.deepEqual(after.excludedBuffs, [dropped]);
+  assert.match(after.overflow.find((o) => o.name === dropped).reason, /removed/);
+});
+
+test('Amplification is a pinned special song when a bard can cast it - not scored, not slotted', () => {
+  const roster = [
+    buff({ name: 'Amplification', spellId: 9, category: 'Utility Beneficial', classes: 'BRD 30', level: 30 }),
+    buff({ name: 'A Real Song', spellId: 1, category: 'Haste', classes: 'BRD 10', level: 10 }),
+  ];
+  const withBard = computePlan({ roster, classes: ['BRD'], level: 50 });
+  assert.deepEqual(withBard.specialSongs.map((s) => s.name), ['Amplification']);
+  assert.equal(withBard.specialSongs[0].special, true);
+  assert.equal(withBard.specialSongs[0].score, null);
+  assert.ok(!withBard.songSlots.some((s) => s.name === 'Amplification'), 'it does not take a real slot');
+  assert.deepEqual(computePlan({ roster, classes: ['CLR'], level: 50 }).specialSongs, [], 'no bard, none pinned');
+  assert.deepEqual(computePlan({ roster, classes: ['BRD'], level: 20 }).specialSongs, [], 'below its level, not pinned');
+});
+
+test('a lone haste buff keeps its full haste score', () => {
+  const roster = [buff({ name: 'Only Haste', spellId: 1, category: 'Haste', classes: 'ENC 50', level: 50 })];
+  const spellData = fakeSpellData({ 1: [stat('haste', 141, 9)] });
+  const plan = computePlan({ roster, classes: ['ENC'], spellData });
+  assert.equal(plan.slots[0].score, 141);
+  assert.ok(!plan.slots[0].redundantMultiplier);
+});
+
 test('totals sum each stat across every slotted buff; haste is kept-best not summed', () => {
   const roster = [
     buff({ name: 'Str A', spellId: 1, category: 'Strength', classes: 'SHM 20', level: 20 }),
     buff({ name: 'AC A', spellId: 2, category: 'Armor Class', classes: 'CLR 20', level: 20 }),
     buff({ name: 'Haste A', spellId: 3, category: 'Haste', classes: 'ENC 20', level: 20 }),
-    buff({ name: 'Multi', spellId: 4, category: 'Combat Innates', classes: 'SHM 20', level: 20 }),
+    buff({ name: 'Multi', spellId: 4, category: 'Attack', classes: 'SHM 20', level: 20 }),
   ];
   const spellData = fakeSpellData({
     1: [stat('STR', 50, 2)],
@@ -412,7 +509,7 @@ test('the real roster: a full 14 comes out, and Strength + Infusion of Spirit bo
 });
 
 // ---------------------------------------------------------------------------
-// The 2 Sep bundle - Fix 7 (set comparison), Fix 3 (coverage), Fix 11 (playstyle)
+// The 2 Sep bundle - Fix 7 (set comparison), Fix 3 (coverage), plus the stat-toggle presets
 // ---------------------------------------------------------------------------
 
 // A combination line that blocks two individual lines, all with a score.
@@ -465,45 +562,54 @@ test('Fix 3: stackingCoverage counts slotted buffs that sat on a known line', ()
   });
 });
 
-test('Fix 11: a playstyle preset reorders via weights, balanced is the default', () => {
+// spellData.score is (spellId, weightScale) now - weightScale is { stat: 0 } for excluded stats.
+const scoreFake = (byId) => (id, ws) =>
+  (byId[id] || []).reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat] != null) ? ws[e.stat] : 1), 0);
+const weightScaleFake = (excluded) => Object.fromEntries((excluded || []).map((n) => [n, 0]));
+
+test('Balanced/Melee/Caster are stat-toggle presets - a preset zeroes the excluded stat weight', () => {
+  // Buffs carry a non-excluded stat too, so the "every stat turned off -> dropped" filter can't
+  // fire - this isolates the weight change.
   const roster = [
-    buff({ name: 'BigStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
-    buff({ name: 'BigInt', spellId: 2, category: 'I', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'StrAtk', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'IntAtk', spellId: 2, category: 'I', classes: 'SHM 50', level: 50 }),
   ];
-  const byId = { 1: [{ stat: 'STR', value: 50, order: 0 }], 2: [{ stat: 'INT', value: 50, order: 1 }] };
-  const spellData = {
-    ...fakeSpellData(byId),
-    score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat]) || 1), 0),
-    weightScale: (style) => (style === 'melee' ? { STR: 2, INT: 0.35 } : style === 'caster' ? { STR: 0.35, INT: 2 } : {}),
-  };
-  const names = (style) => computePlan({ roster, classes: ['SHM'], spellData, playstyle: style }).candidates.map((c) => c.name);
-  assert.deepEqual(names('melee')[0], 'BigStr');
-  assert.deepEqual(names('caster')[0], 'BigInt');
-  assert.equal(computePlan({ roster, classes: ['SHM'], spellData }).playstyle, 'balanced');
+  const byId = { 1: [{ stat: 'STR', value: 50, order: 0 }, { stat: 'ATK', value: 5, order: 1 }], 2: [{ stat: 'INT', value: 60, order: 1 }, { stat: 'ATK', value: 5, order: 2 }] };
+  const spellData = { ...fakeSpellData(byId), score: scoreFake(byId), weightScale: weightScaleFake };
+  const first = (excludedStats) => computePlan({ roster, classes: ['SHM'], spellData, excludedStats }).candidates[0].name;
+  assert.equal(first([]), 'IntAtk', 'balanced: 65 > 55');
+  assert.equal(first(['INT']), 'StrAtk', 'un-ticking INT drops IntAtk to 5, below StrAtk 55');
+  assert.equal(first(['STR']), 'IntAtk', 'un-ticking STR drops StrAtk to 5');
 });
 
-test('excludedStats: an ignored stat is scored at zero, so its buff falls to the bottom', () => {
+test('a buff whose every scored stat is turned off is dropped, not just ranked last', () => {
   const roster = [
-    buff({ name: 'BigStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
-    buff({ name: 'BigCha', spellId: 2, category: 'C', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'PureStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'PureCha', spellId: 2, category: 'C', classes: 'SHM 50', level: 50 }),
   ];
   const byId = { 1: [{ stat: 'STR', value: 40, order: 0 }], 2: [{ stat: 'CHA', value: 80, order: 1 }] };
-  const spellData = {
-    ...fakeSpellData(byId),
-    score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat] != null) ? ws[e.stat] : 1), 0),
-    // main.js wires this to spellEffects.combinedWeightScale(style, excluded)
-    weightScale: (style, excluded) => {
-      const sc = {};
-      for (const n of excluded || []) sc[n] = 0;
-      return sc;
-    },
-  };
-  const base = computePlan({ roster, classes: ['SHM'], spellData }).candidates.map((c) => c.name);
-  assert.deepEqual(base[0], 'BigCha', 'without exclusions the +80 CHA buff ranks first');
-
+  const spellData = { ...fakeSpellData(byId), score: scoreFake(byId), weightScale: weightScaleFake };
+  assert.deepEqual(computePlan({ roster, classes: ['SHM'], spellData }).candidates.map((c) => c.name).sort(), ['PureCha', 'PureStr']);
   const dumped = computePlan({ roster, classes: ['SHM'], spellData, excludedStats: ['CHA'] });
-  assert.deepEqual(dumped.candidates.map((c) => c.name)[0], 'BigStr', 'ignoring CHA drops it below the STR buff');
-  assert.deepEqual(dumped.excludedStats, ['CHA'], 'the result echoes what was ignored');
+  assert.deepEqual(dumped.candidates.map((c) => c.name), ['PureStr'], 'PureCha is gone entirely');
+  assert.match(dumped.overflow.find((o) => o.name === 'PureCha').reason, /turned off/);
+});
+
+test('a combat/permanent buff the stacking model says is blocked by a slotted-14 buff drops', () => {
+  const roster = [
+    buff({ name: 'Standing Str', spellId: 1, category: 'S', classes: 'SHM 50', level: 50, durationSec: 1800 }),
+    buff({ name: 'Combat Str', spellId: 2, category: 'S', classes: 'SHM 50', level: 50, durationSec: 60 }),
+    buff({ name: 'Combat Proc', spellId: 3, category: 'Combat Innates', classes: 'SHM 50', level: 50, durationSec: 60 }),
+  ];
+  const byId = { 1: [{ stat: 'STR', value: 50, order: 0 }], 2: [{ stat: 'STR', value: 40, order: 0 }], 3: [] };
+  const spellData = { ...fakeSpellData(byId), score: scoreFake(byId), weightScale: weightScaleFake };
+  // the model: Combat Str conflicts with Standing Str; Combat Proc conflicts with nothing
+  const checkStack = (a, b) => ((a === 1 && b === 2) || (a === 2 && b === 1) ? { conflict: true } : null);
+  const plan = computePlan({ roster, classes: ['SHM'], spellData, checkStack });
+  assert.ok(plan.slots.some((c) => c.name === 'Standing Str'));
+  assert.ok(plan.combatSlots.some((c) => c.name === 'Combat Proc'), 'the proc still shows next to the standing buff');
+  assert.ok(!plan.combatSlots.some((c) => c.name === 'Combat Str'), 'the conflicting combat buff is dropped');
+  assert.match(plan.combatOverflow.find((o) => o.name === 'Combat Str').reason, /blocked by Standing Str/);
 });
 
 test('excludedStats: junk is filtered, balanced+no-exclusions still means no weightScale call', () => {

@@ -7,8 +7,9 @@
 // are ordered low->high tier. `blockedPairs` are directional ground-truth mined from real logs.
 //
 // This module is pure data + lookups. It knows nothing about the roster, the character, or what is
-// castable - callers pass that in. Anything not covered by a line falls back to
-// spellStacking.checkOverwrite in the callers (buffPlanner, buffEngine).
+// castable - callers pass that in. It is the FIRST authority everywhere; anything it returns
+// 'unknown' for falls back to the full ported EQEmu engine (src/main/stackingService.js) in the
+// callers (buffPlanner, buffEngine).
 
 let DATA = require('./data/buff-lines.json');
 let cache = null;
@@ -83,7 +84,8 @@ function bestCastableMember(line, canCast) {
 //   'overwrites' - active is replaced / downgraded (drop the active tile, or drop it as a planner candidate)
 //   'blocked'    - incoming could not land; active stays (planner should not have placed incoming)
 //   'coexist'    - different headings, both stay
-//   'unknown'    - no line data for one or both; caller falls back to spellStacking
+//   'unknown'    - no line data for one or both; caller falls back to the ported stacking engine
+//                  (src/main/stackingService.js)
 function stackDecision(incomingName, activeName) {
   if (!incomingName || !activeName) return 'unknown';
   if (incomingName.toLowerCase() === activeName.toLowerCase()) return 'overwrites'; // a recast/refresh
@@ -117,6 +119,43 @@ function headingLabel(id) {
   return DATA.headings[id] || id;
 }
 
+// The REASON behind a non-'coexist' stackDecision, for the planner's "why was this dropped"
+// tooltip. One of: 'blocked-pair' (a real "did not take hold (Blocked by X)" log line),
+// 'same-line' (an upgrade tier of the same buff), 'combination' (a combo buff subsumes the other),
+// 'shared-slot' (two lines that occupy the same heading), 'cross-class' (an explicit conflictsWith),
+// or null when they coexist / it's unknown.
+function stackReason(incomingName, activeName) {
+  if (!incomingName || !activeName) return null;
+  const i = incomingName.toLowerCase();
+  const a = activeName.toLowerCase();
+  if (i === a) return 'same-line';
+  const { blockedBy } = index();
+  if (blockedBy.get(`${i}||${a}`) || blockedBy.get(`${a}||${i}`)) return 'blocked-pair';
+  const iL = lineForName(incomingName);
+  const aL = lineForName(activeName);
+  if (!iL || !aL) return null;
+  if (iL.id === aL.id) return 'same-line';
+  if ((iL.combination && (iL.blocks || []).includes(aL.id)) || (aL.combination && (aL.blocks || []).includes(iL.id))) {
+    return 'combination';
+  }
+  if ((iL.stacksWith || []).includes(aL.id) || (aL.stacksWith || []).includes(iL.id)) return null;
+  if (iL.headings.some((h) => aL.headings.includes(h))) return 'shared-slot';
+  if ((iL.conflictsWith || []).includes(aL.id) || (aL.conflictsWith || []).includes(iL.id)) return 'cross-class';
+  return null;
+}
+
+// True only when the two lines carry an EXPLICIT `stacksWith` link - a deliberate "these coexist"
+// declaration (bard haste songs + spell haste, Frenzy line + Strength line, ...). A plain 'coexist'
+// from stackDecision can also just mean "no shared heading and no recorded conflict" - i.e. an
+// absence of evidence, which the full ported engine is allowed to overrule. This tells the two
+// apart so the engine only ever vetoes the weak kind.
+function stacksExplicitly(nameA, nameB) {
+  const a = lineForName(nameA);
+  const b = lineForName(nameB);
+  if (!a || !b) return false;
+  return (a.stacksWith || []).includes(b.id) || (b.stacksWith || []).includes(a.id);
+}
+
 function resetCache() {
   cache = null;
 }
@@ -127,6 +166,8 @@ module.exports = {
   headingsForName,
   bestCastableMember,
   stackDecision,
+  stackReason,
+  stacksExplicitly,
   headingLabel,
   loadData,
   resetCache,

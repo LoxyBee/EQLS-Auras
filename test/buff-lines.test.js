@@ -95,6 +95,19 @@ test('stackDecision - unknown when either spell has no line', () => {
   assert.equal(bl.stackDecision('Strength', 'Some Random Thing'), 'unknown');
 });
 
+test('stacksExplicitly - true only for a real stacksWith link, not a weak coexist', () => {
+  bl.loadData();
+  // Strength + Harnessing carry an explicit stacksWith (per shaman.strength) - wait, that is a
+  // block. Use a real stacksWith pair: shaman.strength stacksWith cleric.yaulp.
+  assert.equal(bl.stackDecision('Strength', 'Yaulp'), 'coexist');
+  assert.equal(bl.stacksExplicitly('Strength', 'Yaulp'), true, 'this coexist is a deliberate stacksWith');
+  // Cantata / Cassindra's Chorus of Clarity sit on different bard-regen headings -> a WEAK coexist,
+  // no stacksWith. The ported engine is allowed to overrule this one.
+  assert.equal(bl.stackDecision("Cassindra's Chorus of Clarity", 'Cantata of Soothing'), 'coexist');
+  assert.equal(bl.stacksExplicitly("Cassindra's Chorus of Clarity", 'Cantata of Soothing'), false);
+  assert.equal(bl.stacksExplicitly('Made Up', 'Also Made Up'), false);
+});
+
 test('loadData swaps the data and restores it', () => {
   bl.loadData({ headings: {}, lines: [{ id: 'x', headings: ['h'], members: ['Foo'] }], blockedPairs: [] });
   assert.equal(bl.lineForName('Foo').id, 'x');
