@@ -53,6 +53,68 @@ const F_NAME = 1;
 const F_CAST_MS = 8;
 const F_RECAST_MS = 10;
 const F_ICON = 75;
+// Fields the buff-stacking engine (src/shared/spellStackingEngine.js) needs, all confirmed against
+// amerzel/eql-info's authoritative _field_catalog.json AND verified 1061/1061 against its parsed
+// values (see memory: project_full_stacking_engine_port).
+const F_BUFF_DUR_FORMULA = 11;
+const F_BUFF_DUR = 12;
+const F_GOOD_EFFECT = 28;
+const F_TARGET_TYPE = 30;
+const F_UNSTACKABLE_DOT = 79;
+const F_IS_DISCIPLINE = 98;
+const F_CLASSES = 36; // 16-wide; bard's own required level is at 36+7 = 43 (< 255 => bard can cast)
+const F_BARD_LEVEL = F_CLASSES + 7;
+const STACK_EFFECT_COUNT = 12;
+const SPA_BLANK = 254;
+
+// The trailing effect block: `slot|spa|base|limit|formula|max` segments, `$`-separated, and the
+// slot numbers are 1-INDEXED here (amerzel / the engine are 0-indexed - shift down). Returns the
+// sparse non-blank slots as ONE compact string `"slot0,spa,base,limit,formula,max;slot0,..."` -
+// a string rather than nested arrays purely so `JSON.stringify(roster, null, 1)` doesn't explode
+// it to one line per number (that alone was +270KB on buffs.json). spellStackingEngine.spellView
+// parses this shape. Same tail-field parse spellStacking.parseEffectSegments documents the reason
+// for.
+function parseStackEffects(fields) {
+  const tail = Array.isArray(fields) ? fields[fields.length - 1] : null;
+  if (typeof tail !== 'string' || tail.indexOf('|') === -1) return '';
+  const out = [];
+  for (const seg of tail.split('$')) {
+    const e = seg.split('|').map(Number);
+    if (e.length !== 6 || !Number.isFinite(e[0])) continue;
+    const slot0 = e[0] - 1;
+    if (slot0 < 0 || slot0 >= STACK_EFFECT_COUNT) continue;
+    // Blank (SPA 254) and the CHA "spacer" (SPA 10, base 0, formula 100) carry no effect - the
+    // engine's isBlankSlot ignores them anyway, so leave them out. The 148/149 stacking directives
+    // ARE kept: the engine's directive branch needs them present.
+    if (e[1] === SPA_BLANK) continue;
+    if (e[1] === 10 && e[2] === 0 && e[4] === 100) continue;
+    out.push([slot0, e[1], e[2], e[3], e[4], e[5]].join(','));
+  }
+  return out.join(';');
+}
+
+// The per-spell stacking fields, written onto every roster entry that matches a client spell.
+const STACK_KEYS = [
+  'stackEffects', 'goodEffect', 'targetType', 'buffDurationFormula',
+  'buffDuration', 'unstackableDot', 'isDiscipline', 'bardCastable',
+];
+function stackFields(fields) {
+  return {
+    stackEffects: parseStackEffects(fields) || undefined,
+    goodEffect: Number(fields[F_GOOD_EFFECT]) || 0,
+    targetType: Number(fields[F_TARGET_TYPE]) || 0,
+    buffDurationFormula: Number(fields[F_BUFF_DUR_FORMULA]) || 0,
+    buffDuration: Number(fields[F_BUFF_DUR]) || 0,
+    unstackableDot: Number(fields[F_UNSTACKABLE_DOT]) ? 1 : 0,
+    isDiscipline: Number(fields[F_IS_DISCIPLINE]) ? 1 : 0,
+    bardCastable: Number(fields[F_BARD_LEVEL]) < 255 ? 1 : 0,
+  };
+}
+const pick = (obj, keys) => {
+  const out = {};
+  for (const k of keys) if (k in obj) out[k] = obj[k];
+  return out;
+};
 
 // spells_us_str.txt - the file names these itself in its header row.
 const S_ID = 0;
@@ -118,6 +180,7 @@ function buildAddedEntries(overrides, { spellByName, strById }, existingNames = 
       iconId: g ? Number(g[F_ICON]) || null : null,
       castSec: g ? Number(g[F_CAST_MS] || 0) / 1000 || null : null,
       reuseSec: g ? Number(g[F_RECAST_MS] || 0) / 1000 || null : null,
+      ...(g ? stackFields(g) : {}),
       scaleCategory: 'none',
       ...rosterFields(ov.add),
     };
@@ -140,6 +203,7 @@ function main() {
 
   // ---- client data, indexed by lowercase name and by id
   const spellByName = new Map();
+  const spellById = new Map();
   const nameById = new Map();
   for (const line of fs.readFileSync(path.join(eq, 'spells_us.txt'), 'utf8').split(/\r?\n/)) {
     if (!line) continue;
@@ -148,6 +212,7 @@ function main() {
     const n = (f[F_NAME] || '').trim();
     if (!n) continue;
     nameById.set(f[F_ID], n);
+    spellById.set(Number(f[F_ID]), f);
     if (!spellByName.has(n.toLowerCase())) spellByName.set(n.toLowerCase(), f);
   }
 
@@ -189,6 +254,10 @@ function main() {
       if (n >= 2) e.landingTextSharedBy = n;
       else delete e.landingTextSharedBy;
     }
+    // The stacking-engine fields, straight from the client spell (by id, exact). An override can
+    // still pin any of them; a spell absent from the client keeps whatever it already had.
+    const cs = e.spellId != null ? spellById.get(Number(e.spellId)) : null;
+    if (cs) Object.assign(e, stackFields(cs), ov && ov.set ? pick(ov.set, STACK_KEYS) : {});
     for (const k of Object.keys(e)) if (e[k] == null) delete e[k];
     roster.push(e);
   }

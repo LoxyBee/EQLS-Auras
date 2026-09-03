@@ -143,37 +143,69 @@ function calcSpellValue(base, formula, max, level) {
 }
 
 // --- spellView -------------------------------------------------------------------------------
-// The engine's 12-slot view of a spell. `effects` is an array of [spa, base, limit, formula, max]
-// with blanks filling any gap so slot positions are exact. `sp.effects` in the record carries
-// explicit slot numbers (from a spells.json record) OR is already a dense 12-length array of the
-// [spa, base, limit, formula, max] tuples (from spellStacking.js's spells_us.txt parse).
+// The engine's 12-slot view of a spell: `effects` is a dense length-12 array of
+// [spa, base, limit, formula, max], blanks filling any gap so slot positions line up exactly.
+//
+// Three input shapes are accepted, so the same engine serves the parity test and the running app:
+//   1. `sp.stackEffects` - the roster shape (src/shared/data/buffs.json). A compact string,
+//      `"slot,spa,base,limit,formula,max;slot,..."`, slot 0-indexed (build-roster.js converts
+//      spells_us.txt's 1-indexed slots down and drops blank slots). A sparse array of the same
+//      6-tuples is also accepted.
+//   2. `sp.effects` as objects with explicit `slot` - the amerzel spells.json shape (parity test).
+//   3. `sp.effects` as a dense 12-array of [spa, base, limit, formula, max] tuples.
 function spellView(sp) {
   const effects = Array.from({ length: EFFECT_COUNT }, () => BLANK_EFFECT);
-  const src = sp.effects || [];
-  if (Array.isArray(src) && src.length && Array.isArray(src[0])) {
-    for (let i = 0; i < EFFECT_COUNT && i < src.length; i++) {
-      const e = src[i];
-      if (e && e.length >= 5) effects[i] = [e[0], e[1], e[2], e[3], e[4]];
+  if (sp.stackEffects != null && sp.stackEffects !== '') {
+    const segs =
+      typeof sp.stackEffects === 'string'
+        ? sp.stackEffects.split(';').map((s) => s.split(',').map(Number))
+        : sp.stackEffects;
+    for (const e of segs) {
+      if (Array.isArray(e) && e.length >= 6 && e[0] >= 0 && e[0] < EFFECT_COUNT) {
+        effects[e[0]] = [e[1], e[2], e[3], e[4], e[5]];
+      }
     }
   } else {
-    for (const e of src) {
-      if (e && e.slot >= 0 && e.slot < EFFECT_COUNT) {
-        effects[e.slot] = [e.effect_id, e.base_value, e.limit_value, e.formula, e.max_value];
+    const src = sp.effects || [];
+    if (Array.isArray(src) && src.length && Array.isArray(src[0])) {
+      for (let i = 0; i < EFFECT_COUNT && i < src.length; i++) {
+        const e = src[i];
+        if (e && e.length >= 5) effects[i] = [e[0], e[1], e[2], e[3], e[4]];
+      }
+    } else {
+      for (const e of src) {
+        if (e && e.slot >= 0 && e.slot < EFFECT_COUNT) {
+          effects[e.slot] = [e.effect_id, e.base_value, e.limit_value, e.formula, e.max_value];
+        }
       }
     }
   }
-  const bardLevel = Array.isArray(sp.classes) ? sp.classes[7] : sp.bardLevel;
+  // The bard-pool flag the engine wants is "bard can cast this at all" (spells_us.txt classes
+  // column 8, i.e. field 43, < 255) MINUS disciplines - NOT the roster's tagged `isBardSong`, which
+  // is bard-ONLY and would wrongly drop a shared BRD/other song from the bard pool. `bardCastable`
+  // is the field build-roster.js writes for exactly this. A hand-built test view can set
+  // `isBardSong` directly; a real roster/amerzel record never does (that key means something else
+  // on a roster entry), so it is only consulted when there is no other signal.
+  const isDisc = !!(sp.is_discipline || sp.isDiscipline);
+  let isBardSong;
+  if (sp.bardCastable != null) {
+    isBardSong = !!sp.bardCastable && !isDisc;
+  } else if (Array.isArray(sp.classes)) {
+    isBardSong = sp.classes[7] < 255 && !isDisc;
+  } else if (typeof sp.bardLevel === 'number') {
+    isBardSong = sp.bardLevel < 255 && !isDisc;
+  } else {
+    isBardSong = !!sp.isBardSong;
+  }
   return {
-    id: sp.id,
+    id: sp.id != null ? sp.id : sp.spellId,
     name: sp.name,
     goodEffect: sp.good_effect != null ? sp.good_effect : sp.goodEffect,
-    buffDurationFormula: sp.buff_duration_formula != null ? sp.buff_duration_formula : sp.buffDurationFormula,
+    buffDurationFormula:
+      sp.buff_duration_formula != null ? sp.buff_duration_formula : sp.buffDurationFormula,
     buffDuration: sp.buff_duration != null ? sp.buff_duration : sp.buffDuration,
     targetType: sp.target_type != null ? sp.target_type : sp.targetType,
-    isBardSong:
-      sp.isBardSong != null
-        ? !!sp.isBardSong
-        : (bardLevel != null && bardLevel < 255 && !(sp.is_discipline || sp.isDiscipline)),
+    isBardSong,
     unstackableDot: !!(sp.unstackable_dot || sp.unstackableDot),
     effects,
   };
