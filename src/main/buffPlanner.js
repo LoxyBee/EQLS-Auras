@@ -124,8 +124,8 @@ function enrichCandidate(cand, spellData, weightScale) {
     magnitude: headline ? headline.value : null,
     stat: headline ? headline.stat : null,
     stats,
-    // name + weightScale feed the curated proc boost (Fix 10); weightScale zeroes an ignored stat.
-    score: spellData.score(cand.spellId, cand.name, weightScale) || 0,
+    // weightScale zeroes a stat the user turned off; otherwise a plain sum of the character stats.
+    score: spellData.score(cand.spellId, weightScale) || 0,
   };
 }
 
@@ -520,6 +520,24 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     discountRedundantMultipliers(pooledRaw, spellData.multiplierStats, weightScale);
   }
 
+  // A buff/song whose every SCORED stat is one the user turned off is doing nothing for this build
+  // (owner, 3 Sep: "frenzied strength is showing under caster buffs, even though it's a melee buff
+  // only"). Drop it - re-ticking the stat brings it back. Resist / rune stats can't be excluded, so
+  // a resist buff always keeps a live stat; a buff with no scored stat at all (a pure proc) is left
+  // alone here - the Combat pool is uncapped and score is only its display order there.
+  const excludedSet = new Set(excluded);
+  const zeroedDrops = [];
+  if (excludedSet.size) {
+    pooledRaw = pooledRaw.filter((c) => {
+      const scored = (c.stats || []).filter((s) => s.value);
+      if (scored.length && scored.every((s) => excludedSet.has(s.stat))) {
+        zeroedDrops.push({ ...c, reason: 'every stat it gives is turned off for this preset', beatenBy: [] });
+        return false;
+      }
+      return true;
+    });
+  }
+
   // Permanent buffs (Yaulp, Fury) are "cast once and forget" - they get their OWN uncapped pool and
   // are resolved SEPARATELY, never deduped against a temp buff of a DIFFERENT line (the owner,
   // 27 Aug: Fury keeps its permanent listing even when a higher-tier temp Strength buff is also in
@@ -537,22 +555,54 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   const resolved = resolveByHeadings(tempRaw, priorityOrder, lines, checkStack);
   const resolvedPerm = resolveByHeadings(permRaw, priorityOrder, lines, checkStack);
   const resolvedCombat = resolveByHeadings(combatRaw, priorityOrder, lines, checkStack);
+  const crossPoolDrops = [];
   const dropped = (which) =>
     (which === 'permanent'
       ? resolvedPerm.dropped
       : which === 'combat'
         ? resolvedCombat.dropped
         : resolved.dropped.filter((c) => pool(c) === which)
-    ).concat(lineDrops.filter((c) => pool(c) === which));
+    )
+      .concat(lineDrops.filter((c) => pool(c) === which))
+      .concat(zeroedDrops.filter((c) => pool(c) === which))
+      .concat(crossPoolDrops.filter((c) => pool(c) === which));
   const keptOrdered = orderCandidates(resolved.kept, priorityOrder);
 
   const songCands = keptOrdered.filter((c) => pool(c) === 'song');
   const buffCands = keptOrdered.filter((c) => pool(c) === 'buff');
-  const permCands = orderCandidates(resolvedPerm.kept, priorityOrder);
-  const combatCands = orderCandidates(resolvedCombat.kept, priorityOrder);
 
   const buffs = fillSlots(buffCands, SLOT_COUNT);
   const songs = fillSlots(songCands, SONG_SLOT_COUNT);
+
+  // The permanent and combat pools are resolved on their own so a Puma-style PROC still shows next
+  // to a standing stat buff - a proc does not conflict in the stacking model. But a REAL same-slot
+  // clash with a buff that took one of the 14 does matter (owner, 3 Sep: Frenzied Strength shows in
+  // the combat pool while the log says "did not take hold. (Blocked by Strength.)"). Drop a
+  // permanent/combat buff the model says is blocked by, or would overwrite, a slotted-14 buff.
+  const clashWith14 = (c) => {
+    for (const placed of buffs.slots) {
+      if (lines) {
+        const d = lines.stackDecision(c.name, placed.name);
+        if (d === 'blocked' || d === 'overwrites') return placed.name;
+      }
+      if (checkStack && c.spellId != null && placed.spellId != null) {
+        const v = checkStack(placed.spellId, c.spellId);
+        if (v && v.conflict) return placed.name;
+      }
+    }
+    return null;
+  };
+  const dropClashes = (cands) =>
+    cands.filter((c) => {
+      const clash = clashWith14(c);
+      if (clash) {
+        crossPoolDrops.push({ ...c, reason: `blocked by ${clash}, which is in your 14`, beatenBy: [clash] });
+        return false;
+      }
+      return true;
+    });
+  const permCands = dropClashes(orderCandidates(resolvedPerm.kept, priorityOrder));
+  const combatCands = dropClashes(orderCandidates(resolvedCombat.kept, priorityOrder));
 
   // "Why this one?" - for the tooltip on a slotted buff. Every dropped buff carries `beatenBy` (the
   // name(s) of the buff(s) that displaced it) + a `reason`; invert that so each winner knows the
@@ -562,6 +612,8 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     ...resolvedPerm.dropped,
     ...resolvedCombat.dropped,
     ...lineDrops,
+    ...zeroedDrops,
+    ...crossPoolDrops,
     ...buffs.overflow,
     ...songs.overflow,
   ];

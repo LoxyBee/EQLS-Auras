@@ -531,43 +531,54 @@ test('Fix 3: stackingCoverage counts slotted buffs that sat on a known line', ()
   });
 });
 
-test('Balanced/Melee/Caster are stat-toggle presets - a preset excludes stats, weight 0', () => {
-  // The renderer applies a preset by writing its stat list into excludedStats; the planner just
-  // sees the exclusions. So this is the same path as any hand-toggled exclusion.
+// spellData.score is (spellId, weightScale) now - weightScale is { stat: 0 } for excluded stats.
+const scoreFake = (byId) => (id, ws) =>
+  (byId[id] || []).reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat] != null) ? ws[e.stat] : 1), 0);
+const weightScaleFake = (excluded) => Object.fromEntries((excluded || []).map((n) => [n, 0]));
+
+test('Balanced/Melee/Caster are stat-toggle presets - a preset zeroes the excluded stat weight', () => {
+  // Buffs carry a non-excluded stat too, so the "every stat turned off -> dropped" filter can't
+  // fire - this isolates the weight change.
   const roster = [
-    buff({ name: 'BigStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
-    buff({ name: 'BigInt', spellId: 2, category: 'I', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'StrAtk', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'IntAtk', spellId: 2, category: 'I', classes: 'SHM 50', level: 50 }),
   ];
-  const byId = { 1: [{ stat: 'STR', value: 50, order: 0 }], 2: [{ stat: 'INT', value: 60, order: 1 }] };
-  const spellData = {
-    ...fakeSpellData(byId),
-    score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat] != null) ? ws[e.stat] : 1), 0),
-    weightScale: (excluded) => Object.fromEntries((excluded || []).map((n) => [n, 0])),
-  };
+  const byId = { 1: [{ stat: 'STR', value: 50, order: 0 }, { stat: 'ATK', value: 5, order: 1 }], 2: [{ stat: 'INT', value: 60, order: 1 }, { stat: 'ATK', value: 5, order: 2 }] };
+  const spellData = { ...fakeSpellData(byId), score: scoreFake(byId), weightScale: weightScaleFake };
   const first = (excludedStats) => computePlan({ roster, classes: ['SHM'], spellData, excludedStats }).candidates[0].name;
-  assert.equal(first([]), 'BigInt', 'balanced (no exclusions): +60 INT ranks first');
-  assert.equal(first(['INT']), 'BigStr', 'a Melee preset un-ticks INT -> the INT buff scores 0');
-  assert.equal(first(['STR']), 'BigInt', 'a Caster preset un-ticks STR');
+  assert.equal(first([]), 'IntAtk', 'balanced: 65 > 55');
+  assert.equal(first(['INT']), 'StrAtk', 'un-ticking INT drops IntAtk to 5, below StrAtk 55');
+  assert.equal(first(['STR']), 'IntAtk', 'un-ticking STR drops StrAtk to 5');
 });
 
-test('excludedStats: an ignored stat is scored at zero, so its buff falls to the bottom', () => {
+test('a buff whose every scored stat is turned off is dropped, not just ranked last', () => {
   const roster = [
-    buff({ name: 'BigStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
-    buff({ name: 'BigCha', spellId: 2, category: 'C', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'PureStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'PureCha', spellId: 2, category: 'C', classes: 'SHM 50', level: 50 }),
   ];
   const byId = { 1: [{ stat: 'STR', value: 40, order: 0 }], 2: [{ stat: 'CHA', value: 80, order: 1 }] };
-  const spellData = {
-    ...fakeSpellData(byId),
-    score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat] != null) ? ws[e.stat] : 1), 0),
-    // main.js wires this to spellEffects.combinedWeightScale(excluded)
-    weightScale: (excluded) => Object.fromEntries((excluded || []).map((n) => [n, 0])),
-  };
-  const base = computePlan({ roster, classes: ['SHM'], spellData }).candidates.map((c) => c.name);
-  assert.deepEqual(base[0], 'BigCha', 'without exclusions the +80 CHA buff ranks first');
-
+  const spellData = { ...fakeSpellData(byId), score: scoreFake(byId), weightScale: weightScaleFake };
+  assert.deepEqual(computePlan({ roster, classes: ['SHM'], spellData }).candidates.map((c) => c.name).sort(), ['PureCha', 'PureStr']);
   const dumped = computePlan({ roster, classes: ['SHM'], spellData, excludedStats: ['CHA'] });
-  assert.deepEqual(dumped.candidates.map((c) => c.name)[0], 'BigStr', 'ignoring CHA drops it below the STR buff');
-  assert.deepEqual(dumped.excludedStats, ['CHA'], 'the result echoes what was ignored');
+  assert.deepEqual(dumped.candidates.map((c) => c.name), ['PureStr'], 'PureCha is gone entirely');
+  assert.match(dumped.overflow.find((o) => o.name === 'PureCha').reason, /turned off/);
+});
+
+test('a combat/permanent buff the stacking model says is blocked by a slotted-14 buff drops', () => {
+  const roster = [
+    buff({ name: 'Standing Str', spellId: 1, category: 'S', classes: 'SHM 50', level: 50, durationSec: 1800 }),
+    buff({ name: 'Combat Str', spellId: 2, category: 'S', classes: 'SHM 50', level: 50, durationSec: 60 }),
+    buff({ name: 'Combat Proc', spellId: 3, category: 'Combat Innates', classes: 'SHM 50', level: 50, durationSec: 60 }),
+  ];
+  const byId = { 1: [{ stat: 'STR', value: 50, order: 0 }], 2: [{ stat: 'STR', value: 40, order: 0 }], 3: [] };
+  const spellData = { ...fakeSpellData(byId), score: scoreFake(byId), weightScale: weightScaleFake };
+  // the model: Combat Str conflicts with Standing Str; Combat Proc conflicts with nothing
+  const checkStack = (a, b) => ((a === 1 && b === 2) || (a === 2 && b === 1) ? { conflict: true } : null);
+  const plan = computePlan({ roster, classes: ['SHM'], spellData, checkStack });
+  assert.ok(plan.slots.some((c) => c.name === 'Standing Str'));
+  assert.ok(plan.combatSlots.some((c) => c.name === 'Combat Proc'), 'the proc still shows next to the standing buff');
+  assert.ok(!plan.combatSlots.some((c) => c.name === 'Combat Str'), 'the conflicting combat buff is dropped');
+  assert.match(plan.combatOverflow.find((o) => o.name === 'Combat Str').reason, /blocked by Standing Str/);
 });
 
 test('excludedStats: junk is filtered, balanced+no-exclusions still means no weightScale call', () => {

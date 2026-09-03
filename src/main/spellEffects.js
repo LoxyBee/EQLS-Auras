@@ -81,20 +81,6 @@ const STAT_WEIGHT = {
   'magic resist': 0.4, 'all resists': 0.2,
 };
 
-// A curated snapshot (like buffStore's CHARM_SPELL_NAMES) of combat-proc buffs the owner wants
-// treated as clearly slot-worthy. Effect 85's value is a SPELL ID, not a magnitude (Spirit of the
-// Puma's is 6908), so the proc can't be scored from the file - modelling proc rate + proc damage
-// is out of scope. A flat +50 in statScore() puts each of these level with Dexterity/Celerity:
-// worth a slot, not dominating. The owner drags to reorder within that. Excludes Spirit of
-// Inferno/Lightning/Blizzard/Scorpion/Vermin - same effect, but [Pet Misc Buffs] (the proc lands
-// on the pet). (AEM/owner, 2 Sep.)
-const PROC_SCORE_BOOST = new Set([
-  'Spirit of the Puma', 'Boon of the Garou', 'Call of Sky', 'Divine Might',
-  "Katta's Song of Sword Dancing", 'Scream of Death', 'Vampiric Embrace',
-  'Instrument of Nife', 'Ward of the Divine',
-]);
-const PROC_BOOST_POINTS = 50;
-
 // Every stat name the planner knows, in stat-sheet order.
 const STAT_NAMES = STATS.map((s) => s.name);
 
@@ -199,10 +185,14 @@ function categoryHeadline(roster, entry, category) {
 }
 
 // One number for ranking a buff against buffs of OTHER stats (fill order when slots run out).
-// `name` is optional - only the curated proc list needs it. `weightScale` is the exclusion map
-// from combinedWeightScale: `{ 'CHA': 0, ... }` for every stat the user turned off, defaulting to
-// 1 for anything not named. Proc boost is flat and not affected by exclusions.
-function statScore(entry, name = null, weightScale = null) {
+// `weightScale` is the exclusion map from combinedWeightScale: `{ 'CHA': 0, ... }` for every stat
+// the user turned off, defaulting to 1 for anything not named. Scored purely on the character
+// stats a buff grants - "actual character stats only" (owner). A proc effect (Spirit of the Puma,
+// Katta's) is a spell reference, not a magnitude, so it does not score; those buffs are Combat
+// Innates and live in the uncapped Combat pool where score is only a display order anyway. The
+// old flat PROC_SCORE_BOOST was removed 3 Sep - owner: "if it needs to have an always worth
+// taking list it means the weights are wrong".
+function statScore(entry, weightScale = null) {
   const scale = (stat) => (weightScale && weightScale[stat] != null ? weightScale[stat] : 1);
   let score = 0;
   for (const s of spellStats(entry)) {
@@ -212,7 +202,6 @@ function statScore(entry, name = null, weightScale = null) {
     else if (s.stat === 'cast speed') score += Math.abs(s.value) * 5.0 * scale('cast speed');
     else score += Math.abs(s.value) * (STAT_WEIGHT[s.stat] ?? 1) * scale(s.stat);
   }
-  if (name && PROC_SCORE_BOOST.has(name)) score += PROC_BOOST_POINTS;
   return Math.round(score);
 }
 
@@ -222,6 +211,6 @@ function resetCache() {
 
 module.exports = {
   spellStats, categoryStatMap, categoryHeadline, statScore, MULTIPLIER_STATS, RESIST_STATS,
-  resetCache, PROC_SCORE_BOOST, STAT_WEIGHT,
+  resetCache, STAT_WEIGHT,
   STAT_NAMES, EXCLUDABLE_STATS, PRESET_EXCLUDES, combinedWeightScale,
 };

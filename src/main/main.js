@@ -2927,7 +2927,7 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
   const spellData = {
     stats: (spellId) => spellEffects.spellStats(entryFor(spellId), level),
     headline: (spellId, category) => spellEffects.categoryHeadline(roster, entryFor(spellId), category),
-    score: (spellId, name, weightScale) => spellEffects.statScore(entryFor(spellId), name, weightScale),
+    score: (spellId, weightScale) => spellEffects.statScore(entryFor(spellId), weightScale),
     weightScale: (excluded) => spellEffects.combinedWeightScale(excluded),
     multiplierStats: spellEffects.MULTIPLIER_STATS,
   };
