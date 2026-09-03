@@ -3102,5 +3102,3 @@ ipcMain.handle('app:getVersionInfo', () => {
     nodeVersion: process.versions.node,
   };
 });
-// Backlog #18 - the in-app changelog shown on the About page.
-ipcMain.handle('app:getChangelog', () => require('../shared/data/changelog').CHANGELOG);

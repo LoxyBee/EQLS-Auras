@@ -64,57 +64,8 @@ async function init() {
   if (window.eqTracker.onModulesChanged) window.eqTracker.onModulesChanged(refreshModuleRegistry);
   initBuffPlanner();
   initLoggingWatch();
-  initChangelog();
 }
 
-// Backlog #18 - the changelog, from src/shared/data/changelog.js. Opened from a button on the
-// About page into its own modal; each version is a <details>, the newest one open.
-function initChangelog() {
-  const el = document.getElementById('changelog-body');
-  const openBtn = document.getElementById('open-changelog-btn');
-  const backdrop = document.getElementById('changelog-modal-backdrop');
-  const closeBtn = document.getElementById('close-changelog-modal');
-  if (!el || !openBtn || !backdrop) return;
-
-  window.eqTracker.getChangelog().then((entries) => {
-    el.textContent = '';
-    if (!Array.isArray(entries) || !entries.length) {
-      el.textContent = 'Nothing recorded yet.';
-      return;
-    }
-    entries.forEach((entry, i) => {
-      const d = document.createElement('details');
-      d.className = 'changelog-version-block';
-      if (i === 0) d.open = true;
-      const s = document.createElement('summary');
-      s.className = 'changelog-version';
-      s.textContent = entry.date ? `${entry.version} — ${entry.date}` : entry.version;
-      d.appendChild(s);
-      for (const [label, items] of [['New', entry.new], ['Fixes', entry.fixes]]) {
-        if (!Array.isArray(items) || !items.length) continue;
-        const lbl = document.createElement('p');
-        lbl.className = 'changelog-label';
-        lbl.textContent = label;
-        d.appendChild(lbl);
-        const ul = document.createElement('ul');
-        ul.className = 'changelog-list';
-        for (const it of items) {
-          const li = document.createElement('li');
-          li.textContent = it;
-          ul.appendChild(li);
-        }
-        d.appendChild(ul);
-      }
-      el.appendChild(d);
-    });
-  }).catch(() => { el.textContent = 'Could not load the changelog.'; });
-
-  const show = () => (backdrop.style.display = 'flex');
-  const hide = () => (backdrop.style.display = 'none');
-  openBtn.addEventListener('click', show);
-  if (closeBtn) closeBtn.addEventListener('click', hide);
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) hide(); });
-}
 
 // "EverQuest is running but not writing to its log" - main decides, this shows the in-app modal.
 function initLoggingWatch() {

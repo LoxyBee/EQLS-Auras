@@ -19,11 +19,11 @@ const preloadSrc = read('preload', 'preload-main.js');
 test('the identity card is the first card in #page-about', () => {
   const about = html.slice(html.indexOf('id="page-about"'));
   const idIdx = about.indexOf('id="about-identity-card"');
-  const changelogIdx = about.indexOf('id="changelog-card"');
-  assert.ok(idIdx > -1 && changelogIdx > -1);
-  assert.ok(idIdx < changelogIdx, 'identity card must come before the changelog card');
-  assert.match(about.slice(idIdx, changelogIdx), /id="about-version"/);
-  assert.match(about.slice(idIdx, changelogIdx), /id="about-site-link"/);
+  const nextCardIdx = about.indexOf('id="about-limitations-card"');
+  assert.ok(idIdx > -1 && nextCardIdx > -1);
+  assert.ok(idIdx < nextCardIdx, 'the identity card must come first');
+  assert.match(about.slice(idIdx, nextCardIdx), /id="about-version"/);
+  assert.match(about.slice(idIdx, nextCardIdx), /id="about-site-link"/);
 });
 
 test('a "Good to know" card names the real limitations, up near the top', () => {
