@@ -2938,6 +2938,8 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
     songCandidates: withIcons(plan.songCandidates),
     permanentSlots: withIcons(plan.permanentSlots),
     permanentOverflow: withIcons(plan.permanentOverflow),
+    combatSlots: withIcons(plan.combatSlots || []),
+    combatOverflow: withIcons(plan.combatOverflow || []),
     stackingKnown: plan.stackingKnown,
     stackingCoverage: plan.stackingCoverage,
     playstyle: plan.playstyle,

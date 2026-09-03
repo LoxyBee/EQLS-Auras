@@ -288,6 +288,13 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
           ...c,
           reason: `${displaced.map((d) => d.name).join(' + ')} together are worth more (${displacedScore} vs ${c.score || 0})`,
           beatenBy: displaced.map((d) => d.name),
+          // The combination-buff breakdown, for the "why this one?" tooltip: what this combo would
+          // have blocked, and the score comparison that kept the individuals.
+          combo: {
+            blocks: displaced.map((d) => ({ name: d.name, stats: d.stats || [], score: d.score || 0 })),
+            comboScore: c.score || 0,
+            sumScore: displacedScore,
+          },
         });
         continue;
       }
@@ -295,10 +302,12 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
 
     let clash = null;
     let clashKind = 'conflicts with';
+    let clashWhy = null; // buffLines.stackReason tag: 'blocked-pair' | 'same-line' | 'shared-slot' | 'cross-class' | ...
     for (const placed of kept) {
       const dec = lines.stackDecision(c.name, placed.name);
       if (dec === 'blocked' || dec === 'overwrites') {
         clash = placed.name;
+        clashWhy = lines.stackReason ? lines.stackReason(c.name, placed.name) : null;
         break;
       }
       if (dec === 'unknown' && checkStack && c.spellId != null && placed.spellId != null) {
@@ -308,6 +317,7 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
         if (v && v.conflict) {
           clash = placed.name;
           clashKind = v.blocked ? "wouldn't take hold past" : 'shares an effect slot with';
+          clashWhy = 'effect-slot';
           break;
         }
       }
@@ -317,11 +327,12 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
       if (held) {
         clash = held.name;
         clashKind = 'wants the same slot as';
+        clashWhy = 'shared-slot';
       }
     }
 
     if (clash) {
-      dropped.push({ ...c, reason: `${clashKind} ${clash}`, beatenBy: [clash] });
+      dropped.push({ ...c, reason: `${clashKind} ${clash}`, beatenBy: [clash], stackWhy: clashWhy });
       continue;
     }
     // Fix 3: tag whether the LINE model placed this (vs a buff with no line data that only got in
@@ -377,17 +388,29 @@ function fillSlots(ordered, count) {
   };
 }
 
-// Which of the three pools a candidate belongs to.
-//   'permanent' - never runs out (infiniteDuration: Yaulp, Fury), its own uncapped pool. Checked
-//                 FIRST: a permanent buff is "cast once and forget" regardless of what else it is,
-//                 and it is NOT collapsed against a temp buff of the same category (so Fury, a
-//                 permanent shaman Strength buff, still shows even when Infusion of Spirit -
-//                 higher-tier temp Strength - is in the 14).
+// The owner's mental model (3 Sep): the 14 are the PRE-COMBAT loadout - long buffs you cast in one
+// burst before a fight, then swap loadout to your combat spells. A short buff like Spirit of the
+// Puma (60s) or a limited-proc one like Ward of the Divine belongs with THAT set, not the 14.
+const COMBAT_BUFF_MAX_SEC = 300; // "something like 5 minutes" (the owner)
+const COMBAT_CATEGORIES = new Set(['Combat Innates']);
+function isCombatBuff(cand) {
+  if (cand.infiniteDuration || cand.isSong) return false;
+  if (COMBAT_CATEGORIES.has(cand.category)) return true;
+  return typeof cand.durationSec === 'number' && cand.durationSec > 0 && cand.durationSec <= COMBAT_BUFF_MAX_SEC;
+}
+
+// Which pool a candidate belongs to.
+//   'permanent' - never runs out (infiniteDuration: Yaulp, Fury), its own uncapped pool. NOT
+//                 collapsed against a temp buff of the same category (so Fury still shows even when
+//                 a higher-tier temp Strength buff is in the 14).
 //   'song'      - a bard song (only when Bard is one of the classes), 5-slot symphonic pool
-//   'buff'      - everything else, the 14 spell-buff slots
+//   'combat'    - a short buff (<= 5 min) or a limited-proc combat innate (Puma, Ward of the
+//                 Divine). Cast in a fight, not part of the standing loadout. Own uncapped pool.
+//   'buff'      - everything else, the 14 pre-combat slots
 function poolFor(cand, hasBard) {
   if (cand.infiniteDuration) return 'permanent';
   if (hasBard && cand.isSong) return 'song';
+  if (isCombatBuff(cand)) return 'combat';
   return 'buff';
 }
 
@@ -414,6 +437,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     slots: [], overflow: [], candidates: [],
     songSlots: [], songOverflow: [], songCandidates: [],
     permanentSlots: [], permanentOverflow: [],
+    combatSlots: [], combatOverflow: [],
     totals: [],
   };
   if (normClasses.length === 0) return empty;
@@ -463,23 +487,30 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   // the 14). Resolving them in the same heading walk as the temp buffs was throwing Fury away as
   // "Rage is the higher tier".
   const permRaw = pooledRaw.filter((c) => pool(c) === 'permanent');
-  const tempRaw = pooledRaw.filter((c) => pool(c) !== 'permanent');
+  const combatRaw = pooledRaw.filter((c) => pool(c) === 'combat');
+  const tempRaw = pooledRaw.filter((c) => pool(c) !== 'permanent' && pool(c) !== 'combat');
 
-  // ONE resolution across the temp spell-buff + bard-song pools together (bard songs claim the same
-  // shared headings as spell buffs where they overlap - haste, run speed - and their own private
-  // headings elsewhere), THEN split into pools for the slot caps.
+  // ONE resolution across the pre-combat spell-buff + bard-song pools together (bard songs claim
+  // the same shared headings where they overlap - haste, run speed - and their own private
+  // headings elsewhere), THEN split for the slot caps. Permanent and combat buffs are resolved on
+  // their OWN - they're a different loadout you swap to, so a short combat Strength proc does not
+  // fight the standing Strength buff for a slot.
   const resolved = resolveByHeadings(tempRaw, priorityOrder, lines, checkStack);
   const resolvedPerm = resolveByHeadings(permRaw, priorityOrder, lines, checkStack);
+  const resolvedCombat = resolveByHeadings(combatRaw, priorityOrder, lines, checkStack);
   const dropped = (which) =>
     (which === 'permanent'
       ? resolvedPerm.dropped
-      : resolved.dropped.filter((c) => pool(c) === which)
+      : which === 'combat'
+        ? resolvedCombat.dropped
+        : resolved.dropped.filter((c) => pool(c) === which)
     ).concat(lineDrops.filter((c) => pool(c) === which));
   const keptOrdered = orderCandidates(resolved.kept, priorityOrder);
 
   const songCands = keptOrdered.filter((c) => pool(c) === 'song');
   const buffCands = keptOrdered.filter((c) => pool(c) === 'buff');
   const permCands = orderCandidates(resolvedPerm.kept, priorityOrder);
+  const combatCands = orderCandidates(resolvedCombat.kept, priorityOrder);
 
   const buffs = fillSlots(buffCands, SLOT_COUNT);
   const songs = fillSlots(songCands, SONG_SLOT_COUNT);
@@ -490,22 +521,31 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   const allDrops = [
     ...resolved.dropped,
     ...resolvedPerm.dropped,
+    ...resolvedCombat.dropped,
     ...lineDrops,
     ...buffs.overflow,
     ...songs.overflow,
   ];
-  const beatMap = new Map(); // winner name (lower) -> [{ name, reason }]
+  const beatMap = new Map(); // winner name (lower) -> [{ name, reason, stats, score, combo }]
   for (const d of allDrops) {
     for (const winner of d.beatenBy || []) {
       const key = winner.toLowerCase();
       if (!beatMap.has(key)) beatMap.set(key, []);
-      beatMap.get(key).push({ name: d.name, reason: d.reason });
+      beatMap.get(key).push({
+        name: d.name,
+        reason: d.reason,
+        stats: d.stats || [],
+        score: d.score,
+        combo: d.combo || null,
+        stackWhy: d.stackWhy || null,
+      });
     }
   }
   const withBeat = (list) => list.map((c) => ({ ...c, beat: beatMap.get(c.name.toLowerCase()) || [] }));
   buffs.slots = withBeat(buffs.slots);
   songs.slots = withBeat(songs.slots);
   const permSlots = withBeat(permCands);
+  const combatSlots = withBeat(combatCands);
 
   // Fix 3 - coverage over the buffs that actually take a slot. `lineKnown` was tagged in
   // resolveByHeadings. Null when the fallback path ran (no `lines`), which `stackingKnown` covers.
@@ -522,7 +562,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     playstyle: style,
     excludedStats: excluded,
     statsKnown: !!spellData,
-    stackingKnown: !resolved.approximate && !resolvedPerm.approximate,
+    stackingKnown: !resolved.approximate && !resolvedPerm.approximate && !resolvedCombat.approximate,
     stackingCoverage,
     slots: buffs.slots,
     overflow: [...buffs.overflow, ...dropped('buff')],
@@ -532,6 +572,10 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     songCandidates: songCands,
     permanentSlots: permSlots,
     permanentOverflow: dropped('permanent'),
+    // The combat / burst-swap loadout - short buffs (<= 5 min) and limited-proc combat innates
+    // (Puma, Ward of the Divine). Own uncapped pool; NOT in `totals` (not part of the standing 14).
+    combatSlots,
+    combatOverflow: dropped('combat'),
     totals: sumStats([buffs.slots, songs.slots, permSlots], spellData && spellData.multiplierStats),
   };
 }

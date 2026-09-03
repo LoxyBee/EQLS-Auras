@@ -8868,6 +8868,9 @@ function initBuffPlanner() {
   const permCardEl = document.getElementById('planner-permanent-card');
   const permListEl = document.getElementById('planner-permanent-list');
   const permCountEl = document.getElementById('planner-permanent-count');
+  const combatCardEl = document.getElementById('planner-combat-card');
+  const combatListEl = document.getElementById('planner-combat-list');
+  const combatCountEl = document.getElementById('planner-combat-count');
   const priorityListEl = document.getElementById('planner-priority-list');
   const overflowCardEl = document.getElementById('planner-overflow-card');
   const overflowListEl = document.getElementById('planner-overflow-list');
@@ -8982,6 +8985,54 @@ function initBuffPlanner() {
     return `${value >= 0 ? '+' : ''}${Math.round(value)} ${label}`;
   }
 
+  // A stat list -> "+50 STR, +45 STA, +55 DEX", strongest first, capped so the tooltip stays sane.
+  function statSummary(stats) {
+    return (stats || [])
+      .slice()
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+      .slice(0, 4)
+      .map((s) => fmtStat(s.stat, s.value))
+      .join(', ');
+  }
+
+  // The full "why is this one in the plan" breakdown, shown on hover over a slotted buff. Lists
+  // every buff it displaced, each with its own stats + score, and - for a combination buff like
+  // Harnessing of Spirit - the blocked-pair breakdown and the score maths that kept the individuals.
+  function whyKeptTooltip(cand) {
+    const mine = statSummary(cand.stats);
+    const head =
+      cand.name +
+      (mine ? ` — ${mine}` : '') +
+      (cand.score != null ? `  (score ${cand.score})` : '');
+    const lines = [head, '', 'Kept over:'];
+    for (const b of cand.beat) {
+      const bs = statSummary(b.stats);
+      const num = [bs, b.score != null ? `score ${b.score}` : ''].filter(Boolean).join('  ·  ');
+      lines.push(`• ${b.name}${num ? ` — ${num}` : ''}`);
+      if (b.combo) {
+        const blocked = b.combo.blocks
+          .map((x) => `${x.name}${x.score != null ? ` (${x.score})` : ''}`)
+          .join(', ');
+        lines.push(`    a combination buff - it would block ${blocked}`);
+        lines.push(
+          `    but those together score ${b.combo.sumScore} vs its ${b.combo.comboScore}, so they stay`
+        );
+      } else {
+        const s = String(b.reason || '');
+        let why;
+        if (b.stackWhy === 'blocked-pair') why = 'confirmed in-game: it did not take hold with this one up';
+        else if (b.stackWhy === 'same-line' || /is the higher tier$/.test(s)) why = 'a lower tier of the same buff line';
+        else if (b.stackWhy === 'cross-class') why = 'a different class’s version of the same buff';
+        else if (b.stackWhy === 'effect-slot') why = 'the same effect slot - only the stronger holds';
+        else if (b.stackWhy === 'shared-slot' || /^(conflicts with|wants the same slot as) /.test(s)) why = 'the same buff slot';
+        else if (/^wouldn't take hold past /.test(s)) why = "it wouldn't take hold with this one up";
+        else why = s;
+        lines.push(`    ${why}`);
+      }
+    }
+    return lines.join('\n');
+  }
+
   function buffRow(cand, opts) {
     opts = opts || {};
     const li = document.createElement('li');
@@ -9019,19 +9070,7 @@ function initBuffPlanner() {
       li.appendChild(r);
       li.title = reason; // the full text on hover - the visible one ellipsizes if it's long
     } else if (Array.isArray(cand.beat) && cand.beat.length) {
-      // A slotted buff: hovering shows why it's in - the buffs it beat for the slot, and why. The
-      // dropped buff's own reason names THIS buff ("conflicts with Verses of Victory" / "Verses of
-      // Victory is the higher tier"), so reframe it from the winner's side.
-      const why = (r) => {
-        const s = String(r || '');
-        if (/is the higher tier$/.test(s)) return 'lower tier of the same line';
-        if (/^conflicts with /.test(s)) return 'both want the same slot';
-        if (/^wouldn't take hold past /.test(s)) return "wouldn't have taken hold";
-        if (/^(shares an effect slot with|wants the same slot as) /.test(s)) return 'same effect slot';
-        if (/together are worth more/.test(s)) return 'these stacked give more';
-        return s.replace(new RegExp('\\b' + cand.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g'), 'this').trim();
-      };
-      li.title = 'Picked over ' + cand.beat.map((b) => `${b.name} (${why(b.reason)})`).join('; ');
+      li.title = whyKeptTooltip(cand);
       li.classList.add('planner-buff-has-why');
     } else if (opts.slotted) {
       li.title = 'Nothing else competes for this slot.';
@@ -9085,6 +9124,12 @@ function initBuffPlanner() {
     permCardEl.style.display = perm.length ? '' : 'none';
     permCountEl.textContent = String(perm.length);
     fillList(permListEl, perm, { slotted: true });
+
+    // Combat / burst-swap buffs (Puma, Ward of the Divine, anything under 5 min) - their own list.
+    const combat = plan.combatSlots || [];
+    combatCardEl.style.display = combat.length ? '' : 'none';
+    combatCountEl.textContent = String(combat.length);
+    fillList(combatListEl, combat, { slotted: true });
 
     // One priority list covering the buff slots AND the song slots (both are capped, so order
     // matters for both); permanent buffs are uncapped so they aren't in it.

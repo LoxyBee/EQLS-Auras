@@ -119,6 +119,31 @@ function headingLabel(id) {
   return DATA.headings[id] || id;
 }
 
+// The REASON behind a non-'coexist' stackDecision, for the planner's "why was this dropped"
+// tooltip. One of: 'blocked-pair' (a real "did not take hold (Blocked by X)" log line),
+// 'same-line' (an upgrade tier of the same buff), 'combination' (a combo buff subsumes the other),
+// 'shared-slot' (two lines that occupy the same heading), 'cross-class' (an explicit conflictsWith),
+// or null when they coexist / it's unknown.
+function stackReason(incomingName, activeName) {
+  if (!incomingName || !activeName) return null;
+  const i = incomingName.toLowerCase();
+  const a = activeName.toLowerCase();
+  if (i === a) return 'same-line';
+  const { blockedBy } = index();
+  if (blockedBy.get(`${i}||${a}`) || blockedBy.get(`${a}||${i}`)) return 'blocked-pair';
+  const iL = lineForName(incomingName);
+  const aL = lineForName(activeName);
+  if (!iL || !aL) return null;
+  if (iL.id === aL.id) return 'same-line';
+  if ((iL.combination && (iL.blocks || []).includes(aL.id)) || (aL.combination && (aL.blocks || []).includes(iL.id))) {
+    return 'combination';
+  }
+  if ((iL.stacksWith || []).includes(aL.id) || (aL.stacksWith || []).includes(iL.id)) return null;
+  if (iL.headings.some((h) => aL.headings.includes(h))) return 'shared-slot';
+  if ((iL.conflictsWith || []).includes(aL.id) || (aL.conflictsWith || []).includes(iL.id)) return 'cross-class';
+  return null;
+}
+
 function resetCache() {
   cache = null;
 }
@@ -129,6 +154,7 @@ module.exports = {
   headingsForName,
   bestCastableMember,
   stackDecision,
+  stackReason,
   headingLabel,
   loadData,
   resetCache,

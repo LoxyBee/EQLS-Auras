@@ -198,6 +198,20 @@ test('a line collapses to its highest castable tier', () => {
   });
 });
 
+test('short buffs (<= 5 min) and Combat Innates go to their own pool, out of the 14', () => {
+  const roster = [
+    buff({ name: 'Standing STR', spellId: 1, category: 'Strength', classes: 'SHM 20', level: 20, durationSec: 3600 }),
+    buff({ name: 'Puma', spellId: 2, category: 'Attack', classes: 'SHM 20', level: 20, durationSec: 60 }),
+    buff({ name: 'Ward', spellId: 3, category: 'Combat Innates', classes: 'CLR 20', level: 20, durationSec: 1200 }),
+  ];
+  const spellData = fakeSpellData({ 1: [stat('STR', 40, 0)], 2: [stat('ATK', 30, 0)], 3: [stat('AC', 20, 0)] });
+  const plan = computePlan({ roster, classes: ['SHM', 'CLR'], spellData });
+  assert.deepEqual(plan.slots.map((s) => s.name), ['Standing STR'], 'only the long buff is in the 14');
+  assert.deepEqual(plan.combatSlots.map((s) => s.name).sort(), ['Puma', 'Ward'], 'short + Combat Innates -> combat pool');
+  // combat buffs are NOT in the standing totals
+  assert.equal(plan.totals.find((t) => t.stat === 'ATK'), undefined);
+});
+
 test('a slotted buff carries `beat` - the buffs it displaced for its slot, with reasons', () => {
   const roster = [
     buff({ name: 'Strengthen', spellId: 1, category: 'Strength', classes: 'SHM 1', level: 1 }),
@@ -334,7 +348,7 @@ test('the dragged priority order decides which buffs win the slots', () => {
 test('best of a stat = the bigger number, not level or duration', () => {
   const roster = [
     buff({ name: 'Weak Haste', spellId: 1, category: 'Haste', classes: 'ENC 50', level: 50, durationSec: 9999 }),
-    buff({ name: 'Strong Haste', spellId: 2, category: 'Haste', classes: 'ENC 10', level: 10, durationSec: 60 }),
+    buff({ name: 'Strong Haste', spellId: 2, category: 'Haste', classes: 'ENC 10', level: 10, durationSec: 9999 }),
   ];
   // same line (one overwrites the other), so only one survives - the one with the bigger haste
   const checkStack = (a, b) => (a === 1 && b === 2 ? { overwrites: true } : a === 2 && b === 1 ? null : null);
@@ -348,7 +362,7 @@ test('totals sum each stat across every slotted buff; haste is kept-best not sum
     buff({ name: 'Str A', spellId: 1, category: 'Strength', classes: 'SHM 20', level: 20 }),
     buff({ name: 'AC A', spellId: 2, category: 'Armor Class', classes: 'CLR 20', level: 20 }),
     buff({ name: 'Haste A', spellId: 3, category: 'Haste', classes: 'ENC 20', level: 20 }),
-    buff({ name: 'Multi', spellId: 4, category: 'Combat Innates', classes: 'SHM 20', level: 20 }),
+    buff({ name: 'Multi', spellId: 4, category: 'Attack', classes: 'SHM 20', level: 20 }),
   ];
   const spellData = fakeSpellData({
     1: [stat('STR', 50, 2)],
