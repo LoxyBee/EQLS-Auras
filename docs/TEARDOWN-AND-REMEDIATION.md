@@ -527,8 +527,8 @@ leverage. Do the monolith split first so the rest has somewhere to land.
    (commit 756aa6d) — the guard test was converted to "file must not exist + must not be required".
 3. Remove GCD-aura remnants and any duplicated `zoneVisibility` logic (import the extracted module
    everywhere).
-4. Each removal gets a migration so old installs upgrade cleanly. Hand the changelog + CLAUDE.md
-   edits to Documentation.
+4. Each removal gets a migration so old installs upgrade cleanly. Hand the CLAUDE.md edits to
+   Documentation.
 
 *Touches:* `src/main/widgetStore.js` · `src/main/rosterBackfill.js` (delete) · `src/main/buffEngine.js`
 · `roster.test.js`

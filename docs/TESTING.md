@@ -1522,7 +1522,7 @@ client and, for the trim/rotation checks, a real log that spans more than one lo
 # 11 — Backlog batch (30 Aug)
 
 `feat/backlog-batch-2`. All unverified in a real session. The automated suite covers the code
-paths (death-clears, config-transfer, config-backup, sound-cooldown, preview-aura, changelog,
+paths (death-clears, config-transfer, config-backup, sound-cooldown, preview-aura,
 zone-aliases, spellbook-diagnostic). A clean fresh-start smoke was **not** possible — the owner's
 dev build + a live `eqgame` held the single-instance lock, so a second launch exits 0 (guard
 working as designed). Record: single-instance guard verified; fresh-start smoke deferred.

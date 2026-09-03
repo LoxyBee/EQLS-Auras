@@ -1,7 +1,7 @@
 # QoL & Feature Backlog
 
 **This is the live backlog — what's still to do.** Shipped and dropped work is not kept here;
-git history and `src/shared/data/changelog.js` hold the record of what changed. The item numbers
+git history holds the record of what changed. The item numbers
 run to 51 from earlier batches and are kept so cross-references (CLAUDE.md, `docs/TESTING.md`)
 don't dangle — the gaps are completed or dropped items removed 31 Aug onward.
 

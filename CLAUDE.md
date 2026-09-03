@@ -457,8 +457,9 @@ heading model - see below and `docs/BUFF-STACKING.md`); `main.js` always passes 
 - **Ranked purely by character-stat magnitude** - the owner, 27 Aug: "rank them by best, that means
   numerical", "level and duration have absolutely 0 to do with anything", "actual character stats
   only", "i don't want SPA anywhere near the calculations". **`spellEffects.js`** reads the real
-  +STR / +AC / haste% numbers from `spells_us.txt`'s effect slots (reusing `spellStacking.js`'s
-  `denseEffects`/`effectValue`). Its `STATS` list is the **complete set of character stats the
+  +STR / +AC / haste% numbers from `spells_us.txt`'s effect slots (via the ported stacking
+  engine's `calcSpellValue` — `spellStacking.js` was folded onto it and deleted, `959f84d`). Its
+  `STATS` list is the **complete set of character stats the
   planner knows** - the 7 attributes, AC, ATK, haste, spell haste, the 5 resists + all-resists,
   damage shield, rune, spell rune, max HP, max mana - each paired with the effect number the game
   file uses (an implementation detail that appears **nowhere** else - not in the returned data
@@ -512,12 +513,14 @@ heading model - see below and `docs/BUFF-STACKING.md`); `main.js` always passes 
   `unknown`. `buffPlanner.resolveByHeadings()` collapses each line to its best castable tier, then
   walks candidates in priority order claiming headings, dropping anything whose heading is taken or
   that `stackDecision` calls `blocked`/`overwrites` (-> overflow with a `reason`). Only
-  CLR/SHM/BRD/ENC/DRU + universal resist lines are defined so far; an `unknown` pair falls back to
-  `spellStacking.checkOverwrite`.
+  CLR/SHM/BRD/ENC/DRU + universal resist lines are defined so far; an `unknown` pair (and a weak
+  `coexist` with no explicit `stacksWith` link) falls back to the ported stacking engine via
+  `stackingService` (`src/main/stackingService.js` → `src/shared/spellStackingEngine.js`, the full
+  EQEmu `CheckStackConflict` port, parity-verified 100% over 6.75M verdicts).
 - **`collapseByStacking` / `collapseByCategory` are the fallback** used only when `lines` is absent
   (never, in the real app - `main.js` always passes `buffLines`); they set `approximate: true` /
-  `stackingKnown: false`. `checkStack` (`spellStacking.checkOverwrite`) is always wired when the
-  spell file is reachable, not gated on the `useStackingModel` diagnostic toggle.
+  `stackingKnown: false`. `checkStack` (`stackingService.wouldOverwriteLive`) is always wired when
+  the spell file is reachable, not gated on the `useStackingModel` diagnostic toggle.
 - **The Self Buffs overlay uses the same model to drop stale tiles.** `buffEngine.setLineStackFn()`
   is wired in `main.js` to `buffLines.stackDecision`; in `_land()`, when a `kind:'buff'` spell
   lands, any active buff the incoming one `overwrites` is removed immediately (logged
@@ -562,7 +565,7 @@ entry under `group: 'standalone'`. Not started.
 
 `docs/QOL-BACKLOG.md` is the live backlog for smaller items; this section is the larger
 architectural roadmap. It was **pruned of shipped work 31 Aug** — only genuinely-open items are
-kept below, and git history plus `src/shared/data/changelog.js` hold the record of what landed
+kept below, and git history holds the record of what landed
 (the P1 bard-song containment, the P2 quick UI wins, the per-timer form overhaul, the Bard Songs
 aura, and the first real slice of Action Bars are all done). None of what's left has been scoped
 in detail; confirm design specifics with the owner before starting anything large.
