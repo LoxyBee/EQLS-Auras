@@ -198,6 +198,25 @@ test('a line collapses to its highest castable tier', () => {
   });
 });
 
+test('a line collapses to its best tier ACROSS the permanent/temp split (Frenzy vs Rage)', () => {
+  // shm.frenzy = Frenzy (finite) -> temp pool, Fury/Rage (permanent) -> permanent pool. Each pool
+  // used to collapse only its own members, leaving Frenzy AND Rage both on screen. Reported by the
+  // owner: "rage and frenzy are the same spell line and are both permanent".
+  const roster = [
+    buff({ name: 'Frenzy', spellId: 1, category: 'Strength', classes: 'SHM 16', level: 16 }),
+    buff({ name: 'Fury', spellId: 2, category: 'Strength', classes: 'SHM 30', level: 30, infiniteDuration: true, durationSec: null }),
+    buff({ name: 'Rage', spellId: 3, category: 'Strength', classes: 'SHM 45', level: 45, infiniteDuration: true, durationSec: null }),
+  ];
+  withLines({}, HEADING_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['SHM'], lines });
+    assert.deepEqual(plan.permanentSlots.map((s) => s.name), ['Rage'], 'only the top tier is listed');
+    assert.deepEqual(plan.slots.map((s) => s.name), [], 'Frenzy does not also take a spell slot');
+    const frenzy = plan.overflow.find((o) => o.name === 'Frenzy');
+    assert.equal(frenzy && frenzy.reason, 'Rage is the higher tier');
+    assert.equal(plan.permanentOverflow.find((o) => o.name === 'Fury').reason, 'Rage is the higher tier');
+  });
+});
+
 test('two different lines that share a heading conflict - one to overflow', () => {
   const roster = [
     buff({ name: 'Shield of Words', spellId: 1, category: 'Armor Class', classes: 'CLR 45', level: 45 }),

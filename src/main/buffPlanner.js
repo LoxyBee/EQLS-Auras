@@ -420,12 +420,39 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   const raw = candidatesFor(roster || [], normClasses, spellData, weightScale);
   const pool = (c) => poolFor(c, hasBard);
 
+  // Collapse each stacking LINE to its single best castable tier BEFORE the permanent/temp split.
+  // A line is an upgrade ladder whose tiers are mutually exclusive, so only the top one you can
+  // cast is ever worth listing. The split below sends permanent tiers (Fury, Rage) to one pool and
+  // finite ones (Frenzy) to another, and each pool used to collapse only its OWN members - so
+  // Frenzy survived in the temp pool while Rage survived in the permanent pool, both on screen,
+  // even though Rage being permanently up makes Frenzy pointless. This does NOT touch DIFFERENT
+  // lines: a permanent Fury (shaman.frenzy line) and a finite Strength buff (shaman.strength line)
+  // still both show - the owner's 27 Aug rule.
+  const lineDrops = [];
+  let pooledRaw = raw;
+  if (lines) {
+    const bestByLine = new Map(); // line id -> the highest-tier candidate present
+    for (const c of raw) {
+      const line = lines.lineForName(c.name);
+      if (!line) continue;
+      const prev = bestByLine.get(line.id);
+      if (!prev || lines.tierOf(line, c.name) > lines.tierOf(line, prev.name)) bestByLine.set(line.id, c);
+    }
+    pooledRaw = raw.filter((c) => {
+      const line = lines.lineForName(c.name);
+      if (!line || bestByLine.get(line.id) === c) return true;
+      lineDrops.push({ ...c, reason: `${bestByLine.get(line.id).name} is the higher tier` });
+      return false;
+    });
+  }
+
   // Permanent buffs (Yaulp, Fury) are "cast once and forget" - they get their OWN uncapped pool and
-  // are resolved SEPARATELY, never deduped against the temp buffs (the owner, 27 Aug: Fury keeps its
-  // permanent listing even when a higher-tier temp Strength buff is also in the 14). Resolving them
-  // in the same heading walk as the temp buffs was throwing Fury away as "Rage is the higher tier".
-  const permRaw = raw.filter((c) => pool(c) === 'permanent');
-  const tempRaw = raw.filter((c) => pool(c) !== 'permanent');
+  // are resolved SEPARATELY, never deduped against a temp buff of a DIFFERENT line (the owner,
+  // 27 Aug: Fury keeps its permanent listing even when a higher-tier temp Strength buff is also in
+  // the 14). Resolving them in the same heading walk as the temp buffs was throwing Fury away as
+  // "Rage is the higher tier".
+  const permRaw = pooledRaw.filter((c) => pool(c) === 'permanent');
+  const tempRaw = pooledRaw.filter((c) => pool(c) !== 'permanent');
 
   // ONE resolution across the temp spell-buff + bard-song pools together (bard songs claim the same
   // shared headings as spell buffs where they overlap - haste, run speed - and their own private
@@ -433,9 +460,10 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   const resolved = resolveByHeadings(tempRaw, priorityOrder, lines, checkStack);
   const resolvedPerm = resolveByHeadings(permRaw, priorityOrder, lines, checkStack);
   const dropped = (which) =>
-    which === 'permanent'
+    (which === 'permanent'
       ? resolvedPerm.dropped
-      : resolved.dropped.filter((c) => pool(c) === which);
+      : resolved.dropped.filter((c) => pool(c) === which)
+    ).concat(lineDrops.filter((c) => pool(c) === which));
   const keptOrdered = orderCandidates(resolved.kept, priorityOrder);
 
   const songCands = keptOrdered.filter((c) => pool(c) === 'song');
