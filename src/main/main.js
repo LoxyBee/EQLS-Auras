@@ -73,6 +73,7 @@ const { RaidNamedTracker } = require('./raidNamedTracker');
 const { FirstAggroEngine } = require('./firstAggroEngine');
 const { ModuleHost } = require('./moduleHost');
 const { readLastZoneEntry } = require('./logZonePeek');
+const { readRecentGroup } = require('./logGroupPeek');
 const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
 const { lockoutBoardRows } = require('../shared/lockoutBoard');
@@ -1576,6 +1577,18 @@ app.whenReady().then(() => {
   setImmediate(() => {
     const logPath = logService.watcher.getStatus().currentFilePath;
     if (!logPath) return;
+    // Group roster from the log tail, same reasoning: if the session-restore snapshot was too
+    // stale (or absent), the damage meter's group scope and its friend/enemy bootstrap start
+    // blind. Only seed when nothing has populated the roster yet.
+    if (groupRoster.getAdmitted().length === 0) {
+      const group = readRecentGroup(logPath);
+      if (group && groupRoster.seed(group)) {
+        debugLog(
+          `GROUP recovered on startup: ${groupRoster.getAdmitted().join(', ') || '(none)'} (from the log tail)`
+        );
+      }
+    }
+
     const found = readLastZoneEntry(logPath);
     if (!found) return;
     applyZoneChangeAndNotify(found.zone);

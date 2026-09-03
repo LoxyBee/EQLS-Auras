@@ -78,6 +78,22 @@ class GroupRoster {
     this._lastChangeAt = at;
   }
 
+  // Seed from a backward log scan (logGroupPeek) at startup, when the session-restore snapshot did
+  // not supply a roster. Merges rather than replaces - if a live join line has already come in
+  // since launch, it stays. Only meaningful before the first real group line; callers gate on
+  // getAdmitted().length being 0.
+  seed({ members, admitted } = {}) {
+    let changed = false;
+    for (const n of Array.isArray(members) ? members : []) {
+      if (!this.members.has(String(n).toLowerCase())) { this.members.add(String(n).toLowerCase()); changed = true; }
+    }
+    for (const n of Array.isArray(admitted) ? admitted : []) {
+      if (!this.admitted.has(String(n).toLowerCase())) { this.admitted.add(String(n).toLowerCase()); changed = true; }
+    }
+    if (changed) this._save();
+    return changed;
+  }
+
   // Wiped when the PLAYER's own membership changes - a new group is a new roster.
   _reset() {
     this.members.clear();

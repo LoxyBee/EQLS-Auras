@@ -154,6 +154,10 @@ class DamageEngine extends EventEmitter {
     }
   }
 
+  // An EXPLICIT enemy signal - the player mezzed/snared this exact name - is trusted directly, even
+  // if the bootstrap has the name as a friend (a genuine same-name charmed-pet/enemy collision, the
+  // case the collision guard in _classify exists for). Only the bootstrap's OWN inferences go
+  // through the _learnFriend/_learnEnemy "first side wins" guards.
   _isEnemy(name) {
     const key = name.toLowerCase();
     if (this.enemies.has(key)) return true;
@@ -163,6 +167,33 @@ class DamageEngine extends EventEmitter {
         this.enemies.add(key);
         return true;
       }
+    }
+    return false;
+  }
+
+  // The friend counterpart. A confirmed group member (groupRoster - live join lines + the startup
+  // log-tail scan) is a friend for classification, full stop, no bootstrap needed. This is what
+  // stops a groupmate dropping off the CURRENT fight after a restart: their hits on a mob you never
+  // personally touched now classify as outgoing immediately, instead of sitting unclassifiable
+  // until your own first attack seeds the enemy set. The learned `friends` set still grows the
+  // usual way for everyone else (charmed pets, a stranger helping on a pull).
+  _isFriend(name) {
+    const key = name.toLowerCase();
+    if (this.friends.has(key)) return true;
+    if (this._isGroupMember(key)) {
+      this.friends.add(key);
+      return true;
+    }
+    return false;
+  }
+
+  // Strictly the group roster - a real person confirmed by a join line or the startup log scan.
+  // Distinct from _isFriend, which also covers bootstrap-learned friends like charmed pets.
+  _isGroupMember(name) {
+    const key = name.toLowerCase();
+    if (key === 'you' || key === 'yourself') return true;
+    for (const g of this.groupFn() || []) {
+      if (typeof g === 'string' && g.toLowerCase() === key) return true;
     }
     return false;
   }
@@ -179,9 +210,33 @@ class DamageEngine extends EventEmitter {
    * Classifying also TEACHES: every resolved line names one side, which by rules 2 and 3 proves
    * the other. That is the whole bootstrap.
    */
+  // A friend and an enemy are learned, never un-learned - except that a name must never sit on
+  // both sides at once (the collision guard would then drop every line it appears in). So the two
+  // adders refuse to cross a name that the other set already holds: the first classification of a
+  // name wins, and a later contradiction is treated as noise rather than allowed to poison the set.
+  // 'you' is a friend from the constructor and can never become an enemy.
+  _learnFriend(key) {
+    if (this.enemies.has(key)) return;
+    this.friends.add(key);
+  }
+  _learnEnemy(key) {
+    if (this.friends.has(key)) return;
+    this.enemies.add(key);
+  }
+
   _classify(hit) {
     const a = hit.attacker.toLowerCase();
     const t = hit.target.toLowerCase();
+
+    // A damage-shield hit ("Avenrae is burned by Footman of V`Zher's flames") is pure retaliation:
+    // whoever hit the shield-holder took its damage back. It NEVER teaches a side that the hit
+    // which triggered it did not already teach, and in a charm-war zone (necro pets, charmed mobs,
+    // enemy mobs that share a name with the charmed ones) DS crossfire is the single biggest source
+    // of contradictory facts - measured live, it collapsed the whole bootstrap: the group ended up
+    // tagged as enemies and the mobs as friends. So a shield line is still given a DIRECTION when
+    // both sides are already known (real DS damage on a real enemy still counts), but it is never
+    // allowed to ADD to either set.
+    const teach = hit.kind !== 'shield';
 
     // Rule 1. The damage itself is unambiguous - it happened, it was yours, credit it - but WHO
     // it proves the target to be is not, quite: a real log has friendly fire in it ("You crush
@@ -192,7 +247,18 @@ class DamageEngine extends EventEmitter {
     // stray hit being counted as an enemy would have been. So: credit the hit always, but only
     // teach `enemies` when the target isn't already known as a person.
     if (hit.attacker === 'You') {
-      if (!this.friends.has(t)) this.enemies.add(t);
+      if (teach && !this._isFriend(t)) this._learnEnemy(t);
+      return 'out';
+    }
+
+    // Rule 1, generalised to a CONFIRMED group member. "You crush X" proves X is an enemy; so does
+    // "Bobarafius crushes X" when Bobarafius is in the group roster - a groupmate does not melee a
+    // friend, and this is the fix for the owner's report that a groupmate fighting mobs she never
+    // personally touched dropped off the current fight after a restart (her own attacks, as a bard,
+    // seed the enemy set too slowly). Scoped to a roster-confirmed member, never a bootstrap-learned
+    // friend (a charmed pet is a "friend" that DOES fight other friends). A DS line never teaches.
+    if (teach && this._isGroupMember(a) && !this._isFriend(t)) {
+      this._learnEnemy(t);
       return 'out';
     }
 
@@ -204,20 +270,22 @@ class DamageEngine extends EventEmitter {
 
     const attackerEnemy = this._isEnemy(hit.attacker);
     const targetEnemy = this._isEnemy(hit.target);
+    const attackerFriend = this._isFriend(hit.attacker);
+    const targetFriend = this._isFriend(hit.target);
 
     // Rule 2 - damaging a known enemy makes you a friend.
     if (targetEnemy && !attackerEnemy) {
-      this.friends.add(a);
+      if (teach) this._learnFriend(a);
       return 'out';
     }
     // Rule 3 - damaging a known friend makes you an enemy.
-    if (this.friends.has(t) && !this.friends.has(a)) {
-      this.enemies.add(a);
+    if (targetFriend && !attackerFriend) {
+      if (teach) this._learnEnemy(a);
       return 'in';
     }
     // Both sides already known. No new information, but the direction is still readable.
-    if (this.friends.has(a) && targetEnemy) return 'out';
-    if (attackerEnemy && this.friends.has(t)) return 'in';
+    if (attackerFriend && targetEnemy) return 'out';
+    if (attackerEnemy && targetFriend) return 'in';
     return null;
   }
 
@@ -331,6 +399,16 @@ class DamageEngine extends EventEmitter {
     if (!s || typeof s !== 'object') return 0;
     for (const n of Array.isArray(s.enemies) ? s.enemies : []) this.enemies.add(n);
     for (const n of Array.isArray(s.friends) ? s.friends : []) this.friends.add(n);
+    // A snapshot taken while the bootstrap was mid-collapse (charm-war zone - see _classify) can
+    // carry a name on BOTH sides. The collision guard would then drop every line that name appears
+    // in for the rest of the session. Forget any such name entirely and let the live bootstrap
+    // re-learn it cleanly - a restored contradiction is worse than a restored blank.
+    for (const n of [...this.enemies]) {
+      if (this.friends.has(n)) {
+        this.enemies.delete(n);
+        this.friends.delete(n);
+      }
+    }
     for (const pair of Array.isArray(s.byAttacker) ? s.byAttacker : []) {
       if (Array.isArray(pair)) this.byAttacker.set(pair[0], pair[1]);
     }

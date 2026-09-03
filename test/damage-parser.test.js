@@ -528,6 +528,38 @@ test("scope 'all': an article-prefixed friendly attacker folds into Charmed pets
   assert.match(charmed.valueText, /^400/);
 });
 
+// Owner, 3 Sep: after a restart the current-fight meter lost the groupmates while the since-zone
+// tally kept them. Root cause: the friend/enemy bootstrap starts empty, and a bard who does little
+// direct damage never seeds the enemy set fast enough to classify a groupmate's hits on a mob she
+// never personally touched. A confirmed group member is a friend for classification, full stop.
+test('a confirmed group member is a friend without the bootstrap having to prove it', () => {
+  const e = new DamageEngine();
+  e.setGroupFn(() => ['bobarafius', 'avenrae']);
+  // Nobody has attacked yet - the enemy set is empty. Bobarafius (a group member) hits a mob.
+  e.handleLine(`${T}Bobarafius slashes a hardened skeleton for 300 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'all');
+  const bob = rows.find((r) => r.name === 'Bobarafius');
+  assert.ok(bob, 'the groupmate is credited on the current fight immediately');
+  assert.match(bob.valueText, /^300/);
+  assert.ok(e.enemies.has('a hardened skeleton'), 'and the mob is now a known enemy');
+});
+
+// A damage shield is pure retaliation and must never teach a side. In a charm-war zone this was
+// collapsing the whole bootstrap (measured live: the group tagged as enemies, mobs as friends).
+test('a damage-shield line does not add anyone to the friend or enemy sets', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}a zol ghoul knight has taken 5 damage from your Plague III.`, 1000); // knight = enemy
+  // A charmed pet's thorns hit the knight. Old behaviour: rule 2 makes "a spite golem" a friend.
+  e.handleLine(`${T}a zol ghoul knight is pierced by a spite golem's thorns for 7 points of non-melee damage.`, 1000);
+  assert.ok(!e.friends.has('a spite golem'), 'a DS hit is not proof of a side');
+  // A mob's flame shield hits a groupmate. Old behaviour: rule 3 could tag the groupmate an enemy.
+  e.setGroupFn(() => []);
+  e.handleLine(`${T}a zol ghoul knight has taken 5 damage from your Plague III.`, 1000);
+  e.friends.add('avenrae');
+  e.handleLine(`${T}Avenrae is burned by Footman of V\`Zher's flames for 7 points of non-melee damage.`, 1000);
+  assert.ok(!e.enemies.has('avenrae'), 'the groupmate is not flipped to enemy by a shield hit');
+});
+
 test("scope 'mine': an article-prefixed friendly attacker is dropped, not shown", () => {
   const e = new DamageEngine();
   e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000);
