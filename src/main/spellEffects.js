@@ -32,6 +32,11 @@ const STATS = [
   { name: 'CHA', effect: 10 },
   { name: 'haste', effect: 11 }, // stored 100-based: 141 = +41%
   { name: 'cast speed', effect: 127 }, // reduces cast time. the owner, 27 Aug: same priority as haste.
+  // Spell-damage focus (effect 124). Rizlona's Embers is the only roster buff with it - the owner
+  // wants it ranked as a real caster buff (3 Sep). The magnitude sits in the limit field (~15%),
+  // not the base (1), so spellStats reads `limit` for this one. Caster/Balanced count it; Melee
+  // un-ticks it.
+  { name: 'spell damage %', effect: 124 },
   { name: 'HP regen', effect: 0 }, // per-tick on a duration buff (heals/HoTs are filtered out before this)
   { name: 'mana regen', effect: 15 }, // per-tick mana on a duration buff (Clarity etc.), not a max-mana raise
   { name: 'endurance regen', effect: 189 },
@@ -81,6 +86,8 @@ const STAT_WEIGHT = {
   // which in turn beats the single-element ones.
   'fire resist': 0.1, 'cold resist': 0.1, 'poison resist': 0.1, 'disease resist': 0.1,
   'magic resist': 0.4, 'all resists': 0.2,
+  // A spell-damage focus is a real caster buff - weighted so its ~15% ranks like a strong stat.
+  'spell damage %': 3,
 };
 
 // Every stat name the planner knows, in stat-sheet order.
@@ -102,7 +109,7 @@ const EXCLUDABLE_SET = new Set(EXCLUDABLE_STATS);
 // user sees exactly which stats got dropped and can re-tick any of them.
 const PRESET_EXCLUDES = {
   balanced: [],
-  melee: ['WIS', 'INT', 'mana regen', 'cast speed', 'max mana'],
+  melee: ['WIS', 'INT', 'mana regen', 'cast speed', 'max mana', 'spell damage %'],
   caster: ['STR', 'DEX', 'AGI', 'ATK', 'haste', 'HP on hit'],
 };
 
@@ -131,6 +138,8 @@ function spellStats(entry, level = ASSUMED_LEVEL) {
     const known = STAT_BY_EFFECT.get(spa);
     if (!known) continue;
     let value = calcSpellValue(base, formula, max, level);
+    // Spell-damage focus (124) keeps its magnitude in the limit field (~15%), not the base (1).
+    if (spa === 124 && Math.abs(base) <= 1 && limit) value = limit;
     // EQ stores spell AC (effect 1) at 4x the value the client actually applies - it divides it back
     // down (floored) when folding spell AC into the mitigation pool. floor(raw/4) matches the
     // owner's in-game readings (Yaulp III raw 40 -> +10, Verses of Victory raw 50 -> +12) and the
