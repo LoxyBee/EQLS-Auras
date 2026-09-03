@@ -273,15 +273,19 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
     // Fix 7 (owner, 2 Sep): "the buff line research should naturally exclude it, and then the
     // weights should realise that the two stacked is better stats." A combination buff (Aegolism,
     // Harnessing of Spirit) claims its headings only if it scores at least as much as the sum of
-    // the candidates it would displace. No buff-specific code - it's a score comparison over the
-    // real numbers, so it moves with the weights and the playstyle preset. Compared against the
-    // whole ordered set (placed AND still-pending), because a high-scoring individual walked first
-    // is already in `kept` and the combo must still be measured against it.
+    // the candidates it genuinely SUBSUMES. Subsumes = it's on the combo's authored `blocks` list.
+    // NOT a stackDecision('overwrites') sweep - that also catches buffs which REPLACE the combo
+    // (Armor of the Faithful, Talisman of Altuna both overwrite Harnessing of Spirit), which the
+    // combo does not displace at all. Owner, 3 Sep: "it's actually REPLACED by armour of the
+    // faithful ... this is exactly the kind of nuance the new model was supposed to fix".
     const cLine = lines.lineForName(c.name);
     if (cLine && cLine.combination) {
-      const displaced = ordered.filter(
-        (o) => o !== c && lines.stackDecision(c.name, o.name) === 'overwrites'
-      );
+      const blockIds = new Set(cLine.blocks || []);
+      const displaced = ordered.filter((o) => {
+        if (o === c) return false;
+        const oL = lines.lineForName(o.name);
+        return oL && blockIds.has(oL.id);
+      });
       const displacedScore = displaced.reduce((s, o) => s + (o.score || 0), 0);
       if (displaced.length && (c.score || 0) < displacedScore) {
         dropped.push({
