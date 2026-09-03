@@ -118,8 +118,6 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setUseEvidenceModel: (enabled) => ipcRenderer.invoke('settings:setUseEvidenceModel', enabled),
   getUseCastTimeFilter: () => ipcRenderer.invoke('settings:getUseCastTimeFilter'),
   setUseCastTimeFilter: (enabled) => ipcRenderer.invoke('settings:setUseCastTimeFilter', enabled),
-  getUseStackingModel: () => ipcRenderer.invoke('settings:getUseStackingModel'),
-  setUseStackingModel: (enabled) => ipcRenderer.invoke('settings:setUseStackingModel', enabled),
   getAutoHideOverlayEnabled: () => ipcRenderer.invoke('settings:getAutoHideOverlay'),
   getShowAurasWhenAppFocused: () => ipcRenderer.invoke('settings:getShowAurasWhenAppFocused'),
   setShowAurasWhenAppFocused: (enabled) => ipcRenderer.invoke('settings:setShowAurasWhenAppFocused', enabled),

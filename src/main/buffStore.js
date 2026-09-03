@@ -116,6 +116,13 @@ class BuffStore {
     return [...this.buffs].sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  // By the client spell id (the roster's `spellId`). Used by the stacking engine, which keys on it.
+  getBySpellId(spellId) {
+    if (spellId == null) return null;
+    const n = Number(spellId);
+    return this.buffs.find((b) => Number(b.spellId) === n) || null;
+  }
+
   getByName(name) {
     const lower = name.toLowerCase();
     const exact = this.buffs.find((b) => b.name.toLowerCase() === lower);

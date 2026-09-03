@@ -146,19 +146,20 @@ function calcSpellValue(base, formula, max, level) {
 // The engine's 12-slot view of a spell: `effects` is a dense length-12 array of
 // [spa, base, limit, formula, max], blanks filling any gap so slot positions line up exactly.
 //
-// Three input shapes are accepted, so the same engine serves the parity test and the running app:
-//   1. `sp.stackEffects` - the roster shape (src/shared/data/buffs.json). A compact string,
-//      `"slot,spa,base,limit,formula,max;slot,..."`, slot 0-indexed (build-roster.js converts
-//      spells_us.txt's 1-indexed slots down and drops blank slots). A sparse array of the same
-//      6-tuples is also accepted.
-//   2. `sp.effects` as objects with explicit `slot` - the amerzel spells.json shape (parity test).
-//   3. `sp.effects` as a dense 12-array of [spa, base, limit, formula, max] tuples.
+// Two input shapes are accepted, so the same engine serves the parity test and the running app:
+//   1. The roster shape (src/shared/data/buffs.json): `goodEffect` / `targetType` /
+//      `buffDurationFormula` / `buffDuration` / `unstackableDot` / `isDiscipline` / `bardCastable`
+//      as named fields, plus `stackEffects` - one coded string of the sparse 0-indexed non-blank
+//      slots, `"slot,spa,base,limit,formula,max;slot,..."` (build-roster.js writes it; there's no
+//      readable form of raw effect data). A sparse array of the same 6-tuples is also accepted.
+//   2. The amerzel spells.json record shape (parity test): `good_effect` etc. snake_case, and
+//      `effects` as objects with an explicit `slot` (or a dense 12-array of the 5-tuples).
 function spellView(sp) {
   const effects = Array.from({ length: EFFECT_COUNT }, () => BLANK_EFFECT);
   if (sp.stackEffects != null && sp.stackEffects !== '') {
     const segs =
       typeof sp.stackEffects === 'string'
-        ? sp.stackEffects.split(';').map((s) => s.split(',').map(Number))
+        ? sp.stackEffects.split(';').map((x) => x.split(',').map(Number))
         : sp.stackEffects;
     for (const e of segs) {
       if (Array.isArray(e) && e.length >= 6 && e[0] >= 0 && e[0] < EFFECT_COUNT) {
@@ -180,13 +181,13 @@ function spellView(sp) {
       }
     }
   }
-  // The bard-pool flag the engine wants is "bard can cast this at all" (spells_us.txt classes
-  // column 8, i.e. field 43, < 255) MINUS disciplines - NOT the roster's tagged `isBardSong`, which
-  // is bard-ONLY and would wrongly drop a shared BRD/other song from the bard pool. `bardCastable`
-  // is the field build-roster.js writes for exactly this. A hand-built test view can set
-  // `isBardSong` directly; a real roster/amerzel record never does (that key means something else
-  // on a roster entry), so it is only consulted when there is no other signal.
-  const isDisc = !!(sp.is_discipline || sp.isDiscipline);
+
+  const val = (camel, snake) => (sp[camel] != null ? sp[camel] : sp[snake]);
+  // `bardCastable` = "bard can cast this at all" (spells_us.txt classes column, field 43 < 255)
+  // MINUS disciplines - NOT the roster's tagged `isBardSong`, which is bard-ONLY and would wrongly
+  // drop a shared BRD/other song from the bard pool. A hand-built test view may set `isBardSong`
+  // directly; a real record never does (that key means something else on a roster entry).
+  const isDisc = !!val('isDiscipline', 'is_discipline');
   let isBardSong;
   if (sp.bardCastable != null) {
     isBardSong = !!sp.bardCastable && !isDisc;
@@ -197,16 +198,16 @@ function spellView(sp) {
   } else {
     isBardSong = !!sp.isBardSong;
   }
+
   return {
     id: sp.id != null ? sp.id : sp.spellId,
     name: sp.name,
-    goodEffect: sp.good_effect != null ? sp.good_effect : sp.goodEffect,
-    buffDurationFormula:
-      sp.buff_duration_formula != null ? sp.buff_duration_formula : sp.buffDurationFormula,
-    buffDuration: sp.buff_duration != null ? sp.buff_duration : sp.buffDuration,
-    targetType: sp.target_type != null ? sp.target_type : sp.targetType,
+    goodEffect: val('goodEffect', 'good_effect'),
+    targetType: val('targetType', 'target_type'),
+    buffDurationFormula: val('buffDurationFormula', 'buff_duration_formula'),
+    buffDuration: val('buffDuration', 'buff_duration'),
     isBardSong,
-    unstackableDot: !!(sp.unstackable_dot || sp.unstackableDot),
+    unstackableDot: !!val('unstackableDot', 'unstackable_dot'),
     effects,
   };
 }

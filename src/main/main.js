@@ -90,6 +90,7 @@ const { tagBardSongs } = require('./bardSongTagger');
 const { SessionRestore } = require('./sessionRestore');
 const gameSpellData = require('./gameSpellData');
 const spellStacking = require('./spellStacking');
+const { makeStackingService } = require('./stackingService');
 const spellEffects = require('./spellEffects');
 const buffLines = require('../shared/buffLines');
 const buffPlanner = require('./buffPlanner');
@@ -135,6 +136,9 @@ const lockoutService = new LockoutService();
 const { LogRotationService } = require('./logRotation');
 const logRotationService = new LogRotationService({ loadJson, saveJson });
 const buffStore = new BuffStore({ loadJson, saveJson });
+// The buff-stacking engine, bound to the roster's per-spell stacking data (build-roster.js writes
+// it onto every buffs.json entry). Replaces spellStacking.js's checkOverwrite / stackVerdict.
+const stackingService = makeStackingService(buffStore);
 const buffEngine = new BuffEngine(buffStore, { loadJson, saveJson });
 const profileStore = new ProfileStore({ loadJson, saveJson });
 // Makes sure the engine starts out pointed at whichever profile was last
@@ -410,14 +414,15 @@ buffEngine.setUseEvidenceModel(loadJson('useEvidenceModel', true));
 // P0c, off by default and independently switchable from useEvidenceModel above - see buffEngine.js's
 // constructor comment on useCastTimeFilter for exactly what this changes.
 buffEngine.setUseCastTimeFilter(loadJson('useCastTimeFilter', false));
-// Note 26, off by default - see buffEngine.js's constructor comment on stackVerdictFn/
-// useStackingModel. currentInstallRoot is read live on every call (not captured here) since it
-// starts null and is only set once applyInstallRoot runs - see that function, further down.
-buffEngine.setStackVerdictFn((activeSpellId, incomingSpellId) =>
-  currentInstallRoot ? spellStacking.stackVerdict(currentInstallRoot, activeSpellId, incomingSpellId) : null
+// Note 26. The full ported stacking engine decides self-buff tile removal for pairs the curated
+// line data doesn't cover. No toggle - it's a verified 1:1 port of the reference engine, and it
+// only ever removes a stale tile on a clean one-way overwrite (stackingService.wouldOverwriteLive).
+// The live engine has no character level, so it assumes 50 (see stackingService's header).
+buffEngine.setStackConflictFn((activeSpellId, incomingSpellId) =>
+  stackingService.wouldOverwriteLive(activeSpellId, incomingSpellId)
 );
-buffEngine.setUseStackingModel(loadJson('useStackingModel', false));
-// The heading model / measured blocked-pairs (docs/BUFF-STACKING.md) - always on, no toggle.
+// The heading model / measured blocked-pairs (docs/BUFF-STACKING.md) - the first authority, always
+// on. The stacking engine above only answers what this returns 'unknown' for.
 buffEngine.setLineStackFn((incomingName, activeName) => buffLines.stackDecision(incomingName, activeName));
 
 // Auto-hide overlay widgets while EQ isn't the focused window (backlog #6)
@@ -990,6 +995,7 @@ function applyInstallRoot(eqFolder) {
   iconService.setEqFolder(currentInstallRoot);
   spellbookService.setInstallRoot(currentInstallRoot);
   spellEffects.resetCache(); // its per-category stat map is built from the roster, which is about to change
+  stackingService.invalidate(); // its spellView cache is built from roster entries
   // Tagging is cheap and idempotent - it only writes when it actually changes something - so
   // running it every launch costs nothing after the first, and it self-heals after a re-seed.
   //
@@ -2065,13 +2071,6 @@ ipcMain.handle('settings:setUseCastTimeFilter', (_event, enabled) => {
   return enabled;
 });
 
-ipcMain.handle('settings:getUseStackingModel', () => loadJson('useStackingModel', false));
-ipcMain.handle('settings:setUseStackingModel', (_event, enabled) => {
-  saveJson('useStackingModel', enabled);
-  buffEngine.setUseStackingModel(enabled);
-  return enabled;
-});
-
 ipcMain.handle('settings:getAutoHideOverlay', () => autoHideOverlayEnabled);
 ipcMain.handle('settings:setAutoHideOverlay', (_event, enabled) => {
   autoHideOverlayEnabled = enabled;
@@ -2905,12 +2904,11 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
   const priorityOrder = (profile && profile.buffPlanOrder) || [];
   const playstyle = (profile && profile.plannerPlaystyle) || 'balanced';
   const excludedStats = (profile && profile.plannerExcludedStats) || [];
-  // The planner ALWAYS uses the game's stacking data when the spell file is reachable - it's how it
-  // tells a weaker tier of a buff line from a different buff that stacks. (Independent of the
-  // `useStackingModel` diagnostic toggle, which gates the live detection engine, a riskier place.)
-  const checkStack = currentInstallRoot
-    ? (activeId, incomingId) => spellStacking.checkOverwrite(currentInstallRoot, activeId, incomingId)
-    : null;
+  // The planner uses the full stacking engine (roster stacking data - always present now, not
+  // gated on the EQ folder) for pairs the curated line model returns 'unknown' for. It passes the
+  // real character level, so a not-yet-capped low-level spell resolves correctly here (unlike the
+  // live engine, which has to assume 50).
+  const checkStack = (activeId, incomingId) => stackingService.planConflict(activeId, incomingId, level);
   // The real stat numbers - only available once the EQ folder is set (spells_us.txt). Without it
   // the planner ranks by name alone and says so (statsKnown: false).
   const roster = buffStore.getAll();

@@ -69,11 +69,11 @@ const SPA_BLANK = 254;
 
 // The trailing effect block: `slot|spa|base|limit|formula|max` segments, `$`-separated, and the
 // slot numbers are 1-INDEXED here (amerzel / the engine are 0-indexed - shift down). Returns the
-// sparse non-blank slots as ONE compact string `"slot0,spa,base,limit,formula,max;slot0,..."` -
-// a string rather than nested arrays purely so `JSON.stringify(roster, null, 1)` doesn't explode
-// it to one line per number (that alone was +270KB on buffs.json). spellStackingEngine.spellView
-// parses this shape. Same tail-field parse spellStacking.parseEffectSegments documents the reason
-// for.
+// sparse non-blank slots as ONE string `"slot0,spa,base,limit,formula,max;slot0,..."` - a coded
+// string because there's no readable form of raw effect data (slot / effect-id / magnitude /
+// formula) that isn't 20+ pretty-printed lines per spell, and no human edits this. The seven
+// SCALARS beside it (goodEffect, targetType, ...) stay as their own named fields so the roster is
+// still legible. spellStackingEngine.spellView parses this shape.
 function parseStackEffects(fields) {
   const tail = Array.isArray(fields) ? fields[fields.length - 1] : null;
   if (typeof tail !== 'string' || tail.indexOf('|') === -1) return '';
@@ -93,11 +93,18 @@ function parseStackEffects(fields) {
   return out.join(';');
 }
 
-// The per-spell stacking fields, written onto every roster entry that matches a client spell.
+// The per-spell stacking fields, written onto every roster entry that matches a client spell. The
+// seven scalars are their own NAMED fields so the roster stays legible; `stackEffects` is the one
+// coded string (raw slot data - no readable form, see parseStackEffects). `bardCastable` is
+// "bard can cast this at all" (field 43 < 255), which is NOT the same as the roster's tagged
+// `isBardSong` (bard-ONLY) - the engine needs the wider one for its bard-pool branch.
 const STACK_KEYS = [
   'stackEffects', 'goodEffect', 'targetType', 'buffDurationFormula',
   'buffDuration', 'unstackableDot', 'isDiscipline', 'bardCastable',
 ];
+// Fields build-roster re-derives every run - cleared off each entry first so a rename or format
+// change doesn't strand the old ones on entries carried over from the previous buffs.json.
+const DERIVED_KEYS = [...STACK_KEYS, 'stack'];
 function stackFields(fields) {
   return {
     stackEffects: parseStackEffects(fields) || undefined,
@@ -254,8 +261,9 @@ function main() {
       if (n >= 2) e.landingTextSharedBy = n;
       else delete e.landingTextSharedBy;
     }
-    // The stacking-engine fields, straight from the client spell (by id, exact). An override can
-    // still pin any of them; a spell absent from the client keeps whatever it already had.
+    // The stacking-engine `stack` field, straight from the client spell (by id, exact). Re-derived
+    // every run: clear the previous value(s) first, then an override can still pin it.
+    for (const k of DERIVED_KEYS) delete e[k];
     const cs = e.spellId != null ? spellById.get(Number(e.spellId)) : null;
     if (cs) Object.assign(e, stackFields(cs), ov && ov.set ? pick(ov.set, STACK_KEYS) : {});
     for (const k of Object.keys(e)) if (e[k] == null) delete e[k];

@@ -921,16 +921,6 @@ function initDetectionSettingsPanel() {
     window.eqTracker.setUseCastTimeFilter(useCastTimeFilterCheckbox.checked);
   });
 
-  // Off by default - see buffEngine.js's constructor comment on useStackingModel. Independent
-  // toggle from the two above, so any of the three can be reverted without touching the others.
-  const useStackingModelCheckbox = document.getElementById('use-stacking-model-checkbox');
-  window.eqTracker.getUseStackingModel().then((enabled) => {
-    useStackingModelCheckbox.checked = !!enabled;
-  });
-  useStackingModelCheckbox.addEventListener('change', () => {
-    window.eqTracker.setUseStackingModel(useStackingModelCheckbox.checked);
-  });
-
   const loadoutLabelCheckbox = document.getElementById('loadout-label-checkbox');
   const loadoutLabelPositionRow = document.getElementById('loadout-label-position-row');
   const loadoutLabelUnlockBtn = document.getElementById('loadout-label-unlock-btn');

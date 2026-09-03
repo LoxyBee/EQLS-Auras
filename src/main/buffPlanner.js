@@ -300,9 +300,10 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
         break;
       }
       if (dec === 'unknown' && checkStack && c.spellId != null && placed.spellId != null) {
-        const a = checkStack(placed.spellId, c.spellId);
-        const b = checkStack(c.spellId, placed.spellId);
-        if ((a && a.overwrites) || (b && b.overwrites)) {
+        // checkStack (stackingService.planConflict) checks both directions itself and returns
+        // { overwrites, blocked, conflict } | null. `conflict` = they collide either way.
+        const v = checkStack(placed.spellId, c.spellId);
+        if (v && v.conflict) {
           clash = placed.name;
           break;
         }

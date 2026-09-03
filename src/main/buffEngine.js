@@ -525,22 +525,20 @@ class BuffEngine extends EventEmitter {
     // Puma VII, before this existed) and the real in-game value (1.94s) seen on that character. See
     // setCastTimeMultiplierFn.
     this.castTimeMultiplierFn = () => 1;
-    // Note 26, off by default - see setStackVerdictFn and _land()'s use of it. EQ prints an
-    // explicit "has been overwritten" line for a buff overwritten on someone ELSE, but nothing at
-    // all for one overwritten on the player's own self - so when a newly-landed self-buff would, by
-    // the game's own stacking rule, silently replace one already active (see src/main/
-    // spellStacking.js), this removes the stale one immediately instead of leaving it to time out
-    // on its own or be misattributed later by a shared fade-text line. Injected as a function, same
-    // DI reasoning as spellbookCheckFn - this engine has to keep running in a plain Node test and in
-    // tools/replay-log.js, neither of which has the game's install files to read.
-    this.stackVerdictFn = null; // (activeSpellId, incomingSpellId) => { overwrites, why } | null
-    this.useStackingModel = false;
+    // EQ prints an explicit "has been overwritten" line for a buff overwritten on someone ELSE, but
+    // nothing at all for one overwritten on the player's own self - so when a newly-landed self-buff
+    // would, by the game's own stacking rule, silently replace one already active, this removes the
+    // stale tile immediately instead of leaving it to time out or be misattributed by a shared
+    // fade-text line. `lineStackFn` (curated, real-log) decides first; `stackConflictFn` (the full
+    // ported EQEmu engine, src/main/stackingService.js) answers what it returns 'unknown' for.
+    // Both injected as functions - this engine runs in a plain Node test and in tools/replay-log.js,
+    // neither of which has the game files. A verdict here only ever REMOVES a stale entry under a
+    // DIFFERENT name; the incoming landing always proceeds regardless.
+    this.stackConflictFn = null; // (activeSpellId, incomingSpellId) => boolean (incoming cleanly overwrites active)
     // The heading model (docs/BUFF-STACKING.md, src/shared/buffLines.js). (incomingName, activeName)
     // => 'overwrites' | 'blocked' | 'coexist' | 'unknown'. Runs UNCONDITIONALLY in _land() for the
     // 'overwrites' verdict - those come from a measured "did not take hold" pair in a real log, or a
-    // strict same-line tier bump (Yaulp III over Yaulp II), neither of which is a guess. The
-    // effect-slot heuristic above stays behind useStackingModel for the pairs the line data does not
-    // cover ('unknown').
+    // strict same-line tier bump (Yaulp III over Yaulp II), neither of which is a guess.
     this.lineStackFn = null; // set by main.js from buffLines.stackDecision
     this.durationMultiplierFn = () => 1;
     this.iconUrlFn = (iconId) => `eqicon://icon/Alternate%201/${iconId}`;
@@ -563,14 +561,10 @@ class BuffEngine extends EventEmitter {
     this.castTimeMultiplierFn = fn;
   }
 
-  // fn(activeSpellId, incomingSpellId) => { overwrites, why } | null - see the constructor comment
-  // on stackVerdictFn and _land()'s use of it.
-  setStackVerdictFn(fn) {
-    this.stackVerdictFn = fn;
-  }
-
-  setUseStackingModel(enabled) {
-    this.useStackingModel = enabled;
+  // fn(activeSpellId, incomingSpellId) => boolean - true when the incoming buff cleanly and
+  // unambiguously replaces the active one. See the constructor comment on stackConflictFn.
+  setStackConflictFn(fn) {
+    this.stackConflictFn = fn;
   }
 
   // fn(incomingName, activeName) => 'overwrites' | 'blocked' | 'coexist' | 'unknown'. See the
@@ -2233,25 +2227,20 @@ class BuffEngine extends EventEmitter {
         }
       }
     }
-    // The effect-slot heuristic, for pairs the line data does not cover - still behind the toggle.
-    if (this.useStackingModel && this.stackVerdictFn && known.spellId && known.scaleCategory === 'buff') {
+    // The full ported EQEmu engine, for pairs the curated line data returns 'unknown' for. Runs
+    // UNCONDITIONALLY now (it is a verified 1:1 port, not the old heuristic) - `stackConflictFn`
+    // only reports a clean, unambiguous one-way overwrite (see stackingService.wouldOverwriteLive),
+    // and even so this only removes a stale tile under a DIFFERENT name. The old "skip anything
+    // touching a bard song" guard is gone: the ported engine has real bard-pool separation, so a
+    // song landing over a non-song correctly returns 0 (coexist) rather than being force-killed.
+    if (this.stackConflictFn && known.spellId && known.scaleCategory === 'buff') {
       for (const [activeKey, activeEntry] of this.activeBuffs) {
         if (activeKey === known.name.toLowerCase()) continue; // a recast of the same spell, not a conflict
         if (this.lineStackFn && this.lineStackFn(known.name, activeEntry.name) !== 'unknown') continue;
         const activeKnown = this.buffStore.getByName(activeEntry.name);
         if (!activeKnown || !activeKnown.spellId || activeKnown.scaleCategory !== 'buff') continue;
-        // Never let the effect-slot heuristic rule across the bard-song boundary. We only get here
-        // when the heading model returned 'unknown' - i.e. the two are not both members of the same
-        // modelled line - so the real song exclusions (bard haste vs Alacrity, Selo's vs SoW) were
-        // already decided by lineStackFn above and never reach this loop. Everything left with a
-        // song on either side coexists: resist songs stack with resist spells, with each other, and
-        // with cleric AC lines - measured across 26-31 Aug, every AC-SPA-1 "overwrite" the heuristic
-        // produced was a bard song being wrongly killed, zero of them correct
-        // (docs/research/bard-song-stacking.md).
-        if (known.isBardSong || activeKnown.isBardSong) continue;
-        const verdict = this.stackVerdictFn(activeKnown.spellId, known.spellId);
-        if (verdict) {
-          this._debugLog(`ENDED "${activeKnown.name}" - overwritten by "${known.name}" (${verdict.why})`);
+        if (this.stackConflictFn(activeKnown.spellId, known.spellId)) {
+          this._debugLog(`ENDED "${activeKnown.name}" - overwritten by "${known.name}" (stacking engine)`);
           this.activeBuffs.delete(activeKey);
         }
       }
