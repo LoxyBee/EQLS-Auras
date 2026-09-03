@@ -9004,11 +9004,18 @@ function initBuffPlanner() {
       cand.name +
       (mine ? ` — ${mine}` : '') +
       (cand.score != null ? `  (score ${cand.score})` : '');
-    const lines = [head, '', 'Kept over:'];
+    const lines = [head];
+    for (const rm of cand.redundantMultiplier || []) {
+      lines.push(`  ${rm.stat} not counted — ${rm.coveredBy} already gives more (only one ${rm.stat} source applies)`);
+    }
+    lines.push('', 'Kept over:');
     for (const b of cand.beat) {
       const bs = statSummary(b.stats);
       const num = [bs, b.score != null ? `score ${b.score}` : ''].filter(Boolean).join('  ·  ');
       lines.push(`• ${b.name}${num ? ` — ${num}` : ''}`);
+      for (const rm of b.redundantMultiplier || []) {
+        lines.push(`    ${rm.stat} doesn't count here — ${rm.coveredBy} gives more`);
+      }
       if (b.combo) {
         const blocked = b.combo.blocks
           .map((x) => `${x.name}${x.score != null ? ` (${x.score})` : ''}`)

@@ -349,6 +349,39 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
   return { kept, dropped, approximate: false };
 }
 
+// A haste / cast-speed buff only helps if it is the STRONGEST source of that multiplier. EQ applies
+// one haste source at a time - the owner, 3 Sep: "alacrities 40% haste beats verses of victories
+// 30% haste, so only 1 applies, even though only 1 is active ... verses still stacks with
+// strength/everything else". A bard haste song and a spell-haste buff sit on different headings, so
+// both land in the plan, but only the higher one's haste counts. Without this the weaker one's
+// wasted haste inflates its `score`, and score decides slot competition (orderCandidates) and
+// combination displacement (Fix 7) - so a genuinely useful buff could be pushed out by a song
+// whose haste does nothing. Mutates `score` on the losers and tags `redundantMultiplier` for the
+// "why" tooltip. Movement speed is not a scored stat, so Selo's vs SoW needs nothing here.
+function discountRedundantMultipliers(cands, multiplierStats, weightScale) {
+  if (!multiplierStats || !multiplierStats.size) return cands;
+  const scale = (stat) => (weightScale && weightScale[stat] != null ? weightScale[stat] : 1);
+  // Mirror spellEffects.statScore's per-stat weighting so the subtraction lines up.
+  const contribution = (stat, value) => {
+    if (stat === 'haste') return Math.max(0, Math.abs(value) - 100) * scale('haste');
+    if (stat === 'cast speed') return Math.abs(value) * 5.0 * scale('cast speed');
+    return 0;
+  };
+  for (const stat of multiplierStats) {
+    const providers = cands
+      .map((c) => ({ c, s: (c.stats || []).find((x) => x.stat === stat) }))
+      .filter((p) => p.s && p.s.value);
+    if (providers.length < 2) continue;
+    const best = providers.reduce((a, b) => (Math.abs(b.s.value) > Math.abs(a.s.value) ? b : a));
+    for (const p of providers) {
+      if (p === best) continue;
+      p.c.score = Math.max(0, Math.round((p.c.score || 0) - contribution(stat, p.s.value)));
+      p.c.redundantMultiplier = [...(p.c.redundantMultiplier || []), { stat, coveredBy: best.c.name }];
+    }
+  }
+  return cands;
+}
+
 // The order the candidate list is shown in AND the order the slots are filled in. The user's own
 // dragged `priorityOrder` (a list of names) wins; anything not in it follows by stat score
 // (biggest total contribution first - so when slots run out it's the least valuable buffs that
@@ -485,6 +518,13 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     });
   }
 
+  // A haste / cast-speed buff that isn't the strongest source loses that stat's weight (EQ applies
+  // one haste source at a time). Runs on the whole pooled set BEFORE the pool split and every
+  // resolve/order pass, so the discounted score is what slot competition and Fix 7 see.
+  if (spellData && spellData.multiplierStats) {
+    discountRedundantMultipliers(pooledRaw, spellData.multiplierStats, weightScale);
+  }
+
   // Permanent buffs (Yaulp, Fury) are "cast once and forget" - they get their OWN uncapped pool and
   // are resolved SEPARATELY, never deduped against a temp buff of a DIFFERENT line (the owner,
   // 27 Aug: Fury keeps its permanent listing even when a higher-tier temp Strength buff is also in
@@ -542,6 +582,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
         score: d.score,
         combo: d.combo || null,
         stackWhy: d.stackWhy || null,
+        redundantMultiplier: d.redundantMultiplier || null,
       });
     }
   }
@@ -586,6 +627,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
 
 module.exports = {
   computePlan,
+  discountRedundantMultipliers,
   normalizeClasses,
   normalizeClassCodes,
   parseSpellClasses,

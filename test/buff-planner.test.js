@@ -357,6 +357,35 @@ test('best of a stat = the bigger number, not level or duration', () => {
   assert.deepEqual(plan.candidates.map((c) => c.name), ['Strong Haste']);
 });
 
+test('a haste buff that is not the strongest source loses its haste weight from its score', () => {
+  // A bard haste song and a spell-haste buff both land (different headings), but EQ applies only
+  // one haste source - the higher. The song still keeps its other stats. So the song's score must
+  // not count its wasted haste (or it could push a real buff out of a slot). Owner, 3 Sep.
+  const roster = [
+    buff({ name: 'Spell Haste', spellId: 1, category: 'Haste', classes: 'ENC 50', level: 50 }),
+    buff({ name: 'Song Haste', spellId: 2, category: 'Song', classes: 'BRD 50', level: 50 }),
+  ];
+  const spellData = fakeSpellData({
+    1: [stat('haste', 141, 9)], // +41%
+    2: [stat('haste', 130, 9), stat('STR', 50, 2)], // +30% and +50 STR
+  });
+  const plan = computePlan({ roster, classes: ['ENC', 'BRD'], spellData });
+  const spell = plan.slots.find((c) => c.name === 'Spell Haste');
+  const song = plan.songSlots.find((c) => c.name === 'Song Haste');
+  assert.equal(spell.score, 141, 'the strongest haste source is untouched');
+  assert.equal(song.score, 150, 'raw 180 minus the wasted (130-100) haste weight');
+  assert.equal(song.redundantMultiplier[0].stat, 'haste');
+  assert.equal(song.redundantMultiplier[0].coveredBy, 'Spell Haste');
+});
+
+test('a lone haste buff keeps its full haste score', () => {
+  const roster = [buff({ name: 'Only Haste', spellId: 1, category: 'Haste', classes: 'ENC 50', level: 50 })];
+  const spellData = fakeSpellData({ 1: [stat('haste', 141, 9)] });
+  const plan = computePlan({ roster, classes: ['ENC'], spellData });
+  assert.equal(plan.slots[0].score, 141);
+  assert.ok(!plan.slots[0].redundantMultiplier);
+});
+
 test('totals sum each stat across every slotted buff; haste is kept-best not summed', () => {
   const roster = [
     buff({ name: 'Str A', spellId: 1, category: 'Strength', classes: 'SHM 20', level: 20 }),
