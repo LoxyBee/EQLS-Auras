@@ -3,9 +3,10 @@
 
   "headings": {
     "ac.slot1": "Armor Class (slot 1 - Heroism/Skin)",
-    "ac.slot2": "Armor Class (slot 2 - Shielding/Yaulp)",
+    "ac.slot2": "Armor Class (slot 2 - Shielding line / coats / Armor of Protection)",
     "ac.slot3": "Armor Class (slot 3 - Frenzy/Augment)",
     "ac.slot4": "Armor Class (slot 4 - Aegis/Umbra)",
+    "ac.yaulp": "Armor Class (Yaulp - its own effect slot; owner-confirmed in-game to stack with Arch Shielding and Bramblecoat, so private, not slot 2. Yaulp vs Guard/Aegis untested - add a conflictsWith if it turns out not to stack there)",
     "hp.primary": "Hit points (primary - Heroism/Skin)",
     "hp.symbol": "Hit points (Symbol line - requires gem)",
     "hp.talisman": "Hit points (Shielding/Talisman)",
@@ -89,15 +90,14 @@
       "classes": ["CLR"],
       "headings": ["ac.slot2", "hp.talisman"],
       "members": ["Armor of Protection", "Armor of the Faithful"],
-      "conflictsWith": ["cleric.yaulp", "enchanter.shielding", "shaman.talisman"]
+      "conflictsWith": ["enchanter.shielding", "shaman.talisman"]
     },
     {
       "id": "cleric.yaulp",
       "name": "Yaulp line",
       "classes": ["CLR"],
-      "headings": ["ac.slot2", "atk.primary"],
-      "members": ["Yaulp", "Yaulp II", "Yaulp III", "Yaulp IV"],
-      "conflictsWith": ["cleric.armor-of-protection", "enchanter.shielding"]
+      "headings": ["ac.yaulp", "atk.primary"],
+      "members": ["Yaulp", "Yaulp II", "Yaulp III", "Yaulp IV"]
     },
     {
       "id": "cleric.blessing-piety",
@@ -290,7 +290,7 @@
       "classes": ["ENC", "MAG", "NEC", "WIZ"],
       "headings": ["ac.slot2", "hp.talisman", "resist.magicShield"],
       "members": ["Minor Shielding", "Lesser Shielding", "Shielding", "Major Shielding", "Greater Shielding", "Arch Shielding", "Shield of the Magi"],
-      "conflictsWith": ["shaman.talisman", "cleric.armor-of-protection", "cleric.yaulp"]
+      "conflictsWith": ["shaman.talisman", "cleric.armor-of-protection"]
     },
     {
       "id": "enchanter.charisma",
@@ -361,7 +361,7 @@
       "classes": ["DRU"],
       "headings": ["ac.slot2", "ds.slot3"],
       "members": ["Thistlecoat", "Barbcoat", "Bramblecoat", "Spikecoat", "Thorncoat", "Bladecoat"],
-      "conflictsWith": ["enchanter.shielding", "cleric.yaulp"]
+      "conflictsWith": ["enchanter.shielding"]
     },
     {
       "id": "druid.shield-of-thistles",
