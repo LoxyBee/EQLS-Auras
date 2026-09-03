@@ -9070,6 +9070,16 @@ function initBuffPlanner() {
     const name = document.createElement('span');
     name.className = 'planner-buff-name';
     name.textContent = cand.name;
+    // A pinned "special" song (Amplification): no stats, no score - just the name + a note.
+    if (cand.special) {
+      li.classList.add('planner-buff-special');
+      const note = document.createElement('span');
+      note.className = 'planner-buff-meta';
+      note.textContent = cand.note || 'Not scored.';
+      main.append(name, note);
+      li.appendChild(main);
+      return li;
+    }
     const meta = document.createElement('span');
     meta.className = 'planner-buff-meta';
     // Lead with the stat this buff is ranked on (its category's headline), then its other stats in
@@ -9140,10 +9150,13 @@ function initBuffPlanner() {
 
     fillList(slotListEl, plan.slots, { slotted: true });
 
-    // Bard songs - their own 5-slot pool, only when Bard is one of the classes.
+    // Bard songs - their own 5-slot pool, only when Bard is one of the classes. Pinned "special"
+    // songs (Amplification) sit on top and don't count toward the 5.
     songCardEl.style.display = plan.hasBard ? '' : 'none';
     songCountEl.textContent = String((plan.songSlots || []).length);
-    fillList(songListEl, plan.songSlots || [], { slotted: true });
+    songListEl.innerHTML = '';
+    (plan.specialSongs || []).forEach((c) => songListEl.appendChild(buffRow(c, { slotted: true })));
+    (plan.songSlots || []).forEach((c) => songListEl.appendChild(buffRow(c, { slotted: true })));
 
     // Permanent buffs (Yaulp/Fury) - shown whenever any qualify.
     const perm = plan.permanentSlots || [];

@@ -129,6 +129,41 @@ function enrichCandidate(cand, spellData, weightScale) {
   };
 }
 
+// Songs the planner can't score but wants to surface anyway (owner, 3 Sep). Amplification is a
+// multiplier on every OTHER bard song running, so its value depends on the whole loadout - not a
+// character stat and not something to math out here. Shown at the top of the song list, flagged,
+// not counted against the 5 slots.
+const SPECIAL_SONGS = {
+  Amplification: 'Boosts every other bard song you have running. Shown as a reminder - the multiplier is not scored.',
+};
+
+// The SPECIAL_SONGS a chosen (bard) class can actually cast at the character level, as pinned
+// song-list entries.
+function specialSongsFor(roster, classes) {
+  const wantLevel = new Map(classes.map((c) => [c.code, c.level]));
+  const out = [];
+  for (const [name, note] of Object.entries(SPECIAL_SONGS)) {
+    const entry = (roster || []).find((e) => e.name === name);
+    if (!entry) continue;
+    const castable = parseSpellClasses(entry.classes).some(
+      (sc) => wantLevel.has(sc.code) && sc.level <= wantLevel.get(sc.code)
+    );
+    if (!castable) continue;
+    out.push({
+      name,
+      spellId: entry.spellId,
+      iconId: entry.iconId != null ? entry.iconId : null,
+      isSong: true,
+      special: true,
+      note,
+      stats: [],
+      score: null,
+      beat: [],
+    });
+  }
+  return out;
+}
+
 // Every castable candidate, one object per roster entry, NOT yet collapsed by category. classes
 // is normalized [{code, level}].
 function candidatesFor(roster, classes, spellData, weightScale) {
@@ -475,7 +510,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     stackingKnown: !!(lines || checkStack),
     stackingCoverage: null,
     slots: [], overflow: [], candidates: [],
-    songSlots: [], songOverflow: [], songCandidates: [],
+    songSlots: [], songOverflow: [], songCandidates: [], specialSongs: [],
     permanentSlots: [], permanentOverflow: [],
     combatSlots: [], combatOverflow: [],
     totals: [],
@@ -658,6 +693,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     classes: normClasses,
     level: normClasses[0].level,
     hasBard,
+    specialSongs: hasBard ? specialSongsFor(roster || [], normClasses) : [],
     excludedStats: excluded,
     statsKnown: !!spellData,
     stackingKnown: !resolved.approximate && !resolvedPerm.approximate && !resolvedCombat.approximate,

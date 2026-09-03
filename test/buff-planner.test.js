@@ -378,6 +378,20 @@ test('a haste buff that is not the strongest source loses its haste weight from 
   assert.equal(song.redundantMultiplier[0].coveredBy, 'Spell Haste');
 });
 
+test('Amplification is a pinned special song when a bard can cast it - not scored, not slotted', () => {
+  const roster = [
+    buff({ name: 'Amplification', spellId: 9, category: 'Utility Beneficial', classes: 'BRD 30', level: 30 }),
+    buff({ name: 'A Real Song', spellId: 1, category: 'Haste', classes: 'BRD 10', level: 10 }),
+  ];
+  const withBard = computePlan({ roster, classes: ['BRD'], level: 50 });
+  assert.deepEqual(withBard.specialSongs.map((s) => s.name), ['Amplification']);
+  assert.equal(withBard.specialSongs[0].special, true);
+  assert.equal(withBard.specialSongs[0].score, null);
+  assert.ok(!withBard.songSlots.some((s) => s.name === 'Amplification'), 'it does not take a real slot');
+  assert.deepEqual(computePlan({ roster, classes: ['CLR'], level: 50 }).specialSongs, [], 'no bard, none pinned');
+  assert.deepEqual(computePlan({ roster, classes: ['BRD'], level: 20 }).specialSongs, [], 'below its level, not pinned');
+});
+
 test('a lone haste buff keeps its full haste score', () => {
   const roster = [buff({ name: 'Only Haste', spellId: 1, category: 'Haste', classes: 'ENC 50', level: 50 })];
   const spellData = fakeSpellData({ 1: [stat('haste', 141, 9)] });

@@ -2524,6 +2524,14 @@ body.sidebar-resizing .sidebar {
 .planner-slot-list .planner-buff-row {
   margin-left: 2px;
 }
+/* A pinned "special" song (Amplification) - a reminder, not a scored slot. */
+.planner-buff-special {
+  border-style: dashed;
+  opacity: 0.85;
+}
+.planner-buff-special .planner-buff-meta {
+  font-style: italic;
+}
 .planner-draggable {
   cursor: grab;
 }

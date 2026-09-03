@@ -2950,6 +2950,7 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
     songSlots: withIcons(plan.songSlots),
     songOverflow: withIcons(plan.songOverflow),
     songCandidates: withIcons(plan.songCandidates),
+    specialSongs: withIcons(plan.specialSongs || []),
     permanentSlots: withIcons(plan.permanentSlots),
     permanentOverflow: withIcons(plan.permanentOverflow),
     combatSlots: withIcons(plan.combatSlots || []),
