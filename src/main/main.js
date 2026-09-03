@@ -429,6 +429,9 @@ buffEngine.setStackVetoFn((activeSpellId, incomingSpellId) =>
 // The heading model / measured blocked-pairs (docs/BUFF-STACKING.md) - the first authority, always
 // on. The stacking engine above only answers what this returns 'unknown' for.
 buffEngine.setLineStackFn((incomingName, activeName) => buffLines.stackDecision(incomingName, activeName));
+// ...and which curated 'coexist' verdicts are a deliberate stacksWith (engine must not override
+// those) vs just "no recorded conflict" (engine may). See buffEngine._land().
+buffEngine.setLineStacksExplicitlyFn((a, b) => buffLines.stacksExplicitly(a, b));
 
 // Auto-hide overlay widgets while EQ isn't the focused window (backlog #6)
 // - on by default per explicit user request. The watcher itself only ever

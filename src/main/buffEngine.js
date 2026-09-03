@@ -547,6 +547,7 @@ class BuffEngine extends EventEmitter {
     // 'overwrites' verdict - those come from a measured "did not take hold" pair in a real log, or a
     // strict same-line tier bump (Yaulp III over Yaulp II), neither of which is a guess.
     this.lineStackFn = null; // set by main.js from buffLines.stackDecision
+    this.lineStacksExplicitlyFn = null; // set by main.js from buffLines.stacksExplicitly - see setLineStacksExplicitlyFn
     this.durationMultiplierFn = () => 1;
     this.iconUrlFn = (iconId) => `eqicon://icon/Alternate%201/${iconId}`;
     this.debugLogFn = null; // (message) => void - see setDebugLogFn
@@ -578,6 +579,13 @@ class BuffEngine extends EventEmitter {
   // curated 'overwrites'. See the constructor comment on stackVetoFn.
   setStackVetoFn(fn) {
     this.stackVetoFn = fn;
+  }
+
+  // fn(nameA, nameB) => boolean - true only when the curated data carries an EXPLICIT stacksWith
+  // link for the pair (a deliberate "these coexist"). A plain 'coexist' otherwise just means "no
+  // recorded conflict", which the ported engine is allowed to overrule. See _land().
+  setLineStacksExplicitlyFn(fn) {
+    this.lineStacksExplicitlyFn = fn;
   }
 
   // fn(incomingName, activeName) => 'overwrites' | 'blocked' | 'coexist' | 'unknown'. See the
@@ -2268,17 +2276,28 @@ class BuffEngine extends EventEmitter {
     // still sitting in activeBuffs under a DIFFERENT name - the buff about to land below always
     // proceeds regardless, so a wrong or missing verdict never blocks the landing itself.
     // One pass over every active buff under a DIFFERENT name. The curated heading model
-    // (docs/BUFF-STACKING.md) decides first; where it says 'unknown', the full ported EQEmu engine
+    // (docs/BUFF-STACKING.md) decides first; where it says 'unknown' - or a WEAK 'coexist' (no
+    // recorded conflict, but no explicit stacksWith either) - the full ported EQEmu engine
     // (stackingService.wouldOverwriteLive) decides. Where curated says 'overwrites', the engine
     // gets a veto - a curated "replace" only removes the stale tile if the engine agrees the two
     // don't stack (verdict is not 0 and not -1). AEM's full parse found ~104 curated 'overwrites'
-    // pairs the game engine stacks fine, where the tile was vanishing mid-buff. The incoming
-    // landing always proceeds regardless; a verdict here only ever REMOVES a stale entry.
+    // pairs the game engine stacks fine, where the tile was vanishing mid-buff. And curated has
+    // been caught the other way too (Cantata of Soothing / Cassindra's Chorus of Clarity: different
+    // curated bard-regen headings so 'coexist', but the engine and the owner in-game agree Chorus
+    // blocks Cantata). The incoming landing always proceeds regardless; a verdict here only ever
+    // REMOVES a stale entry.
     if (known.scaleCategory === 'buff') {
       for (const [activeKey, activeEntry] of [...this.activeBuffs]) {
         if (activeKey === known.name.toLowerCase()) continue; // a recast of the same spell, not a conflict
         const curated = this.lineStackFn ? this.lineStackFn(known.name, activeEntry.name) : 'unknown';
-        if (curated === 'coexist' || curated === 'blocked') continue;
+        if (curated === 'blocked') continue;
+        if (
+          curated === 'coexist' &&
+          this.lineStacksExplicitlyFn &&
+          this.lineStacksExplicitlyFn(known.name, activeEntry.name)
+        ) {
+          continue; // a deliberate "these coexist" - the engine does not override it
+        }
 
         const activeKnown = this.buffStore.getByName(activeEntry.name);
         const haveEngine =
@@ -2295,7 +2314,7 @@ class BuffEngine extends EventEmitter {
           continue;
         }
 
-        // curated === 'unknown' - the ported engine decides on its own.
+        // curated 'unknown', or a weak 'coexist' - the ported engine decides on its own.
         if (haveEngine && this.stackConflictFn(activeKnown.spellId, known.spellId)) {
           this._debugLog(`ENDED "${activeKnown.name}" - overwritten by "${known.name}" (stacking engine)`);
           this.activeBuffs.delete(activeKey);

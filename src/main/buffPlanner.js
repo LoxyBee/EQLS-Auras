@@ -314,7 +314,14 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
         clashWhy = lines.stackReason ? lines.stackReason(c.name, placed.name) : null;
         break;
       }
-      if (dec === 'unknown' && checkStack && c.spellId != null && placed.spellId != null) {
+      // The ported engine decides pairs the curated data returns 'unknown' for, AND it can veto a
+      // WEAK 'coexist' (one that just means "no shared heading, no recorded conflict" - not an
+      // explicit stacksWith). Cantata of Soothing vs Cassindra's Chorus of Clarity is the case:
+      // curated puts them on different bard-regen headings and says coexist, but the engine (and
+      // the owner in-game) says Chorus blocks Cantata. An explicit stacksWith is left alone.
+      const engineMayDecide =
+        dec === 'unknown' || (dec === 'coexist' && !(lines.stacksExplicitly && lines.stacksExplicitly(c.name, placed.name)));
+      if (engineMayDecide && checkStack && c.spellId != null && placed.spellId != null) {
         // checkStack (stackingService.planConflict) checks both directions itself and returns
         // { overwrites, blocked, conflict } | null. `conflict` = they collide either way.
         const v = checkStack(placed.spellId, c.spellId);

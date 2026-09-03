@@ -144,6 +144,18 @@ function stackReason(incomingName, activeName) {
   return null;
 }
 
+// True only when the two lines carry an EXPLICIT `stacksWith` link - a deliberate "these coexist"
+// declaration (bard haste songs + spell haste, Frenzy line + Strength line, ...). A plain 'coexist'
+// from stackDecision can also just mean "no shared heading and no recorded conflict" - i.e. an
+// absence of evidence, which the full ported engine is allowed to overrule. This tells the two
+// apart so the engine only ever vetoes the weak kind.
+function stacksExplicitly(nameA, nameB) {
+  const a = lineForName(nameA);
+  const b = lineForName(nameB);
+  if (!a || !b) return false;
+  return (a.stacksWith || []).includes(b.id) || (b.stacksWith || []).includes(a.id);
+}
+
 function resetCache() {
   cache = null;
 }
@@ -155,6 +167,7 @@ module.exports = {
   bestCastableMember,
   stackDecision,
   stackReason,
+  stacksExplicitly,
   headingLabel,
   loadData,
   resetCache,

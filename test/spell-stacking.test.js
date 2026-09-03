@@ -117,6 +117,7 @@ function engineWithStacking() {
   e.setLineStackFn((inc, act) => buffLines.stackDecision(inc, act));
   e.setStackConflictFn((a, i) => s.wouldOverwriteLive(a, i));
   e.setStackVetoFn((a, i) => s.verdict(a, i, 50, 50));
+  e.setLineStacksExplicitlyFn((a, b) => buffLines.stacksExplicitly(a, b));
   return e;
 }
 const TS = '[Wed Aug 19 19:17:52 2026] ';
@@ -137,6 +138,24 @@ test('_land: a curated overwrite the engine agrees with (verdict 1) still replac
   assert.deepEqual(active(e), ['Thistlecoat']);
   feed(e, 'You begin casting Barbcoat.', 'Barbs spring from your skin.');
   assert.deepEqual(active(e), ['Barbcoat'], 'Thistlecoat replaced - curated and engine agree');
+});
+
+test('_land: the engine can also overrule a WEAK curated coexist', () => {
+  // Cantata of Soothing and Cassindra's Chorus of Clarity are on different bard-regen headings so
+  // buffLines says 'coexist' - but the engine (and the owner in-game) says Chorus blocks Cantata.
+  const e = engineWithStacking();
+  feed(e, 'You begin singing Cantata of Soothing.', 'Your feet leave the ground.');
+  // (whatever Cantata's landing text is - just needs to be recognised; use its real one)
+  const bs = new BuffStore({ loadJson: (k, d) => d, saveJson: () => {} });
+  const cantata = bs.getByName('Cantata of Soothing');
+  const chorus = bs.getByName("Cassindra's Chorus of Clarity");
+  e.activeBuffs.clear();
+  e._land(cantata);
+  assert.ok(e.getActiveBuffs().some((b) => b.name === 'Cantata of Soothing'));
+  e._land(chorus);
+  const names = e.getActiveBuffs().map((b) => b.name);
+  assert.ok(names.includes("Cassindra's Chorus of Clarity"), 'the incoming song lands');
+  assert.ok(!names.includes('Cantata of Soothing'), 'Cantata tile removed - engine overruled the weak coexist');
 });
 
 module.exports = () => report('spell-stacking');
