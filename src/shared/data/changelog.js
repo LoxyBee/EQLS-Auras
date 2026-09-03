@@ -11,6 +11,28 @@
 
 const CHANGELOG = [
   {
+    version: 'Unreleased',
+    date: null,
+    new: [
+      'Buff Planner: Balanced / Melee / Caster are stat-toggle presets now - pick one and it un-ticks the stats that build has no use for, and you can adjust from there',
+      'Buff Planner: each slotted buff has a "why this one" hover - the buffs it beat, their stats, and any blocked pairs behind it',
+      'Buff Planner: a Combat buffs section for short and limited-use buffs (Spirit of the Puma, Ward of the Divine) - the loadout you swap to for a fight, kept out of the pre-fight 14',
+      'Buff Planner: bard songs show their instrument type; Amplification is pinned to the song list for reference',
+      'Buff Planner: the result sections fold up - Priority order and Won\'t fit start closed',
+      'Add Aura: five entries under three headings - Standalone tools, Premade & custom, Import',
+      'A "Hide permanent buffs" toggle per aura - keeps Yaulp, Fury and the like off the overlay',
+    ],
+    fixes: [
+      'Buffs that never wear off - Armor of the Faithful, the Shielding line, the damage-shield coats, permanent wolf and vision forms (45 in all) - no longer vanish from the overlay a minute after they land',
+      'Buff stacking now runs the full EverQuest engine: a tile is only removed when the app\'s own rules and the engine agree, and it catches conflicts the rules missed - Cassindra\'s Chorus of Clarity blocks Cantata of Soothing, for instance',
+      'Yaulp stacks with the Shielding line, the coats and Armor of Protection - it was wrongly treated as conflicting',
+      'A maintained bard song that shares its landed text with a permanent buff (Frenzy / McVaxius\' Berserker Crescendo) is told apart by its 6-second pulse instead of showing as a stuck tile',
+      'Buff Planner: spell AC is shown at the value the game actually applies, a quarter of the raw file number',
+      'Buff Planner: magic resist ranks above the other resists; the Blessing of the Lord Commander line scores its passive heal-on-hit instead of nothing',
+      'Buff Planner: the class label is off each row; resists and rune are dropped from the Ignore-stats chips (always low priority)',
+    ],
+  },
+  {
     version: '1.0.0',
     date: '2026-09-02',
     new: [

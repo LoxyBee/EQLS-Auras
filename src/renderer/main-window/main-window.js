@@ -1884,7 +1884,6 @@ function initWidgetsPanel() {
   const premadeListEl = document.getElementById('add-widget-premade-list');
   const toolsListEl = document.getElementById('add-widget-tools-list');
   const modalAddTextWidgetBtn = document.getElementById('modal-add-text-widget-btn');
-  const modalNewWidgetNameInput = document.getElementById('modal-new-widget-name');
   const modalAddBuffWidgetBtn = document.getElementById('modal-add-buff-widget-btn');
   const modalAddTimerWidgetBtn = document.getElementById('modal-add-timer-widget-btn');
 
@@ -4814,7 +4813,6 @@ function initWidgetsPanel() {
     showAddWidgetChoices();
     importCodeInput.value = '';
     importStatus.textContent = '';
-    modalNewWidgetNameInput.value = '';
     renderPremadeList();
     // Re-pull the module list on open so a just-dropped module shows up here; the registry
     // subscriber above rebuilds moduleAuraChoices and re-renders the list when it lands.
@@ -4844,21 +4842,15 @@ function initWidgetsPanel() {
       addWidgetPanels.forEach((panel) => {
         panel.style.display = panel.id === `add-widget-${btn.dataset.choice}-panel` ? '' : 'none';
       });
-      if (btn.dataset.choice === 'custom') modalNewWidgetNameInput.focus();
-      else if (btn.dataset.choice === 'import') importCodeInput.focus();
+      if (btn.dataset.choice === 'import') importCodeInput.focus();
       else if (btn.dataset.choice === 'chat') renderChatShareCodeList();
     });
   });
 
-  // The name box is optional, and that is a fix rather than a relaxation.
-  //
-  // Every one of these buttons used to begin `if (!name) return;`, so clicking any aura type
-  // without first typing a name did nothing at all - no aura, no error, no hint that the empty
-  // box above was the reason. Reported as "cannot select any custom debuff; clicking a menu icon
-  // does not create an aura", which is exactly what it looked like from outside. The type is
-  // already a perfectly good name, and every aura can be renamed afterwards.
+  // No name box on the Add Aura panels (owner, 3 Sep) - a new aura is named after its type and
+  // renamed afterward on its settings panel.
   function widgetName(fallback) {
-    return modalNewWidgetNameInput.value.trim() || fallback;
+    return fallback;
   }
 
   // buffSource is undefined here for a plain buff widget (backend defaults
@@ -4888,9 +4880,6 @@ function initWidgetsPanel() {
       closeAddWidgetModal();
       focusWidget(config.id);
     });
-  });
-  modalNewWidgetNameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') addWidget(undefined, 'Custom buff aura');
   });
 
   nameInput.addEventListener('change', () => {
