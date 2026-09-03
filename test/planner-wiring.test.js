@@ -90,14 +90,24 @@ test('a planner setter on an unknown profile id is a no-op, not a throw', () => 
 // ---------------------------------------------------------------------------
 
 test('every planner IPC channel is handled in main and exposed in preload', () => {
-  for (const ch of ['planner:getInput', 'planner:setClasses', 'planner:setLevel', 'planner:setOrder', 'planner:compute']) {
+  for (const ch of ['planner:getInput', 'planner:setClasses', 'planner:setLevel', 'planner:setOrder', 'planner:setExcludedStats', 'planner:compute']) {
     assert.ok(mainSrc.includes(`ipcMain.handle('${ch}'`), `${ch} not handled`);
   }
   assert.match(preloadSrc, /getPlannerInput: \(profileId\) =>/);
   assert.match(preloadSrc, /setPlannerClasses: \(profileId, classes\) =>/);
   assert.match(preloadSrc, /setPlannerLevel: \(profileId, level\) =>/);
   assert.match(preloadSrc, /setPlannerOrder: \(profileId, order\) =>/);
+  assert.match(preloadSrc, /setPlannerExcludedStats: \(profileId, stats\) =>/);
   assert.match(preloadSrc, /computePlan: \(profileId\) =>/);
+});
+
+test('the "ignore stats" toggles are wired: markup, stat list from main, and it feeds computePlan', () => {
+  const page = read('src', 'renderer', 'main-window', 'index.html').match(/<section id="page-planner"[\s\S]*?<\/section>/)[0];
+  assert.match(page, /id="planner-exclude-chips"/, 'the ignore-stats chip container is missing');
+  assert.match(mainSrc, /allStats: spellEffects\.STAT_NAMES/, 'getInput must hand the renderer the stat list');
+  const fn = mainSrc.match(/ipcMain\.handle\('planner:compute'[\s\S]*?\n\}\);/)[0];
+  assert.match(fn, /excludedStats/, 'planner:compute must read and pass the ignored stats');
+  assert.match(rendererSrc, /setPlannerExcludedStats\(null, excludedStats\)/, 'a chip click must persist and recompute');
 });
 
 test('planner:compute recomputes from the live roster and never persists a plan', () => {

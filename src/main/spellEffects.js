@@ -106,6 +106,21 @@ function playstyleWeightScale(playstyle) {
   return scale;
 }
 
+// Every stat name the planner knows, in stat-sheet order - for the "ignore this stat" toggles.
+const STAT_NAMES = STATS.map((s) => s.name);
+const STAT_NAME_SET = new Set(STAT_NAMES);
+
+// The weight multiplier statScore() actually uses: the playstyle preset, then a hard 0 for every
+// stat the user has chosen to ignore (0 wins - "dump Charisma" means a Charisma buff scores
+// nothing and drops out of the default fill order). Unknown names in `excluded` are dropped.
+function combinedWeightScale(playstyle, excluded) {
+  const scale = playstyleWeightScale(playstyle);
+  for (const name of Array.isArray(excluded) ? excluded : []) {
+    if (STAT_NAME_SET.has(name)) scale[name] = 0;
+  }
+  return scale;
+}
+
 const EFFECT_SLOTS = 12;
 const ASSUMED_LEVEL = 50;
 
@@ -201,4 +216,5 @@ function resetCache() {
 module.exports = {
   spellStats, categoryStatMap, categoryHeadline, statScore, MULTIPLIER_STATS, RESIST_STATS,
   resetCache, PROC_SCORE_BOOST, STAT_WEIGHT, playstyleWeightScale,
+  STAT_NAMES, combinedWeightScale,
 };

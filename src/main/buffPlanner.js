@@ -389,9 +389,10 @@ function poolFor(cand, hasBard) {
 // `classes` is a list of codes (or {code} objects); `level` is the one shared character level.
 const VALID_PLAYSTYLES = ['balanced', 'melee', 'caster'];
 
-function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines, playstyle } = {}) {
+function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines, playstyle, excludedStats } = {}) {
   const normClasses = normalizeClasses(classes, level);
   const style = VALID_PLAYSTYLES.includes(playstyle) ? playstyle : 'balanced';
+  const excluded = Array.isArray(excludedStats) ? excludedStats.filter((s) => typeof s === 'string') : [];
   const empty = {
     classes: [],
     level: clampLevel(level == null ? DEFAULT_LEVEL : level),
@@ -408,10 +409,13 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   if (normClasses.length === 0) return empty;
 
   const hasBard = normClasses.some((c) => c.code === 'BRD');
-  // Fix 11 - the playstyle preset. A per-stat weight multiplier the injected spellData knows how to
-  // build (spellEffects.playstyleWeightScale). null / 'balanced' => all 1s, byte-identical scoring.
+  // Fix 11 - the playstyle preset, plus the user's ignored-stats list (hard 0). A per-stat weight
+  // multiplier the injected spellData builds (spellEffects.combinedWeightScale). null when there is
+  // nothing to change - 'balanced' with no ignored stats => all 1s, byte-identical scoring.
   const weightScale =
-    spellData && spellData.weightScale && style !== 'balanced' ? spellData.weightScale(style) : null;
+    spellData && spellData.weightScale && (style !== 'balanced' || excluded.length)
+      ? spellData.weightScale(style, excluded)
+      : null;
 
   const raw = candidatesFor(roster || [], normClasses, spellData, weightScale);
   const pool = (c) => poolFor(c, hasBard);
@@ -454,6 +458,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     level: normClasses[0].level,
     hasBard,
     playstyle: style,
+    excludedStats: excluded,
     statsKnown: !!spellData,
     stackingKnown: !resolved.approximate && !resolvedPerm.approximate,
     stackingCoverage,

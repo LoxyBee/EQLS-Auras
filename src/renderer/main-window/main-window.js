@@ -8886,6 +8886,7 @@ function initBuffPlanner() {
   const stackingStateEl = document.getElementById('planner-stacking-state');
   const activeProfileEl = document.getElementById('planner-active-profile');
   const priorityResetEl = document.getElementById('planner-priority-reset');
+  const excludeChipsEl = document.getElementById('planner-exclude-chips');
   if (!classRowEl) return;
 
   let classes = []; // up to 3 class codes - mirrors the active profile
@@ -8893,6 +8894,8 @@ function initBuffPlanner() {
   let order = []; // buff names, the dragged priority order
   let hasManualOrder = false; // true once the user has dragged (a non-empty saved buffPlanOrder)
   let syncingClasses = false; // true while syncClassSelects pushes values in - suppresses commitClasses
+  let excludedStats = []; // stat names the user has toggled off - weight 0 in the ranking
+  let allStats = []; // every stat name, from the main process (spellEffects.STAT_NAMES)
 
   // One row, three class dropdowns - it's one multiclass character, not three mains, so there is
   // one level (the input above this row) and it applies to all three.
@@ -8942,6 +8945,27 @@ function initBuffPlanner() {
       if (sel.value && !out.includes(sel.value)) out.push(sel.value);
     }
     return out;
+  }
+
+  // One toggle chip per stat. Clicking one adds/removes it from `excludedStats` (weight 0 in the
+  // planner's ranking) and recomputes. Rebuilt whenever the stat list or the saved set changes.
+  function buildExcludeChips() {
+    if (!excludeChipsEl) return;
+    excludeChipsEl.innerHTML = '';
+    for (const stat of allStats) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'planner-stat-chip' + (excludedStats.includes(stat) ? ' excluded' : '');
+      chip.textContent = stat;
+      chip.title = excludedStats.includes(stat) ? `${stat} is ignored - click to count it again` : `Ignore ${stat}`;
+      chip.addEventListener('click', () => {
+        if (excludedStats.includes(stat)) excludedStats = excludedStats.filter((s) => s !== stat);
+        else excludedStats = [...excludedStats, stat];
+        buildExcludeChips();
+        window.eqTracker.setPlannerExcludedStats(null, excludedStats).then(recompute);
+      });
+      excludeChipsEl.appendChild(chip);
+    }
   }
 
   function commitClasses() {
@@ -9140,6 +9164,9 @@ function initBuffPlanner() {
         levelInputEl.value = String(level);
         const style = input.playstyle || 'balanced';
         playstyleRadios.forEach((r) => { r.checked = r.value === style; });
+        excludedStats = Array.isArray(input.excludedStats) ? input.excludedStats : [];
+        allStats = Array.isArray(input.allStats) ? input.allStats : [];
+        buildExcludeChips();
         const active = profiles.find((p) => p.id === activeId);
         activeProfileEl.textContent = active ? active.name : 'Default';
         buildClassSelects();

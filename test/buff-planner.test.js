@@ -463,5 +463,41 @@ test('Fix 11: a playstyle preset reorders via weights, balanced is the default',
   assert.equal(computePlan({ roster, classes: ['SHM'], spellData }).playstyle, 'balanced');
 });
 
+test('excludedStats: an ignored stat is scored at zero, so its buff falls to the bottom', () => {
+  const roster = [
+    buff({ name: 'BigStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'BigCha', spellId: 2, category: 'C', classes: 'SHM 50', level: 50 }),
+  ];
+  const byId = { 1: [{ stat: 'STR', value: 40, order: 0 }], 2: [{ stat: 'CHA', value: 80, order: 1 }] };
+  const spellData = {
+    ...fakeSpellData(byId),
+    score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat] != null) ? ws[e.stat] : 1), 0),
+    // main.js wires this to spellEffects.combinedWeightScale(style, excluded)
+    weightScale: (style, excluded) => {
+      const sc = {};
+      for (const n of excluded || []) sc[n] = 0;
+      return sc;
+    },
+  };
+  const base = computePlan({ roster, classes: ['SHM'], spellData }).candidates.map((c) => c.name);
+  assert.deepEqual(base[0], 'BigCha', 'without exclusions the +80 CHA buff ranks first');
+
+  const dumped = computePlan({ roster, classes: ['SHM'], spellData, excludedStats: ['CHA'] });
+  assert.deepEqual(dumped.candidates.map((c) => c.name)[0], 'BigStr', 'ignoring CHA drops it below the STR buff');
+  assert.deepEqual(dumped.excludedStats, ['CHA'], 'the result echoes what was ignored');
+});
+
+test('excludedStats: junk is filtered, balanced+no-exclusions still means no weightScale call', () => {
+  const roster = [buff({ name: 'A', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 })];
+  let weightScaleCalls = 0;
+  const spellData = {
+    ...fakeSpellData({ 1: [{ stat: 'STR', value: 10, order: 0 }] }),
+    score: () => 10,
+    weightScale: () => { weightScaleCalls++; return {}; },
+  };
+  computePlan({ roster, classes: ['SHM'], spellData, excludedStats: [null, 5, {}] });
+  assert.equal(weightScaleCalls, 0, 'no real exclusions + balanced => scoring path untouched');
+});
+
 module.exports = () => report('buff-planner');
 if (require.main === module) report('buff-planner').then((n) => process.exit(n ? 1 : 0));

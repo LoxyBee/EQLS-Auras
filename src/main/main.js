@@ -2874,10 +2874,16 @@ ipcMain.handle('planner:getInput', (_event, profileId) => {
     level: (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL,
     buffPlanOrder: (profile && profile.buffPlanOrder) || [],
     playstyle: (profile && profile.plannerPlaystyle) || 'balanced',
+    excludedStats: (profile && profile.plannerExcludedStats) || [],
+    allStats: spellEffects.STAT_NAMES, // for the "ignore this stat" toggles
   };
 });
 ipcMain.handle('planner:setPlaystyle', (_event, { profileId, playstyle }) => {
   profileStore.setPlannerPlaystyle(profileId || profileStore.getActiveId(), playstyle);
+  return true;
+});
+ipcMain.handle('planner:setExcludedStats', (_event, { profileId, stats }) => {
+  profileStore.setPlannerExcludedStats(profileId || profileStore.getActiveId(), stats);
   return true;
 });
 ipcMain.handle('planner:setClasses', (_event, { profileId, classes }) => {
@@ -2898,6 +2904,7 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
   const level = (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL;
   const priorityOrder = (profile && profile.buffPlanOrder) || [];
   const playstyle = (profile && profile.plannerPlaystyle) || 'balanced';
+  const excludedStats = (profile && profile.plannerExcludedStats) || [];
   // The planner ALWAYS uses the game's stacking data when the spell file is reachable - it's how it
   // tells a weaker tier of a buff line from a different buff that stacks. (Independent of the
   // `useStackingModel` diagnostic toggle, which gates the live detection engine, a riskier place.)
@@ -2914,11 +2921,11 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
           spellEffects.categoryHeadline(currentInstallRoot, roster, spellId, category),
         score: (spellId, name, weightScale) =>
           spellEffects.statScore(currentInstallRoot, spellId, name, weightScale),
-        weightScale: (style) => spellEffects.playstyleWeightScale(style),
+        weightScale: (style, excluded) => spellEffects.combinedWeightScale(style, excluded),
         multiplierStats: spellEffects.MULTIPLIER_STATS,
       }
     : null;
-  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines, playstyle });
+  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines, playstyle, excludedStats });
   // Attach a served icon url to everything the page will draw, same shape buffs:known uses.
   const withIcons = (list) =>
     list.map((c) => ({ ...c, iconUrl: c.iconId != null ? iconService.buildIconUrl(c.iconId) : null }));
@@ -2939,6 +2946,7 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
     stackingKnown: plan.stackingKnown,
     stackingCoverage: plan.stackingCoverage,
     playstyle: plan.playstyle,
+    excludedStats: plan.excludedStats,
   };
 });
 

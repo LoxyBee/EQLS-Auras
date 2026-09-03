@@ -1684,6 +1684,10 @@
             <label><input type="radio" name="planner-playstyle" value="melee" /> Melee</label>
             <label><input type="radio" name="planner-playstyle" value="caster" /> Caster</label>
           </div>
+          <div class="row planner-exclude-row">
+            <span class="label" title="Click a stat to stop it counting toward the ranking (its weight becomes zero) - e.g. dump Charisma so no CHA buff takes a slot. Your dragged order still wins, and the totals still show what a slotted buff actually gives.">Ignore stats:</span>
+            <div class="planner-exclude-chips" id="planner-exclude-chips"></div>
+          </div>
         </div>
 
         <div class="card" id="planner-totals-card" style="display:none">

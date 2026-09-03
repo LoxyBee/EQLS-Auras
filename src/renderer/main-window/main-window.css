@@ -2404,6 +2404,39 @@ body.sidebar-resizing .sidebar {
   width: 64px;
   flex: 0 0 auto;
 }
+.planner-exclude-row {
+  align-items: flex-start;
+}
+.planner-exclude-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.planner-stat-chip {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.3;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.planner-stat-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* Ignored: this stat scores nothing. Struck through + dimmed - the opposite signal to the brass
+   "active" fill used elsewhere, because here the highlighted state is the OFF state. */
+.planner-stat-chip.excluded {
+  text-decoration: line-through;
+  opacity: 0.45;
+  border-style: dashed;
+}
+.planner-stat-chip.excluded:hover {
+  opacity: 0.7;
+}
 .planner-slot-list {
   margin: 8px 0 0;
   padding-left: 26px;

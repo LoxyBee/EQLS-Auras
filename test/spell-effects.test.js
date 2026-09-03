@@ -19,7 +19,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { test, report } = require('./harness');
-const { spellStats, categoryStatMap, categoryHeadline, statScore, resetCache } = require('../src/main/spellEffects');
+const { spellStats, categoryStatMap, categoryHeadline, statScore, resetCache, STAT_NAMES, combinedWeightScale } = require('../src/main/spellEffects');
 
 const ROWS = [
   '159^Strength^0^^' + '0^'.repeat(168) + '1|4|42|0|101|67',
@@ -113,6 +113,21 @@ test('the module never exposes the game\'s internal effect numbers by name', () 
     assert.equal(typeof s.stat, 'string');
     assert.ok(!/^\d/.test(s.stat), 'a stat name is a word, not a number');
   }
+});
+
+test('combinedWeightScale: ignored stats get a hard 0, on top of the playstyle preset', () => {
+  assert.deepEqual(combinedWeightScale('balanced', []), {});
+  assert.deepEqual(combinedWeightScale('balanced', ['CHA']), { CHA: 0 });
+  // caster preset already touches STR; ignoring it should still land on 0, not the preset value
+  const caster = combinedWeightScale('caster', ['STR']);
+  assert.equal(caster.STR, 0);
+  // an unknown stat name is dropped, not passed through
+  assert.deepEqual(combinedWeightScale('balanced', ['STR', 'nonsense']), { STR: 0 });
+});
+
+test('STAT_NAMES is the plain stat list the toggles are built from', () => {
+  assert.ok(STAT_NAMES.includes('CHA') && STAT_NAMES.includes('STR') && STAT_NAMES.includes('haste'));
+  assert.ok(STAT_NAMES.every((n) => typeof n === 'string' && !/^\d/.test(n)));
 });
 
 module.exports = () => report('spell-effects');
