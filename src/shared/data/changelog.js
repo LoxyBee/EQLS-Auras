@@ -1,18 +1,17 @@
 'use strict';
 
-// In-app changelog (backlog #18), rendered on the About page. Newest entry first.
+// In-app changelog (backlog #18), opened from a button on the About page. Newest entry first.
 //
-// The Documentation session owns the CONTENT: as part of the pre-PR doc pass it adds/updates the
-// top entry for the work being shipped - new features first (`new`), then bug fixes (`fixes`) -
-// drawing from the DONE backlog items and the `fix:` commits. `version: 'Unreleased'` holds work
-// not yet in a tagged release; give it a real version string and a `date` when it ships.
+// Every entry is a real released version with a date - there is no "Unreleased" line (owner,
+// 3 Sep: "when i pr, it's released"). As part of the pre-PR doc pass, add a new top entry -
+// new features first (`new`), then bug fixes (`fixes`) - and bump package.json's version to match.
 //
-// Shape: { version, date: 'YYYY-MM-DD' | null, new: string[], fixes: string[] }
+// Shape: { version, date: 'YYYY-MM-DD', new: string[], fixes: string[] }
 
 const CHANGELOG = [
   {
-    version: 'Unreleased',
-    date: null,
+    version: '1.1.0',
+    date: '2026-09-03',
     new: [
       'Buff Planner: Balanced / Melee / Caster are stat-toggle presets now - pick one and it un-ticks the stats that build has no use for, and you can adjust from there',
       'Buff Planner: each slotted buff has a "why this one" hover - the buffs it beat, their stats, and any blocked pairs behind it',
