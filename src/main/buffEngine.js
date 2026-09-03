@@ -535,6 +535,13 @@ class BuffEngine extends EventEmitter {
     // neither of which has the game files. A verdict here only ever REMOVES a stale entry under a
     // DIFFERENT name; the incoming landing always proceeds regardless.
     this.stackConflictFn = null; // (activeSpellId, incomingSpellId) => boolean (incoming cleanly overwrites active)
+    // Raw ported-engine verdict, used ONLY to veto a curated 'overwrites' - the curated line data
+    // proposes removing the stale tile, this must also agree before it happens. AEM's full parse of
+    // every curated 'overwrites' pair found ~104 where curated said "replace" but the game engine
+    // says the two stack fine, so the tile was vanishing while the buff was still up. Curated
+    // proposes, engine vetoes. Returns 1 (incoming overwrites active) / 0 (stack) / -1 (blocked) /
+    // null (no roster stack data - then the veto abstains and curated stands).
+    this.stackVetoFn = null; // (activeSpellId, incomingSpellId) => 1 | 0 | -1 | null
     // The heading model (docs/BUFF-STACKING.md, src/shared/buffLines.js). (incomingName, activeName)
     // => 'overwrites' | 'blocked' | 'coexist' | 'unknown'. Runs UNCONDITIONALLY in _land() for the
     // 'overwrites' verdict - those come from a measured "did not take hold" pair in a real log, or a
@@ -565,6 +572,12 @@ class BuffEngine extends EventEmitter {
   // unambiguously replaces the active one. See the constructor comment on stackConflictFn.
   setStackConflictFn(fn) {
     this.stackConflictFn = fn;
+  }
+
+  // fn(activeSpellId, incomingSpellId) => 1 | 0 | -1 | null - raw engine verdict that vetoes a
+  // curated 'overwrites'. See the constructor comment on stackVetoFn.
+  setStackVetoFn(fn) {
+    this.stackVetoFn = fn;
   }
 
   // fn(incomingName, activeName) => 'overwrites' | 'blocked' | 'coexist' | 'unknown'. See the
@@ -2215,31 +2228,36 @@ class BuffEngine extends EventEmitter {
     // reaching into cases nothing has confirmed. A verdict here only ever REMOVES a stale entry
     // still sitting in activeBuffs under a DIFFERENT name - the buff about to land below always
     // proceeds regardless, so a wrong or missing verdict never blocks the landing itself.
-    // The heading model / measured blocked-pairs (docs/BUFF-STACKING.md) - runs unconditionally,
-    // these are observed conflicts or strict tier bumps, not a guess. Only ever removes a stale
-    // tile still sitting under a DIFFERENT name; the incoming landing always proceeds below.
-    if (this.lineStackFn && known.scaleCategory === 'buff') {
+    // One pass over every active buff under a DIFFERENT name. The curated heading model
+    // (docs/BUFF-STACKING.md) decides first; where it says 'unknown', the full ported EQEmu engine
+    // (stackingService.wouldOverwriteLive) decides. Where curated says 'overwrites', the engine
+    // gets a veto - a curated "replace" only removes the stale tile if the engine agrees the two
+    // don't stack (verdict is not 0 and not -1). AEM's full parse found ~104 curated 'overwrites'
+    // pairs the game engine stacks fine, where the tile was vanishing mid-buff. The incoming
+    // landing always proceeds regardless; a verdict here only ever REMOVES a stale entry.
+    if (known.scaleCategory === 'buff') {
       for (const [activeKey, activeEntry] of [...this.activeBuffs]) {
-        if (activeKey === known.name.toLowerCase()) continue;
-        if (this.lineStackFn(known.name, activeEntry.name) === 'overwrites') {
+        if (activeKey === known.name.toLowerCase()) continue; // a recast of the same spell, not a conflict
+        const curated = this.lineStackFn ? this.lineStackFn(known.name, activeEntry.name) : 'unknown';
+        if (curated === 'coexist' || curated === 'blocked') continue;
+
+        const activeKnown = this.buffStore.getByName(activeEntry.name);
+        const haveEngine =
+          this.stackConflictFn && known.spellId && activeKnown && activeKnown.spellId && activeKnown.scaleCategory === 'buff';
+
+        if (curated === 'overwrites') {
+          // Curated proposes removal; the engine vetoes if it has data and says the two stack.
+          if (haveEngine && this.stackVetoFn) {
+            const v = this.stackVetoFn(activeKnown.spellId, known.spellId);
+            if (v === 0 || v === -1) continue; // engine: these stack (or the incoming is blocked) - keep the tile
+          }
           this._debugLog(`ENDED "${activeEntry.name}" - replaced by "${known.name}" (same buff line / known conflict)`);
           this.activeBuffs.delete(activeKey);
+          continue;
         }
-      }
-    }
-    // The full ported EQEmu engine, for pairs the curated line data returns 'unknown' for. Runs
-    // UNCONDITIONALLY now (it is a verified 1:1 port, not the old heuristic) - `stackConflictFn`
-    // only reports a clean, unambiguous one-way overwrite (see stackingService.wouldOverwriteLive),
-    // and even so this only removes a stale tile under a DIFFERENT name. The old "skip anything
-    // touching a bard song" guard is gone: the ported engine has real bard-pool separation, so a
-    // song landing over a non-song correctly returns 0 (coexist) rather than being force-killed.
-    if (this.stackConflictFn && known.spellId && known.scaleCategory === 'buff') {
-      for (const [activeKey, activeEntry] of this.activeBuffs) {
-        if (activeKey === known.name.toLowerCase()) continue; // a recast of the same spell, not a conflict
-        if (this.lineStackFn && this.lineStackFn(known.name, activeEntry.name) !== 'unknown') continue;
-        const activeKnown = this.buffStore.getByName(activeEntry.name);
-        if (!activeKnown || !activeKnown.spellId || activeKnown.scaleCategory !== 'buff') continue;
-        if (this.stackConflictFn(activeKnown.spellId, known.spellId)) {
+
+        // curated === 'unknown' - the ported engine decides on its own.
+        if (haveEngine && this.stackConflictFn(activeKnown.spellId, known.spellId)) {
           this._debugLog(`ENDED "${activeKnown.name}" - overwritten by "${known.name}" (stacking engine)`);
           this.activeBuffs.delete(activeKey);
         }

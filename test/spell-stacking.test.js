@@ -21,6 +21,8 @@ const assert = require('node:assert/strict');
 const { test, report } = require('./harness');
 const { makeStackingService } = require('../src/main/stackingService');
 const { BuffStore } = require('../src/main/buffStore');
+const { BuffEngine } = require('../src/main/buffEngine');
+const buffLines = require('../src/shared/buffLines');
 
 // A BuffStore over the real bundled roster (no userData writes).
 const store = new BuffStore({ loadJson: (k, d) => d, saveJson: () => {} });
@@ -93,6 +95,48 @@ test('wouldOverwriteLive only fires on a clean one-way overwrite', () => {
   assert.equal(svc.wouldOverwriteLive(ID.anthem, ID.chantOfBattle), false);
   // unrelated -> false
   assert.equal(svc.wouldOverwriteLive(ID.strength, ID.dexterity), false);
+});
+
+// ---------------------------------------------------------------------------
+// buffEngine._land: "curated proposes, engine vetoes". The curated line data marks the whole
+// damage-shield "coat" line mutually exclusive, so stackDecision('Barbcoat', 'Thorncoat') is
+// 'overwrites' - but the ported engine knows Barbcoat (lower tier) is actually BLOCKED by
+// Thorncoat (verdict -1). Landing Barbcoat must NOT drop the Thorncoat tile. Against Thistlecoat
+// (lower than Barbcoat, verdict 1) the curated overwrite stands. This is the class AEM's parse
+// found: ~104 curated 'overwrites' the engine stacks, dropping a tile while the buff is still up.
+function engineWithStacking() {
+  const data = {};
+  const st = {
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, val) => { data[n] = JSON.parse(JSON.stringify(val)); },
+  };
+  const bs = new BuffStore(st);
+  const e = new BuffEngine(bs, st);
+  e.stop();
+  const s = makeStackingService(bs);
+  e.setLineStackFn((inc, act) => buffLines.stackDecision(inc, act));
+  e.setStackConflictFn((a, i) => s.wouldOverwriteLive(a, i));
+  e.setStackVetoFn((a, i) => s.verdict(a, i, 50, 50));
+  return e;
+}
+const TS = '[Wed Aug 19 19:17:52 2026] ';
+const feed = (e, ...ls) => ls.forEach((l) => e.handleLine(TS + l));
+const active = (e) => e.getActiveBuffs().map((b) => b.name).sort();
+
+test('_land: a curated overwrite the engine calls a block does NOT drop the worn tile', () => {
+  const e = engineWithStacking();
+  feed(e, 'You begin casting Thorncoat.', 'Thorns spring from your skin.');
+  assert.deepEqual(active(e), ['Thorncoat']);
+  feed(e, 'You begin casting Barbcoat.', 'Barbs spring from your skin.');
+  assert.ok(active(e).includes('Thorncoat'), 'Thorncoat kept - engine vetoed the curated overwrite');
+});
+
+test('_land: a curated overwrite the engine agrees with (verdict 1) still replaces the worn tile', () => {
+  const e = engineWithStacking();
+  feed(e, 'You begin casting Thistlecoat.', 'Thistles spring from your skin.');
+  assert.deepEqual(active(e), ['Thistlecoat']);
+  feed(e, 'You begin casting Barbcoat.', 'Barbs spring from your skin.');
+  assert.deepEqual(active(e), ['Barbcoat'], 'Thistlecoat replaced - curated and engine agree');
 });
 
 module.exports = () => report('spell-stacking');

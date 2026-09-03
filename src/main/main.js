@@ -420,6 +420,12 @@ buffEngine.setUseCastTimeFilter(loadJson('useCastTimeFilter', false));
 buffEngine.setStackConflictFn((activeSpellId, incomingSpellId) =>
   stackingService.wouldOverwriteLive(activeSpellId, incomingSpellId)
 );
+// ...and the same engine gets a veto over a curated 'overwrites': the curated line data proposes
+// removing the stale tile, but if the ported engine says the two actually stack, the tile stays.
+// Raw verdict (1 / 0 / -1 / null) - active buff is "worn", the incoming landing is "cast".
+buffEngine.setStackVetoFn((activeSpellId, incomingSpellId) =>
+  stackingService.verdict(activeSpellId, incomingSpellId, 50, 50)
+);
 // The heading model / measured blocked-pairs (docs/BUFF-STACKING.md) - the first authority, always
 // on. The stacking engine above only answers what this returns 'unknown' for.
 buffEngine.setLineStackFn((incomingName, activeName) => buffLines.stackDecision(incomingName, activeName));
