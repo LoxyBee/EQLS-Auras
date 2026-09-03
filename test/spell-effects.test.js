@@ -59,8 +59,8 @@ test('a slot that is not a character stat (a heal) is thrown away entirely', () 
 
 test('a multi-stat spell returns every stat, strongest first', () => {
   const s = spellStats(E.aegis, 50);
-  assert.deepEqual(s.map((x) => x.stat), ['max HP', 'AC']); // 225 then 50
-  assert.equal(s.find((x) => x.stat === 'AC').value, 50);
+  assert.deepEqual(s.map((x) => x.stat), ['max HP', 'AC']); // 225 then AC 12 (floor(raw 50 / 4))
+  assert.equal(s.find((x) => x.stat === 'AC').value, 12, 'spell AC is stored 4x - floor(50/4) = 12');
 });
 
 test('a formula the old parser did not implement (109 = base + level/4) now scales', () => {
@@ -84,7 +84,7 @@ test("categoryStatMap learns a category's headline stat from the roster", () => 
 test('statScore adds attribute points 1:1, turns haste into its bonus, weights resists down', () => {
   assert.equal(statScore(E.strength), 67);
   assert.equal(statScore(E.melody), 41); // haste 141 -> +41
-  assert.equal(statScore(E.aegis), 106); // AC 50 + max HP 225 * 0.25 = 106.25 -> 106 (Fix 5)
+  assert.equal(statScore(E.aegis), 68); // AC 12 (floor(50/4)) + max HP 225 * 0.25 = 56.25 -> 68
   assert.equal(statScore(E.bigHeal), 0);
   // magic resist is the one weighted-up resist (owner, 3 Sep): +40 * 0.4 = 16. A fire/cold/etc
   // buff would be +40 * 0.1 = 4.

@@ -54,6 +54,8 @@ const STATS = [
 ];
 const STAT_BY_EFFECT = new Map(STATS.map((s, i) => [s.effect, { name: s.name, order: i }]));
 const MULTIPLIER_STATS = new Set(['haste', 'cast speed']); // 100-based, a bonus not a point total
+// Effects the spell file stores at a multiple of the client-applied value. Just AC (see spellStats).
+const STAT_DIVISOR = { AC: 4 };
 
 // How much a point of each stat is worth when ranking buffs of DIFFERENT stats for the default
 // slot order (the user drags to override). Attributes / AC / ATK count 1:1. Resists are weighted
@@ -128,7 +130,18 @@ function spellStats(entry, level = ASSUMED_LEVEL) {
   for (const [spa, base, limit, formula, max] of spellView(entry).effects) {
     const known = STAT_BY_EFFECT.get(spa);
     if (!known) continue;
-    const value = calcSpellValue(base, formula, max, level);
+    let value = calcSpellValue(base, formula, max, level);
+    // EQ stores spell AC (effect 1) at 4x the value the client actually applies - it divides it back
+    // down (floored) when folding spell AC into the mitigation pool. amerzel's eql-info renders
+    // Yaulp III's raw AC 40 as "+10" and Verses of Victory's raw 50 as "+12" (floor(50/4)), both
+    // matching the owner's in-game readings. Every other stat in STATS is stored 1:1 (spot-checked
+    // against amerzel's spells.json: ATK, the resists, the attribute block, HP/mana/endurance regen,
+    // max HP/mana, rune/stoneskin, damage shield; haste and cast speed have their own handling in
+    // statScore). A level-scaling ramp on top of this (Yaulp's "+1 at L1 to +4 at L50") and the
+    // character's own AC soft cap are both out of scope - the planner ranks buffs, it is not a
+    // character sheet.
+    const div = STAT_DIVISOR[known.name];
+    if (div) value = value < 0 ? Math.ceil(value / div) : Math.floor(value / div);
     if (!value) continue;
     // Effect 0 is the generic hit-points effect, not "HP regen" - it's negative on 260 roster
     // entries (damage / life-drain conversions like Lich). statScore does abs()*4x, which ranked
