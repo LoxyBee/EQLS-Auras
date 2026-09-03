@@ -13,6 +13,11 @@ const LOG_FILE_PATTERN = /^eqlog_.*\.txt$/i;
 class LogWatcher extends EventEmitter {
   constructor() {
     super();
+    // main.js registers one 'line' listener per log-line consumer (buff engine, custom timers,
+    // damage, lockouts, zone, travel, ...) - well past Node's default warn-at-10. They are all
+    // long-lived and deliberate, so lift the cap rather than have a real leak hide behind the
+    // warning noise.
+    this.setMaxListeners(32);
     this.logsFolder = null;
     this.currentFilePath = null;
     this.offset = 0;

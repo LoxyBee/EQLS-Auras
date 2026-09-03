@@ -90,14 +90,24 @@ test('a planner setter on an unknown profile id is a no-op, not a throw', () => 
 // ---------------------------------------------------------------------------
 
 test('every planner IPC channel is handled in main and exposed in preload', () => {
-  for (const ch of ['planner:getInput', 'planner:setClasses', 'planner:setLevel', 'planner:setOrder', 'planner:compute']) {
+  for (const ch of ['planner:getInput', 'planner:setClasses', 'planner:setLevel', 'planner:setOrder', 'planner:setExcludedStats', 'planner:compute']) {
     assert.ok(mainSrc.includes(`ipcMain.handle('${ch}'`), `${ch} not handled`);
   }
   assert.match(preloadSrc, /getPlannerInput: \(profileId\) =>/);
   assert.match(preloadSrc, /setPlannerClasses: \(profileId, classes\) =>/);
   assert.match(preloadSrc, /setPlannerLevel: \(profileId, level\) =>/);
   assert.match(preloadSrc, /setPlannerOrder: \(profileId, order\) =>/);
+  assert.match(preloadSrc, /setPlannerExcludedStats: \(profileId, stats\) =>/);
   assert.match(preloadSrc, /computePlan: \(profileId\) =>/);
+});
+
+test('the "ignore stats" toggles are wired: markup, stat list from main, and it feeds computePlan', () => {
+  const page = read('src', 'renderer', 'main-window', 'index.html').match(/<section id="page-planner"[\s\S]*?<\/section>/)[0];
+  assert.match(page, /id="planner-exclude-chips"/, 'the ignore-stats chip container is missing');
+  assert.match(mainSrc, /allStats: spellEffects\.STAT_NAMES/, 'getInput must hand the renderer the stat list');
+  const fn = mainSrc.match(/ipcMain\.handle\('planner:compute'[\s\S]*?\n\}\);/)[0];
+  assert.match(fn, /excludedStats/, 'planner:compute must read and pass the ignored stats');
+  assert.match(rendererSrc, /setPlannerExcludedStats\(null, excludedStats\)/, 'a chip click must persist and recompute');
 });
 
 test('planner:compute recomputes from the live roster and never persists a plan', () => {
@@ -138,16 +148,17 @@ test('planner:compute always uses the game stacking data when the spell file is 
 // the page
 // ---------------------------------------------------------------------------
 
-test('the Buff Planner is LOCKED - no nav button, but the page markup is kept intact', () => {
-  // The sidebar button is removed until the buff-loadout aura ships, so nothing can reach the
-  // page. The <section> and all its controls stay in the DOM so buffPlanner.js keeps its tests
-  // and re-enabling is a one-line change.
-  assert.doesNotMatch(html, /class="nav-btn"[^>]*data-page="page-planner"/, 'the Buff Planner nav button must not be live');
-  assert.doesNotMatch(html, /id="planner-nav-btn"/, 'the nav button id must be gone (initBuffPlanner gates on it)');
+test('the Buff Planner is UNLOCKED - the nav button is live (Fix 4, 2 Sep)', () => {
+  assert.match(html, /class="nav-btn" data-page="page-planner" id="planner-nav-btn"/, 'the Buff Planner nav button must be present');
   assert.match(html, /<section id="page-planner" class="page">/);
+  // Framing (Fix 4): a "loadout sheet", never "optimiser" / "best setup".
+  const page = html.slice(html.indexOf('id="page-planner"'), html.indexOf('id="page-about"'));
+  assert.doesNotMatch(page, /optimis|Best setup|best setup/, 'the planner must not claim to be an optimiser');
+  assert.match(page, /Your loadout/);
+  assert.match(page, /name="planner-playstyle"/, 'the playstyle preset control is missing');
 });
 
-test('initBuffPlanner bails when the (removed) nav button is absent', () => {
+test('initBuffPlanner still gates on the nav button (so a future re-lock is a one-liner)', () => {
   const fn = rendererSrc.match(/function initBuffPlanner\(\) \{[\s\S]*?\n\}\n/)[0];
   assert.match(fn, /if \(!document\.querySelector\('\.nav-btn\[data-page="page-planner"\]'\)\) return;/);
 });

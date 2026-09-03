@@ -861,6 +861,14 @@ function updateRef(ref, buff, isIcon) {
   // remainingSec, which the countdown line below shows.
   ref.root.classList.toggle('raid-killed', !!buff.killed);
   if (currentConfig.buffSource === 'raidNamed') ref.root.classList.toggle('raid-boss', buff.tier === 'boss');
+  // The raid-lockout aura: a zone/character line is a header, the owed tiers under it are indented.
+  if (currentConfig.buffSource === 'lockout') {
+    ref.root.classList.toggle('lockout-header', !!buff.lockoutHeader);
+    ref.root.classList.toggle('lockout-tier', buff.lockoutKind === 'tier');
+  }
+  if (currentConfig.buffSource === 'firstAggro') {
+    ref.root.classList.toggle('first-aggro-bodypull', buff.firstAggroSide === 'mob');
+  }
   // A text aura has no countdown to update - it says its piece and disappears when whatever it is
   // watching ends. Checked rather than assumed, because it is the first tile without one.
   if (!ref.timeEl) return;
@@ -1107,6 +1115,14 @@ function visibleBuffs(buffs, opts = {}) {
   // process has already decided what this aura shows.
   if (currentConfig.buffSource === 'travel') return buffs;
 
+  // The raid-lockout aura. The main process built the whole list (zone headers + owed tiers, or a
+  // single "nothing owed" line) and clears it to [] when the pop-up's time is up - the overlay
+  // just draws what it's handed, same as travel.
+  if (currentConfig.buffSource === 'lockout') return buffs;
+
+  // First aggro - one row the engine decided; nothing to filter.
+  if (currentConfig.buffSource === 'firstAggro') return buffs;
+
   // Backlog #33. The board already IS the current zone's whole named list - every row is meant to
   // show, killed ones just dimmed (see the .killed class in render). No picker, no duration cap,
   // same argument as travel/damage above.
@@ -1125,12 +1141,15 @@ function visibleBuffs(buffs, opts = {}) {
     // Line C - the combined owner-unknown charmed-pet row, hidden if the aura asked.
     if (currentConfig.showCharmedPetsRow === false) rows = rows.filter((b) => !b.unknownPets);
     // Top-N attacker rows only (owner's call, default 6). The engine sends every row sorted
-    // biggest-first; this keeps the meter from running off the screen in a raid. The Total row is
-    // never counted against the cap - it draws last and is a summary, not an attacker.
+    // biggest-first; this keeps the meter from running off the screen in a raid. The Total row and
+    // the "Pets" / "Other" summary rows are never counted against the cap - they draw at the
+    // bottom and are summaries, not individual attackers.
     const cap = Number(currentConfig.damageRowCap);
     if (Number.isFinite(cap) && cap > 0) {
       let kept = 0;
-      rows = rows.filter((b) => b.totalRow || ++kept <= cap);
+      rows = rows.filter(
+        (b) => b.totalRow || b.isOther || b.name === 'Pets' || ++kept <= cap
+      );
     }
     return rows;
   }
@@ -1843,6 +1862,10 @@ let lastRaidNamed = [];
 // Note 20. Keyed by aura id - one broadcast carries every travel aura's route and each window
 // takes its own. See pushTravelRoutes in main.js for why it is shaped that way.
 let lastTravelRoutes = {};
+// The raid-lockout aura. Same keyed-by-aura-id shape as travel; empty array for an aura = hidden.
+let lastLockoutBoard = {};
+// First aggro - one shared row (like the raid-named board), not per-aura.
+let lastFirstAggro = [];
 // feat/module-system. One broadcast carries every custom module's live entries, keyed by module
 // id; a module aura reads its own slice by currentConfig.moduleId.
 let lastModuleEntries = {};
@@ -1871,6 +1894,18 @@ function previewSampleBuffs() {
         mk('Dread', null, null, { tier: 'mini', killed: true, infinite: true }),
         mk('Fright', null, null, { tier: 'mini', killed: false, infinite: true }),
       ];
+    case 'lockout': {
+      const lk = (name, extra) => mk(name, null, 0, { valueText: '', infinite: true, spellCategory: null, ...extra });
+      return [
+        lk('Plane of Fear', { id: 'lp0', lockoutHeader: true, lockoutKind: 'zone' }),
+        lk('d2 · Awakened', { id: 'lp1', lockoutKind: 'tier' }),
+        lk('d3 · Adaptive', { id: 'lp2', lockoutKind: 'tier' }),
+        lk('Plane of Hate', { id: 'lp3', lockoutHeader: true, lockoutKind: 'zone' }),
+        lk('d1 · Normal', { id: 'lp4', lockoutKind: 'tier' }),
+      ];
+    }
+    case 'firstAggro':
+      return [mk('Korvaxx pulled a zol ghoul knight', null, 0, { valueText: '', infinite: true, spellCategory: null, id: 'first-aggro', firstAggroSide: 'friend' })];
     case 'module':
       return [mk(currentConfig.name || 'Module', 9, 12, { key: 'preview' })];
     default:
@@ -1945,6 +1980,8 @@ function realSourceBuffs() {
     return lastDamageViews[scope] || lastDamageViews.all || [];
   }
   if (currentConfig.buffSource === 'travel') return lastTravelRoutes[widgetId] || [];
+  if (currentConfig.buffSource === 'lockout') return lastLockoutBoard[widgetId] || [];
+  if (currentConfig.buffSource === 'firstAggro') return lastFirstAggro;
   // Backlog #33. One shared board (the current zone's named list), not per-widget - like damage,
   // unlike travel/customTimer.
   if (currentConfig.buffSource === 'raidNamed') return lastRaidNamed;
@@ -2198,6 +2235,28 @@ window.eqOverlay.onTravelRoutesChanged((routes) => {
   lastTravelRoutes = routes;
   render(currentSourceBuffs());
 });
+
+if (window.eqOverlay.getLockoutBoard) {
+  window.eqOverlay.getLockoutBoard().then((board) => {
+    lastLockoutBoard = board || {};
+    render(currentSourceBuffs());
+  });
+  window.eqOverlay.onLockoutBoardChanged((board) => {
+    lastLockoutBoard = board || {};
+    render(currentSourceBuffs());
+  });
+}
+
+if (window.eqOverlay.getFirstAggro) {
+  window.eqOverlay.getFirstAggro().then((rows) => {
+    lastFirstAggro = rows || [];
+    render(currentSourceBuffs());
+  });
+  window.eqOverlay.onFirstAggroChanged((rows) => {
+    lastFirstAggro = rows || [];
+    render(currentSourceBuffs());
+  });
+}
 
 // feat/module-system - every custom module's live entries, keyed by module id.
 if (window.eqOverlay.getModuleEntries) {

@@ -61,5 +61,41 @@ test('names are matched case-insensitively', () => {
   assert.ok(!g.isAdmitted('someone else'));
 });
 
+test('restart protection: the roster persists on change and restores within the grace window', () => {
+  let saved = null;
+  const g = new GroupRoster();
+  g.setPersistFn((s) => { saved = s; });
+  g.handleLine(`${T}You have joined the group.`);
+  g.handleLine(`${T}Avenrae has joined the group.`);
+  g.handleLine(`${T}Shubthulu has joined the group.`);
+  assert.deepEqual([...saved.admitted].sort(), ['avenrae', 'shubthulu']);
+
+  const restored = new GroupRoster();
+  restored.restore(saved);
+  assert.ok(restored.isAdmitted('avenrae') && restored.isAdmitted('shubthulu'));
+});
+
+test('restart protection: a stale or future-dated snapshot is dropped, not trusted', () => {
+  const base = { members: ['avenrae'], admitted: ['avenrae'] };
+  const now = 1_000_000_000_000;
+  const tooOld = new GroupRoster();
+  tooOld.restore({ ...base, at: now - 25 * 60 * 1000 }, now);
+  assert.deepEqual(tooOld.getAdmitted(), []);
+  const future = new GroupRoster();
+  future.restore({ ...base, at: now + 60_000 }, now);
+  assert.deepEqual(future.getAdmitted(), []);
+  const fresh = new GroupRoster();
+  fresh.restore({ ...base, at: now - 60_000 }, now);
+  assert.deepEqual(fresh.getAdmitted(), ['avenrae']);
+});
+
+test('restart protection: joining a fresh group after restore wipes the restored roster', () => {
+  const g = new GroupRoster();
+  g.restore({ members: ['oldmate'], admitted: ['oldmate'], at: Date.now() - 60_000 });
+  assert.ok(g.isAdmitted('oldmate'));
+  g.handleLine(`${T}You have joined the group.`);
+  assert.deepEqual(g.getAdmitted(), []);
+});
+
 module.exports = () => report('group-roster');
 if (require.main === module) report('group-roster').then((n) => process.exit(n ? 1 : 0));

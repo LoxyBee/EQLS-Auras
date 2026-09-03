@@ -1745,6 +1745,10 @@ function initWidgetsPanel() {
   const travelSettingsEl = document.getElementById('widget-travel-settings');
   const travelDestinationCurrentEl = document.getElementById('widget-travel-destination-current');
   const travelCommandInputEl = document.getElementById('widget-travel-command-input');
+  const lockoutSettingsEl = document.getElementById('widget-lockout-settings');
+  const lockoutTriggerWordInput = document.getElementById('widget-lockout-command-input');
+  const lockoutAutoHideSlider = document.getElementById('widget-lockout-autohide-slider');
+  const lockoutAutoHideValueEl = document.getElementById('widget-lockout-autohide-value');
   const damageSettingsEl = document.getElementById('widget-damage-settings');
   const fightTimeoutSlider = document.getElementById('widget-fight-timeout-slider');
   const fightTimeoutValueEl = document.getElementById('widget-fight-timeout-value');
@@ -1778,7 +1782,7 @@ function initWidgetsPanel() {
     'topic-panel-this-aura': [
       'widget-text-message-row', 'widget-always-on-row', 'widget-ally-alert-row',
       'widget-text-instant-row', 'widget-text-stack-row', 'widget-travel-settings',
-      'widget-damage-settings',
+      'widget-damage-settings', 'widget-lockout-settings',
     ],
     'topic-panel-size': ['widget-list-only-settings', 'widget-icon-only-settings'],
     'topic-panel-text': ['widget-text-size-row', 'widget-text-justify-row'],
@@ -2949,6 +2953,8 @@ function initWidgetsPanel() {
     if (widget.kind === 'raid-named-builtin') return 'Raid named';
     if (widget.buffSource === 'damage') return 'Damage parser';
     if (widget.buffSource === 'travel') return 'Travel guide';
+    if (widget.buffSource === 'lockout') return 'Raid lockouts';
+    if (widget.buffSource === 'firstAggro') return 'First aggro';
     if (widget.displayMode === 'text') return 'Custom text';
     if (widget.buffSource === 'customTimer') return 'Custom timer';
     if (widget.buffSource === 'ally' && widget.trackOnEnemies) return 'Custom debuff';
@@ -3004,6 +3010,8 @@ function initWidgetsPanel() {
     if (widget.kind === 'module-aura') return 'module';
     if (widget.buffSource === 'damage') return 'damage';
     if (widget.buffSource === 'travel') return 'travel';
+    if (widget.buffSource === 'lockout') return 'lockout';
+    if (widget.buffSource === 'firstAggro') return 'first-aggro';
     if (widget.displayMode === 'text') {
       if (widget.allyDebuffAlert) return 'ally-alert';
       return widget.buffSource === 'customTimer' ? 'text-customTimer' : 'text';
@@ -3052,6 +3060,13 @@ function initWidgetsPanel() {
     // 'display-choice', since a travel aura never offers icon mode at all) gives the two controls
     // that actually shape how a multi-line route reads: list width and row size.
     'travel': ['list-format', 'timer-text', 'opacity', 'position', 'alerts', 'travel-settings'],
+    // The raid-lockout aura. Same reasoning as raid-named (fixed zone-then-tier list, no picker, no
+    // sort/merge/borders) with no 'alerts' either - it pops on a macro and clears itself, nothing
+    // lands or expires - plus its own settings block: the trigger word and the auto-hide time.
+    'lockout': ['list-format', 'timer-text', 'opacity', 'position', 'lockout-settings'],
+    // First aggro - one engine-decided line. No picker, no sort/merge; a sound on a body pull
+    // is worth having, so 'alerts' stays.
+    'first-aggro': ['list-format', 'timer-text', 'opacity', 'position', 'alerts'],
   };
 
   // Applies one shape's field set to every optional row/card, and returns the Set so
@@ -3196,6 +3211,7 @@ function initWidgetsPanel() {
     // fight timeout on a buff aura would be a live control that changes nothing.
     damageSettingsEl.style.display = has('damage-settings') ? '' : 'none';
     travelSettingsEl.style.display = has('travel-settings') ? '' : 'none';
+    if (lockoutSettingsEl) lockoutSettingsEl.style.display = has('lockout-settings') ? '' : 'none';
     // feat/module-system - a module aura whose module keeps its controls on the aura panel
     // ('aura', the default) rather than a sidebar page. Hidden if the module isn't loaded yet
     // (registry is async - the card appears on the re-render once it is) or declares no controls.
@@ -3439,6 +3455,13 @@ function initWidgetsPanel() {
     if (fields.has('travel-settings')) {
       showTravelDestination(widget.travelDestination);
       showTravelPickerCommand();
+    }
+
+    if (fields.has('lockout-settings') && lockoutTriggerWordInput) {
+      lockoutTriggerWordInput.value = widget.lockoutTriggerWord || 'eqrlm';
+      const sec = typeof widget.lockoutAutoHideSec === 'number' ? widget.lockoutAutoHideSec : 20;
+      lockoutAutoHideSlider.value = sec;
+      lockoutAutoHideValueEl.textContent = `${sec}s`;
     }
 
     // feat/module-system - (re)build the module aura's own controls, once per selectWidget so a
@@ -4288,6 +4311,26 @@ function initWidgetsPanel() {
         'each one\'s share. A "just my row" toggle hides the rest without un-counting them.',
       create: (name) => window.eqTracker.createDamageMeterWidget(name, false),
     },
+    {
+      id: 'lockout-board',
+      name: 'Raid lockouts',
+      group: 'standalone',
+      description:
+        'Which weekly raids you still have left, grouped by zone with the difficulty tiers under ' +
+        'each. In game, type /tell eqrlm to pop it; it hides itself after 20 seconds. Cleared ' +
+        'raids are not shown.',
+      create: (name) => window.eqTracker.createLockoutBoardWidget(name),
+    },
+    {
+      id: 'first-aggro',
+      name: 'First aggro',
+      group: 'standalone',
+      description:
+        'One line at the start of a fight: who took the first hit - a groupmate pulling, or the ' +
+        'mob hitting one of yours first (the body-pull tell). Clears when the mob dies or you zone. ' +
+        'Only as complete as your own log.',
+      create: (name) => window.eqTracker.createFirstAggroWidget(name),
+    },
   ];
 
   // Not-yet-built/locked premade ideas - shown inline in their eventual category as
@@ -4306,13 +4349,6 @@ function initWidgetsPanel() {
     // The rest of the roadmap, shown in the app rather than only in docs/QOL-BACKLOG.md. Listing something
     // as "not built yet" turns "this seems broken" into "that's coming", which is worth more than
     // it looks to anyone using the app who did not write it.
-    {
-      name: 'First aggro',
-      group: 'standalone',
-      description:
-        'Shows who hit the boss first, or who it hit first. Not built yet — and it can only be as ' +
-        'complete as your own log.',
-    },
     {
       name: 'Aggro Board',
       group: 'standalone',
@@ -5077,6 +5113,19 @@ function initWidgetsPanel() {
     fightTimeoutValueEl.textContent = `${sec}s`;
     window.eqTracker.setWidgetDamageOptions(selectedId, { fightTimeoutSec: sec });
   });
+
+  if (lockoutTriggerWordInput) {
+    lockoutTriggerWordInput.addEventListener('change', () => {
+      window.eqTracker.setWidgetLockoutOptions(selectedId, { triggerWord: lockoutTriggerWordInput.value }).then((cfg) => {
+        if (cfg && document.activeElement !== lockoutTriggerWordInput) lockoutTriggerWordInput.value = cfg.lockoutTriggerWord;
+      });
+    });
+    lockoutAutoHideSlider.addEventListener('input', () => {
+      const sec = Number(lockoutAutoHideSlider.value);
+      lockoutAutoHideValueEl.textContent = `${sec}s`;
+      window.eqTracker.setWidgetLockoutOptions(selectedId, { autoHideSec: sec });
+    });
+  }
   if (damageRowCapSlider) {
     damageRowCapSlider.addEventListener('input', () => {
       const n = Number(damageRowCapSlider.value);
@@ -5718,7 +5767,11 @@ function initWidgetsPanel() {
     head.appendChild(document.createElement('th'));
     for (const t of tiers) {
       const th = document.createElement('th');
-      th.textContent = t;
+      // Show the difficulty number alongside the label - "D0 - Normal", "D1 - Awakened" ... The
+      // number is on every cell of that column; `tiers` is already in ascending-difficulty order.
+      const anyCell = cells.find((c) => c.difficultyLabel === t);
+      const d = anyCell && Number.isInteger(anyCell.difficulty) ? anyCell.difficulty : null;
+      th.textContent = d != null ? `D${d} - ${t}` : t;
       head.appendChild(th);
     }
     lockoutGridEl.appendChild(head);
@@ -8833,17 +8886,29 @@ function initBuffPlanner() {
   const stackingStateEl = document.getElementById('planner-stacking-state');
   const activeProfileEl = document.getElementById('planner-active-profile');
   const priorityResetEl = document.getElementById('planner-priority-reset');
+  const excludeChipsEl = document.getElementById('planner-exclude-chips');
   if (!classRowEl) return;
 
   let classes = []; // up to 3 class codes - mirrors the active profile
   let level = PLANNER_MAX_LEVEL; // the one shared character level
   let order = []; // buff names, the dragged priority order
   let hasManualOrder = false; // true once the user has dragged (a non-empty saved buffPlanOrder)
+  let syncingClasses = false; // true while syncClassSelects pushes values in - suppresses commitClasses
+  let excludedStats = []; // stat names the user has toggled off - weight 0 in the ranking
+  let allStats = []; // every stat name, from the main process (spellEffects.STAT_NAMES)
 
   // One row, three class dropdowns - it's one multiclass character, not three mains, so there is
   // one level (the input above this row) and it applies to all three.
+  //
+  // Built exactly ONCE. search-dropdown.js enhances each <select> by wrapping it in a .sd-wrap and
+  // drawing a button + popup beside it; destroying and recreating the <select> (an earlier version
+  // did, on every loadInput) orphans that wrapper and leaves a duplicate control on screen. On a
+  // reload we only push new values in - syncClassSelects().
   function buildClassSelects() {
-    classRowEl.querySelectorAll('.planner-class-select').forEach((el) => el.remove());
+    if (classRowEl.querySelector('.planner-class-select')) {
+      syncClassSelects();
+      return;
+    }
     for (let i = 0; i < 3; i++) {
       const sel = document.createElement('select');
       sel.className = 'text-input planner-class-select';
@@ -8856,6 +8921,24 @@ function initBuffPlanner() {
     }
   }
 
+  // Push the current `classes` into the three selects without recreating them, and let the
+  // enhanced display catch up (search-dropdown re-syncs on the select's own 'change' event).
+  function syncClassSelects() {
+    const sels = classRowEl.querySelectorAll('.planner-class-select');
+    syncingClasses = true;
+    try {
+      sels.forEach((sel, i) => {
+        const want = classes[i] || '';
+        if (sel.value !== want) {
+          sel.value = want;
+          sel.dispatchEvent(new Event('change', { bubbles: false }));
+        }
+      });
+    } finally {
+      syncingClasses = false;
+    }
+  }
+
   function readClassSelects() {
     const out = [];
     for (const sel of classRowEl.querySelectorAll('.planner-class-select')) {
@@ -8864,7 +8947,29 @@ function initBuffPlanner() {
     return out;
   }
 
+  // One toggle chip per stat. Clicking one adds/removes it from `excludedStats` (weight 0 in the
+  // planner's ranking) and recomputes. Rebuilt whenever the stat list or the saved set changes.
+  function buildExcludeChips() {
+    if (!excludeChipsEl) return;
+    excludeChipsEl.innerHTML = '';
+    for (const stat of allStats) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'planner-stat-chip' + (excludedStats.includes(stat) ? ' excluded' : '');
+      chip.textContent = stat;
+      chip.title = excludedStats.includes(stat) ? `${stat} is ignored - click to count it again` : `Ignore ${stat}`;
+      chip.addEventListener('click', () => {
+        if (excludedStats.includes(stat)) excludedStats = excludedStats.filter((s) => s !== stat);
+        else excludedStats = [...excludedStats, stat];
+        buildExcludeChips();
+        window.eqTracker.setPlannerExcludedStats(null, excludedStats).then(recompute);
+      });
+      excludeChipsEl.appendChild(chip);
+    }
+  }
+
   function commitClasses() {
+    if (syncingClasses) return; // a programmatic value push, not a user pick
     classes = readClassSelects();
     window.eqTracker.setPlannerClasses(null, classes).then(recompute);
   }
@@ -8935,9 +9040,18 @@ function initBuffPlanner() {
     const hasClasses = plan.classes.length > 0;
     emptyNoteEl.style.display = hasClasses ? 'none' : '';
     slotCountEl.textContent = String(plan.slots.length);
-    stackingStateEl.textContent = plan.stackingKnown
-      ? ''
-      : 'Set your EQ folder on the Setup page so the planner can tell buff tiers apart properly.';
+    if (!plan.stackingKnown) {
+      stackingStateEl.textContent =
+        'Set your EQ folder on the Setup page so the planner can tell buff tiers apart properly.';
+    } else if (plan.stackingCoverage && plan.stackingCoverage.total) {
+      const { known, total } = plan.stackingCoverage;
+      stackingStateEl.textContent =
+        known >= total
+          ? `Every one of the ${total} is on a stacking line we've mapped.`
+          : `${known} of the ${total} are on a stacking line we've mapped; the rest are a best guess.`;
+    } else {
+      stackingStateEl.textContent = '';
+    }
 
     // Total stats across every slotted buff.
     const totals = plan.totals || [];
@@ -9028,6 +9142,14 @@ function initBuffPlanner() {
     });
   }
 
+  const playstyleRadios = document.querySelectorAll('input[name="planner-playstyle"]');
+  playstyleRadios.forEach((r) =>
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      window.eqTracker.setPlannerPlaystyle(null, r.value).then(recompute);
+    })
+  );
+
   function loadInput() {
     return Promise.all([
       window.eqTracker.getPlannerInput(null),
@@ -9040,6 +9162,11 @@ function initBuffPlanner() {
         order = Array.isArray(input.buffPlanOrder) ? input.buffPlanOrder : [];
         hasManualOrder = order.length > 0;
         levelInputEl.value = String(level);
+        const style = input.playstyle || 'balanced';
+        playstyleRadios.forEach((r) => { r.checked = r.value === style; });
+        excludedStats = Array.isArray(input.excludedStats) ? input.excludedStats : [];
+        allStats = Array.isArray(input.allStats) ? input.allStats : [];
+        buildExcludeChips();
         const active = profiles.find((p) => p.id === activeId);
         activeProfileEl.textContent = active ? active.name : 'Default';
         buildClassSelects();

@@ -9,6 +9,8 @@ const {
   clampInstantSec,
   clampStackTextLines,
   clampSoundCooldownSec,
+  clampLockoutAutoHideSec,
+  cleanLockoutTriggerWord,
 } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
@@ -403,6 +405,22 @@ function setTravelDestination(id, destination) {
 function createDamageMeterWidget(name, mineOnly) {
   const config = widgetStore.createDamageMeter(name, {
     mineOnly,
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
+function createLockoutBoardWidget(name) {
+  const config = widgetStore.createLockoutBoard(name, {
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
+function createFirstAggroWidget(name) {
+  const config = widgetStore.createFirstAggroBoard(name, {
     activeProfileIds: [getActiveProfileIdFn()],
   });
   createWidgetWindow(config);
@@ -1426,6 +1444,16 @@ function setListWidth(id, width) {
   return config;
 }
 
+function setLockoutOptions(id, { triggerWord, autoHideSec } = {}) {
+  const patch = {};
+  if (typeof triggerWord === 'string') patch.lockoutTriggerWord = cleanLockoutTriggerWord(triggerWord);
+  if (autoHideSec != null) patch.lockoutAutoHideSec = clampLockoutAutoHideSec(autoHideSec);
+  if (!Object.keys(patch).length) return getWidgetConfig(id);
+  const config = widgetStore.update(id, patch);
+  pushConfigChanged(id);
+  return config;
+}
+
 function setOpacity(id, opacity) {
   const config = widgetStore.update(id, { opacity });
   const win = windows.get(id);
@@ -1530,6 +1558,8 @@ module.exports = {
   createModuleAuraWidget,
   createDebuffWidget,
   createDamageMeterWidget,
+  createLockoutBoardWidget,
+  createFirstAggroWidget,
   setDamageOptions,
   createTravelGuideWidget,
   setTravelDestination,
@@ -1646,6 +1676,7 @@ module.exports = {
   setWarningSoundId,
   setAlertVolume,
   setListWidth,
+  setLockoutOptions,
   setOpacity,
   setName,
   setBuffFilter,

@@ -483,6 +483,36 @@ test('unknown-owner charmed pets fold into one "Charmed pets" row', () => {
   assert.match(pets[0].valueText, /^200/);
 });
 
+// Owner, 2 Sep: a mage pet ("Kobektik") showed as its own attacker row. In scope 'all', once the
+// group roster is known, only you + admitted members get their own row; a summoned-pet-shaped
+// name the roster does NOT vouch for folds into "Pets", any other outsider folds into "Other".
+test("scope 'all': with a roster, outsiders bucket into Pets / Other", () => {
+  const e = new DamageEngine();
+  e.setGroupFn(() => ['avenrae', 'shubthulu']);
+  e.handleLine(`${T}a zol ghoul knight has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 400 points of damage.`, 1000);
+  e.handleLine(`${T}Kobektik hit a zol ghoul knight for 200 points of magic damage by Fire Bolt.`, 1000);
+  e.handleLine(`${T}Kaerthos slashes a zol ghoul knight for 50 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'all');
+  assert.ok(rows.find((r) => r.name === 'Avenrae'), 'an admitted member keeps their own row');
+  const pets = rows.find((r) => r.name === 'Pets');
+  assert.ok(pets && pets.isPet, 'the mage pet folds into Pets');
+  assert.match(pets.valueText, /^200/);
+  const other = rows.find((r) => r.name === 'Other');
+  assert.ok(other && other.isOther, 'the non-group stranger folds into Other');
+  assert.match(other.valueText, /^50/);
+  assert.equal(rows.find((r) => r.name === 'Kobektik'), undefined, 'the pet is not its own row any more');
+});
+
+test("scope 'all': a possessive-named pet folds into Pets regardless of roster", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}a zol ghoul knight has taken 10 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}a zol ghoul knight has taken 300 damage from Ice Comet by Chrysaetos\`s pet.`, 1000);
+  // ^ "X has taken N damage from SPELL by ATTACKER" - attacker is Chrysaetos`s pet
+  const rows = e.getActive(1000, 'all');
+  assert.ok(rows.find((r) => r.name === 'Pets'), 'a possessive pet folds even with no group roster');
+});
+
 test('name-collision guard: a name in both friends and enemies is dropped, not credited', () => {
   const e = new DamageEngine();
   // A charmed "a spite golem" fights a mob you tagged, so rule 2 makes the name a friend...
@@ -525,6 +555,38 @@ test('a friendly-fire hit on a known ally does not poison the enemy set', () => 
   // Baxa's own damage keeps counting afterwards.
   e.handleLine(`${T}Baxa slashes a zol ghoul knight for 200 points of damage.`, 1000);
   assert.equal(e.byAttacker.get('Baxa').damage, 300);
+});
+
+test('captureState / restoreState carries the tallies and the friend/enemy sets across a restart', () => {
+  const a = new DamageEngine();
+  a.handleLine(`${T}You slash a zol ghoul knight for 100 points of damage.`, 1000);
+  a.handleLine(`${T}Baxa slashes a zol ghoul knight for 60 points of damage.`, 2000);
+  const snap = a.captureState();
+  assert.ok(snap);
+
+  const b = new DamageEngine();
+  const n = b.restoreState(snap, 30_000, 5000); // 5s later, well inside the fight timeout
+  assert.ok(n > 0);
+  assert.equal(b.byAttacker.get('You').damage, 100);
+  assert.equal(b.byAttacker.get('Baxa').damage, 60);
+  assert.ok(b.enemies.has('a zol ghoul knight'));
+  assert.ok(b.friends.has('baxa'), 'Baxa was proved a friend by hitting a known enemy - that survives');
+});
+
+test('a fight that timed out during the gap is dropped on restore, but the sets are kept', () => {
+  const a = new DamageEngine();
+  a.handleLine(`${T}You slash a zol ghoul knight for 100 points of damage.`, 1000);
+  const snap = a.captureState();
+
+  const b = new DamageEngine();
+  // 90s later - past the 10s default fight timeout
+  b.restoreState(snap, 90_000, 1000 + 90_000);
+  assert.equal(b.fightStartedAt, null, 'the stale fight is gone');
+  assert.ok(b.enemies.has('a zol ghoul knight'), 'the bootstrap set is kept so the next pull is not lost');
+});
+
+test('nothing counted -> captureState is null', () => {
+  assert.equal(new DamageEngine().captureState(), null);
 });
 
 module.exports = () => report('damage-parser');

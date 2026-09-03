@@ -198,6 +198,25 @@ test('a line collapses to its highest castable tier', () => {
   });
 });
 
+test('a line collapses to its best tier ACROSS the permanent/temp split (Frenzy vs Rage)', () => {
+  // shm.frenzy = Frenzy (finite) -> temp pool, Fury/Rage (permanent) -> permanent pool. Each pool
+  // used to collapse only its own members, leaving Frenzy AND Rage both on screen. Reported by the
+  // owner: "rage and frenzy are the same spell line and are both permanent".
+  const roster = [
+    buff({ name: 'Frenzy', spellId: 1, category: 'Strength', classes: 'SHM 16', level: 16 }),
+    buff({ name: 'Fury', spellId: 2, category: 'Strength', classes: 'SHM 30', level: 30, infiniteDuration: true, durationSec: null }),
+    buff({ name: 'Rage', spellId: 3, category: 'Strength', classes: 'SHM 45', level: 45, infiniteDuration: true, durationSec: null }),
+  ];
+  withLines({}, HEADING_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['SHM'], lines });
+    assert.deepEqual(plan.permanentSlots.map((s) => s.name), ['Rage'], 'only the top tier is listed');
+    assert.deepEqual(plan.slots.map((s) => s.name), [], 'Frenzy does not also take a spell slot');
+    const frenzy = plan.overflow.find((o) => o.name === 'Frenzy');
+    assert.equal(frenzy && frenzy.reason, 'Rage is the higher tier');
+    assert.equal(plan.permanentOverflow.find((o) => o.name === 'Fury').reason, 'Rage is the higher tier');
+  });
+});
+
 test('two different lines that share a heading conflict - one to overflow', () => {
   const roster = [
     buff({ name: 'Shield of Words', spellId: 1, category: 'Armor Class', classes: 'CLR 45', level: 45 }),
@@ -390,6 +409,113 @@ test('the real roster: a full 14 comes out, and Strength + Infusion of Spirit bo
   assert.equal(plan.slots.length, 14);
   assert.equal(plan.slots[0].name, 'Strength');
   assert.equal(plan.slots[1].name, 'Infusion of Spirit');
+});
+
+// ---------------------------------------------------------------------------
+// The 2 Sep bundle - Fix 7 (set comparison), Fix 3 (coverage), Fix 11 (playstyle)
+// ---------------------------------------------------------------------------
+
+// A combination line that blocks two individual lines, all with a score.
+const COMBO_LINES = [
+  { id: 'l.str', headings: ['h.str'], members: ['Str'] },
+  { id: 'l.dex', headings: ['h.dex'], members: ['Dex'] },
+  { id: 'l.combo', combination: true, headings: ['h.str', 'h.dex'], blocks: ['l.str', 'l.dex'], members: ['Combo'] },
+];
+
+test('Fix 7: a combination buff is dropped when the individuals it displaces outscore it', () => {
+  const roster = [
+    buff({ name: 'Combo', spellId: 1, category: 'C', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'Str', spellId: 2, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'Dex', spellId: 3, category: 'D', classes: 'SHM 50', level: 50 }),
+  ];
+  const spellData = fakeSpellData({ 1: [{ stat: 'STR', value: 60, order: 0 }], 2: [{ stat: 'STR', value: 40, order: 0 }], 3: [{ stat: 'DEX', value: 40, order: 1 }] });
+  withLines({}, COMBO_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['SHM'], lines, spellData });
+    // Combo 60 < Str 40 + Dex 40 = 80 -> individuals win
+    assert.deepEqual(plan.slots.map((s) => s.name).sort(), ['Dex', 'Str']);
+    const over = plan.overflow.find((o) => o.name === 'Combo');
+    assert.match(over.reason, /together are worth more \(80 vs 60\)/);
+    assert.ok(/Str/.test(over.reason) && /Dex/.test(over.reason));
+  });
+});
+
+test('Fix 7: the combination buff still wins when it outscores the set', () => {
+  const roster = [
+    buff({ name: 'Combo', spellId: 1, category: 'C', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'Str', spellId: 2, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'Dex', spellId: 3, category: 'D', classes: 'SHM 50', level: 50 }),
+  ];
+  const spellData = fakeSpellData({ 1: [{ stat: 'STR', value: 200, order: 0 }], 2: [{ stat: 'STR', value: 40, order: 0 }], 3: [{ stat: 'DEX', value: 40, order: 1 }] });
+  withLines({}, COMBO_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['SHM'], lines, spellData });
+    assert.deepEqual(plan.slots.map((s) => s.name), ['Combo']);
+  });
+});
+
+test('Fix 3: stackingCoverage counts slotted buffs that sat on a known line', () => {
+  const roster = [
+    buff({ name: 'Str', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'Mystery Buff', spellId: 2, category: 'M', classes: 'SHM 50', level: 50 }),
+  ];
+  const spellData = fakeSpellData({ 1: [{ stat: 'STR', value: 40, order: 0 }], 2: [{ stat: 'AC', value: 30, order: 1 }] });
+  withLines({}, COMBO_LINES, [], (lines) => {
+    const plan = computePlan({ roster, classes: ['SHM'], lines, spellData });
+    assert.equal(plan.slots.length, 2);
+    assert.deepEqual(plan.stackingCoverage, { known: 1, total: 2 }); // Str is on l.str, Mystery Buff isn't
+  });
+});
+
+test('Fix 11: a playstyle preset reorders via weights, balanced is the default', () => {
+  const roster = [
+    buff({ name: 'BigStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'BigInt', spellId: 2, category: 'I', classes: 'SHM 50', level: 50 }),
+  ];
+  const byId = { 1: [{ stat: 'STR', value: 50, order: 0 }], 2: [{ stat: 'INT', value: 50, order: 1 }] };
+  const spellData = {
+    ...fakeSpellData(byId),
+    score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat]) || 1), 0),
+    weightScale: (style) => (style === 'melee' ? { STR: 2, INT: 0.35 } : style === 'caster' ? { STR: 0.35, INT: 2 } : {}),
+  };
+  const names = (style) => computePlan({ roster, classes: ['SHM'], spellData, playstyle: style }).candidates.map((c) => c.name);
+  assert.deepEqual(names('melee')[0], 'BigStr');
+  assert.deepEqual(names('caster')[0], 'BigInt');
+  assert.equal(computePlan({ roster, classes: ['SHM'], spellData }).playstyle, 'balanced');
+});
+
+test('excludedStats: an ignored stat is scored at zero, so its buff falls to the bottom', () => {
+  const roster = [
+    buff({ name: 'BigStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
+    buff({ name: 'BigCha', spellId: 2, category: 'C', classes: 'SHM 50', level: 50 }),
+  ];
+  const byId = { 1: [{ stat: 'STR', value: 40, order: 0 }], 2: [{ stat: 'CHA', value: 80, order: 1 }] };
+  const spellData = {
+    ...fakeSpellData(byId),
+    score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat] != null) ? ws[e.stat] : 1), 0),
+    // main.js wires this to spellEffects.combinedWeightScale(style, excluded)
+    weightScale: (style, excluded) => {
+      const sc = {};
+      for (const n of excluded || []) sc[n] = 0;
+      return sc;
+    },
+  };
+  const base = computePlan({ roster, classes: ['SHM'], spellData }).candidates.map((c) => c.name);
+  assert.deepEqual(base[0], 'BigCha', 'without exclusions the +80 CHA buff ranks first');
+
+  const dumped = computePlan({ roster, classes: ['SHM'], spellData, excludedStats: ['CHA'] });
+  assert.deepEqual(dumped.candidates.map((c) => c.name)[0], 'BigStr', 'ignoring CHA drops it below the STR buff');
+  assert.deepEqual(dumped.excludedStats, ['CHA'], 'the result echoes what was ignored');
+});
+
+test('excludedStats: junk is filtered, balanced+no-exclusions still means no weightScale call', () => {
+  const roster = [buff({ name: 'A', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 })];
+  let weightScaleCalls = 0;
+  const spellData = {
+    ...fakeSpellData({ 1: [{ stat: 'STR', value: 10, order: 0 }] }),
+    score: () => 10,
+    weightScale: () => { weightScaleCalls++; return {}; },
+  };
+  computePlan({ roster, classes: ['SHM'], spellData, excludedStats: [null, 5, {}] });
+  assert.equal(weightScaleCalls, 0, 'no real exclusions + balanced => scoring path untouched');
 });
 
 module.exports = () => report('buff-planner');

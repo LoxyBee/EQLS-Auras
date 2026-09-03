@@ -78,6 +78,29 @@ class ProfileStore {
     return profile;
   }
 
+  // The buff-planner playstyle preset ('balanced' | 'melee' | 'caster'), per loadout profile.
+  // 'balanced' (the default, and anything unrecognised) is stored as-is; it does not change scoring.
+  setPlannerPlaystyle(id, playstyle) {
+    const profile = this.data.profiles.find((p) => p.id === id);
+    if (!profile) return null;
+    profile.plannerPlaystyle = ['melee', 'caster'].includes(playstyle) ? playstyle : 'balanced';
+    this._save();
+    return profile;
+  }
+
+  // Stats the user has chosen to ignore in the planner's default ranking ("dump Charisma"), by
+  // name. Loose validation - unknown names are harmless (spellEffects.combinedWeightScale drops
+  // them); the planner just sets each one's weight to 0.
+  setPlannerExcludedStats(id, stats) {
+    const profile = this.data.profiles.find((p) => p.id === id);
+    if (!profile) return null;
+    profile.plannerExcludedStats = Array.isArray(stats)
+      ? [...new Set(stats.filter((s) => typeof s === 'string'))]
+      : [];
+    this._save();
+    return profile;
+  }
+
   getActiveId() {
     return this.data.activeProfileId;
   }

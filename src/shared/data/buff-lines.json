@@ -227,7 +227,7 @@
       "classes": ["SHM"],
       "combination": true,
       "headings": ["hp.talisman", "str.primary", "dex.primary"],
-      "blocks": ["shaman.strength", "shaman.dexterity"],
+      "blocks": ["shaman.strength", "shaman.dexterity", "shaman.infusion-of-spirit"],
       "members": ["Harnessing of Spirit"]
     },
     {

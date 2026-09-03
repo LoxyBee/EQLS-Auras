@@ -125,34 +125,39 @@ test('the "- Group" difficulty grammar still resolves a raid to the base-zone bo
   assert.ok(t.getActive().length > 0);
 });
 
-test('a RAID zone entered WITHOUT saying "danger" does not light up the board', () => {
+test('a raid zone entered as a plain group/dungeon run lights up the board (owner, 2 Sep)', () => {
   const { t } = make();
-  // the plane, same difficulty suffix a raid uses - but no Voidling dialogue
+  // no Voidling dialogue - just walked in with a group. "anything that is a RAID is also a
+  // separate DUNGEON": the board still shows.
   t.handleLine(`${TS}You have entered The Plane of Fear 4 (Refined).`);
-  assert.equal(t.getCurrentZone(), null, 'the suffix alone is not the raid');
-  assert.deepEqual(t.getActive(), []);
-});
-
-test('a groupmate saying "danger" does not arm the board', () => {
-  const { t } = make();
-  t.handleLine(`${TS}Avenrae says, 'danger'`); // not "You say," - a different player
-  t.handleLine(`${TS}You have entered The Plane of Fear 1 (Awakened).`);
-  assert.equal(t.getCurrentZone(), null, "someone else's line is not proof the player raided");
-});
-
-test('the raid entry is consumed by the zone change - a later zone does not inherit it', () => {
-  const { t } = make();
-  enter(t, 'The Plane of Fear'); // danger + zone -> board up
+  assert.equal(t.getCurrentZone(), 'The Plane of Fear');
   assert.ok(t.getActive().length > 0);
-  enterOpen(t, 'The Plane of Fear'); // no fresh danger -> not a raid entry any more
-  assert.equal(t.getCurrentZone(), null);
+  assert.equal(t.viaVoidling, false, 'a plain entry is not flagged as the raid-lockout instance');
 });
 
-test('entering the open version while a raid board is up clears it', () => {
+test("a groupmate's \"danger\" hail: the board shows, but it is not flagged as the player's raid instance", () => {
+  const { t } = make();
+  t.handleLine(`${TS}Avenrae says, 'danger'`); // a different player
+  t.handleLine(`${TS}You have entered The Plane of Fear 1 (Awakened).`);
+  assert.equal(t.getCurrentZone(), 'The Plane of Fear', 'the board still shows');
+  assert.equal(t.viaVoidling, false, "someone else's hail is not proof the PLAYER raided");
+});
+
+test('viaVoidling is consumed by the zone change - a plain re-entry drops the raid flag but keeps the board', () => {
+  const { t } = make();
+  enter(t, 'The Plane of Fear'); // danger + zone -> board up, viaVoidling true
+  assert.equal(t.viaVoidling, true);
+  slay(t, 'Terror');
+  enterOpen(t, 'The Plane of Fear'); // same base zone, no fresh danger
+  assert.equal(t.getCurrentZone(), 'The Plane of Fear', 'the board stays');
+  assert.equal(t.getActive().find((r) => r.name === 'Terror').killed, true, 'the kill is kept');
+});
+
+test('walking out to an untracked zone clears the board', () => {
   const { t } = make();
   enter(t, 'The Plane of Fear');
   assert.ok(t.getActive().length > 0);
-  enterOpen(t, 'The Plane of Fear'); // walked into the non-instanced version
+  t.handleLine(`${TS}You have entered Qeynos.`);
   assert.deepEqual(t.getActive(), []);
   assert.equal(t.getCurrentZone(), null);
 });

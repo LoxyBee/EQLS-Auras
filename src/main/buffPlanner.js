@@ -115,7 +115,7 @@ function isBardSongEntry(entry) {
 // ([{stat,value,order}] - every character stat the buff grants), `score` (one number for the
 // default slot order). `spellData` is injected by main.js from spellEffects.js; without it (no EQ
 // folder) everything is null/0 and ordering falls to name.
-function enrichCandidate(cand, spellData) {
+function enrichCandidate(cand, spellData, weightScale) {
   if (!spellData) return { ...cand, magnitude: null, stat: null, stats: [], score: 0 };
   const stats = spellData.stats(cand.spellId) || [];
   const headline = spellData.headline(cand.spellId, cand.category);
@@ -124,13 +124,14 @@ function enrichCandidate(cand, spellData) {
     magnitude: headline ? headline.value : null,
     stat: headline ? headline.stat : null,
     stats,
-    score: spellData.score(cand.spellId) || 0,
+    // name + weightScale feed the curated proc boost (Fix 10) and the playstyle preset (Fix 11).
+    score: spellData.score(cand.spellId, cand.name, weightScale) || 0,
   };
 }
 
 // Every castable candidate, one object per roster entry, NOT yet collapsed by category. classes
 // is normalized [{code, level}].
-function candidatesFor(roster, classes, spellData) {
+function candidatesFor(roster, classes, spellData, weightScale) {
   const wantLevel = new Map(classes.map((c) => [c.code, c.level]));
   const out = [];
 
@@ -159,7 +160,8 @@ function candidatesFor(roster, classes, spellData) {
           castByClasses: casters.map((c) => c.code),
           isSong: isBardSongEntry(entry),
         },
-        spellData
+        spellData,
+        weightScale
       );
 
     out.push(cand);
@@ -268,6 +270,28 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
   for (const c of ordered) {
     const headings = lines.headingsForName(c.name);
 
+    // Fix 7 (owner, 2 Sep): "the buff line research should naturally exclude it, and then the
+    // weights should realise that the two stacked is better stats." A combination buff (Aegolism,
+    // Harnessing of Spirit) claims its headings only if it scores at least as much as the sum of
+    // the candidates it would displace. No buff-specific code - it's a score comparison over the
+    // real numbers, so it moves with the weights and the playstyle preset. Compared against the
+    // whole ordered set (placed AND still-pending), because a high-scoring individual walked first
+    // is already in `kept` and the combo must still be measured against it.
+    const cLine = lines.lineForName(c.name);
+    if (cLine && cLine.combination) {
+      const displaced = ordered.filter(
+        (o) => o !== c && lines.stackDecision(c.name, o.name) === 'overwrites'
+      );
+      const displacedScore = displaced.reduce((s, o) => s + (o.score || 0), 0);
+      if (displaced.length && (c.score || 0) < displacedScore) {
+        dropped.push({
+          ...c,
+          reason: `${displaced.map((d) => d.name).join(' + ')} together are worth more (${displacedScore} vs ${c.score || 0})`,
+        });
+        continue;
+      }
+    }
+
     let clash = null;
     for (const placed of kept) {
       const dec = lines.stackDecision(c.name, placed.name);
@@ -290,7 +314,10 @@ function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
       dropped.push({ ...c, reason: `conflicts with ${clash}` });
       continue;
     }
-    kept.push(c);
+    // Fix 3: tag whether the LINE model placed this (vs a buff with no line data that only got in
+    // because nothing conflicted). Lets computePlan report real "N of M tiers known" coverage
+    // instead of the always-true flag.
+    kept.push({ ...c, lineKnown: !!lines.lineForName(c.name) });
     for (const h of headings) occupied.set(h, c);
   }
 
@@ -360,14 +387,20 @@ function poolFor(cand, hasBard) {
 //     songSlots, songOverflow, songCandidates,   // the 5 bard-song slots (empty unless Bard picked)
 //     permanentSlots, permanentOverflow }        // permanent buffs (Yaulp/Fury), no cap
 // `classes` is a list of codes (or {code} objects); `level` is the one shared character level.
-function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines } = {}) {
+const VALID_PLAYSTYLES = ['balanced', 'melee', 'caster'];
+
+function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines, playstyle, excludedStats } = {}) {
   const normClasses = normalizeClasses(classes, level);
+  const style = VALID_PLAYSTYLES.includes(playstyle) ? playstyle : 'balanced';
+  const excluded = Array.isArray(excludedStats) ? excludedStats.filter((s) => typeof s === 'string') : [];
   const empty = {
     classes: [],
     level: clampLevel(level == null ? DEFAULT_LEVEL : level),
     hasBard: false,
+    playstyle: style,
     statsKnown: !!spellData,
     stackingKnown: !!(lines || checkStack),
+    stackingCoverage: null,
     slots: [], overflow: [], candidates: [],
     songSlots: [], songOverflow: [], songCandidates: [],
     permanentSlots: [], permanentOverflow: [],
@@ -376,16 +409,50 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   if (normClasses.length === 0) return empty;
 
   const hasBard = normClasses.some((c) => c.code === 'BRD');
+  // Fix 11 - the playstyle preset, plus the user's ignored-stats list (hard 0). A per-stat weight
+  // multiplier the injected spellData builds (spellEffects.combinedWeightScale). null when there is
+  // nothing to change - 'balanced' with no ignored stats => all 1s, byte-identical scoring.
+  const weightScale =
+    spellData && spellData.weightScale && (style !== 'balanced' || excluded.length)
+      ? spellData.weightScale(style, excluded)
+      : null;
 
-  const raw = candidatesFor(roster || [], normClasses, spellData);
+  const raw = candidatesFor(roster || [], normClasses, spellData, weightScale);
   const pool = (c) => poolFor(c, hasBard);
 
+  // Collapse each stacking LINE to its single best castable tier BEFORE the permanent/temp split.
+  // A line is an upgrade ladder whose tiers are mutually exclusive, so only the top one you can
+  // cast is ever worth listing. The split below sends permanent tiers (Fury, Rage) to one pool and
+  // finite ones (Frenzy) to another, and each pool used to collapse only its OWN members - so
+  // Frenzy survived in the temp pool while Rage survived in the permanent pool, both on screen,
+  // even though Rage being permanently up makes Frenzy pointless. This does NOT touch DIFFERENT
+  // lines: a permanent Fury (shaman.frenzy line) and a finite Strength buff (shaman.strength line)
+  // still both show - the owner's 27 Aug rule.
+  const lineDrops = [];
+  let pooledRaw = raw;
+  if (lines) {
+    const bestByLine = new Map(); // line id -> the highest-tier candidate present
+    for (const c of raw) {
+      const line = lines.lineForName(c.name);
+      if (!line) continue;
+      const prev = bestByLine.get(line.id);
+      if (!prev || lines.tierOf(line, c.name) > lines.tierOf(line, prev.name)) bestByLine.set(line.id, c);
+    }
+    pooledRaw = raw.filter((c) => {
+      const line = lines.lineForName(c.name);
+      if (!line || bestByLine.get(line.id) === c) return true;
+      lineDrops.push({ ...c, reason: `${bestByLine.get(line.id).name} is the higher tier` });
+      return false;
+    });
+  }
+
   // Permanent buffs (Yaulp, Fury) are "cast once and forget" - they get their OWN uncapped pool and
-  // are resolved SEPARATELY, never deduped against the temp buffs (the owner, 27 Aug: Fury keeps its
-  // permanent listing even when a higher-tier temp Strength buff is also in the 14). Resolving them
-  // in the same heading walk as the temp buffs was throwing Fury away as "Rage is the higher tier".
-  const permRaw = raw.filter((c) => pool(c) === 'permanent');
-  const tempRaw = raw.filter((c) => pool(c) !== 'permanent');
+  // are resolved SEPARATELY, never deduped against a temp buff of a DIFFERENT line (the owner,
+  // 27 Aug: Fury keeps its permanent listing even when a higher-tier temp Strength buff is also in
+  // the 14). Resolving them in the same heading walk as the temp buffs was throwing Fury away as
+  // "Rage is the higher tier".
+  const permRaw = pooledRaw.filter((c) => pool(c) === 'permanent');
+  const tempRaw = pooledRaw.filter((c) => pool(c) !== 'permanent');
 
   // ONE resolution across the temp spell-buff + bard-song pools together (bard songs claim the same
   // shared headings as spell buffs where they overlap - haste, run speed - and their own private
@@ -393,9 +460,10 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   const resolved = resolveByHeadings(tempRaw, priorityOrder, lines, checkStack);
   const resolvedPerm = resolveByHeadings(permRaw, priorityOrder, lines, checkStack);
   const dropped = (which) =>
-    which === 'permanent'
+    (which === 'permanent'
       ? resolvedPerm.dropped
-      : resolved.dropped.filter((c) => pool(c) === which);
+      : resolved.dropped.filter((c) => pool(c) === which)
+    ).concat(lineDrops.filter((c) => pool(c) === which));
   const keptOrdered = orderCandidates(resolved.kept, priorityOrder);
 
   const songCands = keptOrdered.filter((c) => pool(c) === 'song');
@@ -405,12 +473,23 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   const buffs = fillSlots(buffCands, SLOT_COUNT);
   const songs = fillSlots(songCands, SONG_SLOT_COUNT);
 
+  // Fix 3 - coverage over the buffs that actually take a slot. `lineKnown` was tagged in
+  // resolveByHeadings. Null when the fallback path ran (no `lines`), which `stackingKnown` covers.
+  const slotted = [...buffs.slots, ...songs.slots, ...permCands];
+  const stackingCoverage =
+    lines && slotted.length
+      ? { known: slotted.filter((c) => c.lineKnown).length, total: slotted.length }
+      : null;
+
   return {
     classes: normClasses,
     level: normClasses[0].level,
     hasBard,
+    playstyle: style,
+    excludedStats: excluded,
     statsKnown: !!spellData,
     stackingKnown: !resolved.approximate && !resolvedPerm.approximate,
+    stackingCoverage,
     slots: buffs.slots,
     overflow: [...buffs.overflow, ...dropped('buff')],
     candidates: buffCands,
@@ -435,5 +514,6 @@ module.exports = {
   DEFAULT_LEVEL,
   MAX_CHARACTER_LEVEL,
   VALID_CLASSES,
+  VALID_PLAYSTYLES,
   PLAYER_TARGETS,
 };

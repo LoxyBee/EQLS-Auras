@@ -22,6 +22,16 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onTravelRoutesChanged: (callback) => {
     ipcRenderer.on('travel:routes', (_event, routes) => callback(routes));
   },
+  // The raid-lockout aura. Same { widgetId: rows } shape as travel routes; empty rows = hidden.
+  getLockoutBoard: () => ipcRenderer.invoke('lockout:getBoard'),
+  onLockoutBoardChanged: (callback) => {
+    ipcRenderer.on('lockout:board', (_event, board) => callback(board));
+  },
+  // First aggro - one shared row (not keyed by widget id), like the raid-named board.
+  getFirstAggro: () => ipcRenderer.invoke('firstAggro:getActive'),
+  onFirstAggroChanged: (callback) => {
+    ipcRenderer.on('firstAggro:active', (_event, rows) => callback(rows));
+  },
   getActiveDamage: () => ipcRenderer.invoke('damage:getActive'),
   onActiveDamageChanged: (callback) => {
     ipcRenderer.on('damage:active', (_event, rows) => callback(rows));

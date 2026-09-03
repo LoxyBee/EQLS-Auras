@@ -23,6 +23,8 @@ function makeUserData() {
   fs.writeFileSync(path.join(ud, 'config.json'), '{"eqFolder":"C:/this-machine"}'); // machine path
   fs.writeFileSync(path.join(ud, 'mainWindowBounds.json'), '{"x":10}');              // this screen
   fs.writeFileSync(path.join(ud, 'currentlyMemorized.json'), '[]');                  // live state
+  fs.writeFileSync(path.join(ud, 'sessionRestore.json'), '{}');                      // live state
+  fs.writeFileSync(path.join(ud, 'groupRoster.json'), '{}');                         // live state
   fs.mkdirSync(path.join(ud, 'customSounds'));
   fs.writeFileSync(path.join(ud, 'customSounds', 'registry.json'), '{}');
   fs.writeFileSync(path.join(ud, 'moduleSettings.json'), '{"pull-timer":{"seconds":20}}');
@@ -44,6 +46,8 @@ test('export carries the portable config, not machine-specific or live-state fil
     assert.ok(!got.includes('config.json'), 'the EQ install path leaked into the bundle');
     assert.ok(!got.includes('mainWindowBounds.json'), 'this screen\'s window bounds leaked');
     assert.ok(!got.includes('currentlyMemorized.json'), 'live gem state leaked');
+    assert.ok(!got.includes('sessionRestore.json'), 'live session-restore snapshot leaked');
+    assert.ok(!got.includes('groupRoster.json'), 'live group roster leaked');
     assert.ok(!got.includes('detection-logs'), 'the logs folder leaked');
     assert.ok(got.includes('eqls-bundle.json'), 'no bundle marker written');
   } finally { fs.rmSync(ud, { recursive: true, force: true }); }

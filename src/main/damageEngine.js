@@ -62,6 +62,7 @@
 
 const EventEmitter = require('events');
 const { parseDamageLine } = require('../shared/damageLines');
+const { isPossessivePetName, petOwnerFromName, looksLikeGeneratedPetName } = require('../shared/petNames');
 
 // Seconds without counted damage before the fight is considered over. Ten is the conventional
 // answer and is as arbitrary as everyone else's ten; it is the per-aura default, not a constant
@@ -296,6 +297,53 @@ class DamageEngine extends EventEmitter {
     this.emit('activeChanged', this.getActive(now));
   }
 
+  // --- session restore (see sessionRestore.js) ------------------------------------------------
+  // A quick restart mid-fight otherwise blanks the meter until the next hit re-bootstraps from
+  // your own first attack, losing the opening of the pull. Captured: the friend/enemy sets (the
+  // valuable bootstrap - the same mobs and group are still there a minute later), both tallies,
+  // and their absolute timestamps. Nothing here needs clock math on the way back: a fight whose
+  // last hit is now older than the timeout is dropped by _expireIfIdle, exactly as it would be
+  // mid-session, and the since-zone tally (which has no timeout) carries the meter until the next
+  // real fight. The registry only offers this back within a short window (2 min) - a damage total
+  // minutes out of date reads as current in a way an empty meter doesn't.
+  captureState() {
+    if (this.totalDamage === 0 && this.sinceZoneTotal === 0) return null;
+    return {
+      enemies: [...this.enemies],
+      friends: [...this.friends],
+      byAttacker: [...this.byAttacker],
+      fightStartedAt: this.fightStartedAt,
+      lastDamageAt: this.lastDamageAt,
+      totalDamage: this.totalDamage,
+      sinceZoneByAttacker: [...this.sinceZoneByAttacker],
+      sinceZoneTotal: this.sinceZoneTotal,
+      sinceZoneStartedAt: this.sinceZoneStartedAt,
+      sinceZoneLastAt: this.sinceZoneLastAt,
+    };
+  }
+
+  restoreState(s, _gapMs, now = Date.now()) {
+    if (!s || typeof s !== 'object') return 0;
+    for (const n of Array.isArray(s.enemies) ? s.enemies : []) this.enemies.add(n);
+    for (const n of Array.isArray(s.friends) ? s.friends : []) this.friends.add(n);
+    for (const pair of Array.isArray(s.byAttacker) ? s.byAttacker : []) {
+      if (Array.isArray(pair)) this.byAttacker.set(pair[0], pair[1]);
+    }
+    for (const pair of Array.isArray(s.sinceZoneByAttacker) ? s.sinceZoneByAttacker : []) {
+      if (Array.isArray(pair)) this.sinceZoneByAttacker.set(pair[0], pair[1]);
+    }
+    if (typeof s.fightStartedAt === 'number') this.fightStartedAt = s.fightStartedAt;
+    if (typeof s.lastDamageAt === 'number') this.lastDamageAt = s.lastDamageAt;
+    if (typeof s.totalDamage === 'number') this.totalDamage = s.totalDamage;
+    if (typeof s.sinceZoneStartedAt === 'number') this.sinceZoneStartedAt = s.sinceZoneStartedAt;
+    if (typeof s.sinceZoneLastAt === 'number') this.sinceZoneLastAt = s.sinceZoneLastAt;
+    if (typeof s.sinceZoneTotal === 'number') this.sinceZoneTotal = s.sinceZoneTotal;
+    this._expireIfIdle(now); // a fight that timed out during the gap ends here, sets kept
+    const rows = this.byAttacker.size + this.sinceZoneByAttacker.size;
+    if (rows) this.emit('activeChanged', this.getActive(now));
+    return rows;
+  }
+
   _expireIfIdle(now) {
     if (this.lastDamageAt === null) return false;
     if (now - this.lastDamageAt < this.timeoutSec * 1000) return false;
@@ -415,20 +463,50 @@ class DamageEngine extends EventEmitter {
         bump(petKey, r, { isPet: true });
         continue;
       }
+      // A possessive-named pet ("Chrysaetos`s pet") is unambiguously a pet whoever owns it - fold
+      // every one into a single "Pets" row, in every scope that shows other people at all. (Owner,
+      // 1-2 Sep: her + her group get their own rows; identifiable pets share a "Pets" row.)
+      if (isPossessivePetName(rawName)) {
+        if (scope === 'mine') continue;
+        const owner = (petOwnerFromName(rawName) || '').toLowerCase();
+        if (scope === 'group' && !admits(owner)) continue;
+        bump('Pets', r, { isPet: true });
+        continue;
+      }
+
       if (scope === 'mine') continue;
       if (scope === 'group') {
         if (allyLeader && admits(allyLeader)) bump(rawName, r, { isPet: true });
         else if (admits(key)) bump(rawName, r);
         continue;
       }
-      // scope 'all'
-      bump(rawName, r);
+
+      // scope 'all'. Her + anyone the group roster has admitted this session get their own row.
+      // Everyone else: a summoned-pet-shaped name (corroboration only - the roster is primary, so
+      // this only fires for a name the roster does NOT vouch for) goes to "Pets"; any other
+      // outsider goes to "Other". If the roster is empty (grouped before launch, or a restart) we
+      // can't tell an outsider from a groupmate, so everyone keeps their own row - the pre-existing
+      // behaviour - and only possessive pets (handled above, roster-independent) still fold.
+      if (admittedList.length === 0 || admits(key)) {
+        bump(rawName, r);
+      } else if (looksLikeGeneratedPetName(rawName)) {
+        bump('Pets', r, { isPet: true });
+      } else {
+        bump('Other', r, { isOther: true });
+      }
     }
 
     const totalDamage = [...agg.values()].reduce((s, r) => s + r.damage, 0);
     const rows = [...agg.entries()]
-      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits, isPet: !!r.isPet, unknownPets: !!r.unknownPets }))
-      .sort((a, b) => b.damage - a.damage);
+      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits, isPet: !!r.isPet, unknownPets: !!r.unknownPets, isOther: !!r.isOther }))
+      // biggest first, but the "Pets" and "Other" summary rows always sink to the bottom above the
+      // total, regardless of how much damage they carry.
+      .sort((a, b) => {
+        const aSummary = a.name === 'Pets' || a.name === 'Other';
+        const bSummary = b.name === 'Pets' || b.name === 'Other';
+        if (aSummary !== bSummary) return aSummary ? 1 : -1;
+        return b.damage - a.damage;
+      });
     const top = rows.length ? rows[0].damage : 0;
     if (totalDamage <= 0) return [];
 
@@ -454,6 +532,7 @@ class DamageEngine extends EventEmitter {
         // display hints for the overlay; nothing downstream needs them.
         isPet: r.isPet,
         unknownPets: r.unknownPets,
+        isOther: r.isOther,
         ...INERT_TIMER_FIELDS,
       };
     });

@@ -67,13 +67,15 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
-const { GroupRoster } = require('./groupRoster');
+const { GroupRoster, RESTORE_GRACE_MS: GROUP_ROSTER_GRACE_MS } = require('./groupRoster');
 const { PetTracker } = require('./petTracker');
 const { RaidNamedTracker } = require('./raidNamedTracker');
+const { FirstAggroEngine } = require('./firstAggroEngine');
 const { ModuleHost } = require('./moduleHost');
 const { readLastZoneEntry } = require('./logZonePeek');
 const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
+const { lockoutBoardRows } = require('../shared/lockoutBoard');
 const { matchShareCodeInChat, splitReason } = require('../shared/shareCodeChat');
 const { TRAVEL_SPELLS } = require('../shared/data/zoneGraph');
 const { IconService } = require('./iconService');
@@ -85,7 +87,7 @@ const { tagBardSongs } = require('./bardSongTagger');
 // launch and re-added other-expansion bard songs, which was right when the roster was mined and
 // wrong once it became the EQL-scoped set. A missing song goes in via tools/roster-overrides.json
 // now - see applyInstallRoot. test/roster.test.js fails if the module or a call to it comes back.
-const { saveSnapshot, loadSnapshot } = require('./sessionSnapshot');
+const { SessionRestore } = require('./sessionRestore');
 const gameSpellData = require('./gameSpellData');
 const spellStacking = require('./spellStacking');
 const spellEffects = require('./spellEffects');
@@ -220,6 +222,65 @@ const damageEngine = new DamageEngine();
 const groupRoster = new GroupRoster();
 const petTracker = new PetTracker();
 const raidNamedTracker = new RaidNamedTracker();
+const firstAggroEngine = new FirstAggroEngine();
+
+// One place for "put back what was live when the app last closed" - see sessionRestore.js. Every
+// engine that holds live session state registers a capture/restore pair and its own staleness
+// limit here; this owns the single snapshot file, the debounced save, and the startup pass.
+const sessionRestore = new SessionRestore();
+sessionRestore.setStore({ loadJson, saveJson });
+sessionRestore.setDebugLogFn((m) => debugLog(m));
+const MIN = 60 * 1000;
+
+// Buffs / ally buffs / bard songs / custom timers - 5 minutes. A buff that "hasn't expired" may
+// still be gone (death, camp, zone) and a wrong countdown reads as authoritative, but 5 min
+// covers a crash or accidental close. Entries store an absolute expiresAt, so restore is just a
+// filter: anything already past its expiry is dropped here.
+sessionRestore.register('timers', {
+  maxGapMs: 5 * MIN,
+  capture() {
+    const { selfBuffs, allyBuffs, bardSongs } = buffEngine.getSnapshotState();
+    const customTimers = customTimerEngine.getSnapshotState();
+    if (!selfBuffs.length && !allyBuffs.length && !bardSongs.length && !customTimers.length) return null;
+    return { selfBuffs, allyBuffs, bardSongs, customTimers };
+  },
+  restore(d) {
+    const now = Date.now();
+    const alive = (xs) => (Array.isArray(xs) ? xs : []).filter((e) => e && e.expiresAt > now);
+    const n = buffEngine.restoreSnapshot({
+      selfBuffs: alive(d.selfBuffs),
+      allyBuffs: alive(d.allyBuffs),
+      bardSongs: alive(d.bardSongs),
+    });
+    return n + customTimerEngine.restoreSnapshot(alive(d.customTimers));
+  },
+});
+
+// Damage meter - 2 minutes (the owner's call). A running total minutes out of date reads as
+// current where an empty meter obviously doesn't; 2 min only covers a crash/restart mid-fight.
+sessionRestore.register('damage', {
+  maxGapMs: 2 * MIN,
+  capture: () => damageEngine.captureState(),
+  restore: (d) => damageEngine.restoreState(d),
+});
+
+// First-aggro line - 2 minutes, same reasoning ("X pulled" goes stale fast).
+sessionRestore.register('firstAggro', {
+  maxGapMs: 2 * MIN,
+  capture: () => firstAggroEngine.captureState(),
+  restore: (d) => firstAggroEngine.restoreState(d),
+});
+
+// Group roster - 20 minutes (its own RESTORE_GRACE_MS). A groupmate who joined before the restart
+// would otherwise read as an outsider on the damage meter's group scope and Pets/Other bucketing.
+sessionRestore.register('groupRoster', {
+  maxGapMs: GROUP_ROSTER_GRACE_MS,
+  capture: () => groupRoster.capture(),
+  restore: (d) => {
+    groupRoster.restore(d);
+    return groupRoster.getAdmitted().length;
+  },
+});
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
 // widgetManager pulls in Electron's screen/BrowserWindow. Action bar gem cooldowns ride along as
@@ -248,8 +309,14 @@ abilityGroupTracker.setGetGroupSlotsFn((group) => {
 abilityGroupTracker.setOnChangeFn(() => broadcast('actionBar:abilityGroupChanged', abilityGroupTracker.getAllActiveStates()));
 // QOL #16 - the active stance/invocation is a character state the player is still in after a
 // restart (like the current zone), so persist it by name and restore it once the bars are known.
+// Kept on its own store key rather than folded into sessionRestore: it has no staleness at all (a
+// stance stays whatever you set until you change it) and its restore must run against the loaded
+// bar layout, which is ready here at module load, before sessionRestore's startup pass.
 abilityGroupTracker.setPersistFn((state) => saveJson('activeAbilityGroups', state));
 abilityGroupTracker.restore(loadJson('activeAbilityGroups', { stance: null, invocation: null }));
+// The group roster is one part of the sessionRestore snapshot now (registered above); a change
+// just pings the shared debounced save, and restore happens in sessionRestore.restoreAll().
+groupRoster.setPersistFn(() => sessionRestore.scheduleSave());
 // See customTimerEngine._resolveCastName. getByName tries the exact name first and only then the
 // rank-stripped one, which is what tells a mote rank ("Cannibalize V" -> Cannibalize) apart from a
 // spell whose name merely ends in a numeral ("Yaulp III" -> itself).
@@ -493,6 +560,7 @@ function debugLog(message) {
 buffEngine.setDebugLogFn(debugLog);
 customTimerEngine.setDebugLogFn(debugLog);
 raidNamedTracker.setDebugLogFn(debugLog);
+firstAggroEngine.setDebugLogFn(debugLog);
 
 // AA "Spell Casting Reinforcement" (4 ranks) and Exaltation "Extended
 // Enhancement" (3 ranks) both extend buff durations by a flat percentage,
@@ -585,6 +653,7 @@ onLogLine('damageEngine', (line) => damageEngine.handleLine(line));
 onLogLine('groupRoster', (line) => groupRoster.handleLine(line));
 onLogLine('petTracker', (line) => petTracker.handleLine(line));
 onLogLine('raidNamedTracker', (line) => raidNamedTracker.handleLine(line));
+onLogLine('firstAggro', (line) => firstAggroEngine.handleLine(line));
 onLogLine('abilityGroupTracker', (line) => abilityGroupTracker.handleLine(line));
 // Custom modules ride the same bus as pure observers. Its handleLine already catches per-module
 // throws internally (like lockoutService); the wrapper is a second layer for the host itself.
@@ -797,6 +866,9 @@ lockoutService.on('changed', () => {
   lockoutPushTimer = setTimeout(() => {
     lockoutPushTimer = null;
     broadcast('lockouts:changed', lockoutService.getStatus());
+    // If a raid-lockout aura is on screen right now, a kill that just landed should drop off it
+    // live rather than waiting for the 20s to lapse. Cheap no-op when nothing is shown.
+    pushLockoutBoard();
   }, 400);
 });
 lockoutService.on('backfillChanged', (status) => broadcast('lockouts:backfill', status));
@@ -891,32 +963,20 @@ logService.watcher.on('status', (status) => {
     spellbookService.setCharacterBaseName(baseName);
   }
 });
-// Persist live timers so a restart doesn't wipe everything currently running
-// - see sessionSnapshot.js for why this exists and why it's time-limited.
-// Debounced because these events fire on every tick of every buff (once a
-// second) and this writes to disk; 2s is far below the 5 minute grace window,
-// so nothing meaningful is lost even if the app dies between writes.
-let snapshotTimer = null;
-function saveSessionSnapshotSoon() {
-  if (snapshotTimer) return;
-  snapshotTimer = setTimeout(() => {
-    snapshotTimer = null;
-    const { selfBuffs, allyBuffs, bardSongs } = buffEngine.getSnapshotState();
-    saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, bardSongs, customTimers: customTimerEngine.getSnapshotState() });
-  }, 2000);
-}
-
+// Persist live engine state so a restart doesn't wipe everything currently running - see
+// sessionRestore.js for why this exists and why each part is time-limited. The save is debounced
+// (2s) because these events fire on every tick of every active thing and it writes to disk.
 buffEngine.on('buffsChanged', (buffs) => {
   broadcast('buffs:active', buffs);
-  saveSessionSnapshotSoon();
+  sessionRestore.scheduleSave();
 });
 buffEngine.on('allyBuffsChanged', (buffs) => {
   broadcast('buffs:activeAllies', buffs);
-  saveSessionSnapshotSoon();
+  sessionRestore.scheduleSave();
 });
 buffEngine.on('bardSongsChanged', (songs) => {
   broadcast('buffs:activeBardSongs', songs);
-  saveSessionSnapshotSoon();
+  sessionRestore.scheduleSave();
 });
 // Where the EQ install actually lives, once known - kept module-level so
 // lookups against the game's own spell data (gameSpellData.js) can happen
@@ -987,7 +1047,7 @@ function memorizedWithIcons() {
 buffEngine.on('memorizedChanged', () => broadcast('spellbook:memorized', memorizedWithIcons()));
 customTimerEngine.on('activeChanged', (timers) => {
   broadcast('customTimers:active', timers);
-  saveSessionSnapshotSoon();
+  sessionRestore.scheduleSave();
 });
 // Note 19. One engine, but a damage aura can be scoped to the whole fight, just the player's
 // group, or just the player (+ their charmed pets), and 'group'/'mine' recompute the % denominator
@@ -1000,10 +1060,38 @@ function damageViews() {
     mine: damageEngine.getActive(Date.now(), 'mine'),
   };
 }
-damageEngine.on('activeChanged', () => broadcast('damage:active', damageViews()));
+damageEngine.on('activeChanged', () => {
+  broadcast('damage:active', damageViews());
+  sessionRestore.scheduleSave();
+});
 // Backlog #33 - the named-kill board. Each row becomes an infinite buff-shaped tile (killed ones
 // flagged so overlay.js can dim them); a row with a live respawn countdown carries remainingSec.
 raidNamedTracker.on('changed', (rows) => broadcast('raidNamed:active', rows.map(raidNamedTile)));
+firstAggroEngine.on('changed', (rows) => {
+  broadcast('firstAggro:active', rows.map(firstAggroTile));
+  sessionRestore.scheduleSave();
+});
+// One line - who took the first hit of the fight. An infinite, buff-shaped tile styled
+// like a travel-guide leg (no category border, no countdown). `side` lets overlay.js
+// colour a body-pull ('mob') differently from a clean pull.
+function firstAggroTile(row) {
+  return {
+    name: row.text,
+    id: 'first-aggro',
+    valueText: '',
+    barPercent: 0,
+    remainingSec: null,
+    durationSec: 0,
+    infinite: true,
+    instant: false,
+    landedAt: null,
+    showOnOverlay: true,
+    iconUrl: null,
+    isBardSong: false,
+    spellCategory: null,
+    firstAggroSide: row.side,
+  };
+}
 function raidNamedTile(row) {
   return {
     name: row.name,
@@ -1211,6 +1299,140 @@ function travelRowsFor(widget, zone, scribed) {
 function pushTravelRoutes() {
   broadcast('travel:routes', travelRoutes());
 }
+
+// -------------------------------------------------------------------------------------------------
+// The raid-lockout aura (owner request, 2 Sep 2026). Transient: the player's macro sends
+// `/tell <word>`, the board pops for `lockoutAutoHideSec`, then it clears itself. Same broadcast
+// shape as travel routes - one { widgetId: rows } map, each overlay picks its own id out - and the
+// same reasoning for living in the main process: the overlay can't require lockoutBoard.js
+// (lockoutBoardRows is required at the top of this file).
+const lockoutShownUntil = new Map(); // widget id -> ms timestamp to hide at
+let lockoutHideTimer = null;
+
+function hasLockoutWidget() {
+  return widgetManager.getAllWidgetConfigs().some((w) => w.buffSource === 'lockout');
+}
+
+// One board row -> a buff-shaped tile the overlay can draw. Same field shape as a travel-guide
+// leg (travelRowsFor's row()): no spell category (so no coloured border), a blank valueText (so
+// no infinity glyph on the right), no bar. Zone/character headers are flagged so overlay.js can
+// style them bold; a tier row's `name` is "d3 · Adaptive".
+function lockoutTile(row, i) {
+  return {
+    name: row.label,
+    // "d1 · Normal" repeats across zones, so a name-only identity would collide (gotcha #13). The
+    // list is a fixed zone-then-tier order rebuilt wholesale each push, so a positional id is
+    // stable enough and unique.
+    id: `lockout-${i}`,
+    valueText: '',
+    barPercent: 0,
+    remainingSec: null,
+    durationSec: 0,
+    infinite: true,
+    instant: false,
+    landedAt: null,
+    showOnOverlay: true,
+    iconUrl: null,
+    isBardSong: false,
+    spellCategory: null,
+    lockoutHeader: row.kind === 'zone' || row.kind === 'character',
+    lockoutKind: row.kind,
+  };
+}
+
+function lockoutBoardRoutes() {
+  const now = Date.now();
+  // getProjection() just reads the parsed states. It's only called when a board is actually shown
+  // (an unshown aura short-circuits to [] first), so the 1s heartbeat below costs nothing at idle.
+  let projection = null;
+  const out = {};
+  for (const w of widgetManager.getAllWidgetConfigs()) {
+    if (w.buffSource !== 'lockout') continue;
+    if ((lockoutShownUntil.get(w.id) || 0) <= now) { out[w.id] = []; continue; }
+    if (!projection) {
+      try { projection = lockoutService.getProjection(); } catch { projection = { characters: [] }; }
+    }
+    out[w.id] = lockoutBoardRows(projection).map((row, i) => lockoutTile(row, i));
+  }
+  return out;
+}
+
+// The board only ever reaches the overlay through here, and only when it has actually changed -
+// the 1s heartbeat and the lockoutService 'changed' event both call this, and without the dedupe
+// the overlay would rebuild its tile list every second (a visible flash). Reported live.
+let lastLockoutBoardJSON = null;
+function pushLockoutBoard() {
+  const board = lockoutBoardRoutes();
+  const json = JSON.stringify(board);
+  if (json !== lastLockoutBoardJSON) {
+    lastLockoutBoardJSON = json;
+    broadcast('lockout:board', board);
+    const summary = Object.entries(board).map(([id, rows]) => `${id.slice(0, 8)}:${rows.length}`).join(' ');
+    debugLog(`LOCKOUT board broadcast -> ${summary || '(no lockout auras)'}`);
+  }
+  // Re-arm a single timer for the soonest hide, so a board clears itself even with no further
+  // log activity. One timer for all lockout auras - they rarely overlap and the recompute is tiny.
+  if (lockoutHideTimer) { clearTimeout(lockoutHideTimer); lockoutHideTimer = null; }
+  const now = Date.now();
+  const next = [...lockoutShownUntil.values()].filter((t) => t > now).sort((a, b) => a - b)[0];
+  if (next) lockoutHideTimer = setTimeout(pushLockoutBoard, Math.max(250, next - now));
+}
+
+function popLockoutBoard(word) {
+  const now = Date.now();
+  const mine = widgetManager.getAllWidgetConfigs()
+    .filter((w) => w.buffSource === 'lockout' && (w.lockoutTriggerWord || 'eqrlm') === word);
+  if (!mine.length) return false;
+
+  // A second `/tell <word>` while it's up is "never mind" - one command both ways, like the
+  // travel picker.
+  if (mine.some((w) => (lockoutShownUntil.get(w.id) || 0) > now)) {
+    for (const w of mine) lockoutShownUntil.delete(w.id);
+    debugLog(`LOCKOUT board dismissed by /tell ${word}`);
+    pushLockoutBoard();
+    return true;
+  }
+
+  // Reveal only once the grid scan has FINISHED. Showing it mid-scan renders a half-parsed board
+  // (every tier looks owed) that then visibly shrinks as backfill marks tiers completed - reported
+  // live as "it flashes with every single lockout before truncating the list". One push, final
+  // content.
+  const reveal = () => {
+    const t = Date.now();
+    for (const w of mine) lockoutShownUntil.set(w.id, t + (w.lockoutAutoHideSec || 20) * 1000);
+    debugLog(`LOCKOUT board opened by /tell ${word}`);
+    pushLockoutBoard();
+  };
+  if (lockoutService.backfillState === 'done') {
+    reveal();
+  } else if (lockoutService.backfillState === 'running') {
+    const waitDone = () => {
+      if (lockoutService.backfillState === 'running') lockoutService.once('backfillChanged', waitDone);
+      else reveal();
+    };
+    lockoutService.once('backfillChanged', waitDone);
+  } else {
+    lockoutService.backfill().then(reveal, reveal);
+  }
+  return true;
+}
+
+onLogLine('lockoutCommand', (line) => {
+  if (!hasLockoutWidget()) return;
+  const typed = matchOfflineTell(line);
+  if (!typed) return;
+  const word = typed.toLowerCase();
+  const wanted = new Set(
+    widgetManager.getAllWidgetConfigs()
+      .filter((w) => w.buffSource === 'lockout')
+      .map((w) => (w.lockoutTriggerWord || 'eqrlm'))
+  );
+  if (wanted.has(word)) {
+    popLockoutBoard(word);
+  } else {
+    debugLog(`LOCKOUT /tell "${word}" seen but no lockout aura uses it (words in use: ${[...wanted].join(', ') || 'none'})`);
+  }
+});
 // The longest timeout any damage aura asks for - see setOptions for why the longest and not the
 // shortest. Recomputed on any widget change rather than read per line, because it changes when
 // someone edits a setting and at no other time.
@@ -1239,6 +1461,10 @@ setInterval(() => {
   // scribing a travel spell. Cheap: a breadth-first search over 104 nodes, only for auras that are
   // actually travel guides, and almost always zero of them.
   pushTravelRoutes();
+  // The raid-lockout aura is transient (a shown board clears itself when its timer lapses), so it
+  // needs a heartbeat to notice that lapse and to give a freshly-created aura window its first
+  // (empty) push. Same cost profile as the travel push - a handful of small maps.
+  pushLockoutBoard();
 }, 1000);
 buffEngine.on('unknownBuffsChanged', (buffs) => broadcast('buffs:unknown', buffs));
 buffEngine.on('ambiguousCastsChanged', (casts) => {
@@ -1321,19 +1547,12 @@ app.whenReady().then(() => {
 
   applyInstallRoot(logService.getState().eqFolder);
 
-  // Put back whatever was still running when the app last closed - see
-  // sessionSnapshot.js. Deliberately after applyInstallRoot so the roster is
-  // fully backfilled/tagged first: a restored buff is looked up by name for
-  // its icon, and doing this earlier would restore entries the roster doesn't
-  // know about yet.
-  const { restored, gapMs, reason } = loadSnapshot({ loadJson, saveJson });
-  if (restored) {
-    const count =
-      buffEngine.restoreSnapshot(restored) + customTimerEngine.restoreSnapshot(restored.customTimers);
-    if (count) debugLog(`Restored ${count} running timers after a ${Math.round(gapMs / 1000)}s restart`);
-  } else if (reason && reason !== 'no snapshot') {
-    debugLog(`Did not restore timers: ${reason}`);
-  }
+  // Put back whatever was still running when the app last closed - see sessionRestore.js. Every
+  // registered part (timers, damage meter, first-aggro, group roster) restores here, each within
+  // its own staleness limit. Deliberately after applyInstallRoot so the roster is fully
+  // backfilled/tagged first: a restored buff is looked up by name for its icon, and doing this
+  // earlier would restore entries the roster doesn't know about yet.
+  sessionRestore.restoreAll();
 
   // Recover the current zone from the log tail. logWatcher started at EOF and will never see the
   // "You have entered X." line if the player zoned while the app was down, which otherwise leaves
@@ -1549,7 +1768,9 @@ ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffE
 
 ipcMain.handle('damage:getActive', () => damageViews());
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
+ipcMain.handle('firstAggro:getActive', () => firstAggroEngine.getActive().map(firstAggroTile));
 ipcMain.handle('travel:getRoutes', () => travelRoutes());
+ipcMain.handle('lockout:getBoard', () => lockoutBoardRoutes());
 ipcMain.handle('travel:getZones', () => allZoneNames());
 // Used only by the zone-prompt popup's pick list - no instance-tier variants (" (Awakened)",
 // " (Fused)"), at the owner's request. `travel:getZones` above is untouched for anything that
@@ -1977,6 +2198,12 @@ ipcMain.handle('widget:createModuleAura', (_event, { name, moduleId }) => widget
 ipcMain.handle('widget:createDebuff', (_event, { name }) => widgetManager.createDebuffWidget(name));
 ipcMain.handle('widget:createDamageMeter', (_event, { name, mineOnly }) =>
   widgetManager.createDamageMeterWidget(name, mineOnly)
+);
+ipcMain.handle('widget:createLockoutBoard', (_event, { name }) =>
+  widgetManager.createLockoutBoardWidget(name)
+);
+ipcMain.handle('widget:createFirstAggro', (_event, { name }) =>
+  widgetManager.createFirstAggroWidget(name)
 );
 ipcMain.handle('widget:createTravelGuide', (_event, { name, destination }) =>
   widgetManager.createTravelGuideWidget(name, destination)
@@ -2545,6 +2772,11 @@ ipcMain.handle('app:backupConfig', () => {
   }
 });
 ipcMain.handle('widget:setListWidth', (_event, { id, value }) => widgetManager.setListWidth(id, value));
+ipcMain.handle('widget:setLockoutOptions', (_event, { id, ...opts }) => {
+  const config = widgetManager.setLockoutOptions(id, opts);
+  pushLockoutBoard(); // a shown board picks up the new word / hide time right away
+  return config;
+});
 ipcMain.on('widget:reportContentSize', (_event, { id, width, height, originX }) => widgetManager.fitToContent(id, width, height, originX));
 ipcMain.handle('widget:setOpacity', (_event, { id, value }) => widgetManager.setOpacity(id, value));
 ipcMain.handle('widget:setBuffFilter', (_event, { id, mode, names }) => widgetManager.setBuffFilter(id, mode, names));
@@ -2641,7 +2873,18 @@ ipcMain.handle('planner:getInput', (_event, profileId) => {
     classes: (profile && profile.plannerClasses) || [],
     level: (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL,
     buffPlanOrder: (profile && profile.buffPlanOrder) || [],
+    playstyle: (profile && profile.plannerPlaystyle) || 'balanced',
+    excludedStats: (profile && profile.plannerExcludedStats) || [],
+    allStats: spellEffects.STAT_NAMES, // for the "ignore this stat" toggles
   };
+});
+ipcMain.handle('planner:setPlaystyle', (_event, { profileId, playstyle }) => {
+  profileStore.setPlannerPlaystyle(profileId || profileStore.getActiveId(), playstyle);
+  return true;
+});
+ipcMain.handle('planner:setExcludedStats', (_event, { profileId, stats }) => {
+  profileStore.setPlannerExcludedStats(profileId || profileStore.getActiveId(), stats);
+  return true;
 });
 ipcMain.handle('planner:setClasses', (_event, { profileId, classes }) => {
   profileStore.setPlannerClasses(profileId || profileStore.getActiveId(), buffPlanner.normalizeClassCodes(classes));
@@ -2660,6 +2903,8 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
   const classes = (profile && profile.plannerClasses) || [];
   const level = (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL;
   const priorityOrder = (profile && profile.buffPlanOrder) || [];
+  const playstyle = (profile && profile.plannerPlaystyle) || 'balanced';
+  const excludedStats = (profile && profile.plannerExcludedStats) || [];
   // The planner ALWAYS uses the game's stacking data when the spell file is reachable - it's how it
   // tells a weaker tier of a buff line from a different buff that stacks. (Independent of the
   // `useStackingModel` diagnostic toggle, which gates the live detection engine, a riskier place.)
@@ -2674,11 +2919,13 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
         stats: (spellId) => spellEffects.spellStats(currentInstallRoot, spellId, level),
         headline: (spellId, category) =>
           spellEffects.categoryHeadline(currentInstallRoot, roster, spellId, category),
-        score: (spellId) => spellEffects.statScore(currentInstallRoot, spellId),
+        score: (spellId, name, weightScale) =>
+          spellEffects.statScore(currentInstallRoot, spellId, name, weightScale),
+        weightScale: (style, excluded) => spellEffects.combinedWeightScale(style, excluded),
         multiplierStats: spellEffects.MULTIPLIER_STATS,
       }
     : null;
-  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines });
+  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines, playstyle, excludedStats });
   // Attach a served icon url to everything the page will draw, same shape buffs:known uses.
   const withIcons = (list) =>
     list.map((c) => ({ ...c, iconUrl: c.iconId != null ? iconService.buildIconUrl(c.iconId) : null }));
@@ -2697,6 +2944,9 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
     permanentSlots: withIcons(plan.permanentSlots),
     permanentOverflow: withIcons(plan.permanentOverflow),
     stackingKnown: plan.stackingKnown,
+    stackingCoverage: plan.stackingCoverage,
+    playstyle: plan.playstyle,
+    excludedStats: plan.excludedStats,
   };
 });
 
@@ -2750,11 +3000,9 @@ ipcMain.handle('icons:getCount', () => iconService.getIconCount());
 // second, not another pass over these same four ruled-out in-app paths.
 app.on('before-quit', () => {
   debugLog('SHUTDOWN: before-quit fired');
-  // Flush immediately - the debounced save above may still be pending, and
-  // this is exactly the moment the snapshot matters most.
-  if (snapshotTimer) clearTimeout(snapshotTimer);
-  const { selfBuffs, allyBuffs, bardSongs } = buffEngine.getSnapshotState();
-  saveSnapshot({ loadJson, saveJson }, { selfBuffs, allyBuffs, bardSongs, customTimers: customTimerEngine.getSnapshotState() });
+  // Flush immediately - the debounced save may still be pending, and this is exactly the moment
+  // the snapshot matters most.
+  sessionRestore.saveNow();
 });
 app.on('will-quit', () => {
   debugLog('SHUTDOWN: will-quit fired');
@@ -2766,6 +3014,7 @@ app.on('will-quit', () => {
   // orphaned process after the app closes instead of exiting with it.
   foregroundWatcher.stop();
   raidNamedTracker.stop();
+  firstAggroEngine.stop();
 });
 // A renderer dying takes its window with it, which can cascade into
 // window-all-closed and look like a clean quit - `reason` distinguishes a

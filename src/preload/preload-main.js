@@ -169,6 +169,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createDebuffWidget: (name) => ipcRenderer.invoke('widget:createDebuff', { name }),
   createDamageMeterWidget: (name, mineOnly) => ipcRenderer.invoke('widget:createDamageMeter', { name, mineOnly }),
   createTravelGuideWidget: (name, destination) => ipcRenderer.invoke('widget:createTravelGuide', { name, destination }),
+  createLockoutBoardWidget: (name) => ipcRenderer.invoke('widget:createLockoutBoard', { name }),
+  createFirstAggroWidget: (name) => ipcRenderer.invoke('widget:createFirstAggro', { name }),
   setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
   // Raid lockouts. Read-only from the renderer's side: it asks for a projection and is told when
@@ -328,6 +330,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   previewWidget: (id) => ipcRenderer.invoke('widget:preview', id),
   isWidgetPreviewing: (id) => ipcRenderer.invoke('widget:isPreviewing', id),
   setWidgetListWidth: (id, width) => ipcRenderer.invoke('widget:setListWidth', { id, value: width }),
+  setWidgetLockoutOptions: (id, opts) => ipcRenderer.invoke('widget:setLockoutOptions', { id, ...opts }),
   setWidgetOpacity: (id, opacity) => ipcRenderer.invoke('widget:setOpacity', { id, value: opacity }),
   setWidgetBuffFilter: (id, mode, names) => ipcRenderer.invoke('widget:setBuffFilter', { id, mode, names }),
   setWidgetBuffSource: (id, source) => ipcRenderer.invoke('widget:setBuffSource', { id, source }),
@@ -362,6 +365,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setPlannerClasses: (profileId, classes) => ipcRenderer.invoke('planner:setClasses', { profileId, classes }),
   setPlannerLevel: (profileId, level) => ipcRenderer.invoke('planner:setLevel', { profileId, level }),
   setPlannerOrder: (profileId, order) => ipcRenderer.invoke('planner:setOrder', { profileId, order }),
+  setPlannerPlaystyle: (profileId, playstyle) => ipcRenderer.invoke('planner:setPlaystyle', { profileId, playstyle }),
+  setPlannerExcludedStats: (profileId, stats) => ipcRenderer.invoke('planner:setExcludedStats', { profileId, stats }),
   computePlan: (profileId) => ipcRenderer.invoke('planner:compute', profileId),
 
   getIconSets: () => ipcRenderer.invoke('icons:getSets'),

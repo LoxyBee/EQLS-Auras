@@ -735,6 +735,33 @@ const RAIDS = Object.freeze([
     singleBoss: false,
     weeklyTaskObserved: false,
   },
+  {
+    // Kedge Keep — a real Voidling-armed weekly raid on EQL that was missing from this list, so it
+    // never counted. ONE visit in the entire 21-file split corpus
+    // (Split/eqlog_Shara_rivervale_2026-08-18.txt), verified line-for-line:
+    //   22:20:35  You say, 'danger'                                  (the Voidling arm)
+    //   22:20:51  You have entered Kedge Keep - Group 4 (Refined).
+    //   22:27:08  Phinigel Autropos has been slain by Jonarer!       (exact spelling, matches SLAIN_BY_RE)
+    // An earlier open-world `You have entered Kedge Keep.` at 22:07:49 is the non-instance zone;
+    // the existing group-instance/Voidling handling already scopes kills to the `- Group N` run.
+    //
+    // `singleBoss: true` and `alsoDies: []` are NOT MEASURED — one visit can't run the
+    // once-per-visit test the other zones' flags came from. Only trash seen was many
+    // "a swirlspine seahorse" per visit, no boss signature.
+    //
+    // `weeklyTaskObserved: false` is CORRECT and must stay false: no
+    // `Potential of the Void - <boss> - Weekly` line appears anywhere near the Kedge raid,
+    // because the player had already spent all three weekly tokens that night (Lord Nagafen 20:41,
+    // Innoruuk 20:58, Master Yael 21:56) — Kedge was the 4th raid and granted nothing. A Kedge
+    // grant would presumably read `Potential of the Void - Phinigel Autropos - Weekly`, but that
+    // string has never been seen, so it is an inference in this comment only, not in code.
+    key: 'Kedge Keep',
+    label: 'Phinigel Autropos',
+    bosses: Object.freeze(['Phinigel Autropos']),
+    alsoDies: Object.freeze([]),
+    singleBoss: true,
+    weeklyTaskObserved: false,
+  },
 ].map(Object.freeze));
 
 // THE CLIENT CAPITALISES THE FIRST CHARACTER OF A LINE, so a mob whose name

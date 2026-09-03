@@ -19,7 +19,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { test, report } = require('./harness');
-const { spellStats, categoryStatMap, categoryHeadline, statScore, resetCache } = require('../src/main/spellEffects');
+const { spellStats, categoryStatMap, categoryHeadline, statScore, resetCache, STAT_NAMES, combinedWeightScale } = require('../src/main/spellEffects');
 
 const ROWS = [
   '159^Strength^0^^' + '0^'.repeat(168) + '1|4|42|0|101|67',
@@ -85,7 +85,7 @@ test('categoryStatMap learns a category\'s headline stat from the roster', () =>
 test('statScore adds attribute points 1:1, turns haste into its bonus, weights resists down', () => {
   assert.equal(statScore(installRoot, 159), 67); // STR 67
   assert.equal(statScore(installRoot, 300), 41); // haste 141 -> +41
-  assert.equal(statScore(installRoot, 1445), 55); // AC 50 + max HP 225 * 0.02 = 54.5 -> 55
+  assert.equal(statScore(installRoot, 1445), 106); // AC 50 + max HP 225 * 0.25 = 106.25 -> 106 (Fix 5)
   assert.equal(statScore(installRoot, 900), 0); // heal -> nothing
   assert.equal(statScore(installRoot, 500), 4); // +40 magic resist * 0.1 = 4 - situational, well below a real stat
 });
@@ -93,7 +93,7 @@ test('statScore adds attribute points 1:1, turns haste into its bonus, weights r
 test('regen and cast speed rank high (Vaela, 27 Aug)', () => {
   assert.equal(statScore(installRoot, 600), 48); // mana regen 12 * 4
   assert.equal(statScore(installRoot, 601), 92); // HP regen 15 * 4 + endurance regen 8 * 4
-  assert.equal(statScore(installRoot, 602), 45); // cast speed 30 * 1.5
+  assert.equal(statScore(installRoot, 602), 150); // cast speed 30 * 5.0 (Fix 8a - level with haste)
   const clarity = spellStats(installRoot, 600);
   assert.equal(clarity[0].stat, 'mana regen');
   const bof = spellStats(installRoot, 602);
@@ -113,6 +113,21 @@ test('the module never exposes the game\'s internal effect numbers by name', () 
     assert.equal(typeof s.stat, 'string');
     assert.ok(!/^\d/.test(s.stat), 'a stat name is a word, not a number');
   }
+});
+
+test('combinedWeightScale: ignored stats get a hard 0, on top of the playstyle preset', () => {
+  assert.deepEqual(combinedWeightScale('balanced', []), {});
+  assert.deepEqual(combinedWeightScale('balanced', ['CHA']), { CHA: 0 });
+  // caster preset already touches STR; ignoring it should still land on 0, not the preset value
+  const caster = combinedWeightScale('caster', ['STR']);
+  assert.equal(caster.STR, 0);
+  // an unknown stat name is dropped, not passed through
+  assert.deepEqual(combinedWeightScale('balanced', ['STR', 'nonsense']), { STR: 0 });
+});
+
+test('STAT_NAMES is the plain stat list the toggles are built from', () => {
+  assert.ok(STAT_NAMES.includes('CHA') && STAT_NAMES.includes('STR') && STAT_NAMES.includes('haste'));
+  assert.ok(STAT_NAMES.every((n) => typeof n === 'string' && !/^\d/.test(n)));
 });
 
 module.exports = () => report('spell-effects');
