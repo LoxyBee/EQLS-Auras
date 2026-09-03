@@ -2535,6 +2535,23 @@ body.sidebar-resizing .sidebar {
 .planner-slot-list .planner-buff-row {
   margin-left: 2px;
 }
+/* The X on a slotted row - removes that buff from the plan. */
+.planner-buff-x {
+  margin-left: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--ink-dim);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.planner-buff-x:hover {
+  color: var(--bad, #e06c6c);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
 /* A pinned "special" song (Amplification) - not one of the 5, so it gets its own look: a solid
    accent border and a left accent bar. */
 .planner-buff-special {

@@ -378,6 +378,23 @@ test('a haste buff that is not the strongest source loses its haste weight from 
   assert.equal(song.redundantMultiplier[0].coveredBy, 'Spell Haste');
 });
 
+test('excludedBuffs: an X-ed buff drops out and the next candidate takes the slot', () => {
+  const roster = [];
+  for (let i = 0; i < 16; i++) {
+    roster.push(buff({ name: `B${i}`, spellId: i + 1, category: `C${i}`, classes: 'CLR 10', level: 10 }));
+  }
+  const byId = Object.fromEntries(roster.map((e, i) => [e.spellId, [{ stat: 'STR', value: 100 - i, order: 0 }]]));
+  const spellData = { ...fakeSpellData(byId), score: (id) => (byId[id][0] || {}).value || 0 };
+  const base = computePlan({ roster, classes: ['CLR'], spellData });
+  assert.equal(base.slots.length, 14);
+  const dropped = base.slots[0].name;
+  const after = computePlan({ roster, classes: ['CLR'], spellData, excludedBuffs: [dropped] });
+  assert.ok(!after.slots.some((s) => s.name === dropped), 'the removed buff is gone from the 14');
+  assert.equal(after.slots.length, 14, 'a fresh candidate filled the freed slot');
+  assert.deepEqual(after.excludedBuffs, [dropped]);
+  assert.match(after.overflow.find((o) => o.name === dropped).reason, /removed/);
+});
+
 test('Amplification is a pinned special song when a bard can cast it - not scored, not slotted', () => {
   const roster = [
     buff({ name: 'Amplification', spellId: 9, category: 'Utility Beneficial', classes: 'BRD 30', level: 30 }),

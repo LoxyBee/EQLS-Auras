@@ -365,6 +365,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setPlannerLevel: (profileId, level) => ipcRenderer.invoke('planner:setLevel', { profileId, level }),
   setPlannerOrder: (profileId, order) => ipcRenderer.invoke('planner:setOrder', { profileId, order }),
   setPlannerExcludedStats: (profileId, stats) => ipcRenderer.invoke('planner:setExcludedStats', { profileId, stats }),
+  setPlannerExcludedBuffs: (profileId, names) => ipcRenderer.invoke('planner:setExcludedBuffs', { profileId, names }),
   computePlan: (profileId) => ipcRenderer.invoke('planner:compute', profileId),
 
   getIconSets: () => ipcRenderer.invoke('icons:getSets'),

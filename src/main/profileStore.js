@@ -96,6 +96,18 @@ class ProfileStore {
     return profile;
   }
 
+  // Individual buffs the user has X'd off the plan, by name. The planner drops them and pulls the
+  // next candidate into the freed slot. Reset button clears the list.
+  setPlannerExcludedBuffs(id, names) {
+    const profile = this.data.profiles.find((p) => p.id === id);
+    if (!profile) return null;
+    profile.plannerExcludedBuffs = Array.isArray(names)
+      ? [...new Set(names.filter((s) => typeof s === 'string'))]
+      : [];
+    this._save();
+    return profile;
+  }
+
   getActiveId() {
     return this.data.activeProfileId;
   }

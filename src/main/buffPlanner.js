@@ -500,13 +500,16 @@ function poolFor(cand, hasBard) {
 //     songSlots, songOverflow, songCandidates,   // the 5 bard-song slots (empty unless Bard picked)
 //     permanentSlots, permanentOverflow }        // permanent buffs (Yaulp/Fury), no cap
 // `classes` is a list of codes (or {code} objects); `level` is the one shared character level.
-function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines, excludedStats } = {}) {
+function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines, excludedStats, excludedBuffs } = {}) {
   const normClasses = normalizeClasses(classes, level);
   const excluded = Array.isArray(excludedStats) ? excludedStats.filter((s) => typeof s === 'string') : [];
+  const removed = Array.isArray(excludedBuffs) ? excludedBuffs.filter((s) => typeof s === 'string') : [];
+  const removedSet = new Set(removed.map((n) => n.toLowerCase()));
   const empty = {
     classes: [],
     level: clampLevel(level == null ? DEFAULT_LEVEL : level),
     hasBard: false,
+    excludedBuffs: [],
     statsKnown: !!spellData,
     stackingKnown: !!(lines || checkStack),
     stackingCoverage: null,
@@ -526,7 +529,15 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   const weightScale =
     spellData && spellData.weightScale && excluded.length ? spellData.weightScale(excluded) : null;
 
-  const raw = candidatesFor(roster || [], normClasses, spellData, weightScale);
+  const rawAll = candidatesFor(roster || [], normClasses, spellData, weightScale);
+  // Buffs the user X'd off the plan (owner, 3 Sep). Dropped from the candidate pool entirely, so
+  // the next-best moves into the freed slot. The Reset button clears the list.
+  const manualDrops = [];
+  const raw = rawAll.filter((c) => {
+    if (!removedSet.has(c.name.toLowerCase())) return true;
+    manualDrops.push({ ...c, reason: 'you removed it', beatenBy: [] });
+    return false;
+  });
   const pool = (c) => poolFor(c, hasBard);
 
   // Collapse each stacking LINE to its single best castable tier BEFORE the permanent/temp split.
@@ -608,7 +619,8 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     )
       .concat(lineDrops.filter((c) => pool(c) === which))
       .concat(zeroedDrops.filter((c) => pool(c) === which))
-      .concat(crossPoolDrops.filter((c) => pool(c) === which));
+      .concat(crossPoolDrops.filter((c) => pool(c) === which))
+      .concat(manualDrops.filter((c) => pool(c) === which));
   const keptOrdered = orderCandidates(resolved.kept, priorityOrder);
 
   const songCands = keptOrdered.filter((c) => pool(c) === 'song');
@@ -657,6 +669,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     ...lineDrops,
     ...zeroedDrops,
     ...crossPoolDrops,
+    ...manualDrops,
     ...buffs.overflow,
     ...songs.overflow,
   ];
@@ -696,6 +709,7 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     hasBard,
     specialSongs: hasBard ? specialSongsFor(roster || [], normClasses) : [],
     excludedStats: excluded,
+    excludedBuffs: removed,
     statsKnown: !!spellData,
     stackingKnown: !resolved.approximate && !resolvedPerm.approximate && !resolvedCombat.approximate,
     stackingCoverage,

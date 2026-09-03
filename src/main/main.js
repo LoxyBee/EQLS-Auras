@@ -2894,12 +2894,17 @@ ipcMain.handle('planner:getInput', (_event, profileId) => {
     level: (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL,
     buffPlanOrder: (profile && profile.buffPlanOrder) || [],
     excludedStats: plannerExcludedFor(profile),
+    excludedBuffs: (profile && profile.plannerExcludedBuffs) || [],
     allStats: spellEffects.EXCLUDABLE_STATS, // the stats that get a toggle chip (no resists / rune)
     presetExcludes: spellEffects.PRESET_EXCLUDES, // Balanced/Melee/Caster -> which stats they un-tick
   };
 });
 ipcMain.handle('planner:setExcludedStats', (_event, { profileId, stats }) => {
   profileStore.setPlannerExcludedStats(profileId || profileStore.getActiveId(), stats);
+  return true;
+});
+ipcMain.handle('planner:setExcludedBuffs', (_event, { profileId, names }) => {
+  profileStore.setPlannerExcludedBuffs(profileId || profileStore.getActiveId(), names);
   return true;
 });
 ipcMain.handle('planner:setClasses', (_event, { profileId, classes }) => {
@@ -2920,6 +2925,7 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
   const level = (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL;
   const priorityOrder = (profile && profile.buffPlanOrder) || [];
   const excludedStats = plannerExcludedFor(profile);
+  const excludedBuffs = (profile && profile.plannerExcludedBuffs) || [];
   // The planner uses the full stacking engine (roster stacking data - always present now, not
   // gated on the EQ folder) for pairs the curated line model returns 'unknown' for. It passes the
   // real character level, so a not-yet-capped low-level spell resolves correctly here (unlike the
@@ -2937,7 +2943,7 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
     weightScale: (excluded) => spellEffects.combinedWeightScale(excluded),
     multiplierStats: spellEffects.MULTIPLIER_STATS,
   };
-  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines, excludedStats });
+  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines, excludedStats, excludedBuffs });
   // Attach a served icon url to everything the page will draw, same shape buffs:known uses.
   const withIcons = (list) =>
     list.map((c) => ({ ...c, iconUrl: c.iconId != null ? iconService.buildIconUrl(c.iconId) : null }));
@@ -2961,6 +2967,7 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
     stackingKnown: plan.stackingKnown,
     stackingCoverage: plan.stackingCoverage,
     excludedStats: plan.excludedStats,
+    excludedBuffs: plan.excludedBuffs,
   };
 });
 

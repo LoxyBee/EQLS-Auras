@@ -8876,6 +8876,7 @@ function initBuffPlanner() {
   const stackingStateEl = document.getElementById('planner-stacking-state');
   const activeProfileEl = document.getElementById('planner-active-profile');
   const priorityResetEl = document.getElementById('planner-priority-reset');
+  const buffResetEl = document.getElementById('planner-buff-reset');
   const excludeChipsEl = document.getElementById('planner-exclude-chips');
   if (!classRowEl) return;
 
@@ -8885,6 +8886,7 @@ function initBuffPlanner() {
   let hasManualOrder = false; // true once the user has dragged (a non-empty saved buffPlanOrder)
   let syncingClasses = false; // true while syncClassSelects pushes values in - suppresses commitClasses
   let excludedStats = []; // stat names the user has toggled OFF - weight 0 in the ranking
+  let excludedBuffs = []; // individual buffs the user X'd off the plan
   let allStats = []; // the stats that get a toggle chip (spellEffects.EXCLUDABLE_STATS - no resists/rune)
   let presetExcludes = { balanced: [], melee: [], caster: [] }; // Balanced/Melee/Caster -> which stats they un-tick
 
@@ -9110,6 +9112,20 @@ function initBuffPlanner() {
     } else if (opts.slotted) {
       li.title = 'Nothing else competes for this slot.';
     }
+    // An X on every slotted row - removes that buff from the plan and pulls the next one in.
+    if (opts.slotted && !cand.special) {
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'planner-buff-x';
+      x.textContent = '✕';
+      x.title = `Remove ${cand.name}`;
+      x.addEventListener('click', (e) => {
+        e.stopPropagation();
+        excludedBuffs = [...new Set([...excludedBuffs, cand.name])];
+        window.eqTracker.setPlannerExcludedBuffs(null, excludedBuffs).then(recompute);
+      });
+      li.appendChild(x);
+    }
     return li;
   }
 
@@ -9122,18 +9138,9 @@ function initBuffPlanner() {
     const hasClasses = plan.classes.length > 0;
     emptyNoteEl.style.display = hasClasses ? 'none' : '';
     slotCountEl.textContent = String(plan.slots.length);
-    if (!plan.stackingKnown) {
-      stackingStateEl.textContent =
-        'Set your EQ folder on the Setup page so the planner can tell buff tiers apart properly.';
-    } else if (plan.stackingCoverage && plan.stackingCoverage.total) {
-      const { known, total } = plan.stackingCoverage;
-      stackingStateEl.textContent =
-        known >= total
-          ? `Every one of the ${total} is on a stacking line we've mapped.`
-          : `${known} of the ${total} are on a stacking line we've mapped; the rest are a best guess.`;
-    } else {
-      stackingStateEl.textContent = '';
-    }
+    // Only surfaces the one thing the user can act on: point the app at the EQ folder.
+    stackingStateEl.textContent = plan.stackingKnown ? '' : 'Set your EQ folder on the Setup page.';
+    stackingStateEl.style.display = stackingStateEl.textContent ? '' : 'none';
 
     // Total stats across every slotted buff.
     const totals = plan.totals || [];
@@ -9183,6 +9190,17 @@ function initBuffPlanner() {
     overflowCountEl.textContent = String(allOverflow.length);
 
     if (priorityResetEl) priorityResetEl.style.display = hasManualOrder ? '' : 'none';
+    excludedBuffs = Array.isArray(plan.excludedBuffs) ? plan.excludedBuffs : excludedBuffs;
+    if (buffResetEl) buffResetEl.style.display = excludedBuffs.length ? '' : 'none';
+  }
+
+  if (buffResetEl) {
+    buffResetEl.addEventListener('click', (e) => {
+      e.preventDefault(); // it lives inside the accordion's <summary>
+      e.stopPropagation();
+      excludedBuffs = [];
+      window.eqTracker.setPlannerExcludedBuffs(null, []).then(recompute);
+    });
   }
 
   if (priorityResetEl) {
@@ -9260,6 +9278,7 @@ function initBuffPlanner() {
         hasManualOrder = order.length > 0;
         levelInputEl.value = String(level);
         excludedStats = Array.isArray(input.excludedStats) ? input.excludedStats : [];
+        excludedBuffs = Array.isArray(input.excludedBuffs) ? input.excludedBuffs : [];
         allStats = Array.isArray(input.allStats) ? input.allStats : [];
         if (input.presetExcludes) presetExcludes = input.presetExcludes;
         buildExcludeChips();

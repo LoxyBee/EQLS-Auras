@@ -1693,15 +1693,13 @@
         </details>
 
         <details class="card planner-acc" open>
-          <summary><h3>Your loadout — <span id="planner-slot-count">0</span> of 14 buff slots</h3></summary>
-          <p class="hint">
-            Every stat/combat buff your classes can cast, grouped by stacking line and ordered by
-            the numbers we can read from the game's spell file - not level or duration. The weaker
-            tier of a line is folded into the stronger one. Bard songs and never-expiring buffs get
-            their own sections. You arrange the 14 - drag the priority list below.
-            <span id="planner-stacking-state"></span> Heals and pure utility (levitate, vision,
-            illusions) are left out.
-          </p>
+          <summary>
+            <div class="planner-priority-head">
+              <h3>Your loadout — <span id="planner-slot-count">0</span> of 14 buff slots</h3>
+              <button type="button" id="planner-buff-reset" style="display:none">Reset removed</button>
+            </div>
+          </summary>
+          <p class="hint" id="planner-stacking-state"></p>
           <ol class="planner-slot-list" id="planner-slot-list"></ol>
           <p class="hint" id="planner-empty-note" style="display:none">
             Pick at least one class above to see a plan.
