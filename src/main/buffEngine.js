@@ -1488,6 +1488,42 @@ class BuffEngine extends EventEmitter {
       );
       const selfCandidates = this.spellbookCheckFn ? selfPlausible.filter((c) => this.spellbookCheckFn(c.name)) : [];
 
+      // EXACTLY one bard song vs one non-song buff (owner, 3 Sep): the 6s song pulse is the only
+      // thing that tells them apart, so track it HERE - above the renewal / spellbook / gem tiers -
+      // and let it auto-resolve. Without this, a non-song candidate one of those tiers grabs
+      // (Frenzy, now permanent, sharing "You go berserk." with McVaxius' Berserker Crescendo)
+      // absorbs every pulse below as its own renewal and the pulse detector never sees the cadence.
+      // On confirm the song wins outright, no prompt, and a tile an earlier tier had provisionally
+      // landed for the non-song candidate is dropped. On a first sighting / broken cadence this
+      // holds and the tiers below make the provisional call.
+      const strictSongBuff = this._songVsSingleBuff(selfPlausible);
+      if (strictSongBuff) {
+        const pulsed = this._pulsedAmbiguousSong(stripped, selfPlausible);
+        if (pulsed) {
+          // Clear a prompt an earlier pulse may have queued for this same text (burst / track-
+          // others path) - the cadence has now answered it.
+          if (this.ambiguousCasts.has(stripped)) {
+            this.ambiguousCasts.delete(stripped);
+            this.emit('ambiguousCastsChanged', this.getAmbiguousCasts());
+          }
+          const otherKey = strictSongBuff.buff.name.toLowerCase();
+          if (this.activeBuffs.has(otherKey)) {
+            this._debugLog(
+              `ENDED "${strictSongBuff.buff.name}" - "${stripped}" kept re-landing on the 6s song cadence; ` +
+                `it is "${pulsed.name}", not "${strictSongBuff.buff.name}"`
+            );
+            this.activeBuffs.delete(otherKey);
+          }
+          this._debugLog(
+            `LANDED "${pulsed.name}" - "${stripped}" on the 6s song cadence ${SONG_PULSE_CONFIRM_HITS}x ` +
+              '(one song vs one buff - auto-resolved, no prompt)'
+          );
+          this._land(pulsed);
+          this._checkForEndedBuffs(line);
+          return;
+        }
+      }
+
       // A recent third-person cast-begin line naming one of these
       // candidates is concrete evidence someone else is the actual source
       // (most likely a group-targeted spell landing on everyone) - overrides
@@ -1670,7 +1706,10 @@ class BuffEngine extends EventEmitter {
       } else {
         // Before giving up: is this a maintained bard song pulsing on its 6s cadence? That is the
         // one thing that re-lands on its own, and it needs no spellbook to recognise (layer 2).
-        const pulsedSong = this._pulsedAmbiguousSong(stripped, selfPlausible);
+        // The strict one-song-one-buff case is already tracked at the top of this block - calling
+        // _pulsedAmbiguousSong again here would advance its watch twice for the same line and break
+        // the cadence maths, so skip it (the top route owns that case, confirm or not).
+        const pulsedSong = strictSongBuff ? null : this._pulsedAmbiguousSong(stripped, selfPlausible);
         if (pulsedSong) {
           this._debugLog(
             `LANDED "${pulsedSong.name}" - ambiguous text "${stripped}" re-landed on the 6s song cadence ` +
@@ -2681,6 +2720,19 @@ class BuffEngine extends EventEmitter {
     if (songs.length !== 1) return null;
     if (songs.length === candidates.length) return null;
     return songs[0];
+  }
+
+  // Owner, 3 Sep: an ambiguous landing text whose candidates are EXACTLY one bard song and one
+  // non-song buff is told apart by the 6s song pulse alone - nothing else re-lands on its own.
+  // Returns { song, buff } for that case so handleLine can route it to the pulse detector ahead
+  // of the renewal / spellbook / gem tiers (a non-song candidate one of those would grab - e.g. a
+  // now-permanent Frenzy sharing "You go berserk." with McVaxius' Berserker Crescendo - would
+  // otherwise absorb every pulse as its own renewal and the song would never be recognised).
+  _songVsSingleBuff(candidates) {
+    if (candidates.length !== 2) return null;
+    const songs = candidates.filter((c) => c.isBardSong);
+    if (songs.length !== 1) return null;
+    return { song: songs[0], buff: candidates.find((c) => !c.isBardSong) };
   }
 
   // Layer 2 of the 31 Aug report. Watches an ambiguous self landing that is about to be IGNORED:
