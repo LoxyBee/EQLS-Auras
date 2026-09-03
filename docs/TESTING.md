@@ -2370,3 +2370,35 @@ Planner page is still LOCKED (no nav button) so its checks need the button re-ad
 - [ ] **No aura-name field** anywhere in Add Aura (custom panel included).
 - [ ] **Standalone-tool premades** (Ally Buffs, Bard Songs, Travel guide, Damage parser) appear
       under "Standalone tools"; everything else under "Premade & custom".
+
+## Detection + damage-meter fixes (3 Sep) — live-report follow-ups, none re-confirmed in game
+
+Four things reported live during a Befallen session, all fixed and replay/test-checked. None
+seen working in the real app yet.
+
+### Monster names no longer withhold your buffs
+- [ ] **Quick Buff after a mob has cast something near you.** In a zone with casters (elemental
+      wizards, Teir`Dal shadowknights), let a few of their casts go by, then Quick Buff. *Expect*:
+      the full set of buffs shows — not one or two. Center in particular used to vanish.
+- [ ] **Your own Center / Yaulp / a heal-buff** lands and stays on the Self Buffs aura even if a
+      mob cast the same-named spell earlier in the session.
+- [ ] **A real groupmate's buff on you still doesn't show** (track-others off) — the change is
+      about monsters only, not people.
+
+### Your own Quick Buff asks instead of dropping
+- [ ] **Quick Buff while a groupmate also buffs.** If a landing is genuinely undecidable, a
+      "which spell was this?" prompt appears (bottom of the main window) instead of nothing.
+      Answer it once and it's remembered.
+
+### Damage meter — charm-war zone
+- [ ] **Fight in a zone with charmed pets** (someone in the group charming mobs). *Expect*: your
+      groupmates keep their own rows, mobs do NOT show as attackers, and a mob's melee on your
+      group is not counted as group DPS. The "Footman of V`Zher"-style enemy row should not appear.
+- [ ] **Damage-shield chip damage** (thorns, flame shields) doesn't flip anyone's side.
+
+### Damage meter — after a restart
+- [ ] **Restart the app mid-session while grouped.** *Expect*: your groupmates are back on the
+      meter within a fight or two — not gone until someone re-invites. The "group" scope shows the
+      group, not the whole zone.
+- [ ] **The current-fight meter and the "since zone" totals agree on who the attackers are** (no
+      groupmate showing in one view and missing from the other).
