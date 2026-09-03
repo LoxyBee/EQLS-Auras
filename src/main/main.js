@@ -89,7 +89,6 @@ const { tagBardSongs } = require('./bardSongTagger');
 // now - see applyInstallRoot. test/roster.test.js fails if the module or a call to it comes back.
 const { SessionRestore } = require('./sessionRestore');
 const gameSpellData = require('./gameSpellData');
-const spellStacking = require('./spellStacking');
 const { makeStackingService } = require('./stackingService');
 const spellEffects = require('./spellEffects');
 const buffLines = require('../shared/buffLines');
@@ -137,7 +136,7 @@ const { LogRotationService } = require('./logRotation');
 const logRotationService = new LogRotationService({ loadJson, saveJson });
 const buffStore = new BuffStore({ loadJson, saveJson });
 // The buff-stacking engine, bound to the roster's per-spell stacking data (build-roster.js writes
-// it onto every buffs.json entry). Replaces spellStacking.js's checkOverwrite / stackVerdict.
+// it onto every buffs.json entry).
 const stackingService = makeStackingService(buffStore);
 const buffEngine = new BuffEngine(buffStore, { loadJson, saveJson });
 const profileStore = new ProfileStore({ loadJson, saveJson });
@@ -2909,20 +2908,18 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
   // real character level, so a not-yet-capped low-level spell resolves correctly here (unlike the
   // live engine, which has to assume 50).
   const checkStack = (activeId, incomingId) => stackingService.planConflict(activeId, incomingId, level);
-  // The real stat numbers - only available once the EQ folder is set (spells_us.txt). Without it
-  // the planner ranks by name alone and says so (statsKnown: false).
+  // The real +STR / +AC / haste numbers - read straight off the roster now (each entry carries its
+  // `stackEffects`), so the planner has them whether or not the EQ folder is set.
   const roster = buffStore.getAll();
-  const spellData = currentInstallRoot
-    ? {
-        stats: (spellId) => spellEffects.spellStats(currentInstallRoot, spellId, level),
-        headline: (spellId, category) =>
-          spellEffects.categoryHeadline(currentInstallRoot, roster, spellId, category),
-        score: (spellId, name, weightScale) =>
-          spellEffects.statScore(currentInstallRoot, spellId, name, weightScale),
-        weightScale: (style, excluded) => spellEffects.combinedWeightScale(style, excluded),
-        multiplierStats: spellEffects.MULTIPLIER_STATS,
-      }
-    : null;
+  const byId = new Map(roster.filter((e) => e.spellId != null).map((e) => [Number(e.spellId), e]));
+  const entryFor = (spellId) => byId.get(Number(spellId)) || null;
+  const spellData = {
+    stats: (spellId) => spellEffects.spellStats(entryFor(spellId), level),
+    headline: (spellId, category) => spellEffects.categoryHeadline(roster, entryFor(spellId), category),
+    score: (spellId, name, weightScale) => spellEffects.statScore(entryFor(spellId), name, weightScale),
+    weightScale: (style, excluded) => spellEffects.combinedWeightScale(style, excluded),
+    multiplierStats: spellEffects.MULTIPLIER_STATS,
+  };
   const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines, playstyle, excludedStats });
   // Attach a served icon url to everything the page will draw, same shape buffs:known uses.
   const withIcons = (list) =>

@@ -123,10 +123,11 @@ test('the planner and the detection engine both use the heading model (buffLines
   assert.match(mainSrc, /buffEngine\.setLineStackFn\(\(incomingName, activeName\) => buffLines\.stackDecision/);
 });
 
-test('planner:compute only reads the real stat numbers when the EQ folder is set', () => {
+test('planner:compute reads the real stat numbers straight off the roster (no EQ folder needed)', () => {
   const fn = mainSrc.match(/ipcMain\.handle\('planner:compute'[\s\S]*?\n\}\);/)[0];
-  assert.match(fn, /currentInstallRoot\s*\?\s*\{[\s\S]*?spellEffects\.spellStats/);
-  assert.match(fn, /spellData/);
+  // spellData is built unconditionally now - the stat data is on every roster entry (stackEffects).
+  assert.match(fn, /const spellData = \{[\s\S]*?stats: \(spellId\) => spellEffects\.spellStats\(entryFor\(spellId\), level\)/);
+  assert.doesNotMatch(fn, /spellEffects\.spellStats\(currentInstallRoot/, 'no longer takes an install root');
 });
 
 test('nothing in the planner pipeline exposes the game\'s internal effect numbers ("SPA")', () => {

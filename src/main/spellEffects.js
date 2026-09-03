@@ -3,16 +3,15 @@
 // The actual character-stat numbers a buff grants - for the buff optimiser (buffPlanner.js).
 // the owner, 27 Aug: "rank them by best, that means numerical" / "actual character stats only".
 //
-// The game's spells_us.txt stores each spell's effects as numbered slots; spellStacking.js already
-// parses them (denseEffects / effectValue). This module reads those slots and keeps ONLY the ones
-// that are a real character stat - STR, AC, haste, a resist, and so on - each under its plain
-// name. Every other kind of effect (a heal component, a proc, vision, an illusion, a spell-focus
-// limit) is discarded here and never reaches the planner. There is one lookup table below that
-// pairs the game's internal effect number with a stat name; that number is an implementation
-// detail of reading the file and appears nowhere else - not in the returned data, not in the
-// planner, not on screen.
+// Each spell's effect slots now travel on the roster itself (`stackEffects` on every buffs.json
+// entry, written by build-roster.js). This module reads those slots and keeps ONLY the ones that
+// are a real character stat - STR, AC, haste, a resist - each under its plain name; every other
+// kind (a heal component, a proc, vision, an illusion, a spell-focus limit) is discarded here and
+// never reaches the planner. The value is computed by the ported engine's own calcSpellValue (the
+// full EQEmu formula table), replacing the hand-cut effectValue that used to live in
+// spellStacking.js and returned the raw base for any formula it didn't implement.
 
-const { denseEffects, effectValue } = require('./spellStacking');
+const { spellView, calcSpellValue } = require('../shared/spellStackingEngine');
 
 // The character stats the planner counts, in the order a stat sheet lists them, paired with the
 // effect number the game's spell file uses for each. The attribute block and AC are confirmed
@@ -121,21 +120,20 @@ function combinedWeightScale(playstyle, excluded) {
   return scale;
 }
 
-const EFFECT_SLOTS = 12;
 const ASSUMED_LEVEL = 50;
 
-let cache = null; // { installRoot, categoryStat: Map<category, statName> }
+let cache = null; // Map<category, statName>, rebuilt from the roster; cleared by resetCache()
 
 // Every real character stat a buff grants: [{ stat, value, order }], strongest first.
-function spellStats(installRoot, spellId, level = ASSUMED_LEVEL) {
-  if (!installRoot || spellId == null) return [];
-  const slots = denseEffects(installRoot, spellId);
+// `entry` is a roster entry (buffs.json) - it carries `stackEffects`. Anything without effect data
+// (a custom entry, a spell not in the client) yields [].
+function spellStats(entry, level = ASSUMED_LEVEL) {
+  if (!entry || (entry.stackEffects == null && entry.effects == null)) return [];
   const out = [];
-  for (let i = 1; i <= EFFECT_SLOTS; i++) {
-    const slot = slots[i];
-    const known = slot && STAT_BY_EFFECT.get(slot[1]);
+  for (const [spa, base, limit, formula, max] of spellView(entry).effects) {
+    const known = STAT_BY_EFFECT.get(spa);
     if (!known) continue;
-    const value = effectValue(slot[2], slot[5], slot[4], level);
+    const value = calcSpellValue(base, formula, max, level);
     if (!value) continue;
     // Effect 0 is the generic hit-points effect, not "HP regen" - it's negative on 260 roster
     // entries (damage / life-drain conversions like Lich). statScore does abs()*4x, which ranked
@@ -149,13 +147,13 @@ function spellStats(installRoot, spellId, level = ASSUMED_LEVEL) {
 
 // Which stat is a category's headline, learned from the roster: the stat that appears in the most
 // of that category's spells. "Strength" -> STR because every strength spell grants STR.
-function categoryStatMap(installRoot, roster) {
-  if (cache && cache.installRoot === installRoot) return cache.categoryStat;
+function categoryStatMap(roster) {
+  if (cache) return cache;
   const tally = new Map(); // category -> Map<statName, count>
   for (const entry of roster || []) {
-    if (entry.kind !== 'buff' || entry.spellId == null || !entry.category) continue;
+    if (entry.kind !== 'buff' || !entry.category) continue;
     const seen = new Set();
-    for (const s of spellStats(installRoot, entry.spellId)) {
+    for (const s of spellStats(entry)) {
       if (seen.has(s.stat)) continue;
       seen.add(s.stat);
       if (!tally.has(entry.category)) tally.set(entry.category, new Map());
@@ -175,17 +173,17 @@ function categoryStatMap(installRoot, roster) {
     }
     if (best) categoryStat.set(category, best);
   }
-  cache = { installRoot, categoryStat };
+  cache = categoryStat;
   return categoryStat;
 }
 
 // The category's headline stat on a spell: { stat, value }, or null. Matched by the stat's NAME
 // (not by value), so a "Charisma"-category buff that also happens to give +40 INT still leads with
 // its CHA figure.
-function categoryHeadline(installRoot, roster, spellId, category) {
-  const want = categoryStatMap(installRoot, roster).get(category);
+function categoryHeadline(roster, entry, category) {
+  const want = categoryStatMap(roster).get(category);
   if (!want) return null;
-  const matching = spellStats(installRoot, spellId).filter((s) => s.stat === want);
+  const matching = spellStats(entry).filter((s) => s.stat === want);
   if (!matching.length) return null;
   const best = matching.reduce((m, s) => (Math.abs(s.value) > Math.abs(m.value) ? s : m));
   return { stat: best.stat, value: best.value };
@@ -195,10 +193,10 @@ function categoryHeadline(installRoot, roster, spellId, category) {
 // `name` is optional - only the curated proc list needs it. `weightScale` (Fix 11) multiplies a
 // stat's weight by playstyle: `{ 'STR': 2, 'WIS': 0.35, ... }`, defaulting to 1 for anything not
 // named. Proc boost is flat and playstyle-independent.
-function statScore(installRoot, spellId, name = null, weightScale = null) {
+function statScore(entry, name = null, weightScale = null) {
   const scale = (stat) => (weightScale && weightScale[stat] != null ? weightScale[stat] : 1);
   let score = 0;
-  for (const s of spellStats(installRoot, spellId)) {
+  for (const s of spellStats(entry)) {
     if (s.stat === 'haste') score += Math.max(0, Math.abs(s.value) - 100) * scale('haste'); // 141 -> +41
     // Raw %, not 100-based like haste - a +10% cast-speed buff is `10`, not `110`. x5.0 (was x1.5)
     // puts Blessing of Faith level with Celerity, which is the owner's "same priority as haste".

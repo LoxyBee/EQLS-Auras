@@ -7,8 +7,9 @@
 // are ordered low->high tier. `blockedPairs` are directional ground-truth mined from real logs.
 //
 // This module is pure data + lookups. It knows nothing about the roster, the character, or what is
-// castable - callers pass that in. Anything not covered by a line falls back to
-// spellStacking.checkOverwrite in the callers (buffPlanner, buffEngine).
+// castable - callers pass that in. It is the FIRST authority everywhere; anything it returns
+// 'unknown' for falls back to the full ported EQEmu engine (src/main/stackingService.js) in the
+// callers (buffPlanner, buffEngine).
 
 let DATA = require('./data/buff-lines.json');
 let cache = null;
@@ -83,7 +84,8 @@ function bestCastableMember(line, canCast) {
 //   'overwrites' - active is replaced / downgraded (drop the active tile, or drop it as a planner candidate)
 //   'blocked'    - incoming could not land; active stays (planner should not have placed incoming)
 //   'coexist'    - different headings, both stay
-//   'unknown'    - no line data for one or both; caller falls back to spellStacking
+//   'unknown'    - no line data for one or both; caller falls back to the ported stacking engine
+//                  (src/main/stackingService.js)
 function stackDecision(incomingName, activeName) {
   if (!incomingName || !activeName) return 'unknown';
   if (incomingName.toLowerCase() === activeName.toLowerCase()) return 'overwrites'; // a recast/refresh

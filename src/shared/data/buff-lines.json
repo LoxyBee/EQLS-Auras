@@ -1,5 +1,5 @@
 {
-  "_comment": "Buff stacking model - see docs/BUFF-STACKING.md. A 'heading' is a slot: two buffs on the same heading are mutually exclusive, different headings stack. A 'line' is an upgrade ladder that shares a heading; members are low->high tier. blockedPairs are directional ground-truth from real logs. Covers CLR/SHM/BRD/ENC/DRU + universal lines; anything not here falls back to spellStacking.checkOverwrite.",
+  "_comment": "Buff stacking model - see docs/BUFF-STACKING.md. A 'heading' is a slot: two buffs on the same heading are mutually exclusive, different headings stack. A 'line' is an upgrade ladder that shares a heading; members are low->high tier. blockedPairs are directional ground-truth from real logs. Covers CLR/SHM/BRD/ENC/DRU + universal lines; anything not here falls back to the full ported EQEmu engine (src/main/stackingService.js).",
 
   "headings": {
     "ac.slot1": "Armor Class (slot 1 - Heroism/Skin)",
