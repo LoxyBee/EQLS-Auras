@@ -19,7 +19,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, report } = require('./harness');
 const {
-  spellStats, categoryStatMap, categoryHeadline, statScore, resetCache, STAT_NAMES, combinedWeightScale,
+  spellStats, categoryStatMap, categoryHeadline, statScore, resetCache,
+  EXCLUDABLE_STATS, PRESET_EXCLUDES, combinedWeightScale,
 } = require('../src/main/spellEffects');
 
 // name -> a minimal roster entry carrying `stackEffects`.
@@ -30,6 +31,7 @@ const E = {
   melody: { name: 'Melody', kind: 'buff', category: 'Haste', stackEffects: '0,11,141,0,100,0' },
   bigHeal: { name: 'Big Heal', kind: 'buff', category: 'Heals', stackEffects: '0,79,500,0,100,500' },
   resistMagic: { name: 'Resist Magic', kind: 'buff', category: 'Resist Magic', stackEffects: '0,50,40,0,100,40' },
+  resistFire: { name: 'Resist Fire', kind: 'buff', category: 'Resist Fire', stackEffects: '0,46,40,0,100,40' },
   clarity: { name: 'Clarity', kind: 'buff', category: 'Clarity', stackEffects: '0,15,12,0,100,12' },
   chloroplast: { name: 'Chloroplast', kind: 'buff', category: 'Regen', stackEffects: '0,0,15,0,100,15;1,189,8,0,100,8' },
   blessingOfFaith: { name: 'Blessing of Faith', kind: 'buff', category: 'Cast Speed', stackEffects: '0,127,30,0,100,30' },
@@ -84,7 +86,10 @@ test('statScore adds attribute points 1:1, turns haste into its bonus, weights r
   assert.equal(statScore(E.melody), 41); // haste 141 -> +41
   assert.equal(statScore(E.aegis), 106); // AC 50 + max HP 225 * 0.25 = 106.25 -> 106 (Fix 5)
   assert.equal(statScore(E.bigHeal), 0);
-  assert.equal(statScore(E.resistMagic), 4); // +40 magic resist * 0.1
+  // magic resist is the one weighted-up resist (owner, 3 Sep): +40 * 0.4 = 16. A fire/cold/etc
+  // buff would be +40 * 0.1 = 4.
+  assert.equal(statScore(E.resistMagic), 16);
+  assert.equal(statScore(E.resistFire), 4);
 });
 
 test('regen and cast speed rank high (the owner, 27 Aug)', () => {
@@ -111,17 +116,29 @@ test("the module never exposes the game's internal effect numbers by name", () =
   }
 });
 
-test('combinedWeightScale: ignored stats get a hard 0, on top of the playstyle preset', () => {
-  assert.deepEqual(combinedWeightScale('balanced', []), {});
-  assert.deepEqual(combinedWeightScale('balanced', ['CHA']), { CHA: 0 });
-  const caster = combinedWeightScale('caster', ['STR']);
-  assert.equal(caster.STR, 0);
-  assert.deepEqual(combinedWeightScale('balanced', ['STR', 'nonsense']), { STR: 0 });
+test('combinedWeightScale: each excludable stat turned off gets a hard 0; nothing else', () => {
+  assert.deepEqual(combinedWeightScale([]), {});
+  assert.deepEqual(combinedWeightScale(['CHA']), { CHA: 0 });
+  assert.deepEqual(combinedWeightScale(['STR', 'nonsense']), { STR: 0 });
+  // a resist / rune stat is not excludable - it always counts, so it can't be zeroed here
+  assert.deepEqual(combinedWeightScale(['fire resist', 'rune']), {});
 });
 
-test('STAT_NAMES is the plain stat list the toggles are built from', () => {
-  assert.ok(STAT_NAMES.includes('CHA') && STAT_NAMES.includes('STR') && STAT_NAMES.includes('haste'));
-  assert.ok(STAT_NAMES.every((n) => typeof n === 'string' && !/^\d/.test(n)));
+test('EXCLUDABLE_STATS is the toggle list - real stats, no resists or rune', () => {
+  assert.ok(EXCLUDABLE_STATS.includes('CHA') && EXCLUDABLE_STATS.includes('STR') && EXCLUDABLE_STATS.includes('haste'));
+  assert.ok(!EXCLUDABLE_STATS.includes('fire resist') && !EXCLUDABLE_STATS.includes('all resists'));
+  assert.ok(!EXCLUDABLE_STATS.includes('rune') && !EXCLUDABLE_STATS.includes('spell rune'));
+  assert.ok(EXCLUDABLE_STATS.every((n) => typeof n === 'string' && !/^\d/.test(n)));
+});
+
+test('PRESET_EXCLUDES: melee drops caster stats, caster drops melee stats, balanced drops none', () => {
+  assert.deepEqual(PRESET_EXCLUDES.balanced, []);
+  assert.ok(PRESET_EXCLUDES.melee.includes('WIS') && PRESET_EXCLUDES.melee.includes('INT'));
+  assert.ok(PRESET_EXCLUDES.caster.includes('STR') && PRESET_EXCLUDES.caster.includes('haste'));
+  // every stat a preset names must itself be excludable
+  for (const list of Object.values(PRESET_EXCLUDES)) {
+    for (const s of list) assert.ok(EXCLUDABLE_STATS.includes(s), `${s} in a preset but not excludable`);
+  }
 });
 
 module.exports = () => report('spell-effects');

@@ -478,7 +478,7 @@ test('the real roster: a full 14 comes out, and Strength + Infusion of Spirit bo
 });
 
 // ---------------------------------------------------------------------------
-// The 2 Sep bundle - Fix 7 (set comparison), Fix 3 (coverage), Fix 11 (playstyle)
+// The 2 Sep bundle - Fix 7 (set comparison), Fix 3 (coverage), plus the stat-toggle presets
 // ---------------------------------------------------------------------------
 
 // A combination line that blocks two individual lines, all with a score.
@@ -531,21 +531,23 @@ test('Fix 3: stackingCoverage counts slotted buffs that sat on a known line', ()
   });
 });
 
-test('Fix 11: a playstyle preset reorders via weights, balanced is the default', () => {
+test('Balanced/Melee/Caster are stat-toggle presets - a preset excludes stats, weight 0', () => {
+  // The renderer applies a preset by writing its stat list into excludedStats; the planner just
+  // sees the exclusions. So this is the same path as any hand-toggled exclusion.
   const roster = [
     buff({ name: 'BigStr', spellId: 1, category: 'S', classes: 'SHM 50', level: 50 }),
     buff({ name: 'BigInt', spellId: 2, category: 'I', classes: 'SHM 50', level: 50 }),
   ];
-  const byId = { 1: [{ stat: 'STR', value: 50, order: 0 }], 2: [{ stat: 'INT', value: 50, order: 1 }] };
+  const byId = { 1: [{ stat: 'STR', value: 50, order: 0 }], 2: [{ stat: 'INT', value: 60, order: 1 }] };
   const spellData = {
     ...fakeSpellData(byId),
-    score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat]) || 1), 0),
-    weightScale: (style) => (style === 'melee' ? { STR: 2, INT: 0.35 } : style === 'caster' ? { STR: 0.35, INT: 2 } : {}),
+    score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat] != null) ? ws[e.stat] : 1), 0),
+    weightScale: (excluded) => Object.fromEntries((excluded || []).map((n) => [n, 0])),
   };
-  const names = (style) => computePlan({ roster, classes: ['SHM'], spellData, playstyle: style }).candidates.map((c) => c.name);
-  assert.deepEqual(names('melee')[0], 'BigStr');
-  assert.deepEqual(names('caster')[0], 'BigInt');
-  assert.equal(computePlan({ roster, classes: ['SHM'], spellData }).playstyle, 'balanced');
+  const first = (excludedStats) => computePlan({ roster, classes: ['SHM'], spellData, excludedStats }).candidates[0].name;
+  assert.equal(first([]), 'BigInt', 'balanced (no exclusions): +60 INT ranks first');
+  assert.equal(first(['INT']), 'BigStr', 'a Melee preset un-ticks INT -> the INT buff scores 0');
+  assert.equal(first(['STR']), 'BigInt', 'a Caster preset un-ticks STR');
 });
 
 test('excludedStats: an ignored stat is scored at zero, so its buff falls to the bottom', () => {
@@ -557,12 +559,8 @@ test('excludedStats: an ignored stat is scored at zero, so its buff falls to the
   const spellData = {
     ...fakeSpellData(byId),
     score: (id, name, ws) => byId[id].reduce((s, e) => s + Math.abs(e.value) * ((ws && ws[e.stat] != null) ? ws[e.stat] : 1), 0),
-    // main.js wires this to spellEffects.combinedWeightScale(style, excluded)
-    weightScale: (style, excluded) => {
-      const sc = {};
-      for (const n of excluded || []) sc[n] = 0;
-      return sc;
-    },
+    // main.js wires this to spellEffects.combinedWeightScale(excluded)
+    weightScale: (excluded) => Object.fromEntries((excluded || []).map((n) => [n, 0])),
   };
   const base = computePlan({ roster, classes: ['SHM'], spellData }).candidates.map((c) => c.name);
   assert.deepEqual(base[0], 'BigCha', 'without exclusions the +80 CHA buff ranks first');

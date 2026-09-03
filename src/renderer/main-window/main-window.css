@@ -2426,9 +2426,11 @@ body.sidebar-resizing .sidebar {
   flex-wrap: wrap;
   gap: 5px;
 }
+/* "Count stats" toggles: the default (counted) state is a filled brass pill; un-ticking one
+   (`.excluded` - it scores nothing) drops it to a dashed, struck-through, dimmed outline. */
 .planner-stat-chip {
-  background: transparent;
-  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid var(--accent);
   color: var(--ink);
   padding: 2px 9px;
   border-radius: 999px;
@@ -2441,12 +2443,12 @@ body.sidebar-resizing .sidebar {
   border-color: var(--accent);
   color: var(--accent);
 }
-/* Ignored: this stat scores nothing. Struck through + dimmed - the opposite signal to the brass
-   "active" fill used elsewhere, because here the highlighted state is the OFF state. */
 .planner-stat-chip.excluded {
+  background: transparent;
+  border-color: var(--line);
+  border-style: dashed;
   text-decoration: line-through;
   opacity: 0.45;
-  border-style: dashed;
 }
 .planner-stat-chip.excluded:hover {
   opacity: 0.7;

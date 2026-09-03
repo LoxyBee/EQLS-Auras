@@ -124,7 +124,7 @@ function enrichCandidate(cand, spellData, weightScale) {
     magnitude: headline ? headline.value : null,
     stat: headline ? headline.stat : null,
     stats,
-    // name + weightScale feed the curated proc boost (Fix 10) and the playstyle preset (Fix 11).
+    // name + weightScale feed the curated proc boost (Fix 10); weightScale zeroes an ignored stat.
     score: spellData.score(cand.spellId, cand.name, weightScale) || 0,
   };
 }
@@ -457,17 +457,13 @@ function poolFor(cand, hasBard) {
 //     songSlots, songOverflow, songCandidates,   // the 5 bard-song slots (empty unless Bard picked)
 //     permanentSlots, permanentOverflow }        // permanent buffs (Yaulp/Fury), no cap
 // `classes` is a list of codes (or {code} objects); `level` is the one shared character level.
-const VALID_PLAYSTYLES = ['balanced', 'melee', 'caster'];
-
-function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines, playstyle, excludedStats } = {}) {
+function computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines, excludedStats } = {}) {
   const normClasses = normalizeClasses(classes, level);
-  const style = VALID_PLAYSTYLES.includes(playstyle) ? playstyle : 'balanced';
   const excluded = Array.isArray(excludedStats) ? excludedStats.filter((s) => typeof s === 'string') : [];
   const empty = {
     classes: [],
     level: clampLevel(level == null ? DEFAULT_LEVEL : level),
     hasBard: false,
-    playstyle: style,
     statsKnown: !!spellData,
     stackingKnown: !!(lines || checkStack),
     stackingCoverage: null,
@@ -480,13 +476,12 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
   if (normClasses.length === 0) return empty;
 
   const hasBard = normClasses.some((c) => c.code === 'BRD');
-  // Fix 11 - the playstyle preset, plus the user's ignored-stats list (hard 0). A per-stat weight
-  // multiplier the injected spellData builds (spellEffects.combinedWeightScale). null when there is
-  // nothing to change - 'balanced' with no ignored stats => all 1s, byte-identical scoring.
+  // The user's ignored-stats list, turned into a per-stat weight of 0 by the injected spellData
+  // (spellEffects.combinedWeightScale). null when nothing is excluded => scoring path untouched,
+  // byte-identical to before. The Balanced/Melee/Caster buttons are presets that write this list
+  // in the renderer, not a separate weighting any more.
   const weightScale =
-    spellData && spellData.weightScale && (style !== 'balanced' || excluded.length)
-      ? spellData.weightScale(style, excluded)
-      : null;
+    spellData && spellData.weightScale && excluded.length ? spellData.weightScale(excluded) : null;
 
   const raw = candidatesFor(roster || [], normClasses, spellData, weightScale);
   const pool = (c) => poolFor(c, hasBard);
@@ -604,7 +599,6 @@ function computePlan({ roster, classes, level, priorityOrder, checkStack, spellD
     classes: normClasses,
     level: normClasses[0].level,
     hasBard,
-    playstyle: style,
     excludedStats: excluded,
     statsKnown: !!spellData,
     stackingKnown: !resolved.approximate && !resolvedPerm.approximate && !resolvedCombat.approximate,
@@ -638,6 +632,5 @@ module.exports = {
   DEFAULT_LEVEL,
   MAX_CHARACTER_LEVEL,
   VALID_CLASSES,
-  VALID_PLAYSTYLES,
   PLAYER_TARGETS,
 };

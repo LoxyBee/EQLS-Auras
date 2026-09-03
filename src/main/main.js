@@ -2871,20 +2871,26 @@ ipcMain.handle('profiles:setActive', (_event, id) => {
 // priority order - lives on the active loadout profile (profileStore). The plan itself is always
 // recomputed here from the live roster and the real stacking model, never stored: the roster is
 // rebuilt every launch (see buffStore's header) so a cached plan could silently drift.
+// The ignored-stats list, folding in a profile from before the Balanced/Melee/Caster buttons
+// became stat presets: an old `plannerPlaystyle` of melee/caster with no explicit exclusions
+// resolves to that preset's un-tick list. Once the renderer saves an exclusion set it wins.
+function plannerExcludedFor(profile) {
+  const explicit = profile && profile.plannerExcludedStats;
+  if (Array.isArray(explicit) && explicit.length) return explicit;
+  const legacy = profile && profile.plannerPlaystyle;
+  if (legacy === 'melee' || legacy === 'caster') return spellEffects.PRESET_EXCLUDES[legacy].slice();
+  return Array.isArray(explicit) ? explicit : [];
+}
 ipcMain.handle('planner:getInput', (_event, profileId) => {
   const profile = profileStore.getProfile(profileId || profileStore.getActiveId());
   return {
     classes: (profile && profile.plannerClasses) || [],
     level: (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL,
     buffPlanOrder: (profile && profile.buffPlanOrder) || [],
-    playstyle: (profile && profile.plannerPlaystyle) || 'balanced',
-    excludedStats: (profile && profile.plannerExcludedStats) || [],
-    allStats: spellEffects.STAT_NAMES, // for the "ignore this stat" toggles
+    excludedStats: plannerExcludedFor(profile),
+    allStats: spellEffects.EXCLUDABLE_STATS, // the stats that get a toggle chip (no resists / rune)
+    presetExcludes: spellEffects.PRESET_EXCLUDES, // Balanced/Melee/Caster -> which stats they un-tick
   };
-});
-ipcMain.handle('planner:setPlaystyle', (_event, { profileId, playstyle }) => {
-  profileStore.setPlannerPlaystyle(profileId || profileStore.getActiveId(), playstyle);
-  return true;
 });
 ipcMain.handle('planner:setExcludedStats', (_event, { profileId, stats }) => {
   profileStore.setPlannerExcludedStats(profileId || profileStore.getActiveId(), stats);
@@ -2907,8 +2913,7 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
   const classes = (profile && profile.plannerClasses) || [];
   const level = (profile && profile.plannerLevel) || buffPlanner.DEFAULT_LEVEL;
   const priorityOrder = (profile && profile.buffPlanOrder) || [];
-  const playstyle = (profile && profile.plannerPlaystyle) || 'balanced';
-  const excludedStats = (profile && profile.plannerExcludedStats) || [];
+  const excludedStats = plannerExcludedFor(profile);
   // The planner uses the full stacking engine (roster stacking data - always present now, not
   // gated on the EQ folder) for pairs the curated line model returns 'unknown' for. It passes the
   // real character level, so a not-yet-capped low-level spell resolves correctly here (unlike the
@@ -2923,10 +2928,10 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
     stats: (spellId) => spellEffects.spellStats(entryFor(spellId), level),
     headline: (spellId, category) => spellEffects.categoryHeadline(roster, entryFor(spellId), category),
     score: (spellId, name, weightScale) => spellEffects.statScore(entryFor(spellId), name, weightScale),
-    weightScale: (style, excluded) => spellEffects.combinedWeightScale(style, excluded),
+    weightScale: (excluded) => spellEffects.combinedWeightScale(excluded),
     multiplierStats: spellEffects.MULTIPLIER_STATS,
   };
-  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines, playstyle, excludedStats });
+  const plan = buffPlanner.computePlan({ roster, classes, level, priorityOrder, checkStack, spellData, lines: buffLines, excludedStats });
   // Attach a served icon url to everything the page will draw, same shape buffs:known uses.
   const withIcons = (list) =>
     list.map((c) => ({ ...c, iconUrl: c.iconId != null ? iconService.buildIconUrl(c.iconId) : null }));
@@ -2948,7 +2953,6 @@ ipcMain.handle('planner:compute', (_event, profileId) => {
     combatOverflow: withIcons(plan.combatOverflow || []),
     stackingKnown: plan.stackingKnown,
     stackingCoverage: plan.stackingCoverage,
-    playstyle: plan.playstyle,
     excludedStats: plan.excludedStats,
   };
 });

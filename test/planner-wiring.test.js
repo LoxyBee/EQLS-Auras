@@ -103,11 +103,13 @@ test('every planner IPC channel is handled in main and exposed in preload', () =
 
 test('the "ignore stats" toggles are wired: markup, stat list from main, and it feeds computePlan', () => {
   const page = read('src', 'renderer', 'main-window', 'index.html').match(/<section id="page-planner"[\s\S]*?<\/section>/)[0];
-  assert.match(page, /id="planner-exclude-chips"/, 'the ignore-stats chip container is missing');
-  assert.match(mainSrc, /allStats: spellEffects\.STAT_NAMES/, 'getInput must hand the renderer the stat list');
+  assert.match(page, /id="planner-exclude-chips"/, 'the stat-toggle chip container is missing');
+  assert.match(mainSrc, /allStats: spellEffects\.EXCLUDABLE_STATS/, 'getInput must hand the renderer the toggle stat list');
+  assert.match(mainSrc, /presetExcludes: spellEffects\.PRESET_EXCLUDES/, 'getInput must hand over the Balanced/Melee/Caster preset lists');
   const fn = mainSrc.match(/ipcMain\.handle\('planner:compute'[\s\S]*?\n\}\);/)[0];
   assert.match(fn, /excludedStats/, 'planner:compute must read and pass the ignored stats');
   assert.match(rendererSrc, /setPlannerExcludedStats\(null, excludedStats\)/, 'a chip click must persist and recompute');
+  assert.doesNotMatch(mainSrc, /planner:setPlaystyle|setPlannerPlaystyle/, 'the old playstyle IPC is gone - presets are stat toggles now');
 });
 
 test('planner:compute recomputes from the live roster and never persists a plan', () => {

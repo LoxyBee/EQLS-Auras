@@ -35,6 +35,11 @@ const STATS = [
   { name: 'HP regen', effect: 0 }, // per-tick on a duration buff (heals/HoTs are filtered out before this)
   { name: 'mana regen', effect: 15 }, // per-tick mana on a duration buff (Clarity etc.), not a max-mana raise
   { name: 'endurance regen', effect: 189 },
+  // effect 121 (reverse damage shield). On EQL's "Blessing of the X" cleric line it is a passive
+  // heal-on-melee - owner, 3 Sep: "it heals you passively, it's basically like hp regen for melee
+  // characters", "the entire blessing of the lord commander line needs to be in the 14". Weighted
+  // like regen (x4) so the line reliably takes a slot; caster preset un-ticks it.
+  { name: 'HP on hit', effect: 121 },
   { name: 'fire resist', effect: 46 },
   { name: 'cold resist', effect: 47 },
   { name: 'poison resist', effect: 48 },
@@ -64,11 +69,16 @@ const STAT_WEIGHT = {
   'max HP': 0.25, 'max mana': 0.25, rune: 0.05, 'spell rune': 0.05, 'damage shield': 0.5,
   // Regen is a top priority (the owner, 27 Aug: "mana and endurance regen should be a high priority").
   // A per-tick value is small (~10-15), so it needs a big multiplier to rank alongside a +40 stat.
-  'HP regen': 4, 'mana regen': 4, 'endurance regen': 4,
+  // "HP on hit" (effect 121, the Blessing line) is the same idea for melee - owner wants the whole
+  // line slotted, so it rides the same x4.
+  'HP regen': 4, 'mana regen': 4, 'endurance regen': 4, 'HP on hit': 4,
   // Resists are "situational and lower priority" - dropped well below a real stat so 4-5 single-
-  // element resist buffs don't fill the tail of the 14 ahead of anything useful.
+  // element resist buffs don't fill the tail of the 14 ahead of anything useful. MAGIC RESIST is
+  // the exception (owner, 3 Sep: "magic resist in general is worth a lot more than any other type
+  // ... needs a higher priority than any other resistance buff") - it ranks above `all resists`,
+  // which in turn beats the single-element ones.
   'fire resist': 0.1, 'cold resist': 0.1, 'poison resist': 0.1, 'disease resist': 0.1,
-  'magic resist': 0.1, 'all resists': 0.15,
+  'magic resist': 0.4, 'all resists': 0.2,
 };
 
 // A curated snapshot (like buffStore's CHARM_SPELL_NAMES) of combat-proc buffs the owner wants
@@ -85,37 +95,36 @@ const PROC_SCORE_BOOST = new Set([
 ]);
 const PROC_BOOST_POINTS = 50;
 
-// Fix 11 - a playstyle preset multiplies whole STAT_WEIGHT groups inside statScore(). NOT a filter:
-// a strongly-valuable off-style buff can still earn a slot. 'balanced' (the default) is all-1s.
-// CHA and max HP are in NEITHER group on purpose (both playstyles want HP; CHA is niche either
-// way). The proc boost stays flat regardless. Multipliers x2.0 up / x0.35 down (owner signed off -
-// x1.5/x0.5 moved nothing for her CLR/SHM/BRD combo). (AEM/owner, 2 Sep.)
-const PLAYSTYLE_UP = 2.0;
-const PLAYSTYLE_DOWN = 0.35;
-const MELEE_UP = ['STR', 'DEX', 'AGI', 'STA', 'ATK', 'haste', 'AC'];
-const MELEE_DOWN = ['WIS', 'INT', 'mana regen', 'cast speed', 'max mana'];
-const CASTER_UP = ['WIS', 'INT', 'mana regen', 'cast speed', 'HP regen', 'max mana'];
-const CASTER_DOWN = ['STR', 'DEX', 'AGI', 'ATK', 'haste'];
-function playstyleWeightScale(playstyle) {
-  const scale = {};
-  const up = playstyle === 'melee' ? MELEE_UP : playstyle === 'caster' ? CASTER_UP : [];
-  const down = playstyle === 'melee' ? MELEE_DOWN : playstyle === 'caster' ? CASTER_DOWN : [];
-  for (const s of up) scale[s] = PLAYSTYLE_UP;
-  for (const s of down) scale[s] = PLAYSTYLE_DOWN;
-  return scale;
-}
-
-// Every stat name the planner knows, in stat-sheet order - for the "ignore this stat" toggles.
+// Every stat name the planner knows, in stat-sheet order.
 const STAT_NAMES = STATS.map((s) => s.name);
-const STAT_NAME_SET = new Set(STAT_NAMES);
 
-// The weight multiplier statScore() actually uses: the playstyle preset, then a hard 0 for every
-// stat the user has chosen to ignore (0 wins - "dump Charisma" means a Charisma buff scores
-// nothing and drops out of the default fill order). Unknown names in `excluded` are dropped.
-function combinedWeightScale(playstyle, excluded) {
-  const scale = playstyleWeightScale(playstyle);
+// The stats the user gets a toggle chip for. Resists and the rune stats are deliberately NOT here
+// (owner, 3 Sep: "res buffs don't need a toggle as they are low priority anyway ... rune doesn't
+// need a toggle either") - they still score, at their low STAT_WEIGHT, they just can't be turned
+// off by hand. Order follows the stat sheet.
+const NON_EXCLUDABLE = new Set([...RESIST_STATS, 'rune', 'spell rune']);
+const EXCLUDABLE_STATS = STAT_NAMES.filter((n) => !NON_EXCLUDABLE.has(n));
+const EXCLUDABLE_SET = new Set(EXCLUDABLE_STATS);
+
+// The Balanced / Melee / Caster buttons are stat-toggle PRESETS now, not a weighting (owner,
+// 3 Sep: "remove the balanced melee/caster 0.5 weighting and instead have it just deselect them
+// from the toggles when stats are useless ... more visual for the user"). Picking Melee un-ticks
+// the caster-only stats; Caster un-ticks the melee-only ones; Balanced ticks everything. The end
+// result is weight 0 for a deselected stat - same as the old x0.35 taken to its limit - but the
+// user sees exactly which stats got dropped and can re-tick any of them.
+const PRESET_EXCLUDES = {
+  balanced: [],
+  melee: ['WIS', 'INT', 'mana regen', 'cast speed', 'max mana'],
+  caster: ['STR', 'DEX', 'AGI', 'ATK', 'haste', 'HP on hit'],
+};
+
+// The weight multiplier statScore() uses: a hard 0 for every excludable stat the user has turned
+// off ("dump Charisma" -> a Charisma buff scores nothing and drops out of the fill order).
+// Unknown / non-excludable names are ignored. Returns {} when nothing is excluded.
+function combinedWeightScale(excluded) {
+  const scale = {};
   for (const name of Array.isArray(excluded) ? excluded : []) {
-    if (STAT_NAME_SET.has(name)) scale[name] = 0;
+    if (EXCLUDABLE_SET.has(name)) scale[name] = 0;
   }
   return scale;
 }
@@ -190,9 +199,9 @@ function categoryHeadline(roster, entry, category) {
 }
 
 // One number for ranking a buff against buffs of OTHER stats (fill order when slots run out).
-// `name` is optional - only the curated proc list needs it. `weightScale` (Fix 11) multiplies a
-// stat's weight by playstyle: `{ 'STR': 2, 'WIS': 0.35, ... }`, defaulting to 1 for anything not
-// named. Proc boost is flat and playstyle-independent.
+// `name` is optional - only the curated proc list needs it. `weightScale` is the exclusion map
+// from combinedWeightScale: `{ 'CHA': 0, ... }` for every stat the user turned off, defaulting to
+// 1 for anything not named. Proc boost is flat and not affected by exclusions.
 function statScore(entry, name = null, weightScale = null) {
   const scale = (stat) => (weightScale && weightScale[stat] != null ? weightScale[stat] : 1);
   let score = 0;
@@ -213,6 +222,6 @@ function resetCache() {
 
 module.exports = {
   spellStats, categoryStatMap, categoryHeadline, statScore, MULTIPLIER_STATS, RESIST_STATS,
-  resetCache, PROC_SCORE_BOOST, STAT_WEIGHT, playstyleWeightScale,
-  STAT_NAMES, combinedWeightScale,
+  resetCache, PROC_SCORE_BOOST, STAT_WEIGHT,
+  STAT_NAMES, EXCLUDABLE_STATS, PRESET_EXCLUDES, combinedWeightScale,
 };

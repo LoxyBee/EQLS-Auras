@@ -1665,13 +1665,13 @@
             <!-- three class selects injected by main-window.js -->
           </div>
           <div class="row planner-playstyle-row">
-            <span class="label" title="Nudges the default order toward melee stats or caster stats. Not a filter - a strong off-style buff still earns a slot, and your dragged order always wins.">Lean toward:</span>
+            <span class="label" title="A shortcut for the toggles below. Melee un-ticks the caster stats; Caster un-ticks the melee stats; Balanced ticks them all. Adjust any of them by hand afterwards.">Preset:</span>
             <label><input type="radio" name="planner-playstyle" value="balanced" checked /> Balanced</label>
             <label><input type="radio" name="planner-playstyle" value="melee" /> Melee</label>
             <label><input type="radio" name="planner-playstyle" value="caster" /> Caster</label>
           </div>
           <div class="row planner-exclude-row">
-            <span class="label" title="Click a stat to stop it counting toward the ranking (its weight becomes zero) - e.g. dump Charisma so no CHA buff takes a slot. Your dragged order still wins, and the totals still show what a slotted buff actually gives.">Ignore stats:</span>
+            <span class="label" title="A ticked stat counts toward the ranking; un-tick one to drop it (e.g. dump Charisma so no CHA buff takes a slot). Resists and rune aren't here - they're always low priority. Your dragged order still wins, and the totals still show what a slotted buff actually gives.">Count stats:</span>
             <div class="planner-exclude-chips" id="planner-exclude-chips"></div>
           </div>
         </div>

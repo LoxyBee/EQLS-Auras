@@ -8887,8 +8887,23 @@ function initBuffPlanner() {
   let order = []; // buff names, the dragged priority order
   let hasManualOrder = false; // true once the user has dragged (a non-empty saved buffPlanOrder)
   let syncingClasses = false; // true while syncClassSelects pushes values in - suppresses commitClasses
-  let excludedStats = []; // stat names the user has toggled off - weight 0 in the ranking
-  let allStats = []; // every stat name, from the main process (spellEffects.STAT_NAMES)
+  let excludedStats = []; // stat names the user has toggled OFF - weight 0 in the ranking
+  let allStats = []; // the stats that get a toggle chip (spellEffects.EXCLUDABLE_STATS - no resists/rune)
+  let presetExcludes = { balanced: [], melee: [], caster: [] }; // Balanced/Melee/Caster -> which stats they un-tick
+
+  // Which preset radio (if any) the current exclusion set matches - Balanced only when nothing is
+  // off. Order-insensitive.
+  function matchingPreset() {
+    const cur = [...excludedStats].sort().join('|');
+    for (const name of ['balanced', 'melee', 'caster']) {
+      if ([...(presetExcludes[name] || [])].sort().join('|') === cur) return name;
+    }
+    return null; // a hand-tweaked set matches no preset
+  }
+  function syncPresetRadio() {
+    const m = matchingPreset();
+    document.querySelectorAll('input[name="planner-playstyle"]').forEach((r) => { r.checked = r.value === m; });
+  }
 
   // One row, three class dropdowns - it's one multiclass character, not three mains, so there is
   // one level (the input above this row) and it applies to all three.
@@ -8940,21 +8955,24 @@ function initBuffPlanner() {
     return out;
   }
 
-  // One toggle chip per stat. Clicking one adds/removes it from `excludedStats` (weight 0 in the
-  // planner's ranking) and recomputes. Rebuilt whenever the stat list or the saved set changes.
+  // One toggle chip per excludable stat (no resists / rune - those always count, at low weight).
+  // A ticked chip counts toward the ranking; clicking un-ticks it (weight 0) and recomputes. The
+  // Balanced/Melee/Caster radios above are shortcuts that set the whole set. Rebuilt whenever the
+  // stat list or the exclusion set changes.
   function buildExcludeChips() {
     if (!excludeChipsEl) return;
     excludeChipsEl.innerHTML = '';
     for (const stat of allStats) {
+      const off = excludedStats.includes(stat);
       const chip = document.createElement('button');
       chip.type = 'button';
-      chip.className = 'planner-stat-chip' + (excludedStats.includes(stat) ? ' excluded' : '');
+      chip.className = 'planner-stat-chip' + (off ? ' excluded' : '');
       chip.textContent = stat;
-      chip.title = excludedStats.includes(stat) ? `${stat} is ignored - click to count it again` : `Ignore ${stat}`;
+      chip.title = off ? `${stat} is not counted - click to count it` : `${stat} counts - click to drop it`;
       chip.addEventListener('click', () => {
-        if (excludedStats.includes(stat)) excludedStats = excludedStats.filter((s) => s !== stat);
-        else excludedStats = [...excludedStats, stat];
+        excludedStats = off ? excludedStats.filter((s) => s !== stat) : [...excludedStats, stat];
         buildExcludeChips();
+        syncPresetRadio();
         window.eqTracker.setPlannerExcludedStats(null, excludedStats).then(recompute);
       });
       excludeChipsEl.appendChild(chip);
@@ -9202,11 +9220,15 @@ function initBuffPlanner() {
     });
   }
 
+  // The Balanced/Melee/Caster radios are stat-toggle presets: picking one replaces the whole
+  // exclusion set with that preset's list, then it's just the chips (which the user can adjust).
   const playstyleRadios = document.querySelectorAll('input[name="planner-playstyle"]');
   playstyleRadios.forEach((r) =>
     r.addEventListener('change', () => {
       if (!r.checked) return;
-      window.eqTracker.setPlannerPlaystyle(null, r.value).then(recompute);
+      excludedStats = [...(presetExcludes[r.value] || [])];
+      buildExcludeChips();
+      window.eqTracker.setPlannerExcludedStats(null, excludedStats).then(recompute);
     })
   );
 
@@ -9222,11 +9244,11 @@ function initBuffPlanner() {
         order = Array.isArray(input.buffPlanOrder) ? input.buffPlanOrder : [];
         hasManualOrder = order.length > 0;
         levelInputEl.value = String(level);
-        const style = input.playstyle || 'balanced';
-        playstyleRadios.forEach((r) => { r.checked = r.value === style; });
         excludedStats = Array.isArray(input.excludedStats) ? input.excludedStats : [];
         allStats = Array.isArray(input.allStats) ? input.allStats : [];
+        if (input.presetExcludes) presetExcludes = input.presetExcludes;
         buildExcludeChips();
+        syncPresetRadio();
         const active = profiles.find((p) => p.id === activeId);
         activeProfileEl.textContent = active ? active.name : 'Default';
         buildClassSelects();
