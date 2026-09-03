@@ -391,6 +391,11 @@ test('a week that opened with an empty log does not eat the first night of play'
     '[Tue Sep 01 20:00:00 2026] You have slain Lady Vox!\n' +
     '[Tue Sep 01 21:30:00 2026] You have slain Lord Nagafen!\n';
   fs.writeFileSync(live, night);
+  // Re-pin the mtime AFTER this write, same reason as line 381 and the LANDMINE warning at the top
+  // of the file: the fake "now" below is a hardcoded date, and once real wall-clock passes it a
+  // freshly-written fixture reads as "being written right now" and the quiet check skips it as
+  // busy. Tuesday night, comfortably before Wednesday morning's fake now.
+  fs.utimesSync(live, new Date(2026, 8, 1, 22, 0), new Date(2026, 8, 1, 22, 0));
 
   // Wednesday morning she opens the app again.
   const next = s.rotateIfDue(new Date(2026, 8, 2, 9, 0, 0));
