@@ -7,8 +7,8 @@
 // Pure and dependency-free on purpose - it takes the roster, the three classes + one character
 // level, an optional priority order, a stacking-check function, and a `spellData` reader (the real
 // stat numbers), and returns a plan. `main.js` wires the real roster (buffStore), the real
-// spellStacking.checkOverwrite, and spellEffects.js into it; tests wire fakes. Nothing here reads
-// a file or knows an install path.
+// stacking engine (stackingService), and spellEffects.js into it; tests wire fakes. Nothing here
+// reads a file or knows an install path.
 //
 // HOW IT DECIDES:
 //   - Candidates: every kind:'buff' roster entry one of the three classes can cast at the
@@ -18,8 +18,8 @@
 //     file is available, a fine check that the buff carries at least one recognised stat.
 //   - "One per slot line" is the roster's own `category` column. The planner keeps the ONE buff
 //     per category with the biggest headline-stat number - not the highest level, not the longest
-//     duration. Where spellStacking has a real verdict for a pair it overrides that grouping (a
-//     cross-category conflict it names is collapsed); it never invents one.
+//     duration. Where the stacking engine has a real verdict for a pair it overrides that grouping
+//     (a cross-category conflict it names is collapsed); it never invents one.
 //   - Three pools: the 14 spell-buff slots, a 5-slot bard-song pool (only when Bard is picked),
 //     and an uncapped permanent-buff pool (Yaulp/Fury). Songs and buffs are reconciled together;
 //     permanents keep their own listing even when a temp buff shares their stat.
@@ -29,8 +29,8 @@
 //   - `totals` is the summed stat sheet across every slotted buff.
 
 const SLOT_COUNT = 14;
-// Bard songs occupy a separate pool from spell buffs in EQ (see spellStacking.js's own header), so
-// they get their own slots on top of the 14. Only computed when Bard is one of the chosen classes.
+// Bard songs occupy a separate buff pool from spell buffs in EQ (the stacking engine models it),
+// so they get their own slots on top of the 14. Only computed when Bard is one of the chosen classes.
 const SONG_SLOT_COUNT = 5;
 
 // EQ Legends caps at level 50 (the owner, 26 Aug). One character level applies to all three classes -
@@ -197,9 +197,9 @@ function hasUniqueStat(a, b) {
   return (a.stats || []).some((s) => s.value && !bStats.has(s.stat));
 }
 
-// FALLBACK collapse for when the line data isn't wired in (`lines` is null). Uses the game's own
-// effect-slot data (spellStacking.checkOverwrite) for a same-category tier collapse; without even
-// that, only merges shared base names. Imperfect - the real answer is resolveByHeadings below.
+// FALLBACK collapse for when the line data isn't wired in (`lines` is null). Uses the stacking
+// engine's verdict (checkStack) for a same-category tier collapse; without even that, only merges
+// shared base names. Imperfect - the real answer is resolveByHeadings below.
 function collapseByStacking(cands, checkStack) {
   if (!checkStack) return collapseByCategory(cands);
   const droppedBy = new Map();
@@ -232,7 +232,7 @@ function collapseByStacking(cands, checkStack) {
 //   3. Walking that order, each buff claims the effect "headings" its line occupies. A buff whose
 //      heading is already taken, or that a placed combination buff blocks, or that a placed buff is
 //      recorded as blocking (measured pairs), goes to overflow with the reason.
-//   4. A buff with no line data falls back to spellStacking.checkOverwrite against the placed set.
+//   4. A buff with no line data falls back to the stacking engine (checkStack) against the placed set.
 // Nothing is dropped just for sharing a stat: Strength + Infusion of Spirit + Fury all stack
 // because they sit on different headings.
 function resolveByHeadings(cands, priorityOrder, lines, checkStack) {
