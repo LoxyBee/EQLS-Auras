@@ -1878,6 +1878,7 @@ function initWidgetsPanel() {
   const importBtn = document.getElementById('modal-import-widget-btn');
   const importStatus = document.getElementById('modal-import-widget-status');
   const premadeListEl = document.getElementById('add-widget-premade-list');
+  const toolsListEl = document.getElementById('add-widget-tools-list');
   const modalAddTextWidgetBtn = document.getElementById('modal-add-text-widget-btn');
   const modalNewWidgetNameInput = document.getElementById('modal-new-widget-name');
   const modalAddBuffWidgetBtn = document.getElementById('modal-add-buff-widget-btn');
@@ -4619,7 +4620,7 @@ function initWidgetsPanel() {
     { id: 'standalone', title: 'Standalone tools', hint: 'Their own kind of aura, with behaviour the custom settings cannot produce.' },
   ];
 
-  function renderPremadeGroupHeading(group) {
+  function renderPremadeGroupHeading(group, targetEl) {
     const li = document.createElement('li');
     li.className = 'premade-group-heading';
     const title = document.createElement('strong');
@@ -4627,7 +4628,7 @@ function initWidgetsPanel() {
     const hint = document.createElement('span');
     hint.textContent = group.hint;
     li.append(title, hint);
-    premadeListEl.appendChild(li);
+    targetEl.appendChild(li);
   }
 
   // feat/module-system - custom modules with `hasAura` become Standalone-tools entries in the Add
@@ -4671,21 +4672,26 @@ function initWidgetsPanel() {
     // to PREMADE_WIDGETS and it was easy to forget to remove the matching PLANNED one. Filtered
     // rather than merely tested, so the app is right even if someone adds a premade without
     // reading the test.
+    toolsListEl.innerHTML = '';
     const builtNames = new Set(PREMADE_WIDGETS.map((p) => p.name));
     const stillPlanned = PLANNED_PREMADE_WIDGETS.filter((p) => !builtNames.has(p.name));
+    // "Standalone tools" is its own top-level Add Aura category now (owner, 3 Sep) - it renders
+    // into #add-widget-tools-list, the Timers / Event alerts groups into #add-widget-premade-list.
     for (const group of PREMADE_GROUPS) {
+      const targetEl = group.id === 'standalone' ? toolsListEl : premadeListEl;
+      const withHeading = group.id !== 'standalone'; // the tools panel is already all one category
       const built = PREMADE_WIDGETS.filter((p) => p.group === group.id);
       const modChoices = group.id === 'standalone' ? moduleAuraChoices : [];
       const planned = stillPlanned.filter((p) => p.group === group.id);
       if (!built.length && !modChoices.length && !planned.length) continue;
-      renderPremadeGroupHeading(group);
-      for (const premade of built) renderPremadeChoice(premade);
-      for (const premade of modChoices) renderPremadeChoice(premade);
-      for (const premade of planned) renderPremadeChoice(premade, true);
+      if (withHeading) renderPremadeGroupHeading(group, targetEl);
+      for (const premade of built) renderPremadeChoice(premade, false, targetEl);
+      for (const premade of modChoices) renderPremadeChoice(premade, false, targetEl);
+      for (const premade of planned) renderPremadeChoice(premade, true, targetEl);
     }
   }
 
-  function renderPremadeChoice(premade, planned = false) {
+  function renderPremadeChoice(premade, planned = false, targetEl = premadeListEl) {
     const li = document.createElement('li');
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -4729,7 +4735,7 @@ function initWidgetsPanel() {
       });
     }
     li.appendChild(btn);
-    premadeListEl.appendChild(li);
+    targetEl.appendChild(li);
   }
 
   function showAddWidgetChoices() {
@@ -4740,7 +4746,7 @@ function initWidgetsPanel() {
   // Reported live 25 Aug: "when on this menu and hitting back, it sends you two screens back
   // instead of 1." Root cause - every .add-widget-back button, no matter which panel it lives in,
   // called the SAME showAddWidgetChoices() above. That's correct for a panel reached directly from
-  // Choices (import/chat/premade-list/custom), but the buff-timer panel (Buff timer/Cooldown
+  // Choices (tools/import/premade), but the buff-timer panel (Buff timer/Cooldown
   // timer/Debuff on an enemy - reached by clicking one of THOSE from the premade list, one screen
   // further in) has its own back button too, and it was skipping the premade list entirely and
   // jumping straight to Choices. This is that panel's real "one step back."
@@ -4779,10 +4785,8 @@ function initWidgetsPanel() {
         span.textContent = `from ${entry.sender} in ${entry.channel}, ${when}`;
         btn.append(strong, span);
         btn.addEventListener('click', () => {
+          // The chat list lives in the Import panel now - just fill the box above it.
           importCodeInput.value = entry.code;
-          addWidgetPanels.forEach((panel) => {
-            panel.style.display = panel.id === 'add-widget-import-panel' ? '' : 'none';
-          });
           importCodeInput.focus();
         });
         li.appendChild(btn);
@@ -4838,9 +4842,10 @@ function initWidgetsPanel() {
       addWidgetPanels.forEach((panel) => {
         panel.style.display = panel.id === `add-widget-${btn.dataset.choice}-panel` ? '' : 'none';
       });
-      if (btn.dataset.choice === 'custom') modalNewWidgetNameInput.focus();
-      else if (btn.dataset.choice === 'import') importCodeInput.focus();
-      else if (btn.dataset.choice === 'chat') renderChatShareCodeList();
+      if (btn.dataset.choice === 'import') {
+        importCodeInput.focus();
+        renderChatShareCodeList();
+      }
     });
   });
 
