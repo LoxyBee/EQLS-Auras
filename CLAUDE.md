@@ -54,6 +54,9 @@ a docs update or a new CLAUDE.md note for it. When in doubt, a fix is small.
 - `src/main/buffParser.js` — pure regex/text helpers: cast-begin ("casting" **and** "singing" — bard songs use a different verb), AA "activate" lines, failure messages, party join/leave messages, generic landing-text heuristics, and `stripRankSuffix`.
 - `src/main/buffStore.js` — buff database (`{name, durationSec, landingText, endedText, iconId, showOnOverlay}`). **The install (`src/shared/data/buffs.json`) is the source of truth for spell data, rebuilt fresh on every launch, not a version-gated one-time migration** — see gotcha #29. Only three things persist in userData across that rebuild: a fully custom entry (`custom: true`), a spell the user hand-corrected via Known Buffs' Save button (`edited: true`), and three small per-spell toggles with no install-side value (`showOnOverlay`; `isBardSong` once `isBardSongUserSet`; `noDurationScaling` once `noDurationScalingUserSet`).
 - `src/main/buffEngine.js` — the actual detection state machine. **Read the big comment block at the top of this file before touching detection logic** — it documents the full priority order (named cast > unique landing text > spellbook-narrowed ambiguous text > burst-window ambiguous text > opt-in others'-buff prompt) and why each layer exists.
+- `src/shared/spellStackingEngine.js` — the **full EQEmu `CheckStackConflict` port** (every mechanic: same-effect-slot collision, `SPA 148/149` block/overwrite directives, bard-song separation, rank ladders, `calcSpellValue` formula table). Pure, no deps. `verdict(a, b)` → `-1` incoming blocked / `0` stacks / `1` incoming overwrites the worn one. Parity-verified 100% over 6.75M verdicts against the reference implementation (`tools/stacking-parity.js`, `test/spell-stacking-engine.test.js`). Replaced the old `spellStacking.js` effect-slot heuristic, which is **deleted**; `spellEffects.js` now gets its stat magnitudes from this engine's `calcSpellValue`.
+- `src/main/stackingService.js` — binds that engine to the live roster. `makeStackingService(buffStore)` → `{ verdict, planConflict, wouldOverwriteLive, invalidate }`. `wouldOverwriteLive` is what `buffEngine._land` calls for the stale-tile sweep; `planConflict` (checks both directions, returns `{ overwrites, blocked, conflict }`) is what the Buff Planner calls. `invalidate()` on roster rebuild.
+- `src/shared/buffLines.js` + `src/shared/data/buff-lines.json` — the **curated heading model** (see `docs/BUFF-STACKING.md`). A *heading* is a mutually-exclusive effect slot; a *line* is an upgrade ladder sharing a heading. `stackDecision(incoming, active)` → `overwrites` / `blocked` / `coexist` / `unknown`. `stacksExplicitly(a, b)` is true **only** for an authored `stacksWith` link — a plain `coexist` fall-through (no shared heading, no recorded conflict) is *weak* and the ported engine may still veto it. `blockedPairs` carries 33 directional "X did not take hold, blocked by Y" observations mined from real logs. Curated decides first everywhere; the ported engine fills `unknown` and overrules weak `coexist`.
 - `src/main/profileStore.js` — named loadout profiles (see gotcha #9), one active at a time; `buffEngine.js` keeps a separate self-cast ambiguous-resolution memory per profile, switched via the chip bar at the top of the main window.
 - `src/main/gameSpellData.js` — the single shared parse of the game's own `spells_us.txt`, lazily loaded and cached per install root. Exists because several features need facts about spells the app's roster deliberately *doesn't* contain (nukes, heals, anything the mining filter dropped): currently which spells are bard-only, and icon art for any spell by name. **Field positions were all established empirically against the user's real file, not assumed from EQEmu docs** — name is field 1, the 16 per-class levels are 36–51 (255 = never castable, Bard at offset 7), and the icon id is **field 75** (verified by scanning every field against the roster's own `iconId` across 40 sampled buffs: field 75 matched 40/40, no other field matched more than 2). If a future change needs another field, verify it the same way rather than trusting a schema doc — this server is a custom ruleset.
 - `src/main/bardSongTagger.js` — flags every bard-only spell in the roster as `isBardSong`, using `gameSpellData.js`. See gotcha #14 for why this exists and why it's additive-only.
@@ -79,6 +82,7 @@ a docs update or a new CLAUDE.md note for it. When in doubt, a fix is small.
 - `src/renderer/main-window/` — the normal app window (multi-page: Buff Tracker, Known Buffs, Overlay, Log & Setup).
 - `src/renderer/overlay/` — the game overlay renderer (list or icon-grid display mode).
   - **Icon-mode aura tiles carry three independent optional readouts**, all per-aura and off by default: a **depletion shade** (`iconDepletionShade` — none/wipe/radial, a shrinking dark overlay standing in for the countdown bar icon mode lacks), a **graduated timer colour** (`timerColorRamp` — timer text fades amber→red as it runs down, ahead of the existing `.low` flash), and an **expired linger** (`expiredLingerSec`, 0–6s — holds an expired tile greyed before it clears). All in `overlay.js` (`updateTileShade` / `rampColorFor` / `trackExpiredLinger`), all in `SHAREABLE_FIELDS`.
+  - **`hideInfiniteBuffs`** (per-aura, off by default, in `SHAREABLE_FIELDS`) — a Self Buffs aura drops every permanent buff (Yaulp, Fury, the Shielding / coat / wolf-form line — anything `infinite`) from its list. Filtered in `overlay.js`'s `visibleBuffs` right after the name filter; `widgetManager.setHideInfiniteBuffs` + `widget:setHideInfiniteBuffs` IPC; the settings row is `has('merge')`-gated so it only shows on buff-style auras.
 - `src/shared/data/buffs.json` — **the roster of record: ~1,067 entries, the spells EQ Legends actually has.** No longer mined; **no spreadsheet** (retired 31 Aug — the owner: *"i do not want the spreadsheet to have anything to do with the code... it was ONLY meant as a reference"*). `tools/build-roster.js` rebuilds `buffs.json` from the *current* `buffs.json` plus every `set` / `add` in `tools/roster-overrides.json`, re-deriving `landingTextSharedBy` and enrichment (text, icon, cast/reuse times) from the game's own `spells_us.txt` / `spells_us_str.txt`. Fully idempotent — a rebuild with no override changes is byte-identical. Rebuild with `node tools/build-roster.js --write`; run it with no flag first for a report. **`tools/roster-overrides.json` is the one place the roster is edited**: `"<spell name>": { "why": "...", "set": {…} }` corrects an existing entry, `"<spell name>": { "why": "...", "add": {…} }` adds a brand-new one. `tools/lib/xlsx.js` is deleted. The previous 11,337-entry mined roster is at `archive/buffs-legacy-11337.json` (outside `src/`, never ships) for reference only; **do not restore it** — add the missing spell via an `add` block.
   - **Why smaller is the point.** "Is this landing line unique?" is judged by counting roster entries, so every spell this server does not have still voted on ambiguity. Measured against a real session: recognised landing lines went 45 → 83 and auto-confirmed 19 → 49. Gotcha #15's confirmed live bug is fixed by it — Armor of Protection is back, and `"You feel protected."` now correctly offers it as a candidate.
   - **`rosterBackfill.js` was deleted (1 Sep).** It undid an old mining mistake that no longer exists; run against the current roster it would re-read the client file and pull in ~1,499 other-expansion bard songs. A missing song now goes in the same way as any other missing spell — a `tools/roster-overrides.json` `add`. `test/roster.test.js` fails if the file, or a `require` of it, ever comes back. (`gameSpellData.getBardSongRecords` is now unused — kept only as a thin cache read.)
@@ -216,6 +220,12 @@ Raid-lockout tracking and the log-management tools that grew alongside it (`feat
 34. **During an *ally's* Quick Buff, an ambiguous landing that narrows to one of your spells is NOT auto-landed.** Extends gotcha #18. `MULTI_GRANT_ABILITIES` (`buffEngine.js`, currently just `Quick Buff`) — when the *exact* line `<Name> activates Quick Buff.` opens the 5s ally-burst window and **you aren't also bursting**, a shared-text landing that the gem/spellbook tier would otherwise resolve to one of your own spells falls through to the normal ambiguous handling (queued prompt, or silent IGNORE) instead. Scoped tight, from the owner's domain knowledge + a full-corpus replay (−44 landings / 511,743, **+229 correct ally attributions, 0 buffs lost**): only that one known ability by its exact line (not "any ally activate" — a raid keeps that window open permanently, and the broad version cost −60k landings); not when `inBurst` (both Quick Buffing at once is unsolvable, so your own burst wins); **never a bard song** (Quick Buff can't grant songs, so a song landing in the window is yours regardless — this also structurally protects maintained Psalm/Selo's/Hymn); and not a renewal of something already active. A remembered self-resolution is deliberately not honoured here — it answers "which of my spells is this text", not "is this landing even mine".
 
 35. **A groupmate's own self-cast must not land on your Ally Buffs — the named-cast ally path now checks `recentOtherCasts` too.** Live bug (Sep 1): the player cast Spirit of the Puma on Orlando; Ally Buffs showed it on Chrysaetos, because Chrysaetos had self-cast his *own* Puma 2s earlier and his third-person landing (`Chrysaetos growls with the spirit of the puma.`) was matched to her pending cast. The burst-context ally path (#18) already skipped a groupmate's own self-cast; the "named cast confirmed by third-person landing text" path didn't. `_allySelfCastRecently()` — a **local, rank-aware** pass over `recentOtherCasts` (recipient == the person just seen casting this spell, inside the 60s window → their own self-cast → consume the line, don't attribute). **Deliberately local:** a first attempt rank-stripped the whole `recentOtherCasts` key and that made the self tiers suppress the player's own maintained songs when a groupmate sang the same one (replay: −1851 Selo's Accelerando, −986 Amplification). The map stays raw-keyed; only this one check strips ranks. The IGNORE branch also has to *return* — an earlier version fell through to the "unexplained third-person" recorder and re-introduced the bad key shape. `test/ally-named-cast-recent-other.test.js`.
+
+36. **Buff duration formula 50 = permanent-until-cancelled — reading field 12 for these buffs gave ~0s and they vanished off the overlay ~1 min after landing.** EQEmu's `CalcBuffDuration_formula` case 50 returns the `-1` "doesn't tick" sentinel *before* field 12 is consulted (field 12 there is only a PvP cap); the published EQL spell references render every formula-50 spell as "permanent". The old mining did `field12 × 6` and gave 45 real long buffs — Armor of the Faithful, the whole Shielding line, the damage-shield "coat" line, permanent wolf/vision forms — a near-zero duration. The owner watched Armor of the Faithful still blocking casts long after the app had dropped its tile. `tools/build-roster.js` now sets `infiniteDuration: true` (and deletes `durationSec`) for `buffDurationFormula === 50 && goodEffect >= 1 && !buffDuration`, unless a `roster-overrides.json` `set` pins `infiniteDuration`/`durationSec`. Two entries carry a real field-12 value (Dark Temptation 3600, Phantom Plate 4320) and are left finite pending a live "it didn't expire" report — flip them by dropping the `&& !e.buffDuration`. These feed the planner's permanent pool (gotcha: a permanent-tier line member like Rage now correctly outranks its finite sibling Frenzy). Research + build, 3 Sep.
+
+37. **Curated stacking data proposes; the ported engine vetoes — in `buffEngine._land`'s stale-tile sweep and the Buff Planner both.** A curated `overwrites` only removes an active tile if `stackingService.verdict` agrees the two don't stack (verdict is not `0` and not `-1`) — AEM's full parse found ~104 curated `overwrites` pairs the real game engine stacks fine, where a tile was vanishing mid-buff. The reverse also happens: a *weak* `coexist` (different curated headings, no recorded conflict, **no** authored `stacksWith`) is overruled when the engine says the pair collides — Cantata of Soothing vs Cassindra's Chorus of Clarity sit on different curated bard-regen headings so curated says `coexist`, but the engine and the owner in-game agree Chorus blocks Cantata. `buffLines.stacksExplicitly(a, b)` is the guard: an authored `stacksWith` link is left strictly alone, only the plain fall-through is engine-overrulable. Wired via `buffEngine.setStackVetoFn` / `setLineStacksExplicitlyFn` from `main.js`. `test/spell-stacking.test.js`, `test/buff-lines.test.js`.
+
+38. **Exactly one bard song vs exactly one non-song buff sharing a landing text is told apart by the 6s song pulse alone — so that check runs *above* the renewal / spellbook / gem tiers, not below.** `_songVsSingleBuff(candidates)` spots the 1-song-1-buff shape; `_pulsedAmbiguousSong` then confirms the song once the same text has re-landed on the ~6s cadence `SONG_PULSE_CONFIRM_HITS` times. It had to move ahead of the other tiers because a non-song candidate one of them grabs — a now-permanent Frenzy sharing `"You go berserk."` with McVaxius' Berserker Crescendo (owner report, 3 Sep) — absorbs every pulse as its own renewal, so the pulse detector downstream never sees the cadence. On confirm the song wins outright with no prompt, any provisional tile for the non-song candidate is dropped, and a queued ambiguous prompt for that text is cleared. First sighting / broken cadence → holds, and the tiers below make the provisional call. The later (line ~1720) pulse call is gated off when `strictSongBuff` already handled it, so its watch isn't advanced twice. `test/bard-songs.test.js`.
 
 ## Where the backlog actually lives
 
@@ -447,111 +457,92 @@ character with a multiclass loadout, not three mains"), capped at **50** (the EQ
 level picker sits above the single row of three class dropdowns.
 
 **`src/main/buffPlanner.js`** is the brain - pure, no file/path access. `computePlan({ roster,
-classes, level, priorityOrder, checkStack, spellData, lines })` -> `{ ..., slots, songSlots,
-permanentSlots, totals, statsKnown, stackingKnown }`. `lines` is `src/shared/buffLines.js` (the
-heading model - see below and `docs/BUFF-STACKING.md`); `main.js` always passes it.
-- Candidates: every `kind:'buff'` roster entry one of the 3 classes can cast at the character
-  level, whose `targets` can land on the player (`Self`/`Group`/`Friendly`/`Group Member`/`Single`
-  - not Pet/Animal/Undead). **Heal-over-time spells excluded** (`scaleCategory` `hot`/`heal` -
-  the owner, 26 Aug: "heals should be excluded").
-- **Ranked purely by character-stat magnitude** - the owner, 27 Aug: "rank them by best, that means
-  numerical", "level and duration have absolutely 0 to do with anything", "actual character stats
-  only", "i don't want SPA anywhere near the calculations". **`spellEffects.js`** reads the real
-  +STR / +AC / haste% numbers from `spells_us.txt`'s effect slots (via the ported stacking
-  engine's `calcSpellValue` — `spellStacking.js` was folded onto it and deleted, `959f84d`). Its
-  `STATS` list is the **complete set of character stats the
-  planner knows** - the 7 attributes, AC, ATK, haste, spell haste, the 5 resists + all-resists,
-  damage shield, rune, spell rune, max HP, max mana - each paired with the effect number the game
-  file uses (an implementation detail that appears **nowhere** else - not in the returned data
-  (`{stat, value, order}`), not in the planner, not on screen; the term "SPA" is banned from
-  `spellEffects.js` and `buffPlanner.js`, pinned by a test). Any effect that isn't one of those
-  stats - heal components, procs, vision, illusion, focus limits, pacify - is discarded here and
-  never reaches the planner.
-- **STATS list + weights (updated 27 Aug on the owner's review of a live plan):** added `HP regen`
-  (effect 0), `mana regen` (effect 15 - was mislabelled `max mana`; effect 15 is a per-tick mana
-  buff, Clarity-style, not a max-mana raise), `endurance regen` (effect 189), and `cast speed`
-  (effect 127, replacing the unused `spell haste` on effect 118). `max mana` moved to effect 97.
-  **`STAT_WEIGHT`: regen stats are 4x** ("mana and endurance regen should be a high priority") -
-  a per-tick value is small (~10-15) so it needs the multiplier to sit alongside a +40 stat;
-  **resists dropped to 0.1x** (0.15 for `all resists`) - was 0.25, still let 4-5 single-element
-  resist buffs fill the tail of the 14 ahead of anything useful. `cast speed` is a raw % scored
-  1.5x (top priority, like haste - the owner: "blessing of faith/piety is a cast speed buff and needs
-  the same priority as haste"). These effect numbers are the standard client ones, NOT verified
-  against her file - see TESTING.md's checklist for what to confirm. `buffPlanner.NON_STAT_CATEGORIES` is the coarse companion filter
-  (whole categories: Duration Heals, Echoes, Delayed, Movement, Vision, Illusion:*, Spell Focus,
-  Invulnerability, ...) so the plan is sane even with no spell file; with the file, a buff granting
-  zero known stats is also dropped.
-- Each category's headline stat is learned *empirically* (the stat most of that category's spells
-  grant - "Strength" -> STR, no hardcoded assumption). `betterCandidate` compares that number;
-  `orderCandidates` fills slots by `statScore` so the least valuable buffs drop first. `totals`
-  sums every slotted buff's stats (haste kept-best, not summed), in character-sheet order.
-  No EQ folder -> name order, `statsKnown: false`.
-- **STR/DEX/AGI/AC are confirmed against the owner's file** via `spell-stacking.test.js`'s
-  fixtures; the rest use the standard client effect numbers - a wrong one shows as an obviously
-  wrong number for a *named* stat, not gibberish. Live check in TESTING.md.
-- **Three pools** (`poolFor()` routes each candidate; permanent checked first):
-  - **14 spell-buff slots** and the **5-slot bard-song pool** (`songSlots`, only when BRD is one
-    of the classes - `isBardSongEntry` = `isBardSong` flag or Bard-only class list) go through
-    ONE `collapseByStacking` pass together (see the "category is a stat label" bullet below), then
-    split by pool; each pool then fills by priority order + stat score.
-  - **Uncapped permanent pool** (`permanentSlots`, `infiniteDuration` - Yaulp, Fury) collapses
-    SEPARATELY and is NOT deduped against the temp buffs: Fury (permanent shaman Strength) keeps
-    its own permanent listing even though a temp Strength buff is also in the 14. "Cast once and
-    forget" - the player wants it listed regardless (the owner, 27 Aug).
-- **The roster's `category` column is a STAT LABEL, not a stacking line** - learned the hard way
-  27 Aug when the owner posted a real, valid 14-buff cleric/shaman/bard loadout that ran `Strength`
-  AND `Infusion of Spirit` AND `Talisman of Altuna` (all "stat" categories that overlap) and my
-  category-collapse had thrown two of the fourteen away. **The planner does NOT collapse by
-  category.** Every stat/combat buff the classes can cast is a candidate.
-- **The heading model (`src/shared/buffLines.js` + `src/shared/data/buff-lines.json`)** is how
-  conflicts are resolved now - see `docs/BUFF-STACKING.md`. A **heading** is a slot; same heading =
-  mutually exclusive, different heading = stack. A **line** is an upgrade ladder sharing a heading,
-  `members` ordered low->high. `buff-lines.json` also carries `blockedPairs` (33 directional "X did
-  not take hold, blocked by Y" observations mined from real logs) and combination buffs (Aegolism,
-  Harnessing of Spirit) that `blocks` the individual lines they subsume.
-  `buffLines.stackDecision(incoming, active)` returns `overwrites` / `blocked` / `coexist` /
-  `unknown`. `buffPlanner.resolveByHeadings()` collapses each line to its best castable tier, then
-  walks candidates in priority order claiming headings, dropping anything whose heading is taken or
-  that `stackDecision` calls `blocked`/`overwrites` (-> overflow with a `reason`). Only
-  CLR/SHM/BRD/ENC/DRU + universal resist lines are defined so far; an `unknown` pair (and a weak
-  `coexist` with no explicit `stacksWith` link) falls back to the ported stacking engine via
-  `stackingService` (`src/main/stackingService.js` → `src/shared/spellStackingEngine.js`, the full
-  EQEmu `CheckStackConflict` port, parity-verified 100% over 6.75M verdicts).
-- **`collapseByStacking` / `collapseByCategory` are the fallback** used only when `lines` is absent
-  (never, in the real app - `main.js` always passes `buffLines`); they set `approximate: true` /
-  `stackingKnown: false`. `checkStack` (`stackingService.wouldOverwriteLive`) is always wired when
-  the spell file is reachable, not gated on the `useStackingModel` diagnostic toggle.
-- **The Self Buffs overlay uses the same model to drop stale tiles.** `buffEngine.setLineStackFn()`
-  is wired in `main.js` to `buffLines.stackDecision`; in `_land()`, when a `kind:'buff'` spell
-  lands, any active buff the incoming one `overwrites` is removed immediately (logged
-  `ENDED "<x>" - replaced by "<y>"`). This runs unconditionally (measured pairs + strict line tiers
-  are not guesses); the old effect-slot heuristic behind `useStackingModel` now only handles pairs
-  `stackDecision` returns `unknown` for.
-- The headline stat shown on a row is matched by **name** to the category's calibrated stat, not
-  by value - a "Charisma" buff that also gives +40 INT still leads with its CHA figure.
-- **Resist buffs are weighted 0.25x** in the default slot order (`STAT_WEIGHT` in spellEffects) -
-  "situational and lower priority" (the owner) - so a +40 resist doesn't outrank a +40 stat buff for a
-  slot. The drag order still overrides everything.
-- The 14 slots are just `candidates.slice(0, 14)` after ordering by the user's dragged
-  `priorityOrder` (names), with un-ordered buffs following by `DEFAULT_CATEGORY_PRIORITY` then name.
-  Everything past 14 -> overflow `reason: "no free slot"`.
+classes, level, priorityOrder, checkStack, spellData, lines, excludedStats, excludedBuffs })` ->
+`{ slots, overflow, songSlots, songOverflow, specialSongs, permanentSlots, combatSlots, totals,
+statsKnown, stackingKnown, stackingCoverage, excludedStats, excludedBuffs, ... }`. `main.js` wires
+the real roster, `stackingService`, and `spellEffects.js` in; tests wire fakes. **`buffPlanner.js`
+and `spellEffects.js` both carry current, detailed header + inline comments — read those before
+changing the maths.** The decisions that aren't in the code:
 
-**Data model**: `profileStore.js` grew `plannerClasses` (up to 3 codes), `plannerLevel` (1..50),
-and `buffPlanOrder` (names), per profile, all optional. `main.js` has
-`planner:getInput|setClasses|setLevel|setOrder|compute` -
-**`compute` is always recomputed live from `buffStore.getAll()`, never persisted** (the roster is
-rebuilt every launch, so a cached plan would drift - same reasoning as gotcha #29).
+- **Candidates** — every `kind:'buff'` roster entry one of the 3 classes can cast at the character
+  level, `targets` in `PLAYER_TARGETS` (Self/Group/Friendly/Group Member/Single), not
+  `scaleCategory` `hot`/`heal`, not in `NON_STAT_CATEGORIES`, and (with the spell file) granting at
+  least one recognised character stat. Ranked **purely by character-stat magnitude** — owner, 27
+  Aug: "actual character stats only", "i don't want SPA anywhere near the calculations" (the term
+  "SPA" is banned in `spellEffects.js`/`buffPlanner.js`, pinned by a test). `spellEffects.STATS` is
+  the full stat set the planner knows.
+- **Spell AC is stored 4× the applied value — `spellEffects.js` divides it down, floored**
+  (`STAT_DIVISOR = { AC: 4 }`). Matches the owner's in-game readings and the published EQL spell
+  references (Yaulp III raw 40 → +10, Verses of Victory raw 50 → +12). Every other stat is 1:1.
+  Level-scaling ramps and the AC soft cap are out of scope — the planner ranks buffs, it is not a
+  character sheet.
+- **Balanced / Melee / Caster are stat-toggle PRESETS, not a weighting** (owner, 3 Sep: "remove
+  the ... 0.5 weighting and instead have it just deselect them from the toggles when stats are
+  useless ... more visual for the user"). `spellEffects.PRESET_EXCLUDES` lists which stats each
+  preset un-ticks (Melee drops WIS/INT/mana regen/cast speed/max mana/spell damage %; Caster drops
+  STR/DEX/AGI/ATK/haste/HP on hit; Balanced drops nothing). The renderer writes the resulting list
+  to `plannerExcludedStats`; a deselected stat scores 0 (`combinedWeightScale`). **Resists and the
+  rune stats get no toggle chip at all** (`NON_EXCLUDABLE`) — owner: "res buffs don't need a
+  toggle as they are low priority anyway" — they still score, at their low `STAT_WEIGHT`.
+- **No "always worth taking" list.** The old flat `PROC_SCORE_BOOST` was deleted 3 Sep — owner:
+  "if it needs to have an always worth taking list it means the weights are wrong". A pure-proc
+  buff (Spirit of the Puma, Katta's) scores nothing and lives in the uncapped Combat pool where
+  score is only a display order.
+- **Four pools** (`poolFor()`): **`buff`** (the 14 pre-combat slots), **`song`** (bard only, 5
+  `songSlots`), **`permanent`** (`infiniteDuration` — Yaulp, Fury; uncapped; resolved on its own so
+  Fury keeps its listing next to a temp Strength buff), **`combat`** (a short buff `durationSec <=
+  300` **or** a `Combat Innates` proc; uncapped; owner's "burst-swap" loadout; **not** in `totals`).
+- **The roster's `category` column is a STAT LABEL, not a stacking line** — the planner does NOT
+  collapse by category. Conflicts are resolved through the curated heading model (`buffLines`, see
+  the Architecture bullet and `docs/BUFF-STACKING.md`): `resolveByHeadings()` collapses each line
+  to its best castable tier, orders by drag-priority-then-score, then walks the list claiming
+  effect headings — a buff whose heading is taken, that a curated `blocked`/`overwrites` names, or
+  that the ported engine says collides on an `unknown` / weak-`coexist` pair, goes to overflow
+  with a reason. A **combination buff** (Aegolism, Harnessing of Spirit) only claims its headings
+  if it scores ≥ the summed score of the line members it *subsumes* (its authored `blocks` list) —
+  not a `stackDecision('overwrites')` sweep, which also catches buffs that *replace* the combo.
+- **Drop reasons, all surfaced in the "Won't fit" card and the per-slot "why this one?" hover**
+  (`beat` array on every slotted buff, inverted from every dropped buff's `beatenBy` + `reason`):
+  `lineDrops` (lower tier), `zeroedDrops` (every scored stat turned off by the preset),
+  `crossPoolDrops` (a permanent/combat buff the model says a slotted-14 buff blocks),
+  `manualDrops` (the user X'd it — `excludedBuffs`), and `discountRedundantMultipliers` (a
+  haste / cast-speed buff that isn't the strongest source of that multiplier loses that stat's
+  weight — EQ applies one haste source at a time, but the buff still stacks for its other stats).
+- **`specialSongs`** — Amplification is pinned as a reference row at the top of the song list
+  (`special: true`, `score: null`, not counted against the 5 slots), only when a chosen bard class
+  can cast it. It's a multiplier on every other running song, so its value depends on the whole
+  loadout — "not something to math out here" (owner, 3 Sep). Note text: *"Boosts your Singing
+  songs. Shown for reference."*
+- **`songInstrument`** — every bard entry carries its instrument type (Brass / Singing / Stringed /
+  Wind / Percussion), derived by `build-roster.js` from `spells_us.txt` field 32 (skill enum).
+  Shown on each song row; `test/roster.test.js` pins the valid values + bard-only.
+- **`collapseByStacking` / `collapseByCategory`** are the fallback for when `lines` is absent
+  (never in the real app); they set `approximate: true` → `stackingKnown: false`.
 
-**Page**: `initBuffPlanner()` in `main-window.js`, `#page-planner` / "Buff Planner" nav button.
-A character-level input, one row of three class dropdowns, the 14-slot list, a "Symphonic" card
-(shown only with BRD), a "Permanent buffs" card (shown when non-empty), one drag-to-reorder
-priority list covering the buff + song slots (HTML5 DnD), and a "Won't fit" card. Recomputes on
-every level/class/drag change and on `onActiveProfileChanged`.
-Tests: `test/buff-planner.test.js` (the maths + heading model, mutation-tested),
-`test/buff-lines.test.js` (the shipped `buff-lines.json` + `stackDecision`),
-`test/planner-wiring.test.js` (store + IPC + page markup + the engine/planner both using
-`buffLines`), `test/spell-stacking.test.js` (the `buffEngine` stale-tile removal).
-**Not yet run in the real app** - see docs/TESTING.md.
+**Data model** — `profileStore.js`, all per-profile and optional: `plannerClasses` (≤3 codes),
+`plannerLevel` (1–50), `buffPlanOrder` (names, drag order), `plannerExcludedStats`,
+`plannerExcludedBuffs`. A legacy `plannerPlaystyle` on an old profile is folded into the exclusion
+list on read by `main.js`'s `plannerExcludedFor()` (nothing writes it any more). IPC:
+`planner:getInput | setExcludedStats | setExcludedBuffs | setClasses | setLevel | setOrder |
+compute`. `getInput` also returns `allStats` (`EXCLUDABLE_STATS`) and `presetExcludes`
+(`PRESET_EXCLUDES`) for the renderer. **`compute` is recomputed live from `buffStore.getAll()`
+every call, never persisted** (roster rebuilds every launch — same reasoning as gotcha #29).
+
+**Page** — `initBuffPlanner()` in `main-window.js`, `#page-planner`. Level input + one row of
+three class dropdowns; the preset buttons + per-stat toggle chips; the 14-slot loadout card,
+"Symphonic" (bard only), "Permanent buffs", "Combat buffs", drag-to-reorder priority list, and
+"Won't fit". All sections are `<details class="planner-acc" open>` **except Priority order and
+Won't fit, which start closed** (owner). The loadout card header carries a **"Reset removed"**
+button (shown only when `excludedBuffs` is non-empty). Every slotted row has an **X** that appends
+its name to `excludedBuffs` and recomputes — the next-best buff pulls up into the freed slot.
+Recomputes on every level / class / preset / toggle / drag / X change and on
+`onActiveProfileChanged`.
+
+Tests: `test/buff-planner.test.js` (maths + heading model + presets + X-removal, mutation-tested),
+`test/spell-effects.test.js` (`combinedWeightScale`, `PRESET_EXCLUDES`, AC ÷4), `test/buff-lines.test.js`
+(`buff-lines.json` + `stackDecision` + `stacksExplicitly`), `test/planner-wiring.test.js` (store +
+IPC + markup), `test/spell-stacking.test.js` + `test/spell-stacking-engine.test.js` (the ported
+engine + `buffEngine` stale-tile removal). **Not yet run in the real app** — see `docs/TESTING.md`.
 
 **Still to build - the `buff-loadout` aura** (the owner chose "page + aura"): a repeatable aura kind
 that renders the planned 14 as overlay tiles - active buffs counting down (cross-referenced against
@@ -653,8 +644,25 @@ Applies to bard songs especially, but it isn't song-specific — it's the genera
 The per-timer form was overhauled — `+ Add timer` opens `#custom-timer-modal-backdrop` with every
 field visible, Edit reopens the same modal pre-populated, and the trigger-type picker is
 data-driven (`TRIGGER_TYPES` in `main-window.js`, module scope; adding a real trigger type is an
-entry with a `fieldsId` + that panel's markup + a case in `readTimerFormData`). **Still open:** the
-owner's broader note also wants the *Add Aura* modal itself reworked the same way.
+entry with a `fieldsId` + that panel's markup + a case in `readTimerFormData`).
+
+**The Add Aura choices screen was restructured 3 Sep** (`c926c41`) — owner's exact shape after two
+wrong turns: the **original four buttons, plus one new "Standalone tools" button = five buttons,
+grouped under three `<h4 class="add-widget-cat">` headings**, NOT sub-menus and NOT one giant
+scrolling page. `#add-widget-choices` in `index.html`:
+- **Standalone tools** → `data-choice="tools"` → `#add-widget-tools-panel`
+- **Premade & custom** → `data-choice="premade"` → `#add-widget-premade-panel` · `data-choice="custom"` → `#add-widget-custom-panel`
+- **Import** → `data-choice="import"` → `#add-widget-import-panel` (code box) · `data-choice="chat"` → routes to the import panel
+
+Each `.add-widget-choice` click shows `#add-widget-${choice}-panel`; every panel's Back button
+returns to `showAddWidgetChoices()` **except** the buff-timer panel (reached *from* the premade
+list, one level deeper), whose Back is `showAddWidgetPremadePanel()`. `renderPremadeList()` sends
+the `group: 'standalone'` premades to `#add-widget-tools-panel` and the rest to
+`#add-widget-premade-panel`.
+
+**The aura-name field was removed from Add Aura entirely** (`2be4382`) — `#add-widget-custom-panel`
+no longer has a name input, and `widgetName(fallback)` just returns the fallback. Auras are named
+by their kind; there is no editable name (same rule as buffs — never add one).
 
 ### Smaller open questions
 
