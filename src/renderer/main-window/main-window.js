@@ -9107,7 +9107,9 @@ function initBuffPlanner() {
       .map((s) => fmtStat(s.stat, s.value))
       .join('  ');
     // No class label per row (owner, 3 Sep) - the classes you picked are at the top of the page.
-    meta.textContent = [statBit, extra].filter(Boolean).join(' · ');
+    // A bard song leads with its instrument type instead.
+    const instr = cand.songInstrument ? (cand.songInstrument === 'Singing' ? 'Singing' : `${cand.songInstrument} instrument`) : null;
+    meta.textContent = [instr, statBit, extra].filter(Boolean).join(' · ');
     main.append(name, meta);
     li.appendChild(main);
     const reason = opts.reason || (opts.reasonFromItem ? cand.reason : null);

@@ -64,6 +64,11 @@ const F_UNSTACKABLE_DOT = 79;
 const F_IS_DISCIPLINE = 98;
 const F_CLASSES = 36; // 16-wide; bard's own required level is at 36+7 = 43 (< 255 => bard can cast)
 const F_BARD_LEVEL = F_CLASSES + 7;
+// Field 32 is the EQ skill enum. For a bard song its value is the instrument type (verified against
+// the owner's real spells_us.txt - EQL's assignments differ from classic EQ, so this is READ, not
+// hand-mapped from memory). All 61 bard-castable songs land on one of these five.
+const F_SKILL = 32;
+const SONG_INSTRUMENT = { 12: 'Brass', 41: 'Singing', 49: 'Stringed', 54: 'Wind', 70: 'Percussion' };
 const STACK_EFFECT_COUNT = 12;
 const SPA_BLANK = 254;
 
@@ -100,7 +105,7 @@ function parseStackEffects(fields) {
 // `isBardSong` (bard-ONLY) - the engine needs the wider one for its bard-pool branch.
 const STACK_KEYS = [
   'stackEffects', 'goodEffect', 'targetType', 'buffDurationFormula',
-  'buffDuration', 'unstackableDot', 'isDiscipline', 'bardCastable',
+  'buffDuration', 'unstackableDot', 'isDiscipline', 'bardCastable', 'songInstrument',
 ];
 // Fields build-roster re-derives every run - cleared off each entry first so a rename or format
 // change doesn't strand the old ones on entries carried over from the previous buffs.json.
@@ -115,6 +120,9 @@ function stackFields(fields) {
     unstackableDot: Number(fields[F_UNSTACKABLE_DOT]) ? 1 : 0,
     isDiscipline: Number(fields[F_IS_DISCIPLINE]) ? 1 : 0,
     bardCastable: Number(fields[F_BARD_LEVEL]) < 255 ? 1 : 0,
+    // Instrument type - only meaningful for a bard song, so only set when the bard can cast it.
+    songInstrument:
+      Number(fields[F_BARD_LEVEL]) < 255 ? SONG_INSTRUMENT[Number(fields[F_SKILL])] || undefined : undefined,
   };
 }
 const pick = (obj, keys) => {

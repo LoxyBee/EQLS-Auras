@@ -207,7 +207,8 @@
   "buffDuration": 3,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Alacrity",
@@ -256,7 +257,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Stringed"
  },
  {
   "name": "Alliance",
@@ -327,6 +329,7 @@
   "reuseSec": 6,
   "targets": "Self",
   "landingTextSharedBy": 3,
+  "infiniteDuration": true,
   "stackEffects": "1,15,4,0,100,0;6,0,-6,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -334,8 +337,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Allure of the Wild",
@@ -455,7 +457,8 @@
   "buffDuration": 5,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Anarchy",
@@ -505,7 +508,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Brass"
  },
  {
   "name": "Animate Dead",
@@ -552,7 +556,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Arch Shielding",
@@ -570,6 +575,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 8,
+  "infiniteDuration": true,
   "stackEffects": "0,69,100,0,102,150;1,1,42,0,102,90;5,50,1,0,101,20",
   "goodEffect": 1,
   "targetType": 6,
@@ -577,8 +583,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Aria of Asceticism",
@@ -601,7 +606,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Armor of Faith",
@@ -647,6 +653,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 7,
+  "infiniteDuration": true,
   "stackEffects": "0,69,100,0,104,225;1,1,50,0,100,50;2,79,100,0,104,225",
   "goodEffect": 1,
   "targetType": 6,
@@ -654,8 +661,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Armor of the Faithful",
@@ -674,6 +680,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 7,
+  "infiniteDuration": true,
   "stackEffects": "0,69,105,0,104,275;1,1,75,0,100,75;2,79,105,0,104,275",
   "goodEffect": 1,
   "targetType": 6,
@@ -681,8 +688,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Assiduous Vision",
@@ -935,6 +941,7 @@
   "reuseSec": 9.5,
   "targets": "Self",
   "landingTextSharedBy": 9,
+  "infiniteDuration": true,
   "stackEffects": "0,59,-6,0,110,12",
   "goodEffect": 1,
   "targetType": 6,
@@ -942,8 +949,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Barbcoat",
@@ -961,6 +967,7 @@
   "castSec": 2,
   "reuseSec": 1.5,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "1,1,18,0,102,42;2,59,-2,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -968,8 +975,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Barrier of Combustion",
@@ -1915,6 +1921,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 2,
+  "infiniteDuration": true,
   "stackEffects": "1,1,29,0,102,63;2,59,-3,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -1922,8 +1929,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Bravery",
@@ -1968,6 +1974,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 2,
+  "infiniteDuration": true,
   "stackEffects": "0,14,1,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -1975,8 +1982,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Breeze",
@@ -2082,7 +2088,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Budding Heal",
@@ -2398,6 +2405,7 @@
   "reuseSec": 6,
   "targets": "Self",
   "landingTextSharedBy": 5,
+  "infiniteDuration": true,
   "stackEffects": "0,374,100,9492,100,0;1,15,8,0,100,0;3,66,1,0,100,0;6,0,-11,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -2405,8 +2413,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Call of Earth",
@@ -2475,6 +2482,7 @@
   "castSec": 3.5,
   "reuseSec": 6,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "5,85,3129,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -2482,8 +2490,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Calm",
@@ -2689,7 +2696,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Stringed"
  },
  {
   "name": "Careless Lightning",
@@ -2789,7 +2797,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Cassindra's Chorus of Clarity",
@@ -2813,7 +2822,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Cassindra's Elegy",
@@ -2838,7 +2848,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Cast Force",
@@ -3203,7 +3214,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Chaos Flux",
@@ -3374,6 +3386,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 18,
+  "infiniteDuration": true,
   "stackEffects": "0,66,1,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -3381,8 +3394,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Chilling Embrace",
@@ -3487,7 +3499,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Stringed"
  },
  {
   "name": "Cinda's Charismatic Carillon",
@@ -3510,7 +3523,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Cinder Bolt",
@@ -4547,7 +4561,8 @@
   "buffDuration": 3,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Crystallize Mana",
@@ -4798,6 +4813,7 @@
   "reuseSec": 6,
   "targets": "Self",
   "landingTextSharedBy": 3,
+  "infiniteDuration": true,
   "stackEffects": "1,15,2,0,100,0;6,0,-3,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -4805,8 +4821,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Dark Soul",
@@ -4958,6 +4973,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 3,
+  "infiniteDuration": true,
   "stackEffects": "0,13,1,0,100,0;1,65,1,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -4965,8 +4981,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Defensive Stance",
@@ -5026,7 +5041,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Denon's Disruptive Discord",
@@ -5051,7 +5067,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Brass"
  },
  {
   "name": "Denon's Dissension",
@@ -5074,7 +5091,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Brass"
  },
  {
   "name": "Desist",
@@ -5472,6 +5490,7 @@
   "reuseSec": 6,
   "targets": "Self",
   "landingTextSharedBy": 2,
+  "infiniteDuration": true,
   "stackEffects": "2,85,823,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -5479,8 +5498,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Divine Purpose",
@@ -5497,6 +5515,7 @@
   "castSec": 4.5,
   "reuseSec": 6,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "0,15,-3,0,100,0;1,0,8,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -5504,8 +5523,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Divine Vigor",
@@ -5939,6 +5957,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 4,
+  "infiniteDuration": true,
   "stackEffects": "1,47,15,0,101,30;3,46,15,0,101,30",
   "goodEffect": 1,
   "targetType": 6,
@@ -5946,8 +5965,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Elemental Maelstrom",
@@ -5998,7 +6016,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Elemental Shield",
@@ -6017,6 +6036,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 4,
+  "infiniteDuration": true,
   "stackEffects": "1,47,5,0,101,15;3,46,5,0,101,15",
   "goodEffect": 1,
   "targetType": 6,
@@ -6024,8 +6044,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Elemental: Air",
@@ -7343,6 +7362,7 @@
   "reuseSec": 6,
   "targets": "Self",
   "landingTextSharedBy": 3,
+  "infiniteDuration": true,
   "stackEffects": "0,65,1,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -7350,8 +7370,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Fade",
@@ -7673,6 +7692,7 @@
   "castSec": 3.5,
   "reuseSec": 7,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "0,2,1,0,101,10",
   "goodEffect": 1,
   "targetType": 6,
@@ -7680,8 +7700,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Firestorm",
@@ -8105,6 +8124,7 @@
   "castSec": 6,
   "reuseSec": 1.5,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "0,0,6,0,139,19;1,59,-5,0,100,0;2,2,20,0,100,0;3,189,3,0,139,10",
   "goodEffect": 1,
   "targetType": 6,
@@ -8112,8 +8132,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Force Snap",
@@ -8311,6 +8330,7 @@
   "reuseSec": 12,
   "targets": "Self",
   "landingTextSharedBy": 8,
+  "infiniteDuration": true,
   "stackEffects": "0,58,796,2,100,3;1,475,100,40593,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -8318,8 +8338,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Frenzied Spirit",
@@ -8388,6 +8407,7 @@
   "reuseSec": 30,
   "targets": "Self",
   "landingTextSharedBy": 3,
+  "infiniteDuration": true,
   "stackEffects": "2,1,15,0,101,35;4,6,10,0,101,25;5,4,15,0,109,28;6,5,10,0,102,25",
   "goodEffect": 1,
   "targetType": 6,
@@ -8395,8 +8415,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Frost Bolt",
@@ -8616,7 +8635,8 @@
   "buffDuration": 2,
   "unstackableDot": 1,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Furious Strength",
@@ -9201,6 +9221,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 8,
+  "infiniteDuration": true,
   "stackEffects": "0,69,60,0,102,100;1,1,36,0,102,75;5,50,2,0,101,16",
   "goodEffect": 1,
   "targetType": 6,
@@ -9208,8 +9229,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Greater Summoning: Air",
@@ -9316,6 +9336,7 @@
   "reuseSec": 10,
   "targets": "Self",
   "landingTextSharedBy": 8,
+  "infiniteDuration": true,
   "stackEffects": "0,58,796,3,100,3;1,3,35,0,101,60;2,2,1,0,102,40",
   "goodEffect": 1,
   "targetType": 6,
@@ -9323,8 +9344,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Grim Aura",
@@ -9343,6 +9363,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 3,
+  "infiniteDuration": true,
   "stackEffects": "0,2,5,0,101,10",
   "goodEffect": 1,
   "targetType": 6,
@@ -9350,8 +9371,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Group Resist Magic",
@@ -9529,7 +9549,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Guardian Spirit",
@@ -9836,6 +9857,7 @@
   "reuseSec": 3,
   "targets": "Self",
   "landingTextSharedBy": 3,
+  "infiniteDuration": true,
   "stackEffects": "0,184,10,7,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -9843,8 +9865,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Haze",
@@ -10174,7 +10195,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Stringed"
  },
  {
   "name": "Ice",
@@ -11911,6 +11933,7 @@
   "castSec": 3,
   "reuseSec": 6,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "2,85,2729,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -11918,8 +11941,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Intellectual Advancement",
@@ -12245,7 +12267,8 @@
   "buffDuration": 3,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Jolt",
@@ -12295,7 +12318,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Jonthan's Whistling Warsong",
@@ -12320,7 +12344,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Juli's Animation",
@@ -12366,7 +12391,8 @@
   "buffDuration": 3,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Kelin's Lucid Lullaby",
@@ -12391,7 +12417,8 @@
   "buffDuration": 3,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Stringed"
  },
  {
   "name": "Kelin's Lugubrious Lament",
@@ -12416,7 +12443,8 @@
   "buffDuration": 5,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Stringed"
  },
  {
   "name": "Keshuval's Rejuvenation",
@@ -12561,7 +12589,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Lava Bolt",
@@ -12868,6 +12897,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 8,
+  "infiniteDuration": true,
   "stackEffects": "0,69,12,0,102,30;1,1,12,0,102,30;5,50,5,0,109,10",
   "goodEffect": 1,
   "targetType": 6,
@@ -12875,8 +12905,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Lesser Succor",
@@ -13085,6 +13114,7 @@
   "reuseSec": 6,
   "targets": "Self",
   "landingTextSharedBy": 5,
+  "infiniteDuration": true,
   "stackEffects": "0,374,100,9490,100,0;1,15,20,0,100,0;3,66,1,0,100,0;6,0,-22,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -13092,8 +13122,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Life Leech",
@@ -13466,7 +13495,8 @@
   "buffDuration": 4,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Lyssa's Veracious Concord",
@@ -13490,7 +13520,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Mage Hunter Stance",
@@ -13524,7 +13555,8 @@
   "buffDuration": 3,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Magnify",
@@ -13569,6 +13601,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 8,
+  "infiniteDuration": true,
   "stackEffects": "0,69,45,0,102,75;1,1,32,0,102,60;5,50,3,0,101,14",
   "goodEffect": 1,
   "targetType": 6,
@@ -13576,8 +13609,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Malaise",
@@ -14354,7 +14386,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Brass"
  },
  {
   "name": "Melanie's Mellifluous Motion",
@@ -14377,7 +14410,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Melody of Ervaj",
@@ -14402,7 +14436,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Brass"
  },
  {
   "name": "Memory Blur",
@@ -14709,6 +14744,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 8,
+  "infiniteDuration": true,
   "stackEffects": "0,69,5,0,102,10;1,1,10,0,102,15",
   "goodEffect": 1,
   "targetType": 6,
@@ -14716,8 +14752,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Minor Summoning: Air",
@@ -14938,6 +14973,7 @@
   "reuseSec": 7,
   "targets": "Self",
   "landingTextSharedBy": 6,
+  "infiniteDuration": true,
   "stackEffects": "0,2,15,0,100,15",
   "goodEffect": 1,
   "targetType": 6,
@@ -14945,8 +14981,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Nature's Renewal",
@@ -15095,7 +15130,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Stringed"
  },
  {
   "name": "Nonchalance",
@@ -15359,6 +15395,7 @@
   "castSec": 6,
   "reuseSec": 6,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "0,59,-5,0,100,0;1,46,20,0,102,30;2,57,2,0,100,0;3,65,1,0,100,0;4,148,59,1,100,100",
   "goodEffect": 1,
   "targetType": 6,
@@ -15366,8 +15403,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "O`Keil's Radiation",
@@ -15743,6 +15779,7 @@
   "castSec": 5,
   "reuseSec": 1.5,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "1,0,2,0,100,0;3,1,11,0,102,45",
   "goodEffect": 1,
   "targetType": 6,
@@ -15750,8 +15787,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Phantom Leather",
@@ -15769,6 +15805,7 @@
   "castSec": 4,
   "reuseSec": 1.5,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "1,0,1,0,100,0;3,1,20,0,101,30",
   "goodEffect": 1,
   "targetType": 6,
@@ -15776,8 +15813,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Phantom Plate",
@@ -16215,7 +16251,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Psalm of Mystic Shielding",
@@ -16240,7 +16277,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Psalm of Purity",
@@ -16265,7 +16303,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Psalm of Vitality",
@@ -16290,7 +16329,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Psalm of Warmth",
@@ -16315,7 +16355,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Purify Mana",
@@ -16361,7 +16402,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Quickness",
@@ -17199,6 +17241,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 3,
+  "infiniteDuration": true,
   "stackEffects": "0,49,5,0,101,15;1,48,5,0,101,15",
   "goodEffect": 1,
   "targetType": 6,
@@ -17206,8 +17249,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Resolution",
@@ -17719,7 +17761,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Root",
@@ -18204,6 +18247,7 @@
   "reuseSec": 4,
   "targets": "Self",
   "landingTextSharedBy": 2,
+  "infiniteDuration": true,
   "stackEffects": "0,85,2718,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -18211,8 +18255,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Scream of Hate",
@@ -18395,7 +18438,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Selo's Accelerating Chorus",
@@ -18420,7 +18464,8 @@
   "buffDuration": 25,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Selo's Chords of Cessation",
@@ -18445,7 +18490,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Stringed"
  },
  {
   "name": "Selo's Consonant Chain",
@@ -18470,7 +18516,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Sense Animals",
@@ -18779,6 +18826,7 @@
   "castSec": 3,
   "reuseSec": 1.5,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "0,66,1,0,100,0;1,13,1,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -18786,8 +18834,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Shadow Step",
@@ -18984,7 +19031,8 @@
   "buffDuration": 3,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Shield of Barbs",
@@ -19143,7 +19191,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Stringed"
  },
  {
   "name": "Shield of Spikes",
@@ -19269,6 +19318,7 @@
   "reuseSec": 1.5,
   "targets": "Self",
   "landingTextSharedBy": 8,
+  "infiniteDuration": true,
   "stackEffects": "0,69,30,0,102,50;1,1,24,0,102,45;5,50,4,0,101,12",
   "goodEffect": 1,
   "targetType": 6,
@@ -19276,8 +19326,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Shieldskin",
@@ -19836,7 +19885,8 @@
   "buffDuration": 3,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Siphon Life",
@@ -20174,7 +20224,8 @@
   "buffDuration": 10,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Solon's Song of the Sirens",
@@ -20199,7 +20250,8 @@
   "buffDuration": 3,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Song of Sustenance",
@@ -20223,7 +20275,8 @@
   "buffDuration": 15,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Stringed"
  },
  {
   "name": "Soothe",
@@ -20417,6 +20470,7 @@
   "castSec": 2,
   "reuseSec": 1.5,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "1,1,40,0,102,84;2,59,-4,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -20424,8 +20478,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Spirit Armor",
@@ -23132,7 +23185,8 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Tagar's Insects",
@@ -23390,7 +23444,8 @@
   "buffDuration": 4,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Wind"
  },
  {
   "name": "Tashani",
@@ -23631,6 +23686,7 @@
   "castSec": 2,
   "reuseSec": 1.5,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "1,1,7,0,102,21;2,59,-1,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -23638,8 +23694,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Thorncoat",
@@ -23657,6 +23712,7 @@
   "castSec": 2,
   "reuseSec": 1.5,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "1,1,105,0,100,0;2,59,-5,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -23664,8 +23720,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Thunder of Karana",
@@ -24346,7 +24401,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Tuyen's Chant of Flame",
@@ -24372,7 +24428,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Tuyen's Chant of Frost",
@@ -24398,7 +24455,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Tuyen's Chant of Poison",
@@ -24424,7 +24482,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Percussion"
  },
  {
   "name": "Uleen's Animation",
@@ -24541,6 +24600,7 @@
   "castSec": 4,
   "reuseSec": 1.5,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "0,11,125,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -24548,8 +24608,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Vampiric Curse",
@@ -24592,6 +24651,7 @@
   "castSec": 3,
   "reuseSec": 6,
   "targets": "Self",
+  "infiniteDuration": true,
   "stackEffects": "0,85,821,0,100,0",
   "goodEffect": 1,
   "targetType": 6,
@@ -24599,8 +24659,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Vengeance of the Wild",
@@ -24679,7 +24738,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Vigilant Spirit",
@@ -24749,7 +24809,8 @@
   "buffDuration": 2,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 1
+  "bardCastable": 1,
+  "songInstrument": "Singing"
  },
  {
   "name": "Vision",
@@ -25451,6 +25512,7 @@
   "reuseSec": 8,
   "targets": "Self",
   "landingTextSharedBy": 8,
+  "infiniteDuration": true,
   "stackEffects": "0,58,796,0,100,3;1,3,30,0,101,55;2,2,1,0,102,30",
   "goodEffect": 1,
   "targetType": 6,
@@ -25458,8 +25520,7 @@
   "buffDuration": 0,
   "unstackableDot": 0,
   "isDiscipline": 0,
-  "bardCastable": 0,
-  "infiniteDuration": true
+  "bardCastable": 0
  },
  {
   "name": "Word Divine",

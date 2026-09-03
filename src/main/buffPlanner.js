@@ -194,6 +194,7 @@ function candidatesFor(roster, classes, spellData, weightScale) {
           targets: entry.targets,
           castByClasses: casters.map((c) => c.code),
           isSong: isBardSongEntry(entry),
+          songInstrument: entry.songInstrument || null,
         },
         spellData,
         weightScale
