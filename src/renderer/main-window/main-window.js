@@ -1873,7 +1873,9 @@ function initWidgetsPanel() {
   const openAddWidgetBtn = document.getElementById('open-add-widget-modal-btn');
   const addWidgetModalBackdrop = document.getElementById('add-widget-modal-backdrop');
   const closeAddWidgetModalBtn = document.getElementById('close-add-widget-modal');
-  const addWidgetChoicesEl = document.getElementById('add-widget-choices');
+  // The Add Aura modal is one scrolling view (#add-widget-main) with three headed categories.
+  // #add-widget-buff-timer-panel is the only real sub-view - it asks a question before building.
+  const addWidgetMainEl = document.getElementById('add-widget-main');
   const addWidgetPanels = document.querySelectorAll('.add-widget-panel');
   const addWidgetBackBtns = document.querySelectorAll('.add-widget-back');
   const importCodeInput = document.getElementById('modal-import-widget-code-input');
@@ -4124,12 +4126,9 @@ function initWidgetsPanel() {
     hideShareCodeOffer();
     if (!code) return;
     openAddWidgetModal();
-    addWidgetChoicesEl.style.display = 'none';
-    addWidgetPanels.forEach((panel) => {
-      panel.style.display = panel.id === 'add-widget-import-panel' ? '' : 'none';
-    });
     importCodeInput.value = code;
     importCodeInput.focus();
+    importCodeInput.scrollIntoView({ block: 'center' });
   });
 
   window.eqTracker.onShareCodeOffered((offer) => {
@@ -4743,23 +4742,18 @@ function initWidgetsPanel() {
     targetEl.appendChild(li);
   }
 
+  // The modal's default view - the one scrolling page of all three categories.
   function showAddWidgetChoices() {
-    addWidgetChoicesEl.style.display = '';
-    addWidgetPanels.forEach((panel) => (panel.style.display = 'none'));
+    addWidgetPanels.forEach((panel) => (panel.style.display = panel.id === 'add-widget-main' ? '' : 'none'));
+    addWidgetMainEl.scrollTop = 0;
   }
 
-  // Reported live 25 Aug: "when on this menu and hitting back, it sends you two screens back
-  // instead of 1." Root cause - every .add-widget-back button, no matter which panel it lives in,
-  // called the SAME showAddWidgetChoices() above. That's correct for a panel reached directly from
-  // Choices (tools/import/premade), but the buff-timer panel (Buff timer/Cooldown
-  // timer/Debuff on an enemy - reached by clicking one of THOSE from the premade list, one screen
-  // further in) has its own back button too, and it was skipping the premade list entirely and
-  // jumping straight to Choices. This is that panel's real "one step back."
+  // The buff-timer panel (Buff timer / Cooldown timer / Debuff on an enemy) is the one sub-view -
+  // it's reached by clicking one of those from the premade list, and its own Back button returns
+  // to the main page rather than closing the modal. Kept as a named function because a test pins
+  // that the buff-timer back button is singled out from every other .add-widget-back.
   function showAddWidgetPremadePanel() {
-    addWidgetChoicesEl.style.display = 'none';
-    addWidgetPanels.forEach((panel) => {
-      panel.style.display = panel.id === 'add-widget-premade-panel' ? '' : 'none';
-    });
+    showAddWidgetChoices();
   }
 
   // Codes seen in chat this session. Read-only by construction: the only thing picking one does is
@@ -4817,6 +4811,7 @@ function initWidgetsPanel() {
     importStatus.textContent = '';
     modalNewWidgetNameInput.value = '';
     renderPremadeList();
+    renderChatShareCodeList();
     // Re-pull the module list on open so a just-dropped module shows up here; the registry
     // subscriber above rebuilds moduleAuraChoices and re-renders the list when it lands.
     refreshModuleRegistry();
@@ -4832,26 +4827,11 @@ function initWidgetsPanel() {
   addWidgetModalBackdrop.addEventListener('click', (e) => {
     if (e.target === addWidgetModalBackdrop) closeAddWidgetModal();
   });
-  // The buff-timer panel's own back button goes to the premade list it was opened from, not all
-  // the way to Choices - see showAddWidgetPremadePanel's own comment. Every other panel (import,
-  // chat, premade list, custom) was reached directly from Choices, so Choices is correctly their
-  // one step back.
+  // The buff-timer panel is the one sub-view, reached from a premade-list row; its Back button
+  // returns to the main page. Every other .add-widget-back (there are none right now) would too.
   const buffTimerBackBtn = document.querySelector('#add-widget-buff-timer-panel .add-widget-back');
   addWidgetBackBtns.forEach((btn) => {
     btn.addEventListener('click', () => (btn === buffTimerBackBtn ? showAddWidgetPremadePanel() : showAddWidgetChoices()));
-  });
-
-  addWidgetChoicesEl.querySelectorAll('.add-widget-choice').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      addWidgetChoicesEl.style.display = 'none';
-      addWidgetPanels.forEach((panel) => {
-        panel.style.display = panel.id === `add-widget-${btn.dataset.choice}-panel` ? '' : 'none';
-      });
-      if (btn.dataset.choice === 'import') {
-        importCodeInput.focus();
-        renderChatShareCodeList();
-      }
-    });
   });
 
   // The name box is optional, and that is a fix rather than a relaxation.

@@ -134,7 +134,7 @@ function enrichCandidate(cand, spellData, weightScale) {
 // character stat and not something to math out here. Shown at the top of the song list, flagged,
 // not counted against the 5 slots.
 const SPECIAL_SONGS = {
-  Amplification: 'Boosts your Singing songs (the voice ones, no instrument). Shown as a reminder - the effect is not scored.',
+  Amplification: 'Boosts your Singing songs. Shown for reference.',
 };
 
 // The SPECIAL_SONGS a chosen (bard) class can actually cast at the character level, as pinned

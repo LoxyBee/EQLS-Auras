@@ -1200,12 +1200,6 @@ h4 {
   color: var(--accent);
 }
 
-#add-widget-choices {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .add-widget-choice {
   display: flex;
   flex-direction: column;
@@ -1251,11 +1245,26 @@ h4 {
   flex: 1;
 }
 
-/* "Or build one from scratch" between the premade list and the custom-aura buttons. */
+/* The Add Aura modal is one scrolling page; #add-widget-main is the scroll container and its
+   three <h4 class="add-widget-cat"> headings split it into categories. */
+#add-widget-main {
+  overflow-y: auto;
+  min-height: 0;
+}
+.add-widget-cat {
+  margin: 16px 0 2px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--accent-line);
+  font-size: 13px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.add-widget-cat:first-child {
+  margin-top: 0;
+}
 .add-widget-subhead {
-  margin: 6px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--line-soft);
+  margin: 10px 0 4px;
   font-size: 12px;
   color: var(--ink-dim);
   text-transform: uppercase;

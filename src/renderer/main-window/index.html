@@ -558,9 +558,9 @@
                   </div>
                   <p class="hint" id="widget-merge-hint"></p>
                   <div class="row" id="widget-hide-infinite-row">
-                    <label title="Yaulp, Fury, the permanent Shielding / coat / wolf-form line and the like never count down. Hide them if you only want tiles that tick.">
+                    <label title="Yaulp, Fury, the Shielding / coat / wolf-form line and the like.">
                       <input type="checkbox" id="widget-hide-infinite-checkbox" />
-                      Hide permanent buffs (the ones that never count down)
+                      Hide permanent buffs
                     </label>
                   </div>
                   <!-- The "Also watch these spells on enemies" toggle that used to live here is
@@ -2111,49 +2111,16 @@
         <button id="close-add-widget-modal" class="modal-close">✕</button>
       </div>
 
-      <div id="add-widget-choices">
-        <button type="button" class="add-widget-choice" data-choice="tools">
-          <strong>Standalone tools</strong>
-          <span>Ally Buffs, Bard Songs, the damage meter, the travel guide - their own kind of aura.</span>
-        </button>
-        <button type="button" class="add-widget-choice" data-choice="premade">
-          <strong>Premade &amp; custom</strong>
-          <span>Buff / cooldown / debuff timers, event flashes, or build one from scratch.</span>
-        </button>
-        <button type="button" class="add-widget-choice" data-choice="import">
-          <strong>Import</strong>
-          <span>Paste a share code, or pick one someone posted in chat.</span>
-        </button>
-      </div>
+      <!-- One scrolling view, three headed categories (owner, 3 Sep - "headed categories, not
+           extra menus to click through"). The buff-timer panel below is the only real sub-view,
+           because it asks a question before it builds. -->
+      <div id="add-widget-main" class="add-widget-panel">
+        <h4 class="add-widget-cat">Standalone tools</h4>
+        <ul id="add-widget-tools-list" class="plain-list"></ul>
 
-      <div id="add-widget-tools-panel" class="add-widget-panel" style="display:none">
-        <button type="button" class="add-widget-back">&larr; Back</button>
-        <ul id="add-widget-tools-list" class="plain-list scroll-list"></ul>
-      </div>
-
-      <div id="add-widget-import-panel" class="add-widget-panel" style="display:none">
-        <button type="button" class="add-widget-back">&larr; Back</button>
-        <div class="row">
-          <input
-            type="text"
-            id="modal-import-widget-code-input"
-            class="text-input"
-            placeholder="Paste an aura share code..."
-          />
-          <button id="modal-import-widget-btn">Import</button>
-        </div>
-        <p class="hint" id="modal-import-widget-status"></p>
-        <!-- Note 30's other half. The offer strip is easy to dismiss and appears while she is
-             playing; this is where you come looking for it afterwards. Read-only: picking one
-             fills the box above, and nothing is applied without pressing Import. -->
-        <p class="hint">Or an aura code someone pasted in chat since the app started - picking one fills the box above.</p>
-        <ul id="add-widget-chat-list" class="plain-list scroll-list"></ul>
-      </div>
-
-      <div id="add-widget-premade-panel" class="add-widget-panel" style="display:none">
-        <button type="button" class="add-widget-back">&larr; Back</button>
-        <ul id="add-widget-premade-list" class="plain-list scroll-list"></ul>
-        <h4 class="add-widget-subhead">Or build one from scratch</h4>
+        <h4 class="add-widget-cat">Premade &amp; custom</h4>
+        <ul id="add-widget-premade-list" class="plain-list"></ul>
+        <p class="add-widget-subhead">Or build one from scratch</p>
         <div class="row">
           <input type="text" id="modal-new-widget-name" class="text-input" placeholder="Aura name..." />
         </div>
@@ -2179,6 +2146,23 @@
             of log text.
           </span>
         </button>
+
+        <h4 class="add-widget-cat">Import</h4>
+        <div class="row">
+          <input
+            type="text"
+            id="modal-import-widget-code-input"
+            class="text-input"
+            placeholder="Paste an aura share code..."
+          />
+          <button id="modal-import-widget-btn">Import</button>
+        </div>
+        <p class="hint" id="modal-import-widget-status"></p>
+        <!-- Note 30's other half. The offer strip is easy to dismiss and appears while she is
+             playing; this is where you come looking for it afterwards. Read-only: picking one
+             fills the box above, and nothing is applied without pressing Import. -->
+        <p class="hint">Or an aura code someone pasted in chat since the app started - picking one fills the box above.</p>
+        <ul id="add-widget-chat-list" class="plain-list"></ul>
       </div>
 
       <!-- The first premade that asks a question before it builds anything. Deliberately its own
