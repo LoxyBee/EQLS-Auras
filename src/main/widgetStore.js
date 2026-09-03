@@ -208,6 +208,10 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // landings across the owner's logs, 100,000 of them from two bard songs pulsing on everything
     // in range. Opting in per aura bounds it by what someone actually asked to see.
     trackOnEnemies: false,
+    // Hide buffs that never wear off (Yaulp, Fury, the permanent Shielding / coat / wolf-form
+    // line). They're static tiles that never count down, so an aura can opt to leave them off.
+    // Off by default (owner, 3 Sep).
+    hideInfiniteBuffs: false,
     // Note 40. Only meaningful when trackOnEnemies is true. 'self' (default,
     // backward compatible) keeps the original behaviour - a watched debuff
     // only lands here while there's evidence the player herself cast it.
@@ -485,6 +489,10 @@ function defaultCustomWidget(name) {
     // landings across the owner's logs, 100,000 of them from two bard songs pulsing on everything
     // in range. Opting in per aura bounds it by what someone actually asked to see.
     trackOnEnemies: false,
+    // Hide buffs that never wear off (Yaulp, Fury, the permanent Shielding / coat / wolf-form
+    // line). They're static tiles that never count down, so an aura can opt to leave them off.
+    // Off by default (owner, 3 Sep).
+    hideInfiniteBuffs: false,
     // Note 40. Only meaningful when trackOnEnemies is true. 'self' (default,
     // backward compatible) keeps the original behaviour - a watched debuff
     // only lands here while there's evidence the player herself cast it.
@@ -750,6 +758,7 @@ const SHAREABLE_FIELDS = [
   'categoryBordersEnabled',
   'categoryBorderWidthPx',
   'trackOnEnemies',
+  'hideInfiniteBuffs',
   'debuffCastBy',
   'allyDebuffAlert',
   'alwaysOn',
@@ -929,6 +938,7 @@ function normalizeWidget(widget) {
         ? Math.max(1, Math.min(6, Math.round(widget.categoryBorderWidthPx)))
         : 1,
     trackOnEnemies: !!widget.trackOnEnemies,
+    hideInfiniteBuffs: !!widget.hideInfiniteBuffs,
     allyDebuffAlert: !!widget.allyDebuffAlert,
     alwaysOn: !!widget.alwaysOn,
     showOnAllProfiles: !!widget.showOnAllProfiles,

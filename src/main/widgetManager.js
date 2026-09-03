@@ -1088,6 +1088,12 @@ function setTrackOnEnemies(id, enabled) {
   return config;
 }
 
+function setHideInfiniteBuffs(id, enabled) {
+  const config = widgetStore.update(id, { hideInfiniteBuffs: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setAllyDebuffAlert(id, enabled) {
   const config = widgetStore.update(id, { allyDebuffAlert: !!enabled });
   pushConfigChanged(id);
@@ -1626,6 +1632,7 @@ module.exports = {
   setCategoryBorders,
   setCategoryBorderWidth,
   setTrackOnEnemies,
+  setHideInfiniteBuffs,
   setDebuffCastBy,
   setAllyDebuffAlert,
   setAlwaysOn,

@@ -1756,6 +1756,8 @@ function initWidgetsPanel() {
   const bordersHintEl = document.getElementById('widget-borders-hint');
   const mergeCheckbox = document.getElementById('widget-merge-checkbox');
   const mergeRowEl = document.getElementById('widget-merge-row');
+  const hideInfiniteCheckbox = document.getElementById('widget-hide-infinite-checkbox');
+  const hideInfiniteRowEl = document.getElementById('widget-hide-infinite-row');
   const mergeHintEl = document.getElementById('widget-merge-hint');
   const sortOrderRowEl = document.getElementById('widget-sort-order-row');
   const opacityRowEl = document.getElementById('widget-opacity-row');
@@ -3167,6 +3169,8 @@ function initWidgetsPanel() {
     // so there is never anything to merge.
     mergeRowEl.style.display = has('merge') ? '' : 'none';
     mergeHintEl.style.display = has('merge') ? '' : 'none';
+    // Same set of auras as merge (a countdown buff list) - a permanent buff is only ever a tile here.
+    hideInfiniteRowEl.style.display = has('merge') ? '' : 'none';
     // A sound aura draws no tile to put an edge on. A text aura draws one, but it is a plate of
     // words rather than a spell tile, and giving it a spell-type edge would be the first thing on
     // screen the mode promised never to draw.
@@ -3295,6 +3299,7 @@ function initWidgetsPanel() {
     landingGlowCheckbox.checked = widget.landingGlowEnabled !== false;
     if (timerColorRampCheckbox) timerColorRampCheckbox.checked = !!widget.timerColorRamp;
     mergeCheckbox.checked = !!widget.mergeSameDuration;
+    hideInfiniteCheckbox.checked = !!widget.hideInfiniteBuffs;
     categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
     const borderWidth = typeof widget.categoryBorderWidthPx === 'number' ? widget.categoryBorderWidthPx : 1;
     borderWidthSlider.value = String(borderWidth);
@@ -5194,6 +5199,9 @@ function initWidgetsPanel() {
 
   mergeCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetMergeSameDuration(selectedId, mergeCheckbox.checked).then(refreshWidgets);
+  });
+  hideInfiniteCheckbox.addEventListener('change', () => {
+    window.eqTracker.setWidgetHideInfiniteBuffs(selectedId, hideInfiniteCheckbox.checked).then(refreshWidgets);
   });
   soundLandCheckbox.addEventListener('change', () => {
     syncSoundDisclosure();

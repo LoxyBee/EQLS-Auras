@@ -225,6 +225,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetCategoryBorders: (id, value) => ipcRenderer.invoke('widget:setCategoryBorders', { id, value }),
   setWidgetCategoryBorderWidth: (id, px) => ipcRenderer.invoke('widget:setCategoryBorderWidth', { id, px }),
   setWidgetTrackOnEnemies: (id, value) => ipcRenderer.invoke('widget:setTrackOnEnemies', { id, value }),
+  setWidgetHideInfiniteBuffs: (id, value) => ipcRenderer.invoke('widget:setHideInfiniteBuffs', { id, value }),
   setWidgetDebuffCastBy: (id, value) => ipcRenderer.invoke('widget:setDebuffCastBy', { id, value }),
   setWidgetAllyDebuffAlert: (id, value) => ipcRenderer.invoke('widget:setAllyDebuffAlert', { id, value }),
   setWidgetDamageOptions: (id, options) => ipcRenderer.invoke('widget:setDamageOptions', { id, options }),

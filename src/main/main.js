@@ -2333,6 +2333,9 @@ ipcMain.handle('widget:setCategoryBorderWidth', (_event, { id, px }) =>
 ipcMain.handle('widget:setTrackOnEnemies', (_event, { id, value }) =>
   widgetManager.setTrackOnEnemies(id, value)
 );
+ipcMain.handle('widget:setHideInfiniteBuffs', (_event, { id, value }) =>
+  widgetManager.setHideInfiniteBuffs(id, value)
+);
 ipcMain.handle('widget:setDebuffCastBy', (_event, { id, value }) =>
   widgetManager.setDebuffCastBy(id, value)
 );
