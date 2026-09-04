@@ -612,6 +612,26 @@ test('a raid-wide AE buff is not auto-landed as the player\'s own spell that sha
   assert.ok(log.some((m) => m.includes('incoming AE') || (m.includes('IGNORED') && m.includes(alacrity.landingText))));
 });
 
+test('the player\'s own burst cannot be propped open past the re-arm cap by a drip of buffs', () => {
+  // Reported live (3 Sep): "my quick buff already happened, it's a 10 MINUTE cooldown. my window
+  // should be closed long before 34 seconds." The window is re-armed at every self-plausible
+  // ambiguous landing, so a raid buff phase held it open the whole time. _rearmBurst refuses once
+  // the burst is older than SELF_BURST_REARM_CAP_MS.
+  const { engine, buffStore, log } = makeEngine();
+  const alacrity = buffStore.getByName('Alacrity');
+  engine.handleLine('You activate Quick Buff.');
+  assert.ok(engine.burstOpenedBy, 'the activate opened a burst');
+  // Simulate the burst having opened well over the cap ago - as if a raid had been dripping buffs
+  // onto her for 30s. Any re-arm now must be refused.
+  engine.burstOpenedBy.at = Date.now() - 30000;
+  engine.burstUntil = Date.now() + 4000; // still nominally "open" from the last drip
+  for (const who of ['Leche', 'Fahh']) engine.handleLine(`${who} feels much faster.`);
+  engine.handleLine('You feel much faster.'); // a lone shared-text landing, no crowd
+  // Not landed as hers, and not queued as "your own burst" - the burst is stale.
+  assert.deepEqual(names(engine), []);
+  assert.ok(!log.some((m) => m.includes('your own burst')), 'a 30s-old burst should not still be "yours"');
+});
+
 test('a raid AE buff during the player\'s own Quick Buff is ignored, not queued as a prompt', () => {
   // Reported live (3 Sep): "i just quick buffed ... then someone cast theirs completely after
   // mine and spirit of wolf came up on my self buffs." A raid-wide recast whose text shares with

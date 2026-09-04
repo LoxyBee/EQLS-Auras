@@ -57,6 +57,15 @@ const BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS = 30000;
 // later.
 const OTHER_SELF_CAST_WINDOW_MS = 60000;
 
+// The player's own burst window ("You activate Quick Buff.") is re-armed at every self-plausible
+// ambiguous landing, so during a raid buff phase a steady drip of other people's buffs landing on
+// her kept it open the whole time - a raid Spirit of Wolf 34s after her own Quick Buff (a
+// 10-minute-cooldown ability) was still treated as inside her burst (reported live). Quick Buff's
+// own ~11 grants all land within ~3s, so re-arms are refused past this many ms from when the burst
+// actually opened; the window then lapses on its own ~BURST_WINDOW_MS later. Only bounds the
+// re-arm - `inBurst` itself is unchanged, so nothing keyed on it flips early.
+const SELF_BURST_REARM_CAP_MS = 12000;
+
 // A raid-wide AE buff prints the SAME landing text for a dozen people in one ~1s tick - the player's
 // own "You feel much faster." arrives in the middle of "Leche feels much faster. / Fahh feels much
 // faster. / ..." When an ambiguous self-landing text is one that just landed third-person on this
@@ -1488,7 +1497,7 @@ class BuffEngine extends EventEmitter {
       }
       // A bard song NEVER extends the burst - they auto-pulse every ~6s forever, and letting them
       // re-arm the window is exactly what held it open for 11+ minutes (#burst-window fix).
-      if (inBurst && !uniqueMatch.isBardSong) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+      if (inBurst && !uniqueMatch.isBardSong) this._rearmBurst();
       this._debugLog(
         inBurst && isMemorizableSpell && !alreadyActive && this.currentlyMemorized.size > 0 && !this.currentlyMemorized.has(uniqueMatch.name.toLowerCase())
           ? `LANDED "${uniqueMatch.name}" - unique landing text, not currently memorized but assumed yours (burst context)`
@@ -1661,7 +1670,7 @@ class BuffEngine extends EventEmitter {
         // no sign anyone else just cast any of the candidates either - safe
         // to treat as my own cast even with no cast-begin/activate line at
         // all. (Suppressed only during an ally Quick Buff - see suppressNarrow above.)
-        if (inBurst && !selfCandidates[0].isBardSong) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+        if (inBurst && !selfCandidates[0].isBardSong) this._rearmBurst();
         this._debugLog(`LANDED "${selfCandidates[0].name}" - ambiguous text "${stripped}" narrowed to 1 by spellbook`);
         this._land(selfCandidates[0]);
         this._checkForEndedBuffs(line);
@@ -1673,7 +1682,7 @@ class BuffEngine extends EventEmitter {
       // trusted OVER the spellbook when the two disagree.
       const memorizedCandidates = selfPlausible.filter((c) => this.currentlyMemorized.has(c.name.toLowerCase()));
       if (!otherCastMatch && !incomingAE && memorizedCandidates.length === 1 && !suppressNarrow(memorizedCandidates[0])) {
-        if (inBurst && !memorizedCandidates[0].isBardSong) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+        if (inBurst && !memorizedCandidates[0].isBardSong) this._rearmBurst();
         this._debugLog(
           `LANDED "${memorizedCandidates[0].name}" - ambiguous text "${stripped}" narrowed to 1 by currently-memorized gem`
         );
@@ -1707,7 +1716,7 @@ class BuffEngine extends EventEmitter {
         // since that's a previously-confirmed answer, not a guess;
         // otherwise this always queues for the user to resolve, the same
         // way the "someone else's buff" ambiguous path already does.
-        if (inBurst && !selfCandidates.every((c) => c.isBardSong)) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+        if (inBurst && !selfCandidates.every((c) => c.isBardSong)) this._rearmBurst();
         const remembered = this.selfAmbiguousResolutions.get(stripped);
         const rememberedBuff = remembered ? this.buffStore.getByName(remembered) : null;
         if (rememberedBuff) {
@@ -1734,7 +1743,7 @@ class BuffEngine extends EventEmitter {
         // evidence the PLAYER just triggered something, which still cannot
         // make an enemy-only category (a debuff/dot/charm/nuke) a plausible
         // answer for a line where the effect landed on them.
-        if (!selfPlausible.every((c) => c.isBardSong)) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+        if (!selfPlausible.every((c) => c.isBardSong)) this._rearmBurst();
         const remembered = this.selfAmbiguousResolutions.get(stripped);
         const rememberedBuff = remembered ? this.buffStore.getByName(remembered) : null;
         if (rememberedBuff) {
@@ -1800,7 +1809,7 @@ class BuffEngine extends EventEmitter {
           // between the two, so it goes to a prompt rather than a silent IGNORE. Owner, 3 Sep:
           // "there should be ways to tell, and when not it should go to me." A remembered choice
           // still applies straight away.
-          if (!strictSongBuff) this.burstUntil = Date.now() + BURST_WINDOW_MS;
+          if (!strictSongBuff) this._rearmBurst();
           const remembered = this.selfAmbiguousResolutions.get(stripped);
           const rememberedBuff = remembered ? this.buffStore.getByName(remembered) : null;
           if (rememberedBuff) {
@@ -2866,6 +2875,15 @@ class BuffEngine extends EventEmitter {
    * credited to a burst that opened eight seconds ago is far likelier to be somebody else's cast
    * arriving inside your window than one credited half a second after you pressed something.
    */
+  // Re-arm the player's own burst window - see SELF_BURST_REARM_CAP_MS. Refused past that many ms
+  // from when the burst actually opened (burstOpenedBy.at, which is NOT re-armed), so a raid buff
+  // phase can't prop it open indefinitely. `inBurst` itself is untouched; the window lapses on its
+  // own once re-arms stop.
+  _rearmBurst() {
+    if (this.burstOpenedBy && Date.now() - this.burstOpenedBy.at >= SELF_BURST_REARM_CAP_MS) return;
+    this.burstUntil = Date.now() + BURST_WINDOW_MS;
+  }
+
   _burstOrigin() {
     if (!this.burstOpenedBy) return ' (burst origin unknown)';
     const ageSec = ((Date.now() - this.burstOpenedBy.at) / 1000).toFixed(1);
