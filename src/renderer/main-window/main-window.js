@@ -1832,6 +1832,7 @@ function initWidgetsPanel() {
   const iconDepletionSelect = document.getElementById('widget-icon-depletion-select');
   const expiredLingerSlider = document.getElementById('widget-expired-linger-slider');
   const expiredLingerValueEl = document.getElementById('widget-expired-linger-value');
+  const expiredLingerRowEl = document.getElementById('widget-expired-linger-row');
   const deleteBtn = document.getElementById('delete-widget-btn');
   const duplicateWidgetBtn = document.getElementById('duplicate-widget-btn');
   const exportBtn = document.getElementById('export-widget-btn');
@@ -3124,6 +3125,9 @@ function initWidgetsPanel() {
     iconPositionSettings.style.display = showsIconOnly ? '' : 'none';
     iconLabelSectionEl.style.display = showsIconOnly ? '' : 'none';
     displayIconOnlySettings.style.display = showsIconOnly ? '' : 'none';
+    // "Linger when expired" works in both Tiles and List mode (the row greys and reads 'done'
+    // before it clears), so it lives outside the icon-only block - shown for any buff-style aura.
+    if (expiredLingerRowEl) expiredLingerRowEl.style.display = has('display-choice') ? '' : 'none';
     // Icon tiles only, and only once "Colour each tile's edge by spell type" is actually on -
     // offering a width for an edge that isn't drawn would be a control that does nothing.
     borderWidthRowEl.style.display = showsIconOnly && widget.categoryBordersEnabled !== false ? '' : 'none';

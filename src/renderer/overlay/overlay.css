@@ -500,6 +500,21 @@ body.unlocked .drag-overlay {
   color: rgba(255, 255, 255, 0.75) !important;
 }
 
+/* Same linger, list mode - a greyed row with an empty bar and "done" where the countdown was. */
+.buff-row.expired-linger {
+  opacity: 0.45;
+}
+.buff-row.expired-linger .buff-row-bar {
+  display: none;
+}
+.buff-row.expired-linger .buff-row-icon img {
+  filter: grayscale(1);
+}
+.buff-row.expired-linger .name,
+.buff-row.expired-linger .time {
+  color: rgba(255, 255, 255, 0.75) !important;
+}
+
 
 /* Ally-buff grouping - tiles split by whose buff it is, each group under a
    heading naming that ally. Groups stack down the screen by default, or side

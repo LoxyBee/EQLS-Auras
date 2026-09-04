@@ -843,6 +843,8 @@ function updateRef(ref, buff, isIcon) {
     ref.root.classList.remove('low', 'just-landed');
     if (isIcon) updateTileIcon(ref, buff);
     if (ref.shadeEl) ref.shadeEl.style.display = 'none';
+    // List mode: empty the countdown bar so a stale sliver doesn't sit under the greyed row.
+    if (ref.barEl) ref.barEl.style.width = '0%';
     const t = ref.timeEl;
     if (t) t.textContent = 'done';
     return;
@@ -1642,7 +1644,9 @@ function render(buffs) {
   // sound / glow / "genuinely expired" set below still works from the real `visible`, so the
   // expire sound fires at the true expiry, not when the linger clears.
   let tileBuffs = visible;
-  const lingerSec = isIcon && !showingPreviewSample ? currentConfig.expiredLingerSec || 0 : 0;
+  // Works in both Tiles and List mode - the tile/row greys, its countdown clears and it reads
+  // 'done' (updateRef) before it vanishes. Not for text auras (one line, nothing to linger).
+  const lingerSec = !isText && !showingPreviewSample ? currentConfig.expiredLingerSec || 0 : 0;
   if (lingerSec > 0) {
     const { soonest } = trackExpiredLinger(visible, keyFor, lingerSec * 1000);
     if (expiredLinger.size) tileBuffs = [...visible, ...[...expiredLinger.values()].map((e) => e.buff)];
