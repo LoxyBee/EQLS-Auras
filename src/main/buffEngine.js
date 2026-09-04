@@ -1365,6 +1365,26 @@ class BuffEngine extends EventEmitter {
       // (_attributeBardSongCaster, You/an ally/Unknown) the actual answer to "whose is this",
       // instead of the log silently dropping half the evidence before that code ever runs.
       const trackOthersForThis = this.trackOthersEnabled || !!uniqueMatch.isBardSong;
+      // The player's own burst ("You activate Quick Buff.") is open RIGHT NOW - a self-plausible
+      // grant from it must not be vetoed just because some ally cast the same-named spell at some
+      // earlier, unrelated point this session. recentOtherCasts has no expiry by design (bard-song
+      // attribution needs it to last the whole session - see that field's own comment), so without
+      // this a single ally cast, however long ago, permanently poisoned this spell name for every
+      // later landing of the player's own. Reported live: Courage IGNORED from her own Quick Buff
+      // because Genaner had cast Courage himself earlier that same session.
+      const ownBurstOverride =
+        Date.now() < this.burstUntil &&
+        !!this.burstOpenedBy &&
+        !ENEMY_SPELL_CATEGORIES.has(uniqueMatch.scaleCategory) &&
+        !NON_PLAYER_TARGETS.has(uniqueMatch.targets);
+      if (ownBurstOverride && this._hasRecentOtherCast(uniqueMatch.name)) {
+        this._debugLog(
+          `LANDED "${uniqueMatch.name}" - unique text, your own burst is open (a groupmate cast it earlier this session, but this is your Quick Buff)`
+        );
+        this._land(uniqueMatch);
+        this._checkForEndedBuffs(line);
+        return;
+      }
       if (this._hasRecentOtherCast(uniqueMatch.name)) {
         if (trackOthersForThis) {
           // The caster goes in double quotes deliberately: tools/replay-log.js normalises every
