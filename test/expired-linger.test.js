@@ -120,15 +120,18 @@ test('expiredLingerSec is clamped 0..6, default 0', () => {
   assert.equal(by.d, 0);
 });
 
-test('wired end to end, and only for real icon tiles', () => {
+test('wired end to end, for both tile and list mode', () => {
   assert.match(html, /id="widget-expired-linger-slider"/);
   assert.match(rendererSrc, /setWidgetExpiredLingerSec\(selectedId, seconds\)/);
   assert.match(preloadSrc, /setWidgetExpiredLingerSec: \(id, seconds\) =>/);
   assert.match(mainSrc, /widget:setExpiredLingerSec/);
   assert.match(managerSrc, /function setExpiredLingerSec\(id, seconds\)/);
   assert.match(overlayCss, /\.buff-tile\.expired-linger/);
-  // render() only lingers in icon mode, and never during a preview
-  assert.match(overlaySrc, /const lingerSec = isIcon && !showingPreviewSample \? currentConfig\.expiredLingerSec \|\| 0 : 0;/);
+  assert.match(overlayCss, /\.buff-row\.expired-linger/, 'list rows get the linger styling too');
+  // render() lingers in tile AND list mode (anything that draws a countdown), never during a preview
+  assert.match(overlaySrc, /const lingerSec = !isText && !showingPreviewSample \? currentConfig\.expiredLingerSec \|\| 0 : 0;/);
+  // list rows: the countdown bar is emptied so no sliver sits under the greyed row
+  assert.match(overlaySrc, /if \(ref\.barEl\) ref\.barEl\.style\.width = '0%';/);
   // the sound / "genuinely expired" sets still work off the real visible list, not tileBuffs
   assert.match(overlaySrc, /const visibleSet = new Set\(visible\.flatMap\(memberKeys\)\);/);
   assert.match(overlaySrc, /checkSoundWarnings\(visible\);/);

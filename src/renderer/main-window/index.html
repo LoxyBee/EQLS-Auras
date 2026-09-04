@@ -550,6 +550,11 @@
                     <label><input type="radio" name="widget-sort-order" value="time-remaining" /> Time remaining</label>
                     <label><input type="radio" name="widget-sort-order" value="alphabetical" /> Alphabetical</label>
                   </div>
+                  <div class="row" id="widget-sort-direction-row">
+                    <span class="label">Order:</span>
+                    <label><input type="radio" name="widget-sort-direction" value="asc" /> Ascending</label>
+                    <label><input type="radio" name="widget-sort-direction" value="desc" /> Descending</label>
+                  </div>
                   <div class="row" id="widget-merge-row">
                     <label title="Collapses buffs of the same duration into one tile with a count. What counts as &quot;the same&quot; is set on the Setup page.">
                       <input type="checkbox" id="widget-merge-checkbox" />
@@ -601,17 +606,22 @@
                         <option value="radial">Radial (clock sweep)</option>
                       </select>
                     </div>
-                    <div class="row">
-                      <span class="label" title="When a buff runs out, hold its tile on screen for a moment — greyed, marked 'done' — before it vanishes. 0 turns it off.">Linger when expired:</span>
-                      <input type="range" id="widget-expired-linger-slider" min="0" max="6" step="1" />
-                      <span id="widget-expired-linger-value" class="slider-value">off</span>
-                    </div>
+                  </div>
+                  <div class="row" id="widget-expired-linger-row">
+                    <span class="label" title="When a buff runs out, hold its tile/row on screen for a moment — greyed, marked 'done' — before it vanishes. 0 turns it off.">Linger when expired:</span>
+                    <input type="range" id="widget-expired-linger-slider" min="0" max="6" step="1" />
+                    <span id="widget-expired-linger-value" class="slider-value">off</span>
                   </div>
                   <!-- Only meaningful on an aura showing buffs cast on other people - hidden
                        otherwise (see renderBuffFilter). -->
                   <div id="widget-ally-grouping-settings" style="display:none">
                     <div class="row">
-                      <label><input type="checkbox" id="widget-group-ally-checkbox" /> Group by player</label>
+                      <label><input type="checkbox" id="widget-group-ally-checkbox" /> Group into headed sections</label>
+                    </div>
+                    <div class="row" id="widget-ally-group-by-row">
+                      <span class="label">One section per:</span>
+                      <label><input type="radio" name="widget-ally-group-by" value="ally" /> Player</label>
+                      <label><input type="radio" name="widget-ally-group-by" value="buff" /> Buff</label>
                     </div>
                     <div class="row" id="widget-ally-direction-row">
                       <span class="label">Stack groups:</span>
@@ -1764,7 +1774,7 @@
 
         <div class="card" id="about-identity-card">
           <h3>EQLS Auras</h3>
-          <p class="hint">Stop alt-tabbing to check your buffs. Reads your EverQuest Legends log and shows a countdown overlay on top of the game.</p>
+          <p class="hint">A countdown timer for every buff you're running, right on top of the game. Read straight from your EverQuest Legends log.</p>
           <p class="hint"><span id="about-version"></span> · <a href="#" id="about-site-link">eqlsource.com/tools</a></p>
         </div>
 
@@ -2190,7 +2200,7 @@
         </div>
         <div class="row" id="buff-timer-source-row" style="display:none">
           <span class="label">On:</span>
-          <label><input type="radio" name="buff-timer-source" value="self" checked /> Yourself</label>
+          <label id="buff-timer-self-label"><input type="radio" name="buff-timer-source" value="self" checked /> Yourself</label>
           <label id="buff-timer-ally-label">
             <input type="radio" name="buff-timer-source" value="ally" /> Someone you cast it on
           </label>
@@ -2198,6 +2208,7 @@
             <input type="radio" name="buff-timer-source" value="enemy" /> Something you cast it at
           </label>
         </div>
+        <p class="hint" id="buff-timer-self-warning" style="display:none"></p>
         <p class="hint" id="buff-timer-ally-warning" style="display:none"></p>
         <p class="hint" id="buff-timer-enemy-warning" style="display:none"></p>
         <!-- Only shown when the picked spell also has a known recast time AND "Yourself" is

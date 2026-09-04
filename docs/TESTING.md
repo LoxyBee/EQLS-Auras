@@ -2370,3 +2370,87 @@ Planner page is still LOCKED (no nav button) so its checks need the button re-ad
 - [ ] **No aura-name field** anywhere in Add Aura (custom panel included).
 - [ ] **Standalone-tool premades** (Ally Buffs, Bard Songs, Travel guide, Damage parser) appear
       under "Standalone tools"; everything else under "Premade & custom".
+
+## Detection + damage-meter fixes (3 Sep) — live-report follow-ups, none re-confirmed in game
+
+Four things reported live during a Befallen session, all fixed and replay/test-checked. None
+seen working in the real app yet.
+
+### Monster names no longer withhold your buffs
+- [ ] **Quick Buff after a mob has cast something near you.** In a zone with casters (elemental
+      wizards, Teir`Dal shadowknights), let a few of their casts go by, then Quick Buff. *Expect*:
+      the full set of buffs shows — not one or two. Center in particular used to vanish.
+- [ ] **Your own Center / Yaulp / a heal-buff** lands and stays on the Self Buffs aura even if a
+      mob cast the same-named spell earlier in the session.
+- [ ] **A real groupmate's buff on you still doesn't show** (track-others off) — the change is
+      about monsters only, not people.
+
+### Your own Quick Buff asks instead of dropping
+- [ ] **Quick Buff while a groupmate also buffs.** If a landing is genuinely undecidable, a
+      "which spell was this?" prompt appears (bottom of the main window) instead of nothing.
+      Answer it once and it's remembered.
+
+### Damage meter — charm-war zone
+- [ ] **Fight in a zone with charmed pets** (someone in the group charming mobs). *Expect*: your
+      groupmates keep their own rows, mobs do NOT show as attackers, and a mob's melee on your
+      group is not counted as group DPS. The "Footman of V`Zher"-style enemy row should not appear.
+- [ ] **Damage-shield chip damage** (thorns, flame shields) doesn't flip anyone's side.
+
+### Damage meter — after a restart
+- [ ] **Restart the app mid-session while grouped.** *Expect*: your groupmates are back on the
+      meter within a fight or two — not gone until someone re-invites. The "group" scope shows the
+      group, not the whole zone.
+- [ ] **The current-fight meter and the "since zone" totals agree on who the attackers are** (no
+      groupmate showing in one view and missing from the other).
+
+## Detection + UI batch (3 Sep, part 2) — live-report follow-ups, none re-confirmed in game
+
+### Bard songs
+- [ ] **Weave your rotation** (re-mem the set every ~24s). *Expect*: every song attributes to
+      "You" on the Bard Songs aura, not "Unknown" - and stays there through the weave.
+- [ ] **Sing a ranked song** (Selo's Accelerating Chorus VI etc.). *Expect*: the tile shows the
+      mote-scaled duration and holds it across renewals, not dropping to the base after ~12s.
+
+### Ally Buffs
+- [ ] **Re-cast a group buff on a groupmate who cast it themselves earlier** (Spirit of the Puma
+      on a shaman). *Expect*: their tile refreshes to the new time - not stuck on the old one.
+- [ ] **"One section per: Buff"** - Ally Buffs settings → Group into headed sections → pick
+      "Buff". Cast Puma on the whole group. *Expect*: one "Spirit of the Puma" section with a
+      tile per person (showing names), not one section per person.
+
+### Self Buffs
+- [ ] **A raid enchanter's Clarity / Breeze on you** does NOT land on your Self Buffs aura
+      (track-others off). Same for any spell your class can't cast, even one that's in your
+      spellbook file with a 255 level.
+- [ ] **A raid-wide AE buff** (someone AE-hastes the raid: "…feels much faster." on a dozen names,
+      then "You feel much faster."). *Expect*: nothing new lands on your Self Buffs, even if you
+      have one spell that shares that text (Alacrity) scribed.
+
+### Ally Buffs / Damage meter — side-by-side by-buff columns
+- [ ] Ally Buffs → Group into headed sections → "Buff", and set direction to **side by side**.
+      Cast the same buff on several people. *Expect*: each buff section is its own column at the
+      list width and the overlay grows wider - not all columns crushed into one width.
+
+### Linger when expired — List mode
+- [ ] A buff/ally aura in **List** mode → "Linger when expired" 2s+. Let a buff run out. *Expect*:
+      the row greys, the bar clears, the time reads "done", then it vanishes after the set seconds.
+      (Previously this only worked in Tiles mode.)
+
+### Sort direction
+- [ ] Any buff/ally aura → **Order: Descending**. *Expect*: the list flips (with "Time remaining"
+      the longest-left is on top; with "Cast order" the newest is on top).
+- [ ] Grouped aura (Ally Buffs "one section per buff") + Sort by "Time remaining" + Descending.
+      *Expect*: the whole sections/columns reorder, not just the tiles within them.
+
+### Damage meter
+- [ ] **A groupmate who was already in the group when you joined** (no "has joined" line) gets
+      their own row once they talk in group/raid chat **or once you land a group buff/song on
+      them** - not folded into "Other".
+
+### UI
+- [ ] **Pick a spell from any searchable dropdown** (Add Aura → Buff timer, + Add timer, the buff
+      picker). *Expect*: the modal stays open every time.
+- [ ] **Buff timer picker** shows only buffs; **Debuff on an enemy** picker shows only DoTs /
+      mez / snare / charm. Affliction is not offered "on yourself".
+- [ ] **A share code** for a default aura is ~6 characters (`EQa1…`); paste an old `EQLSAURAS1-`
+      code and it still imports.

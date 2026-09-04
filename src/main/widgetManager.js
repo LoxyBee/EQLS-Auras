@@ -1053,6 +1053,12 @@ function setSortOrder(id, order) {
   return config;
 }
 
+function setSortDirection(id, value) {
+  const config = widgetStore.update(id, { sortDirection: value === 'desc' ? 'desc' : 'asc' });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setLowTimeThreshold(id, seconds) {
   const config = widgetStore.update(id, { lowTimeThresholdSec: seconds });
   pushConfigChanged(id);
@@ -1308,6 +1314,12 @@ function removeProfileFromAllWidgets(profileId) {
 
 function setGroupAllyBuffs(id, value) {
   const config = widgetStore.update(id, { groupAllyBuffs: value });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setAllyGroupBy(id, value) {
+  const config = widgetStore.update(id, { allyGroupBy: value === 'buff' ? 'buff' : 'ally' });
   pushConfigChanged(id);
   return config;
 }
@@ -1626,6 +1638,7 @@ module.exports = {
   setIconsPerRow,
   setRowSize,
   setSortOrder,
+  setSortDirection,
   setLowTimeThreshold,
   setLandingGlowEnabled,
   setMergeSameDuration,
@@ -1661,6 +1674,7 @@ module.exports = {
   setActiveProfileIds,
   removeProfileFromAllWidgets,
   setGroupAllyBuffs,
+  setAllyGroupBy,
   setShowDebuffSongs,
   setSplitSongsByType,
   setGroupAllyDirection,

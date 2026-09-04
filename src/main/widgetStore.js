@@ -348,6 +348,7 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // the redundant "Name: " prefix from each tile once the heading already
     // says whose group it is.
     groupAllyBuffs: false,
+    allyGroupBy: 'ally', // when groupAllyBuffs: 'ally' = heading per person, 'buff' = heading per spell
     groupAllyDirection: 'vertical',
     hideAllyNameOnTile: false,
     // Icon mode only - pixels of space between icons in the grid.
@@ -470,6 +471,7 @@ function defaultCustomWidget(name) {
     reverseDetection: false,
     locked: true,
     sortOrder: 'default',
+    sortDirection: 'asc',
     lowTimeThresholdSec: 30,
     landingGlowEnabled: true,
     // Note 8. Collapses buffs that share a duration into one tile showing the lowest remaining
@@ -605,6 +607,7 @@ function defaultCustomWidget(name) {
     // the redundant "Name: " prefix from each tile once the heading already
     // says whose group it is.
     groupAllyBuffs: false,
+    allyGroupBy: 'ally', // when groupAllyBuffs: 'ally' = heading per person, 'buff' = heading per spell
     groupAllyDirection: 'vertical',
     hideAllyNameOnTile: false,
     // Icon mode only - pixels of space between icons in the grid.
@@ -652,6 +655,7 @@ function defaultAllyBuffsWidget(name) {
     timerTextColor: '#ffffff',
     iconMarginPx: 2,
     groupAllyBuffs: true,
+    allyGroupBy: 'ally',
     groupAllyDirection: 'horizontal',
     categoryBorderWidthPx: 2,
   };
@@ -713,6 +717,7 @@ function defaultBardSongsWidget(name) {
     // hide-bard-songs/track-others controls that would normally sit alongside this are absent
     // entirely rather than just left off.
     groupAllyBuffs: true,
+    allyGroupBy: 'ally',
     wrapText: true,
     iconsPerRow: 5,
     categoryBorderWidthPx: 2,
@@ -806,6 +811,8 @@ const SHAREABLE_FIELDS = [
   'wrapText',
   'iconJustify',
   'textJustify',
+  'allyGroupBy',
+  'sortDirection',
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -820,12 +827,56 @@ const SHAREABLE_FIELDS = [
 // 11,337-entry roster that no longer exist, so they could not be honoured anyway; a prefix change
 // makes them fail cleanly at the door instead of importing an aura whose buffs silently never
 // fire. Breaking them was agreed rather than assumed.
-const SHARE_CODE_PREFIX = 'EQLSAURAS1-';
+// v3, deliberately tiny (owner, 3 Sep): a share code sits in a game chat line with a real length
+// limit, so every byte counts. Was 'EQLSAURAS1-' (11 chars). 'EQa1' - "EQ aura, format 1" - is
+// short, distinctive enough for shareCodeChat's scanner, and carries the version so a later format
+// bump is a new prefix. See exportCode for the format: [kindByte] + deflate(numeric-keyed diff),
+// base64url. Position/size are not in SHAREABLE_FIELDS so they were never encoded - a shared aura
+// always lands at the screen default and the recipient moves it.
+const SHARE_CODE_PREFIX = 'EQa1';
 
-// Recognised, no longer decodable. Kept so the import UI can eventually say "this code is from an
-// older version" instead of "invalid code" - a much better answer for someone pasting a code a
-// friend sent last week. Nothing consults this yet; wiring it belongs with the import feature.
-const LEGACY_SHARE_CODE_PREFIXES = ['EQBT2-'];
+// Widget kind <-> a small integer for the share code. APPEND ONLY: never reorder or remove an
+// entry, a code in the wild encodes a kind by its index here. Index 0 is the fallback for any
+// unknown kind ('custom' covers every premade-derived aura - travel guide, damage parser, buff/
+// cooldown timers, text auras are all kind:'custom' + a premadeOrigin the code doesn't carry).
+// String literals, not the *_KIND consts (declared further down - this would be a TDZ error).
+const SHARE_KINDS = [
+  'custom',
+  'self-buffs-builtin',
+  'ally-buffs-builtin',
+  'bard-songs-builtin', // BARD_SONGS_KIND
+  'raid-named-builtin', // RAID_NAMED_KIND
+  'loadout-label-builtin', // LOADOUT_LABEL_KIND
+  'module-aura', // MODULE_KIND
+];
+
+// The share code encodes a changed field by its INDEX in SHAREABLE_FIELDS, so that list is now a
+// wire format: APPEND ONLY, never reorder or delete (a new shareable field goes on the end).
+// This alias exists to make that constraint findable from the encode/decode code.
+const SHARE_FIELD_ORDER = SHAREABLE_FIELDS;
+
+// Build a v3 code from a kind and a { fieldName: value } diff. The wire format in one place, so
+// exportCode and the tests agree on it. `name` is silently dropped (a v3 code never carries one).
+function encodeShareCode(kind, diffByName = {}) {
+  const kindByte = Math.max(0, SHARE_KINDS.indexOf(kind));
+  const diff = {};
+  for (const [field, value] of Object.entries(diffByName)) {
+    if (field === 'name') continue;
+    const i = SHARE_FIELD_ORDER.indexOf(field);
+    if (i >= 0) diff[i] = value;
+  }
+  const parts = [Buffer.from([kindByte])];
+  if (Object.keys(diff).length) {
+    parts.push(zlib.deflateRawSync(Buffer.from(JSON.stringify(diff), 'utf8')));
+  }
+  return SHARE_CODE_PREFIX + Buffer.concat(parts).toString('base64url');
+}
+
+// Recognised on decode for back-compat (real users may have a code from the last few days), never
+// emitted. 'EQBT2-' predates the roster rebuild and is unreadable; 'EQLSAURAS1-' is the v2 format
+// (plain deflated JSON with a `name` and string `kind`) and _decodeCode still reads it.
+const LEGACY_SHARE_CODE_PREFIXES = ['EQLSAURAS1-', 'EQBT2-'];
+const V2_SHARE_CODE_PREFIX = 'EQLSAURAS1-';
 
 // textSize used to be a 'small'|'medium'|'large' enum (fixed 3-step radio
 // buttons) - now it's a free px number via a slider. Widgets saved under
@@ -922,6 +973,7 @@ function normalizeWidget(widget) {
         : DEFAULT_AND_WINDOW_SEC,
     excludedBuffNames: stringList(widget.excludedBuffNames),
     sortOrder: widget.sortOrder || 'default',
+    sortDirection: widget.sortDirection === 'desc' ? 'desc' : 'asc',
     lowTimeThresholdSec: typeof widget.lowTimeThresholdSec === 'number' ? widget.lowTimeThresholdSec : 30,
     landingGlowEnabled: widget.landingGlowEnabled !== false,
     mergeSameDuration: !!widget.mergeSameDuration,
@@ -959,6 +1011,7 @@ function normalizeWidget(widget) {
     splitSongsByType: !!widget.splitSongsByType,
     timerTextColor: typeof widget.timerTextColor === 'string' ? widget.timerTextColor : '#f0f1f5',
     groupAllyBuffs: !!widget.groupAllyBuffs,
+    allyGroupBy: widget.allyGroupBy === 'buff' ? 'buff' : 'ally',
     groupAllyDirection: widget.groupAllyDirection === 'horizontal' ? 'horizontal' : 'vertical',
     hideAllyNameOnTile: !!widget.hideAllyNameOnTile,
     labelTextColor: typeof widget.labelTextColor === 'string' ? widget.labelTextColor : '#f0f1f5',
@@ -2118,55 +2171,92 @@ class WidgetStore {
   // rides along so importCode()/applyCodeToSelfBuffs() know which one this
   // code is for - Self Buffs is a singleton, so a code exported from it has
   // to be routed to overwrite the existing one, never to spawn a second.
+  // A tiny copyable code for this aura's look/filter settings. v3 (owner, 3 Sep - "it only needs
+  // to encode a number for the aura type and then say what is different"):
+  //
+  //   'EQa1' + base64url( [kindByte] + deflateRaw(JSON.stringify(diff)) )
+  //
+  // where `diff` is `{ "<SHAREABLE_FIELDS index>": value }` for every field that differs from a
+  // fresh default of that kind. A bare default aura is just the kind byte -> ~6 characters total.
+  // NOT encoded, ever: `name` (the recipient names it), `position` / `width` / `height` (not in
+  // SHAREABLE_FIELDS - a shared aura lands at the screen default and gets moved), and a
+  // customTimer's `id` (a random UUID, regenerated on import).
   exportCode(id) {
     const widget = this.getById(id);
     if (!widget) return null;
     const defaults = defaultsForKind(widget.kind, widget.name);
-    const payload = { name: widget.name, kind: widget.kind };
-    for (const field of SHAREABLE_FIELDS) {
+    const diff = {};
+    for (const field of SHARE_FIELD_ORDER) {
       if (field === 'name') continue;
-      if (JSON.stringify(widget[field]) !== JSON.stringify(defaults[field])) payload[field] = widget[field];
+      let val = widget[field];
+      if (field === 'customTimers' && Array.isArray(val)) {
+        val = val.map((t) => (t && typeof t === 'object' ? (({ id: _id, ...rest }) => rest)(t) : t));
+      }
+      if (JSON.stringify(val) !== JSON.stringify(defaults[field])) diff[field] = val;
     }
-    const compressed = zlib.deflateRawSync(Buffer.from(JSON.stringify(payload), 'utf8'));
-    return SHARE_CODE_PREFIX + compressed.toString('base64');
+    return encodeShareCode(widget.kind, diff);
   }
 
-  // Note 30. What a code IS, without doing anything with it. A code arriving from chat is text
-  // another player typed, so the app needs to be able to say "Baxa sent a Resist flash aura"
-  // before anyone decides anything - and reading is the only part of that which is safe to do
-  // without being asked.
-  peekCode(code) {
-    const payload = this._decodeCode(code);
-    if (!payload) return null;
-    return { name: payload.name, kind: payload.kind || 'custom' };
-  }
-
+  // Turns any recognised code (v3 'EQa1', or the legacy v2 'EQLSAURAS1-' JSON format) into a
+  // normalised payload: `{ kind, <field>: value, ... }` keyed by real SHAREABLE_FIELDS names, no
+  // `name`. null for anything unreadable. This is the ONLY place that touches the wire format.
   _decodeCode(code) {
-    if (typeof code !== 'string' || !code.startsWith(SHARE_CODE_PREFIX)) return null;
-    try {
-      const compressed = Buffer.from(code.slice(SHARE_CODE_PREFIX.length), 'base64');
-      const payload = JSON.parse(zlib.inflateRawSync(compressed).toString('utf8'));
-      if (!payload || typeof payload.name !== 'string' || !payload.name.trim()) return null;
-      return payload;
-    } catch {
-      return null;
+    if (typeof code !== 'string') return null;
+
+    if (code.startsWith(SHARE_CODE_PREFIX)) {
+      try {
+        const bytes = Buffer.from(code.slice(SHARE_CODE_PREFIX.length), 'base64url');
+        if (!bytes.length) return null;
+        const payload = { kind: SHARE_KINDS[bytes[0]] || 'custom' };
+        if (bytes.length > 1) {
+          const diff = JSON.parse(zlib.inflateRawSync(bytes.subarray(1)).toString('utf8'));
+          if (!diff || typeof diff !== 'object') return null;
+          for (const [k, v] of Object.entries(diff)) {
+            const field = SHARE_FIELD_ORDER[Number(k)];
+            if (field && field !== 'name') payload[field] = v;
+          }
+        }
+        // exportCode strips each customTimer's UUID (36 chars of pure waste in a chat line);
+        // give every entry a fresh one here, before sanitizeCustomTimers - which DROPS an id-less
+        // entry - ever sees it.
+        if (Array.isArray(payload.customTimers)) {
+          payload.customTimers = payload.customTimers.map((t) =>
+            t && typeof t === 'object' && !Array.isArray(t) ? { id: crypto.randomUUID(), ...t } : t
+          );
+        }
+        return payload;
+      } catch {
+        return null;
+      }
     }
+
+    if (code.startsWith(V2_SHARE_CODE_PREFIX)) {
+      try {
+        const compressed = Buffer.from(code.slice(V2_SHARE_CODE_PREFIX.length), 'base64');
+        const payload = JSON.parse(zlib.inflateRawSync(compressed).toString('utf8'));
+        if (!payload || typeof payload !== 'object' || typeof payload.kind !== 'string') return null;
+        delete payload.name; // v2 carried it; v3 semantics drop it
+        return payload;
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
   }
 
-  // Decodes a code without applying it, so a caller (the import UI) can
-  // tell whether it's a Self Buffs code - which needs a confirm-before-
-  // overwrite prompt - before anything actually changes. Returns
-  // { name, kind } or null for an invalid/foreign code.
+  // Note 30 / the import UI. What a code IS, without applying it - which is the only safe thing to
+  // do with text another player typed. `name` is the recipient's to set (a v3 code carries none),
+  // so it falls back to the kind's own default name here. Returns { name, kind, displayMode }.
   peekCode(code) {
     const payload = this._decodeCode(code);
     if (!payload) return null;
     const builtinKinds = ['self-buffs-builtin', 'ally-buffs-builtin'];
     const kind = builtinKinds.includes(payload.kind) ? payload.kind : 'custom';
-    // displayMode is here so the Self Buffs confirm dialog can say what is actually about to
-    // happen - a code from before 'sound-only' was removed could still carry it, which
-    // normalizeDisplayMode below silently turns back into 'list'. A code carries only its diff
-    // from the defaults, so an absent displayMode genuinely means 'list'.
-    return { name: payload.name, kind, displayMode: normalizeDisplayMode(payload.displayMode) };
+    const name =
+      (typeof payload.name === 'string' && payload.name.trim()) ||
+      (defaultsForKind(payload.kind === 'custom' ? undefined : payload.kind).name || 'Shared aura');
+    return { name, kind, displayMode: normalizeDisplayMode(payload.displayMode) };
   }
 
   // Creates a brand-new widget from a code - never overwrites an existing
@@ -2185,12 +2275,18 @@ class WidgetStore {
   // actually on" reasoning as create()/createAllyBuffs() above. Used by
   // both a genuine import (someone else's code) and duplicateWidget()
   // (which is implemented as export+import of the same widget).
-  importCode(code, { activeProfileIds } = {}) {
+  importCode(code, { activeProfileIds, name: nameOverride } = {}) {
     const payload = this._decodeCode(code);
     if (!payload || payload.kind === 'self-buffs-builtin') return null;
 
-    const name = payload.name.trim();
-    const widget = defaultsForKind(payload.kind === 'custom' ? undefined : payload.kind, name);
+    // A v3 code carries no name (the recipient's to choose). Fall back to an explicit override,
+    // else the payload's own name for a legacy code, else this kind's default name - never blank.
+    const kindArg = payload.kind === 'custom' ? undefined : payload.kind;
+    const name =
+      (typeof nameOverride === 'string' && nameOverride.trim()) ||
+      (typeof payload.name === 'string' && payload.name.trim()) ||
+      (defaultsForKind(kindArg).name || 'Shared aura');
+    const widget = defaultsForKind(kindArg, name);
     widget.id = crypto.randomUUID();
     for (const field of SHAREABLE_FIELDS) {
       if (field !== 'name' && payload[field] !== undefined) widget[field] = payload[field];
@@ -2244,6 +2340,10 @@ module.exports = {
   sanitizeCustomTimers,
   stringList,
   SHARE_CODE_PREFIX,
+  V2_SHARE_CODE_PREFIX,
+  SHAREABLE_FIELDS,
+  SHARE_KINDS,
+  encodeShareCode,
   LOADOUT_LABEL_KIND,
   BARD_SONGS_KIND,
   MODULE_KIND,

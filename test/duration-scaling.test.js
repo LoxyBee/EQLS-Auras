@@ -207,6 +207,37 @@ test('Quick Buff activating cannot lend its own name\'s rank to an unrelated gra
   assert.equal(active.durationSec, 50, 'Quick Buff\'s own name must never lend a rank to a burst-landed buff'); // 30 x 1 x 1.65
 });
 
+// Reported live (3 Sep): "bard songs are not scaling their duration based on mote rank." They do
+// on the FIRST landing - but a maintained song re-lands every ~6s with no cast line of its own,
+// and recentSelfCast only lives ~12s, so every renewal after that was quietly dropping back to the
+// un-scaled base. The rank landed at is now carried onto the next renewal.
+test('a maintained bard song keeps its mote rank across renewals, past the cast window', () => {
+  const data = {};
+  const store = {
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  };
+  const buffStore = new BuffStore(store);
+  const song = buffStore.getByName('Chant of Battle'); // isBardSong, unique landing text, kind buff
+  assert.ok(song && song.isBardSong, 'Chant of Battle is no longer a tagged bard song - pick another');
+
+  const engine = new BuffEngine(buffStore, store);
+  engine.stop();
+  engine.setDurationMultiplierFn(() => 1.65);
+
+  engine.handleLine('[Thu Aug 20 12:00:00 2026] You begin singing Chant of Battle VIII.');
+  engine.handleLine('[Thu Aug 20 12:00:00 2026] ' + song.landingText);
+  const first = engine.getActiveBuffs().find((b) => b.name === 'Chant of Battle').durationSec;
+  assert.equal(first, 36, 'first land: 12 x (1 + 0.1x8) x 1.65 = 35.6 -> 36, quantised to the 6s tick');
+
+  // The cast window lapses; the song pulses again with no fresh cast line.
+  engine.recentSelfCast = null;
+  engine.pendingCast = null;
+  engine.handleLine('[Thu Aug 20 12:00:10 2026] ' + song.landingText);
+  const renewed = engine.getActiveBuffs().find((b) => b.name === 'Chant of Battle').durationSec;
+  assert.equal(renewed, 36, 'the renewal keeps the rank-VIII duration, not the base 12 x 1.65 -> 18');
+});
+
 // The rank comes from the cast that is landing. A stale cast of something else must not lend it.
 test('a tier from a different spell is never borrowed', () => {
   const e = afterCasting(makeEngine(1), 'Cannibalize VII');

@@ -6,7 +6,12 @@
 
 const assert = require('node:assert/strict');
 const { test, report } = require('./harness');
-const { isPossessivePetName, petOwnerFromName, looksLikeGeneratedPetName } = require('../src/shared/petNames');
+const {
+  isPossessivePetName,
+  petOwnerFromName,
+  looksLikeGeneratedPetName,
+  isArticlePrefixedMobName,
+} = require('../src/shared/petNames');
 
 test('a possessive name is a pet, and the owner comes out', () => {
   assert.equal(isPossessivePetName('Chrysaetos`s pet'), true);
@@ -40,11 +45,23 @@ test('the generated shape has known collisions - it is corroboration only, never
   assert.equal(looksLikeGeneratedPetName('Kaan'), true);
 });
 
+test('an article-prefixed name is a monster, never a player', () => {
+  // Owner, 3 Sep: "a Teir`Dal rogue" (a charmed mob) showed as its own attacker row in the meter.
+  for (const n of ['a Teir`Dal rogue', 'A Teir`Dal rogue', 'an ancient sarnak', 'the Priest of Discord', 'a zol ghoul knight']) {
+    assert.equal(isArticlePrefixedMobName(n), true, `${n} should read as a monster`);
+  }
+  // a real one-word player name, and a possessive pet that starts with "a", are not this
+  for (const n of ['Avenrae', 'Aradia', 'Anduin', 'Aradia`s familiar', 'Theron']) {
+    assert.equal(isArticlePrefixedMobName(n), false, `${n} should not`);
+  }
+});
+
 test('junk never throws', () => {
   for (const bad of [null, undefined, 42, '', {}, []]) {
     assert.doesNotThrow(() => isPossessivePetName(bad));
     assert.doesNotThrow(() => looksLikeGeneratedPetName(bad));
     assert.doesNotThrow(() => petOwnerFromName(bad));
+    assert.doesNotThrow(() => isArticlePrefixedMobName(bad));
   }
 });
 

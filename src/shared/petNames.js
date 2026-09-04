@@ -17,6 +17,14 @@
 
 const POSSESSIVE_PET = /^(.+?)[`'’]s (pet|warder|familiar|companion|ward)$/i;
 
+// An article-prefixed name - "a Teir`Dal rogue", "an ancient sarnak", "the Priest of Discord". EQ
+// writes a generic monster this way and never a player (a player name is one capitalised word, no
+// spaces, no leading article - see buffEngine gotcha #20). So a name of this shape that the damage
+// engine has already classified as a FRIENDLY attacker is a charmed / wild-charmed monster
+// fighting on your side - a pet nobody has claimed - not a group member. Unambiguous and
+// roster-independent, the same strength as the possessive signal.
+const ARTICLE_MOB = /^(?:a|an|the)\s+\S/i;
+
 // Start G/J/K/L/V/X/Z, then a short lowercase body, an optional middle syllable, a fixed ending.
 // 3-9 chars total, one word, no digits. Deliberately loose on the middle - the exact tables vary
 // by EQEmu era and this is a corroborating signal, not a gate.
@@ -24,6 +32,12 @@ const GENERATED_PET = /^[GJKLVXZ][a-z]{1,6}(?:er|ab|n|tik)$/;
 
 function isPossessivePetName(name) {
   return POSSESSIVE_PET.test(String(name || '').trim());
+}
+
+// See ARTICLE_MOB above. Excludes a possessive name that happens to start with "a"/"an"/"the".
+function isArticlePrefixedMobName(name) {
+  const n = String(name || '').trim();
+  return ARTICLE_MOB.test(n) && !POSSESSIVE_PET.test(n);
 }
 
 // The owner's name from a possessive pet name ("Chrysaetos`s pet" -> "Chrysaetos"), or null.
@@ -38,4 +52,4 @@ function looksLikeGeneratedPetName(name) {
   return n.length >= 3 && n.length <= 9 && GENERATED_PET.test(n);
 }
 
-module.exports = { isPossessivePetName, petOwnerFromName, looksLikeGeneratedPetName };
+module.exports = { isPossessivePetName, petOwnerFromName, looksLikeGeneratedPetName, isArticlePrefixedMobName };

@@ -66,9 +66,16 @@ test('trailing words are not swallowed into the code', () => {
   assert.ok(!found.code.includes('hello'));
 });
 
-// Base64's full alphabet, which is the half of the blocker Vaela answered directly.
-test('a code containing + / and = comes through whole', () => {
-  const code = `${SHARE_CODE_PREFIX}ab+cd/ef==`;
+// v3 is base64url - adds - and _, so a real code can contain those.
+test('a v3 code containing - and _ comes through whole', () => {
+  const code = `${SHARE_CODE_PREFIX}Aq-tW_M2xyz`;
+  assert.equal(matchShareCodeInChat(chat('Baxa', 'says', code)).code, code);
+});
+
+// The legacy v2 form is plain base64 (+ / =), still spotted in chat so a code a friend sent last
+// week reaches the "look at it" prompt (widgetStore still decodes it).
+test('a legacy EQLSAURAS1- code with + / = is still recognised', () => {
+  const code = 'EQLSAURAS1-ab+cd/ef==';
   assert.equal(matchShareCodeInChat(chat('Baxa', 'says', code)).code, code);
 });
 
@@ -106,20 +113,28 @@ test('the prefix matches the one widgetStore actually writes', () => {
 // Codes that will not fit
 // ---------------------------------------------------------------------------
 
-test('a code cut off by the line limit is explained rather than called invalid', () => {
-  // 301 base64 characters, which is not a multiple of four - the signature of a truncated message.
-  const truncated = SHARE_CODE_PREFIX + 'a'.repeat(301);
-  const reason = splitReason(truncated);
-  assert.ok(reason, 'a long ragged code should get an explanation');
+test('a code near the chat-line limit is explained rather than called invalid', () => {
+  // v3 (base64url, no padding) has no raggedness tell, so length alone is the signal: a body near
+  // the measured ~403-char floor is the likely-truncated case.
+  const reason = splitReason(SHARE_CODE_PREFIX + 'a'.repeat(390));
+  assert.ok(reason, 'a code that long should get an explanation');
+  assert.match(reason, /cut off/);
+});
+
+test('a legacy v2 code cut off mid-base64 is explained', () => {
+  // 301 base64 chars, not a multiple of four - the v2 signature of a truncated message.
+  const reason = splitReason('EQLSAURAS1-' + 'a'.repeat(301));
+  assert.ok(reason);
   assert.match(reason, /cut off/);
 });
 
 test('a short code that simply does not decode gets no invented explanation', () => {
-  assert.equal(splitReason(`${SHARE_CODE_PREFIX}abc`), null);
+  assert.equal(splitReason(`${SHARE_CODE_PREFIX}abcdef`), null);
 });
 
-test('a long well-formed code is not accused of being truncated', () => {
-  assert.equal(splitReason(SHARE_CODE_PREFIX + 'a'.repeat(400)), null);
+test('an ordinary-length code is not accused of being truncated', () => {
+  // v3 codes are tiny now - a 150-char one is a genuinely elaborate aura, nowhere near the limit.
+  assert.equal(splitReason(SHARE_CODE_PREFIX + 'a'.repeat(150)), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -175,7 +190,15 @@ test('a heavy aura genuinely does not fit, which is why the explanation exists',
       endedText: `a fairly long ended line for timer number ${i} as well`,
     });
   }
-  assert.ok(ws.exportCode(big.id).length > 403, 'if this now fits, the limitation has gone away');
+  // v3 (owner, 3 Sep) shrank this from 651 chars to ~290 - the aura that used to be the example of
+  // "does not fit" now fits comfortably. The limit is not gone, just much further away.
+  assert.ok(ws.exportCode(big.id).length < 403, 'the v3 codec should have brought this under the floor');
+
+  // It still exists, though - pile on enough and a code will run past a chat line.
+  ws.update(big.id, { buffNames: Array.from({ length: 200 }, (_, i) => `Some Long Spell Name Number ${i}`) });
+  const huge = ws.exportCode(big.id);
+  assert.ok(huge.length > 403, 'a 200-name aura should still be too big');
+  assert.match(splitReason(huge) || '', /cut off/, 'and that case is explained, not called invalid');
 });
 
 // ---------------------------------------------------------------------------

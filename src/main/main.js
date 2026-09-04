@@ -73,6 +73,7 @@ const { RaidNamedTracker } = require('./raidNamedTracker');
 const { FirstAggroEngine } = require('./firstAggroEngine');
 const { ModuleHost } = require('./moduleHost');
 const { readLastZoneEntry } = require('./logZonePeek');
+const { readRecentGroup } = require('./logGroupPeek');
 const { findRoute, describeLeg, allZoneNames, pickableZoneNames, searchPickableZones } = require('../shared/zoneRouting');
 const { matchOfflineTell } = require('../shared/travelCommand');
 const { lockoutBoardRows } = require('../shared/lockoutBoard');
@@ -379,6 +380,10 @@ damageEngine.setKnownEnemiesFn(() =>
 // Note 19. The "group" damage scope filters on who has been in the player's group this session;
 // the charmed-pet rows need to know which charmed mobs are the player's own. Both are pulled live.
 damageEngine.setGroupFn(() => groupRoster.getAdmitted());
+// A raid leader moving players between groups prints no "has joined the group" line, so a groupmate
+// who never speaks stays invisible to the "group" damage scope (reported live: Avenrae, Nocturis).
+// Every group-target spell the player lands on someone proves that someone is in their group.
+buffEngine.setGroupmateSink((name) => groupRoster.noteGroupmate(name));
 damageEngine.setPetsFn(() => petTracker.snapshot());
 petTracker.setOwnNameFn(() => spellbookService.getCharacterName());
 petTracker.setCharmSpellCheck((name) => {
@@ -1576,6 +1581,18 @@ app.whenReady().then(() => {
   setImmediate(() => {
     const logPath = logService.watcher.getStatus().currentFilePath;
     if (!logPath) return;
+    // Group roster from the log tail, same reasoning: if the session-restore snapshot was too
+    // stale (or absent), the damage meter's group scope and its friend/enemy bootstrap start
+    // blind. Only seed when nothing has populated the roster yet.
+    if (groupRoster.getAdmitted().length === 0) {
+      const group = readRecentGroup(logPath);
+      if (group && groupRoster.seed(group)) {
+        debugLog(
+          `GROUP recovered on startup: ${groupRoster.getAdmitted().join(', ') || '(none)'} (from the log tail)`
+        );
+      }
+    }
+
     const found = readLastZoneEntry(logPath);
     if (!found) return;
     applyZoneChangeAndNotify(found.zone);
@@ -2294,9 +2311,15 @@ ipcMain.handle('buffs:trackable', () =>
       // on an ally, it is not" - Allure is a charm (roster: kind 'det', scaleCategory 'charm') and
       // does carry third-person text ("<Name> has been charmed."), so before this fix `ally` was
       // true purely because the text existed, with nothing checking what KIND of landing it was.
-      const isDetrimental = ['debuff', 'charm', 'dot', 'nuke'].includes(e.scaleCategory);
+      const isDetrimental =
+        e.kind === 'det' || ['debuff', 'charm', 'dot', 'nuke'].includes(e.scaleCategory);
       return {
         name: e.name,
+        // "On yourself" - a beneficial buff you cast on yourself. A detrimental spell (Affliction,
+        // a DoT: kind 'det') carries a second-person landing text only because an ENEMY casting it
+        // on you produces one ("You feel feverish.") - that is the Loss-of-control / debuff-on-me
+        // case, not a "buff timer". Reported live: Affliction offered "Yourself" as the default.
+        self: !isDetrimental,
         ally: hasThirdPersonText && !isDetrimental,
         // Whether "on something you cast it at" can be offered. Needs the same third-person
         // landing text ally tracking needs, plus a category that means the spell is cast at
@@ -2693,6 +2716,7 @@ ipcMain.handle('widget:setContentAnchor', (_event, { id, value }) => widgetManag
 ipcMain.handle('widget:setIconsPerRow', (_event, { id, value }) => widgetManager.setIconsPerRow(id, value));
 ipcMain.handle('widget:setRowSize', (_event, { id, value }) => widgetManager.setRowSize(id, value));
 ipcMain.handle('widget:setSortOrder', (_event, { id, value }) => widgetManager.setSortOrder(id, value));
+ipcMain.handle('widget:setSortDirection', (_event, { id, value }) => widgetManager.setSortDirection(id, value));
 ipcMain.handle('widget:setLowTimeThreshold', (_event, { id, value }) => widgetManager.setLowTimeThreshold(id, value));
 ipcMain.handle('widget:setLandingGlowEnabled', (_event, { id, enabled }) => widgetManager.setLandingGlowEnabled(id, enabled));
 ipcMain.handle('widget:setHideBardSongs', (_event, { id, hide }) => widgetManager.setHideBardSongs(id, hide));
@@ -2705,6 +2729,7 @@ ipcMain.handle('widget:setExpiredLingerSec', (_event, { id, seconds }) => widget
 ipcMain.handle('widget:setIconLabelSize', (_event, { id, value }) => widgetManager.setIconLabelSize(id, value));
 ipcMain.handle('widget:setTimerTextColor', (_event, { id, value }) => widgetManager.setTimerTextColor(id, value));
 ipcMain.handle('widget:setGroupAllyBuffs', (_event, { id, value }) => widgetManager.setGroupAllyBuffs(id, value));
+ipcMain.handle('widget:setAllyGroupBy', (_event, { id, value }) => widgetManager.setAllyGroupBy(id, value));
 ipcMain.handle('widget:setShowDebuffSongs', (_event, { id, value }) => widgetManager.setShowDebuffSongs(id, value));
 ipcMain.handle('widget:setSplitSongsByType', (_event, { id, value }) => widgetManager.setSplitSongsByType(id, value));
 ipcMain.handle('widget:setGroupAllyDirection', (_event, { id, value }) => widgetManager.setGroupAllyDirection(id, value));

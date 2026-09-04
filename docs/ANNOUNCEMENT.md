@@ -8,7 +8,7 @@ is in the post.
 
 **EQLS Auras 1.0 — buff timers on top of EverQuest Legends**
 
-Stop alt-tabbing to check your buffs. EQLS Auras reads your EQ log and puts a countdown overlay
+EQLS Auras reads your EQ log and puts a countdown timer for every buff you're running
 on top of the game.
 
 - Every buff you're running, counting down, on screen

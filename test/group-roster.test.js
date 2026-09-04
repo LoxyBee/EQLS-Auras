@@ -54,6 +54,22 @@ test('an ordinary chat line ending "has joined the group." seeds nobody', () => 
   assert.deepEqual(g.getAdmitted(), []);
 });
 
+test('a member talking in group chat is admitted - the "already in the group when I joined" case', () => {
+  // Reported live: Avenrae and Nocturis were in the group when Shara joined, so no "has joined"
+  // line ever named them, and the damage meter folded them into "Other".
+  const g = new GroupRoster();
+  g.handleLine(`${T}You have joined the group.`);
+  g.handleLine(`${T}Avenrae tells the group, 'pulling'`);
+  g.handleLine(`${T}Nocturis tells the raid, 'oom'`);
+  assert.ok(g.isAdmitted('avenrae') && g.isAdmitted('nocturis'));
+});
+
+test('a guild/say line that merely quotes "tells the group" seeds nobody', () => {
+  const g = new GroupRoster();
+  g.handleLine(`${T}Baxa tells the guild, 'she tells the group, hurry up'`);
+  assert.deepEqual(g.getAdmitted(), []);
+});
+
 test('names are matched case-insensitively', () => {
   const g = new GroupRoster();
   g.handleLine(`${T}BAXA has joined the group.`);
@@ -94,6 +110,25 @@ test('restart protection: joining a fresh group after restore wipes the restored
   g.restore({ members: ['oldmate'], admitted: ['oldmate'], at: Date.now() - 60_000 });
   assert.ok(g.isAdmitted('oldmate'));
   g.handleLine(`${T}You have joined the group.`);
+  assert.deepEqual(g.getAdmitted(), []);
+});
+
+test('noteGroupmate: a group-target spell the player landed proves membership the join lines missed', () => {
+  // Reported live (3 Sep): a raid leader shuffled Avenrae/Nocturis into Shara's group with no
+  // "has joined the group" line, and neither spoke - so the damage meter dumped them in "Other".
+  // Every Group-target spell the player lands on someone is proof that someone is grouped.
+  const g = new GroupRoster();
+  g.handleLine(`${T}You have joined the group.`);
+  g.noteGroupmate('Avenrae');
+  g.noteGroupmate('Nocturis');
+  assert.ok(g.isAdmitted('avenrae') && g.isAdmitted('nocturis'));
+});
+
+test('noteGroupmate: a mob phrase or empty name is rejected', () => {
+  const g = new GroupRoster();
+  g.noteGroupmate('a greater kobold');
+  g.noteGroupmate('');
+  g.noteGroupmate(null);
   assert.deepEqual(g.getAdmitted(), []);
 });
 

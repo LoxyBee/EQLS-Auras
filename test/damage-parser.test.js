@@ -483,6 +483,35 @@ test('unknown-owner charmed pets fold into one "Charmed pets" row', () => {
   assert.match(pets[0].valueText, /^200/);
 });
 
+// Owner, 3 Sep: "i want all the damage separated on the backend, so that when something happens
+// that can retroactively split this ... it isn't lost." Every hit's attacker is tallied raw,
+// regardless of classification, so a groupmate recognised late shows their FULL damage - not just
+// what landed after the app worked out who they were.
+test('a groupmate learned late gets their complete damage, not just what came after', () => {
+  const e = new DamageEngine();
+  // No roster, nothing seeded. Avenrae fights a mob the player never touches - unclassifiable, so
+  // it would normally sit in `pending` and be dropped after the fight timeout.
+  e.handleLine(`${T}Avenrae slashes a lockjaw for 500 points of damage.`, 1000);
+  e.handleLine(`${T}Avenrae slashes a lockjaw for 500 points of damage.`, 2000);
+  // Now the player tags the mob AND Avenrae is confirmed a group member.
+  e.handleLine(`${T}a lockjaw has taken 10 damage from your Plague III.`, 3000);
+  e.setGroupFn(() => ['avenrae']);
+  e.handleLine(`${T}Avenrae slashes a lockjaw for 500 points of damage.`, 4000);
+  const av = e.getActive(4000, 'all').find((r) => r.name === 'Avenrae');
+  assert.ok(av, 'Avenrae has her own row');
+  assert.match(av.valueText, /^1\.5k|^1500/, 'all 1500, not just the 500 after she was recognised');
+});
+
+test('a fully-classified friend is byte-identical - raw is only a top-up', () => {
+  const e = new DamageEngine();
+  e.setGroupFn(() => ['baxa']);
+  e.handleLine(`${T}a zol ghoul knight has taken 10 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Baxa slashes a zol ghoul knight for 300 points of damage.`, 1000);
+  e.handleLine(`${T}Baxa slashes a zol ghoul knight for 300 points of damage.`, 2000);
+  const baxa = e.getActive(2000, 'all').find((r) => r.name === 'Baxa');
+  assert.match(baxa.valueText, /^600/, 'no double-count - raw equals classified here');
+});
+
 // Owner, 2 Sep: a mage pet ("Kobektik") showed as its own attacker row. In scope 'all', once the
 // group roster is known, only you + admitted members get their own row; a summoned-pet-shaped
 // name the roster does NOT vouch for folds into "Pets", any other outsider folds into "Other".
@@ -511,6 +540,62 @@ test("scope 'all': a possessive-named pet folds into Pets regardless of roster",
   // ^ "X has taken N damage from SPELL by ATTACKER" - attacker is Chrysaetos`s pet
   const rows = e.getActive(1000, 'all');
   assert.ok(rows.find((r) => r.name === 'Pets'), 'a possessive pet folds even with no group roster');
+});
+
+// Owner, 3 Sep: "a Teir`Dal rogue" (a wild-charmed mob fighting alongside the group) showed as its
+// own attacker row. An article-prefixed name that reaches the meter has already been classified as
+// a friendly attacker - it can only be a charmed monster, never a player - so it folds into the one
+// "Charmed pets" row even when the group roster is empty and petTracker never saw the charm line.
+test("scope 'all': an article-prefixed friendly attacker folds into Charmed pets", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000); // enemy established
+  e.handleLine(`${T}a Teir\`Dal rogue backstabs a zol ghoul knight for 400 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'all');
+  assert.equal(rows.find((r) => /Teir/i.test(r.name)), undefined, 'the mob is not its own row');
+  const charmed = rows.find((r) => r.name === 'Charmed pets');
+  assert.ok(charmed && charmed.unknownPets, 'it folds into the Charmed pets row');
+  assert.match(charmed.valueText, /^400/);
+});
+
+// Owner, 3 Sep: after a restart the current-fight meter lost the groupmates while the since-zone
+// tally kept them. Root cause: the friend/enemy bootstrap starts empty, and a bard who does little
+// direct damage never seeds the enemy set fast enough to classify a groupmate's hits on a mob she
+// never personally touched. A confirmed group member is a friend for classification, full stop.
+test('a confirmed group member is a friend without the bootstrap having to prove it', () => {
+  const e = new DamageEngine();
+  e.setGroupFn(() => ['bobarafius', 'avenrae']);
+  // Nobody has attacked yet - the enemy set is empty. Bobarafius (a group member) hits a mob.
+  e.handleLine(`${T}Bobarafius slashes a hardened skeleton for 300 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'all');
+  const bob = rows.find((r) => r.name === 'Bobarafius');
+  assert.ok(bob, 'the groupmate is credited on the current fight immediately');
+  assert.match(bob.valueText, /^300/);
+  assert.ok(e.enemies.has('a hardened skeleton'), 'and the mob is now a known enemy');
+});
+
+// A damage shield is pure retaliation and must never teach a side. In a charm-war zone this was
+// collapsing the whole bootstrap (measured live: the group tagged as enemies, mobs as friends).
+test('a damage-shield line does not add anyone to the friend or enemy sets', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}a zol ghoul knight has taken 5 damage from your Plague III.`, 1000); // knight = enemy
+  // A charmed pet's thorns hit the knight. Old behaviour: rule 2 makes "a spite golem" a friend.
+  e.handleLine(`${T}a zol ghoul knight is pierced by a spite golem's thorns for 7 points of non-melee damage.`, 1000);
+  assert.ok(!e.friends.has('a spite golem'), 'a DS hit is not proof of a side');
+  // A mob's flame shield hits a groupmate. Old behaviour: rule 3 could tag the groupmate an enemy.
+  e.setGroupFn(() => []);
+  e.handleLine(`${T}a zol ghoul knight has taken 5 damage from your Plague III.`, 1000);
+  e.friends.add('avenrae');
+  e.handleLine(`${T}Avenrae is burned by Footman of V\`Zher's flames for 7 points of non-melee damage.`, 1000);
+  assert.ok(!e.enemies.has('avenrae'), 'the groupmate is not flipped to enemy by a shield hit');
+});
+
+test("scope 'mine': an article-prefixed friendly attacker is dropped, not shown", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000);
+  e.handleLine(`${T}a Teir\`Dal rogue backstabs a zol ghoul knight for 400 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'mine');
+  assert.equal(rows.find((r) => r.name === 'Charmed pets'), undefined, 'not in the mine scope');
+  assert.equal(rows.find((r) => /Teir/i.test(r.name)), undefined);
 });
 
 test('name-collision guard: a name in both friends and enemies is dropped, not credited', () => {

@@ -131,8 +131,16 @@ class SpellbookService {
       const content = fs.readFileSync(filePath, 'utf8');
       const names = [];
       for (const line of content.split(/\r?\n/)) {
-        const name = (line.split('\t')[1] || '').trim();
-        if (name) names.push(name);
+        const [level, name] = line.split('\t').map((s) => (s || '').trim());
+        if (!name) continue;
+        // The first column is the level the character's class scribes it at; 255 is EQ's "no class
+        // of this character can ever cast this" sentinel (same value gameSpellData reads for
+        // per-class castability - see gotcha #14). A multiclass character's spellbook dump lists
+        // those rows anyway, and counting them as "scribed" made an ambiguous landing narrow to a
+        // spell she can't cast: reported live, a raid enchanter's Clarity ("A cool breeze slips
+        // through your mind.") landed on her own Self Buffs because "255  Clarity" was in the file.
+        if (level === '255') continue;
+        names.push(name);
       }
       return names;
     } catch {

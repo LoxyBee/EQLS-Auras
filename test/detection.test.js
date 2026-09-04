@@ -271,14 +271,42 @@ test('a second caster of the same spell does not break the veto', () => {
   assert.deepEqual(names(engine), []);
 });
 
-test('a caster whose name is not one plain word still vetoes', () => {
-  // Only about half of the caster names in the real logs are a single alphabetic word.
-  // Anything that filtered them by shape - Cazic-Thule, A Teir`Dal something, someone's pet -
-  // would silently stop vetoing for the rest.
+test('an article-prefixed monster is NOT recorded as a caster (owner, 3 Sep)', () => {
+  // recentOtherCasts only ever withholds a beneficial buff - "someone else cast this, so it isn't
+  // yours". A monster does not cast beneficial buffs onto the player. A charmed "a Teir`Dal rogue"
+  // seen casting Center was making the player's own Center get silently IGNORED. So an "a/an/the ..."
+  // caster is dropped on the way in; every downstream consumer is a buff path and benefits.
   const { engine } = makeEngine();
   engine.handleLine('a greater kobold begins casting Spirit of the Puma.');
+  assert.equal(engine._hasRecentOtherCast('Spirit of the Puma'), false, 'a monster is not a veto source');
+  engine.handleLine('You begin to snarl as your features become feline.');
+  assert.deepEqual(names(engine), ['Spirit of the Puma'], "the player's own buff lands");
+});
+
+test('a non-article multi-word caster (a real mob boss, a possessive pet) still vetoes', () => {
+  // The article is the ONLY shape-based tell the log gives (gotcha #20). A proper-noun mob name
+  // or a possessive pet name is left alone - still real evidence someone else's spell is in play.
+  const { engine } = makeEngine();
+  engine.handleLine("Cazic-Thule begins casting Spirit of the Puma.");
   assert.equal(engine._hasRecentOtherCast('Spirit of the Puma'), true);
-  assert.equal(engine._recentOtherCaster('Spirit of the Puma'), 'a greater kobold');
+  assert.equal(engine._recentOtherCaster('Spirit of the Puma'), 'Cazic-Thule');
+});
+
+test('your own Quick Buff: an unresolvable ambiguous landing is queued, not silently dropped (owner, 3 Sep)', () => {
+  // "there should be ways to tell, and when not it should go to me." A groupmate was seen casting
+  // one of the candidates for a shared landing text, AND the player's own Quick Buff burst is open.
+  // Genuinely undecidable - so a prompt, not a silent IGNORE (track-others is off, the default).
+  const { engine, buffStore, log } = makeEngine();
+  const shared = buffStore.getAll().filter((b) => b.landingText === 'You feel the favor of the gods upon you.');
+  assert.ok(shared.length > 1, 'fixture: the landing text is shared by several buffs');
+  engine.handleLine(`Baxa begins casting ${shared[0].name}.`); // a real groupmate, not a mob
+  engine.handleLine('You activate Quick Buff.');
+  engine.handleLine('You feel the favor of the gods upon you.');
+  assert.ok(
+    log.some((l) => l.startsWith('QUEUED') && l.includes('your own burst')),
+    'the landing is queued for the player, not dropped'
+  );
+  assert.ok(engine.getAmbiguousCasts().length >= 1, 'a prompt is actually pending');
 });
 
 test('a party change still clears the veto', () => {
@@ -531,6 +559,107 @@ test('an ambiguous third-person suffix does not record evidence for the wrong sp
       `an ambiguous third-person suffix wrongly vetoed "${candidate.name}"`
     );
   }
+});
+
+test('setGroupmateSink fires when the player lands a Group-target spell on someone', () => {
+  // A raid leader moving players between groups prints no join line, so a silent groupmate is
+  // invisible to the damage meter (reported live: Avenrae, Nocturis). The player can only land a
+  // Group-target spell on an actual groupmate - feed that name to the group roster.
+  const { engine, buffStore } = makeEngine();
+  const spell = buffStore.getAll().find(
+    (e) => e.targets === 'Group' && e.othersLandingSuffix && !e.isBardSong && !e.scaleCategory?.match(/debuff|charm|dot|nuke/)
+  );
+  assert.ok(spell, 'expected a Group-target buff with a third-person suffix');
+  const seen = [];
+  engine.setGroupmateSink((n) => seen.push(n));
+  engine.handleLine(`You begin casting ${spell.name}.`);
+  engine.handleLine(`Fahh${spell.othersLandingSuffix}`);
+  assert.deepEqual(seen, ['Fahh']);
+});
+
+test('setGroupmateSink does NOT fire for a Single-target buff on an ally', () => {
+  const { engine, buffStore } = makeEngine();
+  const spell = buffStore.getAll().find(
+    (e) => (e.targets === 'Single' || e.targets === 'Friendly') && e.othersLandingSuffix && !e.isBardSong
+  );
+  assert.ok(spell, 'expected a Single/Friendly buff with a third-person suffix');
+  const seen = [];
+  engine.setGroupmateSink((n) => seen.push(n));
+  engine.handleLine(`You begin casting ${spell.name}.`);
+  engine.handleLine(`Fahh${spell.othersLandingSuffix}`);
+  assert.deepEqual(seen, [], 'a targeted buff on anyone is not proof of group membership');
+});
+
+test('a raid-wide AE buff is not auto-landed as the player\'s own spell that shares its text', () => {
+  // Reported live (3 Sep): "alacrity just landed in my self buffs even though i never cast it."
+  // A raid AE haste prints "Leche feels much faster. / Fahh feels much faster. / ... / You feel
+  // much faster." in one tick. "You feel much faster." is shared by 13 spells; Alacrity was the
+  // only one in her spellbook, so the spellbook-narrow tier took it as her own cast with no cast
+  // line anywhere. The many identical third-person landings ARE the tell that it is incoming.
+  const { engine, buffStore, log } = makeEngine();
+  const alacrity = buffStore.getByName('Alacrity');
+  assert.ok(alacrity && alacrity.othersLandingSuffix, 'expected Alacrity with a third-person suffix');
+  const sharing = buffStore.getAll().filter((e) => e.landingText === alacrity.landingText);
+  assert.ok(sharing.length > 1, 'Alacrity landing text is meant to be shared');
+
+  engine.setSpellbookCheckFn((name) => name === 'Alacrity'); // only candidate she has scribed
+  for (const who of ['Leche', 'Fahh', 'Nocturis', 'Jarlaxle']) {
+    engine.handleLine(`${who}${alacrity.othersLandingSuffix}`);
+  }
+  engine.handleLine(alacrity.landingText); // "You feel much faster."
+
+  assert.deepEqual(names(engine), [], 'a raid AE haste self-attributed to Alacrity');
+  assert.ok(log.some((m) => m.includes('incoming AE') || (m.includes('IGNORED') && m.includes(alacrity.landingText))));
+});
+
+test('the player\'s own burst cannot be propped open past the re-arm cap by a drip of buffs', () => {
+  // Reported live (3 Sep): "my quick buff already happened, it's a 10 MINUTE cooldown. my window
+  // should be closed long before 34 seconds." The window is re-armed at every self-plausible
+  // ambiguous landing, so a raid buff phase held it open the whole time. _rearmBurst refuses once
+  // the burst is older than SELF_BURST_REARM_CAP_MS.
+  const { engine, buffStore, log } = makeEngine();
+  const alacrity = buffStore.getByName('Alacrity');
+  engine.handleLine('You activate Quick Buff.');
+  assert.ok(engine.burstOpenedBy, 'the activate opened a burst');
+  // Simulate the burst having opened well over the cap ago - as if a raid had been dripping buffs
+  // onto her for 30s. Any re-arm now must be refused.
+  engine.burstOpenedBy.at = Date.now() - 30000;
+  engine.burstUntil = Date.now() + 4000; // still nominally "open" from the last drip
+  for (const who of ['Leche', 'Fahh']) engine.handleLine(`${who} feels much faster.`);
+  engine.handleLine('You feel much faster.'); // a lone shared-text landing, no crowd
+  // Not landed as hers, and not queued as "your own burst" - the burst is stale.
+  assert.deepEqual(names(engine), []);
+  assert.ok(!log.some((m) => m.includes('your own burst')), 'a 30s-old burst should not still be "yours"');
+});
+
+test('a raid AE buff during the player\'s own Quick Buff is ignored, not queued as a prompt', () => {
+  // Reported live (3 Sep): "i just quick buffed ... then someone cast theirs completely after
+  // mine and spirit of wolf came up on my self buffs." A raid-wide recast whose text shares with
+  // one of her spells must not land AND must not prompt during Quick Buff chaos - the crowd of
+  // identical third-person landings is proof enough it is incoming.
+  const { engine, buffStore, log } = makeEngine();
+  const alacrity = buffStore.getByName('Alacrity');
+  engine.setSpellbookCheckFn((name) => name === 'Alacrity');
+  engine.handleLine('You activate Quick Buff.'); // her own burst is open
+  for (const who of ['Leche', 'Fahh', 'Nocturis', 'Jarlaxle', 'Valkri']) {
+    engine.handleLine(`${who}${alacrity.othersLandingSuffix}`);
+  }
+  engine.handleLine(alacrity.landingText);
+  assert.deepEqual(names(engine), [], 'a raid AE landed during her own Quick Buff');
+  assert.ok(!log.some((m) => m.includes('QUEUED') && m.includes(alacrity.landingText)), 'it should not prompt');
+  assert.ok(log.some((m) => m.includes('incoming AE')));
+});
+
+test('a normal ambiguous landing with only a couple of other recipients still narrows by spellbook', () => {
+  // The AE guard must not swallow the ordinary case: the player casts a group buff, it lands on
+  // her two groupmates and herself. Below the crowd threshold, spellbook-narrowing still works.
+  const { engine, buffStore, log } = makeEngine();
+  const alacrity = buffStore.getByName('Alacrity');
+  engine.setSpellbookCheckFn((name) => name === 'Alacrity');
+  engine.handleLine(`Leche${alacrity.othersLandingSuffix}`);
+  engine.handleLine(alacrity.landingText);
+  assert.deepEqual(names(engine), ['Alacrity'], 'one other recipient should not trip the AE guard');
+  assert.ok(log.some((m) => m.includes('narrowed to 1 by spellbook')));
 });
 
 test('a detrimental spell can never land as a self-buff, from ANY tier - not just the spellbook one', () => {

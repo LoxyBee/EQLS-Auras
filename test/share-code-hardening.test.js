@@ -18,6 +18,7 @@ const zlib = require('node:zlib');
 const { test, report } = require('./harness');
 const {
   WidgetStore, normalizeWidget, sanitizeCustomTimers, stringList, SHARE_CODE_PREFIX,
+  encodeShareCode,
 } = require('../src/main/widgetStore');
 const { CustomTimerEngine } = require('../src/main/customTimerEngine');
 const { LogWatcher } = require('../src/main/logWatcher');
@@ -73,8 +74,10 @@ function makeStore() {
     saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
   });
 }
-const mkCode = (payload) =>
-  SHARE_CODE_PREFIX + zlib.deflateRawSync(Buffer.from(JSON.stringify(payload), 'utf8')).toString('base64');
+// A v3 code. `payload` is { kind, name?, ...fieldsByName } - the same shape the old v2 mkCode took,
+// so the malicious-payload tests below read unchanged. name is dropped (v3 carries none); the
+// remaining fields are the "diff from defaults", exactly what a real export would hold.
+const mkCode = ({ kind = 'custom', ...fields }) => encodeShareCode(kind, fields);
 
 test('importing `customTimers: [null]` creates a widget the engine can process without throwing', () => {
   const store = makeStore();

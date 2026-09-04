@@ -1619,6 +1619,7 @@ function initWidgetsPanel() {
   const displayModeRadios = document.querySelectorAll('input[name="widget-display-mode"]');
   const timerFormatRadios = document.querySelectorAll('input[name="widget-timer-format"]');
   const sortOrderRadios = document.querySelectorAll('input[name="widget-sort-order"]');
+  const sortDirectionRadios = document.querySelectorAll('input[name="widget-sort-direction"]');
   // The countdown / row text size (the "Timer text" topic), capped at 28px - see widgetStore's
   // own comment on the shared `textSize` field. Its slider used to share the id
   // widget-text-size-slider with the text-aura MESSAGE slider below, so getElementById returned
@@ -1725,6 +1726,7 @@ function initWidgetsPanel() {
   const hideInfiniteRowEl = document.getElementById('widget-hide-infinite-row');
   const mergeHintEl = document.getElementById('widget-merge-hint');
   const sortOrderRowEl = document.getElementById('widget-sort-order-row');
+  const sortDirectionRowEl = document.getElementById('widget-sort-direction-row');
   const opacityRowEl = document.getElementById('widget-opacity-row');
   const positionRowEl = document.getElementById('widget-position-row');
   const positionHintEl = document.getElementById('widget-position-hint');
@@ -1813,6 +1815,8 @@ function initWidgetsPanel() {
   const splitSongsRowEl = document.getElementById('widget-split-songs-row');
   const allyDirectionRadios = document.querySelectorAll('input[name="widget-ally-direction"]');
   const allyDirectionRow = document.getElementById('widget-ally-direction-row');
+  const allyGroupByRadios = document.querySelectorAll('input[name="widget-ally-group-by"]');
+  const allyGroupByRow = document.getElementById('widget-ally-group-by-row');
   const hideAllyNameCheckbox = document.getElementById('widget-hide-ally-name-checkbox');
   const marginWidthValueEl = document.getElementById('widget-margin-width-value');
   const borderWidthRowEl = document.getElementById('widget-border-width-row');
@@ -1828,6 +1832,7 @@ function initWidgetsPanel() {
   const iconDepletionSelect = document.getElementById('widget-icon-depletion-select');
   const expiredLingerSlider = document.getElementById('widget-expired-linger-slider');
   const expiredLingerValueEl = document.getElementById('widget-expired-linger-value');
+  const expiredLingerRowEl = document.getElementById('widget-expired-linger-row');
   const deleteBtn = document.getElementById('delete-widget-btn');
   const duplicateWidgetBtn = document.getElementById('duplicate-widget-btn');
   const exportBtn = document.getElementById('export-widget-btn');
@@ -3120,6 +3125,9 @@ function initWidgetsPanel() {
     iconPositionSettings.style.display = showsIconOnly ? '' : 'none';
     iconLabelSectionEl.style.display = showsIconOnly ? '' : 'none';
     displayIconOnlySettings.style.display = showsIconOnly ? '' : 'none';
+    // "Linger when expired" works in both Tiles and List mode (the row greys and reads 'done'
+    // before it clears), so it lives outside the icon-only block - shown for any buff-style aura.
+    if (expiredLingerRowEl) expiredLingerRowEl.style.display = has('display-choice') ? '' : 'none';
     // Icon tiles only, and only once "Colour each tile's edge by spell type" is actually on -
     // offering a width for an edge that isn't drawn would be a control that does nothing.
     borderWidthRowEl.style.display = showsIconOnly && widget.categoryBordersEnabled !== false ? '' : 'none';
@@ -3131,6 +3139,9 @@ function initWidgetsPanel() {
     // watches is active at once - see overlay.js's visibleBuffs) - only the control is hidden, at
     // whatever value the aura already has (the default, cast order, unless changed before this).
     sortOrderRowEl.style.display = has('sort') ? '' : 'none';
+    // Ascending / descending flips whatever "Sort by" chose (including cast order -> newest first),
+    // and also orders the columns/sections when the aura is grouped.
+    sortDirectionRowEl.style.display = has('sort') ? '' : 'none';
     // Merging is about how tiles are drawn. A text aura draws exactly one tile whatever happens,
     // so there is never anything to merge.
     mergeRowEl.style.display = has('merge') ? '' : 'none';
@@ -3245,6 +3256,7 @@ function initWidgetsPanel() {
     displayModeRadios.forEach((r) => (r.checked = r.value === widget.displayMode));
     timerFormatRadios.forEach((r) => (r.checked = r.value === widget.timerFormat));
     sortOrderRadios.forEach((r) => (r.checked = r.value === (widget.sortOrder || 'default')));
+    sortDirectionRadios.forEach((r) => (r.checked = r.value === (widget.sortDirection === 'desc' ? 'desc' : 'asc')));
     textSizeSlider.value = widget.textSize;
     textSizeValueEl.textContent = `${widget.textSize}px`;
     iconSizeSlider.value = widget.iconSize;
@@ -3361,8 +3373,10 @@ function initWidgetsPanel() {
     splitSongsCheckbox.checked = !!widget.splitSongsByType;
     splitSongsRowEl.style.display = widget.showDebuffSongs ? '' : 'none';
     allyDirectionRadios.forEach((r) => (r.checked = r.value === (widget.groupAllyDirection || 'vertical')));
+    allyGroupByRadios.forEach((r) => (r.checked = r.value === (widget.allyGroupBy === 'buff' ? 'buff' : 'ally')));
     hideAllyNameCheckbox.checked = !!widget.hideAllyNameOnTile;
     allyDirectionRow.style.display = widget.groupAllyBuffs ? '' : 'none';
+    allyGroupByRow.style.display = widget.groupAllyBuffs ? '' : 'none';
     timerTextColorPicker.value = widget.timerTextColor || '#f0f1f5';
     labelTextColorPicker.value = widget.labelTextColor || '#f0f1f5';
     const iconMargin = typeof widget.iconMarginPx === 'number' ? widget.iconMarginPx : 5;
@@ -3588,11 +3602,7 @@ function initWidgetsPanel() {
   }
 
   if (closeBuffPickerModalBtn) closeBuffPickerModalBtn.addEventListener('click', closeBuffPickerModal);
-  if (buffPickerModalBackdrop) {
-    buffPickerModalBackdrop.addEventListener('click', (e) => {
-      if (e.target === buffPickerModalBackdrop) closeBuffPickerModal();
-    });
-  }
+  if (buffPickerModalBackdrop) closeOnBackdropClick(buffPickerModalBackdrop, closeBuffPickerModal);
 
   trackOthersCheckbox.addEventListener('change', () => {
     window.eqTracker.setTrackOthersEnabled(trackOthersCheckbox.checked);
@@ -4326,6 +4336,8 @@ function initWidgetsPanel() {
   // and should reuse this rather than each growing their own picker.
   const buffTimerSelect = document.getElementById('buff-timer-select');
   const buffTimerSourceRow = document.getElementById('buff-timer-source-row');
+  const buffTimerSelfLabel = document.getElementById('buff-timer-self-label');
+  const buffTimerSelfWarning = document.getElementById('buff-timer-self-warning');
   const buffTimerAllyLabel = document.getElementById('buff-timer-ally-label');
   const buffTimerAllyWarning = document.getElementById('buff-timer-ally-warning');
   const buffTimerEnemyLabel = document.getElementById('buff-timer-enemy-label');
@@ -4373,7 +4385,14 @@ function initWidgetsPanel() {
   }
 
   function buffTimerPool() {
-    return buffTimerMode === 'cooldown' ? castableBuffs : trackableBuffs;
+    if (buffTimerMode === 'cooldown') return castableBuffs;
+    // Two different lists share this panel. "Debuff on an enemy" opens it with defaultSource
+    // 'enemy'; "Buff timer" with 'self'. A detrimental spell (Affliction, a DoT) belongs ONLY in
+    // the enemy list - owner, 3 Sep: "they should never be in the buff picker. there is a separate
+    // debuff picker for det spells." (`b.ally` implies `b.self`, so `b.self` alone is the buff set.)
+    return buffTimerPreferredSource === 'enemy'
+      ? trackableBuffs.filter((b) => b.enemy)
+      : trackableBuffs.filter((b) => b.self);
   }
 
   function buffTimerOptionLabel(buff) {
@@ -4381,8 +4400,10 @@ function initWidgetsPanel() {
       return `${buff.name} - ${buff.reuseSec}s recast + ${buff.castSec}s cast = ${buff.cooldownSec}s`;
     }
     const howLong = buff.infinite ? 'lasts until dispelled' : buff.durationSec ? `${buff.durationSec}s` : 'no duration';
+    // self and enemy are mutually exclusive (a detrimental spell is cast AT something, never a
+    // buff on you); ally only ever pairs with self.
     const where = buff.enemy
-      ? 'on you, an ally, or something you cast it at'
+      ? 'on something you cast it at'
       : buff.ally
         ? 'on you or on an ally'
         : 'on you only';
@@ -4454,43 +4475,51 @@ function initWidgetsPanel() {
     // so it reads as "not possible for this spell" instead of the choice having moved. A heal has
     // third-person landing text and so passes the ally test, but watching it "on an enemy" would
     // build an aura that never lights up.
-    const enemyRadio = buffTimerEnemyLabel.querySelector('input');
-    enemyRadio.disabled = !buff.enemy;
-    buffTimerEnemyLabel.classList.toggle('disabled', !buff.enemy);
-    if (!buff.enemy) {
-      if (enemyRadio.checked) {
-        enemyRadio.checked = false;
-        buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
-      }
-      buffTimerEnemyWarning.textContent =
-        `"${buff.name}" is not something you cast at an enemy, so it can only be watched on you ` +
-        'or on someone in your group.';
-      buffTimerEnemyWarning.style.display = '';
-    } else {
-      buffTimerEnemyWarning.style.display = 'none';
-    }
-
+    const selfRadio = buffTimerSelfLabel.querySelector('input');
     const allyRadio = buffTimerAllyLabel.querySelector('input');
+    const enemyRadio = buffTimerEnemyLabel.querySelector('input');
+    selfRadio.disabled = !buff.self;
     allyRadio.disabled = !buff.ally;
+    enemyRadio.disabled = !buff.enemy;
+    buffTimerSelfLabel.classList.toggle('disabled', !buff.self);
     buffTimerAllyLabel.classList.toggle('disabled', !buff.ally);
-    if (!buff.ally) {
-      if (allyRadio.checked) {
-        allyRadio.checked = false;
-        buffTimerSourceRow.querySelector('input[value="self"]').checked = true;
-      }
+    buffTimerEnemyLabel.classList.toggle('disabled', !buff.enemy);
+
+    // Exactly one warning shows, naming what the spell CAN be watched on. A detrimental spell
+    // (Affliction, a DoT) is `self:false, ally:false, enemy:true` - it is cast AT a target, so
+    // "Yourself" and "Someone you cast it on" are both off and the self-warning is the message.
+    buffTimerSelfWarning.style.display = 'none';
+    buffTimerAllyWarning.style.display = 'none';
+    buffTimerEnemyWarning.style.display = 'none';
+    if (!buff.self && !buff.ally && buff.enemy) {
+      buffTimerSelfWarning.textContent =
+        `"${buff.name}" is cast at a target, not on you - watch it on "something you cast it at".`;
+      buffTimerSelfWarning.style.display = '';
+    } else if (!buff.ally && !buff.enemy) {
       buffTimerAllyWarning.textContent =
         `The app has no message for "${buff.name}" landing on someone else, so it can only be ` +
         'watched on you. An aura set to watch it on an ally would never light up.';
       buffTimerAllyWarning.style.display = '';
-    } else {
-      buffTimerAllyWarning.style.display = 'none';
+    } else if (!buff.enemy) {
+      buffTimerEnemyWarning.textContent =
+        `"${buff.name}" is not something you cast at an enemy, so it can only be watched on you ` +
+        'or on someone in your group.';
+      buffTimerEnemyWarning.style.display = '';
     }
 
-    // Applied after both options know whether they are available, so a premade asking for the
-    // enemy option on a spell that cannot use it falls back to a working choice rather than
-    // leaving a disabled radio selected.
-    const preferred = buffTimerSourceRow.querySelector(`input[value="${buffTimerPreferredSource}"]`);
-    if (preferred && !preferred.disabled) preferred.checked = true;
+    // Land on a working radio: the premade's preferred option if this spell allows it, otherwise
+    // the first enabled one (self, then enemy, then ally). Runs after every disabled state is set
+    // so a disabled radio is never left selected.
+    const order = ['self', 'enemy', 'ally'];
+    const radioFor = (v) => buffTimerSourceRow.querySelector(`input[value="${v}"]`);
+    const wanted = radioFor(buffTimerPreferredSource);
+    const pick =
+      wanted && !wanted.disabled
+        ? wanted
+        : order.map(radioFor).find((r) => r && !r.disabled);
+    buffTimerSourceRow.querySelectorAll('input[name="buff-timer-source"]').forEach((r) => {
+      r.checked = r === pick;
+    });
     // After the source radio has its final value for this spell, so the row's visibility matches
     // what's actually selected rather than whatever was left over from the previous spell.
     syncBuffTimerAlsoCooldownRow();
@@ -4791,9 +4820,7 @@ function initWidgetsPanel() {
 
   openAddWidgetBtn.addEventListener('click', openAddWidgetModal);
   closeAddWidgetModalBtn.addEventListener('click', closeAddWidgetModal);
-  addWidgetModalBackdrop.addEventListener('click', (e) => {
-    if (e.target === addWidgetModalBackdrop) closeAddWidgetModal();
-  });
+  closeOnBackdropClick(addWidgetModalBackdrop, closeAddWidgetModal);
   // Every .add-widget-back goes to Choices, except the buff-timer panel's - that one was reached
   // from the premade list, so it goes back there.
   const buffTimerBackBtn = document.querySelector('#add-widget-buff-timer-panel .add-widget-back');
@@ -4916,6 +4943,12 @@ function initWidgetsPanel() {
     radio.addEventListener('change', () => {
       if (!radio.checked) return;
       window.eqTracker.setWidgetSortOrder(selectedId, radio.value);
+    });
+  });
+  sortDirectionRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      window.eqTracker.setWidgetSortDirection(selectedId, radio.value);
     });
   });
   textSizeSlider.addEventListener('input', () => {
@@ -5970,9 +6003,7 @@ function initWidgetsPanel() {
   addTimerBtn.addEventListener('click', () => openTimerModal());
   newTimerCancelBtn.addEventListener('click', closeTimerModal);
   closeCustomTimerModalBtn.addEventListener('click', closeTimerModal);
-  customTimerModalBackdrop.addEventListener('click', (e) => {
-    if (e.target === customTimerModalBackdrop) closeTimerModal();
-  });
+  closeOnBackdropClick(customTimerModalBackdrop, closeTimerModal);
   newTimerAddBtn.addEventListener('click', () => {
     const timerData = readTimerFormData();
     if (!timerData) return;
@@ -6039,14 +6070,20 @@ function initWidgetsPanel() {
     window.eqTracker.setWidgetShowIconLabel(selectedId, showIconLabelCheckbox.checked);
   });
   groupAllyCheckbox.addEventListener('change', () => {
-    // The direction choice only means anything while grouping is on, so it
-    // appears and disappears with the toggle rather than sitting there inert.
+    // The direction / group-by choices only mean anything while grouping is on, so they
+    // appear and disappear with the toggle rather than sitting there inert.
     allyDirectionRow.style.display = groupAllyCheckbox.checked ? '' : 'none';
+    allyGroupByRow.style.display = groupAllyCheckbox.checked ? '' : 'none';
     window.eqTracker.setWidgetGroupAllyBuffs(selectedId, groupAllyCheckbox.checked).then(updateLocalWidgetCache);
   });
   allyDirectionRadios.forEach((radio) => {
     radio.addEventListener('change', () => {
       if (radio.checked) window.eqTracker.setWidgetGroupAllyDirection(selectedId, radio.value).then(updateLocalWidgetCache);
+    });
+  });
+  allyGroupByRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (radio.checked) window.eqTracker.setWidgetAllyGroupBy(selectedId, radio.value).then(updateLocalWidgetCache);
     });
   });
   hideAllyNameCheckbox.addEventListener('change', () => {
@@ -6739,6 +6776,20 @@ function _pickLogFiles({ title = 'Choose a log file', hint = '', multi = false, 
   });
 }
 
+// Close a modal on a genuine backdrop click - one where the mouse went DOWN on the backdrop, not
+// just came up there. A click whose mousedown was inside the modal (a drag that ended outside, or
+// an option in a searchable dropdown whose popup got hidden mid-gesture so the click retargeted to
+// the backdrop underneath) must not close it. Reported live: picking a spell "sometimes" closed
+// the Add Aura modal.
+function closeOnBackdropClick(backdrop, close) {
+  let downOnBackdrop = false;
+  backdrop.addEventListener('mousedown', (e) => { downOnBackdrop = e.target === backdrop; });
+  backdrop.addEventListener('click', (e) => {
+    if (downOnBackdrop && e.target === backdrop) close();
+    downOnBackdrop = false;
+  });
+}
+
 function setupModalToggle(backdropId, openBtnId, closeBtnId, onOpen) {
   const backdrop = document.getElementById(backdropId);
   const openBtn = document.getElementById(openBtnId);
@@ -6754,9 +6805,7 @@ function setupModalToggle(backdropId, openBtnId, closeBtnId, onOpen) {
 
   openBtn.addEventListener('click', open);
   closeBtn.addEventListener('click', close);
-  backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) close();
-  });
+  closeOnBackdropClick(backdrop, close);
 }
 
 init().finally(() => {

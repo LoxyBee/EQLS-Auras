@@ -28,6 +28,7 @@ let currentConfig = {
   excludedBuffNames: [],
   buffSource: 'self',
   sortOrder: 'default',
+  sortDirection: 'asc',
   lowTimeThresholdSec: 30,
   landingGlowEnabled: true,
   hideBardSongs: false,
@@ -332,6 +333,8 @@ function displayName(buff) {
   // A charmed pet you own, kept distinct across re-charms by a trailing "#n" - shown as " #n".
   if (buff.isPet && /#\d+$/.test(buff.name || '')) return buff.name.replace(/#(\d+)$/, ' #$1');
   if (!buff.allyName) return buff.name;
+  // When the aura groups BY BUFF, the heading is the spell name, so the tile shows whose it is.
+  if (currentConfig.groupAllyBuffs && currentConfig.allyGroupBy === 'buff') return buff.allyName;
   if (currentConfig.hideAllyNameOnTile || currentConfig.groupAllyBuffs) return buff.name;
   return `${buff.allyName}: ${buff.name}`;
 }
@@ -348,15 +351,36 @@ function displayName(buff) {
 // remaining, alphabetical - whatever the user picked), which is applied
 // upstream in visibleBuffs.
 function groupByAlly(buffs) {
+  // 'ally' (default) - one section per person, heading is their name, tiles name the spell.
+  // 'buff' - one section per spell (owner, 3 Sep: "cast puma 8 times and it will all be under the
+  // 'puma' category"), heading is the spell, tiles name the person.
+  const byBuff = currentConfig.allyGroupBy === 'buff';
   const groups = new Map();
   for (const buff of buffs) {
-    const key = buff.allyName || '';
+    const key = (byBuff ? buff.name : buff.allyName) || '';
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(buff);
   }
-  return [...groups.entries()]
-    .map(([allyName, list]) => ({ allyName, buffs: list }))
-    .sort((a, b) => a.allyName.localeCompare(b.allyName));
+  const out = [...groups.entries()].map(([heading, list]) => ({ heading, allyName: heading, buffs: list }));
+  return orderGroups(out);
+}
+
+// Orders the groups/columns themselves (not just the tiles inside them) by the aura's own
+// "Sort by" + Ascending/Descending - owner, 3 Sep: "a way to sort across columns/groups, not just
+// sorting inside those groups". 'default' keeps the order the groups first appeared in, which
+// already follows the sorted buff list (so Descending is honoured there too, via sortBuffs).
+function orderGroups(groups) {
+  const desc = currentConfig.sortDirection === 'desc';
+  if (currentConfig.sortOrder === 'alphabetical') {
+    groups.sort((a, b) => a.heading.localeCompare(b.heading));
+    if (desc) groups.reverse();
+  } else if (currentConfig.sortOrder === 'time-remaining') {
+    const soonest = (g) =>
+      Math.min(...g.buffs.map((b) => (typeof b.remainingSec === 'number' ? b.remainingSec : Infinity)));
+    groups.sort((a, b) => soonest(a) - soonest(b));
+    if (desc) groups.reverse();
+  }
+  return groups;
 }
 
 // Grouping only makes sense when tiles actually carry an ally name - a self
@@ -819,6 +843,8 @@ function updateRef(ref, buff, isIcon) {
     ref.root.classList.remove('low', 'just-landed');
     if (isIcon) updateTileIcon(ref, buff);
     if (ref.shadeEl) ref.shadeEl.style.display = 'none';
+    // List mode: empty the countdown bar so a stale sliver doesn't sit under the greyed row.
+    if (ref.barEl) ref.barEl.style.width = '0%';
     const t = ref.timeEl;
     if (t) t.textContent = 'done';
     return;
@@ -948,10 +974,14 @@ function rampColorFor(buff, low, isZeroDurationPing, threshold) {
 // 'default' leaves the array in whatever order it arrived in (cast order,
 // from the main process) - not a no-op sort call, since re-sorting stable
 // input every tick for no reason is wasted work.
-function sortBuffs(buffs, order) {
-  if (order === 'time-remaining') return [...buffs].sort((a, b) => a.remainingSec - b.remainingSec);
-  if (order === 'alphabetical') return [...buffs].sort((a, b) => a.name.localeCompare(b.name));
-  return buffs;
+function sortBuffs(buffs, order, direction) {
+  let out = buffs;
+  if (order === 'time-remaining') out = [...buffs].sort((a, b) => a.remainingSec - b.remainingSec);
+  else if (order === 'alphabetical') out = [...buffs].sort((a, b) => a.name.localeCompare(b.name));
+  // 'desc' flips whichever order was chosen - including 'default' (cast order), where it means
+  // newest-first. Copy first if we haven't already, so the caller's array is never reversed in place.
+  if (direction === 'desc') out = (out === buffs ? [...buffs] : out).reverse();
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1250,7 +1280,7 @@ function visibleBuffs(buffs, opts = {}) {
   // be counted in a badge; before sorting, so the merged tile takes its place in the order by the
   // remaining time it actually shows rather than by whichever member happened to be first.
   if (currentConfig.mergeSameDuration) filtered = mergeByDuration(filtered);
-  const sorted = sortBuffs(filtered, currentConfig.sortOrder);
+  const sorted = sortBuffs(filtered, currentConfig.sortOrder, currentConfig.sortDirection);
 
   // A TEXT AURA IS ONE TILE, always, however many things it is watching. That is what makes it an
   // announcement rather than a list, and it is the owner's explicit constraint on the type.
@@ -1614,7 +1644,9 @@ function render(buffs) {
   // sound / glow / "genuinely expired" set below still works from the real `visible`, so the
   // expire sound fires at the true expiry, not when the linger clears.
   let tileBuffs = visible;
-  const lingerSec = isIcon && !showingPreviewSample ? currentConfig.expiredLingerSec || 0 : 0;
+  // Works in both Tiles and List mode - the tile/row greys, its countdown clears and it reads
+  // 'done' (updateRef) before it vanishes. Not for text auras (one line, nothing to linger).
+  const lingerSec = !isText && !showingPreviewSample ? currentConfig.expiredLingerSec || 0 : 0;
   if (lingerSec > 0) {
     const { soonest } = trackExpiredLinger(visible, keyFor, lingerSec * 1000);
     if (expiredLinger.size) tileBuffs = [...visible, ...[...expiredLinger.values()].map((e) => e.buff)];
@@ -1764,7 +1796,22 @@ function render(buffs) {
     tileRefs.clear();
     listEl.classList.toggle('icon-grid', isIcon && !grouped);
     listEl.classList.toggle('ally-grouped', grouped);
-    listEl.classList.toggle('ally-grouped-horizontal', grouped && currentConfig.groupAllyDirection === 'horizontal');
+    const horizontalGroups = grouped && currentConfig.groupAllyDirection === 'horizontal';
+    listEl.classList.toggle('ally-grouped-horizontal', horizontalGroups);
+    // List mode normally pins content-wrap to exactly the "List width" setting
+    // (applyConfig). Side-by-side groups have to override that: each group is
+    // its own column AT that width, and the window grows to fit however many
+    // columns there are - otherwise every column is crushed to share one
+    // list-width ("tries to squish into the same column", owner 3 Sep).
+    if (!isIcon && !isText) {
+      if (horizontalGroups) {
+        contentWrap.style.width = 'max-content';
+        listEl.style.setProperty('--ally-col-width', `${currentConfig.listWidth || 220}px`);
+      } else {
+        contentWrap.style.width = `${currentConfig.listWidth || 220}px`;
+        listEl.style.removeProperty('--ally-col-width');
+      }
+    }
     listEl.dataset.mode = modeKey;
     listEl.dataset.groupKey = groupKey;
     listEl.dataset.mergeKey = mergeKey;
