@@ -1054,7 +1054,7 @@ class BuffEngine extends EventEmitter {
         // _hasRecentOtherCast fire for ranked ally casts across the self tiers too, which suppressed
         // the player's own maintained bard songs when a groupmate sang the same one (measured:
         // -1851 Selo's, -986 Amplification on a full replay). So this one check strips ranks itself.
-        if (this._allySelfCastRecently(known.name, allyName)) {
+        if (this._allySelfCastRecently(known.name, allyName, !!known.isBardSong)) {
           this._debugLog(`ALLY IGNORED "${known.name}" on "${allyName}" - "${allyName}" was just seen self-casting it, not your cast landing on them`);
           // Consume the line. Falling through lets a later ally path (the burst-context one, with a
           // Quick Buff window open - constant in a raid) re-land this same third-person landing on
@@ -2101,9 +2101,15 @@ class BuffEngine extends EventEmitter {
   // the self-cast window. Its own rank-aware pass over recentOtherCasts (raw-keyed - see the
   // named-cast ally path for why that's deliberate). The map is small (distinct spells groupmates
   // have cast this session), so the loop is cheap and only runs on a matched third-person landing.
-  _allySelfCastRecently(canonicalName, allyName) {
+  _allySelfCastRecently(canonicalName, allyName, isSong = false) {
     const wanted = stripRankSuffix(canonicalName).toLowerCase();
-    const cutoff = Date.now() - OTHER_SELF_CAST_WINDOW_MS;
+    // A bard song the ally sang once keeps re-emitting its landing text for the whole song, so a
+    // single cast of theirs explains a landing up to a minute later. A non-song buff lands ONCE,
+    // within its cast time - a re-land many seconds after the ally's cast is a fresh application by
+    // someone else (the player, at the named-cast call site). Reported live (3 Sep): re-casting
+    // Spirit of the Puma on Jarlaxle stopped refreshing his aura tile for the full 60s after
+    // Jarlaxle cast Puma once himself. The short window is one cast-plus-slop.
+    const cutoff = Date.now() - (isSong ? OTHER_SELF_CAST_WINDOW_MS : FALLBACK_CONFIRM_WINDOW_MS);
     for (const [key, caster] of this.recentOtherCasts) {
       if (caster !== allyName) continue;
       if (stripRankSuffix(key).toLowerCase() !== wanted) continue;

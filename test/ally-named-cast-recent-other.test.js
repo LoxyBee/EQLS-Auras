@@ -65,6 +65,35 @@ test('the skip is bounded - a groupmate cast >60s ago no longer suppresses', () 
   assert.ok(allyBuffs(engine).some((s) => s.startsWith('Spirit of the Puma@Chrysaetos')));
 });
 
+test('re-casting a non-song buff on an ally who cast it ~30s ago still refreshes their tile', () => {
+  // Reported live (3 Sep): Jarlaxle (a shaman) cast Spirit of the Puma once; for the next 60s
+  // every re-cast Shara landed on him was IGNORED as "Jarlaxle just self-cast it" and his aura
+  // tile stopped updating. A non-song buff lands once within its cast time - a landing 30s after
+  // the ally's cast is a fresh application by whoever just cast, which is the player.
+  const { engine, log } = makeEngine();
+  engine.handleLine(`${TS(0)}Jarlaxle begins casting Spirit of the Puma VIII.`);
+  for (const k of engine.recentOtherCastAt.keys()) engine.recentOtherCastAt.set(k, Date.now() - 30000);
+  engine.handleLine(`${TS(30)}You begin casting Spirit of the Puma VII.`);
+  engine.handleLine(`${TS(31)}Jarlaxle growls with the spirit of the puma.`);
+  assert.ok(
+    allyBuffs(engine).some((s) => s.startsWith('Spirit of the Puma@Jarlaxle')),
+    'the re-cast on Jarlaxle should land and refresh his tile'
+  );
+  assert.ok(!log.some((m) => /ALLY IGNORED "Spirit of the Puma" on "Jarlaxle"/.test(m)));
+});
+
+test('the window is short for a non-song buff, full 60s for a bard song', () => {
+  const { engine } = makeEngine();
+  engine.handleLine(`${TS(0)}Chrysaetos begins casting Spirit of the Puma VIII.`);
+  const key = 'spirit of the puma viii';
+  engine.recentOtherCastAt.set(key, Date.now() - 30000); // 30s ago
+
+  // Non-song: 30s is past the one-cast window - not "their landing" any more.
+  assert.equal(engine._allySelfCastRecently('Spirit of the Puma', 'Chrysaetos', false), false);
+  // Song: their single cast still explains a pulse 30s later.
+  assert.equal(engine._allySelfCastRecently('Spirit of the Puma', 'Chrysaetos', true), true);
+});
+
 test('a DIFFERENT groupmate casting it does not suppress the real recipient', () => {
   const { engine } = makeEngine();
   engine.handleLine(`${TS(7)}Chrysaetos begins casting Spirit of the Puma VIII.`);
