@@ -278,13 +278,27 @@ test('the memorize-attribution fallback expires - a landing well after the memor
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
-  // Backdate the recorded memorize time rather than sleeping the test - same effect as the
-  // landing arriving long after the memorize, without a real wall-clock wait.
-  engine.recentlyMemorizedAt.set(SONG.toLowerCase(), Date.now() - 7000);
+  // Backdate the recorded memorize time rather than sleeping the test - same effect as the landing
+  // arriving long after the memorize, without a real wall-clock wait. Past the 30s window (widened
+  // from 6s on 3 Sep to cover a real bard weave that re-mems every ~24s).
+  engine.recentlyMemorizedAt.set(SONG.toLowerCase(), Date.now() - 35000);
   engine.handleLine(`${TS}${SONG} takes hold.`);
   const songs = engine.getActiveBardSongs();
   assert.equal(songs.length, 1);
   assert.equal(songs[0].allyName, 'Unknown');
+});
+
+test('a song that re-lands within the (widened) 30s memorize window is attributed to You - the weave case', () => {
+  // Reported live: "bard songs are not being attributed to me even though i am actively swapping
+  // and memming spells every 24 seconds ... sometimes works, sometimes not." The 6s window only
+  // caught the pulse right after the memorize.
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
+  engine.recentlyMemorizedAt.set(SONG.toLowerCase(), Date.now() - 20000); // 20s later - a real weave gap
+  engine.recentSelfCast = null;
+  engine.handleLine(`${TS}${SONG} takes hold.`);
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'You');
 });
 
 test('once confirmed by the memorize window, later re-lands stay "You" even well past the 6s window - "it should stay that way until you unmem it"', () => {

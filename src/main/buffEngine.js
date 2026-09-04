@@ -36,9 +36,18 @@ const TICK_INTERVAL_MS = 1000;
 // song landing with no cast-begin line of its own - see _attributeBardSongCaster's own comment.
 // Reported live: this server's auto-sing mechanic can start a bard song playing the instant it's
 // memorized, with no "You begin singing X." line at all, so a genuine self-cast fell through to
-// Unknown. 6s is generous enough to cover the memorize-to-first-tick gap without reaching back far
-// enough to credit an unrelated later memorize to an earlier landing.
-const BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS = 6000;
+// Unknown.
+//
+// 6s -> 30s (owner, 3 Sep: "bard songs are not being attributed to me even though i am actively
+// swapping and memming spells every 24 seconds ... sometimes works, sometimes not"). A real bard
+// weave re-mems its whole rotation every ~24s (measured in her log: two 4-song halves alternating
+// ~12s apart) and songs lapse and re-land constantly, so a 6s window only caught the pulse
+// immediately after the memorize - a song that first re-landed 7s later, or whose confidence was
+// cleared by a neighbour wearing off (see _dropBardSongConfidence), fell back to Unknown.
+// recentlyMemorizedAt is refreshed on every "finished memorizing X" line, so during active weaving
+// a 30s window keeps every song in the rotation continuously credited. A genuine ally cast still
+// wins - _recentOtherCaster is checked before this, and a `targets:'Self'` song is unconditional.
+const BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS = 30000;
 
 // How recently a groupmate must have been seen casting a spell for "they just self-cast it" to
 // suppress a burst-context ally landing of that spell on them. recentOtherCasts itself is
