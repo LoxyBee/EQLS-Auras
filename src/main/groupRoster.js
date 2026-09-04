@@ -32,6 +32,14 @@ const {
 
 const SELF_JOINED = /^You have joined the group\.$/;
 const SELF_REMOVED = /^You have been removed from the group\.$/;
+// "<Name> tells the group, '...'" (or the raid / party). Joining a group that already has members
+// produces NO per-member "has joined" line for the ones already there (gotcha #7), and
+// matchGroupJoinAccepted only names the ONE person you notified - so an existing member who never
+// says anything is invisible. A member talking in group chat is unambiguous current membership.
+// Reported live: Avenrae and Nocturis, in the group when Shara joined, never got their own damage
+// meter rows - folded into "Other" - because nothing ever added them here. A single alphabetic
+// word before the phrase, so quoted chat about the group can't seed a name.
+const GROUP_TELL = /^([A-Za-z]+) tells the (?:group|raid|party), /;
 
 // After a restart, a restored roster older than this is dropped rather than trusted - the app
 // can't see what happened while it was closed (regroup, camp, relog).
@@ -126,6 +134,14 @@ class GroupRoster {
     const accepted = matchGroupJoinAccepted(line);
     if (accepted) {
       this._add(accepted);
+      return;
+    }
+
+    // "<Name> tells the group/raid, '...'" - a current member talking. Not one of isPartyChangeLine's
+    // shapes, so checked before that gate. See GROUP_TELL's comment.
+    const tell = GROUP_TELL.exec(stripped);
+    if (tell) {
+      this._add(tell[1]);
       return;
     }
 

@@ -54,6 +54,22 @@ test('an ordinary chat line ending "has joined the group." seeds nobody', () => 
   assert.deepEqual(g.getAdmitted(), []);
 });
 
+test('a member talking in group chat is admitted - the "already in the group when I joined" case', () => {
+  // Reported live: Avenrae and Nocturis were in the group when Shara joined, so no "has joined"
+  // line ever named them, and the damage meter folded them into "Other".
+  const g = new GroupRoster();
+  g.handleLine(`${T}You have joined the group.`);
+  g.handleLine(`${T}Avenrae tells the group, 'pulling'`);
+  g.handleLine(`${T}Nocturis tells the raid, 'oom'`);
+  assert.ok(g.isAdmitted('avenrae') && g.isAdmitted('nocturis'));
+});
+
+test('a guild/say line that merely quotes "tells the group" seeds nobody', () => {
+  const g = new GroupRoster();
+  g.handleLine(`${T}Baxa tells the guild, 'she tells the group, hurry up'`);
+  assert.deepEqual(g.getAdmitted(), []);
+});
+
 test('names are matched case-insensitively', () => {
   const g = new GroupRoster();
   g.handleLine(`${T}BAXA has joined the group.`);
