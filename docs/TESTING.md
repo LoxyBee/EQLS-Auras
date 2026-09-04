@@ -2431,6 +2431,15 @@ seen working in the real app yet.
       Cast the same buff on several people. *Expect*: each buff section is its own column at the
       list width and the overlay grows wider - not all columns crushed into one width.
 
+### Loadout-locked zones — gem memorises become truth
+- [ ] In a raid/group instance (or any dungeon), weave your bard rotation. *Expect*: songs
+      attribute to "You" on the Bard Songs aura the moment they're memorised — no "Unknown", no
+      wait for the memorise window, even if a mob sang a same-named song earlier.
+- [ ] Same, then zone out to open world and back in. *Expect*: the gem trust resets on the way out
+      (back to normal behaviour); it only comes back as you re-mem inside.
+- [ ] An ambiguous buff (shared landing text) you have in a gem, cast in an instance. *Expect*: it
+      resolves to the gem'd one without a prompt.
+
 ### Linger when expired — List mode
 - [ ] A buff/ally aura in **List** mode → "Linger when expired" 2s+. Let a buff run out. *Expect*:
       the row greys, the bar clears, the time reads "done", then it vanishes after the set seconds.
