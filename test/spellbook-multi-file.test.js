@@ -38,6 +38,28 @@ test('a name match reads EVERY <base>-*-Spellbook.txt and unions the spell lists
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('hasListed() sees a 255 (not-this-class) row that has() correctly refuses', () => {
+  // Reported live: "North Ro Gate" reads 255 in her SHM spellbook dump - Shaman can't cast it -
+  // but she's loadout-swapped onto a class that can, and it's still listed in the one file that
+  // happens to exist on disk. Travel routing needs "is it listed at all", buff detection needs
+  // "can THIS class cast it" (gotcha #42, Clarity) - has() must keep refusing, hasListed() must not.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'eq-sb-'));
+  try {
+    fs.writeFileSync(
+      path.join(dir, 'Shara_rivervale-SHM-Spellbook.txt'),
+      '5\tTorpor\n255\tNorth Ro Gate'
+    );
+    const s = new SpellbookService();
+    s.setInstallRoot(dir);
+    s.setCharacterBaseName('Shara_rivervale');
+    assert.ok(s.has('Torpor'));
+    assert.ok(!s.has('North Ro Gate'), 'a 255 row must never count as castable for buff detection');
+    assert.ok(s.hasListed('North Ro Gate'), 'but it is still listed in her own outputfile dump');
+    assert.ok(s.hasListed('Torpor'), 'a castable row is also listed, obviously');
+    assert.ok(!s.hasListed('Lure of Ice'), 'a name absent from every file entirely is still refused');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('getExpectation reports mode and the loaded files, and drops the class from the pattern', () => {
   const dir = fixture();
   try {

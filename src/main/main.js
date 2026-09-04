@@ -1258,7 +1258,14 @@ onLogLine('travelCommand', (line) => {
  * scribes something. A stale route is worse than no route - it points the wrong way.
  */
 function scribedTravelSpellNames() {
-  return TRAVEL_SPELLS.map((s) => s.spell).filter((name) => spellbookService.has(name));
+  // hasListed(), not has(): the level column in her /outputfile dump is a per-CLASS castability
+  // flag (255 = "not this class", gotcha #42), not a "has she ever learned this" flag. A
+  // teleport/gate/circle spell can read 255 in the one class file that happens to exist on disk
+  // while her actual active loadout - a different class in the same multiclass build - casts it
+  // fine. Travel routing only needs "is this listed in her own spellbook dump at all", not "can
+  // her currently-detected class cast it" - that stricter check stays on `has()` for buff
+  // detection, where a wrong guess is a silent misattribution rather than a route she'd notice.
+  return TRAVEL_SPELLS.map((s) => s.spell).filter((name) => spellbookService.hasListed(name));
 }
 
 function travelRoutes() {
