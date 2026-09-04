@@ -63,8 +63,9 @@ const OTHER_SELF_CAST_WINDOW_MS = 60000;
 // 10-minute-cooldown ability) was still treated as inside her burst (reported live). Quick Buff's
 // own ~11 grants all land within ~3s, so re-arms are refused past this many ms from when the burst
 // actually opened; the window then lapses on its own ~BURST_WINDOW_MS later. Only bounds the
-// re-arm - `inBurst` itself is unchanged, so nothing keyed on it flips early.
-const SELF_BURST_REARM_CAP_MS = 12000;
+// re-arm - `inBurst` itself is unchanged, so nothing keyed on it flips early. (Owner, 3 Sep: "make
+// it 5 seconds, 12 is far too much for a 3 second timer.")
+const SELF_BURST_REARM_CAP_MS = 5000;
 
 // A raid-wide AE buff prints the SAME landing text for a dozen people in one ~1s tick - the player's
 // own "You feel much faster." arrives in the middle of "Leche feels much faster. / Fahh feels much
