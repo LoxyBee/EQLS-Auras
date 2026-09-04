@@ -2402,3 +2402,35 @@ seen working in the real app yet.
       group, not the whole zone.
 - [ ] **The current-fight meter and the "since zone" totals agree on who the attackers are** (no
       groupmate showing in one view and missing from the other).
+
+## Detection + UI batch (3 Sep, part 2) — live-report follow-ups, none re-confirmed in game
+
+### Bard songs
+- [ ] **Weave your rotation** (re-mem the set every ~24s). *Expect*: every song attributes to
+      "You" on the Bard Songs aura, not "Unknown" - and stays there through the weave.
+- [ ] **Sing a ranked song** (Selo's Accelerating Chorus VI etc.). *Expect*: the tile shows the
+      mote-scaled duration and holds it across renewals, not dropping to the base after ~12s.
+
+### Ally Buffs
+- [ ] **Re-cast a group buff on a groupmate who cast it themselves earlier** (Spirit of the Puma
+      on a shaman). *Expect*: their tile refreshes to the new time - not stuck on the old one.
+- [ ] **"One section per: Buff"** - Ally Buffs settings → Group into headed sections → pick
+      "Buff". Cast Puma on the whole group. *Expect*: one "Spirit of the Puma" section with a
+      tile per person (showing names), not one section per person.
+
+### Self Buffs
+- [ ] **A raid enchanter's Clarity / Breeze on you** does NOT land on your Self Buffs aura
+      (track-others off). Same for any spell your class can't cast, even one that's in your
+      spellbook file with a 255 level.
+
+### Damage meter
+- [ ] **A groupmate who was already in the group when you joined** (no "has joined" line) gets
+      their own row once they talk in group/raid chat - not folded into "Other".
+
+### UI
+- [ ] **Pick a spell from any searchable dropdown** (Add Aura → Buff timer, + Add timer, the buff
+      picker). *Expect*: the modal stays open every time.
+- [ ] **Buff timer picker** shows only buffs; **Debuff on an enemy** picker shows only DoTs /
+      mez / snare / charm. Affliction is not offered "on yourself".
+- [ ] **A share code** for a default aura is ~6 characters (`EQa1…`); paste an old `EQLSAURAS1-`
+      code and it still imports.
