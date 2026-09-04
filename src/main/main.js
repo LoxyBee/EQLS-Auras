@@ -2701,8 +2701,10 @@ ipcMain.handle('actionBar:setCooldownReplacesLabel', (_event, { id, replaces }) 
 ipcMain.handle('actionBar:setBorderWidth', (_event, { id, px }) => actionBarManager.setBorderWidth(id, px));
 ipcMain.handle('actionBar:setBorderOffset', (_event, { id, px }) => actionBarManager.setBorderOffset(id, px));
 ipcMain.handle('actionBar:setBorderColor', (_event, { id, color }) => actionBarManager.setBorderColor(id, color));
+ipcMain.handle('actionBar:setBgColor', (_event, { id, color }) => actionBarManager.setBgColor(id, color));
 ipcMain.handle('actionBar:setSlotBgColor', (_event, { id, index, color }) => actionBarManager.setSlotBgColor(id, index, color));
 ipcMain.handle('actionBar:setSlotNameSizeOverride', (_event, { id, index, size }) => actionBarManager.setSlotNameSizeOverride(id, index, size));
+ipcMain.handle('actionBar:setSlotNameColorOverride', (_event, { id, index, color }) => actionBarManager.setSlotNameColorOverride(id, index, color));
 ipcMain.handle('actionBar:setSlotInsetPx', (_event, { id, index, px }) => actionBarManager.setSlotInsetPx(id, index, px));
 ipcMain.handle('actionBar:setSlotToggleGroup', (_event, { id, index, group }) => actionBarManager.setSlotToggleGroup(id, index, group));
 ipcMain.handle('actionBar:setSlotToggleName', (_event, { id, index, name }) => actionBarManager.setSlotToggleName(id, index, name));

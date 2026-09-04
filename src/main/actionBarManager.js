@@ -416,6 +416,14 @@ function setBorderColor(id, color) {
   return store.getById(id);
 }
 
+// Bar-wide default background - same 3-way encoding as a slot's own bgColor (null/'transparent'/a
+// hex string). A per-gem bgColor still wins when set - see actionbar.js's render.
+function setBgColor(id, color) {
+  store.update(id, { bgColor: typeof color === 'string' && color ? color : null });
+  pushConfigChanged(id);
+  return store.getById(id);
+}
+
 function clampSlotIndex(index) {
   return Math.max(0, Math.min(TOTAL_SLOTS - 1, Math.round(Number(index) || 0)));
 }
@@ -463,6 +471,10 @@ function setSlotBgColor(id, index, color) {
 function setSlotNameSizeOverride(id, index, size) {
   const n = size == null ? null : Math.max(6, Math.min(20, Math.round(Number(size))));
   return updateSlot(id, index, { nameSizeOverride: n });
+}
+
+function setSlotNameColorOverride(id, index, color) {
+  return updateSlot(id, index, { nameColorOverride: typeof color === 'string' && color ? color : null });
 }
 
 // Per-gem, not bar-wide - reported directly: the game's own white active/toggled border only
@@ -796,12 +808,14 @@ module.exports = {
   setBorderWidth,
   setBorderOffset,
   setBorderColor,
+  setBgColor,
   swapSlots,
   setSlotIcon,
   setSlotName,
   setSlotDisabled,
   setSlotBgColor,
   setSlotNameSizeOverride,
+  setSlotNameColorOverride,
   setSlotInsetPx,
   setSlotToggleGroup,
   setSlotToggleName,
