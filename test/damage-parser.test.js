@@ -483,6 +483,35 @@ test('unknown-owner charmed pets fold into one "Charmed pets" row', () => {
   assert.match(pets[0].valueText, /^200/);
 });
 
+// Owner, 3 Sep: "i want all the damage separated on the backend, so that when something happens
+// that can retroactively split this ... it isn't lost." Every hit's attacker is tallied raw,
+// regardless of classification, so a groupmate recognised late shows their FULL damage - not just
+// what landed after the app worked out who they were.
+test('a groupmate learned late gets their complete damage, not just what came after', () => {
+  const e = new DamageEngine();
+  // No roster, nothing seeded. Avenrae fights a mob the player never touches - unclassifiable, so
+  // it would normally sit in `pending` and be dropped after the fight timeout.
+  e.handleLine(`${T}Avenrae slashes a lockjaw for 500 points of damage.`, 1000);
+  e.handleLine(`${T}Avenrae slashes a lockjaw for 500 points of damage.`, 2000);
+  // Now the player tags the mob AND Avenrae is confirmed a group member.
+  e.handleLine(`${T}a lockjaw has taken 10 damage from your Plague III.`, 3000);
+  e.setGroupFn(() => ['avenrae']);
+  e.handleLine(`${T}Avenrae slashes a lockjaw for 500 points of damage.`, 4000);
+  const av = e.getActive(4000, 'all').find((r) => r.name === 'Avenrae');
+  assert.ok(av, 'Avenrae has her own row');
+  assert.match(av.valueText, /^1\.5k|^1500/, 'all 1500, not just the 500 after she was recognised');
+});
+
+test('a fully-classified friend is byte-identical - raw is only a top-up', () => {
+  const e = new DamageEngine();
+  e.setGroupFn(() => ['baxa']);
+  e.handleLine(`${T}a zol ghoul knight has taken 10 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Baxa slashes a zol ghoul knight for 300 points of damage.`, 1000);
+  e.handleLine(`${T}Baxa slashes a zol ghoul knight for 300 points of damage.`, 2000);
+  const baxa = e.getActive(2000, 'all').find((r) => r.name === 'Baxa');
+  assert.match(baxa.valueText, /^600/, 'no double-count - raw equals classified here');
+});
+
 // Owner, 2 Sep: a mage pet ("Kobektik") showed as its own attacker row. In scope 'all', once the
 // group roster is known, only you + admitted members get their own row; a summoned-pet-shaped
 // name the roster does NOT vouch for folds into "Pets", any other outsider folds into "Other".

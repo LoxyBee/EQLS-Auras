@@ -108,6 +108,17 @@ class DamageEngine extends EventEmitter {
     this.sinceZoneTotal = 0;
     this.sinceZoneStartedAt = null;
     this.sinceZoneLastAt = null;
+    // Owner, 3 Sep: "i want all the damage separated on the backend, so that when something happens
+    // that can retroactively split this ... it still collects all the correct data and it isn't
+    // lost." Every parsed damage line's ATTACKER is tallied here regardless of classification -
+    // one map per fight (cleared with byAttacker on reset), one per zone (cleared with
+    // sinceZoneByAttacker on enterZone). getActive reconciles: a name that is a confirmed friend
+    // NOW gets the larger of its classified total and this raw total, so a groupmate whose early
+    // hits landed before the bootstrap could place them - or before the group roster learned them -
+    // shows their full damage the moment they're recognised, instead of that stretch being lost to
+    // the pending-buffer age cutoff or a fight reset.
+    this.rawFightByName = new Map(); // rawName -> { damage, hits }
+    this.rawZoneByName = new Map();
     // Lines awaiting proof of which way they point: { attacker, target, amount, kind, at }
     this.pending = [];
     this.timeoutSec = DEFAULT_FIGHT_TIMEOUT_SEC;
@@ -293,6 +304,9 @@ class DamageEngine extends EventEmitter {
     const hit = parseDamageLine(line);
     if (!hit) return;
 
+    // Raw tally FIRST, before any classification can drop the line - see the field comment.
+    this._recordRaw(hit);
+
     const dir = this._classify(hit);
     if (dir === null) {
       // Might still become classifiable a moment from now, once one of its two names turns up in
@@ -336,6 +350,17 @@ class DamageEngine extends EventEmitter {
     }
   }
 
+  _recordRaw(hit) {
+    const bump = (map) => {
+      const r = map.get(hit.attacker) || { damage: 0, hits: 0 };
+      r.damage += hit.amount;
+      r.hits += 1;
+      map.set(hit.attacker, r);
+    };
+    bump(this.rawFightByName);
+    bump(this.rawZoneByName);
+  }
+
   _credit(attacker, amount, at) {
     if (this.fightStartedAt === null) this.fightStartedAt = at;
     // A retro-credited line can predate the line that opened the fight.
@@ -364,6 +389,7 @@ class DamageEngine extends EventEmitter {
   // exactly what it measures.
   enterZone(now = Date.now()) {
     this.sinceZoneByAttacker.clear();
+    this.rawZoneByName.clear();
     this.sinceZoneTotal = 0;
     this.sinceZoneStartedAt = null;
     this.sinceZoneLastAt = null;
@@ -385,6 +411,8 @@ class DamageEngine extends EventEmitter {
       enemies: [...this.enemies],
       friends: [...this.friends],
       byAttacker: [...this.byAttacker],
+      rawFightByName: [...this.rawFightByName],
+      rawZoneByName: [...this.rawZoneByName],
       fightStartedAt: this.fightStartedAt,
       lastDamageAt: this.lastDamageAt,
       totalDamage: this.totalDamage,
@@ -415,6 +443,12 @@ class DamageEngine extends EventEmitter {
     for (const pair of Array.isArray(s.sinceZoneByAttacker) ? s.sinceZoneByAttacker : []) {
       if (Array.isArray(pair)) this.sinceZoneByAttacker.set(pair[0], pair[1]);
     }
+    for (const pair of Array.isArray(s.rawFightByName) ? s.rawFightByName : []) {
+      if (Array.isArray(pair)) this.rawFightByName.set(pair[0], pair[1]);
+    }
+    for (const pair of Array.isArray(s.rawZoneByName) ? s.rawZoneByName : []) {
+      if (Array.isArray(pair)) this.rawZoneByName.set(pair[0], pair[1]);
+    }
     if (typeof s.fightStartedAt === 'number') this.fightStartedAt = s.fightStartedAt;
     if (typeof s.lastDamageAt === 'number') this.lastDamageAt = s.lastDamageAt;
     if (typeof s.totalDamage === 'number') this.totalDamage = s.totalDamage;
@@ -439,6 +473,7 @@ class DamageEngine extends EventEmitter {
   // from your own first hit - losing exactly the opening seconds the bootstrap exists to keep.
   reset() {
     this.byAttacker.clear();
+    this.rawFightByName.clear();
     this.totalDamage = 0;
     this.fightStartedAt = null;
     this.lastDamageAt = null;
@@ -480,13 +515,13 @@ class DamageEngine extends EventEmitter {
     const pets = (this.petsFn && this.petsFn()) || null;
     // A fight is underway - the current-fight rows, as always.
     if (this.fightStartedAt !== null && this.totalDamage > 0) {
-      return this._tilesFrom(this.byAttacker, this.fightSeconds(now), false, scope, pets);
+      return this._tilesFrom(this.byAttacker, this.fightSeconds(now), false, scope, pets, this.rawFightByName);
     }
     // No fight - fall back to the running tally since the last zone line, so the meter isn't blank
     // between pulls and right after zoning. The total row carries a `sinceZone` flag so the overlay
     // can mark that this isn't the last fight's number.
     if (this.sinceZoneStartedAt !== null && this.sinceZoneTotal > 0) {
-      return this._tilesFrom(this.sinceZoneByAttacker, this.sinceZoneSeconds(), true, scope, pets);
+      return this._tilesFrom(this.sinceZoneByAttacker, this.sinceZoneSeconds(), true, scope, pets, this.rawZoneByName);
     }
     return [];
   }
@@ -498,7 +533,26 @@ class DamageEngine extends EventEmitter {
    *   ONLY the rows the scope keeps - non-scope damage is not counted at all, not merely hidden.
    *   An empty group roster makes 'group' fall back to 'all', flagged on the total row.
    */
-  _tilesFrom(byAttacker, secs, sinceZone, scope = 'all', pets = null) {
+  _tilesFrom(byAttacker, secs, sinceZone, scope = 'all', pets = null, rawByName = null) {
+    // Reconcile the classified tally with the raw one (see the rawFightByName / rawZoneByName field
+    // comment). For a name that is a CONFIRMED friend right now - the player, someone in the group
+    // roster, or a name the bootstrap already added to `friends` - its outgoing damage is fully in
+    // the raw tally, so use whichever figure is larger. This is what makes the split retroactive: a
+    // groupmate credited to "Other" (or not credited at all) while unrecognised gets their complete
+    // damage the moment they're recognised, rather than only what landed after. Enemies and
+    // still-unknown names are untouched - raw is not consulted for them.
+    const effective = new Map(byAttacker);
+    if (rawByName) {
+      for (const [rawName, r] of rawByName) {
+        const key = rawName.toLowerCase();
+        const confirmedFriend =
+          key === 'you' || key === 'yourself' || this.friends.has(key) || this._isGroupMember(key);
+        if (!confirmedFriend) continue;
+        const cur = effective.get(rawName) || { damage: 0, hits: 0 };
+        if (r.damage > cur.damage) effective.set(rawName, { damage: r.damage, hits: Math.max(r.hits, cur.hits) });
+      }
+    }
+    byAttacker = effective;
     const admittedList = (() => {
       try {
         return (this.groupFn() || []).map((n) => String(n).toLowerCase());
