@@ -125,6 +125,29 @@ test('the "- Group" difficulty grammar still resolves a raid to the base-zone bo
   assert.ok(t.getActive().length > 0);
 });
 
+test('The Permafrost Caverns (the Voidling instance name for Permafrost) loads the board', () => {
+  const { t } = make();
+  t.handleLine(`${TS}You have entered The Permafrost Caverns - Group 4 (Refined).`);
+  assert.equal(t.getCurrentZone(), 'The Permafrost Caverns');
+  assert.ok(t.getActive().length > 0, 'the raid instance name must resolve, not just "Permafrost Keep"');
+});
+
+test('an instanced zone with no named list logs a loud diagnostic instead of a silent empty board', () => {
+  const { t, log } = make();
+  t.handleLine(`${TS}You have entered The Catacombs of Whoknows - Group 2 (Adaptive).`);
+  assert.deepEqual(t.getActive(), []);
+  assert.ok(
+    log.some((m) => m.includes('no named list') && m.includes('The Catacombs of Whoknows')),
+    'the gap should be visible in the debug log, not silent'
+  );
+});
+
+test('a plain (non-instanced) untracked zone does NOT log the "add it" diagnostic', () => {
+  const { t, log } = make();
+  t.handleLine(`${TS}You have entered East Freeport.`);
+  assert.ok(!log.some((m) => m.includes('no named list')), 'only instanced zones are worth flagging');
+});
+
 test('a raid zone entered as a plain group/dungeon run lights up the board (owner, 2 Sep)', () => {
   const { t } = make();
   // no Voidling dialogue - just walked in with a group. "anything that is a RAID is also a

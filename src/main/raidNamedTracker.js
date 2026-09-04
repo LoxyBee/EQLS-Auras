@@ -86,9 +86,8 @@ class RaidNamedTracker extends EventEmitter {
 
   // Startup zone recovery (see logZonePeek.js). The player entered this zone before the app was
   // watching, so the board is rebuilt full - nothing has been killed as far as the app can know.
-  // `viaVoidling` comes from the same log tail scan: the hail/danger dialogue found just before the
-  // recovered zone line. Without that confirmation the board stays dark - a normal instanced
-  // dungeon shares the zone name and suffix.
+  // The board shows for ANY tracked zone here, same as a live entry (c3479d4) - `viaVoidling` is
+  // only metadata saying whether the log tail also carried the player's own raid-entry hail.
   setZone(zone, viaVoidling = false) {
     if (zone) this._enterZone(zone, viaVoidling);
   }
@@ -99,6 +98,16 @@ class RaidNamedTracker extends EventEmitter {
   _enterZone(rawZone, viaVoidling) {
     const baseZone = stripInstanceSuffix(rawZone);
     const entry = RAID_ZONE_NAMEDS[baseZone];
+    // A group/raid instance carries a difficulty suffix ("- Group", "N (Awakened)"). If one of
+    // those has no named list, that is almost certainly a zone string EQL uses that
+    // raidZoneNameds.js doesn't know yet (e.g. a new instance name) - make it loud in the debug
+    // log rather than a silent empty board, so the gap is visible without the owner having to
+    // report which zone it was.
+    if (!entry && baseZone !== String(rawZone || '').trim()) {
+      this._debugLog(
+        `RAID BOARD - entered instanced zone "${rawZone}" (base "${baseZone}") with no named list - add it to raidZoneNameds.js`
+      );
+    }
 
     // Owner, 2 Sep: "anything that is a RAID is also a separate DUNGEON." The board shows on ANY
     // entry to a tracked zone - a plain group/dungeon run, or a Voidling raid instance. The
