@@ -1053,6 +1053,12 @@ function setSortOrder(id, order) {
   return config;
 }
 
+function setSortDirection(id, value) {
+  const config = widgetStore.update(id, { sortDirection: value === 'desc' ? 'desc' : 'asc' });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setLowTimeThreshold(id, seconds) {
   const config = widgetStore.update(id, { lowTimeThresholdSec: seconds });
   pushConfigChanged(id);
@@ -1632,6 +1638,7 @@ module.exports = {
   setIconsPerRow,
   setRowSize,
   setSortOrder,
+  setSortDirection,
   setLowTimeThreshold,
   setLandingGlowEnabled,
   setMergeSameDuration,

@@ -28,6 +28,7 @@ let currentConfig = {
   excludedBuffNames: [],
   buffSource: 'self',
   sortOrder: 'default',
+  sortDirection: 'asc',
   lowTimeThresholdSec: 30,
   landingGlowEnabled: true,
   hideBardSongs: false,
@@ -360,9 +361,26 @@ function groupByAlly(buffs) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(buff);
   }
-  return [...groups.entries()]
-    .map(([heading, list]) => ({ heading, allyName: heading, buffs: list }))
-    .sort((a, b) => a.heading.localeCompare(b.heading));
+  const out = [...groups.entries()].map(([heading, list]) => ({ heading, allyName: heading, buffs: list }));
+  return orderGroups(out);
+}
+
+// Orders the groups/columns themselves (not just the tiles inside them) by the aura's own
+// "Sort by" + Ascending/Descending - owner, 3 Sep: "a way to sort across columns/groups, not just
+// sorting inside those groups". 'default' keeps the order the groups first appeared in, which
+// already follows the sorted buff list (so Descending is honoured there too, via sortBuffs).
+function orderGroups(groups) {
+  const desc = currentConfig.sortDirection === 'desc';
+  if (currentConfig.sortOrder === 'alphabetical') {
+    groups.sort((a, b) => a.heading.localeCompare(b.heading));
+    if (desc) groups.reverse();
+  } else if (currentConfig.sortOrder === 'time-remaining') {
+    const soonest = (g) =>
+      Math.min(...g.buffs.map((b) => (typeof b.remainingSec === 'number' ? b.remainingSec : Infinity)));
+    groups.sort((a, b) => soonest(a) - soonest(b));
+    if (desc) groups.reverse();
+  }
+  return groups;
 }
 
 // Grouping only makes sense when tiles actually carry an ally name - a self
@@ -954,10 +972,14 @@ function rampColorFor(buff, low, isZeroDurationPing, threshold) {
 // 'default' leaves the array in whatever order it arrived in (cast order,
 // from the main process) - not a no-op sort call, since re-sorting stable
 // input every tick for no reason is wasted work.
-function sortBuffs(buffs, order) {
-  if (order === 'time-remaining') return [...buffs].sort((a, b) => a.remainingSec - b.remainingSec);
-  if (order === 'alphabetical') return [...buffs].sort((a, b) => a.name.localeCompare(b.name));
-  return buffs;
+function sortBuffs(buffs, order, direction) {
+  let out = buffs;
+  if (order === 'time-remaining') out = [...buffs].sort((a, b) => a.remainingSec - b.remainingSec);
+  else if (order === 'alphabetical') out = [...buffs].sort((a, b) => a.name.localeCompare(b.name));
+  // 'desc' flips whichever order was chosen - including 'default' (cast order), where it means
+  // newest-first. Copy first if we haven't already, so the caller's array is never reversed in place.
+  if (direction === 'desc') out = (out === buffs ? [...buffs] : out).reverse();
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1256,7 +1278,7 @@ function visibleBuffs(buffs, opts = {}) {
   // be counted in a badge; before sorting, so the merged tile takes its place in the order by the
   // remaining time it actually shows rather than by whichever member happened to be first.
   if (currentConfig.mergeSameDuration) filtered = mergeByDuration(filtered);
-  const sorted = sortBuffs(filtered, currentConfig.sortOrder);
+  const sorted = sortBuffs(filtered, currentConfig.sortOrder, currentConfig.sortDirection);
 
   // A TEXT AURA IS ONE TILE, always, however many things it is watching. That is what makes it an
   // announcement rather than a list, and it is the owner's explicit constraint on the type.

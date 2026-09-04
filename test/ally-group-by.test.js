@@ -26,6 +26,7 @@ function load() {
   const parts = [
     'let currentConfig = {};',
     pick(/function groupByAlly\(buffs\) \{[\s\S]*?\n\}/, 'groupByAlly'),
+    pick(/function orderGroups\(groups\) \{[\s\S]*?\n\}/, 'orderGroups'),
     pick(/function displayName\(buff\) \{[\s\S]*?\n\}/, 'displayName'),
   ];
   // eslint-disable-next-line no-new-func
@@ -65,6 +66,22 @@ test('group by player (default): one section per person, tiles named by spell', 
 test('ungrouped ally buff still shows "Player: Spell"', () => {
   O.setConfig({ groupAllyBuffs: false });
   assert.equal(O.displayName(buff('Spirit of the Puma', 'Fahh')), 'Fahh: Spirit of the Puma');
+});
+
+test('groups/columns order by "Sort by" + Ascending/Descending, not just the tiles inside', () => {
+  O.setConfig({ groupAllyBuffs: true, allyGroupBy: 'buff', sortOrder: 'alphabetical', sortDirection: 'asc' });
+  let g = O.groupByAlly([buff('Talisman of Altuna', 'Fahh'), buff('Aegis', 'Leche'), buff('Spirit of the Puma', 'Fahh')]);
+  assert.deepEqual(g.map((x) => x.heading), ['Aegis', 'Spirit of the Puma', 'Talisman of Altuna']);
+
+  O.setConfig({ groupAllyBuffs: true, allyGroupBy: 'buff', sortOrder: 'alphabetical', sortDirection: 'desc' });
+  g = O.groupByAlly([buff('Talisman of Altuna', 'Fahh'), buff('Aegis', 'Leche'), buff('Spirit of the Puma', 'Fahh')]);
+  assert.deepEqual(g.map((x) => x.heading), ['Talisman of Altuna', 'Spirit of the Puma', 'Aegis']);
+
+  O.setConfig({ groupAllyBuffs: true, allyGroupBy: 'buff', sortOrder: 'time-remaining', sortDirection: 'asc' });
+  const soon = { name: 'Short', allyName: 'A', durationSec: 60, remainingSec: 5 };
+  const late = { name: 'Long', allyName: 'B', durationSec: 60, remainingSec: 55 };
+  g = O.groupByAlly([late, soon]);
+  assert.deepEqual(g.map((x) => x.heading), ['Short', 'Long'], 'the group closest to expiring comes first');
 });
 
 module.exports = () => report('ally-group-by');

@@ -1619,6 +1619,7 @@ function initWidgetsPanel() {
   const displayModeRadios = document.querySelectorAll('input[name="widget-display-mode"]');
   const timerFormatRadios = document.querySelectorAll('input[name="widget-timer-format"]');
   const sortOrderRadios = document.querySelectorAll('input[name="widget-sort-order"]');
+  const sortDirectionRadios = document.querySelectorAll('input[name="widget-sort-direction"]');
   // The countdown / row text size (the "Timer text" topic), capped at 28px - see widgetStore's
   // own comment on the shared `textSize` field. Its slider used to share the id
   // widget-text-size-slider with the text-aura MESSAGE slider below, so getElementById returned
@@ -1725,6 +1726,7 @@ function initWidgetsPanel() {
   const hideInfiniteRowEl = document.getElementById('widget-hide-infinite-row');
   const mergeHintEl = document.getElementById('widget-merge-hint');
   const sortOrderRowEl = document.getElementById('widget-sort-order-row');
+  const sortDirectionRowEl = document.getElementById('widget-sort-direction-row');
   const opacityRowEl = document.getElementById('widget-opacity-row');
   const positionRowEl = document.getElementById('widget-position-row');
   const positionHintEl = document.getElementById('widget-position-hint');
@@ -3133,6 +3135,9 @@ function initWidgetsPanel() {
     // watches is active at once - see overlay.js's visibleBuffs) - only the control is hidden, at
     // whatever value the aura already has (the default, cast order, unless changed before this).
     sortOrderRowEl.style.display = has('sort') ? '' : 'none';
+    // Ascending / descending flips whatever "Sort by" chose (including cast order -> newest first),
+    // and also orders the columns/sections when the aura is grouped.
+    sortDirectionRowEl.style.display = has('sort') ? '' : 'none';
     // Merging is about how tiles are drawn. A text aura draws exactly one tile whatever happens,
     // so there is never anything to merge.
     mergeRowEl.style.display = has('merge') ? '' : 'none';
@@ -3247,6 +3252,7 @@ function initWidgetsPanel() {
     displayModeRadios.forEach((r) => (r.checked = r.value === widget.displayMode));
     timerFormatRadios.forEach((r) => (r.checked = r.value === widget.timerFormat));
     sortOrderRadios.forEach((r) => (r.checked = r.value === (widget.sortOrder || 'default')));
+    sortDirectionRadios.forEach((r) => (r.checked = r.value === (widget.sortDirection === 'desc' ? 'desc' : 'asc')));
     textSizeSlider.value = widget.textSize;
     textSizeValueEl.textContent = `${widget.textSize}px`;
     iconSizeSlider.value = widget.iconSize;
@@ -4933,6 +4939,12 @@ function initWidgetsPanel() {
     radio.addEventListener('change', () => {
       if (!radio.checked) return;
       window.eqTracker.setWidgetSortOrder(selectedId, radio.value);
+    });
+  });
+  sortDirectionRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      window.eqTracker.setWidgetSortDirection(selectedId, radio.value);
     });
   });
   textSizeSlider.addEventListener('input', () => {

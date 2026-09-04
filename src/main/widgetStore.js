@@ -471,6 +471,7 @@ function defaultCustomWidget(name) {
     reverseDetection: false,
     locked: true,
     sortOrder: 'default',
+    sortDirection: 'asc',
     lowTimeThresholdSec: 30,
     landingGlowEnabled: true,
     // Note 8. Collapses buffs that share a duration into one tile showing the lowest remaining
@@ -811,6 +812,7 @@ const SHAREABLE_FIELDS = [
   'iconJustify',
   'textJustify',
   'allyGroupBy',
+  'sortDirection',
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -971,6 +973,7 @@ function normalizeWidget(widget) {
         : DEFAULT_AND_WINDOW_SEC,
     excludedBuffNames: stringList(widget.excludedBuffNames),
     sortOrder: widget.sortOrder || 'default',
+    sortDirection: widget.sortDirection === 'desc' ? 'desc' : 'asc',
     lowTimeThresholdSec: typeof widget.lowTimeThresholdSec === 'number' ? widget.lowTimeThresholdSec : 30,
     landingGlowEnabled: widget.landingGlowEnabled !== false,
     mergeSameDuration: !!widget.mergeSameDuration,

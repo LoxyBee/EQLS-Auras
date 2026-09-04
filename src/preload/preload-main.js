@@ -278,6 +278,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetIconsPerRow: (id, count) => ipcRenderer.invoke('widget:setIconsPerRow', { id, value: count }),
   setWidgetRowSize: (id, size) => ipcRenderer.invoke('widget:setRowSize', { id, value: size }),
   setWidgetSortOrder: (id, order) => ipcRenderer.invoke('widget:setSortOrder', { id, value: order }),
+  setWidgetSortDirection: (id, value) => ipcRenderer.invoke('widget:setSortDirection', { id, value }),
   setWidgetLowTimeThreshold: (id, seconds) => ipcRenderer.invoke('widget:setLowTimeThreshold', { id, value: seconds }),
   setWidgetLandingGlowEnabled: (id, enabled) => ipcRenderer.invoke('widget:setLandingGlowEnabled', { id, enabled }),
   setWidgetHideBardSongs: (id, hide) => ipcRenderer.invoke('widget:setHideBardSongs', { id, hide }),

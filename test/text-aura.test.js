@@ -83,7 +83,7 @@ function loadOverlayLogic() {
     pick(/function mergedKeyFor\(bucket, burstIndex\) \{[\s\S]*?\n\}/, 'mergedKeyFor'),
     pick(/function splitIntoBursts\(members\) \{[\s\S]*?\n\}/, 'splitIntoBursts'),
     pick(/function mergeByDuration\(buffs\) \{[\s\S]*?\n\}/, 'mergeByDuration'),
-    pick(/function sortBuffs\(buffs, order\) \{[\s\S]*?\n\}/, 'sortBuffs'),
+    pick(/function sortBuffs\(buffs, order, direction\) \{[\s\S]*?\n\}/, 'sortBuffs'),
     pick(/function displayName\(buff\) \{[\s\S]*?\n\}/, 'displayName'),
     pick(/function textFor\(buff\) \{[\s\S]*?\n\}/, 'textFor'),
     pick(/function visibleBuffs\(buffs, opts = \{\}\) \{[\s\S]*?\n\}/, 'visibleBuffs'),
