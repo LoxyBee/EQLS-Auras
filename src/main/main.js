@@ -62,6 +62,8 @@ const { createMainWindow, getMainWindow } = require('./mainWindow');
 const { LogService } = require('./logService');
 // Note 38. The zone matcher lives with the other log-line patterns; the seed list is data.
 const { matchZoneChange, matchForgetSpell, matchMemorizeFinished } = require('./buffParser');
+const { isLoadoutLockedZone, INSTANCE_SUFFIX } = require('../shared/loadoutLockedZones');
+const baseZoneName = (z) => String(z || '').replace(INSTANCE_SUFFIX, '').trim();
 const KNOWN_ZONES = require('../shared/data/zones');
 const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
@@ -981,6 +983,10 @@ onLogLine('zoneChange', (line) => {
   if (!zone) return;
   const changed = applyZoneChangeAndNotify(zone);
   debugLog(`ZONE now "${changed}"`);
+  // In a dungeon / raid-group instance a loadout swap is impossible, so gem memorises become trusted
+  // evidence for detection (see buffEngine.setLoadoutLocked). The base name (suffix stripped) is
+  // the key that tells a real move from an entrance->instance / reconnect echo for the same zone.
+  buffEngine.setLoadoutLocked(isLoadoutLockedZone(zone), baseZoneName(zone));
   // The damage meter's "since zone-in" tally starts over here - see damageEngine.enterZone.
   damageEngine.enterZone();
   // Note 20. Where you are is half of every route, so a zone line is the main thing that makes a
@@ -1609,6 +1615,10 @@ app.whenReady().then(() => {
     if (!found) return;
     applyZoneChangeAndNotify(found.zone);
     raidNamedTracker.setZone(found.zone, found.viaVoidling);
+    // Seed loadout-locked state too - but NOT the verified gems: a memorise seen before the app
+    // started was never observed, and re-entering a locked zone deliberately starts the gem
+    // evidence fresh (see setLoadoutLocked). This only sets the flag so memorises from here on count.
+    buffEngine.setLoadoutLocked(isLoadoutLockedZone(found.zone), baseZoneName(found.zone));
     customTimerEngine.seedZone(found.zone);
     pushTravelRoutes();
     debugLog(

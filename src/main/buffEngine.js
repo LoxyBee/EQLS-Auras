@@ -469,6 +469,14 @@ class BuffEngine extends EventEmitter {
     // only ever needs to answer "was this memorized a few seconds ago", not survive a restart or
     // a loadout switch. See _attributeBardSongCaster and BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS.
     this.recentlyMemorizedAt = new Map(); // lowercased name -> Date.now() it finished memorizing
+    // Loadout-locked zones (dungeons / raid+group instances - see src/shared/loadoutLockedZones.js).
+    // A loadout swap is impossible there, so a gem's memorize/forget line seen while `loadoutLocked`
+    // is TRUTH, not the usual weak "currentlyMemorized" guess. `_gemVerified` holds the lowercased
+    // names memorised on THIS visit; it is cleared on EVERY lock transition (owner: exiting
+    // downgrades it immediately, re-entering does not reinstate it - step out, swap, step back in).
+    // Runtime-only, never persisted, never profile-scoped.
+    this.loadoutLocked = false;
+    this._gemVerified = new Set();
     // Trim on load as well as on insert. A store saved before the cap existed can already hold
     // more than fourteen, and capping only new arrivals would leave that file permanently over
     // the limit - it would never come down on its own, because entries are only removed by a
@@ -649,6 +657,25 @@ class BuffEngine extends EventEmitter {
     this.groupmateSink = typeof fn === 'function' ? fn : null;
   }
 
+  // main.js calls this on every zone change: `locked` = is the new zone one where a loadout swap is
+  // impossible (see src/shared/loadoutLockedZones.js); `zoneKey` = the base zone name, used to tell
+  // a real move from a reconnect echo / entrance->instance line for the same zone. `_gemVerified`
+  // (gems whose memorise was seen as TRUTH this visit) is wiped on any real zone change - the
+  // owner's case is stepping out of an instance, swapping loadout with no log line, and stepping
+  // back in, so re-entering must NOT reinstate the old evidence.
+  setLoadoutLocked(locked, zoneKey = null) {
+    const l = !!locked;
+    const movedZone = zoneKey !== this._lastLockZoneKey;
+    this._lastLockZoneKey = zoneKey;
+    this.loadoutLocked = l;
+    if (movedZone && this._gemVerified.size) {
+      this._gemVerified.clear();
+      this._debugLog(`LOADOUT ${l ? 'LOCKED' : 'UNLOCKED'} in "${zoneKey || '(none)'}" - gem evidence reset (${l ? 'rebuilds as you re-mem' : 'back to weak'})`);
+    } else if (movedZone) {
+      this._debugLog(`LOADOUT ${l ? `LOCKED in "${zoneKey}" - gem memorises now count as truth` : 'UNLOCKED'}`);
+    }
+  }
+
   // fn(spellName) => boolean - whether the player has that spell scribed.
   setSpellbookCheckFn(fn) {
     this.spellbookCheckFn = fn;
@@ -786,6 +813,8 @@ class BuffEngine extends EventEmitter {
     this.selfAmbiguousResolutions = this._getOrCreateSelfResolutionsMap(profileId);
     this.currentlyMemorized = this._getOrCreateMemorizedMap(profileId);
     this.bardSongConfirmedMine = this._getOrCreateBardSongConfirmedSet(profileId);
+    // A profile switch IS a loadout swap - the gems verified under the old loadout no longer hold.
+    this._gemVerified.clear();
     this.emit('memorizedChanged', this.getCurrentlyMemorized());
   }
 
@@ -1004,6 +1033,7 @@ class BuffEngine extends EventEmitter {
     const forgotten = matchForgetSpell(line);
     if (forgotten) {
       this.currentlyMemorized.delete(forgotten.toLowerCase());
+      this._gemVerified.delete(forgotten.toLowerCase());
       this.bardSongConfirmedMine.delete(forgotten.toLowerCase());
       // Also clears the raw memorize-window evidence itself (not just the durable confirmation
       // built from it) - otherwise a forget arriving within BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS of
@@ -1017,6 +1047,10 @@ class BuffEngine extends EventEmitter {
     const memorized = matchMemorizeFinished(line);
     if (memorized) {
       this._rememberMemorized(memorized);
+      // In a loadout-locked zone this memorise is TRUTH (owner, 4 Sep) - a loadout swap can't have
+      // happened, so the gem really holds this spell. Used to attribute a bard song / resolve an
+      // ambiguous landing to the player with no time window and no mob-cast doubt.
+      if (this.loadoutLocked) this._gemVerified.add(memorized.toLowerCase());
       this._saveCurrentlyMemorized();
       this.emit('memorizedChanged', this.getCurrentlyMemorized());
       this._checkForEndedBuffs(line);
@@ -1666,6 +1700,19 @@ class BuffEngine extends EventEmitter {
       // exactly one is in a gem would have stopped resolving itself and started asking. Measured
       // against 1.6 million lines before touching anything: the gem check decides 24 landings and
       // the spellbook check 6, so that is a real cost for no gain. Order changed; nothing lost.
+      // A gem whose memorise was seen inside a loadout-locked zone is TRUTH (owner, 4 Sep - see
+      // setLoadoutLocked). Unlike plain `currentlyMemorized` it can resolve a text the spellbook
+      // leaves ambiguous, so it runs FIRST. Still yields to concrete counter-evidence (a groupmate
+      // seen casting a candidate, a raid-wide AE, an ally Quick Buff).
+      const verifiedGem = selfPlausible.filter((c) => this._gemVerified.has(c.name.toLowerCase()));
+      if (!otherCastMatch && !incomingAE && verifiedGem.length === 1 && !suppressNarrow(verifiedGem[0])) {
+        if (inBurst && !verifiedGem[0].isBardSong) this._rearmBurst();
+        this._debugLog(`LANDED "${verifiedGem[0].name}" - ambiguous text "${stripped}" is a gem you memorised in a loadout-locked zone (trusted)`);
+        this._land(verifiedGem[0]);
+        this._checkForEndedBuffs(line);
+        return;
+      }
+
       if (!otherCastMatch && !incomingAE && selfCandidates.length === 1 && !suppressNarrow(selfCandidates[0])) {
         // Spellbook narrows it to exactly one thing I actually know, with
         // no sign anyone else just cast any of the candidates either - safe
@@ -2582,6 +2629,15 @@ class BuffEngine extends EventEmitter {
       stripRankSuffix(this.recentSelfCast.name).toLowerCase() === lower &&
       Date.now() < this.recentSelfCast.expiresAt
     ) {
+      return 'You';
+    }
+    // The player memorised this exact song inside a loadout-locked zone (owner, 4 Sep: "since i
+    // cannot change loadout, the memming and unmemming of spells can be considered truth ... those
+    // bard songs can fully be attributed to me"). A beneficial song landing on the player that they
+    // demonstrably have in a gem and are weaving is theirs - this covers the whole weave with no
+    // time window, and beats a stale mob-cast of a same-named ability (gotcha #31's cause).
+    if (this._gemVerified.has(lower)) {
+      this.bardSongConfirmedMine.add(lower);
       return 'You';
     }
     // A groupmate's own third-person "X begins casting/singing Y" line, seen recently for this
