@@ -3588,11 +3588,7 @@ function initWidgetsPanel() {
   }
 
   if (closeBuffPickerModalBtn) closeBuffPickerModalBtn.addEventListener('click', closeBuffPickerModal);
-  if (buffPickerModalBackdrop) {
-    buffPickerModalBackdrop.addEventListener('click', (e) => {
-      if (e.target === buffPickerModalBackdrop) closeBuffPickerModal();
-    });
-  }
+  if (buffPickerModalBackdrop) closeOnBackdropClick(buffPickerModalBackdrop, closeBuffPickerModal);
 
   trackOthersCheckbox.addEventListener('change', () => {
     window.eqTracker.setTrackOthersEnabled(trackOthersCheckbox.checked);
@@ -4810,9 +4806,7 @@ function initWidgetsPanel() {
 
   openAddWidgetBtn.addEventListener('click', openAddWidgetModal);
   closeAddWidgetModalBtn.addEventListener('click', closeAddWidgetModal);
-  addWidgetModalBackdrop.addEventListener('click', (e) => {
-    if (e.target === addWidgetModalBackdrop) closeAddWidgetModal();
-  });
+  closeOnBackdropClick(addWidgetModalBackdrop, closeAddWidgetModal);
   // Every .add-widget-back goes to Choices, except the buff-timer panel's - that one was reached
   // from the premade list, so it goes back there.
   const buffTimerBackBtn = document.querySelector('#add-widget-buff-timer-panel .add-widget-back');
@@ -5989,9 +5983,7 @@ function initWidgetsPanel() {
   addTimerBtn.addEventListener('click', () => openTimerModal());
   newTimerCancelBtn.addEventListener('click', closeTimerModal);
   closeCustomTimerModalBtn.addEventListener('click', closeTimerModal);
-  customTimerModalBackdrop.addEventListener('click', (e) => {
-    if (e.target === customTimerModalBackdrop) closeTimerModal();
-  });
+  closeOnBackdropClick(customTimerModalBackdrop, closeTimerModal);
   newTimerAddBtn.addEventListener('click', () => {
     const timerData = readTimerFormData();
     if (!timerData) return;
@@ -6758,6 +6750,20 @@ function _pickLogFiles({ title = 'Choose a log file', hint = '', multi = false, 
   });
 }
 
+// Close a modal on a genuine backdrop click - one where the mouse went DOWN on the backdrop, not
+// just came up there. A click whose mousedown was inside the modal (a drag that ended outside, or
+// an option in a searchable dropdown whose popup got hidden mid-gesture so the click retargeted to
+// the backdrop underneath) must not close it. Reported live: picking a spell "sometimes" closed
+// the Add Aura modal.
+function closeOnBackdropClick(backdrop, close) {
+  let downOnBackdrop = false;
+  backdrop.addEventListener('mousedown', (e) => { downOnBackdrop = e.target === backdrop; });
+  backdrop.addEventListener('click', (e) => {
+    if (downOnBackdrop && e.target === backdrop) close();
+    downOnBackdrop = false;
+  });
+}
+
 function setupModalToggle(backdropId, openBtnId, closeBtnId, onOpen) {
   const backdrop = document.getElementById(backdropId);
   const openBtn = document.getElementById(openBtnId);
@@ -6773,9 +6779,7 @@ function setupModalToggle(backdropId, openBtnId, closeBtnId, onOpen) {
 
   openBtn.addEventListener('click', open);
   closeBtn.addEventListener('click', close);
-  backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) close();
-  });
+  closeOnBackdropClick(backdrop, close);
 }
 
 init().finally(() => {

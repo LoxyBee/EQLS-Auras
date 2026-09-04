@@ -111,7 +111,13 @@
         sel.value = value;
         sel.dispatchEvent(new Event('change', { bubbles: true }));
       }
-      close();
+      // Deferred, not synchronous. This runs on the <li>'s mousedown; hiding the popup here would
+      // remove that <li> from the render tree before the click that follows the mousedown is
+      // dispatched, and the browser then retargets that click to whatever is now under the pointer.
+      // When the popup overlapped a modal backdrop, that target was the backdrop - and "click the
+      // backdrop" closes the modal. Reported live: picking a spell "sometimes" closed the Add Aura
+      // modal. Closing on the next tick keeps the <li> in place for the click.
+      setTimeout(close, 0);
       refreshDisplay();
     }
 

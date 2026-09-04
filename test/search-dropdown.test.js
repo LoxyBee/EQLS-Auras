@@ -32,6 +32,15 @@ test('the <select> stays the source of truth - pick() mirrors value and fires ch
   assert.match(src, /new Event\('change', \{ bubbles: true \}\)/);
 });
 
+test('pick() defers the popup close so the following click is not retargeted', () => {
+  // Reported live: choosing a spell "sometimes" closed the Add Aura modal. The <li> handles
+  // mousedown; hiding the popup there removes the <li> before the click fires, and the browser
+  // retargets that click to whatever is underneath - the modal backdrop, which closes the modal.
+  const pick = src.match(/function pick\(value\) \{([\s\S]*?)\n {4}\}/);
+  assert.ok(pick, 'pick() has been renamed or restructured');
+  assert.match(pick[1], /setTimeout\(close, 0\)/, 'close() runs synchronously, in the same gesture as the mousedown');
+});
+
 test('a MutationObserver rebuilds the list when the <option>s change', () => {
   assert.match(src, /new MutationObserver/);
   assert.match(src, /requestAnimationFrame\(rebuild\)/);
