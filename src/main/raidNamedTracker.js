@@ -53,11 +53,72 @@ class RaidNamedTracker extends EventEmitter {
     // "danger" hail - i.e. it's the raid-lockout instance, not a plain group run. Metadata only;
     // the board shows either way now.
     this.viaVoidling = false;
+    // Called on every board change so the session-restore registry can persist it - a raid runs
+    // for well over an hour and the app gets restarted mid-raid (crash, or to pick up a fix), and
+    // without this every restart rebuilt the board with all nameds "up" again, throwing away which
+    // ones the group had already cleared (reported live: 7 Plane of Hate nameds down, restarted,
+    // board showed all 14 up).
+    this._persistFn = null;
+    // A session-restore snapshot waiting for its zone's board to be built (startup ordering - see
+    // restoreState). Consumed by _enterZone.
+    this._pendingRestore = null;
     this.tickTimer = setInterval(() => this._tick(), 1000);
   }
 
   setDebugLogFn(fn) {
     this.debugLogFn = fn;
+  }
+
+  setPersistFn(fn) {
+    this._persistFn = typeof fn === 'function' ? fn : null;
+  }
+
+  _persist() {
+    if (this._persistFn) this._persistFn();
+  }
+
+  // For the session-restore registry. Null when there is nothing worth keeping (not in a tracked
+  // zone, or in one with no kills recorded - a fresh board rebuilds itself from the zone line).
+  captureState() {
+    if (!this.currentZone) return null;
+    const killed = [...this.board.values()].filter((e) => e.killedAt);
+    if (!killed.length) return null;
+    return {
+      zone: this.currentZone,
+      viaVoidling: this.viaVoidling,
+      at: Date.now(),
+      kills: killed.map((e) => ({ name: e.name, killedAt: e.killedAt, respawnAt: e.respawnAt || null })),
+    };
+  }
+
+  // Restore the greyed-out kills onto the board for the same zone. The registry only calls this
+  // within its grace window and with the clock sane. Startup ORDER matters: sessionRestore.restoreAll
+  // runs before the log-tail zone recovery (setZone), so currentZone is usually still null here -
+  // stash the snapshot and let _enterZone apply it once the board for the matching zone exists.
+  // respawnAt is absolute, so a countdown that elapsed while closed is dropped by the next _tick.
+  restoreState(snap) {
+    if (!snap || typeof snap !== 'object' || !snap.zone) return 0;
+    this._pendingRestore = snap;
+    return this._applyPendingRestore();
+  }
+
+  _applyPendingRestore() {
+    const snap = this._pendingRestore;
+    if (!snap || snap.zone !== this.currentZone) return 0;
+    this._pendingRestore = null;
+    let n = 0;
+    for (const k of Array.isArray(snap.kills) ? snap.kills : []) {
+      const entry = this.board.get(bareName(k.name));
+      if (!entry || entry.killedAt) continue;
+      entry.killedAt = Number(k.killedAt) || Date.now();
+      entry.respawnAt = k.respawnAt ? Number(k.respawnAt) : null;
+      n += 1;
+    }
+    if (n) {
+      this._debugLog(`RAID BOARD - restored ${n} kill${n === 1 ? '' : 's'} for "${this.currentZone}" after a restart`);
+      this.emit('changed', this.getActive());
+    }
+    return n;
   }
 
   _debugLog(msg) {
@@ -89,7 +150,13 @@ class RaidNamedTracker extends EventEmitter {
   // The board shows for ANY tracked zone here, same as a live entry (c3479d4) - `viaVoidling` is
   // only metadata saying whether the log tail also carried the player's own raid-entry hail.
   setZone(zone, viaVoidling = false) {
-    if (zone) this._enterZone(zone, viaVoidling);
+    if (!zone) return;
+    this._seeding = true;
+    try {
+      this._enterZone(zone, viaVoidling);
+    } finally {
+      this._seeding = false;
+    }
   }
 
   // `rawZone` is the zone name exactly as the log gave it, difficulty suffix and all. `viaVoidling`
@@ -139,6 +206,11 @@ class RaidNamedTracker extends EventEmitter {
       `RAID BOARD - entered "${baseZone}"${viaVoidling ? ' (via Voidling)' : ''}, ${this.board.size} named up`
     );
     this.emit('changed', this.getActive());
+    // A fresh board for the zone a pre-restart snapshot was taken in - grey its kills back in.
+    // Only from the startup seed (_seeding): a LIVE re-entry is a genuinely fresh instance and the
+    // board should be all-up.
+    if (this._seeding) this._applyPendingRestore();
+    else this._pendingRestore = null;
   }
 
   _recordKill(slainName) {
@@ -155,6 +227,7 @@ class RaidNamedTracker extends EventEmitter {
     this._debugLog(
       `RAID BOARD - "${entry.name}" killed` + (entry.respawnAt ? `, back in ${named.respawnMinutes}m` : '')
     );
+    this._persist();
     this.emit('changed', this.getActive());
   }
 
@@ -170,6 +243,7 @@ class RaidNamedTracker extends EventEmitter {
         this._debugLog(`RAID BOARD - "${entry.name}" respawned`);
       }
     }
+    if (changed) this._persist();
     // A respawn countdown needs a per-second broadcast to visibly tick; a board with no live
     // countdown does not, so only emit when something actually moved or a countdown is running.
     if (changed || [...this.board.values()].some((e) => e.respawnAt)) {

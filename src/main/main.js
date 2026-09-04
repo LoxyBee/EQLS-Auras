@@ -285,6 +285,18 @@ sessionRestore.register('groupRoster', {
     return groupRoster.getAdmitted().length;
   },
 });
+
+// Raid-named board - 30 minutes. A raid runs well over an hour and the app gets restarted mid-raid
+// (crash, or to pick up a fix); without this the board rebuilt from the zone line with every named
+// "up" again, discarding which ones the group had already cleared (reported live). Restored only
+// onto the same zone (a fresh instance since = a fresh board). The tracker itself seeds currentZone
+// from the log tail on startup (logZonePeek), so by the time this runs the board exists to grey.
+sessionRestore.register('raidNamed', {
+  maxGapMs: 30 * MIN,
+  capture: () => raidNamedTracker.captureState(),
+  restore: (d) => raidNamedTracker.restoreState(d),
+});
+raidNamedTracker.setPersistFn(() => sessionRestore.scheduleSave());
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
 // widgetManager pulls in Electron's screen/BrowserWindow. Action bar gem cooldowns ride along as
