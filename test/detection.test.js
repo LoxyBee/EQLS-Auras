@@ -612,6 +612,24 @@ test('a raid-wide AE buff is not auto-landed as the player\'s own spell that sha
   assert.ok(log.some((m) => m.includes('incoming AE') || (m.includes('IGNORED') && m.includes(alacrity.landingText))));
 });
 
+test('a raid AE buff during the player\'s own Quick Buff is ignored, not queued as a prompt', () => {
+  // Reported live (3 Sep): "i just quick buffed ... then someone cast theirs completely after
+  // mine and spirit of wolf came up on my self buffs." A raid-wide recast whose text shares with
+  // one of her spells must not land AND must not prompt during Quick Buff chaos - the crowd of
+  // identical third-person landings is proof enough it is incoming.
+  const { engine, buffStore, log } = makeEngine();
+  const alacrity = buffStore.getByName('Alacrity');
+  engine.setSpellbookCheckFn((name) => name === 'Alacrity');
+  engine.handleLine('You activate Quick Buff.'); // her own burst is open
+  for (const who of ['Leche', 'Fahh', 'Nocturis', 'Jarlaxle', 'Valkri']) {
+    engine.handleLine(`${who}${alacrity.othersLandingSuffix}`);
+  }
+  engine.handleLine(alacrity.landingText);
+  assert.deepEqual(names(engine), [], 'a raid AE landed during her own Quick Buff');
+  assert.ok(!log.some((m) => m.includes('QUEUED') && m.includes(alacrity.landingText)), 'it should not prompt');
+  assert.ok(log.some((m) => m.includes('incoming AE')));
+});
+
 test('a normal ambiguous landing with only a couple of other recipients still narrows by spellbook', () => {
   // The AE guard must not swallow the ordinary case: the player casts a group buff, it lands on
   // her two groupmates and herself. Below the crowd threshold, spellbook-narrowing still works.

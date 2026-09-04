@@ -1596,13 +1596,15 @@ class BuffEngine extends EventEmitter {
       const otherCastMatch = candidates.find((c) => this._hasRecentOtherCast(c.name));
 
       // The same landing text just landed third-person on a crowd of other people - a raid-wide AE
-      // buff, not the player's own cast (see _looksLikeIncomingAE). The spellbook/gem "narrowed to
-      // one thing you know" tiers below must not auto-attribute it; fall through to the ambiguous
-      // handling (queue with track-others on, IGNORE with it off - i.e. off your Self Buffs).
-      // A remembered resolution still wins (it is a confirmed answer, not a guess), and an actively
-      // tracked renewal still wins (it was already yours). Reported live: a raid AE haste landed as
-      // the player's own Alacrity.
-      const incomingAE = !otherCastMatch && this._looksLikeIncomingAE(stripped);
+      // buff, not the player's own cast (see _looksLikeIncomingAE). A buff on 3+ other people at
+      // once is not yours regardless of anything else, so this is NOT gated on otherCastMatch: it
+      // suppresses the spellbook/gem "narrowed to one thing you know" tiers AND the "your own burst
+      // is open" queue below, so the line is simply IGNORED (kept off Self Buffs) rather than
+      // landed or turned into a prompt during Quick Buff chaos. A remembered resolution still wins
+      // (a confirmed answer, not a guess) and an actively tracked renewal still wins (already
+      // yours). Reported live: a raid AE haste landed as the player's own Alacrity; a raid-wide
+      // Spirit of Wolf recast landed as hers 34s after her own Quick Buff.
+      const incomingAE = this._looksLikeIncomingAE(stripped);
       if (incomingAE) {
         this._debugLog(`SUSPECT - ambiguous "${stripped}" just landed on ${this._recentSharedLandings.get(stripped).names.size} others in ${AE_LANDING_WINDOW_MS}ms - incoming AE, not auto-landing`);
       }
@@ -1721,7 +1723,7 @@ class BuffEngine extends EventEmitter {
         return;
       }
 
-      if (!otherCastMatch && inBurst && selfPlausible.length > 0) {
+      if (!otherCastMatch && !incomingAE && inBurst && selfPlausible.length > 0) {
         // Landing during a burst the player themselves triggered ("You
         // activate X.") is presumed to be their own regardless of
         // spellbook - but which specific one it is remains genuinely
@@ -1790,7 +1792,7 @@ class BuffEngine extends EventEmitter {
               `${SONG_PULSE_CONFIRM_HITS}x; a bard song is the only thing that does that on its own`
           );
           this._land(pulsedSong);
-        } else if (this.burstOpenedBy && Date.now() < this.burstUntil && selfPlausible.length > 0) {
+        } else if (!incomingAE && this.burstOpenedBy && Date.now() < this.burstUntil && selfPlausible.length > 0) {
           // The player themselves triggered a burst ("You activate Quick Buff.") and it is still
           // open - so a self-plausible landing right now is very likely one of theirs, even though a
           // groupmate was also seen casting one of the candidates (otherCastMatch), which is the
