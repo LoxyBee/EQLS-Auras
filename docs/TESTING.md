@@ -2422,10 +2422,19 @@ seen working in the real app yet.
 - [ ] **A raid enchanter's Clarity / Breeze on you** does NOT land on your Self Buffs aura
       (track-others off). Same for any spell your class can't cast, even one that's in your
       spellbook file with a 255 level.
+- [ ] **A raid-wide AE buff** (someone AE-hastes the raid: "…feels much faster." on a dozen names,
+      then "You feel much faster."). *Expect*: nothing new lands on your Self Buffs, even if you
+      have one spell that shares that text (Alacrity) scribed.
+
+### Ally Buffs / Damage meter — side-by-side by-buff columns
+- [ ] Ally Buffs → Group into headed sections → "Buff", and set direction to **side by side**.
+      Cast the same buff on several people. *Expect*: each buff section is its own column at the
+      list width and the overlay grows wider - not all columns crushed into one width.
 
 ### Damage meter
 - [ ] **A groupmate who was already in the group when you joined** (no "has joined" line) gets
-      their own row once they talk in group/raid chat - not folded into "Other".
+      their own row once they talk in group/raid chat **or once you land a group buff/song on
+      them** - not folded into "Other".
 
 ### UI
 - [ ] **Pick a spell from any searchable dropdown** (Add Aura → Buff timer, + Add timer, the buff
