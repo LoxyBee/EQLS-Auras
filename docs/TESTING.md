@@ -2431,6 +2431,11 @@ seen working in the real app yet.
       Cast the same buff on several people. *Expect*: each buff section is its own column at the
       list width and the overlay grows wider - not all columns crushed into one width.
 
+### Linger when expired — List mode
+- [ ] A buff/ally aura in **List** mode → "Linger when expired" 2s+. Let a buff run out. *Expect*:
+      the row greys, the bar clears, the time reads "done", then it vanishes after the set seconds.
+      (Previously this only worked in Tiles mode.)
+
 ### Sort direction
 - [ ] Any buff/ally aura → **Order: Descending**. *Expect*: the list flips (with "Time remaining"
       the longest-left is on top; with "Cast order" the newest is on top).
