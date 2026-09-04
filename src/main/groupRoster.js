@@ -109,6 +109,16 @@ class GroupRoster {
     this._save();
   }
 
+  // A group-target spell the PLAYER cast was confirmed landing on `name` (buffEngine.setGroupmateSink).
+  // They can only land such a spell on an actual groupmate, so this is a membership signal for
+  // someone the join lines never named - a raid leader shuffling players between groups prints
+  // nothing (gotcha #7). Additive, like a "tells the group" line; never removes anyone.
+  noteGroupmate(name) {
+    const key = String(name || '').toLowerCase();
+    if (!key || !/^[a-z]+$/.test(key)) return; // a real EQ first name, not a mob phrase
+    this._add(key);
+  }
+
   _add(name) {
     if (!name) return;
     const key = String(name).toLowerCase();

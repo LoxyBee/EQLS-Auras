@@ -113,5 +113,24 @@ test('restart protection: joining a fresh group after restore wipes the restored
   assert.deepEqual(g.getAdmitted(), []);
 });
 
+test('noteGroupmate: a group-target spell the player landed proves membership the join lines missed', () => {
+  // Reported live (3 Sep): a raid leader shuffled Avenrae/Nocturis into Shara's group with no
+  // "has joined the group" line, and neither spoke - so the damage meter dumped them in "Other".
+  // Every Group-target spell the player lands on someone is proof that someone is grouped.
+  const g = new GroupRoster();
+  g.handleLine(`${T}You have joined the group.`);
+  g.noteGroupmate('Avenrae');
+  g.noteGroupmate('Nocturis');
+  assert.ok(g.isAdmitted('avenrae') && g.isAdmitted('nocturis'));
+});
+
+test('noteGroupmate: a mob phrase or empty name is rejected', () => {
+  const g = new GroupRoster();
+  g.noteGroupmate('a greater kobold');
+  g.noteGroupmate('');
+  g.noteGroupmate(null);
+  assert.deepEqual(g.getAdmitted(), []);
+});
+
 module.exports = () => report('group-roster');
 if (require.main === module) report('group-roster').then((n) => process.exit(n ? 1 : 0));

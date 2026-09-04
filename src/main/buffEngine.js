@@ -57,6 +57,16 @@ const BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS = 30000;
 // later.
 const OTHER_SELF_CAST_WINDOW_MS = 60000;
 
+// A raid-wide AE buff prints the SAME landing text for a dozen people in one ~1s tick - the player's
+// own "You feel much faster." arrives in the middle of "Leche feels much faster. / Fahh feels much
+// faster. / ..." When an ambiguous self-landing text is one that just landed third-person on this
+// many OTHER people inside this window, it is an incoming AE from someone else, not the player's
+// own cast - so the spellbook/gem "narrowed to one thing you know" tiers must not auto-land it.
+// Reported live (3 Sep): a raid AE haste landed as the player's own Alacrity (the only one of the
+// 13 spells sharing that text that was in her spellbook) with no cast line of her own anywhere.
+const AE_LANDING_WINDOW_MS = 3000;
+const AE_LANDING_MIN_OTHERS = 3;
+
 // How long an INSTANT is kept available - a spell the roster has no duration for and which is not
 // marked as lasting forever, i.e. something that happened rather than something running.
 //
@@ -380,6 +390,11 @@ class BuffEngine extends EventEmitter {
     // player's own landing (Infusion of Spirit: player casts once at 13:18, a groupmate self-casts
     // at 00:04 next day).
     this.recentOtherCastAt = new Map();
+    // self landingText -> { at, names:Set<lowercased> } - the last time that exact landing text was
+    // seen landing THIRD-PERSON on someone, and who. Feeds the incoming-AE guard in the ambiguous
+    // self path (see AE_LANDING_WINDOW_MS). Small: only texts that actually appear are ever keyed,
+    // and a stale entry is replaced wholesale on the next hit rather than pruned on a timer.
+    this._recentSharedLandings = new Map();
     // lowercased spell name -> currently sitting in a gem slot (built from
     // "You forget X."/"You have finished memorizing X." lines - see
     // handleLine).
@@ -613,6 +628,17 @@ class BuffEngine extends EventEmitter {
     this.iconUrlFn = fn;
   }
 
+  // fn(name) - called with the recipient's name every time one of the PLAYER'S OWN group-target
+  // spells (roster targets 'Group' / 'Group Member') is confirmed landing on someone. main.js feeds
+  // it to the group roster: a raid leader shuffling players between groups prints no "has joined"
+  // line (gotcha #7), so a groupmate who never speaks and never got a normal invite is otherwise
+  // invisible to the damage meter's "group" scope. The player can only land a Group-target spell on
+  // an actual groupmate, so this is a clean membership signal. Not a substitute for the join lines -
+  // additive, same as bardSongTagger.
+  setGroupmateSink(fn) {
+    this.groupmateSink = typeof fn === 'function' ? fn : null;
+  }
+
   // fn(spellName) => boolean - whether the player has that spell scribed.
   setSpellbookCheckFn(fn) {
     this.spellbookCheckFn = fn;
@@ -823,6 +849,7 @@ class BuffEngine extends EventEmitter {
   handleLine(line) {
     const stripped = stripTimestamp(line);
     this._noteRefusedCast(line);
+    this._recordThirdPersonLanding(stripped);
 
     // Backlog #12 - death strips every buff and song. The game clears them all; if you rez you
     // come back with none unless something restores them, and those re-register here like any
@@ -1568,6 +1595,18 @@ class BuffEngine extends EventEmitter {
       // castName/pendingCast handling further down).
       const otherCastMatch = candidates.find((c) => this._hasRecentOtherCast(c.name));
 
+      // The same landing text just landed third-person on a crowd of other people - a raid-wide AE
+      // buff, not the player's own cast (see _looksLikeIncomingAE). The spellbook/gem "narrowed to
+      // one thing you know" tiers below must not auto-attribute it; fall through to the ambiguous
+      // handling (queue with track-others on, IGNORE with it off - i.e. off your Self Buffs).
+      // A remembered resolution still wins (it is a confirmed answer, not a guess), and an actively
+      // tracked renewal still wins (it was already yours). Reported live: a raid AE haste landed as
+      // the player's own Alacrity.
+      const incomingAE = !otherCastMatch && this._looksLikeIncomingAE(stripped);
+      if (incomingAE) {
+        this._debugLog(`SUSPECT - ambiguous "${stripped}" just landed on ${this._recentSharedLandings.get(stripped).names.size} others in ${AE_LANDING_WINDOW_MS}ms - incoming AE, not auto-landing`);
+      }
+
       // If exactly one of these candidates is already an actively tracked
       // buff, this landing is overwhelmingly more likely a renewal of that
       // same buff than a brand-new different one from the same family
@@ -1615,7 +1654,7 @@ class BuffEngine extends EventEmitter {
       // exactly one is in a gem would have stopped resolving itself and started asking. Measured
       // against 1.6 million lines before touching anything: the gem check decides 24 landings and
       // the spellbook check 6, so that is a real cost for no gain. Order changed; nothing lost.
-      if (!otherCastMatch && selfCandidates.length === 1 && !suppressNarrow(selfCandidates[0])) {
+      if (!otherCastMatch && !incomingAE && selfCandidates.length === 1 && !suppressNarrow(selfCandidates[0])) {
         // Spellbook narrows it to exactly one thing I actually know, with
         // no sign anyone else just cast any of the candidates either - safe
         // to treat as my own cast even with no cast-begin/activate line at
@@ -1631,7 +1670,7 @@ class BuffEngine extends EventEmitter {
       // cannot, and after a loadout swap it is wrong rather than useless - it just cannot be
       // trusted OVER the spellbook when the two disagree.
       const memorizedCandidates = selfPlausible.filter((c) => this.currentlyMemorized.has(c.name.toLowerCase()));
-      if (!otherCastMatch && memorizedCandidates.length === 1 && !suppressNarrow(memorizedCandidates[0])) {
+      if (!otherCastMatch && !incomingAE && memorizedCandidates.length === 1 && !suppressNarrow(memorizedCandidates[0])) {
         if (inBurst && !memorizedCandidates[0].isBardSong) this.burstUntil = Date.now() + BURST_WINDOW_MS;
         this._debugLog(
           `LANDED "${memorizedCandidates[0].name}" - ambiguous text "${stripped}" narrowed to 1 by currently-memorized gem`
@@ -2094,6 +2133,35 @@ class BuffEngine extends EventEmitter {
 
   _hasRecentOtherCast(name) {
     return this.recentOtherCasts.has(name.toLowerCase());
+  }
+
+  // Record that a spell's third-person landing text was just seen on someone. Cheap: one O(1) map
+  // lookup per line whose shape is "<OneCapitalisedWord> <rest>". See _recentSharedLandings.
+  _recordThirdPersonLanding(stripped) {
+    const sp = stripped.indexOf(' ');
+    if (sp < 2) return;
+    const name = stripped.slice(0, sp);
+    if (name === 'You' || name === 'Your' || !/^[A-Z][a-z'`]+$/.test(name)) return;
+    const matches = this.buffStore.findAllByOthersLandingSuffix(stripped.slice(sp));
+    if (!matches.length) return;
+    const now = Date.now();
+    const who = name.toLowerCase();
+    for (const m of matches) {
+      if (!m.landingText) continue;
+      let rec = this._recentSharedLandings.get(m.landingText);
+      if (!rec || now - rec.at > AE_LANDING_WINDOW_MS) rec = { at: now, names: new Set() };
+      rec.at = now;
+      rec.names.add(who);
+      this._recentSharedLandings.set(m.landingText, rec);
+    }
+  }
+
+  // True when `text` (a self landingText) just landed third-person on AE_LANDING_MIN_OTHERS or more
+  // other people inside the window - i.e. it is a raid-wide AE from someone else, and an ambiguous
+  // self-landing of the same text must not be auto-attributed to the player.
+  _looksLikeIncomingAE(text) {
+    const rec = this._recentSharedLandings.get(text);
+    return !!rec && Date.now() - rec.at < AE_LANDING_WINDOW_MS && rec.names.size >= AE_LANDING_MIN_OTHERS;
   }
 
   /** Who was last seen casting it, or null. For explaining a decision, never for making one. */
@@ -2587,6 +2655,11 @@ class BuffEngine extends EventEmitter {
     // enemy, or a buff song on a groupmate) is ALSO surfaced on the Bard Songs aura via
     // _trackBardSongOnTarget, called once the duration-bearing allyBuffs entry below is set.
     const onEnemy = this._isEnemySpell(known);
+    // A Group-target spell of the player's own can only land on an actual groupmate - tell the
+    // roster (see setGroupmateSink). Cheap and idempotent; runs before every early return below.
+    if (!onEnemy && this.groupmateSink && (known.targets === 'Group' || known.targets === 'Group Member')) {
+      this.groupmateSink(allyName);
+    }
     if (known.infiniteDuration) {
       this.allyBuffs.set(key, {
         name: known.name,

@@ -561,6 +561,69 @@ test('an ambiguous third-person suffix does not record evidence for the wrong sp
   }
 });
 
+test('setGroupmateSink fires when the player lands a Group-target spell on someone', () => {
+  // A raid leader moving players between groups prints no join line, so a silent groupmate is
+  // invisible to the damage meter (reported live: Avenrae, Nocturis). The player can only land a
+  // Group-target spell on an actual groupmate - feed that name to the group roster.
+  const { engine, buffStore } = makeEngine();
+  const spell = buffStore.getAll().find(
+    (e) => e.targets === 'Group' && e.othersLandingSuffix && !e.isBardSong && !e.scaleCategory?.match(/debuff|charm|dot|nuke/)
+  );
+  assert.ok(spell, 'expected a Group-target buff with a third-person suffix');
+  const seen = [];
+  engine.setGroupmateSink((n) => seen.push(n));
+  engine.handleLine(`You begin casting ${spell.name}.`);
+  engine.handleLine(`Fahh${spell.othersLandingSuffix}`);
+  assert.deepEqual(seen, ['Fahh']);
+});
+
+test('setGroupmateSink does NOT fire for a Single-target buff on an ally', () => {
+  const { engine, buffStore } = makeEngine();
+  const spell = buffStore.getAll().find(
+    (e) => (e.targets === 'Single' || e.targets === 'Friendly') && e.othersLandingSuffix && !e.isBardSong
+  );
+  assert.ok(spell, 'expected a Single/Friendly buff with a third-person suffix');
+  const seen = [];
+  engine.setGroupmateSink((n) => seen.push(n));
+  engine.handleLine(`You begin casting ${spell.name}.`);
+  engine.handleLine(`Fahh${spell.othersLandingSuffix}`);
+  assert.deepEqual(seen, [], 'a targeted buff on anyone is not proof of group membership');
+});
+
+test('a raid-wide AE buff is not auto-landed as the player\'s own spell that shares its text', () => {
+  // Reported live (3 Sep): "alacrity just landed in my self buffs even though i never cast it."
+  // A raid AE haste prints "Leche feels much faster. / Fahh feels much faster. / ... / You feel
+  // much faster." in one tick. "You feel much faster." is shared by 13 spells; Alacrity was the
+  // only one in her spellbook, so the spellbook-narrow tier took it as her own cast with no cast
+  // line anywhere. The many identical third-person landings ARE the tell that it is incoming.
+  const { engine, buffStore, log } = makeEngine();
+  const alacrity = buffStore.getByName('Alacrity');
+  assert.ok(alacrity && alacrity.othersLandingSuffix, 'expected Alacrity with a third-person suffix');
+  const sharing = buffStore.getAll().filter((e) => e.landingText === alacrity.landingText);
+  assert.ok(sharing.length > 1, 'Alacrity landing text is meant to be shared');
+
+  engine.setSpellbookCheckFn((name) => name === 'Alacrity'); // only candidate she has scribed
+  for (const who of ['Leche', 'Fahh', 'Nocturis', 'Jarlaxle']) {
+    engine.handleLine(`${who}${alacrity.othersLandingSuffix}`);
+  }
+  engine.handleLine(alacrity.landingText); // "You feel much faster."
+
+  assert.deepEqual(names(engine), [], 'a raid AE haste self-attributed to Alacrity');
+  assert.ok(log.some((m) => m.includes('incoming AE') || (m.includes('IGNORED') && m.includes(alacrity.landingText))));
+});
+
+test('a normal ambiguous landing with only a couple of other recipients still narrows by spellbook', () => {
+  // The AE guard must not swallow the ordinary case: the player casts a group buff, it lands on
+  // her two groupmates and herself. Below the crowd threshold, spellbook-narrowing still works.
+  const { engine, buffStore, log } = makeEngine();
+  const alacrity = buffStore.getByName('Alacrity');
+  engine.setSpellbookCheckFn((name) => name === 'Alacrity');
+  engine.handleLine(`Leche${alacrity.othersLandingSuffix}`);
+  engine.handleLine(alacrity.landingText);
+  assert.deepEqual(names(engine), ['Alacrity'], 'one other recipient should not trip the AE guard');
+  assert.ok(log.some((m) => m.includes('narrowed to 1 by spellbook')));
+});
+
 test('a detrimental spell can never land as a self-buff, from ANY tier - not just the spellbook one', () => {
   // Reported live 24 Aug, the SECOND time: "boil blood is a debuff, it should never be in buff
   // tracking... second time so there is a wider problem." The first time (Languid Pace, the test

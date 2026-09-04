@@ -380,6 +380,10 @@ damageEngine.setKnownEnemiesFn(() =>
 // Note 19. The "group" damage scope filters on who has been in the player's group this session;
 // the charmed-pet rows need to know which charmed mobs are the player's own. Both are pulled live.
 damageEngine.setGroupFn(() => groupRoster.getAdmitted());
+// A raid leader moving players between groups prints no "has joined the group" line, so a groupmate
+// who never speaks stays invisible to the "group" damage scope (reported live: Avenrae, Nocturis).
+// Every group-target spell the player lands on someone proves that someone is in their group.
+buffEngine.setGroupmateSink((name) => groupRoster.noteGroupmate(name));
 damageEngine.setPetsFn(() => petTracker.snapshot());
 petTracker.setOwnNameFn(() => spellbookService.getCharacterName());
 petTracker.setCharmSpellCheck((name) => {
