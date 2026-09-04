@@ -7895,6 +7895,8 @@ function initActionBarsPage() {
   const slotTextSizeOverrideCheckbox = document.getElementById('action-bar-slot-text-size-override-checkbox');
   const slotTextSizeOverrideSlider = document.getElementById('action-bar-slot-text-size-override-slider');
   const slotTextSizeOverrideValue = document.getElementById('action-bar-slot-text-size-override-value');
+  const slotTextColorOverrideCheckbox = document.getElementById('action-bar-slot-text-color-override-checkbox');
+  const slotTextColorOverridePicker = document.getElementById('action-bar-slot-text-color-override-picker');
   const slotInsetSlider = document.getElementById('action-bar-slot-inset-slider');
   const slotInsetValue = document.getElementById('action-bar-slot-inset-value');
   const slotStanceCheckbox = document.getElementById('action-bar-slot-stance-checkbox');
@@ -7915,6 +7917,10 @@ function initActionBarsPage() {
   const borderOffsetSlider = document.getElementById('action-bar-border-offset-slider');
   const borderOffsetValue = document.getElementById('action-bar-border-offset-value');
   const borderColorPicker = document.getElementById('action-bar-border-color-picker');
+  // Bar-wide default background - same 3-way (default/custom/transparent) as the per-gem one,
+  // just what an un-overridden gem falls back to instead of always the calibration tint.
+  const barBgModeRadios = document.querySelectorAll('input[name="action-bar-bg-mode"]');
+  const barBgColorPicker = document.getElementById('action-bar-bg-color-picker');
   // Bar-wide, not per-gem - requested directly: "you put each cooldown type inside the modal, it
   // should be a global setting per bar."
   const globalCooldownStyleRadios = document.querySelectorAll('input[name="action-bar-cooldown-style"]');
@@ -8157,6 +8163,10 @@ function initActionBarsPage() {
     slotTextSizeOverrideValue.textContent = `${slotTextSizeOverrideSlider.value}px`;
     slotTextSizeOverrideSlider.style.display = hasOverride ? '' : 'none';
     slotTextSizeOverrideValue.style.display = hasOverride ? '' : 'none';
+    const hasColorOverride = typeof s.nameColorOverride === 'string' && !!s.nameColorOverride;
+    slotTextColorOverrideCheckbox.checked = hasColorOverride;
+    slotTextColorOverridePicker.value = hasColorOverride ? s.nameColorOverride : '#f0f1f5';
+    slotTextColorOverridePicker.style.display = hasColorOverride ? '' : 'none';
     slotInsetSlider.value = s.insetPx || 0;
     slotInsetValue.textContent = `${s.insetPx || 0}px`;
     slotStanceCheckbox.checked = s.toggleGroup === 'stance';
@@ -8464,6 +8474,20 @@ function initActionBarsPage() {
     currentSlots[editingSlotIndex].nameSizeOverride = size;
     window.eqTracker.setActionBarSlotNameSizeOverride(selectedActionBarId, editingSlotIndex, size);
   });
+  slotTextColorOverrideCheckbox.addEventListener('change', () => {
+    if (editingSlotIndex == null) return;
+    const on = slotTextColorOverrideCheckbox.checked;
+    slotTextColorOverridePicker.style.display = on ? '' : 'none';
+    const color = on ? slotTextColorOverridePicker.value : null;
+    currentSlots[editingSlotIndex].nameColorOverride = color;
+    window.eqTracker.setActionBarSlotNameColorOverride(selectedActionBarId, editingSlotIndex, color);
+  });
+  slotTextColorOverridePicker.addEventListener('input', () => {
+    if (editingSlotIndex == null) return;
+    const color = slotTextColorOverridePicker.value;
+    currentSlots[editingSlotIndex].nameColorOverride = color;
+    window.eqTracker.setActionBarSlotNameColorOverride(selectedActionBarId, editingSlotIndex, color);
+  });
   slotInsetSlider.addEventListener('input', () => {
     if (editingSlotIndex == null) return;
     const px = Number(slotInsetSlider.value);
@@ -8574,6 +8598,10 @@ function initActionBarsPage() {
     borderOffsetSlider.value = config.borderOffsetPx ?? 1;
     borderOffsetValue.textContent = `${config.borderOffsetPx ?? 1}px`;
     borderColorPicker.value = config.borderColor || '#d2d6e1';
+    const barBgMode = config.bgColor === 'transparent' ? 'transparent' : config.bgColor ? 'custom' : 'default';
+    barBgModeRadios.forEach((r) => (r.checked = r.value === barBgMode));
+    barBgColorPicker.value = barBgMode === 'custom' ? config.bgColor : '#808080';
+    barBgColorPicker.style.display = barBgMode === 'custom' ? '' : 'none';
     showAppFocusedCheckbox.checked = !!config.showWhenAppFocused;
     currentIconSet = iconSet || '';
     currentSlots = config.slots
@@ -8585,6 +8613,7 @@ function initActionBarsPage() {
           cooldown: null,
           bgColor: null,
           nameSizeOverride: null,
+          nameColorOverride: null,
           insetPx: 0,
           toggleGroup: null,
           toggleName: null,
@@ -8693,6 +8722,16 @@ function initActionBarsPage() {
     if (!selectedActionBarId) return;
     window.eqTracker.setActionBarBorderColor(selectedActionBarId, borderColorPicker.value);
   });
+  // Bar-wide default background - same 3-way radio shape as the per-gem one (see applySlotBgColor).
+  function applyBarBgColor() {
+    if (!selectedActionBarId) return;
+    const mode = [...barBgModeRadios].find((r) => r.checked)?.value || 'default';
+    barBgColorPicker.style.display = mode === 'custom' ? '' : 'none';
+    const color = mode === 'transparent' ? 'transparent' : mode === 'custom' ? barBgColorPicker.value : null;
+    window.eqTracker.setActionBarBgColor(selectedActionBarId, color);
+  }
+  barBgModeRadios.forEach((r) => r.addEventListener('change', applyBarBgColor));
+  barBgColorPicker.addEventListener('input', applyBarBgColor);
   iconsSlider.addEventListener('input', () => {
     if (!selectedActionBarId) return;
     iconsValue.textContent = iconsSlider.value;

@@ -632,6 +632,34 @@ test('the player\'s own burst cannot be propped open past the re-arm cap by a dr
   assert.ok(!log.some((m) => m.includes('your own burst')), 'a 30s-old burst should not still be "yours"');
 });
 
+test('a unique-text grant from your own Quick Buff is not vetoed by an unrelated earlier ally cast', () => {
+  // Reported live (4 Sep): Genaner cast Courage on himself at some point in the raid; recentOtherCasts
+  // has no expiry (bard-song attribution needs it to last the whole session), so when the PLAYER's
+  // own Quick Buff granted her Courage seconds later, the "someone else was seen casting this"
+  // veto fired and IGNORED it - even though her own burst window was wide open.
+  const { engine, buffStore, log } = makeEngine();
+  const courage = buffStore.getByName('Courage');
+  assert.ok(courage && !courage.landingTextSharedBy, 'Courage should be a unique-text buff for this test');
+
+  engine.handleLine('Genaner begins casting Courage.'); // an unrelated ally cast, long before
+  engine.handleLine('You activate Quick Buff.'); // opens the player's own burst
+  engine.handleLine(courage.landingText); // her own Quick Buff grants it
+
+  assert.deepEqual(names(engine), ['Courage'], 'her own Quick Buff grant must not be vetoed by Genaner\'s unrelated cast');
+  assert.ok(log.some((m) => m.includes('LANDED "Courage"') && m.includes('your own burst is open')));
+});
+
+test('the ally-cast veto still applies once the player\'s own burst has closed', () => {
+  const { engine, buffStore } = makeEngine();
+  const courage = buffStore.getByName('Courage');
+  engine.handleLine('Genaner begins casting Courage.');
+  engine.handleLine('You activate Quick Buff.');
+  engine.burstOpenedBy.at = Date.now() - 30000; // burst opened 30s ago - long closed
+  engine.burstUntil = Date.now() - 1000;
+  engine.handleLine(courage.landingText);
+  assert.deepEqual(names(engine), [], 'without an open burst, a genuinely stale ally-cast veto still holds');
+});
+
 test('a raid AE buff during the player\'s own Quick Buff is ignored, not queued as a prompt', () => {
   // Reported live (3 Sep): "i just quick buffed ... then someone cast theirs completely after
   // mine and spirit of wolf came up on my self buffs." A raid-wide recast whose text shares with

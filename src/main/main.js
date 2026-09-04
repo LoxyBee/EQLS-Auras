@@ -62,6 +62,8 @@ const { createMainWindow, getMainWindow } = require('./mainWindow');
 const { LogService } = require('./logService');
 // Note 38. The zone matcher lives with the other log-line patterns; the seed list is data.
 const { matchZoneChange, matchForgetSpell, matchMemorizeFinished } = require('./buffParser');
+const { isLoadoutLockedZone, INSTANCE_SUFFIX } = require('../shared/loadoutLockedZones');
+const baseZoneName = (z) => String(z || '').replace(INSTANCE_SUFFIX, '').trim();
 const KNOWN_ZONES = require('../shared/data/zones');
 const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
@@ -285,6 +287,18 @@ sessionRestore.register('groupRoster', {
     return groupRoster.getAdmitted().length;
   },
 });
+
+// Raid-named board - 30 minutes. A raid runs well over an hour and the app gets restarted mid-raid
+// (crash, or to pick up a fix); without this the board rebuilt from the zone line with every named
+// "up" again, discarding which ones the group had already cleared (reported live). Restored only
+// onto the same zone (a fresh instance since = a fresh board). The tracker itself seeds currentZone
+// from the log tail on startup (logZonePeek), so by the time this runs the board exists to grey.
+sessionRestore.register('raidNamed', {
+  maxGapMs: 30 * MIN,
+  capture: () => raidNamedTracker.captureState(),
+  restore: (d) => raidNamedTracker.restoreState(d),
+});
+raidNamedTracker.setPersistFn(() => sessionRestore.scheduleSave());
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
 // widgetManager pulls in Electron's screen/BrowserWindow. Action bar gem cooldowns ride along as
@@ -969,6 +983,10 @@ onLogLine('zoneChange', (line) => {
   if (!zone) return;
   const changed = applyZoneChangeAndNotify(zone);
   debugLog(`ZONE now "${changed}"`);
+  // In a dungeon / raid-group instance a loadout swap is impossible, so gem memorises become trusted
+  // evidence for detection (see buffEngine.setLoadoutLocked). The base name (suffix stripped) is
+  // the key that tells a real move from an entrance->instance / reconnect echo for the same zone.
+  buffEngine.setLoadoutLocked(isLoadoutLockedZone(zone), baseZoneName(zone));
   // The damage meter's "since zone-in" tally starts over here - see damageEngine.enterZone.
   damageEngine.enterZone();
   // Note 20. Where you are is half of every route, so a zone line is the main thing that makes a
@@ -1240,7 +1258,14 @@ onLogLine('travelCommand', (line) => {
  * scribes something. A stale route is worse than no route - it points the wrong way.
  */
 function scribedTravelSpellNames() {
-  return TRAVEL_SPELLS.map((s) => s.spell).filter((name) => spellbookService.has(name));
+  // hasListed(), not has(): the level column in her /outputfile dump is a per-CLASS castability
+  // flag (255 = "not this class", gotcha #42), not a "has she ever learned this" flag. A
+  // teleport/gate/circle spell can read 255 in the one class file that happens to exist on disk
+  // while her actual active loadout - a different class in the same multiclass build - casts it
+  // fine. Travel routing only needs "is this listed in her own spellbook dump at all", not "can
+  // her currently-detected class cast it" - that stricter check stays on `has()` for buff
+  // detection, where a wrong guess is a silent misattribution rather than a route she'd notice.
+  return TRAVEL_SPELLS.map((s) => s.spell).filter((name) => spellbookService.hasListed(name));
 }
 
 function travelRoutes() {
@@ -1597,6 +1622,10 @@ app.whenReady().then(() => {
     if (!found) return;
     applyZoneChangeAndNotify(found.zone);
     raidNamedTracker.setZone(found.zone, found.viaVoidling);
+    // Seed loadout-locked state too - but NOT the verified gems: a memorise seen before the app
+    // started was never observed, and re-entering a locked zone deliberately starts the gem
+    // evidence fresh (see setLoadoutLocked). This only sets the flag so memorises from here on count.
+    buffEngine.setLoadoutLocked(isLoadoutLockedZone(found.zone), baseZoneName(found.zone));
     customTimerEngine.seedZone(found.zone);
     pushTravelRoutes();
     debugLog(
@@ -2679,8 +2708,10 @@ ipcMain.handle('actionBar:setCooldownReplacesLabel', (_event, { id, replaces }) 
 ipcMain.handle('actionBar:setBorderWidth', (_event, { id, px }) => actionBarManager.setBorderWidth(id, px));
 ipcMain.handle('actionBar:setBorderOffset', (_event, { id, px }) => actionBarManager.setBorderOffset(id, px));
 ipcMain.handle('actionBar:setBorderColor', (_event, { id, color }) => actionBarManager.setBorderColor(id, color));
+ipcMain.handle('actionBar:setBgColor', (_event, { id, color }) => actionBarManager.setBgColor(id, color));
 ipcMain.handle('actionBar:setSlotBgColor', (_event, { id, index, color }) => actionBarManager.setSlotBgColor(id, index, color));
 ipcMain.handle('actionBar:setSlotNameSizeOverride', (_event, { id, index, size }) => actionBarManager.setSlotNameSizeOverride(id, index, size));
+ipcMain.handle('actionBar:setSlotNameColorOverride', (_event, { id, index, color }) => actionBarManager.setSlotNameColorOverride(id, index, color));
 ipcMain.handle('actionBar:setSlotInsetPx', (_event, { id, index, px }) => actionBarManager.setSlotInsetPx(id, index, px));
 ipcMain.handle('actionBar:setSlotToggleGroup', (_event, { id, index, group }) => actionBarManager.setSlotToggleGroup(id, index, group));
 ipcMain.handle('actionBar:setSlotToggleName', (_event, { id, index, name }) => actionBarManager.setSlotToggleName(id, index, name));

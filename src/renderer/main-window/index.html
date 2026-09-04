@@ -1543,6 +1543,31 @@
               </div></div>
             </div>
 
+            <div class="topic" id="topic-action-bar-background" data-topic>
+              <button type="button" class="topic-head" data-toggle>
+                <span class="chev"></span>
+                <span class="topic-title">Background</span>
+                <span class="topic-summary"></span>
+              </button>
+              <div class="topic-body"><div class="topic-body-inner">
+                <p class="hint">The default for every gem. Only drawn while a gem has no icon. A gem's own Background override (in its Edit gem panel) wins over this.</p>
+                <div class="row">
+                  <label><input type="radio" name="action-bar-bg-mode" value="default" /> Default (calibration tint)</label>
+                </div>
+                <div class="row">
+                  <label title="A plain colour instead of an icon — for text-only gems.">
+                    <input type="radio" name="action-bar-bg-mode" value="custom" /> Custom colour
+                  </label>
+                  <input type="color" id="action-bar-bg-color-picker" value="#808080" />
+                </div>
+                <div class="row">
+                  <label title="Fully see-through, unlike Default - Default still shows the dark calibration tint behind a text-only gem.">
+                    <input type="radio" name="action-bar-bg-mode" value="transparent" /> Transparent (no colour)
+                  </label>
+                </div>
+              </div></div>
+            </div>
+
             <div class="topic" id="topic-action-bar-cooldown" data-topic>
               <button type="button" class="topic-head" data-toggle>
                 <span class="chev"></span>
@@ -1903,51 +1928,24 @@
         <span id="action-bar-slot-cooldown-status" class="action-bar-slot-cooldown-status"></span>
         <button type="button" id="action-bar-slot-cooldown-btn">Cooldown...</button>
       </div>
-      <h4 class="settings-subsection-title">Background</h4>
-      <p class="hint">Only drawn while this gem has no icon.</p>
-      <div class="row">
-        <label><input type="radio" name="action-bar-slot-bg-mode" value="default" /> Default (calibration tint)</label>
-      </div>
-      <div class="row">
-        <label title="A plain colour instead of an icon — for a text-only tile.">
-          <input type="radio" name="action-bar-slot-bg-mode" value="custom" /> Custom colour
-        </label>
-        <input type="color" id="action-bar-slot-bg-color-picker" value="#808080" />
-      </div>
-      <div class="row">
-        <label title="Fully see-through, unlike Default - Default still shows the dark calibration tint behind a text-only gem.">
-          <input type="radio" name="action-bar-slot-bg-mode" value="transparent" /> Transparent (no colour)
-        </label>
-      </div>
 
-      <h4 class="settings-subsection-title">Border</h4>
-      <p class="hint">Drawn on top of the bar-wide border above, whether or not this gem has an icon.</p>
+      <h4 class="settings-subsection-title">Icon</h4>
       <div class="row">
-        <label>
-          <input type="checkbox" id="action-bar-slot-border-checkbox" /> Custom border for this gem
-        </label>
-      </div>
-      <div class="row" id="action-bar-slot-border-fields" style="display:none">
-        <span class="label">Width:</span>
-        <input type="range" id="action-bar-slot-border-width-slider" min="1" max="4" step="1" />
-        <span id="action-bar-slot-border-width-value" class="slider-value">2px</span>
-      </div>
-      <div class="row" id="action-bar-slot-border-fields-2" style="display:none">
-        <span class="label">Offset (inset):</span>
-        <input type="range" id="action-bar-slot-border-offset-slider" min="0" max="6" step="1" />
-        <span id="action-bar-slot-border-offset-value" class="slider-value">1px</span>
-      </div>
-      <div class="row" id="action-bar-slot-border-fields-3" style="display:none">
-        <span class="label">Colour:</span>
-        <input type="color" id="action-bar-slot-border-color-picker" value="#d2d6e1" />
+        <span class="label" title="Shrinks this gem's icon in from the edge so a ring of the real hotbar button shows through — useful when the game draws a glow at the button's edge.">Icon inset:</span>
+        <input type="range" id="action-bar-slot-inset-slider" min="0" max="15" step="1" />
+        <span id="action-bar-slot-inset-value" class="slider-value">0px</span>
       </div>
       <div class="row">
-        <label title="Overrides the bar-wide name text size for just this one gem.">
-          <input type="checkbox" id="action-bar-slot-text-size-override-checkbox" /> Override text size
+        <label title="Splits this gem's icon diagonally into two images.">
+          <input type="checkbox" id="action-bar-slot-multi-icon-checkbox" /> Multi icon (split diagonally)
         </label>
-        <input type="range" id="action-bar-slot-text-size-override-slider" min="6" max="20" step="1" style="display:none" />
-        <span id="action-bar-slot-text-size-override-value" class="slider-value" style="display:none">11px</span>
       </div>
+      <!-- Same gem-bar/gem-slot boxes the "Buffs shown" picker uses - one box per icon (two once
+           Multi icon is on), showing what's currently picked or a "+" if nothing is. Click a box
+           to open the actual picker in its own modal, rather than the picker grid sitting inline
+           here permanently. -->
+      <div id="action-bar-icon-gem-bar" class="gem-bar"></div>
+
       <h4 class="settings-subsection-title">Stance / Invocation</h4>
       <div class="row">
         <label title="Ties this gem to a stance. Activating any stance gem puts them all on a 6s cooldown and shows a green border on the one you picked.">
@@ -1970,22 +1968,70 @@
       </div>
       <p class="hint" id="action-bar-slot-stance-fixed-hint" style="display:none">Stances always use the game's own fixed 6 second cooldown.</p>
 
-      <h4 class="settings-subsection-title">Icon</h4>
-      <div class="row">
-        <span class="label" title="Shrinks this gem's icon in from the edge so a ring of the real hotbar button shows through — useful when the game draws a glow at the button's edge.">Icon inset:</span>
-        <input type="range" id="action-bar-slot-inset-slider" min="0" max="15" step="1" />
-        <span id="action-bar-slot-inset-value" class="slider-value">0px</span>
+      <div class="topic" id="topic-action-bar-slot-appearance" data-topic>
+        <button type="button" class="topic-head" data-toggle>
+          <span class="chev"></span>
+          <span class="topic-title">Appearance overrides</span>
+          <span class="topic-summary"></span>
+        </button>
+        <div class="topic-body"><div class="topic-body-inner">
+
+          <h4 class="settings-subsection-title">Background</h4>
+          <p class="hint">Only drawn while this gem has no icon.</p>
+          <div class="row">
+            <label><input type="radio" name="action-bar-slot-bg-mode" value="default" /> Default (bar's own background)</label>
+          </div>
+          <div class="row">
+            <label title="A plain colour instead of an icon — for a text-only tile.">
+              <input type="radio" name="action-bar-slot-bg-mode" value="custom" /> Custom colour
+            </label>
+            <input type="color" id="action-bar-slot-bg-color-picker" value="#808080" />
+          </div>
+          <div class="row">
+            <label title="Fully see-through, unlike Default - Default still shows the dark calibration tint (or the bar's own background) behind a text-only gem.">
+              <input type="radio" name="action-bar-slot-bg-mode" value="transparent" /> Transparent (no colour)
+            </label>
+          </div>
+
+          <h4 class="settings-subsection-title">Border</h4>
+          <p class="hint">Drawn on top of the bar-wide border above, whether or not this gem has an icon.</p>
+          <div class="row">
+            <label>
+              <input type="checkbox" id="action-bar-slot-border-checkbox" /> Custom border for this gem
+            </label>
+          </div>
+          <div class="row" id="action-bar-slot-border-fields" style="display:none">
+            <span class="label">Width:</span>
+            <input type="range" id="action-bar-slot-border-width-slider" min="1" max="4" step="1" />
+            <span id="action-bar-slot-border-width-value" class="slider-value">2px</span>
+          </div>
+          <div class="row" id="action-bar-slot-border-fields-2" style="display:none">
+            <span class="label">Offset (inset):</span>
+            <input type="range" id="action-bar-slot-border-offset-slider" min="0" max="6" step="1" />
+            <span id="action-bar-slot-border-offset-value" class="slider-value">1px</span>
+          </div>
+          <div class="row" id="action-bar-slot-border-fields-3" style="display:none">
+            <span class="label">Colour:</span>
+            <input type="color" id="action-bar-slot-border-color-picker" value="#d2d6e1" />
+          </div>
+
+          <h4 class="settings-subsection-title">Text</h4>
+          <div class="row">
+            <label title="Overrides the bar-wide name text size for just this one gem.">
+              <input type="checkbox" id="action-bar-slot-text-size-override-checkbox" /> Override text size
+            </label>
+            <input type="range" id="action-bar-slot-text-size-override-slider" min="6" max="20" step="1" style="display:none" />
+            <span id="action-bar-slot-text-size-override-value" class="slider-value" style="display:none">11px</span>
+          </div>
+          <div class="row">
+            <label title="Overrides the bar-wide name text colour for just this one gem.">
+              <input type="checkbox" id="action-bar-slot-text-color-override-checkbox" /> Override text colour
+            </label>
+            <input type="color" id="action-bar-slot-text-color-override-picker" value="#f0f1f5" style="display:none" />
+          </div>
+
+        </div></div>
       </div>
-      <div class="row">
-        <label title="Splits this gem's icon diagonally into two images.">
-          <input type="checkbox" id="action-bar-slot-multi-icon-checkbox" /> Multi icon (split diagonally)
-        </label>
-      </div>
-      <!-- Same gem-bar/gem-slot boxes the "Buffs shown" picker uses - one box per icon (two once
-           Multi icon is on), showing what's currently picked or a "+" if nothing is. Click a box
-           to open the actual picker in its own modal, rather than the picker grid sitting inline
-           here permanently. -->
-      <div id="action-bar-icon-gem-bar" class="gem-bar"></div>
     </div>
   </div>
 

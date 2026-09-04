@@ -125,6 +125,73 @@ test('the "- Group" difficulty grammar still resolves a raid to the base-zone bo
   assert.ok(t.getActive().length > 0);
 });
 
+test('the board survives a restart: killed nameds come back greyed, not all-up (owner, 4 Sep)', () => {
+  // Reported live: 7 Plane of Hate nameds down, restarted the app mid-raid, the board rebuilt with
+  // all 14 "up" again - every kill lost. captureState/restoreState + the session-restore registry.
+  const { t } = make();
+  enterOpen(t, 'The Plane of Hate');
+  slay(t, 'Lord of Ire');
+  slay(t, 'Maestro of Rancor');
+  slay(t, 'Magi P`tasa');
+  const snap = t.captureState();
+  assert.equal(snap.kills.length, 3);
+
+  // restart: restoreState runs BEFORE the log-tail zone recovery (setZone), so it stashes
+  const { t: t2 } = make();
+  assert.equal(t2.restoreState(snap), 0, 'stashed - no board to apply to yet');
+  t2.setZone('The Plane of Hate', false); // startup seed
+  const killed = t2.getActive().filter((r) => r.killed).map((r) => r.name).sort();
+  assert.deepEqual(killed, ['Lord of Ire', 'Maestro of Rancor', 'Magi P`tasa']);
+});
+
+test('a restart into a DIFFERENT zone than the snapshot gets a fresh board, no stale kills', () => {
+  const { t } = make();
+  enterOpen(t, 'The Plane of Hate');
+  slay(t, 'Lord of Ire');
+  const snap = t.captureState();
+
+  const { t: t2 } = make();
+  t2.restoreState(snap);
+  t2.setZone('The Plane of Fear', false); // she left Hate, restarted in Fear
+  assert.equal(t2.getActive().filter((r) => r.killed).length, 0, 'Fear board must be all-up');
+  assert.equal(t2.getCurrentZone(), 'The Plane of Fear');
+});
+
+test('a fresh Voidling re-entry after a restart-seed does NOT re-apply the old kills', () => {
+  const { t } = make();
+  enterOpen(t, 'The Plane of Hate');
+  slay(t, 'Lord of Ire');
+  const snap = t.captureState();
+
+  const { t: t2 } = make();
+  t2.restoreState(snap);
+  enter(t2, 'The Plane of Hate'); // LIVE entry with a fresh danger hail = brand-new instance
+  assert.equal(t2.getActive().filter((r) => r.killed).length, 0, 'a fresh instance is all-up');
+});
+
+test('The Permafrost Caverns (the Voidling instance name for Permafrost) loads the board', () => {
+  const { t } = make();
+  t.handleLine(`${TS}You have entered The Permafrost Caverns - Group 4 (Refined).`);
+  assert.equal(t.getCurrentZone(), 'The Permafrost Caverns');
+  assert.ok(t.getActive().length > 0, 'the raid instance name must resolve, not just "Permafrost Keep"');
+});
+
+test('an instanced zone with no named list logs a loud diagnostic instead of a silent empty board', () => {
+  const { t, log } = make();
+  t.handleLine(`${TS}You have entered The Catacombs of Whoknows - Group 2 (Adaptive).`);
+  assert.deepEqual(t.getActive(), []);
+  assert.ok(
+    log.some((m) => m.includes('no named list') && m.includes('The Catacombs of Whoknows')),
+    'the gap should be visible in the debug log, not silent'
+  );
+});
+
+test('a plain (non-instanced) untracked zone does NOT log the "add it" diagnostic', () => {
+  const { t, log } = make();
+  t.handleLine(`${TS}You have entered East Freeport.`);
+  assert.ok(!log.some((m) => m.includes('no named list')), 'only instanced zones are worth flagging');
+});
+
 test('a raid zone entered as a plain group/dungeon run lights up the board (owner, 2 Sep)', () => {
   const { t } = make();
   // no Voidling dialogue - just walked in with a group. "anything that is a RAID is also a

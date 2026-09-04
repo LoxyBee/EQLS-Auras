@@ -22,9 +22,11 @@ const TOTAL_SLOTS = 12;
 // cosmetic tint, so it makes sense for each gem to pick its own (e.g. colour-coding several
 // text-only gems differently). Only drawn while the slot has no icon - see actionbar.js's render.
 //
-// nameSizeOverride is null (use the bar-wide nameLabelSize) or a number - a per-gem escape hatch
-// for the one gem whose name needs to read bigger/smaller than the rest, without having to make
-// every other gem's text that size too.
+// nameSizeOverride is null (use the bar-wide nameLabelSize) or a number, and nameColorOverride is
+// null (use the bar-wide nameLabelColor) or a hex string - per-gem escape hatches for the one gem
+// whose name needs to read bigger/smaller or a different colour than the rest, without having to
+// change every other gem's text the same way. Owner, 4 Sep: "the goal here is that any setting for
+// the action bar should have both global settings and per gem override settings."
 //
 // multiIcon/secondIconId split the gem diagonally between iconId (top-left) and secondIconId
 // (bottom-right) - e.g. a buff+debuff combo icon, or two abilities sharing one hotbar slot.
@@ -64,6 +66,7 @@ function emptySlot() {
     cooldown: null,
     bgColor: null,
     nameSizeOverride: null,
+    nameColorOverride: null,
     multiIcon: false,
     secondIconId: null,
     insetPx: 0,
@@ -121,6 +124,12 @@ const BAR_SETTING_DEFAULTS = {
   borderWidthPx: 2,
   borderOffsetPx: 1,
   borderColor: '#d2d6e1',
+  // Bar-wide default background, same 3-way encoding as a slot's own bgColor (null = default
+  // calibration tint, 'transparent' = see-through, a hex string = a real colour) - a per-gem
+  // bgColor still wins when set (see actionbar.js's render), this is just what an un-overridden
+  // gem falls back to instead of always the calibration tint. Owner, 4 Sep: every action-bar
+  // setting should have both a global value and a per-gem override.
+  bgColor: null,
 };
 
 function defaultBar(id, name) {
@@ -175,6 +184,7 @@ class ActionBarStore {
       merged.cooldownStyle = 'none';
       merged.cooldownShowNumber = true;
     }
+    merged.bgColor = typeof b.bgColor === 'string' && b.bgColor ? b.bgColor : null;
     merged.slots = this._normalizeSlots(merged.slots);
     return merged;
   }
@@ -194,6 +204,7 @@ class ActionBarStore {
           cooldown: s.cooldown && typeof s.cooldown === 'object' ? s.cooldown : null,
           bgColor: typeof s.bgColor === 'string' && s.bgColor ? s.bgColor : null,
           nameSizeOverride: typeof s.nameSizeOverride === 'number' ? s.nameSizeOverride : null,
+          nameColorOverride: typeof s.nameColorOverride === 'string' && s.nameColorOverride ? s.nameColorOverride : null,
           multiIcon: !!s.multiIcon,
           secondIconId: s.secondIconId == null ? null : Math.round(Number(s.secondIconId)),
           insetPx: typeof s.insetPx === 'number' ? Math.max(0, Math.min(15, Math.round(s.insetPx))) : 0,

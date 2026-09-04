@@ -262,7 +262,9 @@ function render(config) {
       // the literal string 'transparent' is its own explicit choice, distinct from "unset" -
       // requested directly, since "unset" still shows the dark calibration tint, not a truly
       // see-through gem. Any other string is a real CSS colour picked from the colour input.
-      slot.style.backgroundColor = s.bgColor || '';
+      // A per-gem bgColor always wins; with none set, the bar-wide default (config.bgColor, same
+      // 3-way encoding) applies instead of always falling back to the calibration tint.
+      slot.style.backgroundColor = s.bgColor || config.bgColor || '';
     } else {
       img.src = `eqicon://icon/${encodeURIComponent(iconSet)}/${s.iconId}`;
       img.style.display = '';
@@ -291,7 +293,7 @@ function render(config) {
         config.nameLabelAnchor,
         s.nameSizeOverride ?? config.nameLabelSize ?? 11,
         config.nameLabelWrap !== false,
-        config.nameLabelColor,
+        s.nameColorOverride || config.nameLabelColor,
         config.iconSize
       );
     } else {

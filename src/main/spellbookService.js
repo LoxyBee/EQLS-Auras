@@ -35,8 +35,10 @@ class SpellbookService {
     this.fileOverride = null;
     // [{ path, className, count }] for whatever is currently loaded - drives the Setup status line.
     this.loadedFiles = [];
-    this.spellNames = new Set(); // lowercased, exact
-    this.baseSpellNames = new Set(); // lowercased, rank suffix stripped
+    this.spellNames = new Set(); // lowercased, exact, castable-by-this-class only
+    this.baseSpellNames = new Set(); // lowercased, rank suffix stripped, castable-by-this-class only
+    this.allSpellNames = new Set(); // lowercased, every row regardless of the 255 castability marker
+    this.baseAllSpellNames = new Set(); // same, rank suffix stripped
     this.timer = null;
   }
 
@@ -126,13 +128,19 @@ class SpellbookService {
     return m ? m[2].toUpperCase() : '?';
   }
 
+  // Returns { castable, all } - both lowercase-original-cased spell names as written in the file.
+  // `castable` drops any `255` (never-castable-by-this-class) row; `all` keeps every row regardless,
+  // for callers that only care whether the name is LISTED in her own /outputfile dump at all (see
+  // `hasListed`).
   _readOne(filePath) {
     try {
       const content = fs.readFileSync(filePath, 'utf8');
-      const names = [];
+      const castable = [];
+      const all = [];
       for (const line of content.split(/\r?\n/)) {
         const [level, name] = line.split('\t').map((s) => (s || '').trim());
         if (!name) continue;
+        all.push(name);
         // The first column is the level the character's class scribes it at; 255 is EQ's "no class
         // of this character can ever cast this" sentinel (same value gameSpellData reads for
         // per-class castability - see gotcha #14). A multiclass character's spellbook dump lists
@@ -140,9 +148,9 @@ class SpellbookService {
         // spell she can't cast: reported live, a raid enchanter's Clarity ("A cool breeze slips
         // through your mind.") landed on her own Self Buffs because "255  Clarity" was in the file.
         if (level === '255') continue;
-        names.push(name);
+        castable.push(name);
       }
-      return names;
+      return { castable, all };
     } catch {
       return null;
     }
@@ -151,17 +159,23 @@ class SpellbookService {
   _load(files, { targetChanged = false } = {}) {
     const names = new Set();
     const baseNames = new Set();
+    const allNames = new Set();
+    const baseAllNames = new Set();
     const loaded = [];
     let anyRead = false;
     for (const filePath of files) {
       const spells = this._readOne(filePath);
       if (spells === null) continue;
       anyRead = true;
-      for (const name of spells) {
+      for (const name of spells.castable) {
         names.add(name.toLowerCase());
         baseNames.add(stripRankSuffix(name).toLowerCase());
       }
-      loaded.push({ path: filePath, className: this._classOf(filePath), count: spells.length });
+      for (const name of spells.all) {
+        allNames.add(name.toLowerCase());
+        baseAllNames.add(stripRankSuffix(name).toLowerCase());
+      }
+      loaded.push({ path: filePath, className: this._classOf(filePath), count: spells.castable.length });
     }
     // The 30-second poll must never blank a loaded spellbook because a single reload read nothing.
     // `files` is empty on a transient `_findFiles()` failure (readdir throwing under an AV lock,
@@ -172,6 +186,8 @@ class SpellbookService {
     if (!anyRead && !targetChanged && this.spellNames.size > 0) return;
     this.spellNames = names;
     this.baseSpellNames = baseNames;
+    this.allSpellNames = allNames;
+    this.baseAllSpellNames = baseAllNames;
     this.loadedFiles = loaded;
   }
 
@@ -179,6 +195,20 @@ class SpellbookService {
     const lower = spellName.toLowerCase();
     if (this.spellNames.has(lower)) return true;
     return this.baseSpellNames.has(stripRankSuffix(spellName).toLowerCase());
+  }
+
+  // Unlike has(), does not gate on the 255 castability marker - true whenever the name appears
+  // ANYWHERE in her own /outputfile spellbook dump. Some spells (teleport/gate/circle spells
+  // especially) show as 255 for whichever class's file happens to exist on disk while her actual
+  // active loadout - a different class in the same multiclass build - can cast it fine; the level
+  // column is a per-class castability flag, not a "has she ever learned this" flag. Travel routing
+  // only needs the latter: worst case is a route that offers a spell she can't currently cast,
+  // which she'll notice and route around, not a silent misattribution the way buff detection would
+  // get from trusting this too.
+  hasListed(spellName) {
+    const lower = spellName.toLowerCase();
+    if (this.allSpellNames.has(lower)) return true;
+    return this.baseAllSpellNames.has(stripRankSuffix(spellName).toLowerCase());
   }
 
   // First loaded file, kept for callers that predate multi-file. Prefer getLoadedFiles().
@@ -218,7 +248,7 @@ class SpellbookService {
           fileName: name,
           character: m ? m[1] : name,
           className: m ? m[2].toUpperCase() : '?',
-          count: spells ? spells.length : 0,
+          count: spells ? spells.castable.length : 0,
         };
       });
   }
