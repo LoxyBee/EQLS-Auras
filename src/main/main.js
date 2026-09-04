@@ -2724,6 +2724,7 @@ ipcMain.handle('widget:setExpiredLingerSec', (_event, { id, seconds }) => widget
 ipcMain.handle('widget:setIconLabelSize', (_event, { id, value }) => widgetManager.setIconLabelSize(id, value));
 ipcMain.handle('widget:setTimerTextColor', (_event, { id, value }) => widgetManager.setTimerTextColor(id, value));
 ipcMain.handle('widget:setGroupAllyBuffs', (_event, { id, value }) => widgetManager.setGroupAllyBuffs(id, value));
+ipcMain.handle('widget:setAllyGroupBy', (_event, { id, value }) => widgetManager.setAllyGroupBy(id, value));
 ipcMain.handle('widget:setShowDebuffSongs', (_event, { id, value }) => widgetManager.setShowDebuffSongs(id, value));
 ipcMain.handle('widget:setSplitSongsByType', (_event, { id, value }) => widgetManager.setSplitSongsByType(id, value));
 ipcMain.handle('widget:setGroupAllyDirection', (_event, { id, value }) => widgetManager.setGroupAllyDirection(id, value));

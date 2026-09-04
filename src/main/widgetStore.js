@@ -348,6 +348,7 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // the redundant "Name: " prefix from each tile once the heading already
     // says whose group it is.
     groupAllyBuffs: false,
+    allyGroupBy: 'ally', // when groupAllyBuffs: 'ally' = heading per person, 'buff' = heading per spell
     groupAllyDirection: 'vertical',
     hideAllyNameOnTile: false,
     // Icon mode only - pixels of space between icons in the grid.
@@ -605,6 +606,7 @@ function defaultCustomWidget(name) {
     // the redundant "Name: " prefix from each tile once the heading already
     // says whose group it is.
     groupAllyBuffs: false,
+    allyGroupBy: 'ally', // when groupAllyBuffs: 'ally' = heading per person, 'buff' = heading per spell
     groupAllyDirection: 'vertical',
     hideAllyNameOnTile: false,
     // Icon mode only - pixels of space between icons in the grid.
@@ -652,6 +654,7 @@ function defaultAllyBuffsWidget(name) {
     timerTextColor: '#ffffff',
     iconMarginPx: 2,
     groupAllyBuffs: true,
+    allyGroupBy: 'ally',
     groupAllyDirection: 'horizontal',
     categoryBorderWidthPx: 2,
   };
@@ -713,6 +716,7 @@ function defaultBardSongsWidget(name) {
     // hide-bard-songs/track-others controls that would normally sit alongside this are absent
     // entirely rather than just left off.
     groupAllyBuffs: true,
+    allyGroupBy: 'ally',
     wrapText: true,
     iconsPerRow: 5,
     categoryBorderWidthPx: 2,
@@ -806,6 +810,7 @@ const SHAREABLE_FIELDS = [
   'wrapText',
   'iconJustify',
   'textJustify',
+  'allyGroupBy',
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -1003,6 +1008,7 @@ function normalizeWidget(widget) {
     splitSongsByType: !!widget.splitSongsByType,
     timerTextColor: typeof widget.timerTextColor === 'string' ? widget.timerTextColor : '#f0f1f5',
     groupAllyBuffs: !!widget.groupAllyBuffs,
+    allyGroupBy: widget.allyGroupBy === 'buff' ? 'buff' : 'ally',
     groupAllyDirection: widget.groupAllyDirection === 'horizontal' ? 'horizontal' : 'vertical',
     hideAllyNameOnTile: !!widget.hideAllyNameOnTile,
     labelTextColor: typeof widget.labelTextColor === 'string' ? widget.labelTextColor : '#f0f1f5',

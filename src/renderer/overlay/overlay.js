@@ -332,6 +332,8 @@ function displayName(buff) {
   // A charmed pet you own, kept distinct across re-charms by a trailing "#n" - shown as " #n".
   if (buff.isPet && /#\d+$/.test(buff.name || '')) return buff.name.replace(/#(\d+)$/, ' #$1');
   if (!buff.allyName) return buff.name;
+  // When the aura groups BY BUFF, the heading is the spell name, so the tile shows whose it is.
+  if (currentConfig.groupAllyBuffs && currentConfig.allyGroupBy === 'buff') return buff.allyName;
   if (currentConfig.hideAllyNameOnTile || currentConfig.groupAllyBuffs) return buff.name;
   return `${buff.allyName}: ${buff.name}`;
 }
@@ -348,15 +350,19 @@ function displayName(buff) {
 // remaining, alphabetical - whatever the user picked), which is applied
 // upstream in visibleBuffs.
 function groupByAlly(buffs) {
+  // 'ally' (default) - one section per person, heading is their name, tiles name the spell.
+  // 'buff' - one section per spell (owner, 3 Sep: "cast puma 8 times and it will all be under the
+  // 'puma' category"), heading is the spell, tiles name the person.
+  const byBuff = currentConfig.allyGroupBy === 'buff';
   const groups = new Map();
   for (const buff of buffs) {
-    const key = buff.allyName || '';
+    const key = (byBuff ? buff.name : buff.allyName) || '';
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(buff);
   }
   return [...groups.entries()]
-    .map(([allyName, list]) => ({ allyName, buffs: list }))
-    .sort((a, b) => a.allyName.localeCompare(b.allyName));
+    .map(([heading, list]) => ({ heading, allyName: heading, buffs: list }))
+    .sort((a, b) => a.heading.localeCompare(b.heading));
 }
 
 // Grouping only makes sense when tiles actually carry an ally name - a self

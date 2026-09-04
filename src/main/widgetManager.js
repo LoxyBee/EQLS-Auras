@@ -1312,6 +1312,12 @@ function setGroupAllyBuffs(id, value) {
   return config;
 }
 
+function setAllyGroupBy(id, value) {
+  const config = widgetStore.update(id, { allyGroupBy: value === 'buff' ? 'buff' : 'ally' });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setGroupAllyDirection(id, value) {
   const config = widgetStore.update(id, { groupAllyDirection: value });
   pushConfigChanged(id);
@@ -1661,6 +1667,7 @@ module.exports = {
   setActiveProfileIds,
   removeProfileFromAllWidgets,
   setGroupAllyBuffs,
+  setAllyGroupBy,
   setShowDebuffSongs,
   setSplitSongsByType,
   setGroupAllyDirection,

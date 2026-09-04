@@ -1813,6 +1813,8 @@ function initWidgetsPanel() {
   const splitSongsRowEl = document.getElementById('widget-split-songs-row');
   const allyDirectionRadios = document.querySelectorAll('input[name="widget-ally-direction"]');
   const allyDirectionRow = document.getElementById('widget-ally-direction-row');
+  const allyGroupByRadios = document.querySelectorAll('input[name="widget-ally-group-by"]');
+  const allyGroupByRow = document.getElementById('widget-ally-group-by-row');
   const hideAllyNameCheckbox = document.getElementById('widget-hide-ally-name-checkbox');
   const marginWidthValueEl = document.getElementById('widget-margin-width-value');
   const borderWidthRowEl = document.getElementById('widget-border-width-row');
@@ -3361,8 +3363,10 @@ function initWidgetsPanel() {
     splitSongsCheckbox.checked = !!widget.splitSongsByType;
     splitSongsRowEl.style.display = widget.showDebuffSongs ? '' : 'none';
     allyDirectionRadios.forEach((r) => (r.checked = r.value === (widget.groupAllyDirection || 'vertical')));
+    allyGroupByRadios.forEach((r) => (r.checked = r.value === (widget.allyGroupBy === 'buff' ? 'buff' : 'ally')));
     hideAllyNameCheckbox.checked = !!widget.hideAllyNameOnTile;
     allyDirectionRow.style.display = widget.groupAllyBuffs ? '' : 'none';
+    allyGroupByRow.style.display = widget.groupAllyBuffs ? '' : 'none';
     timerTextColorPicker.value = widget.timerTextColor || '#f0f1f5';
     labelTextColorPicker.value = widget.labelTextColor || '#f0f1f5';
     const iconMargin = typeof widget.iconMarginPx === 'number' ? widget.iconMarginPx : 5;
@@ -6050,14 +6054,20 @@ function initWidgetsPanel() {
     window.eqTracker.setWidgetShowIconLabel(selectedId, showIconLabelCheckbox.checked);
   });
   groupAllyCheckbox.addEventListener('change', () => {
-    // The direction choice only means anything while grouping is on, so it
-    // appears and disappears with the toggle rather than sitting there inert.
+    // The direction / group-by choices only mean anything while grouping is on, so they
+    // appear and disappear with the toggle rather than sitting there inert.
     allyDirectionRow.style.display = groupAllyCheckbox.checked ? '' : 'none';
+    allyGroupByRow.style.display = groupAllyCheckbox.checked ? '' : 'none';
     window.eqTracker.setWidgetGroupAllyBuffs(selectedId, groupAllyCheckbox.checked).then(updateLocalWidgetCache);
   });
   allyDirectionRadios.forEach((radio) => {
     radio.addEventListener('change', () => {
       if (radio.checked) window.eqTracker.setWidgetGroupAllyDirection(selectedId, radio.value).then(updateLocalWidgetCache);
+    });
+  });
+  allyGroupByRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (radio.checked) window.eqTracker.setWidgetAllyGroupBy(selectedId, radio.value).then(updateLocalWidgetCache);
     });
   });
   hideAllyNameCheckbox.addEventListener('change', () => {

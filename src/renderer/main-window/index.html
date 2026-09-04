@@ -611,7 +611,12 @@
                        otherwise (see renderBuffFilter). -->
                   <div id="widget-ally-grouping-settings" style="display:none">
                     <div class="row">
-                      <label><input type="checkbox" id="widget-group-ally-checkbox" /> Group by player</label>
+                      <label><input type="checkbox" id="widget-group-ally-checkbox" /> Group into headed sections</label>
+                    </div>
+                    <div class="row" id="widget-ally-group-by-row">
+                      <span class="label">One section per:</span>
+                      <label><input type="radio" name="widget-ally-group-by" value="ally" /> Player</label>
+                      <label><input type="radio" name="widget-ally-group-by" value="buff" /> Buff</label>
                     </div>
                     <div class="row" id="widget-ally-direction-row">
                       <span class="label">Stack groups:</span>
