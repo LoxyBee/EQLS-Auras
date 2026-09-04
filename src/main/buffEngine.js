@@ -2224,9 +2224,9 @@ class BuffEngine extends EventEmitter {
    * short song can't round to nothing. Applied last, over the already-combined value, for the same
    * reason the multipliers round once: quantising an intermediate step drifts.
    */
-  _scaledDuration(entry) {
+  _scaledDuration(entry, rank = this._rankForEntry(entry)) {
     if (entry.noDurationScaling) return this._quantizeSong(entry, Math.round(entry.durationSec));
-    const rankMult = 1 + (MOTE_DURATION_RATES[entry.scaleCategory] || 0) * this._rankForEntry(entry);
+    const rankMult = 1 + (MOTE_DURATION_RATES[entry.scaleCategory] || 0) * rank;
     const aaMult = isAAEligible(entry) ? this.durationMultiplierFn() : 1;
     return this._quantizeSong(entry, Math.round(entry.durationSec * rankMult * aaMult));
   }
@@ -2360,6 +2360,14 @@ class BuffEngine extends EventEmitter {
       }
     }
     const key = known.name.toLowerCase();
+    // The mote rank this landing is at. A fresh cast line ("You begin singing X VI.") sets it;
+    // failing that, a landing already tracked under this key keeps the rank it landed at. This is
+    // what makes a MAINTAINED bard song stay mote-scaled: it re-lands every ~6s with no cast line
+    // of its own, and recentSelfCast only lives ~12s, so without the carry every renewal after the
+    // first quietly drops back to the un-scaled base duration (reported live, 3 Sep). A genuine
+    // re-sing at a different rank still wins - _rankForEntry reads the new cast line.
+    const carriedRank = this.activeBuffs.get(key)?.castRank || 0;
+    const landRank = this._rankForEntry(known) || carriedRank;
     // A spell that genuinely never runs out - Yaulp, Fury - marked in tools/roster-overrides.json,
     // which is also where to add more. It is a different thing from a spell the spreadsheet simply
     // has no duration for: this one lasts until it is dispelled, or you zone, or its ended text
@@ -2377,7 +2385,7 @@ class BuffEngine extends EventEmitter {
       this.emit('buffsChanged', this.getActiveBuffs());
       return;
     }
-    const effectiveDurationSec = this._scaledDuration(known);
+    const effectiveDurationSec = this._scaledDuration(known, landRank);
     // AN INSTANT. The roster has no duration for it and it is not marked as lasting forever, so it
     // is something that happens rather than something that runs - a nuke, a heal, a gate.
     //
@@ -2411,6 +2419,8 @@ class BuffEngine extends EventEmitter {
       durationSec: effectiveDurationSec,
       expiresAt: Date.now() + effectiveDurationSec * 1000,
       endedText: known.endedText || null,
+      // Carried onto the next renewal (see landRank above); only kept when there was a rank.
+      ...(landRank ? { castRank: landRank } : {}),
     });
     if (known.isBardSong) this._trackBardSongOnPlayer(known, key);
     this.emit('buffsChanged', this.getActiveBuffs());
