@@ -523,6 +523,15 @@ body.unlocked .drag-overlay {
   min-width: 0;
 }
 
+/* Side-by-side groups: each is a fixed column at the configured list width and
+   does not shrink, so N groups make the overlay N columns wide instead of
+   sharing one list-width between them. --ally-col-width is set by overlay.js. */
+.buff-list.ally-grouped.ally-grouped-horizontal .ally-group {
+  flex: 0 0 auto;
+  width: var(--ally-col-width, 220px);
+  min-width: 0;
+}
+
 /* Same 4-direction outline the tile text uses, for the same reason - it has to
    stay readable against arbitrary game art with no background panel. */
 .ally-group-heading {

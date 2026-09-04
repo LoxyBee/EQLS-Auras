@@ -1770,7 +1770,22 @@ function render(buffs) {
     tileRefs.clear();
     listEl.classList.toggle('icon-grid', isIcon && !grouped);
     listEl.classList.toggle('ally-grouped', grouped);
-    listEl.classList.toggle('ally-grouped-horizontal', grouped && currentConfig.groupAllyDirection === 'horizontal');
+    const horizontalGroups = grouped && currentConfig.groupAllyDirection === 'horizontal';
+    listEl.classList.toggle('ally-grouped-horizontal', horizontalGroups);
+    // List mode normally pins content-wrap to exactly the "List width" setting
+    // (applyConfig). Side-by-side groups have to override that: each group is
+    // its own column AT that width, and the window grows to fit however many
+    // columns there are - otherwise every column is crushed to share one
+    // list-width ("tries to squish into the same column", owner 3 Sep).
+    if (!isIcon && !isText) {
+      if (horizontalGroups) {
+        contentWrap.style.width = 'max-content';
+        listEl.style.setProperty('--ally-col-width', `${currentConfig.listWidth || 220}px`);
+      } else {
+        contentWrap.style.width = `${currentConfig.listWidth || 220}px`;
+        listEl.style.removeProperty('--ally-col-width');
+      }
+    }
     listEl.dataset.mode = modeKey;
     listEl.dataset.groupKey = groupKey;
     listEl.dataset.mergeKey = mergeKey;
