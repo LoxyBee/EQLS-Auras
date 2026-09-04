@@ -2431,6 +2431,12 @@ seen working in the real app yet.
       Cast the same buff on several people. *Expect*: each buff section is its own column at the
       list width and the overlay grows wider - not all columns crushed into one width.
 
+### Sort direction
+- [ ] Any buff/ally aura → **Order: Descending**. *Expect*: the list flips (with "Time remaining"
+      the longest-left is on top; with "Cast order" the newest is on top).
+- [ ] Grouped aura (Ally Buffs "one section per buff") + Sort by "Time remaining" + Descending.
+      *Expect*: the whole sections/columns reorder, not just the tiles within them.
+
 ### Damage meter
 - [ ] **A groupmate who was already in the group when you joined** (no "has joined" line) gets
       their own row once they talk in group/raid chat **or once you land a group buff/song on
