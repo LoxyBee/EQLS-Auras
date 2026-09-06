@@ -496,6 +496,22 @@ function matchHostileCastAtYou(line) {
   return m ? m[1].trim() : null;
 }
 
+// A custom trigger with dynamicChatTimer on (see customTimerEngine) takes its duration from the
+// chat line that fires it: "/say timerstart 8:10" -> 490 seconds. A minutes:seconds token anywhere
+// on the line - minutes 0-99, seconds 00-59 - clamped to the engine's 1..3600s window. Returns
+// null when the line carries no valid token, and the trigger then does NOT fire (owner: no
+// fallback to the fixed duration - "if they fuck it up it's their fault"). Hours are not accepted:
+// the cap is one hour, so "60:00" is the longest anyone needs.
+const CHAT_TIMER_PATTERN = /\b(\d{1,2}):([0-5]\d)\b/;
+
+function parseChatTimerDuration(line) {
+  const m = CHAT_TIMER_PATTERN.exec(stripTimestamp(line));
+  if (!m) return null;
+  const secs = Number(m[1]) * 60 + Number(m[2]);
+  if (secs < 1) return null;
+  return Math.min(3600, secs);
+}
+
 module.exports = {
   matchCastBegin,
   matchSingingBegin,
@@ -511,6 +527,7 @@ module.exports = {
   matchCharmed,
   matchPetLeader,
   matchHostileCastAtYou,
+  parseChatTimerDuration,
   matchZoneChange,
   matchOwnVoidlingDanger,
   matchDidNotTakeHold,

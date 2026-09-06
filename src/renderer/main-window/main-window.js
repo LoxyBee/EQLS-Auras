@@ -1930,6 +1930,13 @@ function initWidgetsPanel() {
   const andWindowSlider = document.getElementById('widget-and-window-slider');
   const andWindowValueEl = document.getElementById('widget-and-window-value');
   const reverseDetectionCheckbox = document.getElementById('widget-reverse-detection-checkbox');
+  const dynamicChatTimerCheckbox = document.getElementById('widget-dynamic-chat-timer-checkbox');
+  // The fixed Duration boxes do nothing while "Set duration from the chat line" is on - grey them
+  // out so it's clear the value is coming from somewhere else now.
+  function applyDynamicChatTimerState(on) {
+    triggerDurationMinInput.disabled = !!on;
+    triggerDurationSecInput.disabled = !!on;
+  }
   const newTimerNameInput = document.getElementById('widget-new-timer-name');
   const newTimerCooldownMinInput = document.getElementById('widget-new-timer-cooldown-min');
   const newTimerCooldownSecInput = document.getElementById('widget-new-timer-cooldown-sec');
@@ -3564,6 +3571,8 @@ function initWidgetsPanel() {
       andWindowSlider.value = andWindowSec;
       andWindowValueEl.textContent = `${andWindowSec}s`;
       reverseDetectionCheckbox.checked = !!widget.reverseDetection;
+      dynamicChatTimerCheckbox.checked = !!widget.dynamicChatTimer;
+      applyDynamicChatTimerState(widget.dynamicChatTimer);
     }
 
     if (fields.has('track-others')) {
@@ -5504,6 +5513,10 @@ function initWidgetsPanel() {
   });
   reverseDetectionCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetReverseDetection(selectedId, reverseDetectionCheckbox.checked).then(updateLocalWidgetCache);
+  });
+  dynamicChatTimerCheckbox.addEventListener('change', () => {
+    applyDynamicChatTimerState(dynamicChatTimerCheckbox.checked);
+    window.eqTracker.setWidgetDynamicChatTimer(selectedId, dynamicChatTimerCheckbox.checked).then(updateLocalWidgetCache);
   });
   newTimerChooseIconBtn.addEventListener('click', () => {
     const showing = newTimerIconPicker.style.display !== 'none';

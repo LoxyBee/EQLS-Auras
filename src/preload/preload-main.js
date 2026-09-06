@@ -339,6 +339,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetTriggerCombineMode: (id, mode) => ipcRenderer.invoke('widget:setTriggerCombineMode', { id, mode }),
   setWidgetAndWindowSec: (id, seconds) => ipcRenderer.invoke('widget:setAndWindowSec', { id, seconds }),
   setWidgetReverseDetection: (id, enabled) => ipcRenderer.invoke('widget:setReverseDetection', { id, enabled }),
+  setWidgetDynamicChatTimer: (id, enabled) => ipcRenderer.invoke('widget:setDynamicChatTimer', { id, enabled }),
   updateWidgetCustomTimer: (id, timerId, timer) =>
     ipcRenderer.invoke('widget:updateCustomTimer', { id, timerId, ...timer }),
   removeWidgetCustomTimer: (id, timerId) => ipcRenderer.invoke('widget:removeCustomTimer', { id, timerId }),

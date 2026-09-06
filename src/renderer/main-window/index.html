@@ -758,6 +758,16 @@
                     <input type="number" id="widget-trigger-duration-sec" class="duration-input" min="0" max="59" step="1" />
                     <span class="duration-unit">s</span>
                   </div>
+                  <!-- Whole-aura, like Reverse detection below. When on, every trigger on this aura
+                       reads its own duration off an mm:ss written in the line that fired it, and the
+                       fixed Duration boxes above go dark. No time on the line -> the trigger does
+                       not fire. See customTimerEngine / parseChatTimerDuration. -->
+                  <div class="row">
+                    <label title="Read the duration from the chat line instead of the boxes above. Put an mm:ss in the line the trigger matches — e.g. a trigger on 'timerstart' plus /say timerstart 8:10 makes an 8-minute-10-second tile; /say timerstart 3:00 restarts it at 3:00. Up to 60:00. If the line has no mm:ss on it, nothing fires.">
+                      <input type="checkbox" id="widget-dynamic-chat-timer-checkbox" />
+                      Set duration from the chat line
+                    </label>
+                  </div>
                   <!-- Whole-aura setting, not per-trigger - applies to whatever this aura's
                        triggerCombineMode already decides fires (a single trigger, an AND set, or an
                        OR set), so building "on until two things together happen" is one checkbox,

@@ -521,6 +521,11 @@ function defaultCustomWidget(name) {
     // combine-mode control, not a flag set on each individual trigger. See customTimerEngine.js
     // for the actual show/hide mechanics.
     reverseDetection: false,
+    // Dynamic chat timer: every trigger on this aura takes its duration from an mm:ss token on the
+    // line that fired it ("/say timerstart 8:10" -> 8m10s), ignoring the fixed Duration above. No
+    // token on the line -> the trigger does not fire. Whole-aura, next to reverseDetection - same
+    // "one checkbox, not a per-trigger flag" reasoning. See customTimerEngine.js / parseChatTimerDuration.
+    dynamicChatTimer: false,
     locked: true,
     sortOrder: 'default',
     sortDirection: 'asc',
@@ -820,6 +825,7 @@ const SHAREABLE_FIELDS = [
   'triggerCombineMode',
   'andWindowSec',
   'reverseDetection',
+  'dynamicChatTimer',
   'sortOrder',
   'lowTimeThresholdSec',
   'landingGlowEnabled',
@@ -1046,6 +1052,7 @@ function normalizeWidget(widget) {
         ? Math.max(0, Math.min(MAX_AND_WINDOW_SEC, Math.round(widget.andWindowSec)))
         : DEFAULT_AND_WINDOW_SEC,
     excludedBuffNames: stringList(widget.excludedBuffNames),
+    dynamicChatTimer: !!widget.dynamicChatTimer,
     sortOrder: widget.sortOrder || 'default',
     sortDirection: widget.sortDirection === 'desc' ? 'desc' : 'asc',
     lowTimeThresholdSec: typeof widget.lowTimeThresholdSec === 'number' ? widget.lowTimeThresholdSec : 30,
@@ -1905,6 +1912,15 @@ class WidgetStore {
     const widget = this.getById(id);
     if (!widget) return null;
     widget.reverseDetection = !!enabled;
+    this._save();
+    return widget;
+  }
+
+  // Whole-aura, next to reverseDetection - see defaultCustomWidget's field comment.
+  setDynamicChatTimer(id, enabled) {
+    const widget = this.getById(id);
+    if (!widget) return null;
+    widget.dynamicChatTimer = !!enabled;
     this._save();
     return widget;
   }

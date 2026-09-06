@@ -298,6 +298,12 @@ function setReverseDetection(id, enabled) {
   return config;
 }
 
+function setDynamicChatTimer(id, enabled) {
+  const config = widgetStore.setDynamicChatTimer(id, enabled);
+  pushConfigChanged(id);
+  return config;
+}
+
 function updateCustomTimer(id, timerId, timer) {
   const config = widgetStore.updateCustomTimer(id, timerId, timer);
   pushConfigChanged(id);
@@ -1716,6 +1722,7 @@ module.exports = {
   setTriggerCombineMode,
   setAndWindowSec,
   setReverseDetection,
+  setDynamicChatTimer,
   updateCustomTimer,
   removeCustomTimer,
   excludeBuff,
