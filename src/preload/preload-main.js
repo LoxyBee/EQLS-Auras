@@ -350,6 +350,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getActiveProfileId: () => ipcRenderer.invoke('profiles:getActiveId'),
   createProfile: (name, widgetIdsToMigrate) => ipcRenderer.invoke('profiles:create', { name, widgetIdsToMigrate }),
   renameProfile: (id, name) => ipcRenderer.invoke('profiles:rename', { id, name }),
+  setProfileTellCommand: (id, word) => ipcRenderer.invoke('profiles:setTellCommand', { id, word }),
   setActiveProfile: (id) => ipcRenderer.invoke('profiles:setActive', id),
   deleteProfile: (id) => ipcRenderer.invoke('profiles:delete', id),
   onProfilesChanged: (callback) => {

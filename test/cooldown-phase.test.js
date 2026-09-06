@@ -231,11 +231,13 @@ test('a timer without one stays byte-identical to a pre-feature timer', () => {
 test('it is wired from the form all the way to the store', () => {
   // The gap this actually had: the field was in the form, the store and the engine and still did
   // nothing, because the IPC handler destructures named fields and did not list it.
-  assert.match(html, /id="widget-new-timer-cooldown"/, 'no field in the form');
-  assert.match(rendererSrc, /cooldownSec: Number\(newTimerCooldownInput\.value\) \|\| 0/, 'the form never reads it');
-  assert.match(rendererSrc, /newTimerCooldownInput\.value = timer\.cooldownSec \? String\(timer\.cooldownSec\) : ''/,
+  // Minute + second boxes since 5 Sep (a respawn cooldown can be many minutes).
+  assert.match(html, /id="widget-new-timer-cooldown-min"/, 'no field in the form');
+  assert.match(html, /id="widget-new-timer-cooldown-sec"/, 'no seconds field in the form');
+  assert.match(rendererSrc, /cooldownSec: readMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput\)/, 'the form never reads it');
+  assert.match(rendererSrc, /writeMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput, timer\.cooldownSec \|\| 0, true\)/,
     'editing a timer does not show its cooldown');
-  assert.match(rendererSrc, /newTimerCooldownInput\.value = '';/, 'the form is not cleared between timers');
+  assert.match(rendererSrc, /newTimerCooldownMinInput\.value = '';/, 'the form is not cleared between timers');
   const add = mainSrc.match(/'widget:addCustomTimer',([\s\S]*?)\n\);/);
   assert.ok(add && /cooldownSec/.test(add[1]), 'the add handler drops cooldownSec');
   const upd = mainSrc.match(/'widget:updateCustomTimer',([\s\S]*?)\n\);/);

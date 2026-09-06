@@ -303,12 +303,60 @@ function colorForName(name) {
   return `hsl(${hue}, 45%, 32%)`;
 }
 
-// Note 19. A translucent per-attacker bar fill for the damage meter - same stable hue as
-// colorForName, but lighter and see-through so the row's name and number stay readable over it.
-function damageBarColor(name) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  return `hsla(${hash % 360}, 55%, 50%, 0.3)`;
+// Note 19 / owner ask 4 Sep, reworked 5 Sep. The damage meter colours by RANK, not by name: the
+// player picks one hex for the damage metric and one for healing (per-aura, `damageColor` /
+// `healColor`), that exact colour is the #1 row on the board, and every row below fades toward grey
+// in proportion to how far behind #1 it is. `barPercent` is already "this row against the biggest"
+// (100 at the top), so it doubles as the shade factor for free - a row at 40% of the leader is
+// drawn at ~40% of the picked saturation. The Total row (barPercent null) keeps the full colour.
+const DEFAULT_DAMAGE_HEX = '#e0603a'; // red-orange
+const DEFAULT_HEAL_HEX = '#37b56a'; // green
+
+function hexToHsl(hex) {
+  const s = String(hex || '').trim().replace(/^#/, '');
+  const h6 = s.length === 3 ? s.split('').map((c) => c + c).join('') : s;
+  const int = parseInt(h6, 16);
+  if (!/^[0-9a-f]{6}$/i.test(h6) || Number.isNaN(int)) return { h: 20, s: 70, l: 50 };
+  const r = ((int >> 16) & 255) / 255;
+  const g = ((int >> 8) & 255) / 255;
+  const b = (int & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0;
+  let sat = 0;
+  const d = max - min;
+  if (d !== 0) {
+    sat = d / (1 - Math.abs(2 * l - 1));
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  return { h, s: sat * 100, l: l * 100 };
+}
+
+function meterBaseHex(kind) {
+  const picked = kind === 'heal' ? currentConfig.healColor : currentConfig.damageColor;
+  return picked || (kind === 'heal' ? DEFAULT_HEAL_HEX : DEFAULT_DAMAGE_HEX);
+}
+// t: 1 at the top of the board, down toward 0 for a row far behind the leader. Anything not a
+// number (the Total row) is treated as the top.
+function meterShade(kind, barPercent) {
+  const { h, s, l } = hexToHsl(meterBaseHex(kind));
+  const t = typeof barPercent === 'number' ? Math.max(0, Math.min(1, barPercent / 100)) : 1;
+  return { h, s: s * (0.28 + 0.72 * t), l };
+}
+function damageBarColor(kind, barPercent) {
+  const { h, s, l } = meterShade(kind, barPercent);
+  return `hsla(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%, 0.32)`;
+}
+// The solid-text counterpart, for 'both' mode's two value numbers and the tinted % column - same
+// hue and shade as the bar it belongs to, just opaque and lifted for legibility on the dark plate.
+function damageTextColor(kind, barPercent) {
+  const { h, s, l } = meterShade(kind, barPercent);
+  return `hsl(${h.toFixed(0)}, ${Math.min(100, s + 12).toFixed(0)}%, ${Math.min(82, l + 20).toFixed(0)}%)`;
 }
 
 function initials(name) {
@@ -595,21 +643,41 @@ function buildListRow(buff) {
   const time = document.createElement('span');
   time.className = 'time';
 
-  content.append(bar, name, time);
+  // 'both' track mode only (see updateRef) - a second number sitting right after the first, so a
+  // merged damage+heal row reads as two coloured figures instead of one plain string. Always
+  // created, left empty and un-styled for every other row - cheap, and avoids rebuilding the row
+  // if the aura's track mode changes.
+  const healValue = document.createElement('span');
+  healValue.className = 'time time-heal';
+
+  content.append(bar, name, time, healValue);
   // Between the name and the time, so the countdown stays where the eye already looks for it.
   const listCount = countFor(buff);
   if (listCount) content.insertBefore(buildCountBadge(listCount.n, listCount.why), time);
 
-  const ref = { root, timeEl: time, barEl: bar, iconWrapEl: null, lastIconUrl: undefined };
+  // Damage meter only - the share % as plain text OUTSIDE the row's dark box (owner, 5 Sep). It is
+  // a sibling of .buff-row-box, separated from it by a real gap (the game shows through), so the
+  // coloured countdown/split bar - which lives inside the box - can never reach it. display:none
+  // for every non-damage row and for the Total, so it costs no width (and no gap) there.
+  const pctColEl = document.createElement('span');
+  pctColEl.className = 'row-pct';
+
+  // The dark plate + border lives on this wrapper, not on .buff-row, so pctColEl can sit outside
+  // it with a real gap (see overlay.css). The bar's overflow-clip is on the box too.
+  const box = document.createElement('div');
+  box.className = 'buff-row-box';
+
+  const ref = { root, timeEl: time, healValueEl: healValue, pctEl: pctColEl, barEl: bar, iconWrapEl: null, lastIconUrl: undefined };
   if (currentConfig.showRowIcon) {
     const iconWrap = document.createElement('div');
     iconWrap.className = 'buff-row-icon';
     ref.iconWrapEl = iconWrap;
-    root.append(iconWrap, content);
+    box.append(iconWrap, content);
     updateRowIcon(ref, buff);
   } else {
-    root.append(content);
+    box.append(content);
   }
+  root.append(box, pctColEl);
   return ref;
 }
 
@@ -913,8 +981,94 @@ function updateRef(ref, buff, isIcon) {
     if (mode === 'dps' && buff.dpsText != null) damageText = buff.dpsText;
     else if (mode === 'both' && buff.bothText != null) damageText = buff.bothText;
   }
-  ref.timeEl.textContent =
-    damageText != null ? damageText : formatTime(buff.remainingSec, currentConfig.timerFormat);
+  // damageTrackMode 'both' (owner, 4 Sep) - a per-player row carries its own damage number AND
+  // its own heal number (each with its OWN share %, not one combined figure), and each is coloured
+  // to match the bar segment it belongs to so the two numbers read as anchored to their colour
+  // rather than as one ambiguous string. Only a per-player row has this (barSplit is a number);
+  // the Total row still carries one plain valueText ("X dmg / Y heal") like every other total. Only
+  // ever reached on a list row - the damage aura has no icon-grid mode, so ref.healValueEl (added
+  // only in buildListRow) is the guard here as well as the feature check.
+  const isBothRow = currentConfig.buffSource === 'damage' && typeof buff.barSplit === 'number';
+  // The Both-mode Total row also cycles (owner, 5 Sep) - it carries its own damage/heal total
+  // pieces for that, separate from barSplit which it never has.
+  const isBothTotal =
+    currentConfig.buffSource === 'damage' && buff.totalRow && buff.damageTotalText != null;
+  const cyclePhase = isBothRow || isBothTotal ? bothCyclePhase() : null;
+  if (ref.healValueEl) {
+    if (isBothRow) {
+      const bMode = currentConfig.damageValueMode || (currentConfig.damageShowDps ? 'dps' : 'total');
+      const dmgPiece =
+        bMode === 'dps' ? buff.damageDpsText : bMode === 'both' ? buff.damageBothText : buff.damageValueText;
+      const healPiece =
+        bMode === 'dps' ? buff.healDpsText : bMode === 'both' ? buff.healBothText : buff.healValueText;
+      if (cyclePhase) {
+        // Cycling - one metric at a time, at full detail, in its own colour, with a short "dmg" /
+        // "heal" tag so which figure is on screen is never a guess (owner, 5 Sep).
+        const show = cyclePhase === 'heal' ? healPiece : dmgPiece;
+        const tag = cyclePhase === 'heal' ? 'heal ' : 'dmg ';
+        ref.timeEl.textContent = tag + ((show != null ? show : buff.valueText) || '');
+        ref.timeEl.style.color = damageTextColor(cyclePhase, buff.barPercent);
+        ref.healValueEl.hidden = true;
+        ref.healValueEl.textContent = '';
+      } else {
+        // Side by side. The damage number follows damageValueMode; the heal number stays plain
+        // cumulative + share % - no rate (owner, 5 Sep: a heal /s crammed in here was noise).
+        ref.timeEl.textContent = (dmgPiece != null ? dmgPiece : buff.damageValueText) || '';
+        ref.timeEl.style.color = damageTextColor('damage', buff.barPercent);
+        ref.healValueEl.textContent = buff.healValueText || '';
+        ref.healValueEl.style.color = damageTextColor('heal', buff.barPercent);
+        ref.healValueEl.hidden = false;
+      }
+    } else if (isBothTotal && cyclePhase) {
+      const tag = cyclePhase === 'heal' ? 'heal ' : 'dmg ';
+      ref.timeEl.textContent = tag + (cyclePhase === 'heal' ? buff.healTotalText : buff.damageTotalText);
+      ref.timeEl.style.color = damageTextColor(cyclePhase);
+      ref.healValueEl.hidden = true;
+      ref.healValueEl.textContent = '';
+    } else {
+      ref.healValueEl.hidden = true;
+      ref.healValueEl.textContent = '';
+      ref.timeEl.style.color = '';
+    }
+  }
+  if (!isBothRow && !(isBothTotal && cyclePhase)) {
+    // Both+Swap: the whole meter is one metric right now - prefix the Total (which has no bar to
+    // signal it) with dmg/heal, and tint it, so it's clear which meter is up.
+    const swapKind =
+      currentConfig.buffSource === 'damage' &&
+      currentConfig.damageTrackMode === 'both' &&
+      currentConfig.damageBothMode === 'swap'
+        ? singleMetricKind()
+        : null;
+    if (swapKind && buff.totalRow && damageText != null) {
+      ref.timeEl.textContent = (swapKind === 'heal' ? 'heal ' : 'dmg ') + damageText;
+      ref.timeEl.style.color = damageTextColor(swapKind);
+    } else {
+      ref.timeEl.textContent =
+        damageText != null ? damageText : formatTime(buff.remainingSec, currentConfig.timerFormat);
+    }
+  }
+  // The share % rides its own right-aligned column on a damage meter (owner, 5 Sep) - so the value
+  // numbers line up down the list instead of jittering behind a variable-width %.
+  if (ref.pctEl) {
+    let pctText = '';
+    let pctColor = '';
+    if (currentConfig.buffSource === 'damage' && !buff.totalRow) {
+      if (isBothRow && cyclePhase) {
+        pctText = (cyclePhase === 'heal' ? buff.healPctText : buff.damagePctText) || '';
+        pctColor = damageTextColor(cyclePhase, buff.barPercent);
+      } else if (isBothRow) {
+        pctText = `${buff.damagePctText || ''} / ${buff.healPctText || ''}`;
+      } else if (buff.pctText != null) {
+        pctText = buff.pctText;
+        // Healing track mode / Both+Swap heal phase - tint the % to match the bar.
+        if (singleMetricKind() === 'heal') pctColor = damageTextColor('heal', buff.barPercent);
+      }
+    }
+    ref.pctEl.textContent = pctText;
+    ref.pctEl.style.color = pctColor;
+    ref.pctEl.hidden = pctText === '';
+  }
   if (isIcon) {
     updateTileIcon(ref, buff);
     updateTileShade(ref, buff);
@@ -951,7 +1105,26 @@ function updateRef(ref, buff, isIcon) {
       // Note 19. Each attacker's bar gets a stable colour derived from the name (owner's call), so
       // the same person keeps the same colour tick to tick. Only for a damage meter - every other
       // aura's bar stays the one CSS fill.
-      ref.barEl.style.background = currentConfig.buffSource === 'damage' ? damageBarColor(buff.name) : '';
+      if (currentConfig.buffSource === 'damage') {
+        if (typeof buff.barSplit === 'number') {
+          // 'both' mode - one bar, two touching colour segments (damage then heal), split at
+          // barSplit (see damageEngine._bothTilesFrom). A hard-stop gradient inside the bar's own
+          // box does this with no extra DOM - the box is already sized to `pct`% by the width set
+          // above, so the gradient's 0-100% IS this row's own bar length, not the container's.
+          const dmgColor = damageBarColor('damage', buff.barPercent);
+          const healColor = damageBarColor('heal', buff.barPercent);
+          const splitPct = Math.max(0, Math.min(100, buff.barSplit * 100));
+          // Mirrored rows anchor the bar to the right edge (grow leftward) - flip the gradient
+          // direction too, so the segment nearest the anchored/full edge is consistent either way.
+          const dir = currentConfig.mirrorRowDirection ? 'to left' : 'to right';
+          ref.barEl.style.background =
+            `linear-gradient(${dir}, ${dmgColor} 0%, ${dmgColor} ${splitPct}%, ${healColor} ${splitPct}%, ${healColor} 100%)`;
+        } else {
+          ref.barEl.style.background = damageBarColor(singleMetricKind(), buff.barPercent);
+        }
+      } else {
+        ref.barEl.style.background = '';
+      }
     }
     // QOL #47 - list mode. Empty string clears the override so the row falls back to its CSS
     // colour (--timer-text-color, or the red .buff-row.low .time rule when low).
@@ -1170,16 +1343,15 @@ function visibleBuffs(buffs, opts = {}) {
     if (currentConfig.showTotalRow === false) rows = rows.filter((b) => !b.totalRow);
     // Line C - the combined owner-unknown charmed-pet row, hidden if the aura asked.
     if (currentConfig.showCharmedPetsRow === false) rows = rows.filter((b) => !b.unknownPets);
-    // Top-N attacker rows only (owner's call, default 6). The engine sends every row sorted
-    // biggest-first; this keeps the meter from running off the screen in a raid. The Total row and
-    // the "Pets" / "Other" summary rows are never counted against the cap - they draw at the
-    // bottom and are summaries, not individual attackers.
+    // Top-N rows only (owner's call, default 6). The engine sends every row sorted biggest-first
+    // (with the "Pets" / "Other" summary rows sunk to the bottom); this keeps the meter from
+    // running off the screen in a raid. Only the Total is exempt - the summary rows count as rows
+    // too (owner, 5 Sep: "pets should hide" when the cap is smaller than the list), and being at
+    // the bottom they are the first cut.
     const cap = Number(currentConfig.damageRowCap);
     if (Number.isFinite(cap) && cap > 0) {
       let kept = 0;
-      rows = rows.filter(
-        (b) => b.totalRow || b.isOther || b.name === 'Pets' || ++kept <= cap
-      );
+      rows = rows.filter((b) => b.totalRow || ++kept <= cap);
     }
     return rows;
   }
@@ -1394,6 +1566,47 @@ const tileRefs = new Map(); // lowercased buff name -> { root, timeEl, barEl? }
 const expiredLinger = new Map();
 let prevRealByKey = new Map();
 let lingerRerenderTimer = null;
+
+// Note 19 / owner 5 Sep. 'both' track mode cycles on an interval:
+//   - 'combined' mode: each row's NUMBER flips between damage and heal (the bar stays a split).
+//   - 'swap' mode: the WHOLE meter flips between a standalone damage meter and a standalone heal
+//     meter, each with its own sorting/rows. 'swap' always cycles (an 0 slider -> an 8s default).
+// The engine's broadcast only fires on combat activity, so a dedicated timer forces the re-render.
+const BOTH_SWAP_DEFAULT_SEC = 8;
+let bothCycleTimer = null;
+function bothCycleSecEffective() {
+  const raw = Number(currentConfig.damageBothCycleSec) || 0;
+  if (currentConfig.damageBothMode === 'swap') return raw > 0 ? raw : BOTH_SWAP_DEFAULT_SEC;
+  return raw; // 'combined': 0 = side by side, no cycle
+}
+function updateBothCycleTimer() {
+  const on =
+    currentConfig &&
+    currentConfig.buffSource === 'damage' &&
+    currentConfig.damageTrackMode === 'both' &&
+    bothCycleSecEffective() > 0;
+  if (bothCycleTimer) { clearInterval(bothCycleTimer); bothCycleTimer = null; }
+  if (on) {
+    // Re-render on every phase boundary. Half the cycle length so the flip lands close to on time.
+    bothCycleTimer = setInterval(() => render(currentSourceBuffs()), Math.max(500, (bothCycleSecEffective() * 1000) / 2));
+  }
+}
+// 'damage' | 'heal' - which metric the cycling Both view shows right now, derived from the wall
+// clock so every row (and a fresh render between timer ticks) agrees. null when not cycling.
+function bothCyclePhase() {
+  const sec = bothCycleSecEffective();
+  if (sec <= 0) return null;
+  return Math.floor(Date.now() / (sec * 1000)) % 2 === 0 ? 'damage' : 'heal';
+}
+// For a single-metric-shaped damage row (Healing track mode, or Both+Swap's current phase): which
+// hue band its bar / number / % should use.
+function singleMetricKind() {
+  if (currentConfig.damageTrackMode === 'healing') return 'heal';
+  if (currentConfig.damageTrackMode === 'both' && currentConfig.damageBothMode === 'swap') {
+    return bothCyclePhase() === 'heal' ? 'heal' : 'damage';
+  }
+  return 'damage';
+}
 
 // Tracks every buff the ENGINE currently has active, regardless of this
 // widget's own display filters - deliberately not the same as "currently
@@ -1906,9 +2119,11 @@ let lastSelfBuffs = [];
 let lastAllyBuffs = [];
 let lastBardSongs = [];
 let lastCustomTimers = [];
-// Note 19. Three scoped views from one engine (whole fight / just my group / just me) - the aura
-// picks its own by damageScope. See damageViews() in main.js.
-let lastDamageViews = { all: [], group: [], mine: [] };
+// Note 19. Three scoped views from one engine (whole fight / just my group / just me), nested by
+// track mode (damage / healing / both, see widgetStore.js's damageTrackMode) - the aura picks its
+// own by damageScope and damageTrackMode. See damageViews() in main.js.
+const EMPTY_DAMAGE_SCOPES = { all: [], group: [], mine: [] };
+let lastDamageViews = { damage: EMPTY_DAMAGE_SCOPES, healing: EMPTY_DAMAGE_SCOPES, both: EMPTY_DAMAGE_SCOPES };
 // Backlog #33. One shared board - the current raid zone's named list, killed ones flagged.
 let lastRaidNamed = [];
 // Note 20. Keyed by aura id - one broadcast carries every travel aura's route and each window
@@ -2029,7 +2244,17 @@ function realSourceBuffs() {
   // reorder them by a time remaining they deliberately do not have.
   if (currentConfig.buffSource === 'damage') {
     const scope = currentConfig.damageScope || 'all';
-    return lastDamageViews[scope] || lastDamageViews.all || [];
+    const trackMode = ['healing', 'both'].includes(currentConfig.damageTrackMode)
+      ? currentConfig.damageTrackMode
+      : 'damage';
+    // 'both' + 'swap': show the WHOLE standalone damage meter, then the WHOLE standalone heal meter,
+    // alternating on the cycle interval - each is the real single-metric view, own sorting and all.
+    if (trackMode === 'both' && currentConfig.damageBothMode === 'swap') {
+      const src = bothCyclePhase() === 'heal' ? lastDamageViews.healing : lastDamageViews.damage;
+      return (src && (src[scope] || src.all)) || [];
+    }
+    const view = lastDamageViews[trackMode] || lastDamageViews.damage;
+    return view[scope] || view.all || [];
   }
   if (currentConfig.buffSource === 'travel') return lastTravelRoutes[widgetId] || [];
   if (currentConfig.buffSource === 'lockout') return lastLockoutBoard[widgetId] || [];
@@ -2221,6 +2446,7 @@ function applyConfig(config) {
   // QOL #48 - a config change re-identifies tiles; a linger held over from the old config (old
   // mode, old source, old filter) would be re-attributed to whatever now sits at that key.
   clearExpiredLinger();
+  updateBothCycleTimer();
   // See warningsSuppressedOnce. Changing a setting must not produce a sound.
   warningsSuppressedOnce = true;
   Promise.all([
@@ -2323,9 +2549,19 @@ if (window.eqOverlay.getModuleEntries) {
 }
 
 function applyDamageViews(views) {
-  // Tolerate the old bare-array shape from any stale main process during a hot reload.
-  if (Array.isArray(views)) lastDamageViews = { all: views, group: views, mine: views };
-  else if (views && typeof views === 'object') lastDamageViews = views;
+  // Tolerate stale shapes from a mismatched main process during a hot reload: a bare array (the
+  // original shape) or the pre-track-mode flat {all,group,mine} object (no `damage`/`healing` key).
+  if (Array.isArray(views)) {
+    lastDamageViews = { damage: { all: views, group: views, mine: views }, healing: EMPTY_DAMAGE_SCOPES, both: EMPTY_DAMAGE_SCOPES };
+  } else if (views && typeof views === 'object' && (views.damage || views.healing || views.both)) {
+    lastDamageViews = {
+      damage: views.damage || EMPTY_DAMAGE_SCOPES,
+      healing: views.healing || EMPTY_DAMAGE_SCOPES,
+      both: views.both || EMPTY_DAMAGE_SCOPES,
+    };
+  } else if (views && typeof views === 'object') {
+    lastDamageViews = { damage: views, healing: EMPTY_DAMAGE_SCOPES, both: EMPTY_DAMAGE_SCOPES };
+  }
   render(currentSourceBuffs());
 }
 window.eqOverlay.getActiveDamage().then(applyDamageViews);

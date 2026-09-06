@@ -132,6 +132,46 @@ function clampDamageRowCap(value) {
   return Math.min(20, Math.max(1, Math.round(n)));
 }
 
+const DAMAGE_TRACK_MODES = ['damage', 'healing', 'both'];
+function clampDamageTrackMode(value) {
+  return DAMAGE_TRACK_MODES.includes(value) ? value : 'damage';
+}
+
+// 'both' track mode has two shapes: 'combined' - one merged row per player, split bar (the
+// original); 'swap' - the meter alternates between the whole standalone Damage meter and the whole
+// standalone Healing meter (each with its own sorting, rows, everything), flipping on the
+// damageBothCycleSec interval. Default 'combined'.
+const DAMAGE_BOTH_MODES = ['combined', 'swap'];
+function clampDamageBothMode(value) {
+  return DAMAGE_BOTH_MODES.includes(value) ? value : 'combined';
+}
+
+// The damage meter colours by RANK: the picked hex IS the #1 row, every row below fades toward grey
+// by how far it trails the leader. `damageColor` tints the damage metric, `healColor` the healing
+// metric (used together in 'both' mode's split bar). A non-hex (old aura, junk) -> the default.
+const DEFAULT_DAMAGE_COLOR = '#e0603a';
+const DEFAULT_HEAL_COLOR = '#37b56a';
+function clampHexColor(value, fallback) {
+  const s = String(value == null ? '' : value).trim();
+  return /^#[0-9a-fA-F]{6}$/.test(s) ? s.toLowerCase() : fallback;
+}
+function clampDamageColor(value) {
+  return clampHexColor(value, DEFAULT_DAMAGE_COLOR);
+}
+function clampHealColor(value) {
+  return clampHexColor(value, DEFAULT_HEAL_COLOR);
+}
+
+// 'both' track mode: seconds between flipping a row's number from damage to healing and back, so
+// each metric gets the full row width (rate, share, everything). 0 = show both side by side (no
+// cycle). 1..20; a non-number (an old aura, a share code) -> the default 10.
+function clampDamageBothCycleSec(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 10;
+  const r = Math.round(n);
+  return r <= 0 ? 0 : Math.min(20, Math.max(1, r));
+}
+
 // The raid-lockout aura pops on a macro and hides itself after this many seconds.
 const DEFAULT_LOCKOUT_AUTO_HIDE_SEC = 20;
 function clampLockoutAutoHideSec(value) {
@@ -240,6 +280,18 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // fast chain of pulls reads as one. Settable rather than fixed because the right value depends
     // on what is being fought, which the app cannot know.
     fightTimeoutSec: 10,
+    // What this meter tracks: 'damage' (default, unchanged), 'healing' (the same collect-hold-
+    // collapse method, fed by healLines.js/damageEngine's heal-side maps instead of its damage-side
+    // ones), or 'both' - one row per player with damage and healing merged into a single bar,
+    // split into a damage-coloured and heal-coloured segment (see damageEngine._bothTilesFrom).
+    damageTrackMode: 'damage',
+    // 'both' mode only: cycle each row's number between damage and healing every N seconds (so each
+    // gets the full row width - rate, share and all), or 0 to show both side by side. Default 10.
+    damageBothCycleSec: 10,
+    damageBothMode: 'combined',
+    // Rank colours: the picked hex is the #1 row, rows below fade toward grey (see overlay.js).
+    damageColor: DEFAULT_DAMAGE_COLOR,
+    healColor: DEFAULT_HEAL_COLOR,
     // Count only your own damage. Off by default on measurement, not taste: across the owner's
     // 1,521,971 logged lines her character deals 2,712 damage lines against roughly 346,000 from
     // everyone else, so a meter defaulting to "just mine" would be an almost empty box for her.
@@ -523,6 +575,18 @@ function defaultCustomWidget(name) {
     // fast chain of pulls reads as one. Settable rather than fixed because the right value depends
     // on what is being fought, which the app cannot know.
     fightTimeoutSec: 10,
+    // What this meter tracks: 'damage' (default, unchanged), 'healing' (the same collect-hold-
+    // collapse method, fed by healLines.js/damageEngine's heal-side maps instead of its damage-side
+    // ones), or 'both' - one row per player with damage and healing merged into a single bar,
+    // split into a damage-coloured and heal-coloured segment (see damageEngine._bothTilesFrom).
+    damageTrackMode: 'damage',
+    // 'both' mode only: cycle each row's number between damage and healing every N seconds (so each
+    // gets the full row width - rate, share and all), or 0 to show both side by side. Default 10.
+    damageBothCycleSec: 10,
+    damageBothMode: 'combined',
+    // Rank colours: the picked hex is the #1 row, rows below fade toward grey (see overlay.js).
+    damageColor: DEFAULT_DAMAGE_COLOR,
+    healColor: DEFAULT_HEAL_COLOR,
     // Count only your own damage. Off by default on measurement, not taste: across the owner's
     // 1,521,971 logged lines her character deals 2,712 damage lines against roughly 346,000 from
     // everyone else, so a meter defaulting to "just mine" would be an almost empty box for her.
@@ -774,6 +838,11 @@ const SHAREABLE_FIELDS = [
   'damageScope',
   'showCharmedPetsRow',
   'damageRowCap',
+  'damageTrackMode',
+  'damageBothCycleSec',
+  'damageBothMode',
+  'damageColor',
+  'healColor',
   'lockoutTriggerWord',
   'lockoutAutoHideSec',
   'travelDestination',
@@ -949,6 +1018,11 @@ function normalizeWidget(widget) {
     damageScope: ['all', 'group', 'mine'].includes(widget.damageScope) ? widget.damageScope : 'all',
     showCharmedPetsRow: widget.showCharmedPetsRow !== false,
     damageRowCap: clampDamageRowCap(widget.damageRowCap),
+    damageTrackMode: clampDamageTrackMode(widget.damageTrackMode),
+    damageBothCycleSec: clampDamageBothCycleSec(widget.damageBothCycleSec),
+    damageBothMode: clampDamageBothMode(widget.damageBothMode),
+    damageColor: clampDamageColor(widget.damageColor),
+    healColor: clampHealColor(widget.healColor),
     // Raid-lockout aura. Carried through for every aura (cheap, and normalizeWidget spreads first)
     // but only read when buffSource === 'lockout'.
     lockoutTriggerWord: cleanLockoutTriggerWord(widget.lockoutTriggerWord),
@@ -2354,6 +2428,11 @@ module.exports = {
   clampInstantSec,
   clampSoundCooldownSec,
   clampDamageRowCap,
+  clampDamageTrackMode,
+  clampDamageBothCycleSec,
+  clampDamageBothMode,
+  clampDamageColor,
+  clampHealColor,
   clampLockoutAutoHideSec,
   cleanLockoutTriggerWord,
   DEFAULT_LOCKOUT_AUTO_HIDE_SEC,

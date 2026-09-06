@@ -122,16 +122,32 @@ body.unlocked .drag-overlay {
 
 .buff-row {
   position: relative;
-  overflow: hidden;
   display: flex;
   align-items: stretch;
+  /* The gap is real transparent space (the game shows through it) - it exists so the damage
+     meter's % column, a sibling of .buff-row-box, reads as a separate label OUTSIDE the row's
+     box rather than another cell inside it (owner, 5 Sep). Harmless on every other aura: their
+     rows have no .row-pct sibling so nothing sits in the gap. */
+  gap: 6px;
   height: var(--row-size, 28px);
   flex-shrink: 0;
+  font-size: var(--text-size, 13px);
+  color: var(--timer-text-color, #f0f1f5);
+}
+
+/* The visible row box - the dark plate + border + rounded corners that USED to be on .buff-row
+   itself. Split out so .row-pct can sit outside it. Holds the optional icon and .buff-row-content;
+   overflow:hidden clips the countdown/split bar to it. */
+.buff-row-box {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
   background: rgba(15, 17, 22, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 5px;
-  font-size: var(--text-size, 13px);
-  color: var(--timer-text-color, #f0f1f5);
 }
 
 /* Optional per-row icon (showRowIcon setting) - a plain flex sibling of
@@ -215,10 +231,45 @@ body.unlocked .drag-overlay {
   flex-shrink: 0;
 }
 
+/* damageTrackMode 'both' (owner, 4 Sep) - the second, heal-coloured number sitting right after the
+   damage one on a merged damage+heal row (see overlay.js's updateRef). Hidden by default via the
+   plain HTML `hidden` attribute; only shown on a row that actually carries a barSplit. */
+.buff-row-content .time-heal {
+  margin-left: 6px;
+}
+
+/* Damage meter: the share % in its own column, a SIBLING of .buff-row-content so the coloured
+   countdown/split bar never reaches under it - the % sits in clear space to the right of the bar
+   (owner, 5 Sep). display:none via the plain `hidden` attribute on any row without a %, so it
+   costs no width there. */
+/* Its own little bubble sitting in the gap to the right of the row box - the same dark translucent
+   plate the row box has, but a separate rounded chip so it reads as a label OUTSIDE the row
+   (owner, 5 Sep). */
+.buff-row > .row-pct {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 2.8em;
+  padding: 0 7px;
+  font-family: Consolas, monospace;
+  font-weight: 700;
+  background: rgba(15, 17, 22, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+}
+/* An explicit display:flex above out-specifies the UA [hidden] rule. Collapse it here - once it is
+   display:none it is not a flex item, so .buff-row's `gap` no longer applies (one visible child). */
+.buff-row > .row-pct[hidden] {
+  display: none;
+}
+
 .buff-row.low {
+  animation: pulse 1s infinite;
+}
+.buff-row.low .buff-row-box {
   border-color: rgba(255, 70, 70, 0.7);
   background: rgba(70, 10, 10, 0.8);
-  animation: pulse 1s infinite;
 }
 
 .buff-row.low .time {
@@ -237,7 +288,7 @@ body.unlocked .drag-overlay {
   100% { box-shadow: 0 0 0 0 rgba(255, 214, 110, 0); }
 }
 
-.buff-row.just-landed {
+.buff-row.just-landed .buff-row-box {
   animation: landing-glow 0.9s ease-out;
 }
 
@@ -381,10 +432,10 @@ body.unlocked .drag-overlay {
    stacked above every child instead. The 1px border-color from .cat is left
    alone - overflow:hidden already keeps children off it. Icon tiles are
    untouched: nothing paints over their box-shadow. */
-.buff-row.cat {
+.buff-row.cat .buff-row-box {
   box-shadow: none;
 }
-.buff-row.cat::after {
+.buff-row.cat .buff-row-box::after {
   content: '';
   position: absolute;
   inset: 0;

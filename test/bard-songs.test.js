@@ -681,5 +681,38 @@ test('collapseDebuffSongs is a no-op when there are no debuff songs', () => {
   assert.deepEqual(collapse(songs), songs);
 });
 
+test('a hostile player aiming a spell at you is kept out of recentOtherCasts / song attribution', () => {
+  // Reported live 5 Sep: in a PvP zone an enemy bard "Bloodreign" singing Selo's Accelerating
+  // Chorus nearby stole attribution of the player's OWN Selo's - a "Bloodreign" group appeared on
+  // the Bard Songs aura. Bloodreign was seen casting spells AT the player; their songs never land
+  // on the player's group.
+  const { engine, buffStore } = makeEngine();
+  const song = 'Selo\'s Test Chorus';
+  buffStore.upsert(song, 30, { landingText: `${song} lands.`, endedText: `${song} fades.` });
+  buffStore.markBardSong(song);
+
+  engine.handleLine(`${TS}Bloodreign tries to cast a spell on you, but you are protected.`);
+  engine.handleLine(`${TS}Bloodreign begins singing ${song}.`);
+  assert.equal(engine._recentOtherCaster(song), null, 'a hostile caster is not recorded');
+
+  // The player's own song then attributes to You / Unknown - never to Bloodreign.
+  engine.handleLine(`${TS}You begin singing ${song}.`);
+  engine.handleLine(`${TS}${song} lands.`);
+  const songs = engine.getActiveBardSongs();
+  assert.ok(songs.length >= 1);
+  assert.ok(songs.every((s) => s.allyName !== 'Bloodreign'), 'no Bloodreign group on the aura');
+});
+
+test('a caster already recorded is purged from recentOtherCasts once they turn hostile', () => {
+  const { engine, buffStore } = makeEngine();
+  const song = 'Order Test Anthem';
+  buffStore.upsert(song, 30, { landingText: `${song} lands.` });
+  buffStore.markBardSong(song);
+  engine.handleLine(`${TS}Krudd begins singing ${song}.`);
+  assert.equal(engine._recentOtherCaster(song), 'Krudd', 'recorded while allegiance unknown');
+  engine.handleLine(`${TS}Krudd casts a spell on you, but you resist.`);
+  assert.equal(engine._recentOtherCaster(song), null, 'purged the moment they cast at you');
+});
+
 module.exports = () => report('bard-songs');
 if (require.main === module) report('bard-songs').then((n) => process.exit(n ? 1 : 0));

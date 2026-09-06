@@ -483,6 +483,19 @@ function matchPetLeader(line) {
   return m ? { petName: m[1].trim(), leaderName: m[2].trim() } : null;
 }
 
+// "Bloodreign tries to cast a spell on you, but you are protected." (also "casts a spell on you")
+// - someone aiming a spell AT the player. In a PvP zone that name is a player-shaped hostile, not
+// a groupmate, so their bard songs never land on the player's group - see buffEngine's use of it
+// to keep such a name out of recentOtherCasts (a nearby enemy bard singing a same-named group song
+// was stealing attribution of the player's own song, reported live 5 Sep).
+const HOSTILE_CAST_AT_YOU_PATTERN =
+  /^(.+?) (?:tries to cast|casts) a spell on you[,.]/;
+
+function matchHostileCastAtYou(line) {
+  const m = HOSTILE_CAST_AT_YOU_PATTERN.exec(stripTimestamp(line));
+  return m ? m[1].trim() : null;
+}
+
 module.exports = {
   matchCastBegin,
   matchSingingBegin,
@@ -497,6 +510,7 @@ module.exports = {
   matchGroupJoinAccepted,
   matchCharmed,
   matchPetLeader,
+  matchHostileCastAtYou,
   matchZoneChange,
   matchOwnVoidlingDanger,
   matchDidNotTakeHold,

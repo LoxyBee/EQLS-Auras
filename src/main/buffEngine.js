@@ -17,6 +17,7 @@ const {
   matchGroupMemberJoined,
   matchGroupMemberLeft,
   matchGroupJoinAccepted,
+  matchHostileCastAtYou,
   isFailureLine,
   isPartyChangeLine,
   looksLikeLandingMessage,
@@ -500,6 +501,12 @@ class BuffEngine extends EventEmitter {
     // because it's genuine information worth having, but nothing depends on
     // it being complete.
     this.groupMembers = new Map();
+    // Lowercased names seen aiming a spell AT the player ("X tries to cast a spell on you") - a
+    // PvP-zone hostile, player-shaped name and all. Their bard songs never land on the player's
+    // group, so they are kept out of recentOtherCasts (a nearby enemy bard singing a same-named
+    // group song was stealing attribution of the player's own song - reported live 5 Sep). Session-
+    // lived; the worst case if it is ever wrong is a song reading "Unknown" rather than a name.
+    this.hostileCasters = new Set();
     // Set by "You notify X that you agree to join the group." (see
     // buffParser.js) - the one line naming a pre-existing group's member
     // when you join THEM, one line ahead of the self-join clear in
@@ -890,6 +897,23 @@ class BuffEngine extends EventEmitter {
     this._noteRefusedCast(line);
     this._recordThirdPersonLanding(stripped);
 
+    // Someone aiming a spell at the player marks them a hostile - their casts must not be trusted
+    // as "an ally is maintaining this spell". Also retro-purge anything they were already recorded
+    // as casting (in her log the hostile casts came first, but not always).
+    const hostile = matchHostileCastAtYou(line);
+    if (hostile) {
+      const key = hostile.toLowerCase();
+      if (!this.hostileCasters.has(key)) {
+        this.hostileCasters.add(key);
+        for (const [spell, caster] of this.recentOtherCasts) {
+          if (caster.toLowerCase() === key) {
+            this.recentOtherCasts.delete(spell);
+            this.recentOtherCastAt.delete(spell);
+          }
+        }
+      }
+    }
+
     // Backlog #12 - death strips every buff and song. The game clears them all; if you rez you
     // come back with none unless something restores them, and those re-register here like any
     // other landing. The line carries nothing else any tier below reads, so clear the lot and stop.
@@ -1002,7 +1026,10 @@ class BuffEngine extends EventEmitter {
       // about); a mob's DEBUFF landing on the player is unaffected because that path never reads
       // this map. Mob names that look like a player ("Enro", "Kahaptra Z`Taj") are out of scope -
       // the article is the only shape-based tell the log gives (see buffEngine gotcha #20).
-      if (!isArticlePrefixedMobName(otherCast.casterName)) {
+      if (
+        !isArticlePrefixedMobName(otherCast.casterName) &&
+        !this.hostileCasters.has(otherCast.casterName.toLowerCase())
+      ) {
         this.recentOtherCasts.set(otherCast.spellName.toLowerCase(), otherCast.casterName);
         this.recentOtherCastAt.set(otherCast.spellName.toLowerCase(), Date.now());
       }
@@ -1262,7 +1289,10 @@ class BuffEngine extends EventEmitter {
     const unexplainedThirdPerson = /^([A-Za-z]+)( .+)$/.exec(stripped);
     if (unexplainedThirdPerson) {
       const otherSuffixMatches = this.buffStore.findAllByOthersLandingSuffix(unexplainedThirdPerson[2]);
-      if (otherSuffixMatches.length === 1) {
+      if (
+        otherSuffixMatches.length === 1 &&
+        !this.hostileCasters.has(unexplainedThirdPerson[1].toLowerCase())
+      ) {
         this.recentOtherCasts.set(otherSuffixMatches[0].name.toLowerCase(), unexplainedThirdPerson[1]);
         this.recentOtherCastAt.set(otherSuffixMatches[0].name.toLowerCase(), Date.now());
       }

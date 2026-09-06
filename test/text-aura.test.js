@@ -784,8 +784,8 @@ test('"Show events for" is hidden on a customTimer text aura - it never did anyt
   // confusion." There was never really a second source - customTimerEngine's output carries no
   // `instant` flag at all, so this slider's filter always let a custom-timer buff straight
   // through no matter what it was set to. Hidden now so the only visible duration control is the
-  // one that actually does something: the top-level Duration slider in Custom triggers (see
-  // widget-trigger-duration-slider), added the same day - every trigger shares it now, so there
+  // one that actually does something: the top-level Duration control in Custom triggers (see
+  // widget-trigger-duration-min), added the same day - every trigger shares it now, so there
   // is only ever one number to look at. Rewritten 25 Aug: 'text-customTimer' is a shape of its
   // own specifically so 'text-instant' can be left out of ITS field list while every other
   // text-mode shape keeps it (see the test above) - the two-argument function this test used to

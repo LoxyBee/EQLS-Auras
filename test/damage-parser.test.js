@@ -132,11 +132,11 @@ test('a single-digit-day timestamp is still stripped', () => {
 test('the direct-damage-spell wording is read, first and third person', () => {
   assert.deepEqual(
     parseDamageLine(`${T}You hit a greater kobold for 943 points of magic damage by Energy Storm.`),
-    { attacker: 'You', target: 'a greater kobold', amount: 943, kind: 'spell' }
+    { attacker: 'You', target: 'a greater kobold', amount: 943, kind: 'spell', direct: true }
   );
   assert.deepEqual(
     parseDamageLine(`${T}Gebektik hit Guard Xyxax for 42 points of magic damage by Lifebite.`),
-    { attacker: 'Gebektik', target: 'Guard Xyxax', amount: 42, kind: 'spell' }
+    { attacker: 'Gebektik', target: 'Guard Xyxax', amount: 42, kind: 'spell', direct: true }
   );
 });
 
@@ -268,6 +268,31 @@ test('a fight ends after the timeout and the meter falls back to the since-zone 
   assert.deepEqual(e.getActive(21000), []);
 });
 
+test('a DoT / melody-song tick does not hold the fight open past the last real hit', () => {
+  // Owner, 5 Sep: a maintained DoT (or a /melody-cast song) ticking on a straggler every ~6s kept
+  // the meter's fight from ever closing. The fight now ends timeoutSec after the last MELEE or
+  // directly-cast NUKE; ticks are still credited but do not reset the timer.
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}You crush a wan ghoul knight for 200 points of damage.`, 1000); // a real hit
+  e.handleLine(`${T}a wan ghoul knight has taken 40 damage from your Ignite.`, 6000);
+  // A DoT tick 12s after the crush: the fight has already ended (10s after the last real hit),
+  // so the crush + the early tick are gone and only this straggler tick is live.
+  e.handleLine(`${T}a wan ghoul knight has taken 40 damage from your Ignite.`, 13000);
+  e.tick(13000);
+  assert.equal(e.totalDamage, 40, 'the crush (200) and the 6s tick fell out when the fight ended');
+});
+
+test('a directly-cast nuke DOES hold the fight open (it is a real hit)', () => {
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}You hit a wan ghoul knight for 900 points of fire damage by Lava Storm.`, 1000);
+  e.handleLine(`${T}You hit a wan ghoul knight for 900 points of fire damage by Lava Storm.`, 8000);
+  e.tick(12000);
+  const total = e.getActive(12000)[e.getActive(12000).length - 1];
+  assert.ok(!total.sinceZone, 'still the current fight - the last nuke was only 4s ago');
+});
+
 test('a new fight starts clean rather than adding to the last one', () => {
   const e = new DamageEngine();
   e.setOptions({ fightTimeoutSec: 10 });
@@ -309,8 +334,10 @@ test('rows are biggest first, with the total LAST and bar-less', () => {
   e.handleLine(`${T}Baxa slashes Fright for 300 points of damage.`, 1000);
   const rows = e.getActive(1000);
   assert.deepEqual(rows.map((r) => r.name), ['Baxa', 'You', 'Total'], 'total sits at the bottom now');
-  assert.match(rows[0].valueText, /^300\s+75%$/);
-  assert.match(rows[1].valueText, /^100\s+25%$/);
+  assert.equal(rows[0].valueText, '300');
+  assert.equal(rows[0].pctText, '75%', 'the share rides its own column now');
+  assert.equal(rows[1].valueText, '100');
+  assert.equal(rows[1].pctText, '25%');
   const total = rows[2];
   assert.equal(total.noBar, true, 'the total is a plain label + value, no bar');
   assert.equal(total.barPercent, null);
@@ -343,9 +370,10 @@ test('each attacker row carries all three value readings, using the same fight l
   e.handleLine(`${T}Baxa slashes a kobold for 300 points of damage.`, 5000); // 4s span
   const rows = e.getActive(5000);
   const baxa = rows.find((r) => r.name === 'Baxa');
-  assert.match(baxa.valueText, /^300\s+75%$/, "'total' - cumulative damage + share");
-  assert.match(baxa.dpsText, /^75\/s\s+75%$/, "'dps' - attacker damage / the fight span + share");
-  assert.match(baxa.bothText, /^300 \(75\/s\)\s+75%$/, "'both' - damage (rate) + share");
+  assert.equal(baxa.valueText, '300', "'total' - cumulative damage");
+  assert.equal(baxa.dpsText, '75/s', "'dps' - attacker damage / the fight span");
+  assert.equal(baxa.bothText, '300 (75/s)', "'both' - damage (rate)");
+  assert.equal(baxa.pctText, '75%', 'the share is its own field / column');
   // the total row always shows both, so it only needs valueText
   assert.equal(rows.find((r) => r.name === 'Total').dpsText, undefined);
   assert.equal(rows.find((r) => r.name === 'Total').bothText, undefined);
@@ -412,7 +440,7 @@ test("scope 'all' is unchanged - everyone counts, % over the whole fight", () =>
   const rows = e.getActive(1000, 'all');
   const total = rows.find((r) => r.totalRow);
   assert.match(total.valueText, /^1000/);
-  assert.equal(rows.find((r) => r.name === 'Enro').valueText, '600  60%');
+  assert.equal(rows.find((r) => r.name === 'Enro').valueText, '600');
 });
 
 test("scope 'group' counts only admitted names and recomputes the denominator", () => {
@@ -423,7 +451,7 @@ test("scope 'group' counts only admitted names and recomputes the denominator", 
   assert.equal(rows.find((r) => r.name === 'Enro'), undefined, 'the stranger is not shown');
   const total = rows.find((r) => r.totalRow);
   assert.match(total.valueText, /^400/, 'total is You + Baxa only, not 1000');
-  assert.equal(rows.find((r) => r.name === 'Baxa').valueText, '300  75%');
+  assert.equal(rows.find((r) => r.name === 'Baxa').valueText, '300');
 });
 
 test("scope 'group' with no roster falls back to the whole fight, flagged", () => {
