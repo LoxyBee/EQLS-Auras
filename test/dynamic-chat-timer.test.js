@@ -107,6 +107,26 @@ test('a bare time with the wrong word does not fire it', () => {
   assert.equal(engine.getActive().length, 0);
 });
 
+test('reverse detection + dynamic: the tile shows always, then hides for the parsed time', () => {
+  const engine = engineWith({ reverseDetection: true });
+  assert.deepEqual(engine.getActive().map((t) => ({ p: t.phase, inf: t.infinite })), [{ p: 'shown', inf: true }]);
+  engine.handleLine(`${TS}You say, 'pulltimerstart 1:20'`);
+  assert.equal(engine.getActive().length, 0, 'hidden for the 1:20');
+});
+
+test('toggling Reverse detection on does not leave a stale countdown beside the always-on tile', () => {
+  // Reported live 5 Sep: a "3:35" countdown and an infinite tile on screen at once. The countdown
+  // was a real timer started while the aura was still in normal mode; flipping Reverse detection on
+  // synthesizes the always-on tile without clearing it.
+  const engine = engineWith(); // normal mode
+  engine.handleLine(`${TS}You say, 'pulltimerstart 4:23'`);
+  assert.equal(engine.getActive().length, 1);
+  engine.getWidgetsFn()[0].reverseDetection = true; // user ticks the box
+  const active = engine.getActive();
+  assert.equal(active.length, 1, 'exactly one tile, not the stale countdown plus the new one');
+  assert.equal(active[0].infinite, true);
+});
+
 test('with the toggle off the fixed duration is used as normal', () => {
   const engine = engineWith({ dynamicChatTimer: false }, { triggerMatch: 'contains' });
   engine.handleLine(`${TS}You say, 'pulltimerstart 8:10'`);

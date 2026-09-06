@@ -621,10 +621,26 @@ class CustomTimerEngine extends EventEmitter {
     const hidingKeys = new Set(
       [...this.activeTimers.values()].filter((t) => t.phase === 'hidden').map((t) => t.id)
     );
+    // Every key a reverse-detection widget owns. A reverse widget's activeTimers entries are only
+    // ever phase:'hidden' (see handleLine's reverse branch) - so a NON-hidden entry under one of
+    // these keys is stale: a real countdown started while the aura was still in normal mode, left
+    // behind when Reverse detection was toggled on. Without dropping it here you get the leftover
+    // countdown AND the synthesized "always on" tile at once (reported live 5 Sep, with the dynamic
+    // chat timer). It also self-heals on the next fire, which overwrites the key.
+    const reverseKeys = new Set();
+    for (const widget of this.getWidgetsFn()) {
+      if (!widget.reverseDetection) continue;
+      const mode = widget.triggerCombineMode || 'independent';
+      if (mode === 'independent') {
+        for (const d of widget.customTimers || []) if (d && d.id) reverseKeys.add(d.id);
+      } else {
+        reverseKeys.add(`${mode}:${widget.id}`);
+      }
+    }
     const results = [...this.activeTimers.values()]
       // 'hidden' means literally hidden - excluded here, not just styled differently, which is
-      // the entire point of a reverse trigger.
-      .filter((t) => t.phase !== 'hidden')
+      // the entire point of a reverse trigger. A stale non-hidden entry on a reverse key goes too.
+      .filter((t) => t.phase !== 'hidden' && !reverseKeys.has(t.id))
       .map((t) => {
         // defId if present (an 'and'/'or' combo instance, whose own `id` is a synthetic per-widget
         // string no definition owns), otherwise `id` itself (an 'independent' trigger, or a
