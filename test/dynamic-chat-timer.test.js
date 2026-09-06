@@ -107,6 +107,18 @@ test('a bare time with the wrong word does not fire it', () => {
   assert.equal(engine.getActive().length, 0);
 });
 
+test('a trigger word is not matched as the prefix of a longer word', () => {
+  // Owner, 6 Sep: "/say pulltimerstart2 7:48" was also firing the "pulltimerstart" trigger.
+  const engine = engineWith();
+  const widget = engine.getWidgetsFn()[0];
+  widget.customTimers.push({ id: 't2', name: 'Pull2', triggerText: 'pulltimerstart2', durationSec: 5 });
+  engine.handleLine(`${TS}You say, 'pulltimerstart2 7:48'`);
+  const ids = engine.getActive().map((t) => t.id);
+  assert.deepEqual(ids, ['t2'], 'only the pulltimerstart2 trigger fires');
+  engine.handleLine(`${TS}You say, 'pulltimerstart 1:20'`);
+  assert.deepEqual(engine.getActive().map((t) => t.id).sort(), ['t1', 't2'], 'the plain word still works');
+});
+
 test('reverse detection + dynamic: the tile shows always, then hides for the parsed time', () => {
   const engine = engineWith({ reverseDetection: true });
   assert.deepEqual(engine.getActive().map((t) => ({ p: t.phase, inf: t.infinite })), [{ p: 'shown', inf: true }]);

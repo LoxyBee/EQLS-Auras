@@ -249,6 +249,13 @@ class CustomTimerEngine extends EventEmitter {
           if (!keyword) continue;
           const idx = lowerLine.indexOf(keyword);
           if (idx === -1) continue;
+          // The keyword must stand as a whole word, not a prefix of a longer one - otherwise
+          // "pulltimerstart2 7:48" also fires the "pulltimerstart" trigger (owner, 6 Sep). A letter
+          // or digit touching either end means it's part of a bigger word; a quote/space/punct is
+          // fine (chat wraps the message in 'quotes').
+          const beforeCh = idx === 0 ? '' : lowerLine[idx - 1];
+          const afterCh = lowerLine[idx + keyword.length] || '';
+          if (/[a-z0-9]/i.test(beforeCh) || /[a-z0-9]/i.test(afterCh)) continue;
           const after = strippedLine.slice(idx + keyword.length).trim().replace(/['".!]+$/, '');
           this.lastCapturedTextByTimerId.set(timer.id, after);
           const prefix = strippedLine.slice(0, idx).trim();
