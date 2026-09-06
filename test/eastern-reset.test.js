@@ -8,7 +8,13 @@
 
 const assert = require('node:assert/strict');
 const { test, report } = require('./harness');
-const { easternResetBefore, easternResetAfter, easternOffsetMs } = require('../src/shared/easternReset');
+const {
+  easternResetBefore,
+  easternResetAfter,
+  easternDailyResetBefore,
+  easternDailyResetAfter,
+  easternOffsetMs,
+} = require('../src/shared/easternReset');
 
 const iso = (ms) => new Date(ms).toISOString();
 
@@ -65,6 +71,36 @@ test('easternResetAfter is exactly one Eastern week after the start', () => {
   const end = easternResetAfter(now, 2, 11);
   // No DST change in this window, so it is a clean 7 * 24h.
   assert.equal(end - start, 7 * 86400000);
+});
+
+// --- the DAILY variants (Lockouts page "Daily" tab) ---------------------------
+
+test('easternDailyResetBefore: the most recent HH:00 Eastern today, or yesterday if before it', () => {
+  // 2026-09-05 is a Saturday, EDT (-4). 11:00 EDT = 15:00 UTC.
+  const afterHour = easternDailyResetBefore(Date.UTC(2026, 8, 5, 18, 0, 0), 11); // 14:00 EDT
+  assert.equal(iso(afterHour), '2026-09-05T15:00:00.000Z', 'past 11:00 -> today 11:00');
+  const beforeHour = easternDailyResetBefore(Date.UTC(2026, 8, 5, 13, 0, 0), 11); // 09:00 EDT
+  assert.equal(iso(beforeHour), '2026-09-04T15:00:00.000Z', 'before 11:00 -> yesterday 11:00');
+});
+
+test('easternDailyResetAfter is one Eastern day later', () => {
+  const now = Date.UTC(2026, 8, 5, 18, 0, 0);
+  const start = easternDailyResetBefore(now, 11);
+  const end = easternDailyResetAfter(now, 11);
+  assert.equal(end - start, 86400000, 'clean 24h with no DST change in the window');
+});
+
+test('the daily reset rides the fall-back like the weekly one, staying at wall-clock 11:00', () => {
+  // Fall-back Sunday 1 Nov 2026. Monday the 2nd, afternoon.
+  const now = Date.UTC(2026, 10, 2, 18, 0, 0);
+  const start = easternDailyResetBefore(now, 11);
+  assert.equal(iso(start), '2026-11-02T16:00:00.000Z', '11:00 EST');
+  assert.equal(easternOffsetMs(start) / 3600000, -5);
+});
+
+test('daily hour is clamped and does not throw on junk', () => {
+  assert.doesNotThrow(() => easternDailyResetBefore(Date.now(), 99));
+  assert.doesNotThrow(() => easternDailyResetAfter(Date.now(), -3));
 });
 
 module.exports = () => report('eastern-reset');

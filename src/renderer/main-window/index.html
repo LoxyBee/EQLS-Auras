@@ -1049,6 +1049,10 @@
         </div>
 
         <div class="card">
+          <div class="lockout-tabs" role="tablist">
+            <button type="button" class="lockout-tab active" data-lktab="weekly" role="tab">Weekly</button>
+            <button type="button" class="lockout-tab" data-lktab="daily" role="tab" title="The same raids over the last 24 hours — resets every day at the same hour the week resets.">Daily</button>
+          </div>
           <h3 id="lockout-period-heading">This period</h3>
           <div id="lockout-grid-wrap" style="overflow-x:auto">
             <table id="lockout-grid" class="lockout-grid"></table>
@@ -1061,9 +1065,10 @@
           <p class="hint">
             Reads your current EQ log only (emptied weekly at the reset).
             <strong>done</strong> = a kill for that raid is in the log at that tier.
-            <strong>open</strong> = the log covers the week and there's no such kill.
-            <strong>not looked</strong> = the log doesn't cover the whole week.
+            <strong>open</strong> = the log covers the period and there's no such kill.
+            <strong>not looked</strong> = the log doesn't cover the whole period.
             <strong>depends</strong> = a kill on the reset day with the reset hour unset.
+            <strong>Daily</strong> is the same grid over the last 24 hours.
             There's no countdown — the reset hour isn't known.
           </p>
           <details class="lockout-options">

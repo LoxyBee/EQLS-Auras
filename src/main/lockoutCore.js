@@ -1779,7 +1779,12 @@ function projectGrid(state, now, opts = {}) {
   // which the owner confirms was probably logging-off — from ordinary daily
   // gaps of 7 to 18 hours in the same record. A caller who wants to be stricter
   // has `coverageHoles` and can decide for itself; nothing is hidden either way.
-  const PERIOD_GAP_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+  // Additive opt: the "Daily" tab on the Lockouts page projects a 24-hour window and wants a much
+  // shorter tolerance (a 20-hour hole in a one-day window is not an ordinary nightly gap, it means
+  // the client was closed / not logging). The weekly caller passes nothing and keeps 24h.
+  const PERIOD_GAP_TOLERANCE_MS = Number.isFinite(opts.gapToleranceMs)
+    ? opts.gapToleranceMs
+    : 24 * 60 * 60 * 1000;
   // Gaps at or above this are always listed, even when tolerated, so a run of
   // small holes cannot add up to a missing evening without anyone seeing it.
   const GAP_REPORT_MS = 60 * 60 * 1000;
@@ -2108,7 +2113,7 @@ function projectGrid(state, now, opts = {}) {
         'was probably off during one such gap, so gaps are NOT assumed empty. ' +
         'Gaps over 24 h make a cell not_looked; that threshold is a judgement, ' +
         'not a measurement, and every gap is listed in coverageGaps regardless.',
-      coverageGapToleranceHours: 24,
+      coverageGapToleranceHours: PERIOD_GAP_TOLERANCE_MS / 3600000,
       coverageFrom: coverageStart === null ? null : formatCivil(fromCivil(coverageStart)),
       coverageTo: coverageEnd === null ? null : formatCivil(fromCivil(coverageEnd)),
     },

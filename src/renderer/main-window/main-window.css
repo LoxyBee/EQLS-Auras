@@ -2612,6 +2612,35 @@ body.sidebar-resizing .sidebar {
    "open" must never be confusable at a glance, because the whole point of the feature is that they
    are different facts. not-looked is deliberately the most washed-out: an absence of evidence
    should look like an absence, not like a verdict. */
+.lockout-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.lockout-tab {
+  padding: 5px 14px;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 5px 5px 0 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+}
+.lockout-tab:hover { opacity: 0.85; }
+/* The global `button.active` rule paints an accent fill with dark (--bg) text - right for a
+   master toggle, wrong for a tab, and it was leaving the selected tab dark-on-dark. Override
+   both colour and fill here, and keep the override through :hover. */
+.lockout-tab.active,
+.lockout-tab.active:hover {
+  opacity: 1;
+  background: var(--panel);
+  border-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .lockout-grid {
   border-collapse: collapse;
   margin: 10px 0;

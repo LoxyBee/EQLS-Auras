@@ -998,16 +998,52 @@ function initDetectionSettingsPanel() {
 // Shared by both the static sidebar buttons and the dynamically-created
 // widget submenu buttons (added/removed as widgets are created/deleted),
 // so it can't just be a one-time querySelectorAll like a static nav could.
+// Browser-style back / forward through the pages visited this session, driven by the mouse's side
+// buttons (Mouse 4 = back, Mouse 5 = forward - MouseEvent.button 3 and 4). Every activateNavButton
+// records the page it lands on; goPageHistory walks the list without recording.
+let pageHistory = [];
+let pageHistoryPos = -1;
+let navigatingPageHistory = false;
+
+function recordPageVisit(pageId) {
+  if (!pageId || navigatingPageHistory) return;
+  if (pageHistory[pageHistoryPos] === pageId) return; // same page again - not a move
+  pageHistory = pageHistory.slice(0, pageHistoryPos + 1);
+  pageHistory.push(pageId);
+  pageHistoryPos = pageHistory.length - 1;
+}
+
+function goPageHistory(delta) {
+  const target = pageHistoryPos + delta;
+  if (target < 0 || target >= pageHistory.length) return;
+  pageHistoryPos = target;
+  const btn = document.querySelector(`.nav-btn[data-page="${pageHistory[target]}"]`);
+  if (!btn) return;
+  navigatingPageHistory = true;
+  try { activateNavButton(btn); } finally { navigatingPageHistory = false; }
+}
+
 function activateNavButton(btn) {
   document.querySelectorAll('.nav-btn, .nav-sub-btn').forEach((b) => b.classList.remove('active'));
   btn.classList.add('active');
   const pageId = btn.dataset.page;
   document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === pageId));
+  recordPageVisit(pageId);
 }
 
 function initNavigation() {
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => activateNavButton(btn));
+  });
+
+  // The side buttons. preventDefault on mousedown stops any stray in-page history navigation; the
+  // action runs on mouseup so a press-and-drag off the window doesn't trigger it.
+  window.addEventListener('mousedown', (e) => {
+    if (e.button === 3 || e.button === 4) e.preventDefault();
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (e.button === 3) { e.preventDefault(); goPageHistory(-1); }
+    else if (e.button === 4) { e.preventDefault(); goPageHistory(1); }
   });
 
   // Plain in-page links to another page (e.g. the trimmed Widgets intro
@@ -5716,6 +5752,27 @@ function initWidgetsPanel() {
   const lockoutGridEl = document.getElementById('lockout-grid');
   let lockoutData = null;
 
+  // Weekly / Daily tab. Daily is the same grid over the last 24h (see lockoutService's dailyGrid).
+  let lockoutTab = 'weekly';
+  try {
+    const saved = localStorage.getItem('lockoutTab');
+    if (saved === 'daily' || saved === 'weekly') lockoutTab = saved;
+  } catch (_e) { /* private mode / blocked storage - default weekly */ }
+  const lockoutTabBtns = document.querySelectorAll('.lockout-tab');
+  function paintLockoutTabs() {
+    lockoutTabBtns.forEach((b) => b.classList.toggle('active', b.dataset.lktab === lockoutTab));
+  }
+  paintLockoutTabs();
+  lockoutTabBtns.forEach((b) => {
+    b.addEventListener('click', () => {
+      if (lockoutTab === b.dataset.lktab) return;
+      lockoutTab = b.dataset.lktab;
+      try { localStorage.setItem('lockoutTab', lockoutTab); } catch (_e) { /* ignore */ }
+      paintLockoutTabs();
+      renderLockouts();
+    });
+  });
+
   // --- Log tools ---
   // "Change log file" / "Back to live log" sit next to Rescan. "Add split files" and "Trim to
   // this week" are created inline next to the gap / multi-week notice in renderLockouts(), so they
@@ -5870,6 +5927,9 @@ function initWidgetsPanel() {
     lockoutGridEl.innerHTML = '';
     lockoutSummaryEl.textContent = '';
     if (lockoutPeriodHeadingEl) lockoutPeriodHeadingEl.textContent = 'This period';
+    // Weekly (entry.grid) or Daily (entry.dailyGrid - same shape, 24-hour window). A daily grid was
+    // added later, so an older cached projection may not carry one - fall back to weekly.
+    const isDaily = lockoutTab === 'daily' && entry && entry.dailyGrid;
     if (!entry || !entry.grid) {
       // Say WHICH nothing this is. "No logs read yet" covers three different situations - never
       // scanned, scanned and found no EverQuest folder, scanned and found no character logs - and
@@ -5888,29 +5948,38 @@ function initWidgetsPanel() {
       return;
     }
 
-    const grid = entry.grid;
+    const grid = isDaily ? entry.dailyGrid : entry.grid;
     const cells = grid.cells || [];
     const raids = [...new Set(cells.map((c) => c.raid))];
     const tiers = [...new Set(cells.map((c) => c.difficultyLabel))];
 
-    // The week's date range, in the heading. Dates only - the reset time lives in the "Reset time"
-    // control below. periodEnd should always be there (lockoutCore fills it); fall back to
-    // start + 7 days so the heading never shows a "?".
+    // The period, in the heading. Weekly: the week's date range. Daily: "since <date> <hour>:00",
+    // one line because the window is a single day. periodStart carries the hour when it is known
+    // (always, for the daily grid).
     if (lockoutPeriodHeadingEl && grid.period) {
       const p = grid.period;
-      const start = String(p.periodStart || p.boundaryDay || '').slice(0, 10);
-      let end = String(p.periodEnd || '').slice(0, 10);
-      if (!end && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
-        const d = new Date(`${start}T00:00:00`);
-        d.setDate(d.getDate() + 7);
-        end = d.toISOString().slice(0, 10);
-      }
-      if (start && end) {
-        const sameYear = start.slice(0, 4) === end.slice(0, 4);
-        lockoutPeriodHeadingEl.textContent =
-          `This period: ${lkPrettyDate(start, !sameYear)} – ${lkPrettyDate(end, true)}`;
+      if (isDaily) {
+        const startIso = String(p.periodStart || p.boundaryDay || '');
+        const day = startIso.slice(0, 10);
+        const hm = /(\d{2}:\d{2})/.exec(startIso);
+        lockoutPeriodHeadingEl.textContent = day
+          ? `Since ${lkPrettyDate(day, true)}${hm ? `, ${hm[1]}` : ''} (last 24h)`
+          : 'Last 24 hours';
       } else {
-        lockoutPeriodHeadingEl.textContent = 'This period';
+        const start = String(p.periodStart || p.boundaryDay || '').slice(0, 10);
+        let end = String(p.periodEnd || '').slice(0, 10);
+        if (!end && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+          const d = new Date(`${start}T00:00:00`);
+          d.setDate(d.getDate() + 7);
+          end = d.toISOString().slice(0, 10);
+        }
+        if (start && end) {
+          const sameYear = start.slice(0, 4) === end.slice(0, 4);
+          lockoutPeriodHeadingEl.textContent =
+            `This period: ${lkPrettyDate(start, !sameYear)} – ${lkPrettyDate(end, true)}`;
+        } else {
+          lockoutPeriodHeadingEl.textContent = 'This period';
+        }
       }
     }
 
@@ -6021,7 +6090,7 @@ function initWidgetsPanel() {
     // prior-week coverage is coming from those files, not the live log - trimming the live log
     // would do nothing useful, so the offer is hidden.
     const multiLog = (lkStatus.extraLogs || 0) > 0;
-    if (entry.spansPriorWeek && onLiveLog && !multiLog) {
+    if (entry.spansPriorWeek && onLiveLog && !multiLog && !isDaily) {
       const p = document.createElement('p');
       p.className = 'hint';
       p.textContent = 'This log covers more than the current week. ';

@@ -91,4 +91,37 @@ function easternResetAfter(now, weekday, hour) {
   return easternWallToInstant(civNext.getUTCFullYear(), civNext.getUTCMonth() + 1, civNext.getUTCDate(), h);
 }
 
-module.exports = { easternResetBefore, easternResetAfter, easternParts, easternOffsetMs, EASTERN };
+// The DAILY variants - the most recent `<hour>:00 US Eastern` at or before `now`, and one Eastern
+// day later. The Lockouts page's "Daily" tab uses these: it reuses the same reset HOUR the weekly
+// reset is set to (there is no separate daily-reset setting), just every 24 hours instead of every
+// 7 days. DST-aware the same way - resolved through the zone, walking the civil date not the
+// instant so a DST hour in between cannot shift which day is landed on.
+function easternDailyResetBefore(now, hour) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
+  const h = Number.isInteger(hour) ? Math.min(23, Math.max(0, hour)) : 11;
+  const p = easternParts(nowMs);
+  let instant = easternWallToInstant(p.year, p.month, p.day, h);
+  if (instant > nowMs) {
+    const prev = new Date(Date.UTC(p.year, p.month - 1, p.day) - DAY_MS);
+    instant = easternWallToInstant(prev.getUTCFullYear(), prev.getUTCMonth() + 1, prev.getUTCDate(), h);
+  }
+  return instant;
+}
+
+function easternDailyResetAfter(now, hour) {
+  const start = easternDailyResetBefore(now, hour);
+  const p = easternParts(start);
+  const next = new Date(Date.UTC(p.year, p.month - 1, p.day) + DAY_MS);
+  const h = Number.isInteger(hour) ? Math.min(23, Math.max(0, hour)) : 11;
+  return easternWallToInstant(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), h);
+}
+
+module.exports = {
+  easternResetBefore,
+  easternResetAfter,
+  easternDailyResetBefore,
+  easternDailyResetAfter,
+  easternParts,
+  easternOffsetMs,
+  EASTERN,
+};
