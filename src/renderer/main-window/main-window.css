@@ -2646,12 +2646,13 @@ body.sidebar-resizing .sidebar {
   text-align: center;
   white-space: nowrap;
   vertical-align: middle;
+  /* Fixed row height. th is a single line so this is exact; td's content is clipped to the same
+     height by .lockout-cell-inner below, so a two-line "done" cell can't push its row taller
+     (owner, 6 Sep: "they all need to be static"). Do NOT set display:flex on th/td - that stops
+     them being table cells and collapses the header row. */
+  height: 46px;
 }
-/* Every cell's content lives in this fixed-height box, so the row height NEVER depends on whether
-   the cell is one line ("open") or two ("done" + kill date). It centres and clips - it does not
-   grow (owner, 6 Sep: "they all need to be static"). th uses the same box for alignment. */
-.lockout-grid td .lockout-cell-inner,
-.lockout-grid th {
+.lockout-grid td .lockout-cell-inner {
   height: 46px;
   display: flex;
   flex-direction: column;
@@ -2660,7 +2661,6 @@ body.sidebar-resizing .sidebar {
   gap: 1px;
   overflow: hidden;
 }
-.lockout-grid th { align-items: flex-start; }
 .lockout-status { line-height: 1.2; }
 .lockout-grid th {
   text-align: left;
