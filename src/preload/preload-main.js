@@ -174,6 +174,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   // one changed. Nothing here can write state.
   getLogRotationStatus: () => ipcRenderer.invoke('logRotation:getStatus'),
   setLogRotationEnabled: (enabled) => ipcRenderer.invoke('logRotation:setEnabled', enabled),
+  getLockoutSkeleton: () => ipcRenderer.invoke('lockouts:skeleton'),
   getLockouts: () => ipcRenderer.invoke('lockouts:get'),
   rescanLockouts: () => ipcRenderer.invoke('lockouts:rescan'),
   onLockoutsChanged: (cb) => { ipcRenderer.on('lockouts:changed', (_e, s) => cb(s)); },

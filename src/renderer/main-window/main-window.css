@@ -2668,6 +2668,16 @@ body.sidebar-resizing .sidebar {
   opacity: 0.85;
 }
 .lockout-cell { cursor: help; }
+/* The skeleton drawn while the log read runs - a faint pulsing dot, no verdict colour. */
+.lockout-loading { cursor: default; }
+.lockout-loading .lockout-status {
+  opacity: 0.3;
+  animation: lockout-skel-pulse 1.3s ease-in-out infinite;
+}
+@keyframes lockout-skel-pulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.5; }
+}
 .lockout-completed { background: rgba(80, 190, 120, 0.20); }
 .lockout-open      { background: rgba(90, 150, 235, 0.18); }
 .lockout-conditional { background: rgba(232, 176, 75, 0.22); }

@@ -6146,12 +6146,52 @@ function initWidgetsPanel() {
     renderLogTools(data);
   }
 
-  // Loaded the first time the page is opened, never at startup. The scan reads every log file in
-  // the folder, and a user who never opens this page should not pay for it.
+  // The grid's shape, drawn instantly on first open while the real read runs. Same table markup as
+  // renderLockouts (header row + one row per raid), every cell a muted placeholder. Skipped if the
+  // real projection has already arrived.
+  function renderLockoutSkeleton(sk) {
+    if (lockoutData || !sk || !sk.raids) return;
+    lockoutGridEl.innerHTML = '';
+    lockoutSummaryEl.textContent = 'Reading your log…';
+    if (lockoutPeriodHeadingEl) lockoutPeriodHeadingEl.textContent = 'This period';
+    const head = document.createElement('tr');
+    head.appendChild(document.createElement('th'));
+    for (const t of sk.tiers) {
+      const th = document.createElement('th');
+      th.textContent = Number.isInteger(t.difficulty) ? `D${t.difficulty} - ${t.difficultyLabel}` : t.difficultyLabel;
+      head.appendChild(th);
+    }
+    lockoutGridEl.appendChild(head);
+    for (const r of sk.raids) {
+      const tr = document.createElement('tr');
+      const th = document.createElement('th');
+      th.textContent = r.label;
+      th.title = r.bosses && r.bosses.length ? `Bosses: ${r.bosses.join(', ')}` : '';
+      tr.appendChild(th);
+      for (let i = 0; i < sk.tiers.length; i += 1) {
+        const td = document.createElement('td');
+        td.className = 'lockout-cell lockout-loading';
+        const inner = document.createElement('div');
+        inner.className = 'lockout-cell-inner';
+        const s = document.createElement('span');
+        s.className = 'lockout-status';
+        s.textContent = '·';
+        inner.appendChild(s);
+        td.appendChild(inner);
+        tr.appendChild(td);
+      }
+      lockoutGridEl.appendChild(tr);
+    }
+  }
+
+  // Loaded the first time the page is opened, never at startup. The scan reads a week of the live
+  // log, several seconds on a big file - so the grid's shape is drawn immediately and the results
+  // fill in when the read lands (owner, 6 Sep).
   function loadLockoutsOnce() {
     if (lockoutLoaded) return;
     lockoutLoaded = true;
     lockoutScanStatus.textContent = 'reading…';
+    window.eqTracker.getLockoutSkeleton().then(renderLockoutSkeleton).catch(() => {});
     window.eqTracker.getLockouts().then(applyLockoutData);
   }
 

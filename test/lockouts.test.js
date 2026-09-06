@@ -572,6 +572,33 @@ test('the daily grid uses a short gap tolerance so a big hole reads "not looked"
   assert.match(core, /Number\.isFinite\(opts\.gapToleranceMs\)\s*\n\s*\? opts\.gapToleranceMs/);
 });
 
+test('getSkeleton returns the grid shape with no log read at all', () => {
+  const s = new LockoutService();
+  // No setCurrentFileFn, no backfill - a pure structural call.
+  const sk = s.getSkeleton();
+  assert.equal(sk.raids.length, 6);
+  assert.deepEqual(sk.raids.map((r) => r.label), [
+    'Lord Nagafen', 'Lady Vox', 'Master Yael', 'Plane of Fear', 'Plane of Hate', 'Phinigel Autropos',
+  ]);
+  assert.deepEqual(sk.tiers.map((t) => t.difficultyLabel), ['Normal', 'Awakened', 'Adaptive', 'Fused', 'Refined']);
+  assert.deepEqual(sk.tiers.map((t) => t.difficulty), [0, 1, 2, 3, 4]);
+  assert.ok(Array.isArray(sk.raids[0].bosses) && sk.raids[0].bosses.length, 'boss list for the tooltip');
+});
+
+test('the page draws the skeleton immediately, then the real data replaces it', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.match(src, /ipcMain\.handle\('lockouts:skeleton', \(\) => lockoutService\.getSkeleton\(\)\)/);
+  const pre = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload', 'preload-main.js'), 'utf8');
+  assert.match(pre, /getLockoutSkeleton: \(\) => ipcRenderer\.invoke\('lockouts:skeleton'\)/);
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  assert.match(js, /function renderLockoutSkeleton\(sk\)/);
+  // it bails once the real projection is in, so a slow skeleton can't clobber the grid
+  assert.match(js, /if \(lockoutData \|\| !sk \|\| !sk\.raids\) return;/);
+  // both calls fire on first open
+  assert.match(js, /window\.eqTracker\.getLockoutSkeleton\(\)\.then\(renderLockoutSkeleton\)/);
+  assert.match(js, /window\.eqTracker\.getLockouts\(\)\.then\(applyLockoutData\)/);
+});
+
 test('the Lockouts page has Weekly / Daily tabs wired to re-render', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'index.html'), 'utf8');
   assert.match(html, /data-lktab="weekly"/);

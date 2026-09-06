@@ -335,6 +335,19 @@ class LockoutService extends EventEmitter {
   }
 
   /**
+   * The grid's SHAPE only - the raid rows and difficulty columns - with no log read at all. The
+   * renderer draws this instantly on the first page open, then swaps in the real projection once
+   * the (multi-second) backfill of a week of the live log finishes. Both are static constants in
+   * lockoutCore; nothing here touches the filesystem.
+   */
+  getSkeleton() {
+    return {
+      raids: core.RAIDS.map((r) => ({ key: r.key, label: r.label, bosses: r.bosses.slice() })),
+      tiers: core.DIFFICULTY_LABELS.map((label, i) => ({ difficulty: i, difficultyLabel: label })),
+    };
+  }
+
+  /**
    * What the UI renders, per character.
    *
    * `now` is supplied rather than read inside, so a test can drive it and so the projection is a

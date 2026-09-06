@@ -1684,6 +1684,7 @@ function persistTargetIfCleared(r) {
   return r;
 }
 
+ipcMain.handle('lockouts:skeleton', () => lockoutService.getSkeleton());
 ipcMain.handle('lockouts:get', async () => {
   if (lockoutService.backfillState === 'idle') persistTargetIfCleared(await lockoutService.backfill());
   return lockoutService.getProjection();
