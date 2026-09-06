@@ -489,7 +489,35 @@ function initProfileBar() {
     });
   }
 
-  setupModalToggle('manage-profiles-modal-backdrop', 'profile-manage-btn', 'close-manage-profiles-modal', renderManageProfilesList);
+  // Cycle-to-next command word + the on-change flash - both global (not per-profile), edited in
+  // the Manage Loadouts modal. Populated whenever it opens.
+  const cycleCmdInput = document.getElementById('profile-cycle-command');
+  const flashCheckbox = document.getElementById('profile-flash-checkbox');
+  function loadProfileExtras() {
+    if (cycleCmdInput) {
+      window.eqTracker.getProfileCycleCommand().then((w) => {
+        if (document.activeElement !== cycleCmdInput) cycleCmdInput.value = w || 'eqldnext';
+      });
+    }
+    if (flashCheckbox) {
+      window.eqTracker.getProfileFlashEnabled().then((on) => { flashCheckbox.checked = on !== false; });
+    }
+  }
+  if (cycleCmdInput) {
+    cycleCmdInput.addEventListener('change', () => {
+      window.eqTracker.setProfileCycleCommand(cycleCmdInput.value).then((w) => { cycleCmdInput.value = w; });
+    });
+  }
+  if (flashCheckbox) {
+    flashCheckbox.addEventListener('change', () => {
+      window.eqTracker.setProfileFlashEnabled(flashCheckbox.checked);
+    });
+  }
+
+  setupModalToggle('manage-profiles-modal-backdrop', 'profile-manage-btn', 'close-manage-profiles-modal', () => {
+    renderManageProfilesList();
+    loadProfileExtras();
+  });
 
   function refresh() {
     return Promise.all([window.eqTracker.getProfiles(), window.eqTracker.getActiveProfileId()]).then(([list, id]) => {
@@ -538,6 +566,7 @@ function initProfileBar() {
   function reopenManage() {
     manageBackdrop.style.display = 'flex';
     renderManageProfilesList();
+    loadProfileExtras();
   }
   document.getElementById('manage-profiles-add-btn').addEventListener('click', () => {
     manageBackdrop.style.display = 'none';

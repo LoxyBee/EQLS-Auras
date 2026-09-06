@@ -105,6 +105,7 @@ const zonePromptPopup = require('./zonePromptPopup');
 const moveHudWindow = require('./moveHudWindow');
 const gridGuideWindow = require('./gridGuideWindow');
 const nudgePadWindow = require('./nudgePadWindow');
+const profileFlashWindow = require('./profileFlashWindow');
 const positionSnap = require('./positionSnap');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
@@ -1471,7 +1472,20 @@ onLogLine('profileCommand', (line) => {
   const typed = matchOfflineTell(line);
   if (!typed) return;
   const word = typed.toLowerCase();
-  const match = profileStore.getAll().find((p) => (p.tellCommand || '') === word);
+  const all = profileStore.getAll();
+
+  // The cycle word - go to the NEXT loadout, wrapping. Needs at least two.
+  if (word === profileCycleCommand() && all.length >= 2) {
+    const activeId = profileStore.getActiveId();
+    const i = all.findIndex((p) => p.id === activeId);
+    const next = all[(i + 1) % all.length];
+    if (next && next.id !== activeId && activateProfile(next.id)) {
+      debugLog(`PROFILE cycled to "${next.name}" by /tell ${word}`);
+    }
+    return;
+  }
+
+  const match = all.find((p) => (p.tellCommand || '') === word);
   if (!match) return;
   if (match.id === profileStore.getActiveId()) {
     debugLog(`PROFILE /tell "${word}" - already on "${match.name}"`);
@@ -2939,6 +2953,7 @@ ipcMain.handle('profiles:rename', (_event, { id, name }) => {
 // One place to actually switch the active loadout, so the chip bar, the Loadouts modal and the
 // in-game /tell command (see the profileCommand listener) all do exactly the same thing.
 function activateProfile(id) {
+  const before = profileStore.getActiveId();
   const result = profileStore.setActiveId(id);
   if (!result) return null;
   buffEngine.setActiveProfileId(result);
@@ -2949,13 +2964,39 @@ function activateProfile(id) {
   widgetManager.applyProfileVisibility();
   actionBarManager.applyProfileVisibility();
   broadcast('profiles:activeChanged', result);
+  // QOL #6/#42: flash the new loadout's name on screen for ~3s, but only on a real change and
+  // only if the flash is on (default on). Off never touches the window.
+  if (result !== before && loadJson('profileFlashEnabled', true)) {
+    const p = profileStore.getAll().find((x) => x.id === result);
+    if (p) profileFlashWindow.show(p.name);
+  }
   return result;
+}
+
+// QOL #6/#42: one editable word (default 'eqldnext') that a macro's `/tell` cycles the app to the
+// NEXT loadout with - the same "read the game's own 'X is not online' reply" channel the per-profile
+// words and the travel/lockout commands use. Global, not per-profile.
+function profileCycleCommand() {
+  const raw = String(loadJson('profileCycleCommand', 'eqldnext') || 'eqldnext');
+  const clean = raw.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15);
+  return clean || 'eqldnext';
 }
 ipcMain.handle('profiles:setActive', (_event, id) => activateProfile(id));
 ipcMain.handle('profiles:setTellCommand', (_event, { id, word }) => {
   const profile = profileStore.setTellCommand(id, word);
   if (profile) broadcast('profiles:changed', profileStore.getAll());
   return profile;
+});
+ipcMain.handle('profiles:getCycleCommand', () => profileCycleCommand());
+ipcMain.handle('profiles:setCycleCommand', (_event, word) => {
+  const clean = String(word || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15) || 'eqldnext';
+  saveJson('profileCycleCommand', clean);
+  return clean;
+});
+ipcMain.handle('profiles:getFlashEnabled', () => loadJson('profileFlashEnabled', true) !== false);
+ipcMain.handle('profiles:setFlashEnabled', (_event, on) => {
+  saveJson('profileFlashEnabled', !!on);
+  return !!on;
 });
 // The buff optimiser (buffPlanner.js). Its input - the three classes+levels and the dragged
 // priority order - lives on the active loadout profile (profileStore). The plan itself is always
@@ -3120,6 +3161,7 @@ app.on('will-quit', () => {
   foregroundWatcher.stop();
   raidNamedTracker.stop();
   firstAggroEngine.stop();
+  profileFlashWindow.destroy();
 });
 // A renderer dying takes its window with it, which can cascade into
 // window-all-closed and look like a clean quit - `reason` distinguishes a

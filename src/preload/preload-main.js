@@ -353,6 +353,10 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createProfile: (name, widgetIdsToMigrate) => ipcRenderer.invoke('profiles:create', { name, widgetIdsToMigrate }),
   renameProfile: (id, name) => ipcRenderer.invoke('profiles:rename', { id, name }),
   setProfileTellCommand: (id, word) => ipcRenderer.invoke('profiles:setTellCommand', { id, word }),
+  getProfileCycleCommand: () => ipcRenderer.invoke('profiles:getCycleCommand'),
+  setProfileCycleCommand: (word) => ipcRenderer.invoke('profiles:setCycleCommand', word),
+  getProfileFlashEnabled: () => ipcRenderer.invoke('profiles:getFlashEnabled'),
+  setProfileFlashEnabled: (on) => ipcRenderer.invoke('profiles:setFlashEnabled', on),
   setActiveProfile: (id) => ipcRenderer.invoke('profiles:setActive', id),
   deleteProfile: (id) => ipcRenderer.invoke('profiles:delete', id),
   onProfilesChanged: (callback) => {
