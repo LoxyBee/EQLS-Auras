@@ -2623,6 +2623,12 @@ body.sidebar-resizing .sidebar {
   padding: 5px 9px;
   text-align: center;
   white-space: nowrap;
+  /* Every row the same height, tall enough for a "done" cell's status + kill date, so the grid
+     does not jump between one- and two-line rows (owner, 8 Sep). `height` on a table cell acts as
+     a minimum; a one-line "open" cell just centres in it. */
+  height: 46px;
+  vertical-align: middle;
+  box-sizing: border-box;
 }
 .lockout-grid th {
   text-align: left;
