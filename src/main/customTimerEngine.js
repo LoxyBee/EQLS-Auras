@@ -235,6 +235,28 @@ class CustomTimerEngine extends EventEmitter {
         // door-sanitiser. See widgetStore's sanitizeCustomTimers.
         if (!timer || !timer.triggerText) continue;
         const trigger = timer.triggerText.toLowerCase();
+
+        // Dynamic chat timer (widget.dynamicChatTimer): the trigger fires on "<keyword> mm:ss"
+        // appearing on the line, and the mm:ss becomes the duration (read back in handleLine from
+        // lastCapturedTextByTimerId). The keyword is the chat message the user typed
+        // (triggerChat.message) or, for a raw-text trigger, its triggerText - NOT the whole built
+        // "You say, '...'" line, and the exact/contains mode is ignored, because you cannot
+        // exact-match a line that carries a variable time. This is what makes the trigger word
+        // actually get used: you type "pulltimerstart 1:20" and that one line both fires it and
+        // sets it (owner, 5 Sep).
+        if (widget.dynamicChatTimer) {
+          const keyword = String(timer.triggerChat?.message || timer.triggerText || '').trim().toLowerCase();
+          if (!keyword) continue;
+          const idx = lowerLine.indexOf(keyword);
+          if (idx === -1) continue;
+          const after = strippedLine.slice(idx + keyword.length).trim().replace(/['".!]+$/, '');
+          this.lastCapturedTextByTimerId.set(timer.id, after);
+          const prefix = strippedLine.slice(0, idx).trim();
+          if (prefix) this.lastCapturedPrefixByTimerId.set(timer.id, prefix);
+          matches.push({ widgetId: widget.id, timer });
+          continue;
+        }
+
         // Exact by default, and that default is why this stayed exact for so long: a trigger of
         // "hi" matching every line with "hi" anywhere in it is a timer that fires constantly.
         //
@@ -434,13 +456,18 @@ class CustomTimerEngine extends EventEmitter {
       }
 
       let durSec = clampSec(def.durationSec, DEFAULT_TRIGGER_DURATION_SEC);
-      // Dynamic chat timer (widget.dynamicChatTimer): the duration is an mm:ss token on the line
-      // that fired, not the fixed Duration. No token -> the trigger does not fire at all (owner:
-      // no fallback). Applies to the duration phase only; a cooldown, if set, stays fixed.
+      // Dynamic chat timer (widget.dynamicChatTimer): the duration is the mm:ss written right after
+      // the trigger word - "pulltimerstart 1:20". _findTriggerMatches stored the text after the
+      // keyword; parse the time out of that (falling back to the whole line for an AND-combo, whose
+      // def is not the timer that matched). No time -> the trigger does not fire at all (owner: no
+      // fallback). Duration phase only; a cooldown, if set, stays fixed.
       if (dynamicChatTimer) {
-        const dyn = parseChatTimerDuration(stripped);
+        const afterKeyword = this.lastCapturedTextByTimerId.get(def.id);
+        const dyn = parseChatTimerDuration(afterKeyword != null ? afterKeyword : stripped);
         if (dyn == null) {
-          this._debugLog(`IGNORED "${def.name}" - dynamic chat timer, no mm:ss on the line: "${stripped}"`);
+          this._debugLog(
+            `IGNORED "${def.name}" - dynamic chat timer, no mm:ss after the trigger word: "${stripped}"`
+          );
           continue;
         }
         durSec = dyn;

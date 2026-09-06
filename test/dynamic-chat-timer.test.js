@@ -45,7 +45,7 @@ test('parseChatTimerDuration returns null when there is no usable token', () => 
 // The engine
 // ---------------------------------------------------------------------------
 
-function engineWith(widgetPatch) {
+function engineWith(widgetPatch, timerPatch) {
   const widget = {
     id: 'w1',
     name: 'Dyn',
@@ -56,7 +56,9 @@ function engineWith(widgetPatch) {
     dynamicChatTimer: true,
     triggerCombineMode: 'independent',
     triggerDurationSec: 5,
-    customTimers: [{ id: 't1', name: 'Respawn', triggerText: 'timerstart', triggerMatch: 'contains', durationSec: 5 }],
+    // A plain raw-text trigger word by default, exact match - the point being that dynamic mode
+    // ignores the match setting and works off the word + the time after it either way.
+    customTimers: [{ id: 't1', name: 'Pull', triggerText: 'pulltimerstart', durationSec: 5, ...timerPatch }],
     ...widgetPatch,
   };
   const engine = new CustomTimerEngine();
@@ -65,32 +67,49 @@ function engineWith(widgetPatch) {
   return engine;
 }
 
-test('the tile takes its duration from the mm:ss on the line, not the fixed 5s', () => {
+test('the trigger word plus a time on the same line fires it at that time', () => {
   const engine = engineWith();
-  engine.handleLine(`${TS}You say, 'timerstart 8:10'`);
+  engine.handleLine(`${TS}You say, 'pulltimerstart 1:20'`);
   const active = engine.getActive();
   assert.equal(active.length, 1);
+  assert.ok(active[0].remainingSec > 70 && active[0].remainingSec <= 80, `got ${active[0].remainingSec}`);
+});
+
+test('it works even when the trigger was set up as an exact chat message (the reported bug)', () => {
+  const engine = engineWith(undefined, {
+    triggerText: "You say, 'pulltimerstart'",
+    triggerChat: { channel: 'say', isSelf: true, message: 'pulltimerstart' },
+  });
+  engine.handleLine(`${TS}You say, 'pulltimerstart 8:10'`);
+  const active = engine.getActive();
+  assert.equal(active.length, 1, 'the exact chat line never matches "pulltimerstart 8:10" - dynamic mode must not care');
   assert.ok(active[0].remainingSec > 480 && active[0].remainingSec <= 490, `got ${active[0].remainingSec}`);
 });
 
 test('a second call restarts the same tile at the new time', () => {
   const engine = engineWith();
-  engine.handleLine(`${TS}You say, 'timerstart 8:10'`);
-  engine.handleLine(`${TS}You say, 'timerstart 3:00'`);
+  engine.handleLine(`${TS}You say, 'pulltimerstart 8:10'`);
+  engine.handleLine(`${TS}You say, 'pulltimerstart 3:00'`);
   const active = engine.getActive();
   assert.equal(active.length, 1);
   assert.ok(active[0].remainingSec > 170 && active[0].remainingSec <= 180, `got ${active[0].remainingSec}`);
 });
 
-test('no mm:ss on the line -> nothing fires (no fallback to the fixed duration)', () => {
+test('the trigger word with no time after it -> nothing fires (no fallback)', () => {
   const engine = engineWith();
-  engine.handleLine(`${TS}You say, 'timerstart'`);
+  engine.handleLine(`${TS}You say, 'pulltimerstart'`);
+  assert.equal(engine.getActive().length, 0);
+});
+
+test('a bare time with the wrong word does not fire it', () => {
+  const engine = engineWith();
+  engine.handleLine(`${TS}You say, 'something else 1:20'`);
   assert.equal(engine.getActive().length, 0);
 });
 
 test('with the toggle off the fixed duration is used as normal', () => {
-  const engine = engineWith({ dynamicChatTimer: false });
-  engine.handleLine(`${TS}You say, 'timerstart 8:10'`);
+  const engine = engineWith({ dynamicChatTimer: false }, { triggerMatch: 'contains' });
+  engine.handleLine(`${TS}You say, 'pulltimerstart 8:10'`);
   const active = engine.getActive();
   assert.equal(active.length, 1);
   assert.ok(active[0].remainingSec <= 5, `fixed 5s, got ${active[0].remainingSec}`);
