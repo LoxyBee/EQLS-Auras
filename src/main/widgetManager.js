@@ -1148,10 +1148,11 @@ function isLoadoutLabelEnabled() {
 // fight the instant it started.
 const DAMAGE_VALUE_MODES = ['total', 'dps', 'both'];
 const DAMAGE_SCOPES = ['all', 'group', 'mine'];
+const DAMAGE_TRACK_MODES = ['damage', 'healing', 'both'];
 
 function setDamageOptions(
   id,
-  { fightTimeoutSec, mineOnly, showTotalRow, valueMode, scope, showCharmedPetsRow, rowCap } = {}
+  { fightTimeoutSec, mineOnly, showTotalRow, valueMode, scope, showCharmedPetsRow, rowCap, trackMode, bothCycleSec, bothMode, damageColor, healColor } = {}
 ) {
   const changes = {};
   if (typeof fightTimeoutSec === 'number' && Number.isFinite(fightTimeoutSec)) {
@@ -1165,6 +1166,14 @@ function setDamageOptions(
   if (typeof rowCap === 'number' && Number.isFinite(rowCap)) {
     changes.damageRowCap = Math.min(20, Math.max(1, Math.round(rowCap)));
   }
+  if (DAMAGE_TRACK_MODES.includes(trackMode)) changes.damageTrackMode = trackMode;
+  if (typeof bothCycleSec === 'number' && Number.isFinite(bothCycleSec)) {
+    const r = Math.round(bothCycleSec);
+    changes.damageBothCycleSec = r <= 0 ? 0 : Math.min(20, Math.max(1, r));
+  }
+  if (bothMode === 'combined' || bothMode === 'swap') changes.damageBothMode = bothMode;
+  if (/^#[0-9a-fA-F]{6}$/.test(String(damageColor || ''))) changes.damageColor = String(damageColor).toLowerCase();
+  if (/^#[0-9a-fA-F]{6}$/.test(String(healColor || ''))) changes.healColor = String(healColor).toLowerCase();
   const config = widgetStore.update(id, changes);
   pushConfigChanged(id);
   return config;

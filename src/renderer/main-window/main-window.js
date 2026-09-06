@@ -448,6 +448,23 @@ function initProfileBar() {
         }
       });
 
+      // QOL #6/#42 - the in-game command word for this loadout. Typing `/tell <word>` in game
+      // switches the app to this profile, so a loadout-swap macro can carry the line. Empty = none.
+      const cmdField = document.createElement('input');
+      cmdField.type = 'text';
+      cmdField.className = 'text-input';
+      cmdField.placeholder = '/tell word';
+      cmdField.title = 'Type /tell <this word> in game to switch to this loadout. Letters and digits only. Leave blank for none.';
+      cmdField.value = profile.tellCommand || '';
+      cmdField.style.maxWidth = '110px';
+      cmdField.addEventListener('change', () => {
+        const word = cmdField.value.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15);
+        window.eqTracker.setProfileTellCommand(profile.id, word).then((updated) => {
+          cmdField.value = (updated && updated.tellCommand) || '';
+          refresh();
+        });
+      });
+
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
       deleteBtn.textContent = 'Delete';
@@ -467,7 +484,7 @@ function initProfileBar() {
         });
       });
 
-      li.append(nameField, deleteBtn);
+      li.append(nameField, cmdField, deleteBtn);
       manageListEl.appendChild(li);
     });
   }
@@ -511,16 +528,30 @@ function initProfileBar() {
     nameInput.focus();
   }
 
-  // The add flow is now reached from inside the Loadouts modal rather than from its own button on
-  // the bar. Its modal is untouched - only the way in changed.
+  // The add flow is reached from inside the Loadouts modal. Both are plain .modal-backdrop overlays
+  // at the same stacking level, so leaving Manage open behind New-loadout just stacked them
+  // half-overlapping (reported live 5 Sep). Manage steps aside while New-loadout is up and comes
+  // back when it closes - one modal on screen at a time.
+  const manageBackdrop = document.getElementById('manage-profiles-modal-backdrop');
+  const createBackdrop = document.getElementById('create-profile-modal-backdrop');
   setupModalToggle('create-profile-modal-backdrop', 'manage-profiles-add-btn', 'close-create-profile-modal', populateCreateProfileChecklist);
+  function reopenManage() {
+    manageBackdrop.style.display = 'flex';
+    renderManageProfilesList();
+  }
+  document.getElementById('manage-profiles-add-btn').addEventListener('click', () => {
+    manageBackdrop.style.display = 'none';
+  });
+  document.getElementById('close-create-profile-modal').addEventListener('click', reopenManage);
+  closeOnBackdropClick(createBackdrop, reopenManage);
 
   submitBtn.addEventListener('click', () => {
     const name = nameInput.value.trim();
     if (!name) return;
     const widgetIdsToMigrate = [...checklistEl.querySelectorAll('input[type="checkbox"]:checked')].map((cb) => cb.value);
     window.eqTracker.createProfile(name, widgetIdsToMigrate).then(() => {
-      document.getElementById('create-profile-modal-backdrop').style.display = 'none';
+      createBackdrop.style.display = 'none';
+      reopenManage();
       return refresh();
     });
   });
@@ -1715,6 +1746,16 @@ function initWidgetsPanel() {
   const damageShowDamageCb = document.getElementById('widget-damage-show-damage');
   const damageShowRateCb = document.getElementById('widget-damage-show-rate');
   const damageScopeSelect = document.getElementById('widget-damage-scope');
+  const damageTrackModeRadios = document.querySelectorAll('input[name="widget-damage-track-mode"]');
+  const damageBothCycleSlider = document.getElementById('widget-damage-both-cycle-slider');
+  const damageBothCycleValueEl = document.getElementById('widget-damage-both-cycle-value');
+  const damageBothCycleRow = document.getElementById('widget-damage-both-cycle-row');
+  const damageBothModeRadios = document.querySelectorAll('input[name="widget-damage-both-mode"]');
+  const damageBothModeRow = document.getElementById('widget-damage-both-mode-row');
+  const damageColorInput = document.getElementById('widget-damage-color');
+  const damageColorRow = document.getElementById('widget-damage-color-row');
+  const healColorInput = document.getElementById('widget-heal-color');
+  const healColorRow = document.getElementById('widget-heal-color-row');
   const damageCharmedPetsCb = document.getElementById('widget-damage-charmed-pets');
   const moduleSettingsEl = document.getElementById('widget-module-settings');
   const moduleSettingsControlsEl = document.getElementById('widget-module-settings-controls');
@@ -1882,16 +1923,45 @@ function initWidgetsPanel() {
   const trackOthersCheckbox = document.getElementById('widget-track-others-checkbox');
   const customTimersCardEl = document.getElementById('widget-custom-timers-card');
   const customTimersListEl = document.getElementById('widget-custom-timers-list');
-  const triggerDurationSlider = document.getElementById('widget-trigger-duration-slider');
-  const triggerDurationValueEl = document.getElementById('widget-trigger-duration-value');
+  const triggerDurationMinInput = document.getElementById('widget-trigger-duration-min');
+  const triggerDurationSecInput = document.getElementById('widget-trigger-duration-sec');
   const andWindowRowEl = document.getElementById('widget-and-window-row');
   const andWindowHintEl = document.getElementById('widget-and-window-hint');
   const andWindowSlider = document.getElementById('widget-and-window-slider');
   const andWindowValueEl = document.getElementById('widget-and-window-value');
   const reverseDetectionCheckbox = document.getElementById('widget-reverse-detection-checkbox');
   const newTimerNameInput = document.getElementById('widget-new-timer-name');
-  const newTimerCooldownInput = document.getElementById('widget-new-timer-cooldown');
+  const newTimerCooldownMinInput = document.getElementById('widget-new-timer-cooldown-min');
+  const newTimerCooldownSecInput = document.getElementById('widget-new-timer-cooldown-sec');
   const newTimerMatchRadios = document.querySelectorAll('input[name="widget-new-timer-match"]');
+
+  // A minute box + a second box that together stand for one duration in seconds, clamped to the
+  // store's own 0..3600 ceiling (see clampTimerSeconds / setTriggerDurationSec in widgetStore.js).
+  // Used for both the shared trigger Duration and the per-trigger Cooldown.
+  function readMinSec(minEl, secEl) {
+    const m = Math.max(0, Math.floor(Number(minEl.value) || 0));
+    const s = Math.max(0, Math.floor(Number(secEl.value) || 0));
+    return Math.min(3600, m * 60 + s);
+  }
+  // blankZero: leave both boxes empty for a total of 0 (the Cooldown field, where empty means
+  // "none"). Off for Duration, where 0 is an ordinary value (a sound-only trigger) and a visible
+  // "0 / 0" reads clearer than two blank boxes.
+  function writeMinSec(minEl, secEl, totalSec, blankZero = false) {
+    const t = Math.max(0, Math.min(3600, Math.round(Number(totalSec) || 0)));
+    if (t === 0 && blankZero) {
+      minEl.value = '';
+      secEl.value = '';
+      return;
+    }
+    minEl.value = String(Math.floor(t / 60));
+    secEl.value = String(t % 60);
+  }
+  function formatMinSec(totalSec) {
+    const t = Math.max(0, Math.round(Number(totalSec) || 0));
+    const m = Math.floor(t / 60);
+    const s = t % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  }
 
   // The Cooldown section is collapsed unless the timer being edited has one. Its summary says the
   // value when closed, so a set cooldown is never invisible just because the section is shut -
@@ -1900,13 +1970,15 @@ function initWidgetsPanel() {
     const topic = document.getElementById('topic-timer-cooldown');
     const summary = document.getElementById('timer-cooldown-summary');
     topic.classList.toggle('open', open);
-    const secs = Number(newTimerCooldownInput.value) || 0;
-    summary.textContent = secs > 0 ? `${secs}s` : '';
+    const secs = readMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput);
+    summary.textContent = secs > 0 ? formatMinSec(secs) : '';
   }
-  newTimerCooldownInput.addEventListener('input', () => {
-    const secs = Number(newTimerCooldownInput.value) || 0;
-    document.getElementById('timer-cooldown-summary').textContent = secs > 0 ? `${secs}s` : '';
-  });
+  const updateCooldownSummary = () => {
+    const secs = readMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput);
+    document.getElementById('timer-cooldown-summary').textContent = secs > 0 ? formatMinSec(secs) : '';
+  };
+  newTimerCooldownMinInput.addEventListener('input', updateCooldownSummary);
+  newTimerCooldownSecInput.addEventListener('input', updateCooldownSummary);
   const newTimerTriggerInput = document.getElementById('widget-new-timer-trigger');
   const newTimerEndedInput = document.getElementById('widget-new-timer-ended');
   renderTriggerTypeChoices();
@@ -3307,6 +3379,38 @@ function initWidgetsPanel() {
         ? widget.damageScope
         : 'all';
     }
+    let trackMode = 'damage';
+    if (damageTrackModeRadios.length) {
+      trackMode = ['damage', 'healing', 'both'].includes(widget.damageTrackMode)
+        ? widget.damageTrackMode
+        : 'damage';
+      damageTrackModeRadios.forEach((r) => { r.checked = r.value === trackMode; });
+    }
+    let bothMode = 'combined';
+    if (damageBothModeRadios.length) {
+      bothMode = widget.damageBothMode === 'swap' ? 'swap' : 'combined';
+      damageBothModeRadios.forEach((r) => { r.checked = r.value === bothMode; });
+      if (damageBothModeRow) damageBothModeRow.style.display = trackMode === 'both' ? '' : 'none';
+    }
+    if (damageBothCycleSlider) {
+      const sec = typeof widget.damageBothCycleSec === 'number' ? widget.damageBothCycleSec : 10;
+      damageBothCycleSlider.value = String(sec);
+      // In swap mode the slider is "how long each meter stays up" - 0 there falls back to a default.
+      damageBothCycleValueEl.textContent =
+        sec === 0 ? (bothMode === 'swap' ? 'default (8s)' : 'off (side by side)') : `${sec}s`;
+      // Only meaningful in Both mode.
+      if (damageBothCycleRow) damageBothCycleRow.style.display = trackMode === 'both' ? '' : 'none';
+    }
+    if (damageColorInput) {
+      damageColorInput.value = /^#[0-9a-fA-F]{6}$/.test(widget.damageColor || '') ? widget.damageColor : '#e0603a';
+    }
+    if (healColorInput) {
+      healColorInput.value = /^#[0-9a-fA-F]{6}$/.test(widget.healColor || '') ? widget.healColor : '#37b56a';
+      // The healing colour only matters when healing is in play.
+      const showHeal = trackMode === 'healing' || trackMode === 'both';
+      if (healColorRow) healColorRow.style.display = showHeal ? '' : 'none';
+      if (damageColorRow) damageColorRow.style.display = trackMode === 'healing' ? 'none' : '';
+    }
     if (damageCharmedPetsCb) damageCharmedPetsCb.checked = widget.showCharmedPetsRow !== false;
     if (damageRowCapSlider) {
       const cap = typeof widget.damageRowCap === 'number' ? widget.damageRowCap : 6;
@@ -3450,8 +3554,7 @@ function initWidgetsPanel() {
       resetTimerForm();
       renderCustomTimersList(widget);
       const seconds = typeof widget.triggerDurationSec === 'number' ? widget.triggerDurationSec : 5;
-      triggerDurationSlider.value = seconds;
-      triggerDurationValueEl.textContent = `${seconds}s`;
+      writeMinSec(triggerDurationMinInput, triggerDurationSecInput, seconds);
       // Only means anything in AND mode - Independent/OR have no "still counts as true" window at
       // all, so the row stays hidden rather than offering a number that does nothing for them.
       const isAnd = widget.triggerCombineMode === 'and';
@@ -3641,7 +3744,8 @@ function initWidgetsPanel() {
     editingTimerId = null;
     newTimerIconId = undefined;
     newTimerNameInput.value = '';
-    newTimerCooldownInput.value = '';
+    newTimerCooldownMinInput.value = '';
+    newTimerCooldownSecInput.value = '';
     setTimerCooldownOpen(false);
     newTimerMatchRadios.forEach((r) => (r.checked = r.value === 'exact'));
     newTimerTriggerInput.value = '';
@@ -3672,13 +3776,13 @@ function initWidgetsPanel() {
   function populateTimerForm(timer, iconUrl) {
     editingTimerId = timer.id;
     newTimerNameInput.value = timer.name;
-    // Duration is not part of this form any more - it lives on the aura itself, one number
-    // shared by every trigger (see widget-trigger-duration-slider). timer.durationSec always
-    // already matches it (setTriggerDurationSec keeps every trigger in sync), so there is
+    // Duration is not part of this form any more - it lives on the aura itself, one value
+    // shared by every trigger (see the widget-trigger-duration-min/-sec pair). timer.durationSec
+    // always already matches it (setTriggerDurationSec keeps every trigger in sync), so there is
     // nothing here to restore.
     // Blank, not "0", when there is no cooldown - a zero in the box reads as a cooldown of no
     // length rather than as no cooldown at all.
-    newTimerCooldownInput.value = timer.cooldownSec ? String(timer.cooldownSec) : '';
+    writeMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput, timer.cooldownSec || 0, true);
     // Open it if this timer actually uses one, so editing does not hide the setting behind a
     // closed section the person cannot see they have already set.
     setTimerCooldownOpen(!!timer.cooldownSec);
@@ -5138,6 +5242,48 @@ function initWidgetsPanel() {
       window.eqTracker.setWidgetDamageOptions(selectedId, { scope: damageScopeSelect.value });
     });
   }
+  damageTrackModeRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      window.eqTracker.setWidgetDamageOptions(selectedId, { trackMode: radio.value });
+      const both = radio.value === 'both';
+      if (damageBothCycleRow) damageBothCycleRow.style.display = both ? '' : 'none';
+      if (damageBothModeRow) damageBothModeRow.style.display = both ? '' : 'none';
+      const showHeal = radio.value === 'healing' || both;
+      if (healColorRow) healColorRow.style.display = showHeal ? '' : 'none';
+      if (damageColorRow) damageColorRow.style.display = radio.value === 'healing' ? 'none' : '';
+    });
+  });
+  if (damageColorInput) {
+    damageColorInput.addEventListener('input', () => {
+      window.eqTracker.setWidgetDamageOptions(selectedId, { damageColor: damageColorInput.value });
+    });
+  }
+  if (healColorInput) {
+    healColorInput.addEventListener('input', () => {
+      window.eqTracker.setWidgetDamageOptions(selectedId, { healColor: healColorInput.value });
+    });
+  }
+  damageBothModeRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      window.eqTracker.setWidgetDamageOptions(selectedId, { bothMode: radio.value });
+      const sec = Number(damageBothCycleSlider && damageBothCycleSlider.value);
+      if (damageBothCycleValueEl) {
+        damageBothCycleValueEl.textContent =
+          sec === 0 ? (radio.value === 'swap' ? 'default (8s)' : 'off (side by side)') : `${sec}s`;
+      }
+    });
+  });
+  if (damageBothCycleSlider) {
+    damageBothCycleSlider.addEventListener('input', () => {
+      const sec = Number(damageBothCycleSlider.value);
+      const swap = document.querySelector('input[name="widget-damage-both-mode"]:checked');
+      damageBothCycleValueEl.textContent =
+        sec === 0 ? (swap && swap.value === 'swap' ? 'default (8s)' : 'off (side by side)') : `${sec}s`;
+      window.eqTracker.setWidgetDamageOptions(selectedId, { bothCycleSec: sec });
+    });
+  }
   if (damageCharmedPetsCb) {
     damageCharmedPetsCb.addEventListener('change', () => {
       window.eqTracker.setWidgetDamageOptions(selectedId, {
@@ -5337,13 +5483,20 @@ function initWidgetsPanel() {
   // DEFAULT_TRIGGER_DURATION_SEC in widgetStore.js. setTriggerDurationSec rewrites durationSec on
   // every existing trigger too, so the list re-renders to show the change took effect everywhere,
   // not just on the next one added.
-  triggerDurationSlider.addEventListener('input', () => {
-    const seconds = Number(triggerDurationSlider.value);
-    triggerDurationValueEl.textContent = `${seconds}s`;
+  const pushTriggerDuration = () => {
+    const seconds = readMinSec(triggerDurationMinInput, triggerDurationSecInput);
     window.eqTracker.setWidgetTriggerDurationSec(selectedId, seconds).then(() => {
       refreshWidgets().then(() => renderCustomTimersList(findWidget(selectedId)));
     });
-  });
+  };
+  triggerDurationMinInput.addEventListener('input', pushTriggerDuration);
+  triggerDurationSecInput.addEventListener('input', pushTriggerDuration);
+  // Normalise an out-of-range entry (75s -> 1m 15s, 90m -> clamped 60m) once the box loses focus,
+  // so the two boxes always read back the same value the store actually holds.
+  const normaliseTriggerDuration = () =>
+    writeMinSec(triggerDurationMinInput, triggerDurationSecInput, readMinSec(triggerDurationMinInput, triggerDurationSecInput));
+  triggerDurationMinInput.addEventListener('change', normaliseTriggerDuration);
+  triggerDurationSecInput.addEventListener('change', normaliseTriggerDuration);
   andWindowSlider.addEventListener('input', () => {
     const seconds = Number(andWindowSlider.value);
     andWindowValueEl.textContent = `${seconds}s`;
@@ -5382,7 +5535,7 @@ function initWidgetsPanel() {
   function readTimerFormData() {
     const name = newTimerNameInput.value.trim();
     // Not a form field any more - every trigger on this aura shares the one duration set on the
-    // aura itself (see widget-trigger-duration-slider), and 0 is a legitimate value here (a
+    // aura itself (see the widget-trigger-duration-min/-sec pair), and 0 is a legitimate value (a
     // trigger that only needs to make a sound, never stay on screen). Falls back to
     // widgetStore.js's own DEFAULT_TRIGGER_DURATION_SEC only if the widget can't be found at all -
     // not imported directly since a renderer can't require a main-process module, so the literal
@@ -5433,7 +5586,7 @@ function initWidgetsPanel() {
       endedChat,
       iconId: newTimerIconId,
       // Note 10. Empty means no cooldown, which is what every timer that existed before this had.
-      cooldownSec: Number(newTimerCooldownInput.value) || 0,
+      cooldownSec: readMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput),
       // 'contains' only for a raw-text trigger - the chat builder writes a whole line it composed
       // itself, so matching part of it would be matching part of something the user never typed.
       // 'castOf' for a skill-cast trigger - triggerText above is a SPELL NAME here, not a line;

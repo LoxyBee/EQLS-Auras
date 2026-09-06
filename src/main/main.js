@@ -1088,14 +1088,16 @@ customTimerEngine.on('activeChanged', (timers) => {
 });
 // Note 19. One engine, but a damage aura can be scoped to the whole fight, just the player's
 // group, or just the player (+ their charmed pets), and 'group'/'mine' recompute the % denominator
-// - so the three views are computed here and the overlay picks its aura's. `all` stays a plain
-// array for any older consumer; `damage:active` carries the object.
+// - so the three scoped views are computed here and the overlay picks its aura's. Nested one level
+// deeper than before by TRACK mode ('damage' / 'healing' / 'both', see widgetStore.js's
+// damageTrackMode) - each aura picks its own scope AND its own mode from the one broadcast.
 function damageViews() {
-  return {
-    all: damageEngine.getActive(Date.now(), 'all'),
-    group: damageEngine.getActive(Date.now(), 'group'),
-    mine: damageEngine.getActive(Date.now(), 'mine'),
-  };
+  const forMode = (mode) => ({
+    all: damageEngine.getActive(Date.now(), 'all', mode),
+    group: damageEngine.getActive(Date.now(), 'group', mode),
+    mine: damageEngine.getActive(Date.now(), 'mine', mode),
+  });
+  return { damage: forMode('damage'), healing: forMode('healing'), both: forMode('both') };
 }
 damageEngine.on('activeChanged', () => {
   broadcast('damage:active', damageViews());
@@ -1460,6 +1462,23 @@ function popLockoutBoard(word) {
   }
   return true;
 }
+
+// QOL #6/#42. A failed `/tell <word>` whose word is a profile's own command word switches the app
+// to that profile - the macro-friendly way to keep the app's loadout in step with an in-game
+// loadout swap without alt-tabbing. Editable per profile in the Loadouts modal; same "read the
+// game's own 'X is not online' reply" channel the travel and lockout commands use.
+onLogLine('profileCommand', (line) => {
+  const typed = matchOfflineTell(line);
+  if (!typed) return;
+  const word = typed.toLowerCase();
+  const match = profileStore.getAll().find((p) => (p.tellCommand || '') === word);
+  if (!match) return;
+  if (match.id === profileStore.getActiveId()) {
+    debugLog(`PROFILE /tell "${word}" - already on "${match.name}"`);
+    return;
+  }
+  if (activateProfile(match.id)) debugLog(`PROFILE switched to "${match.name}" by /tell ${word}`);
+});
 
 onLogLine('lockoutCommand', (line) => {
   if (!hasLockoutWidget()) return;
@@ -2915,19 +2934,26 @@ ipcMain.handle('profiles:rename', (_event, { id, name }) => {
   if (profile) broadcast('profiles:changed', profileStore.getAll());
   return profile;
 });
-ipcMain.handle('profiles:setActive', (_event, id) => {
+// One place to actually switch the active loadout, so the chip bar, the Loadouts modal and the
+// in-game /tell command (see the profileCommand listener) all do exactly the same thing.
+function activateProfile(id) {
   const result = profileStore.setActiveId(id);
-  if (result) {
-    buffEngine.setActiveProfileId(result);
-    // Profile membership is what decides which widgets are on screen (see
-    // widgetManager's isVisibleForActiveProfile) - switching profiles has to
-    // re-evaluate every widget's visibility, not just swap the engine's
-    // ambiguous-resolution bucket.
-    widgetManager.applyProfileVisibility();
-    actionBarManager.applyProfileVisibility();
-    broadcast('profiles:activeChanged', result);
-  }
+  if (!result) return null;
+  buffEngine.setActiveProfileId(result);
+  // Profile membership is what decides which widgets are on screen (see
+  // widgetManager's isVisibleForActiveProfile) - switching profiles has to
+  // re-evaluate every widget's visibility, not just swap the engine's
+  // ambiguous-resolution bucket.
+  widgetManager.applyProfileVisibility();
+  actionBarManager.applyProfileVisibility();
+  broadcast('profiles:activeChanged', result);
   return result;
+}
+ipcMain.handle('profiles:setActive', (_event, id) => activateProfile(id));
+ipcMain.handle('profiles:setTellCommand', (_event, { id, word }) => {
+  const profile = profileStore.setTellCommand(id, word);
+  if (profile) broadcast('profiles:changed', profileStore.getAll());
+  return profile;
 });
 // The buff optimiser (buffPlanner.js). Its input - the three classes+levels and the dragged
 // priority order - lives on the active loadout profile (profileStore). The plan itself is always

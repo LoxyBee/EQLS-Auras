@@ -106,10 +106,50 @@ test('with no fight underway the meter shows the running total since zone-in, re
 
 test('the overlay hides the bar for a noBar row and colours per-attacker bars only on a damage meter', () => {
   assert.match(overlaySrc, /if \(buff\.noBar\) \{\s*\n\s*ref\.barEl\.style\.display = 'none';/);
-  assert.match(overlaySrc, /currentConfig\.buffSource === 'damage' \? damageBarColor\(buff\.name\) : ''/);
-  assert.match(overlaySrc, /function damageBarColor\(name\)/);
-  // a stable hash of the name, so the same person keeps the same colour
-  assert.match(overlaySrc, /hash \* 31 \+ name\.charCodeAt\(i\)/);
+  assert.match(overlaySrc, /currentConfig\.buffSource === 'damage'/);
+  assert.match(overlaySrc, /function damageBarColor\(kind, barPercent\)/);
+  // Rank colours (owner, 5 Sep): the player picks a hex per metric, that IS the #1 row, and rows
+  // below fade toward grey in proportion to how far they trail the leader (barPercent).
+  assert.match(overlaySrc, /const picked = kind === 'heal' \? currentConfig\.healColor : currentConfig\.damageColor/);
+  assert.match(overlaySrc, /s: s \* \(0\.28 \+ 0\.72 \* t\)/);
+  // 'both' mode draws one bar as a hard-stop two-colour gradient rather than two DOM elements.
+  assert.match(overlaySrc, /typeof buff\.barSplit === 'number'/);
+  assert.match(overlaySrc, /linear-gradient\(\$\{dir\}/);
+});
+
+test("'both' mode shows two separately-coloured numbers, not one combined string", () => {
+  // A second, hidden-by-default value span sitting right after the first (owner, 4 Sep: "two bits
+  // of text not 1"), each coloured to match the bar segment it belongs to.
+  assert.match(overlaySrc, /healValue\.className = 'time time-heal'/);
+  // Side-by-side: damage number by damageValueMode, heal number plain cumulative + %.
+  assert.match(overlaySrc, /dmgPiece =\s*\n?\s*bMode === 'dps' \? buff\.damageDpsText : bMode === 'both' \? buff\.damageBothText : buff\.damageValueText/);
+  assert.match(overlaySrc, /ref\.healValueEl\.textContent = buff\.healValueText/);
+  // Cycling: one metric at a time, chosen by the wall-clock phase.
+  assert.match(overlaySrc, /function bothCyclePhase\(\)/);
+  assert.match(overlaySrc, /const show = cyclePhase === 'heal' \? healPiece : dmgPiece/);
+  assert.match(overlaySrc, /function damageTextColor\(kind, barPercent\)/);
+  const css = read('src', 'renderer', 'overlay', 'overlay.css');
+  assert.match(css, /\.buff-row-content \.time-heal/);
+});
+
+test('the share % rides its own right-aligned column, not inline with the number', () => {
+  // owner, 5 Sep. The engine's value texts carry no % - it's a separate pctText field / column.
+  const engine = read('src', 'main', 'damageEngine.js');
+  assert.match(engine, /valueText: dmg,\s*\n\s*dpsText: rate,\s*\n\s*bothText: `\$\{dmg\} \(\$\{rate\}\)`,\s*\n\s*pctText: pct,/);
+  assert.match(engine, /damagePctText: `\$\{dmgPct\}%`,\s*\n\s*healPctText: `\$\{healPct\}%`,/);
+  assert.match(overlaySrc, /pctColEl\.className = 'row-pct'/);
+  assert.match(overlaySrc, /ref\.pctEl\.textContent = pctText/);
+  assert.match(overlaySrc, /pctText = \(cyclePhase === 'heal' \? buff\.healPctText : buff\.damagePctText\)/);
+  assert.match(overlaySrc, /pctText = `\$\{buff\.damagePctText \|\| ''\} \/ \$\{buff\.healPctText \|\| ''\}`/);
+  // The dark plate is a wrapper (.buff-row-box); pctColEl is that wrapper's sibling with a gap
+  // between, so the coloured bar (clipped to the box) never reaches it.
+  assert.match(overlaySrc, /box\.className = 'buff-row-box'/);
+  assert.match(overlaySrc, /box\.append\(iconWrap, content\)/);
+  assert.match(overlaySrc, /root\.append\(box, pctColEl\)/);
+  const css2 = read('src', 'renderer', 'overlay', 'overlay.css');
+  assert.match(css2, /\.buff-row-box \{[\s\S]*?overflow: hidden;[\s\S]*?background:/);
+  assert.match(css2, /\.buff-row > \.row-pct \{/);
+  assert.match(css2, /\.buff-row \{[\s\S]*?gap: 6px;/);
 });
 
 test('the two damage/rate checkboxes (both = "damage (rate)") are wired end to end', () => {

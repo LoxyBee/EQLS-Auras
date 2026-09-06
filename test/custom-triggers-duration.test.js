@@ -157,15 +157,28 @@ test('the per-trigger Duration field is gone from the Add/Edit Timer modal', () 
   assert.doesNotMatch(rendererSrc, /newTimerMinutesInput|newTimerSecondsInput/, 'JS still references the removed inputs');
 });
 
-test('the top-level Duration slider exists and is wired', () => {
-  assert.match(html, /id="widget-trigger-duration-slider"/);
-  assert.match(html, /id="widget-trigger-duration-value"/);
-  assert.match(rendererSrc, /triggerDurationSlider\.value = seconds/, 'never populated when a widget is selected');
+test('the top-level Duration is a minute + second pair, wired both ways (owner, 5 Sep - up to 60m)', () => {
+  // Replaced the 0..60s slider so a respawn window (10-15m) can be entered. The store already
+  // clamped to 3600s; only the input was the wall.
+  assert.match(html, /id="widget-trigger-duration-min"[^>]*max="60"/);
+  assert.match(html, /id="widget-trigger-duration-sec"[^>]*max="59"/);
+  assert.match(rendererSrc, /writeMinSec\(triggerDurationMinInput, triggerDurationSecInput, seconds\)/, 'never populated when a widget is selected');
+  assert.match(rendererSrc, /const seconds = readMinSec\(triggerDurationMinInput, triggerDurationSecInput\)/);
   assert.match(
     rendererSrc,
     /window\.eqTracker\.setWidgetTriggerDurationSec\(selectedId, seconds\)/,
-    'the slider does not actually save anywhere'
+    'the boxes do not actually save anywhere'
   );
+  // readMinSec caps at the store's own ceiling so an oversized entry can't get past the renderer.
+  assert.match(rendererSrc, /return Math\.min\(3600, m \* 60 \+ s\)/);
+});
+
+test('the per-trigger Cooldown is also a minute + second pair', () => {
+  assert.match(html, /id="widget-new-timer-cooldown-min"/);
+  assert.match(html, /id="widget-new-timer-cooldown-sec"/);
+  assert.match(rendererSrc, /cooldownSec: readMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput\)/);
+  // edit populates both boxes, blank when there is no cooldown
+  assert.match(rendererSrc, /writeMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput, timer\.cooldownSec \|\| 0, true\)/);
 });
 
 test('the form reads duration from the widget itself, not from any input box', () => {

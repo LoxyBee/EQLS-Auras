@@ -109,7 +109,11 @@ function parseDamageLine(line) {
     // "You hit yourself for 1864 ... by Cannibalization" is an HP->mana self-cost, not outgoing
     // damage - let it fall through to null so the bootstrap never sees "yourself" as an enemy.
     if (m[2].toLowerCase() !== 'yourself') {
-      return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'spell' };
+      // `direct: true` marks a real, actively-cast nuke ("X hit Y for N points of TYPE damage by
+      // Z") as opposed to the "X has taken N damage from ..." shape, which is a DoT / song / proc
+      // tick. damageEngine keys the fight-end timer off real hits (melee + direct nukes) so a
+      // maintained DoT ticking on a straggler does not hold the meter's fight open on its own.
+      return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'spell', direct: true };
     }
   }
 

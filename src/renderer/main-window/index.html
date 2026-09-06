@@ -414,6 +414,30 @@
                        main-window.js. -->
                   <div id="widget-damage-settings" style="display:none">
                     <h4 class="settings-subsection-title">Damage meter</h4>
+                    <div class="row" title="What this meter tracks. Both shows one bar per player split into a damage segment and a heal segment.">
+                      <span class="label">Track</span>
+                      <label><input type="radio" name="widget-damage-track-mode" value="damage" /> Damage</label>
+                      <label><input type="radio" name="widget-damage-track-mode" value="healing" /> Healing</label>
+                      <label><input type="radio" name="widget-damage-track-mode" value="both" /> Both</label>
+                    </div>
+                    <div class="row" id="widget-damage-both-mode-row" title="Combined: one merged row per player with a split damage/heal bar. Swap: the whole meter flips between a full standalone damage meter and a full standalone healing meter, each with its own sorting.">
+                      <span class="label">Both</span>
+                      <label><input type="radio" name="widget-damage-both-mode" value="combined" /> Combined</label>
+                      <label><input type="radio" name="widget-damage-both-mode" value="swap" /> Swap</label>
+                    </div>
+                    <div class="row" id="widget-damage-both-cycle-row" title="Combined: flip each row between its damage and heal number on this interval (0 = show side by side). Swap: how long each of the two meters stays up.">
+                      <label for="widget-damage-both-cycle-slider">Both: swap every</label>
+                      <input type="range" id="widget-damage-both-cycle-slider" min="0" max="20" step="1" />
+                      <span id="widget-damage-both-cycle-value" class="slider-value"></span>
+                    </div>
+                    <div class="row" id="widget-damage-color-row" title="The colour of the #1 row on the board. Rows below fade toward grey by how far they trail the leader.">
+                      <label for="widget-damage-color">Top damage colour</label>
+                      <input type="color" id="widget-damage-color" />
+                    </div>
+                    <div class="row" id="widget-heal-color-row" title="The colour of the #1 healer on the board. Rows below fade toward grey by how far they trail the leader.">
+                      <label for="widget-heal-color">Top healing colour</label>
+                      <input type="color" id="widget-heal-color" />
+                    </div>
                     <div class="row">
                       <label for="widget-damage-scope" title="Whose damage this meter counts. Group and Me recompute every % over just what they show — other damage isn't counted at all.">This meter shows</label>
                       <select id="widget-damage-scope">
@@ -728,9 +752,11 @@
                        the page that looked like it might also control this but never did anything
                        for a custom-timer aura at all. -->
                   <div class="row">
-                    <span class="label">Duration:</span>
-                    <input type="range" id="widget-trigger-duration-slider" min="0" max="60" step="1" />
-                    <span id="widget-trigger-duration-value" class="slider-value">5s</span>
+                    <span class="label" title="How long a tile stays on screen after its trigger fires. Up to 60 minutes — long enough for a respawn window.">Duration:</span>
+                    <input type="number" id="widget-trigger-duration-min" class="duration-input" min="0" max="60" step="1" />
+                    <span class="duration-unit">m</span>
+                    <input type="number" id="widget-trigger-duration-sec" class="duration-input" min="0" max="59" step="1" />
+                    <span class="duration-unit">s</span>
                   </div>
                   <!-- Whole-aura setting, not per-trigger - applies to whatever this aura's
                        triggerCombineMode already decides fires (a single trigger, an AND set, or an
@@ -2315,8 +2341,8 @@
            matching how the timer will actually appear on the overlay -
            rather than a separate "Icon" section with its own button further
            down the form. Duration is NOT set here - it's a single top-level
-           slider on the aura itself, shared by every trigger on it (see
-           widget-trigger-duration-slider). Reported live 24 Aug: a per-timer
+           minute/second pair on the aura itself, shared by every trigger on it
+           (see widget-trigger-duration-min). Reported live 24 Aug: a per-timer
            duration field here meant an aura's triggers could silently drift
            out of sync with each other, and duplicated a second "Show events
            for" slider elsewhere that never actually did anything for a
@@ -2484,7 +2510,9 @@
         <div class="topic-body"><div class="topic-body-inner">
           <div class="row">
             <span class="label">Then cooldown:</span>
-            <input type="number" id="widget-new-timer-cooldown" min="0" step="1" placeholder="none" class="duration-input" />
+            <input type="number" id="widget-new-timer-cooldown-min" min="0" max="60" step="1" placeholder="0" class="duration-input" />
+            <span class="duration-unit">m</span>
+            <input type="number" id="widget-new-timer-cooldown-sec" min="0" max="59" step="1" placeholder="0" class="duration-input" />
             <span class="duration-unit">s</span>
           </div>
           <p class="hint">

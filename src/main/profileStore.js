@@ -28,10 +28,29 @@ class ProfileStore {
 
   _loadOrMigrate() {
     const existing = this.store.loadJson('profiles', null);
-    if (existing) return existing;
+    if (existing) {
+      if (this._backfillTellCommands(existing)) this.store.saveJson('profiles', existing);
+      return existing;
+    }
     const data = defaultData();
     this.store.saveJson('profiles', data);
     return data;
+  }
+
+  // Owner, 5 Sep: give every loadout a /tell command word without the user having to invent one -
+  // eqld1, eqld2, eqld3... by position. Only fills a blank that has NOT been deliberately set or
+  // cleared (tellCommandUserSet), and only once there is more than one loadout (a lone Default has
+  // nothing to switch away from). Runs on load and on every create.
+  _backfillTellCommands(data) {
+    if (!data || !Array.isArray(data.profiles) || data.profiles.length < 2) return false;
+    let changed = false;
+    data.profiles.forEach((p, i) => {
+      if (!p.tellCommand && !p.tellCommandUserSet) {
+        p.tellCommand = `eqld${i + 1}`;
+        changed = true;
+      }
+    });
+    return changed;
   }
 
   _save() {
@@ -126,6 +145,7 @@ class ProfileStore {
   create(name) {
     const profile = { id: crypto.randomUUID(), name };
     this.data.profiles.push(profile);
+    this._backfillTellCommands(this.data); // eqld<n> for the new one (and Default, the first time)
     this._save();
     return profile;
   }
@@ -134,6 +154,28 @@ class ProfileStore {
     const profile = this.data.profiles.find((p) => p.id === id);
     if (!profile) return null;
     profile.name = name;
+    this._save();
+    return profile;
+  }
+
+  // Owner, 4 Sep (QOL #6/#42): a per-profile /tell command word so a loadout-swap macro can carry
+  // one line that switches the app to the matching profile - no alt-tab, no chip click. Same
+  // pattern as the travel picker's `eqtm` and the lockout board's `eqrlm`. Lowercased, letters and
+  // digits only (what a /tell name can contain), capped at EverQuest's 15-char name limit. Empty
+  // clears it. Not unique-checked here - main.js's listener takes the first profile that matches,
+  // and the Loadouts modal is where a duplicate would be visible.
+  setTellCommand(id, word) {
+    const profile = this.data.profiles.find((p) => p.id === id);
+    if (!profile) return null;
+    const clean = String(word || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 15);
+    // A deliberate choice - _backfillTellCommands leaves this profile alone from now on, so
+    // clearing the word makes it stay cleared even when the next loadout is created.
+    profile.tellCommandUserSet = true;
+    if (clean) profile.tellCommand = clean;
+    else delete profile.tellCommand;
     this._save();
     return profile;
   }
