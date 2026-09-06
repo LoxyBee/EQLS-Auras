@@ -2629,17 +2629,10 @@ body.sidebar-resizing .sidebar {
   opacity: 0.6;
 }
 .lockout-tab:hover { opacity: 0.85; }
-/* The global `button.active` rule paints an accent fill with dark (--bg) text - right for a
-   master toggle, wrong for a tab, and it was leaving the selected tab dark-on-dark. Override
-   both colour and fill here, and keep the override through :hover. */
-.lockout-tab.active,
-.lockout-tab.active:hover {
-  opacity: 1;
-  background: var(--panel);
-  border-color: var(--accent);
-  color: var(--ink);
-  font-weight: 600;
-}
+/* The selected tab uses the app's standard "this is on" look - the global `button.active` rule's
+   accent fill with dark text (owner: match the hover state, which is the readable one). Only the
+   opacity needs resetting here; colour and fill come from button.active. */
+.lockout-tab.active { opacity: 1; }
 
 .lockout-grid {
   border-collapse: collapse;
