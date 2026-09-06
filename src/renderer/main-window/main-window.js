@@ -5899,24 +5899,33 @@ function initWidgetsPanel() {
     const td = document.createElement('td');
     const meta = LOCKOUT_STATES[cell.state] || { text: cell.state, title: '' };
     td.className = `lockout-cell lockout-${cell.state}`;
-    td.textContent = meta.text;
     // `because` is the module's own sentence explaining this exact cell. Shown rather than
     // summarised, because a paraphrase is where hedging gets lost.
     td.title = `${meta.title}\n\n${cell.because || ''}`.trim();
+    // Everything goes in a fixed-height inner box so a "done" cell (status + kill date, two lines)
+    // is exactly as tall as a one-line "open" cell - the row height must not depend on the cell
+    // contents (owner, 6 Sep). The box clips rather than grows.
+    const inner = document.createElement('div');
+    inner.className = 'lockout-cell-inner';
+    const status = document.createElement('span');
+    status.className = 'lockout-status';
+    status.textContent = meta.text;
+    inner.appendChild(status);
     // A "done" cell shows WHEN it was done - the first completion's date. The module already
     // carries it as a field (cell.completedAt, "YYYY-MM-DD HH:MM:SS"); render the date part.
     if (cell.state === 'completed' && cell.completedAt) {
       const d = document.createElement('span');
       d.className = 'lockout-killdate';
-      d.textContent = ` ${lkPrettyDate(String(cell.completedAt).slice(0, 10))}`;
-      td.appendChild(d);
+      d.textContent = lkPrettyDate(String(cell.completedAt).slice(0, 10));
+      inner.appendChild(d);
     }
     if (cell.decidedBy) {
       const s = document.createElement('span');
       s.className = 'lockout-pivot';
-      s.textContent = ` (${cell.decidedBy.pivot})`;
-      td.appendChild(s);
+      s.textContent = `(${cell.decidedBy.pivot})`;
+      inner.appendChild(s);
     }
+    td.appendChild(inner);
     return td;
   }
 

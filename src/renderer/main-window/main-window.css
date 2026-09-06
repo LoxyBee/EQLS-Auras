@@ -2642,16 +2642,26 @@ body.sidebar-resizing .sidebar {
 .lockout-grid th,
 .lockout-grid td {
   border: 1px solid var(--line);
-  padding: 5px 9px;
+  padding: 0 9px;
   text-align: center;
   white-space: nowrap;
-  /* Every row the same height, tall enough for a "done" cell's status + kill date, so the grid
-     does not jump between one- and two-line rows (owner, 8 Sep). `height` on a table cell acts as
-     a minimum; a one-line "open" cell just centres in it. */
-  height: 46px;
   vertical-align: middle;
-  box-sizing: border-box;
 }
+/* Every cell's content lives in this fixed-height box, so the row height NEVER depends on whether
+   the cell is one line ("open") or two ("done" + kill date). It centres and clips - it does not
+   grow (owner, 6 Sep: "they all need to be static"). th uses the same box for alignment. */
+.lockout-grid td .lockout-cell-inner,
+.lockout-grid th {
+  height: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+}
+.lockout-grid th { align-items: flex-start; }
+.lockout-status { line-height: 1.2; }
 .lockout-grid th {
   text-align: left;
   font-weight: 600;
@@ -2673,7 +2683,7 @@ body.sidebar-resizing .sidebar {
   font-size: 12px;
   cursor: help;
 }
-.lockout-pivot { opacity: 0.7; font-size: 11px; }
-.lockout-killdate { display: block; opacity: 0.65; font-size: 11px; white-space: nowrap; }
+.lockout-pivot { opacity: 0.7; font-size: 10px; line-height: 1.1; }
+.lockout-killdate { opacity: 0.65; font-size: 10px; line-height: 1.1; white-space: nowrap; }
 /* A gap in the record is not a detail. It is the reason a cell above might be wrong. */
 .lockout-gapwarn { border-left: 3px solid #e8b04b; padding-left: 10px; margin-top: 6px; }
