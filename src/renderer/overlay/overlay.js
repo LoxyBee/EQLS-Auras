@@ -2186,6 +2186,31 @@ function previewSampleBuffs() {
     }
     case 'firstAggro':
       return [mk('Korvaxx pulled a zol ghoul knight', null, 0, { valueText: '', infinite: true, spellCategory: null, id: 'first-aggro', firstAggroSide: 'friend' })];
+    case 'damage': {
+      // Shaped like damageEngine's real tiles - attacker rows biggest-first with a bar + share %,
+      // then a bar-less Total row at the bottom.
+      const d = (name, val, rate, pct, bar) => mk(name, null, 0, {
+        valueText: val, dpsText: rate, bothText: `${val} (${rate})`, pctText: `${pct}%`,
+        barPercent: bar, infinite: true, spellCategory: null,
+      });
+      return [
+        d('You', '48.2k', '1.6k/s', 41, 100),
+        d('Baxa', '30.9k', '1.0k/s', 26, 64),
+        d('Avenrae', '22.4k', '747/s', 19, 46),
+        d('Chrysaetos', '16.3k', '543/s', 14, 34),
+        mk('Total', null, 0, { totalRow: true, noBar: true, valueText: '117.8k  (3.9k/s)', infinite: true, spellCategory: null }),
+      ];
+    }
+    case 'travel': {
+      // Shaped like travelRowsFor's rows - a current-zone header, then numbered legs.
+      const leg = (name, tag) => mk(name, null, 0, { valueText: tag || '', infinite: true, spellCategory: null });
+      return [
+        leg('Current zone: The Overthere', ''),
+        leg('Cast Ring of the Combines', '1/3'),
+        leg('Zone line to West Karana', '2/3'),
+        leg('Boat to Butcherblock Mountains', '3/3'),
+      ];
+    }
     case 'module':
       return [mk(currentConfig.name || 'Module', 9, 12, { key: 'preview' })];
     default:

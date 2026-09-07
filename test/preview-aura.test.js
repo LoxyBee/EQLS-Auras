@@ -60,6 +60,25 @@ test('a custom-timer sample uses the aura\'s own name and a stable id', () => {
   assert.equal(out[0].id, 'preview');
 });
 
+test('a damage-parser sample looks like a damage meter, not random buffs (owner, 7 Sep)', () => {
+  S.set({ buffSource: 'damage' });
+  const out = S.previewSampleBuffs();
+  const total = out.find((b) => b.totalRow);
+  assert.ok(total && total.noBar, 'a bar-less Total row');
+  const rows = out.filter((b) => !b.totalRow);
+  assert.ok(rows.length >= 2 && rows.every((b) => b.valueText && b.pctText && typeof b.barPercent === 'number'));
+  assert.ok(rows.some((b) => b.name === 'You'));
+  assert.ok(!out.some((b) => b.name === 'Spirit of Wolf' || b.name === 'Aegolism'), 'not the default buff sample');
+});
+
+test('a travel-guide sample looks like a route, not random buffs', () => {
+  S.set({ buffSource: 'travel' });
+  const out = S.previewSampleBuffs();
+  assert.ok(out.some((b) => /^Current zone:/.test(b.name)));
+  assert.ok(out.every((b) => b.infinite === true && b.spellCategory === null));
+  assert.ok(!out.some((b) => b.name === 'Spirit of Wolf'), 'not the default buff sample');
+});
+
 test('the sample only stands in when there is nothing real, and real content wins', () => {
   const src = read('src', 'renderer', 'overlay', 'overlay.js');
   // currentSourceBuffs falls back to the sample ONLY when the real feed is empty and preview is on

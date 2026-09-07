@@ -1851,7 +1851,9 @@ function initWidgetsPanel() {
       'widget-text-instant-row', 'widget-text-stack-row', 'widget-travel-settings',
       'widget-damage-settings', 'widget-lockout-settings',
     ],
-    'topic-panel-size': ['widget-list-only-settings', 'widget-icon-only-settings'],
+    // widget-scale-row is always visible (scale applies to every aura kind), so the Size topic
+    // never collapses now - which is what makes Scale reachable on a travel guide / damage meter.
+    'topic-panel-size': ['widget-scale-row', 'widget-list-only-settings', 'widget-icon-only-settings'],
     'topic-panel-text': ['widget-text-size-row', 'widget-text-justify-row'],
     'topic-panel-layout': [
       'widget-display-mode-row', 'widget-sort-order-row', 'widget-merge-row', 'widget-borders-row',
@@ -5156,11 +5158,13 @@ function initWidgetsPanel() {
     rowSizeValueEl.textContent = `${size}px`;
     window.eqTracker.setWidgetRowSize(selectedId, size);
   });
-  if (scaleSlider) {
+  if (scaleSlider && scaleValueEl) {
     scaleSlider.addEventListener('input', () => {
-      const pct = Number(scaleSlider.value);
+      const pct = Number(scaleSlider.value) || 100;
       scaleValueEl.textContent = `${pct}%`;
-      window.eqTracker.setWidgetScale(selectedId, pct / 100);
+      window.eqTracker.setWidgetScale(selectedId, pct / 100).then((cfg) => {
+        if (cfg) updateLocalWidgetCache(cfg);
+      });
     });
   }
   listWidthSlider.addEventListener('input', () => {
