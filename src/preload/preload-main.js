@@ -296,7 +296,6 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetAllyGroupBy: (id, value) => ipcRenderer.invoke('widget:setAllyGroupBy', { id, value }),
   setWidgetShowDebuffSongs: (id, value) => ipcRenderer.invoke('widget:setShowDebuffSongs', { id, value }),
   setWidgetSplitSongsByType: (id, value) => ipcRenderer.invoke('widget:setSplitSongsByType', { id, value }),
-  setWidgetBardSongScope: (id, value) => ipcRenderer.invoke('widget:setBardSongScope', { id, value }),
   setWidgetGroupAllyDirection: (id, value) => ipcRenderer.invoke('widget:setGroupAllyDirection', { id, value }),
   setWidgetHideAllyNameOnTile: (id, value) => ipcRenderer.invoke('widget:setHideAllyNameOnTile', { id, value }),
   setWidgetLabelTextColor: (id, value) => ipcRenderer.invoke('widget:setLabelTextColor', { id, value }),

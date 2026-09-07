@@ -65,7 +65,9 @@ test('a verified gem attributes a bard song to You even over a stale mob cast (g
   const known = { name: "Selo's Accelerating Chorus", targets: 'Group', isBardSong: true };
 
   engine.handleLine("Enro begins singing Selo's Accelerating Chorus."); // a mob, no expiry on recentOtherCasts
-  assert.equal(engine._attributeBardSongCaster(known.name, known), 'Enro', 'without the verified gem, the mob wins');
+  // "Enro" is not in the group, and a bard song can only land on a groupmate - so the mob never
+  // wins attribution now (was the whole gotcha #31 bug). Without the verified gem it reads Unknown.
+  assert.equal(engine._attributeBardSongCaster(known.name, known), null, 'a non-groupmate mob does not get the song');
 
   engine.setLoadoutLocked(true, 'The Plane of Hate');
   engine.handleLine(`You have finished memorizing ${known.name}.`);

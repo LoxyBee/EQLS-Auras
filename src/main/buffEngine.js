@@ -505,7 +505,12 @@ class BuffEngine extends EventEmitter {
     // because it's genuine information worth having, but nothing depends on
     // it being complete.
     this.groupMembers = new Map();
-    this.groupRosterFn = () => []; // see setGroupRosterFn
+    // main.js wires this to the damage meter's group roster (groupRoster.getAdmitted()), which is
+    // more complete than groupMembers - it also recovers from a startup log scan and from
+    // "<Name> tells the group" chatter (gotcha #43). A bard song can only be cast on a groupmate
+    // (owner, game fact, 7 Sep), so a bard song "on the player" is only ever yours or a
+    // groupmate's - this is how the Bard Songs aura tells a real one from a passing pub bard's AE.
+    this.groupRosterFn = () => [];
     // Lowercased names seen aiming a spell AT the player ("X tries to cast a spell on you") - a
     // PvP-zone hostile, player-shaped name and all. Their bard songs never land on the player's
     // group, so they are kept out of recentOtherCasts (a nearby enemy bard singing a same-named
@@ -669,17 +674,16 @@ class BuffEngine extends EventEmitter {
     this.groupmateSink = typeof fn === 'function' ? fn : null;
   }
 
-  // fn() => array of lowercased names in the player's group (main.js wires this to the damage
-  // meter's roster, which also recovers from a startup scan and group chat - gotcha #43). Used
-  // only to tag a bard song's caster as a groupmate vs an outsider, so a Bard Songs aura set to
-  // "my group only" can hide pub-zone randoms. Default: knows no one.
+  // fn() => array of names in the player's group (main.js wires the damage meter's roster).
   setGroupRosterFn(fn) {
     if (typeof fn === 'function') this.groupRosterFn = fn;
   }
 
-  _isKnownGroupmate(name) {
+  // Is `name` you or someone in your group right now, by either signal we have. Case-insensitive.
+  _isSelfOrGroupmate(name) {
     const key = String(name || '').toLowerCase();
-    if (!key || key === 'you' || key === 'unknown') return false;
+    if (!key || key === 'unknown') return false;
+    if (key === 'you') return true;
     if (this.groupMembers && this.groupMembers.has(key)) return true;
     try {
       return (this.groupRosterFn() || []).some((n) => String(n).toLowerCase() === key);
@@ -2729,23 +2733,13 @@ class BuffEngine extends EventEmitter {
       this.bardSongConfirmedMine.add(lower);
       return 'You';
     }
-    // A groupmate's own third-person "X begins casting/singing Y" line, seen recently for this
-    // exact spell. _recentOtherCaster already existed purely for debug-log text ("never for making
-    // one" per its own comment) - this is the first place its answer is actually acted on.
-    //
-    // BUT: an other-cast names a song that is STARTING. If this exact song is already pulsing on
-    // the player as "Unknown" - it was running before this bard sang it - then a bard singing it
-    // now is coincidental (a crowded public zone: measured live 7 Sep, "Bulvye" then "Losi", pub
-    // bards nobody grouped with, kept stealing songs already on the player). Leave it Unknown.
-    // A song already attributed to a real name or "You" is untouched by this - two named casters
-    // maintaining the same song stay two entries, as before.
+    // A GROUPMATE's own third-person "X begins casting/singing Y" line, seen recently for this
+    // exact spell. Gated on the caster being in the group: a bard song lands on you only when a
+    // groupmate sings it (owner, game fact, 7 Sep - "bard songs cannot be applied to non group
+    // members"), so a random public-zone bard singing the same-named song near you is not the
+    // source. A non-groupmate falls through to Unknown, and getActiveBardSongs then drops it.
     const other = this._recentOtherCaster(name);
-    if (other) {
-      const alreadyPulsingUnknown = [...this.bardSongs.values()].some(
-        (s) => s.name.toLowerCase() === lower && !s.castBy && s.expiresAt > Date.now()
-      );
-      if (!alreadyPulsingUnknown) return other;
-    }
+    if (other && this._isSelfOrGroupmate(other)) return other;
     // A song the memorize-window tier below has confirmed as the player's own at some earlier
     // point THIS memorization - checked before that tier itself so an already-confirmed song
     // doesn't need a fresh memorize event every single repeat. Requested directly: "if the app
@@ -2784,7 +2778,9 @@ class BuffEngine extends EventEmitter {
     // stale attribution here.
     for (const song of this.bardSongs.values()) {
       if (song.name.toLowerCase() === lower && song.expiresAt > Date.now()) {
-        return song.castBy;
+        // Keep a self / groupmate attribution; never perpetuate a non-groupmate name a pre-fix or
+        // pre-restart landing left behind - that just re-decides "Bulvye" forever.
+        return !song.castBy || this._isSelfOrGroupmate(song.castBy) ? song.castBy : null;
       }
     }
     return null;
@@ -3639,6 +3635,19 @@ class BuffEngine extends EventEmitter {
   getActiveBardSongs() {
     const now = Date.now();
     return [...this.bardSongs.values()]
+      // A bard song can only be cast on a groupmate (owner, game fact, 7 Sep - "bard songs cannot
+      // be applied to non group members"). So a buff song "on the player":
+      //  - a debuff song is the player's own tracked debuff on a mob - always kept.
+      //  - attributed to You or a confirmed groupmate - kept.
+      //  - attributed to a name that is NOT in the group - a pub bard, dropped.
+      //  - "Unknown" (no caster) - kept, UNLESS the only reason we know the song exists is a
+      //    non-groupmate singing it near you (their AE landing text - mechanically not on you).
+      .filter((b) => {
+        if (b.isDebuff || b.castBy === 'You' || this._isSelfOrGroupmate(b.castBy)) return true;
+        if (b.castBy) return false;
+        const seenCaster = this._recentOtherCaster(b.name);
+        return !(seenCaster && !this._isSelfOrGroupmate(seenCaster));
+      })
       .map((b) => {
         const known = this.buffStore.getByName(b.name);
         const isDebuff = !!b.isDebuff;
@@ -3648,18 +3657,6 @@ class BuffEngine extends EventEmitter {
           // Emitted here, not left for the overlay to fall back on, so the existing ally-grouping
           // renderer needs zero changes to draw an actual, visible bucket for this.
           allyName: isDebuff ? b.onTarget : (b.castBy || 'Unknown'),
-          // For a Bard Songs aura set to "my group only": 'self' = you, 'group' = a confirmed
-          // groupmate, 'other' = a named caster who is not in your group (a pub-zone bard),
-          // 'unknown' = unattributed. Debuff songs (the bard's own tracked debuffs) are always 'self'.
-          casterScope: isDebuff
-            ? 'self'
-            : b.castBy === 'You'
-            ? 'self'
-            : !b.castBy
-            ? 'unknown'
-            : this._isKnownGroupmate(b.castBy)
-            ? 'group'
-            : 'other',
           isDebuff,
           durationSec: b.durationSec,
           remainingSec: b.infinite || b.instant ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
