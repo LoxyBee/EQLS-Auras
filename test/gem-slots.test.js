@@ -71,10 +71,11 @@ test('buffNames is still a flat array of names', () => {
 });
 
 test('buffNames still has no migration of its own - the shape did not change', () => {
-  // The store version is now 5 (v4->v5 added the CONTROLLED catch-all to existing Loss of control
-  // auras - nothing to do with buffNames). If a version bump ever DOES coincide with a buffNames
-  // shape change, that change needs its own migration and this comment is where to notice it.
-  assert.match(storeSrc, /version: 6, widgets: \[selfBuffs\]/, 'the store version moved again - if buffNames changed shape it needs its own migration');
+  // The store version is now 7 (v6->v7 added the "You begin to scream." fear trigger to existing
+  // Loss of control auras - nothing to do with buffNames). If a version bump ever DOES coincide
+  // with a buffNames shape change, that change needs its own migration and this comment is where
+  // to notice it.
+  assert.match(storeSrc, /version: 7, widgets: \[selfBuffs\]/, 'the store version moved again - if buffNames changed shape it needs its own migration');
   // normalizeWidget sanitises the list at the door now (share-code hardening) - a non-array, and
   // any non-string element, is dropped before it can reach the overlay.
   assert.match(storeSrc, /buffNames: stringList\(widget\.buffNames\)/, 'the buffNames sanitiser is gone - a bad value now reaches the overlay');

@@ -125,7 +125,7 @@ test('the v4 -> v5 migration adds CONTROLLED to a Loss of control aura that pred
 
   const s2 = new WidgetStore(io); // reload -> migrate
   const migrated = s2.getAll().find((x) => x.id === w.id);
-  assert.equal(data.widgets.version, 6);
+  assert.equal(data.widgets.version, 7);
   assert.ok(
     migrated.customTimers.some((t) => t.triggerText === 'You lose control of yourself!'),
     'the migration did not add the catch-all'
@@ -139,6 +139,56 @@ test('the v4 -> v5 migration adds CONTROLLED to a Loss of control aura that pred
   const after = s3.getAll().find((x) => x.id === w.id);
   assert.ok(
     !after.customTimers.some((t) => t.triggerText === 'You lose control of yourself!'),
+    'the migration re-added a deliberately deleted trigger'
+  );
+});
+
+test('a fear (Screaming Terror) fires it via "You begin to scream." and clears on "You stop screaming."', () => {
+  const { widget, engine } = setup();
+  const afraid = widget.customTimers.find((t) => t.triggerText === 'You begin to scream.');
+  assert.ok(afraid, 'no "You begin to scream." trigger in the preset');
+  assert.equal(afraid.name, 'AFRAID');
+  engine.handleLine(`${TS}You begin to scream.`);
+  assert.deepEqual(engine.getActive().map((b) => b.name), ['AFRAID']);
+  engine.handleLine(`${TS}You stop screaming.`);
+  assert.equal(engine.getActive().length, 0, 'the "stop screaming" line did not clear it');
+});
+
+test('a resisted fear does not fire it', () => {
+  const { engine } = setup();
+  engine.handleLine(`${TS}You resist a Teir\`Dal ranger's Screaming Terror!`);
+  assert.equal(engine.getActive().length, 0);
+});
+
+test('the v6 -> v7 migration adds the fear trigger to a Loss of control aura that predates it', () => {
+  const data = {};
+  const io = {
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  };
+  const s1 = new WidgetStore(io);
+  const w = s1.createTextAura('Loss of control', { preset: 'lossOfControl' });
+  data.widgets.widgets = data.widgets.widgets.map((x) =>
+    x.id === w.id ? { ...x, customTimers: x.customTimers.filter((t) => t.triggerText !== 'You begin to scream.') } : x
+  );
+  data.widgets.version = 6;
+
+  const s2 = new WidgetStore(io); // reload -> migrate
+  const migrated = s2.getAll().find((x) => x.id === w.id);
+  assert.equal(data.widgets.version, 7);
+  assert.ok(
+    migrated.customTimers.some((t) => t.triggerText === 'You begin to scream.'),
+    'the migration did not add the fear trigger'
+  );
+
+  // Idempotent: a hand-removed trigger stays removed on the next load.
+  s2.update(migrated.id, {
+    customTimers: migrated.customTimers.filter((t) => t.triggerText !== 'You begin to scream.'),
+  });
+  const s3 = new WidgetStore(io);
+  const after = s3.getAll().find((x) => x.id === w.id);
+  assert.ok(
+    !after.customTimers.some((t) => t.triggerText === 'You begin to scream.'),
     'the migration re-added a deliberately deleted trigger'
   );
 });

@@ -1227,6 +1227,10 @@ const LOSS_OF_CONTROL = [
   { label: 'CHARMED', land: 'You are captivated by the haunting tune.', end: 'You are no longer captivated.', secs: 45 },
   { label: 'AFRAID', land: 'Your mind fills with fear.', end: 'You are no longer afraid.', secs: 30 },
   { label: 'AFRAID', land: 'Your mind snaps in terror.', end: 'You are no longer terrified.', secs: 30 },
+  // Screaming Terror (and other fears that write no "mind fills with fear" line) - confirmed in the
+  // owner's log: "You begin to scream." on the land, "You stop screaming." when it breaks. A third-
+  // person fear reads "<Name> begins to scream." the same way.
+  { label: 'AFRAID', land: 'You begin to scream.', end: 'You stop screaming.', secs: 30 },
   { label: 'ROOTED', land: 'Your feet adhere to the ground.', end: 'Your feet come free.', secs: 40 },
   { label: 'ROOTED', land: 'Your feet become entwined.', end: 'The roots fall from your feet.', secs: 40 },
   { label: 'SNARED', land: 'You are ensnared.', end: 'You are no longer ensnared.', secs: 40 },
@@ -1549,6 +1553,30 @@ class WidgetStore {
         for (const widget of data.widgets) delete widget.enabled;
         data.version = 6;
       }
+      // v6 -> v7: the "Loss of control" premade gained a fear trigger - "You begin to scream." /
+      // "You stop screaming." (label AFRAID), which is what Screaming Terror and similar fears write
+      // instead of "Your mind fills with fear." (confirmed in the owner's log). Add it to any Loss
+      // of control aura that doesn't already carry it. Version-gated: a hand-deleted trigger stays
+      // deleted. Same shape as the v4 -> v5 CONTROLLED add.
+      if (data.version < 7) {
+        for (const widget of data.widgets) {
+          const isLossOfControl =
+            widget.premadeOrigin &&
+            widget.premadeOrigin.kind === 'textAura' &&
+            widget.premadeOrigin.preset === 'lossOfControl';
+          if (!isLossOfControl || !Array.isArray(widget.customTimers)) continue;
+          const already = widget.customTimers.some((t) => t.triggerText === 'You begin to scream.');
+          if (already) continue;
+          widget.customTimers.push({
+            id: crypto.randomUUID(),
+            name: 'AFRAID',
+            durationSec: 30,
+            triggerText: 'You begin to scream.',
+            endedText: 'You stop screaming.',
+          });
+        }
+        data.version = 7;
+      }
       this.store.saveJson('widgets', data);
       return data;
     }
@@ -1568,7 +1596,7 @@ class WidgetStore {
 
     const selfBuffs = defaultSelfBuffsWidget(overrides);
 
-    const data = { version: 6, widgets: [selfBuffs], folders: [] };
+    const data = { version: 7, widgets: [selfBuffs], folders: [] };
     this.store.saveJson('widgets', data);
     return data;
   }
