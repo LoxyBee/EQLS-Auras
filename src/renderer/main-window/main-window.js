@@ -1728,6 +1728,8 @@ function initWidgetsPanel() {
   const iconsPerRowValueEl = document.getElementById('widget-icons-per-row-value');
   const rowSizeSlider = document.getElementById('widget-row-size-slider');
   const rowSizeValueEl = document.getElementById('widget-row-size-value');
+  const scaleSlider = document.getElementById('widget-scale-slider');
+  const scaleValueEl = document.getElementById('widget-scale-value');
   const listWidthSlider = document.getElementById('widget-list-width-slider');
   const listWidthValueEl = document.getElementById('widget-list-width-value');
   const showRowIconCheckbox = document.getElementById('widget-show-row-icon-checkbox');
@@ -3409,6 +3411,11 @@ function initWidgetsPanel() {
     iconsPerRowValueEl.textContent = String(widget.iconsPerRow);
     rowSizeSlider.value = widget.rowSize;
     rowSizeValueEl.textContent = `${widget.rowSize}px`;
+    if (scaleSlider) {
+      const pct = Math.round((typeof widget.scale === 'number' ? widget.scale : 1) * 100);
+      scaleSlider.value = String(pct);
+      scaleValueEl.textContent = `${pct}%`;
+    }
     listWidthSlider.value = widget.listWidth;
     listWidthValueEl.textContent = `${widget.listWidth}px`;
     showRowIconCheckbox.checked = !!widget.showRowIcon;
@@ -5149,6 +5156,13 @@ function initWidgetsPanel() {
     rowSizeValueEl.textContent = `${size}px`;
     window.eqTracker.setWidgetRowSize(selectedId, size);
   });
+  if (scaleSlider) {
+    scaleSlider.addEventListener('input', () => {
+      const pct = Number(scaleSlider.value);
+      scaleValueEl.textContent = `${pct}%`;
+      window.eqTracker.setWidgetScale(selectedId, pct / 100);
+    });
+  }
   listWidthSlider.addEventListener('input', () => {
     const width = Number(listWidthSlider.value);
     listWidthValueEl.textContent = `${width}px`;

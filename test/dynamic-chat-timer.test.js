@@ -161,7 +161,9 @@ test('dynamicChatTimer: default false, in SHAREABLE_FIELDS, coerced by normalize
   assert.equal(w.dynamicChatTimer, false);
   const updated = store.setDynamicChatTimer(w.id, 'yes');
   assert.equal(updated.dynamicChatTimer, true);
-  assert.match(read('src', 'main', 'widgetStore.js'), /'reverseDetection',\s*\n\s*'dynamicChatTimer',/);
+  // SHAREABLE_FIELDS is APPEND ONLY - dynamicChatTimer sits at the end, not mid-list.
+  assert.match(read('src', 'main', 'widgetStore.js'), /'dynamicChatTimer',\n\s*'scale',\n\];/);
+  assert.doesNotMatch(read('src', 'main', 'widgetStore.js'), /'reverseDetection',\n\s*'dynamicChatTimer',/);
   assert.match(read('src', 'main', 'widgetStore.js'), /dynamicChatTimer: !!widget\.dynamicChatTimer,/);
 });
 

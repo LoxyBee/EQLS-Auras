@@ -60,7 +60,20 @@ let currentConfig = {
   timerTextColor: '#f0f1f5',
   labelTextColor: '#f0f1f5',
   iconMarginPx: 5,
+  scale: 1,
 };
+
+// The whole-aura size multiplier (widgetStore's clampScale). Applied on top of icon size / row
+// size / text size wherever a pixel size is read - so one slider (or dragging the unlocked box)
+// grows or shrinks everything together. `scaled(0)` stays 0.
+function auraScale() {
+  const n = Number(currentConfig.scale);
+  return Number.isFinite(n) && n > 0 ? Math.max(0.3, Math.min(4, n)) : 1;
+}
+function scaled(px) {
+  const n = Number(px) || 0;
+  return Math.round(n * auraScale());
+}
 
 // Short synthesized tones instead of bundled audio files - no assets to
 // ship/license, and it's enough to be a distinct audible cue for land vs
@@ -583,7 +596,7 @@ function textFor(buff) {
 }
 
 function applyTextAuraStyle(el) {
-  el.style.fontSize = `${currentConfig.textAuraSize || 32}px`;
+  el.style.fontSize = `${scaled(currentConfig.textAuraSize || 32)}px`;
   el.style.color = currentConfig.labelTextColor || '#f0f1f5';
 }
 
@@ -875,7 +888,7 @@ function applyTilePositionedTextStyle(el, low, anchor, textSize, wrap, color) {
     // characters, nowhere near the icon's actual edge. An explicit width
     // removes that ambiguity - the box always fills exactly this much
     // space and wraps within it, not before it.
-    const iconSize = currentConfig.iconSize || 46;
+    const iconSize = scaled(currentConfig.iconSize || 46);
     el.style.whiteSpace = 'normal';
     el.style.wordBreak = 'break-word';
     el.style.width = `${Math.max(0, iconSize - 4)}px`;
@@ -1072,13 +1085,13 @@ function updateRef(ref, buff, isIcon) {
   if (isIcon) {
     updateTileIcon(ref, buff);
     updateTileShade(ref, buff);
-    applyTilePositionedTextStyle(ref.timeEl, low, currentConfig.contentAnchor || 'bottom-center', currentConfig.textSize || 10, false, rampAmber || currentConfig.timerTextColor);
+    applyTilePositionedTextStyle(ref.timeEl, low, currentConfig.contentAnchor || 'bottom-center', scaled(currentConfig.textSize || 10), false, rampAmber || currentConfig.timerTextColor);
     if (ref.labelEl) {
       applyTilePositionedTextStyle(
         ref.labelEl,
         low,
         currentConfig.iconLabelAnchor || 'top-center',
-        currentConfig.iconLabelSize || 11,
+        scaled(currentConfig.iconLabelSize || 11),
         !!currentConfig.wrapText,
         currentConfig.labelTextColor
       );
@@ -2019,9 +2032,9 @@ function render(buffs) {
     if (!isIcon && !isText) {
       if (horizontalGroups) {
         contentWrap.style.width = 'max-content';
-        listEl.style.setProperty('--ally-col-width', `${currentConfig.listWidth || 220}px`);
+        listEl.style.setProperty('--ally-col-width', `${scaled(currentConfig.listWidth || 220)}px`);
       } else {
-        contentWrap.style.width = `${currentConfig.listWidth || 220}px`;
+        contentWrap.style.width = `${scaled(currentConfig.listWidth || 220)}px`;
         listEl.style.removeProperty('--ally-col-width');
       }
     }
@@ -2039,7 +2052,7 @@ function render(buffs) {
         // Heading text tracks the label colour setting so a grouped aura
         // stays visually consistent with its own tiles.
         heading.style.color = currentConfig.labelTextColor || '#f0f1f5';
-        heading.style.fontSize = `${Math.max(9, (currentConfig.textSize || 13) - 1)}px`;
+        heading.style.fontSize = `${Math.max(9, scaled(currentConfig.textSize || 13) - 1)}px`;
         section.appendChild(heading);
 
         const body = document.createElement('div');
@@ -2288,11 +2301,11 @@ function applyConfig(config) {
   // says which is which. Set from applyConfig rather than once at boot because a rename arrives
   // as a config change, and the box would otherwise show the old name until the next restart.
   dragNameEl.textContent = config.name || '';
-  document.documentElement.style.setProperty('--text-size', `${config.textSize || 13}px`);
-  document.documentElement.style.setProperty('--icon-size', `${config.iconSize || 46}px`);
+  document.documentElement.style.setProperty('--text-size', `${scaled(config.textSize || 13)}px`);
+  document.documentElement.style.setProperty('--icon-size', `${scaled(config.iconSize || 46)}px`);
   document.documentElement.style.setProperty('--timer-text-color', config.timerTextColor || '#f0f1f5');
-  document.documentElement.style.setProperty('--icon-gap', `${config.iconMarginPx ?? 5}px`);
-  document.documentElement.style.setProperty('--row-size', `${config.rowSize || 28}px`);
+  document.documentElement.style.setProperty('--icon-gap', `${scaled(config.iconMarginPx ?? 5)}px`);
+  document.documentElement.style.setProperty('--row-size', `${scaled(config.rowSize || 28)}px`);
   // Note 37 follow-up - the coloured edge's own width, previously a fixed 1px baked into .cat's
   // CSS. Read here rather than left as a bare CSS literal so Size & Display's slider actually
   // does something; the toggle that decides whether the edge shows at ALL is still the separate
@@ -2340,7 +2353,7 @@ function applyConfig(config) {
     // explicit pixel value removes the ambiguity entirely.
     listEl.style.alignItems = ''; // cleared in case a text-feed left it set (see drawTextFeed)
     const perRow = config.iconsPerRow || 4;
-    const iconSize = config.iconSize || 46;
+    const iconSize = scaled(config.iconSize || 46);
     // +8 = .buff-list's own 4px horizontal padding x2 - box-sizing:border-box
     // means max-width includes padding, so without adding it back the
     // content area (where icons actually lay out) ends up 8px too narrow
@@ -2425,7 +2438,7 @@ function applyConfig(config) {
     // icon grid happened to measure instead of the real "List width"
     // setting.
     listEl.style.width = '';
-    contentWrap.style.width = `${config.listWidth || 220}px`;
+    contentWrap.style.width = `${scaled(config.listWidth || 220)}px`;
     dragOverlayEl.style.position = '';
     dragOverlayEl.style.inset = '';
     dragOverlayEl.style.top = '';

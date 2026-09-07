@@ -11,6 +11,7 @@ const {
   clampSoundCooldownSec,
   clampLockoutAutoHideSec,
   cleanLockoutTriggerWord,
+  clampScale,
 } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
@@ -53,6 +54,10 @@ const originXByWidget = new Map(); // id -> number
 // bug. Applied once, re-centred on the frozen box, when the aura is locked again. { contentWidth,
 // contentHeight, originX }.
 const pendingFitByWidget = new Map(); // id -> { contentWidth, contentHeight, originX }
+// The window size an unlocked aura was last seen at, so the next drag of its edge can be read as
+// a relative size change and turned into a `scale` bump (see the 'resized' handler). Seeded on
+// unlock, cleared on re-lock.
+const resizeRefByWidget = new Map(); // id -> { w, h }
 // Move HUD (moveHudWindow.js). Snap-to-grid state is shared with action bars via positionSnap.js
 // and only ever applies to the one thing being positioned. movedGuard suppresses the extra 'moved'
 // our own snap setPosition fires.
@@ -243,6 +248,22 @@ function createWidgetWindow(config) {
 
   win.on('resized', () => {
     const [width, height] = win.getSize();
+    // While unlocked, dragging the window's edge is the "scale the whole aura" gesture (owner,
+    // 6 Sep) - not a way to set a literal window size, which fitToContent overrides on re-lock
+    // anyway. Read it as a relative change from the last seen size and bump `scale` by that
+    // factor; the box then springs back to fit the resized content when you re-lock.
+    if (isUnlocked(config.id)) {
+      const ref = resizeRefByWidget.get(config.id) || { w: width, h: height };
+      const factor = ref.h > 0 ? height / ref.h : 1;
+      if (Number.isFinite(factor) && factor > 0.05 && Math.abs(factor - 1) > 0.015) {
+        const cur = widgetStore.getById(config.id);
+        const next = clampScale((cur && cur.scale ? cur.scale : 1) * factor);
+        widgetStore.update(config.id, { scale: next });
+        pushConfigChanged(config.id);
+      }
+      resizeRefByWidget.set(config.id, { w: width, h: height });
+      return;
+    }
     widgetStore.saveSize(config.id, { width, height });
   });
 
@@ -250,6 +271,7 @@ function createWidgetWindow(config) {
     windows.delete(config.id);
     runtimeLock.delete(config.id);
     originXByWidget.delete(config.id);
+    resizeRefByWidget.delete(config.id);
   });
 
   windows.set(config.id, win);
@@ -300,6 +322,14 @@ function setReverseDetection(id, enabled) {
 
 function setDynamicChatTimer(id, enabled) {
   const config = widgetStore.setDynamicChatTimer(id, enabled);
+  pushConfigChanged(id);
+  return config;
+}
+
+// The whole-aura size multiplier - a slider in settings, or the drag-to-scale gesture on the
+// unlocked box (see the 'resized' handler). Re-fits the box on the next render.
+function setScale(id, scale) {
+  const config = widgetStore.update(id, { scale: clampScale(scale) });
   pushConfigChanged(id);
   return config;
 }
@@ -814,8 +844,19 @@ function setLocked(id, locked, { force = true } = {}) {
   // Re-locking: apply whatever size the content settled on while it was frozen, re-centred on the
   // box the user just positioned (see applyPendingFit). Unlocking: nothing to do - fitToContent
   // starts holding sizes back from here on.
-  if (locked) applyPendingFit(id);
-  else pendingFitByWidget.delete(id);
+  if (locked) {
+    applyPendingFit(id);
+    resizeRefByWidget.delete(id);
+  } else {
+    pendingFitByWidget.delete(id);
+    // Seed the drag-to-scale reference with the box's current size, so the first edge-drag
+    // measures against something real.
+    const w2 = windows.get(id);
+    if (w2 && !w2.isDestroyed()) {
+      const [w, h] = w2.getSize();
+      resizeRefByWidget.set(id, { w, h });
+    }
+  }
   return locked;
 }
 
@@ -1723,6 +1764,7 @@ module.exports = {
   setAndWindowSec,
   setReverseDetection,
   setDynamicChatTimer,
+  setScale,
   updateCustomTimer,
   removeCustomTimer,
   excludeBuff,

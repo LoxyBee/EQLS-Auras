@@ -2900,6 +2900,7 @@ ipcMain.handle('widget:setTriggerCombineMode', (_event, { id, mode }) => widgetM
 ipcMain.handle('widget:setAndWindowSec', (_event, { id, seconds }) => widgetManager.setAndWindowSec(id, seconds));
 ipcMain.handle('widget:setReverseDetection', (_event, { id, enabled }) => widgetManager.setReverseDetection(id, enabled));
 ipcMain.handle('widget:setDynamicChatTimer', (_event, { id, enabled }) => widgetManager.setDynamicChatTimer(id, enabled));
+ipcMain.handle('widget:setScale', (_event, { id, scale }) => widgetManager.setScale(id, scale));
 ipcMain.handle(
   'widget:updateCustomTimer',
   (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) =>

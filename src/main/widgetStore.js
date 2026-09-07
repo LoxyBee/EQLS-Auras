@@ -162,6 +162,14 @@ function clampHealColor(value) {
   return clampHexColor(value, DEFAULT_HEAL_COLOR);
 }
 
+// One multiplier on top of icon size / row size / text size, so the whole aura grows or shrinks in
+// one motion (a slider, or dragging the unlocked box's edge). 1 = the individual sliders as set.
+// 0.3..4 keeps it usable at both ends; junk -> 1.
+function clampScale(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.max(0.3, Math.min(4, n)) : 1;
+}
+
 // 'both' track mode: seconds between flipping a row's number from damage to healing and back, so
 // each metric gets the full row width (rate, share, everything). 0 = show both side by side (no
 // cycle). 1..20; a non-number (an old aura, a share code) -> the default 10.
@@ -457,6 +465,8 @@ function defaultCustomWidget(name) {
     timerFormat: 'minutes-seconds',
     textSize: DEFAULT_TEXT_SIZE,
     iconSize: DEFAULT_ICON_SIZE,
+    // Whole-aura size multiplier - see clampScale.
+    scale: 1,
     contentAnchor: DEFAULT_ANCHOR,
     // 1, not DEFAULT_ICONS_PER_ROW (4, used by the two "show everything"
     // builtins) - a custom buff widget or custom timer widget almost always
@@ -825,7 +835,6 @@ const SHAREABLE_FIELDS = [
   'triggerCombineMode',
   'andWindowSec',
   'reverseDetection',
-  'dynamicChatTimer',
   'sortOrder',
   'lowTimeThresholdSec',
   'landingGlowEnabled',
@@ -888,6 +897,12 @@ const SHAREABLE_FIELDS = [
   'textJustify',
   'allyGroupBy',
   'sortDirection',
+  // dynamicChatTimer was briefly inserted mid-list (after reverseDetection) in a Sep 6 commit,
+  // which shifted the wire index of every field below it. Moved to the true end here - APPEND ONLY
+  // means APPEND. A v3 code shared in the few hours that mistake was live decodes a handful of
+  // fields wrong; nothing can be done about those, and the window was tiny.
+  'dynamicChatTimer',
+  'scale',
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -985,6 +1000,7 @@ function normalizeWidget(widget) {
       Math.max(8, typeof widget.textSize === 'number' ? widget.textSize : LEGACY_TEXT_SIZE_PX[widget.textSize] || DEFAULT_TEXT_SIZE)
     ),
     iconSize: typeof widget.iconSize === 'number' ? widget.iconSize : DEFAULT_ICON_SIZE,
+    scale: clampScale(widget.scale),
     contentAnchor: widget.contentAnchor || DEFAULT_ANCHOR,
     iconsPerRow: typeof widget.iconsPerRow === 'number' ? widget.iconsPerRow : DEFAULT_ICONS_PER_ROW,
     rowSize: typeof widget.rowSize === 'number' ? widget.rowSize : DEFAULT_ROW_SIZE,
@@ -2449,6 +2465,7 @@ module.exports = {
   clampDamageBothMode,
   clampDamageColor,
   clampHealColor,
+  clampScale,
   clampLockoutAutoHideSec,
   cleanLockoutTriggerWord,
   DEFAULT_LOCKOUT_AUTO_HIDE_SEC,
