@@ -218,6 +218,20 @@ class DamageEngine extends EventEmitter {
     return false;
   }
 
+  // petTracker's verdict on an article-prefixed name ("a spite golem", "an ice bones"): a pet you
+  // own, an ally's pet, or a wild charm with a real "has been charmed." line behind it. Anything
+  // else that merely LOOKS like a mob and has drifted onto the friend side is charm-war bootstrap
+  // pollution (gotcha #40), not a pet - used to keep such a name off the heal meter.
+  _petVouchesFor(key) {
+    const pets = (this.petsFn && this.petsFn()) || null;
+    if (!pets) return false;
+    return !!(
+      (pets.ownPetKeyByName && pets.ownPetKeyByName.has(key)) ||
+      (pets.unknownPetNames && pets.unknownPetNames.has(key)) ||
+      (pets.allyPetLeader && pets.allyPetLeader.has(key))
+    );
+  }
+
   // The friend counterpart. A confirmed group member (groupRoster - live join lines + the startup
   // log-tail scan) is a friend for classification, full stop, no bootstrap needed. This is what
   // stops a groupmate dropping off the CURRENT fight after a restart: their hits on a mob you never
@@ -359,6 +373,20 @@ class DamageEngine extends EventEmitter {
     // Name-collision guard, same reasoning as _classify's own.
     if (this.enemies.has(h) && this.friends.has(h)) return 'drop';
     if (this.enemies.has(t) && this.friends.has(t)) return 'drop';
+
+    // A heal touching an article-prefixed mob name ("a ghoul healed itself", "an ice bones healed
+    // a greater mummy") is charm-war crossfire - the same poison a damage-shield line is to
+    // _classify (gotcha #40). In a zone full of necro pets and charmed mobs, hostiles self-heal
+    // and heal each other constantly, and if one of those names has drifted onto the friend side
+    // through the bootstrap the heal gets credited to your group's "Charmed pets" row (reported
+    // live 7 Sep, Befallen: a phantom "Charmed pets" healer). Unless petTracker actually vouches
+    // for the name as a pet, a heal like this never teaches a side and is never credited.
+    if (
+      (isArticlePrefixedMobName(hit.healer) && !this._petVouchesFor(h)) ||
+      (isArticlePrefixedMobName(hit.target) && !this._petVouchesFor(t))
+    ) {
+      return 'drop';
+    }
 
     const healerFriend = this._isFriend(hit.healer);
     const healerEnemy = this._isEnemy(hit.healer);
@@ -791,11 +819,11 @@ class DamageEngine extends EventEmitter {
     }
     if (mode === 'healing') {
       if (inFight && this.totalHealing > 0) {
-        const t = this._tilesFrom(this.byHealer, this.healFightSeconds(now), false, scope, pets, this.rawHealFightByName);
+        const t = this._tilesFrom(this.byHealer, this.healFightSeconds(now), false, scope, pets, this.rawHealFightByName, 'heal');
         if (t.length) return t;
       }
       if (this.sinceZoneHealStartedAt !== null && this.sinceZoneHealTotal > 0) {
-        return this._tilesFrom(this.sinceZoneByHealer, this.sinceZoneHealSeconds(), true, scope, pets, this.rawHealZoneByName);
+        return this._tilesFrom(this.sinceZoneByHealer, this.sinceZoneHealSeconds(), true, scope, pets, this.rawHealZoneByName, 'heal');
       }
       return [];
     }
@@ -826,8 +854,8 @@ class DamageEngine extends EventEmitter {
    * gradient inside a single bar rather than two separate elements.
    */
   _bothTilesFrom(byAttacker, rawDmgByName, dmgSecs, byHealer, rawHealByName, healSecs, sinceZone, scope, pets) {
-    const dmgAgg = this._aggregate(byAttacker, scope, pets, rawDmgByName);
-    const healAgg = this._aggregate(byHealer, scope, pets, rawHealByName);
+    const dmgAgg = this._aggregate(byAttacker, scope, pets, rawDmgByName, 'damage');
+    const healAgg = this._aggregate(byHealer, scope, pets, rawHealByName, 'heal');
     // Both passes are given the SAME requested scope, so a 'group' fallback (empty roster) happens
     // identically on both sides - agg.scope/fellBack from either is representative of both.
 
@@ -948,7 +976,7 @@ class DamageEngine extends EventEmitter {
    *   `scope` is the EFFECTIVE scope actually applied (may differ from the requested one - see
    *   `fellBack` below).
    */
-  _aggregate(byAttacker, scope = 'all', pets = null, rawByName = null) {
+  _aggregate(byAttacker, scope = 'all', pets = null, rawByName = null, metric = 'damage') {
     // Reconcile the classified tally with the raw one (see the rawFightByName / rawZoneByName field
     // comment). For a name that is a CONFIRMED friend right now - the player, someone in the group
     // roster, or a name the bootstrap already added to `friends` - its outgoing damage is fully in
@@ -963,6 +991,10 @@ class DamageEngine extends EventEmitter {
         const confirmedFriend =
           key === 'you' || key === 'yourself' || this.friends.has(key) || this._isGroupMember(key);
         if (!confirmedFriend) continue;
+        // On the heal side, a name shaped like a mob that petTracker can't vouch for is never
+        // topped up from the raw tally - it only reached `friends` through charm-war bootstrap
+        // pollution, and its self-heals are not your group's healing (gotcha #40).
+        if (metric === 'heal' && isArticlePrefixedMobName(rawName) && !this._petVouchesFor(key)) continue;
         const cur = effective.get(rawName) || { damage: 0, hits: 0 };
         if (r.damage > cur.damage) effective.set(rawName, { damage: r.damage, hits: Math.max(r.hits, cur.hits) });
       }
@@ -1034,7 +1066,11 @@ class DamageEngine extends EventEmitter {
       // monster name sit next to the players. Safe even with an empty group roster - it can never
       // be the "outsider vs groupmate" ambiguity the admittedList.length===0 fallback exists for.
       if (isArticlePrefixedMobName(rawName)) {
-        if (scope !== 'mine') bump('Charmed pets', r, { unknownPets: true });
+        // Damage: a wild charm with no "has been charmed." line still fought on your side - show
+        // its contribution in the one combined row (the fallback gotcha #40 describes). Healing:
+        // there is nothing real to show - an unvouched mob "healing" is charm-war crossfire, not
+        // your group - so it is dropped rather than inflating a phantom "Charmed pets" heal row.
+        if (metric !== 'heal' && scope !== 'mine') bump('Charmed pets', r, { unknownPets: true });
         continue;
       }
 
@@ -1065,8 +1101,8 @@ class DamageEngine extends EventEmitter {
 
   // Single-metric tiles (damage-only or healing-only), built from one _aggregate() pass. See
   // _aggregate's own comment for the collapsing rules and the scope parameter.
-  _tilesFrom(byAttacker, secs, sinceZone, scope = 'all', pets = null, rawByName = null) {
-    const agg1 = this._aggregate(byAttacker, scope, pets, rawByName);
+  _tilesFrom(byAttacker, secs, sinceZone, scope = 'all', pets = null, rawByName = null, metric = 'damage') {
+    const agg1 = this._aggregate(byAttacker, scope, pets, rawByName, metric);
     const agg = agg1.agg;
     scope = agg1.scope;
     const fellBack = agg1.fellBack;
