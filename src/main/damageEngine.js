@@ -1067,10 +1067,15 @@ class DamageEngine extends EventEmitter {
       // be the "outsider vs groupmate" ambiguity the admittedList.length===0 fallback exists for.
       if (isArticlePrefixedMobName(rawName)) {
         // Damage: a wild charm with no "has been charmed." line still fought on your side - show
-        // its contribution in the one combined row (the fallback gotcha #40 describes). Healing:
-        // there is nothing real to show - an unvouched mob "healing" is charm-war crossfire, not
-        // your group - so it is dropped rather than inflating a phantom "Charmed pets" heal row.
-        if (metric !== 'heal' && scope !== 'mine') bump('Charmed pets', r, { unknownPets: true });
+        // its contribution in the one combined row (the fallback gotcha #40 describes) - BUT only
+        // when there is some charm activity this session to justify it (a tracked pet, or a charm
+        // cast/landing in the last STALE_MS). In a charm-war zone the friend/enemy bootstrap leaks
+        // hostile mobs onto the friend side; with zero charm activity anywhere, an article-prefixed
+        // "friendly attacker" is that leak, not a pet, and gets dropped rather than inventing a
+        // "Charmed pets" row (reported live 7 Sep, Befallen, no charms). `!pets` = no petTracker
+        // wired (tests) -> keep the old unconditional fold. Healing: nothing real to show either way.
+        const charmContext = !pets || pets.charmSeen;
+        if (metric !== 'heal' && scope !== 'mine' && charmContext) bump('Charmed pets', r, { unknownPets: true });
         continue;
       }
 

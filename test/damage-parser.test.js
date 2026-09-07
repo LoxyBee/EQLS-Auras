@@ -617,6 +617,39 @@ test('a damage-shield line does not add anyone to the friend or enemy sets', () 
   assert.ok(!e.enemies.has('avenrae'), 'the groupmate is not flipped to enemy by a shield hit');
 });
 
+// Reported live 7 Sep, Befallen (no charms all session): a "Charmed pets" damage row (78, 2%)
+// with nothing charmed. In a charm-war zone the friend/enemy bootstrap leaks a hostile mob onto
+// the friend side; its outgoing damage was folding into a "Charmed pets" row that shouldn't exist.
+// The fold now requires petTracker to report SOME charm activity this session.
+test('an article-prefixed friendly attacker is NOT folded into Charmed pets when nothing has been charmed', () => {
+  const e = new DamageEngine();
+  e.setPetsFn(() => ({
+    ownPetKeyByName: new Map(),
+    unknownPetNames: new Set(),
+    allyPetLeader: new Map(),
+    charmSeen: false,
+  }));
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000);
+  e.handleLine(`${T}a Teir\`Dal rogue backstabs a zol ghoul knight for 400 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'all');
+  assert.equal(rows.find((r) => r.name === 'Charmed pets'), undefined, 'no phantom Charmed pets row');
+  assert.equal(rows.find((r) => /Teir/i.test(r.name)), undefined, 'and the leaked mob is not its own row');
+});
+
+test('...but it IS folded when petTracker reports a charm this session', () => {
+  const e = new DamageEngine();
+  e.setPetsFn(() => ({
+    ownPetKeyByName: new Map(),
+    unknownPetNames: new Set(),
+    allyPetLeader: new Map(),
+    charmSeen: true, // an enchanter in the group is charm-farming
+  }));
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000);
+  e.handleLine(`${T}a Teir\`Dal rogue backstabs a zol ghoul knight for 400 points of damage.`, 1000);
+  const charmed = e.getActive(1000, 'all').find((r) => r.name === 'Charmed pets');
+  assert.ok(charmed && /^400/.test(charmed.valueText), 'a real wild charm still folds in');
+});
+
 test("scope 'mine': an article-prefixed friendly attacker is dropped, not shown", () => {
   const e = new DamageEngine();
   e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000);
