@@ -807,8 +807,15 @@ function defaultBardSongsWidget(name) {
     // default (owner's call, 31 Aug).
     showDebuffSongs: false,
     splitSongsByType: false,
+    // Whose songs this aura shows. 'group' (default) - you + confirmed groupmates only, so a
+    // random bard in a crowded public zone whose AE songs clip you doesn't fill the aura with
+    // tiles (reported live 7 Sep). 'all' - every song on you, whoever cast it, including ones the
+    // app can't attribute.
+    bardSongScope: 'group',
   };
 }
+
+const BARD_SONG_SCOPES = ['group', 'all'];
 
 // Fields that make sense to share between users via an export/import code -
 // deliberately everything about how a widget looks and what it filters,
@@ -904,6 +911,7 @@ const SHAREABLE_FIELDS = [
   // fields wrong; nothing can be done about those, and the window was tiny.
   'dynamicChatTimer',
   'scale',
+  'bardSongScope',
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -1107,6 +1115,10 @@ function normalizeWidget(widget) {
     hideBardSongs: !!widget.hideBardSongs,
     showDebuffSongs: !!widget.showDebuffSongs,
     splitSongsByType: !!widget.splitSongsByType,
+    // Absent -> 'group' (see defaultBardSongsWidget): an existing Bard Songs aura starts hiding
+    // pub-zone randoms, which is what the aura was always meant to show. Flip to 'all' to keep
+    // seeing every song.
+    bardSongScope: BARD_SONG_SCOPES.includes(widget.bardSongScope) ? widget.bardSongScope : 'group',
     timerTextColor: typeof widget.timerTextColor === 'string' ? widget.timerTextColor : '#f0f1f5',
     groupAllyBuffs: !!widget.groupAllyBuffs,
     allyGroupBy: widget.allyGroupBy === 'buff' ? 'buff' : 'ally',

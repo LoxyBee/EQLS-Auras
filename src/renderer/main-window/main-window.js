@@ -1922,6 +1922,7 @@ function initWidgetsPanel() {
   const bardSongSettingsEl = document.getElementById('widget-bard-song-settings');
   const showDebuffSongsCheckbox = document.getElementById('widget-show-debuff-songs-checkbox');
   const splitSongsCheckbox = document.getElementById('widget-split-songs-checkbox');
+  const bardSongScopeRadios = document.querySelectorAll('input[name="widget-bard-song-scope"]');
   const splitSongsRowEl = document.getElementById('widget-split-songs-row');
   const allyDirectionRadios = document.querySelectorAll('input[name="widget-ally-direction"]');
   const allyDirectionRow = document.getElementById('widget-ally-direction-row');
@@ -2182,7 +2183,9 @@ function initWidgetsPanel() {
     // every row, which is exactly why "Active on this aura" showed nothing on this premade.
     if (widget.buffSource === 'bardSongs') {
       // #29 - debuff songs are opt-in on this aura, same as overlay.js's visibleBuffs.
-      return source.filter((b) => b.showOnOverlay !== false && (widget.showDebuffSongs || !b.isDebuff));
+      const scopeOk = (b) =>
+        widget.bardSongScope === 'all' || !b.casterScope || b.casterScope === 'self' || b.casterScope === 'group';
+      return source.filter((b) => b.showOnOverlay !== false && (widget.showDebuffSongs || !b.isDebuff) && scopeOk(b));
     }
     if (widget.buffFilterMode === 'all') {
       let filtered = source.filter((b) => b.showOnOverlay !== false);
@@ -3556,6 +3559,7 @@ function initWidgetsPanel() {
     groupAllyCheckbox.checked = !!widget.groupAllyBuffs;
     showDebuffSongsCheckbox.checked = !!widget.showDebuffSongs;
     splitSongsCheckbox.checked = !!widget.splitSongsByType;
+    bardSongScopeRadios.forEach((r) => (r.checked = r.value === (widget.bardSongScope === 'all' ? 'all' : 'group')));
     splitSongsRowEl.style.display = widget.showDebuffSongs ? '' : 'none';
     allyDirectionRadios.forEach((r) => (r.checked = r.value === (widget.groupAllyDirection || 'vertical')));
     allyGroupByRadios.forEach((r) => (r.checked = r.value === (widget.allyGroupBy === 'buff' ? 'buff' : 'ally')));
@@ -6431,6 +6435,11 @@ function initWidgetsPanel() {
   splitSongsCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetSplitSongsByType(selectedId, splitSongsCheckbox.checked).then(updateLocalWidgetCache);
   });
+  bardSongScopeRadios.forEach((r) =>
+    r.addEventListener('change', () => {
+      if (r.checked) window.eqTracker.setWidgetBardSongScope(selectedId, r.value).then(updateLocalWidgetCache);
+    })
+  );
 
   timerTextColorPicker.addEventListener('input', () => {
     window.eqTracker.setWidgetTimerTextColor(selectedId, timerTextColorPicker.value);

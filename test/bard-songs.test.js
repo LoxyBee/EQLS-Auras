@@ -636,7 +636,7 @@ test('#27 - filterActiveBuffsForWidget does not strip a bard-songs aura with hid
     fn.indexOf("widget.buffSource === 'bardSongs'") < fn.indexOf('if (widget.hideBardSongs)'),
     'the hideBardSongs filter would run first and strip every row'
   );
-  assert.match(fn, /buffSource === 'bardSongs'\) \{[\s\S]{0,220}return source\.filter/);
+  assert.match(fn, /buffSource === 'bardSongs'\) \{[\s\S]{0,420}return source\.filter/);
 });
 
 // One maintained debuff song on N mobs is one song on the aura - overlay.js's collapseDebuffSongs.
@@ -712,6 +712,71 @@ test('a caster already recorded is purged from recentOtherCasts once they turn h
   assert.equal(engine._recentOtherCaster(song), 'Krudd', 'recorded while allegiance unknown');
   engine.handleLine(`${TS}Krudd casts a spell on you, but you resist.`);
   assert.equal(engine._recentOtherCaster(song), null, 'purged the moment they cast at you');
+});
+
+test('a bard singing a song that is already pulsing as Unknown does not steal its attribution', () => {
+  // Reported live 7 Sep, open Befallen (a crowded public zone): "Anthem de Arms" was already
+  // pulsing on the player (from an unseen source) when a random ungrouped bard "Bulvye" sang it
+  // nearby. The next pulse got re-attributed from Unknown to "Bulvye". An other-cast names a song
+  // that is STARTING - one already running is coincidence.
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  engine.setTrackOthersEnabled(true);
+  // The song is already running with no known caster (missed cast line / running before launch).
+  engine.handleLine(`${TS}${SONG} takes hold.`);
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'Unknown');
+  // A pub bard sings it, then it pulses again.
+  engine.handleLine(`${TS}Bulvye begins singing ${SONG}.`);
+  engine.handleLine(`${TS}${SONG} takes hold.`);
+  const songs = engine.getActiveBardSongs();
+  assert.equal(songs.length, 1, 'still one entry, not a second "Bulvye" one');
+  assert.equal(songs[0].allyName, 'Unknown', 'Bulvye did not get to claim a song already pulsing');
+});
+
+test('but a bard singing a song that was NOT already running is still attributed to them', () => {
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  engine.setTrackOthersEnabled(true);
+  engine.handleLine(`${TS}Baxa begins singing ${SONG}.`);
+  engine.handleLine(`${TS}${SONG} takes hold.`);
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'Baxa', 'a fresh song still gets its singer');
+});
+
+// casterScope - a Bard Songs aura set to "my group only" reads this to hide pub-zone bards.
+test('getActiveBardSongs tags each song with a casterScope', () => {
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  engine.setTrackOthersEnabled(true);
+  engine.setGroupRosterFn(() => ['nocturis']);
+
+  engine.handleLine(`${TS}You begin singing ${SONG}.`);
+  engine.handleLine(`${TS}${SONG} takes hold.`);
+  assert.equal(engine.getActiveBardSongs().find((s) => s.name === SONG).casterScope, 'self');
+
+  const g = 'Group Test Ballad';
+  makeSong(buffStore, g);
+  engine.handleLine(`${TS}Nocturis begins singing ${g}.`);
+  engine.handleLine(`${TS}${g} takes hold.`);
+  assert.equal(engine.getActiveBardSongs().find((s) => s.name === g).casterScope, 'group');
+
+  const o = 'Outsider Test Hymn';
+  makeSong(buffStore, o);
+  engine.handleLine(`${TS}Randobard begins singing ${o}.`);
+  engine.handleLine(`${TS}${o} takes hold.`);
+  assert.equal(engine.getActiveBardSongs().find((s) => s.name === o).casterScope, 'other', 'a non-groupmate');
+
+  const u = 'Nameless Test Chant';
+  makeSong(buffStore, u);
+  engine.handleLine(`${TS}${u} takes hold.`); // no cast line at all
+  assert.equal(engine.getActiveBardSongs().find((s) => s.name === u).casterScope, 'unknown');
+});
+
+test('the overlay filters a Bard Songs aura by bardSongScope', () => {
+  const src = readSrc('src', 'renderer', 'overlay', 'overlay.js');
+  // 'group' (default) keeps self + group; 'all' keeps everything; an untagged song is kept.
+  assert.match(src, /bardSongScope === 'all'\s*\|\|\s*\n?\s*!b\.casterScope\s*\|\|\s*\n?\s*b\.casterScope === 'self'\s*\|\|\s*\n?\s*b\.casterScope === 'group'/);
+  assert.match(readSrc('src', 'main', 'widgetStore.js'), /bardSongScope: 'group'/);
+  assert.match(readSrc('src', 'main', 'widgetStore.js'), /const BARD_SONG_SCOPES = \['group', 'all'\]/);
 });
 
 test('restoreSnapshot downgrades a stale other-player bard-song attribution to Unknown', () => {

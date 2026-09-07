@@ -1413,6 +1413,12 @@ function setSplitSongsByType(id, value) {
   return config;
 }
 
+function setBardSongScope(id, value) {
+  const config = widgetStore.update(id, { bardSongScope: value === 'all' ? 'all' : 'group' });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setHideAllyNameOnTile(id, value) {
   const config = widgetStore.update(id, { hideAllyNameOnTile: value });
   pushConfigChanged(id);
@@ -1748,6 +1754,7 @@ module.exports = {
   setAllyGroupBy,
   setShowDebuffSongs,
   setSplitSongsByType,
+  setBardSongScope,
   setGroupAllyDirection,
   setHideAllyNameOnTile,
   setTimerTextColor,

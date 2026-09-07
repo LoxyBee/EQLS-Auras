@@ -399,6 +399,9 @@ damageEngine.setGroupFn(() => groupRoster.getAdmitted());
 // who never speaks stays invisible to the "group" damage scope (reported live: Avenrae, Nocturis).
 // Every group-target spell the player lands on someone proves that someone is in their group.
 buffEngine.setGroupmateSink((name) => groupRoster.noteGroupmate(name));
+// The reverse - buffEngine reads the roster to tag a bard song's caster as a groupmate or an
+// outsider, so a Bard Songs aura set to "my group only" can hide pub-zone randoms.
+buffEngine.setGroupRosterFn(() => groupRoster.getAdmitted());
 damageEngine.setPetsFn(() => petTracker.snapshot());
 petTracker.setOwnNameFn(() => spellbookService.getCharacterName());
 petTracker.setCharmSpellCheck((name) => {
@@ -2797,6 +2800,7 @@ ipcMain.handle('widget:setGroupAllyBuffs', (_event, { id, value }) => widgetMana
 ipcMain.handle('widget:setAllyGroupBy', (_event, { id, value }) => widgetManager.setAllyGroupBy(id, value));
 ipcMain.handle('widget:setShowDebuffSongs', (_event, { id, value }) => widgetManager.setShowDebuffSongs(id, value));
 ipcMain.handle('widget:setSplitSongsByType', (_event, { id, value }) => widgetManager.setSplitSongsByType(id, value));
+ipcMain.handle('widget:setBardSongScope', (_event, { id, value }) => widgetManager.setBardSongScope(id, value));
 ipcMain.handle('widget:setGroupAllyDirection', (_event, { id, value }) => widgetManager.setGroupAllyDirection(id, value));
 ipcMain.handle('widget:setHideAllyNameOnTile', (_event, { id, value }) => widgetManager.setHideAllyNameOnTile(id, value));
 ipcMain.handle('widget:setLabelTextColor', (_event, { id, value }) => widgetManager.setLabelTextColor(id, value));

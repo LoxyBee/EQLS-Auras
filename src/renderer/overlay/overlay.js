@@ -57,6 +57,7 @@ let currentConfig = {
   hideAllyNameOnTile: false,
   showDebuffSongs: false,
   splitSongsByType: false,
+  bardSongScope: 'group',
   timerTextColor: '#f0f1f5',
   labelTextColor: '#f0f1f5',
   iconMarginPx: 5,
@@ -1376,7 +1377,17 @@ function visibleBuffs(buffs, opts = {}) {
   // every single tile this aura has (every entry here has isBardSong true by construction).
   if (currentConfig.buffSource === 'bardSongs') {
     // #29 - debuff songs (on an enemy) ride the same feed but are opt-in.
-    const shown = buffs.filter((b) => b.showOnOverlay !== false && (currentConfig.showDebuffSongs || !b.isDebuff));
+    // bardSongScope 'group' (default) drops songs from outside your group - a pub-zone bard's AE
+    // songs clipping you, and ones the app can't attribute to anyone (reported live 7 Sep). 'all'
+    // keeps every song. A debuff song is the bard's own and its casterScope is always 'self'.
+    const scopeOk = (b) =>
+      currentConfig.bardSongScope === 'all' ||
+      !b.casterScope ||
+      b.casterScope === 'self' ||
+      b.casterScope === 'group';
+    const shown = buffs.filter(
+      (b) => b.showOnOverlay !== false && (currentConfig.showDebuffSongs || !b.isDebuff) && scopeOk(b)
+    );
     // One maintained debuff song on N mobs is one song - collapse it to a single tile.
     return collapseDebuffSongs(shown);
   }

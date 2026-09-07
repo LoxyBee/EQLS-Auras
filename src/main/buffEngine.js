@@ -505,6 +505,7 @@ class BuffEngine extends EventEmitter {
     // because it's genuine information worth having, but nothing depends on
     // it being complete.
     this.groupMembers = new Map();
+    this.groupRosterFn = () => []; // see setGroupRosterFn
     // Lowercased names seen aiming a spell AT the player ("X tries to cast a spell on you") - a
     // PvP-zone hostile, player-shaped name and all. Their bard songs never land on the player's
     // group, so they are kept out of recentOtherCasts (a nearby enemy bard singing a same-named
@@ -666,6 +667,25 @@ class BuffEngine extends EventEmitter {
   // additive, same as bardSongTagger.
   setGroupmateSink(fn) {
     this.groupmateSink = typeof fn === 'function' ? fn : null;
+  }
+
+  // fn() => array of lowercased names in the player's group (main.js wires this to the damage
+  // meter's roster, which also recovers from a startup scan and group chat - gotcha #43). Used
+  // only to tag a bard song's caster as a groupmate vs an outsider, so a Bard Songs aura set to
+  // "my group only" can hide pub-zone randoms. Default: knows no one.
+  setGroupRosterFn(fn) {
+    if (typeof fn === 'function') this.groupRosterFn = fn;
+  }
+
+  _isKnownGroupmate(name) {
+    const key = String(name || '').toLowerCase();
+    if (!key || key === 'you' || key === 'unknown') return false;
+    if (this.groupMembers && this.groupMembers.has(key)) return true;
+    try {
+      return (this.groupRosterFn() || []).some((n) => String(n).toLowerCase() === key);
+    } catch {
+      return false;
+    }
   }
 
   // main.js calls this on every zone change - it is buffEngine's single zone-change entry point.
@@ -2712,8 +2732,20 @@ class BuffEngine extends EventEmitter {
     // A groupmate's own third-person "X begins casting/singing Y" line, seen recently for this
     // exact spell. _recentOtherCaster already existed purely for debug-log text ("never for making
     // one" per its own comment) - this is the first place its answer is actually acted on.
+    //
+    // BUT: an other-cast names a song that is STARTING. If this exact song is already pulsing on
+    // the player as "Unknown" - it was running before this bard sang it - then a bard singing it
+    // now is coincidental (a crowded public zone: measured live 7 Sep, "Bulvye" then "Losi", pub
+    // bards nobody grouped with, kept stealing songs already on the player). Leave it Unknown.
+    // A song already attributed to a real name or "You" is untouched by this - two named casters
+    // maintaining the same song stay two entries, as before.
     const other = this._recentOtherCaster(name);
-    if (other) return other;
+    if (other) {
+      const alreadyPulsingUnknown = [...this.bardSongs.values()].some(
+        (s) => s.name.toLowerCase() === lower && !s.castBy && s.expiresAt > Date.now()
+      );
+      if (!alreadyPulsingUnknown) return other;
+    }
     // A song the memorize-window tier below has confirmed as the player's own at some earlier
     // point THIS memorization - checked before that tier itself so an already-confirmed song
     // doesn't need a fresh memorize event every single repeat. Requested directly: "if the app
@@ -3616,6 +3648,18 @@ class BuffEngine extends EventEmitter {
           // Emitted here, not left for the overlay to fall back on, so the existing ally-grouping
           // renderer needs zero changes to draw an actual, visible bucket for this.
           allyName: isDebuff ? b.onTarget : (b.castBy || 'Unknown'),
+          // For a Bard Songs aura set to "my group only": 'self' = you, 'group' = a confirmed
+          // groupmate, 'other' = a named caster who is not in your group (a pub-zone bard),
+          // 'unknown' = unattributed. Debuff songs (the bard's own tracked debuffs) are always 'self'.
+          casterScope: isDebuff
+            ? 'self'
+            : b.castBy === 'You'
+            ? 'self'
+            : !b.castBy
+            ? 'unknown'
+            : this._isKnownGroupmate(b.castBy)
+            ? 'group'
+            : 'other',
           isDebuff,
           durationSec: b.durationSec,
           remainingSec: b.infinite || b.instant ? null : Math.max(0, Math.round((b.expiresAt - now) / 1000)),
