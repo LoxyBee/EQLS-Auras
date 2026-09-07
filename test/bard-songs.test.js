@@ -714,6 +714,45 @@ test('a caster already recorded is purged from recentOtherCasts once they turn h
   assert.equal(engine._recentOtherCaster(song), null, 'purged the moment they cast at you');
 });
 
+test('restoreSnapshot downgrades a stale other-player bard-song attribution to Unknown', () => {
+  // Reported live 7 Sep: after an app restart, "Selo's Accelerating Chorus" came back on the Bard
+  // Songs aura still attributed to "Losi" - a bard from a previous zone. sessionRestore persists
+  // the bard song WITH its castBy, and restoreSnapshot put it straight back without re-deriving.
+  // recentOtherCasts is not persisted and the group roster has not rebuilt at that point, so a
+  // specific other-player name cannot be reconfirmed - it becomes Unknown.
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore); // targets defaults to undefined (not 'Self')
+  const future = Date.now() + 60000;
+  engine.restoreSnapshot({
+    bardSongs: [{ name: SONG, castBy: 'Losi', durationSec: 30, expiresAt: future, endedText: `${SONG} fades.` }],
+  });
+  const songs = engine.getActiveBardSongs();
+  assert.equal(songs.length, 1);
+  assert.equal(songs[0].name, SONG);
+  assert.equal(songs[0].allyName, 'Unknown', 'the stale "Losi" was not carried across the restart');
+});
+
+test('restoreSnapshot keeps "You" on a restored self-cast bard song', () => {
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  const future = Date.now() + 60000;
+  engine.restoreSnapshot({
+    bardSongs: [{ name: SONG, castBy: 'You', durationSec: 30, expiresAt: future, endedText: `${SONG} fades.` }],
+  });
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'You', 'the player\'s own song is restored as theirs');
+});
+
+test('restoreSnapshot restores a Self-target song as "You" even if it was stored under a name', () => {
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  buffStore.getByName(SONG).targets = 'Self'; // upsert doesn't carry `targets`; set it like makeDebuffSong sets kind
+  const future = Date.now() + 60000;
+  engine.restoreSnapshot({
+    bardSongs: [{ name: SONG, castBy: 'Losi', durationSec: 30, expiresAt: future, endedText: `${SONG} fades.` }],
+  });
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'You', 'a Self-only song can only ever be the player\'s');
+});
+
 test('a zone change clears stale cross-zone other-cast attribution', () => {
   // Reported live 7 Sep: in Befallen 4 (Refined), a non-bard cleric saw "Selo's Accelerating
   // Chorus" pulsing on her attributed to "Losi" - a bard she had passed 65 minutes and 5 zones

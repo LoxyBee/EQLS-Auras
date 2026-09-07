@@ -3347,8 +3347,27 @@ class BuffEngine extends EventEmitter {
     }
     for (const song of bardSongs) {
       if (this.blockedNames.has(song.name.toLowerCase())) continue;
-      this.bardSongs.set(`${(song.castBy || 'unknown').toLowerCase()}::${song.name.toLowerCase()}`, song);
-      this._debugLog(`LOADED "${song.name}" (bard song, cast by ${song.castBy || 'unknown'}) - restored from before restart`);
+      // The stored castBy was decided last session from evidence that is now gone - recentOtherCasts
+      // is not persisted, and the group roster has not rebuilt yet at this point in startup. Keep
+      // only an attribution still standable-behind: the player's own (a Self-target song, or one
+      // confirmed mine while still memorized). A specific other-player name is downgraded to
+      // "Unknown" - the song may really still be playing, but "Losi cast this", 3 restarts and 5
+      // zones later, is a stale guess (reported live 7 Sep). A live pulse re-attributes it properly.
+      const lower = song.name.toLowerCase();
+      const storedCastBy = song.castBy || null;
+      let castBy = storedCastBy;
+      if (castBy && castBy !== 'You') {
+        const known = this.buffStore.getByName(song.name);
+        const mine =
+          (known && known.targets === 'Self') ||
+          this._gemVerified.has(lower) ||
+          (this.bardSongConfirmedMine.has(lower) && this.currentlyMemorized.has(lower));
+        castBy = mine ? 'You' : null;
+      }
+      song.castBy = castBy;
+      this.bardSongs.set(`${(castBy || 'unknown').toLowerCase()}::${lower}`, song);
+      const note = storedCastBy && storedCastBy !== castBy ? ` (was "${storedCastBy}", stale - downgraded)` : '';
+      this._debugLog(`LOADED "${song.name}" (bard song, cast by ${castBy || 'Unknown'})${note} - restored from before restart`);
     }
     if (selfBuffs.length) this.emit('buffsChanged', this.getActiveBuffs());
     if (allyBuffs.length) this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
