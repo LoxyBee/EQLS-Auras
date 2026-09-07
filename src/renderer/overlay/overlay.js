@@ -2157,25 +2157,35 @@ let previewActive = false;
 
 function previewSampleBuffs() {
   const now = Date.now();
+  // Base = the neutral tile shape (no glow, no category border, no bar) - matches damageEngine's
+  // INERT_TIMER_FIELDS and travelRowsFor's row(). A timed-buff case sets landedAt / spellCategory
+  // itself. The sample must render byte-for-byte like the real feed (owner, 7 Sep) - every field
+  // the real tiles carry is set here so nothing downstream falls back to a default the real tile
+  // would not have had.
   const mk = (name, remainingSec, durationSec, extra = {}) => ({
-    name, remainingSec, durationSec, landedAt: now, spellCategory: 'buff',
-    iconUrl: null, showOnOverlay: true, ...extra,
+    name, remainingSec, durationSec,
+    landedAt: null, spellCategory: null, barPercent: 0, infinite: remainingSec == null,
+    instant: false, isBardSong: false, iconUrl: null, showOnOverlay: true, valueText: '',
+    ...extra,
   });
+  // A real, timed buff/song tile - just landed, has a category, counts down.
+  const timed = (name, remainingSec, durationSec, extra = {}) =>
+    mk(name, remainingSec, durationSec, { landedAt: now, spellCategory: 'buff', ...extra });
   switch (currentConfig.buffSource) {
     case 'ally':
-      return [mk('Spirit of Wolf', 140, 300, { allyName: 'Graznthok' }), mk('Aegolism', 520, 600, { allyName: 'Faelinn' })];
+      return [timed('Spirit of Wolf', 140, 300, { allyName: 'Graznthok' }), timed('Aegolism', 520, 600, { allyName: 'Faelinn' })];
     case 'bardSongs':
-      return [mk("Selo's Accelerando", 15, 18, { allyName: 'You', isBardSong: true }), mk('Chorus of Marr', 12, 18, { allyName: 'Faelinn', isBardSong: true })];
+      return [timed("Selo's Accelerando", 15, 18, { allyName: 'You', isBardSong: true }), timed('Chorus of Marr', 12, 18, { allyName: 'Faelinn', isBardSong: true })];
     case 'customTimer':
-      return [mk(currentConfig.name || 'Preview', 8, 12, { id: 'preview' })];
+      return [timed(currentConfig.name || 'Preview', 8, 12, { id: 'preview' })];
     case 'raidNamed':
       return [
-        mk('Cazic-Thule', null, null, { tier: 'boss', killed: false, infinite: true }),
-        mk('Dread', null, null, { tier: 'mini', killed: true, infinite: true }),
-        mk('Fright', null, null, { tier: 'mini', killed: false, infinite: true }),
+        mk('Cazic-Thule', null, null, { tier: 'boss', killed: false }),
+        mk('Dread', null, null, { tier: 'mini', killed: true }),
+        mk('Fright', null, null, { tier: 'mini', killed: false }),
       ];
     case 'lockout': {
-      const lk = (name, extra) => mk(name, null, 0, { valueText: '', infinite: true, spellCategory: null, ...extra });
+      const lk = (name, extra) => mk(name, null, 0, { ...extra });
       return [
         lk('Plane of Fear', { id: 'lp0', lockoutHeader: true, lockoutKind: 'zone' }),
         lk('d2 · Awakened', { id: 'lp1', lockoutKind: 'tier' }),
@@ -2185,25 +2195,24 @@ function previewSampleBuffs() {
       ];
     }
     case 'firstAggro':
-      return [mk('Korvaxx pulled a zol ghoul knight', null, 0, { valueText: '', infinite: true, spellCategory: null, id: 'first-aggro', firstAggroSide: 'friend' })];
+      return [mk('Korvaxx pulled a zol ghoul knight', null, 0, { id: 'first-aggro', firstAggroSide: 'friend' })];
     case 'damage': {
       // Shaped like damageEngine's real tiles - attacker rows biggest-first with a bar + share %,
       // then a bar-less Total row at the bottom.
       const d = (name, val, rate, pct, bar) => mk(name, null, 0, {
-        valueText: val, dpsText: rate, bothText: `${val} (${rate})`, pctText: `${pct}%`,
-        barPercent: bar, infinite: true, spellCategory: null,
+        valueText: val, dpsText: rate, bothText: `${val} (${rate})`, pctText: `${pct}%`, barPercent: bar,
       });
       return [
         d('You', '48.2k', '1.6k/s', 41, 100),
         d('Baxa', '30.9k', '1.0k/s', 26, 64),
         d('Avenrae', '22.4k', '747/s', 19, 46),
         d('Chrysaetos', '16.3k', '543/s', 14, 34),
-        mk('Total', null, 0, { totalRow: true, noBar: true, valueText: '117.8k  (3.9k/s)', infinite: true, spellCategory: null }),
+        mk('Total', null, 0, { totalRow: true, noBar: true, valueText: '117.8k  (3.9k/s)' }),
       ];
     }
     case 'travel': {
       // Shaped like travelRowsFor's rows - a current-zone header, then numbered legs.
-      const leg = (name, tag) => mk(name, null, 0, { valueText: tag || '', infinite: true, spellCategory: null });
+      const leg = (name, tag) => mk(name, null, 0, { valueText: tag || '' });
       return [
         leg('Current zone: The Overthere', ''),
         leg('Cast Ring of the Combines', '1/3'),
@@ -2212,22 +2221,34 @@ function previewSampleBuffs() {
       ];
     }
     case 'module':
-      return [mk(currentConfig.name || 'Module', 9, 12, { key: 'preview' })];
+      return [timed(currentConfig.name || 'Module', 9, 12, { key: 'preview' })];
     default:
-      return [mk('Spirit of Wolf', 140, 300), mk('Aegolism', 520, 600)];
+      return [timed('Spirit of Wolf', 140, 300), timed('Aegolism', 520, 600)];
   }
 }
 
-window.eqOverlay.onPreviewMode(({ enabled } = {}) => {
-  previewActive = !!enabled;
+// previewActive = the "Show example content" toggle OR being unlocked to move: an aura you are
+// positioning shows sample content so you place its real size, not an empty box that then jumps
+// when it fills (owner, 7 Sep). Tracked separately so exiting move mode does not clear a toggle
+// the user set on purpose.
+let userPreview = false;
+let moveMode = false;
+function recomputePreview() {
+  const next = userPreview || moveMode;
+  if (next === previewActive) return;
+  previewActive = next;
   render(currentSourceBuffs());
+}
+window.eqOverlay.onPreviewMode(({ enabled } = {}) => {
+  userPreview = !!enabled;
+  recomputePreview();
 });
 // A window recreated (profile switch, resize) while preview was on/off would otherwise boot with
 // previewActive = false and miss the one-shot event - re-sync from the main process on load.
 if (window.eqOverlay.getPreviewMode) {
   window.eqOverlay.getPreviewMode(widgetId).then((on) => {
-    previewActive = !!on;
-    render(currentSourceBuffs());
+    userPreview = !!on;
+    recomputePreview();
   });
 }
 
@@ -2307,6 +2328,8 @@ function realSourceBuffs() {
 
 function applyLockState(locked) {
   document.body.classList.toggle('unlocked', !locked);
+  moveMode = !locked;
+  recomputePreview();
 }
 
 const ICON_GRID_GAP_PX = 6;

@@ -87,8 +87,11 @@ test('the sample only stands in when there is nothing real, and real content win
   // filters are bypassed only for the actual sample, not for real content shown during preview mode
   assert.match(src, /const visible = showingPreviewSample \? buffs : visibleBuffs\(buffs\);/);
   // it is a toggle now - set by an enabled flag, no revert timer
-  assert.match(src, /onPreviewMode\(\(\{ enabled \} = \{\}\) => \{\s*\n\s*previewActive = !!enabled;/);
+  assert.match(src, /onPreviewMode\(\(\{ enabled \} = \{\}\) => \{\s*\n\s*userPreview = !!enabled;/);
   assert.doesNotMatch(src, /previewActive = false;\s*render/);
+  // unlocking an aura to move it also shows the sample, so you position its real size
+  assert.match(src, /moveMode = !locked;\s*\n\s*recomputePreview\(\)/);
+  assert.match(src, /const next = userPreview \|\| moveMode;/);
 });
 
 test('previewing keeps the overlay window on screen like a hand-unlock', () => {

@@ -621,17 +621,27 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
   const anchorX = config.position ? config.position.x : currentX + previousOriginX;
   const targetX = anchorX - roundedOriginX;
 
+  // Grow/shrink from the box's CENTRE, not its top edge - same as applyPendingFit does on re-lock
+  // (owner, 31 Aug). A user positions an aura by where its middle sits; anchoring the top meant an
+  // empty aura they placed, then filled (content lands, or "Show example content" turned on),
+  // slid downward by half its new height (owner report, 7 Sep).
+  const targetY = currentY - Math.round((height - currentHeight) / 2);
+
   const sizeChanged = width !== currentWidth || height !== currentHeight;
   const xChanged = targetX !== currentX;
-  if (!sizeChanged && !xChanged) return;
+  const yChanged = targetY !== currentY;
+  if (!sizeChanged && !xChanged && !yChanged) return;
 
   // Set before setBounds, not after - the 'moved' handler (see
   // createWidgetWindow) reads this map to convert the window's raw
   // post-move x back into the canonical anchor, and needs the NEW offset
   // to do that correctly for the move this call itself triggers.
   originXByWidget.set(id, roundedOriginX);
-  win.setBounds({ x: targetX, y: currentY, width, height });
+  win.setBounds({ x: targetX, y: targetY, width, height });
   widgetStore.update(id, { width, height });
+  // Persist the recentred anchor so a restart (which places at config.position, then fits) does
+  // not creep, and a later drag starts from the right place.
+  if (yChanged) widgetStore.savePosition(id, { x: (config.position ? config.position.x : targetX + roundedOriginX), y: targetY });
 }
 
 // Apply the content size that came in while the aura was unlocked (fitToContent held it back), now
