@@ -714,5 +714,43 @@ test('a caster already recorded is purged from recentOtherCasts once they turn h
   assert.equal(engine._recentOtherCaster(song), null, 'purged the moment they cast at you');
 });
 
+test('a zone change clears stale cross-zone other-cast attribution', () => {
+  // Reported live 7 Sep: in Befallen 4 (Refined), a non-bard cleric saw "Selo's Accelerating
+  // Chorus" pulsing on her attributed to "Losi" - a bard she had passed 65 minutes and 5 zones
+  // earlier. recentOtherCasts has no per-entry expiry (bard-song attribution needs a whole-session
+  // memory), so a bard from a previous zone kept owning a song landing in the new one. A song cast
+  // by someone a zone ago cannot be the source of a landing now.
+  const { engine, buffStore } = makeEngine();
+  const song = "Losi's Test March";
+  buffStore.upsert(song, 30, { landingText: `${song} lands.`, endedText: `${song} fades.` });
+  buffStore.markBardSong(song);
+
+  engine.handleLine(`${TS}Losi begins singing ${song}.`);
+  assert.equal(engine._recentOtherCaster(song), 'Losi', 'recorded while in the same zone');
+
+  engine.setLoadoutLocked(false, 'Northern Felwithe'); // first zone seen
+  engine.setLoadoutLocked(true, 'Befallen'); // a real move - Losi is not here
+  assert.equal(engine._recentOtherCaster(song), null, 'the stale attribution is gone after the zone change');
+  assert.equal(engine.recentOtherCasts.size, 0);
+
+  // The same song now landing on the player attributes to Unknown, never "Losi".
+  engine.handleLine(`${TS}${song} lands.`);
+  const songs = engine.getActiveBardSongs();
+  assert.ok(songs.every((s) => s.allyName !== 'Losi'), 'no stale Losi group on the aura');
+});
+
+test('an entrance->instance echo for the same base zone does NOT clear other-cast attribution', () => {
+  // setLoadoutLocked is keyed on the base zone name so a reconnect echo / "You have entered
+  // Befallen." immediately followed by "Befallen 4 (Refined)." counts as one move, not two.
+  const { engine, buffStore } = makeEngine();
+  const song = 'Group Test Cadence';
+  buffStore.upsert(song, 30, { landingText: `${song} lands.` });
+  buffStore.markBardSong(song);
+  engine.setLoadoutLocked(false, 'Befallen');
+  engine.handleLine(`${TS}Bandmate begins singing ${song}.`);
+  engine.setLoadoutLocked(true, 'Befallen'); // the instance line, same base name
+  assert.equal(engine._recentOtherCaster(song), 'Bandmate', 'a groupmate who zoned in with you is still credited');
+});
+
 module.exports = () => report('bard-songs');
 if (require.main === module) report('bard-songs').then((n) => process.exit(n ? 1 : 0));

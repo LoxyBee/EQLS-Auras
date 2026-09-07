@@ -392,6 +392,10 @@ class BuffEngine extends EventEmitter {
     //
     // A monster (an "a/an/the ..." caster name) is never written here - see the matchOtherCastBegin
     // handler for why. So every caster in this map is a real-person name.
+    //
+    // No per-entry expiry (bard-song attribution needs a whole-session memory), but the whole map
+    // is cleared on a party change (handleLine) AND on a real zone change (setLoadoutLocked) -
+    // "someone else is maintaining this" only holds while that someone is still here.
     this.recentOtherCasts = new Map();
     // Parallel to recentOtherCasts: lowercased spell name -> Date.now() when that other-cast was
     // last seen. recentOtherCasts itself is deliberately unbounded (its bard-song caster-attribution
@@ -664,21 +668,36 @@ class BuffEngine extends EventEmitter {
     this.groupmateSink = typeof fn === 'function' ? fn : null;
   }
 
-  // main.js calls this on every zone change: `locked` = is the new zone one where a loadout swap is
-  // impossible (see src/shared/loadoutLockedZones.js); `zoneKey` = the base zone name, used to tell
-  // a real move from a reconnect echo / entrance->instance line for the same zone. `_gemVerified`
-  // (gems whose memorise was seen as TRUTH this visit) is wiped on any real zone change - the
-  // owner's case is stepping out of an instance, swapping loadout with no log line, and stepping
-  // back in, so re-entering must NOT reinstate the old evidence.
+  // main.js calls this on every zone change - it is buffEngine's single zone-change entry point.
+  // `locked` = is the new zone one where a loadout swap is impossible (see
+  // src/shared/loadoutLockedZones.js); `zoneKey` = the base zone name, used to tell a real move
+  // from a reconnect echo / entrance->instance line for the same zone.
+  //
+  // On any real zone change:
+  //  - `_gemVerified` (gems whose memorise was seen as TRUTH this visit) is wiped - the owner's
+  //    case is stepping out of an instance, swapping loadout with no log line, and stepping back
+  //    in, so re-entering must NOT reinstate the old evidence.
+  //  - `recentOtherCasts` is cleared. It has no expiry by design (its bard-song caster-attribution
+  //    consumer needs a whole-session memory), but "X is currently maintaining this song" only
+  //    holds while X is in the zone with you - a song cast by someone a zone (or five) ago cannot
+  //    be the source of a landing now, and songs don't survive zoning. Reported live: "Selo's
+  //    Accelerating Chorus" still attributed to "Losi", a bard the player had passed 65 minutes
+  //    and 5 zones earlier. Same reasoning as the party-change clear in handleLine().
   setLoadoutLocked(locked, zoneKey = null) {
     const l = !!locked;
     const movedZone = zoneKey !== this._lastLockZoneKey;
     this._lastLockZoneKey = zoneKey;
     this.loadoutLocked = l;
-    if (movedZone && this._gemVerified.size) {
+    if (!movedZone) return;
+    if (this.recentOtherCasts.size > 0) {
+      this._debugLog(`ZONE CHANGE to "${zoneKey || '(none)'}" - cleared ${this.recentOtherCasts.size} stale other-cast attribution(s)`);
+      this.recentOtherCasts.clear();
+      this.recentOtherCastAt.clear();
+    }
+    if (this._gemVerified.size) {
       this._gemVerified.clear();
       this._debugLog(`LOADOUT ${l ? 'LOCKED' : 'UNLOCKED'} in "${zoneKey || '(none)'}" - gem evidence reset (${l ? 'rebuilds as you re-mem' : 'back to weak'})`);
-    } else if (movedZone) {
+    } else {
       this._debugLog(`LOADOUT ${l ? `LOCKED in "${zoneKey}" - gem memorises now count as truth` : 'UNLOCKED'}`);
     }
   }
