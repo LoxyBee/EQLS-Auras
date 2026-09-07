@@ -68,7 +68,7 @@ let currentConfig = {
 // grows or shrinks everything together. `scaled(0)` stays 0.
 function auraScale() {
   const n = Number(currentConfig.scale);
-  return Number.isFinite(n) && n > 0 ? Math.max(0.3, Math.min(4, n)) : 1;
+  return Number.isFinite(n) && n > 0 ? Math.max(0.3, Math.min(3, n)) : 1;
 }
 function scaled(px) {
   const n = Number(px) || 0;

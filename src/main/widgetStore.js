@@ -164,10 +164,11 @@ function clampHealColor(value) {
 
 // One multiplier on top of icon size / row size / text size, so the whole aura grows or shrinks in
 // one motion (a slider, or dragging the unlocked box's edge). 1 = the individual sliders as set.
-// 0.3..4 keeps it usable at both ends; junk -> 1.
+// 0.3..3 - the same range as the Scale slider (30-300%), so the drag gesture can't push past what
+// the slider shows. Junk -> 1.
 function clampScale(value) {
   const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.max(0.3, Math.min(4, n)) : 1;
+  return Number.isFinite(n) && n > 0 ? Math.max(0.3, Math.min(3, n)) : 1;
 }
 
 // 'both' track mode: seconds between flipping a row's number from damage to healing and back, so

@@ -22,13 +22,13 @@ function newStore() {
   });
 }
 
-test('clampScale: default 1, clamp 0.3..4, junk -> 1', () => {
+test('clampScale: default 1, clamp 0.3..3 (matches the slider), junk -> 1', () => {
   assert.equal(clampScale(undefined), 1);
   assert.equal(clampScale('x'), 1);
   assert.equal(clampScale(0), 1);
   assert.equal(clampScale(-2), 1);
   assert.equal(clampScale(0.1), 0.3);
-  assert.equal(clampScale(9), 4);
+  assert.equal(clampScale(9), 3);
   assert.equal(clampScale(1.5), 1.5);
 });
 
@@ -41,7 +41,7 @@ test('a fresh aura is scale 1, it is in SHAREABLE_FIELDS (at the end), and a bad
   store.update(w.id, { scale: 99 });
   const data = store.store.loadJson('widgets', null);
   const store2 = new WidgetStore({ loadJson: (n, f) => (n === 'widgets' ? data : f), saveJson: () => {} });
-  assert.equal(store2.getById(w.id).scale, 4);
+  assert.equal(store2.getById(w.id).scale, 3);
 });
 
 test('the overlay multiplies every size read by the aura scale', () => {
@@ -57,15 +57,20 @@ test('the overlay multiplies every size read by the aura scale', () => {
   assert.match(o, /const iconSize = scaled\(config\.iconSize \|\| 46\)/);
 });
 
-test('dragging the unlocked box turns into a scale bump, not a literal window size', () => {
+test('dragging the unlocked box is a damped pixel-rate scale change, not a raw ratio', () => {
   const m = read('src', 'main', 'widgetManager.js');
-  const h = m.slice(m.indexOf("win.on('resized'"), m.indexOf("win.on('resized'") + 900);
+  const h = m.slice(m.indexOf("win.on('resized'"), m.indexOf("win.on('resized'") + 1600);
   assert.match(h, /if \(isUnlocked\(config\.id\)\)/);
-  assert.match(h, /const factor = ref\.h > 0 \? height \/ ref\.h : 1/);
-  assert.match(h, /clampScale\(\(cur && cur\.scale \? cur\.scale : 1\) \* factor\)/);
+  // a FIXED px-per-unit rate, so a short (36px) box doesn't jump on a tiny drag
+  assert.match(m, /const SCALE_DRAG_PX_PER_UNIT = 500/);
+  assert.match(h, /const delta = dPx \/ SCALE_DRAG_PX_PER_UNIT/);
+  assert.match(h, /clampScale\(\(cur && cur\.scale \? cur\.scale : 1\) \+ delta\)/);
   assert.match(h, /widgetStore\.update\(config\.id, \{ scale: next \}\)/);
   // the reference is seeded on unlock so the first drag has something to measure against
   assert.match(m, /resizeRefByWidget\.set\(id, \{ w, h \}\)/);
+  // the store clamp and the slider max agree - the drag can't push past 300%
+  assert.match(read('src', 'main', 'widgetStore.js'), /Math\.min\(3, n\)/);
+  assert.match(read('src', 'renderer', 'main-window', 'index.html'), /id="widget-scale-slider"[^>]*max="300"/);
 });
 
 test('the Scale slider is wired: settings panel, populate, IPC, preload', () => {

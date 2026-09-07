@@ -58,6 +58,7 @@ const pendingFitByWidget = new Map(); // id -> { contentWidth, contentHeight, or
 // a relative size change and turned into a `scale` bump (see the 'resized' handler). Seeded on
 // unlock, cleared on re-lock.
 const resizeRefByWidget = new Map(); // id -> { w, h }
+const SCALE_DRAG_PX_PER_UNIT = 500; // px of edge-drag per 1.0 of scale change
 // Move HUD (moveHudWindow.js). Snap-to-grid state is shared with action bars via positionSnap.js
 // and only ever applies to the one thing being positioned. movedGuard suppresses the extra 'moved'
 // our own snap setPosition fires.
@@ -254,10 +255,14 @@ function createWidgetWindow(config) {
     // factor; the box then springs back to fit the resized content when you re-lock.
     if (isUnlocked(config.id)) {
       const ref = resizeRefByWidget.get(config.id) || { w: width, h: height };
-      const factor = ref.h > 0 ? height / ref.h : 1;
-      if (Number.isFinite(factor) && factor > 0.05 && Math.abs(factor - 1) > 0.015) {
+      // A FIXED pixel-to-scale rate, not a ratio: a one-row travel guide box is ~36px tall, and a
+      // height ratio there turns a 30px drag into "scale x1.8". SCALE_DRAG_PX_PER_UNIT px of drag
+      // (on the taller of the two axes' change) moves scale by 1.0, whatever the box size.
+      const dPx = Math.abs(width - ref.w) > Math.abs(height - ref.h) ? width - ref.w : height - ref.h;
+      const delta = dPx / SCALE_DRAG_PX_PER_UNIT;
+      if (Number.isFinite(delta) && Math.abs(delta) >= 0.02) {
         const cur = widgetStore.getById(config.id);
-        const next = clampScale((cur && cur.scale ? cur.scale : 1) * factor);
+        const next = clampScale((cur && cur.scale ? cur.scale : 1) + delta);
         widgetStore.update(config.id, { scale: next });
         pushConfigChanged(config.id);
       }
