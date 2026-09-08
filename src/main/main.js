@@ -1330,7 +1330,10 @@ function travelRowsFor(widget, zone, scribed) {
   }
   if (!zone) return [row('Waiting for a zone line', 'walk through one')];
 
-  const result = findRoute(zone, widget.travelDestination, { scribedSpells: scribed });
+  const result = findRoute(zone, widget.travelDestination, {
+    scribedSpells: scribed,
+    includeSuccor: widget.travelIncludeSuccor === true,
+  });
   if (result.reason === 'already-there') {
     // Auto-close: the destination has been reached, so it's cleared right away rather than
     // sitting on "You are in X" forever - the aura falls straight back to its idle "Pick a
@@ -2300,6 +2303,11 @@ ipcMain.handle('widget:createTravelGuide', (_event, { name, destination }) =>
 );
 ipcMain.handle('widget:setTravelDestination', (_event, { id, destination }) => {
   const config = widgetManager.setTravelDestination(id, destination);
+  pushTravelRoutes();
+  return config;
+});
+ipcMain.handle('widget:setTravelIncludeSuccor', (_event, { id, include }) => {
+  const config = widgetManager.setTravelIncludeSuccor(id, include);
   pushTravelRoutes();
   return config;
 });

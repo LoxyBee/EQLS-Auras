@@ -1799,6 +1799,7 @@ function initWidgetsPanel() {
   const travelSettingsEl = document.getElementById('widget-travel-settings');
   const travelDestinationCurrentEl = document.getElementById('widget-travel-destination-current');
   const travelCommandInputEl = document.getElementById('widget-travel-command-input');
+  const travelSuccorCb = document.getElementById('widget-travel-succor-checkbox');
   const lockoutSettingsEl = document.getElementById('widget-lockout-settings');
   const lockoutTriggerWordInput = document.getElementById('widget-lockout-command-input');
   const lockoutAutoHideSlider = document.getElementById('widget-lockout-autohide-slider');
@@ -3616,6 +3617,7 @@ function initWidgetsPanel() {
     if (fields.has('travel-settings')) {
       showTravelDestination(widget.travelDestination);
       showTravelPickerCommand();
+      if (travelSuccorCb) travelSuccorCb.checked = widget.travelIncludeSuccor === true;
     }
 
     if (fields.has('lockout-settings') && lockoutTriggerWordInput) {
@@ -5285,6 +5287,12 @@ function initWidgetsPanel() {
       showTravelDestination(findWidget(selectedId)?.travelDestination);
     });
   });
+
+  if (travelSuccorCb) {
+    travelSuccorCb.addEventListener('change', () => {
+      window.eqTracker.setWidgetTravelIncludeSuccor(selectedId, travelSuccorCb.checked);
+    });
+  }
 
   fightTimeoutSlider.addEventListener('input', () => {
     const sec = Number(fightTimeoutSlider.value);

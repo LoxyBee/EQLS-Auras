@@ -904,6 +904,7 @@ const SHAREABLE_FIELDS = [
   // fields wrong; nothing can be done about those, and the window was tiny.
   'dynamicChatTimer',
   'scale',
+  'travelIncludeSuccor',
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -1050,6 +1051,10 @@ function normalizeWidget(widget) {
     // but only read when buffSource === 'lockout'.
     lockoutTriggerWord: cleanLockoutTriggerWord(widget.lockoutTriggerWord),
     lockoutAutoHideSec: clampLockoutAutoHideSec(widget.lockoutAutoHideSec),
+    // Travel guide. "Succor: X" druid evac spells are left OUT of route planning unless this is on
+    // (owner, 7 Sep) - they show as a one-hop shortcut from anywhere and most players don't want an
+    // emergency evac offered as a travel step. Carried for every aura, read only for buffSource 'travel'.
+    travelIncludeSuccor: widget.travelIncludeSuccor === true,
     // A widget saved before this field existed still has its real duration sitting on its first
     // trigger (they were all in sync anyway on every real aura seen so far - see the field's own
     // comment) - read it from there rather than resetting everyone to the bare default. A widget

@@ -443,6 +443,12 @@ function setTravelDestination(id, destination) {
   return config;
 }
 
+function setTravelIncludeSuccor(id, include) {
+  const config = widgetStore.update(id, { travelIncludeSuccor: include === true });
+  pushConfigChanged(id);
+  return config;
+}
+
 function createDamageMeterWidget(name, mineOnly) {
   const config = widgetStore.createDamageMeter(name, {
     mineOnly,
@@ -1661,6 +1667,7 @@ module.exports = {
   setDamageOptions,
   createTravelGuideWidget,
   setTravelDestination,
+  setTravelIncludeSuccor,
   peekShareCode,
   createTextAuraWidget,
   createBuffTimerWidget,
