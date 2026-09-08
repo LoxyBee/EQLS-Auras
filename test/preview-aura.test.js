@@ -60,6 +60,24 @@ test('a custom-timer sample uses the aura\'s own name and a stable id', () => {
   assert.equal(out[0].id, 'preview');
 });
 
+test('a preview sample never gets the .low pulse - it would flash red forever (owner, 7 Sep)', () => {
+  // Several sample tiles carry a deliberately short remainingSec (custom-timer 8s, bard song 15s,
+  // module 9s) that never counts down. `.low` runs `animation: pulse 1s infinite`, so without this
+  // the sample tile sits there pulsing red the whole time preview / move mode is on - reported as
+  // "my trigger timer is stuck in permanent flash mode".
+  S.set({ buffSource: 'customTimer', name: 'x' });
+  assert.ok(S.previewSampleBuffs()[0].remainingSec <= 30, 'this test only matters while the sample is short');
+  const src = read('src', 'renderer', 'overlay', 'overlay.js');
+  const fn = src.match(/function updateRef\(ref, buff, isIcon\) \{([\s\S]*?)\n {2}const cooling/);
+  assert.ok(fn, 'updateRef has been restructured');
+  assert.match(
+    fn[1],
+    /const lowVisual = low && !showingPreviewSample;/,
+    'the .low class is applied straight from `low`, so a short-lived sample tile pulses forever'
+  );
+  assert.match(fn[1], /classList\.toggle\('low', lowVisual\)/, 'the class toggle no longer reads the preview-aware flag');
+});
+
 test('a damage-parser sample looks like a damage meter, not random buffs (owner, 7 Sep)', () => {
   S.set({ buffSource: 'damage' });
   const out = S.previewSampleBuffs();

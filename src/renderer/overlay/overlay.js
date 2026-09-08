@@ -950,9 +950,15 @@ function updateRef(ref, buff, isIcon) {
   // animation always wins over a non-!important static value on the same property). Reported
   // live: the "invisible" tile still visibly pulsed for exactly this reason.
   const low = !isZeroDurationPing && !buff.infinite && threshold > 0 && buff.remainingSec <= threshold;
-  ref.root.classList.toggle('low', low);
+  // A preview sample is a placement aid, not a live timer - several sample tiles carry a
+  // deliberately short remainingSec (custom-timer 8s, bard song 15s, module 9s) that never counts
+  // down, and `.low` runs `animation: pulse 1s infinite`, so the sample would sit there pulsing red
+  // the whole time preview / move mode is on. Reported live 7 Sep as "my trigger timer is stuck in
+  // permanent flash mode". rampColorFor keys on this too, so the amber ramp is suppressed the same way.
+  const lowVisual = low && !showingPreviewSample;
+  ref.root.classList.toggle('low', lowVisual);
 
-  const rampAmber = rampColorFor(buff, low, isZeroDurationPing, threshold);
+  const rampAmber = rampColorFor(buff, lowVisual, isZeroDurationPing, threshold);
 
   // Note 10: "if the tile doesn't visibly say which phase it is in, the number on screen is
   // actively misleading". A cooldown counts down to when you CAN use something; a duration counts
@@ -1085,11 +1091,11 @@ function updateRef(ref, buff, isIcon) {
   if (isIcon) {
     updateTileIcon(ref, buff);
     updateTileShade(ref, buff);
-    applyTilePositionedTextStyle(ref.timeEl, low, currentConfig.contentAnchor || 'bottom-center', scaled(currentConfig.textSize || 10), false, rampAmber || currentConfig.timerTextColor);
+    applyTilePositionedTextStyle(ref.timeEl, lowVisual, currentConfig.contentAnchor || 'bottom-center', scaled(currentConfig.textSize || 10), false, rampAmber || currentConfig.timerTextColor);
     if (ref.labelEl) {
       applyTilePositionedTextStyle(
         ref.labelEl,
-        low,
+        lowVisual,
         currentConfig.iconLabelAnchor || 'top-center',
         scaled(currentConfig.iconLabelSize || 11),
         !!currentConfig.wrapText,
