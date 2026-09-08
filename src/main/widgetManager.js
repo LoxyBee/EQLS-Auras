@@ -621,11 +621,18 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
   const anchorX = config.position ? config.position.x : currentX + previousOriginX;
   const targetX = anchorX - roundedOriginX;
 
-  // Grow/shrink from the box's CENTRE, not its top edge - same as applyPendingFit does on re-lock
-  // (owner, 31 Aug). A user positions an aura by where its middle sits; anchoring the top meant an
-  // empty aura they placed, then filled (content lands, or "Show example content" turned on),
-  // slid downward by half its new height (owner report, 7 Sep).
-  const targetY = currentY - Math.round((height - currentHeight) / 2);
+  // Grow/shrink DOWNWARD from the box's top edge - the top stays exactly where the user put it and
+  // new rows appear below (owner, 7 Sep: "new rows should grow down by default without adjusting
+  // the position of the aura"). Content is top-aligned in the window (#content-wrap has no
+  // justify-content), so the first row never moves. Centre-anchoring was tried (31 Aug - 7 Sep)
+  // and pushed a top-of-screen aura off the top edge as it filled.
+  let targetY = currentY;
+  // Safety: if a very tall fill would run off the BOTTOM of this display, slide up just enough to
+  // fit - but never above the work-area top, so it can't disappear upward.
+  const wa = screen.getDisplayMatching({ x: currentX, y: currentY, width, height }).workArea;
+  if (targetY + height > wa.y + wa.height) {
+    targetY = Math.max(wa.y, wa.y + wa.height - height);
+  }
 
   const sizeChanged = width !== currentWidth || height !== currentHeight;
   const xChanged = targetX !== currentX;
@@ -645,10 +652,9 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
 }
 
 // Apply the content size that came in while the aura was unlocked (fitToContent held it back), now
-// that it is locked again. The frozen box's CENTRE stays put - the owner's choice, 31 Aug: a buff
-// landing or expiring while you were positioning the aura should grow it symmetrically from where
-// you left it, not shove one edge. Also rewrites the stored anchor so later (locked) fitToContent
-// calls grow from this new position rather than snapping back.
+// that it is locked again. The box's TOP-LEFT stays where the user left it and content grows down
+// from there - same rule as fitToContent (owner, 7 Sep). Also rewrites the stored anchor so later
+// (locked) fitToContent calls grow from this new position rather than snapping back.
 function applyPendingFit(id) {
   const pending = pendingFitByWidget.get(id);
   pendingFitByWidget.delete(id);
@@ -664,10 +670,13 @@ function applyPendingFit(id) {
   const [currentX, currentY] = win.getPosition();
   if (width === currentWidth && height === currentHeight) return;
 
+  // Keep the top-left where the user left the box during the move; grow down. X still tracks the
+  // centre (horizontal growth from a label a bit wider/narrower shouldn't shift the box sideways).
   const centreX = currentX + currentWidth / 2;
-  const centreY = currentY + currentHeight / 2;
   const targetX = Math.round(centreX - width / 2);
-  const targetY = Math.round(centreY - height / 2);
+  let targetY = currentY;
+  const wa = screen.getDisplayMatching({ x: currentX, y: currentY, width, height }).workArea;
+  if (targetY + height > wa.y + wa.height) targetY = Math.max(wa.y, wa.y + wa.height - height);
 
   const roundedOriginX = Math.round(pending.originX || 0);
   originXByWidget.set(id, roundedOriginX);

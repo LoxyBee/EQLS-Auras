@@ -57,7 +57,10 @@ class FakeWindow {
 const created = [];
 const fakeElectron = {
   app: { getPath: () => USER_DATA },
-  screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
+  screen: {
+    getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }),
+    getDisplayMatching: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }),
+  },
   BrowserWindow: class {
     constructor(opts) { const w = new FakeWindow(opts); created.push(w); return w; }
   },
@@ -87,24 +90,24 @@ test('fitToContent does nothing to the window while the aura is unlocked', () =>
   assert.deepEqual(win.getBounds(), before, 'the window moved or resized while it was being dragged');
 });
 
-test('re-locking applies the settled size and keeps the box centre fixed', () => {
+test('re-locking applies the settled size, keeps the box TOP fixed and grows down', () => {
   const { config, win } = makeAura('Recentre');
   wm.setLocked(config.id, true);
   wm.setLocked(config.id, false);
 
   const b0 = win.getBounds();
   const centreX0 = b0.x + b0.width / 2;
-  const centreY0 = b0.y + b0.height / 2;
 
   wm.fitToContent(config.id, 600, 500); // content grew while unlocked
   assert.deepEqual(win.getBounds(), b0, 'still frozen while unlocked');
 
-  wm.setLocked(config.id, true); // re-lock -> apply, re-centred
+  wm.setLocked(config.id, true); // re-lock -> apply, growing down from the top
 
   const b1 = win.getBounds();
   assert.notEqual(b1.width, b0.width, 'the settled size was never applied');
-  assert.ok(Math.abs((b1.x + b1.width / 2) - centreX0) <= 1, 'centre X moved');
-  assert.ok(Math.abs((b1.y + b1.height / 2) - centreY0) <= 1, 'centre Y moved');
+  assert.ok(Math.abs((b1.x + b1.width / 2) - centreX0) <= 1, 'X still tracks the centre');
+  assert.equal(b1.y, b0.y, 'the top edge stayed exactly where the user left it');
+  assert.ok(b1.height > b0.height, 'it grew');
 });
 
 test('re-locking with no content change since unlock leaves the window alone', () => {
@@ -122,6 +125,30 @@ test('while locked, fitToContent still resizes normally (existing anchor behavio
   const beforeW = win.getSize()[0];
   wm.fitToContent(config.id, 777, 200);
   assert.notEqual(win.getSize()[0], beforeW, 'a locked aura must still fit its content');
+});
+
+// Owner, 7 Sep: an aura near the top of the screen, filling with buffs, was drifting off the top
+// edge because it grew from the centre. It grows DOWN now - top fixed.
+test('a top-of-screen aura filling up grows down, never above the screen', () => {
+  const { config, win } = makeAura('AtTop');
+  wm.setLocked(config.id, true);
+  win.setBounds({ x: 200, y: 8, width: 220, height: 54 }); // right against the top edge
+  wm.fitToContent(config.id, 900, 700); // a full three-row wrap of buffs lands
+  const b = win.getBounds();
+  assert.equal(b.y, 8, 'the top edge did not move');
+  assert.ok(b.y >= 0, 'nothing went above the screen');
+  assert.ok(b.height > 54, 'it grew to fit the content');
+});
+
+test('an aura near the BOTTOM that overflows slides up just enough, still not above the screen', () => {
+  const { config, win } = makeAura('AtBottom');
+  wm.setLocked(config.id, true);
+  win.setBounds({ x: 200, y: 1000, width: 220, height: 54 }); // 1080 work area, 80px of room
+  wm.fitToContent(config.id, 300, 900); // needs ~920px
+  const b = win.getBounds();
+  assert.ok(b.y < 1000, 'it slid up to fit');
+  assert.ok(b.y >= 0, 'but not off the top');
+  assert.ok(b.y + b.height <= 1080, 'and now fits inside the work area');
 });
 
 module.exports = () => report('overlay-freeze-drag-surface');
