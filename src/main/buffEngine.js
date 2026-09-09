@@ -2763,17 +2763,17 @@ class BuffEngine extends EventEmitter {
     // source. A non-groupmate falls through to Unknown, and getActiveBardSongs then drops it.
     const other = this._recentOtherCaster(name);
     if (other && this._isSelfOrGroupmate(other)) return other;
-    // A song the memorize-window tier below has confirmed as the player's own at some earlier
-    // point THIS memorization - checked before that tier itself so an already-confirmed song
-    // doesn't need a fresh memorize event every single repeat. Requested directly: "if the app
-    // caught you memming a song and attributed it to you within the 6s window, it should stay
-    // that way until you unmem it." Gated on still being memorized (not just once-confirmed-
-    // forever) so a genuine unmem/re-memorize - a real loadout swap, a different spell taking the
-    // slot - requires re-confirming rather than trusting a stale answer indefinitely; see the
-    // forget-line/removeMemorized/clearMemorized call sites, which all clear this alongside
-    // currentlyMemorized itself. NOT "memorized alone" - a bard often keeps a song in a gem they
-    // are not currently weaving while a groupmate keeps it up (owner, 8 Sep - "i was not weaving").
-    if (this.bardSongConfirmedMine.has(lower) && this.currentlyMemorized.has(lower)) {
+    // The song is in one of the player's own fourteen gem slots. On EverQuest Legends a bard
+    // "renews" a song by re-memming it (the twist-via-mem mechanic - CLAUDE.md "Server context"),
+    // and a memmed song auto-sings with NO "You begin singing X." line at all, so recentSelfCast
+    // and the 30s memorize window both come up empty on a long-held weave song. A non-groupmate's
+    // song can never be in your gembar, so a memmed bard song landing on you is yours. Reported
+    // live 8 Sep, twice: "Cantata of Soothing stopped entering my bard aura even though i am
+    // renewing it on myself" (it had been memmed 34 min, pulsing 5000+ times, all "Unknown").
+    // currentlyMemorized can go stale after gems are changed with the app CLOSED (gotcha #16);
+    // accepted - a stale "you have this memmed" crediting your own weave to you beats it vanishing.
+    if (this.currentlyMemorized.has(lower)) {
+      this.bardSongConfirmedMine.add(lower);
       return 'You';
     }
     // Last resort, only once real cast evidence (yours or an ally's) has come up empty: this
@@ -3413,7 +3413,7 @@ class BuffEngine extends EventEmitter {
         const mine =
           (known && known.targets === 'Self') ||
           this._gemVerified.has(lower) ||
-          (this.bardSongConfirmedMine.has(lower) && this.currentlyMemorized.has(lower));
+          this.currentlyMemorized.has(lower); // in the player's own gembar - see _attributeBardSongCaster
         castBy = mine ? 'You' : null;
       }
       song.castBy = castBy;
