@@ -1860,6 +1860,29 @@ class BuffEngine extends EventEmitter {
         if (inBurst && !selfCandidates.every((c) => c.isBardSong)) this._rearmBurst();
         const remembered = this.selfAmbiguousResolutions.get(stripped);
         const rememberedBuff = remembered ? this.buffStore.getByName(remembered) : null;
+        // An ally's Quick Buff is firing and every candidate here would be suppressed by it (a
+        // non-song the player isn't already running - see suppressNarrow). Reported live 8 Sep:
+        // "someone else's quick buff picked up as my own even though i didn't cast it - because i
+        // had the buffs memmed, which is wrong." A remembered self-resolution answers "which of MY
+        // spells is this shared text", never "is this landing even mine", so it must not auto-land
+        // here any more than the gem/spellbook narrow above it does - fall through to the same
+        // track-others handling (a queued prompt attributed to the ally, or a silent IGNORE).
+        if (allyMultiGrant && selfCandidates.every((c) => suppressNarrow(c))) {
+          // suppressNarrow already excludes bard songs, so trackOthersEnabled alone is the gate
+          // here (a song would never reach this branch).
+          if (this.trackOthersEnabled) {
+            this._debugLog(
+              `QUEUED "${stripped}" for you - "${this.allyBurstOpenedBy.ability}" by "${this.allyBurstOpenedBy.casterName}" just fired; a remembered self-choice does not resolve an ally's grant`
+            );
+            this._queueAmbiguousCast(stripped, selfCandidates, false, this.allyBurstOpenedBy.casterName);
+          } else {
+            this._debugLog(
+              `IGNORED "${stripped}" - ambiguous, "${this.allyBurstOpenedBy.ability}" by an ally just fired, track others OFF`
+            );
+          }
+          this._checkForEndedBuffs(line);
+          return;
+        }
         if (rememberedBuff) {
           this._debugLog(`LANDED "${rememberedBuff.name}" - remembered choice for "${stripped}" (your cast)`);
           this._land(rememberedBuff);
@@ -2748,7 +2771,8 @@ class BuffEngine extends EventEmitter {
     // forever) so a genuine unmem/re-memorize - a real loadout swap, a different spell taking the
     // slot - requires re-confirming rather than trusting a stale answer indefinitely; see the
     // forget-line/removeMemorized/clearMemorized call sites, which all clear this alongside
-    // currentlyMemorized itself.
+    // currentlyMemorized itself. NOT "memorized alone" - a bard often keeps a song in a gem they
+    // are not currently weaving while a groupmate keeps it up (owner, 8 Sep - "i was not weaving").
     if (this.bardSongConfirmedMine.has(lower) && this.currentlyMemorized.has(lower)) {
       return 'You';
     }
