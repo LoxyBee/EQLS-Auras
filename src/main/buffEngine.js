@@ -3659,19 +3659,19 @@ class BuffEngine extends EventEmitter {
   getActiveBardSongs() {
     const now = Date.now();
     return [...this.bardSongs.values()]
-      // A bard song can only be cast on a groupmate (owner, game fact, 7 Sep - "bard songs cannot
-      // be applied to non group members"). So a buff song "on the player":
-      //  - a debuff song is the player's own tracked debuff on a mob - always kept.
-      //  - attributed to You or a confirmed groupmate - kept.
-      //  - attributed to a name that is NOT in the group - a pub bard, dropped.
-      //  - "Unknown" (no caster) - kept, UNLESS the only reason we know the song exists is a
-      //    non-groupmate singing it near you (their AE landing text - mechanically not on you).
-      .filter((b) => {
-        if (b.isDebuff || b.castBy === 'You' || this._isSelfOrGroupmate(b.castBy)) return true;
-        if (b.castBy) return false;
-        const seenCaster = this._recentOtherCaster(b.name);
-        return !(seenCaster && !this._isSelfOrGroupmate(seenCaster));
-      })
+      // The aura shows the player's OWN weave, nothing else. A buff song "on the player" is:
+      //  - a debuff song: the player's own tracked debuff on a mob - always kept.
+      //  - attributed to You: kept.
+      //  - attributed to a confirmed groupmate whose cast line the app actually saw: kept.
+      //  - anything else - a named non-groupmate, or "Unknown" - dropped.
+      // EverQuest Legends prints NO "<Name> begins singing X." line for other people's bard songs
+      // (verified against a full session: every other class's casts show, not one bard cast line),
+      // so a raid bard weaving group songs onto the player lands them with zero attribution signal
+      // - forever, every 6s. Reported live three times (7 + 8 + 8 Sep): "random out of party bard
+      // buffs" / "i was not weaving" / "i was literally standing around doing nothing". An
+      // unattributable song is not information, it is noise, so it does not go on the aura. A real
+      // groupmate's song reappears the moment its cast line IS caught.
+      .filter((b) => b.isDebuff || b.castBy === 'You' || this._isSelfOrGroupmate(b.castBy))
       .map((b) => {
         const known = this.buffStore.getByName(b.name);
         const isDebuff = !!b.isDebuff;
