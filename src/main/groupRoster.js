@@ -29,6 +29,7 @@ const {
   isPartyChangeLine,
   stripTimestamp,
 } = require('./buffParser');
+const { looksLikeGeneratedPetName } = require('../shared/petNames');
 
 const SELF_JOINED = /^You have joined the group\.$/;
 const SELF_REMOVED = /^You have been removed from the group\.$/;
@@ -116,6 +117,13 @@ class GroupRoster {
   noteGroupmate(name) {
     const key = String(name || '').toLowerCase();
     if (!key || !/^[a-z]+$/.test(key)) return; // a real EQ first name, not a mob phrase
+    // A group-target spell lands on a groupmate's WARDER / pet as well as the groupmate. So
+    // "the player landed a group buff on X" does not prove X is a player - and a name shaped like
+    // EQ's generated pet names (Xarn, Gubn, Vebekn - see petNames.js) landing a group buff is far
+    // more likely a groupmate's warder than a real person. Don't admit one off a buff alone; a
+    // real join line or a "tells the group" still adds them (those go through _add directly).
+    // Reported live 8 Sep: "Xarn" (a beastlord warder) on the player's Spirit of the Puma aura.
+    if (looksLikeGeneratedPetName(name)) return;
     this._add(key);
   }
 

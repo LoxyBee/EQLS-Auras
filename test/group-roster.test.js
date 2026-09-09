@@ -132,5 +132,18 @@ test('noteGroupmate: a mob phrase or empty name is rejected', () => {
   assert.deepEqual(g.getAdmitted(), []);
 });
 
+test('noteGroupmate: a generated pet-shape name is NOT admitted off a buff landing', () => {
+  // Reported live 8 Sep: "Xarn" (a beastlord warder - name fits EQ's summoned-pet shape) turned
+  // up on the player's Spirit of the Puma aura. A Group-target buff lands on a groupmate's warder
+  // too, so it is not proof the recipient is a player.
+  const g = new GroupRoster();
+  g.handleLine(`${T}You have joined the group.`);
+  g.noteGroupmate('Xarn');
+  assert.equal(g.isAdmitted('xarn'), false, 'a warder is not a groupmate');
+  // ...but a real "tells the group" line still adds them (a warder never talks).
+  g.handleLine(`${T}Xarn tells the group, 'oops wrong toon'`);
+  assert.equal(g.isAdmitted('xarn'), true, 'a direct membership signal still wins');
+});
+
 module.exports = () => report('group-roster');
 if (require.main === module) report('group-roster').then((n) => process.exit(n ? 1 : 0));

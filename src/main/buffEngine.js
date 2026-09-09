@@ -29,7 +29,7 @@ const {
   BURST_HARD_CAP_MS,
 } = require('./buffParser');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
-const { isArticlePrefixedMobName } = require('../shared/petNames');
+const { isArticlePrefixedMobName, isPossessivePetName, looksLikeGeneratedPetName } = require('../shared/petNames');
 
 const TICK_INTERVAL_MS = 1000;
 
@@ -3598,6 +3598,18 @@ class BuffEngine extends EventEmitter {
   getActiveAllyBuffs() {
     const now = Date.now();
     return [...this.allyBuffs.values()]
+      // A group-target buff the player cast lands on a groupmate's WARDER / pet too, and the aura
+      // is meant to show your allies, not the group's pets (reported live 8 Sep: "Xarn", a
+      // beastlord warder, on the Spirit of the Puma aura). A possessive pet name ("X's warder") is
+      // unambiguous. A generated-shape name (Xarn, Gubn) is only excluded when nothing vouches it
+      // is a real person - a join line or group chat would have put it in the roster. A debuff on
+      // an enemy is never a pet-vs-player question and is left alone.
+      .filter((b) => {
+        if (b.onEnemy) return true;
+        if (isPossessivePetName(b.allyName)) return false;
+        if (!looksLikeGeneratedPetName(b.allyName)) return true;
+        return this._isSelfOrGroupmate(b.allyName);
+      })
       .map((b) => {
         const known = this.buffStore.getByName(b.name);
         return {
