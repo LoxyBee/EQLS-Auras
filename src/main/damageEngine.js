@@ -334,6 +334,18 @@ class DamageEngine extends EventEmitter {
     const attackerFriend = this._isFriend(hit.attacker);
     const targetFriend = this._isFriend(hit.target);
 
+    // A known friend (not also flagged an enemy) hitting an ARTICLE-PREFIXED name - which is always
+    // a mob, never a player (gotcha #20) - proves that mob hostile, before the player has personally
+    // touched it. Without this a groupmate's melee on a fresh pull sits unclassified until the
+    // player's own damage lands, which for a bard's slow AE song can be 30s+, and the meter shows
+    // no fight in between (owner, 10 Sep - "combat ending even when avenrae is attacking"). A DS
+    // line still never teaches (`teach`), and `!targetFriend` keeps a charmed pet fighting another
+    // friend out of it.
+    if (teach && attackerFriend && !attackerEnemy && !targetFriend && isArticlePrefixedMobName(hit.target)) {
+      this._learnEnemy(t);
+      return 'out';
+    }
+
     // Rule 2 - damaging a known enemy makes you a friend.
     if (targetEnemy && !attackerEnemy) {
       if (teach) this._learnFriend(a);
@@ -720,6 +732,14 @@ class DamageEngine extends EventEmitter {
     const anchor = this.lastRealHitAt != null ? this.lastRealHitAt : this.lastDamageAt;
     if (anchor === null) return false;
     if (now - anchor < this.timeoutSec * 1000) return false;
+    // Damage lines from within the window that haven't been classified yet ARE ongoing combat -
+    // the engine just hasn't worked out which side each name is on. This is common right after a
+    // group reform (the roster resets, so a groupmate's melee against a fresh mob stays pending
+    // until the PLAYER personally hits it - which for a bard whose damage is a slow AE song can be
+    // 30s+). Ending the fight then, and clearing the held lines with it, was the "combat keeps
+    // ending mid-fight" report (owner, 10 Sep). `_flushPending` already prunes anything older than
+    // this same window, so this can only ever be held by genuinely recent activity.
+    if (this.pending.some((p) => now - p.at < this.timeoutSec * 1000)) return false;
     this.reset();
     return true;
   }
