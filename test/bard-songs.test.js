@@ -336,13 +336,20 @@ test('a still-memmed song is "You" no matter how long ago the memorize was - the
   assert.equal(rawCastBy(engine), 'You');
   assert.equal(engine.getActiveBardSongs()[0].allyName, 'You', 'and it is on the aura');
 
-  // Once genuinely forgotten it drops back to Unknown and off the aura.
+  // A "You forget X." mid-twist does NOT demote it - the song is still pulsing, the forget is
+  // part of the twist. Once confirmed yours this session it stays yours (owner, 9 Sep).
   engine.handleLine(`${TS}You forget ${SONG}.`);
   engine.recentSelfCast = null;
   engine.bardSongs.delete(`you::${SONG.toLowerCase()}`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
-  assert.equal(rawCastBy(engine), 'Unknown');
-  assert.equal(engine.getActiveBardSongs().length, 0);
+  assert.equal(rawCastBy(engine), 'You', 'a twist forget does not drop the attribution');
+
+  // A fresh engine (a restart) starts the confirmed set empty - Unknown again until re-observed.
+  const fresh = makeEngine();
+  makeSong(fresh.buffStore);
+  fresh.engine.handleLine(`${TS}${SONG} takes hold.`);
+  assert.equal(rawCastBy(fresh.engine), 'Unknown');
+  assert.equal(fresh.engine.getActiveBardSongs().length, 0);
 });
 
 test('a song that re-lands within the (widened) 30s memorize window is attributed to You - the weave case', () => {
@@ -383,7 +390,10 @@ test('once confirmed by the memorize window, later re-lands stay "You" even well
   assert.equal(songs[0].allyName, 'You');
 });
 
-test('un-memorizing the song clears its confirmed attribution - a later repeat reads "Unknown" again, not a stale "You"', () => {
+test('un-memorizing a song mid-twist keeps it attributed to You - the forget is part of the twist', () => {
+  // On EQL a bard twist re-mems each buff song to renew it, forgetting it for a beat in between.
+  // A "You forget X." while the song is still pulsing is not "I retired this song" - it is the
+  // twist. The confirmed-mine attribution is session-sticky and survives it (owner, 9 Sep).
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
@@ -392,12 +402,11 @@ test('un-memorizing the song clears its confirmed attribution - a later repeat r
 
   engine.handleLine(`${TS}You forget ${SONG}.`);
   engine.recentSelfCast = null;
-  // Also remove the still-active tracked entry, so the separate "reuse an existing active
-  // attribution" fallback (a different tier - see its own test above) can't mask this one.
+  engine.recentlyMemorizedAt.clear();
   engine.bardSongs.delete(`you::${SONG.toLowerCase()}`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
-  assert.equal(rawCastBy(engine), 'Unknown', 'no stale "You" after the forget');
-  assert.equal(engine.getActiveBardSongs().length, 0);
+  assert.equal(rawCastBy(engine), 'You', 'the twist forget did not drop the attribution');
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'You', 'still on the aura');
 });
 
 test('real ally cast-begin evidence still wins over a coincidental recent self-memorize', () => {
@@ -536,16 +545,15 @@ test('an UNRANKED self-cast still worked before the fix, and still works after i
   assert.equal(engine.getActiveBardSongs()[0].allyName, 'You');
 });
 
-test('a confirmed song wearing off (ended text) without renewing drops the memorize-window confidence', () => {
-  // Requested directly: "if a song stops being played, the confidence of the entire list drops."
-  // This still clears bardSongConfirmedMine (the memorize-WINDOW tier's confirmation). It no longer
-  // demotes a song that is still in a gem, though - that one is the player's on gembar membership
-  // alone (owner, 8 Sep - "i am renewing it on myself"). Only a genuinely FORGOTTEN song drops.
+test('a song wearing off does NOT demote the rest of the confirmed weave', () => {
+  // The old _dropBardSongConfidence cleared the whole confirmed set whenever any confirmed song
+  // lapsed - and on EQL a twist lets songs lapse and re-land constantly, so it was firing all the
+  // time and flapping the player's own weave to Unknown. Removed 9 Sep: bardSongConfirmedMine is
+  // session-sticky. A song stopping just removes that one from the aura on its own timer.
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
-  assert.equal(engine.getActiveBardSongs()[0].allyName, 'You');
 
   const other = 'Other Song of Otherness';
   makeSong(buffStore, other);
@@ -553,25 +561,17 @@ test('a confirmed song wearing off (ended text) without renewing drops the memor
   engine.handleLine(`${TS}${other} takes hold.`);
   assert.equal(engine.bardSongConfirmedMine.size, 2);
 
-  // SONG's own ended-text line arrives - it actually wore off, nothing renewed it.
+  // SONG's own ended-text arrives, and OTHER is forgotten mid-twist - neither un-confirms.
   engine.handleLine(`${TS}${SONG} fades.`);
-  assert.equal(engine.bardSongConfirmedMine.size, 0, 'the window confidence dropped for the whole list');
-
-  // The OTHER song is still memmed - so it is still the player's, no re-earning needed.
-  engine.recentSelfCast = null;
-  engine.bardSongs.delete(`you::${other.toLowerCase()}`);
-  engine.handleLine(`${TS}${other} takes hold.`);
-  assert.equal(rawCastBy(engine, other), 'You', 'a still-memmed song stays the player\'s');
-
-  // But forget it and the next pulse is Unknown, and off the aura.
   engine.handleLine(`${TS}You forget ${other}.`);
   engine.recentSelfCast = null;
+  engine.recentlyMemorizedAt.clear();
   engine.bardSongs.delete(`you::${other.toLowerCase()}`);
   engine.handleLine(`${TS}${other} takes hold.`);
-  assert.equal(rawCastBy(engine, other), 'Unknown');
+  assert.equal(rawCastBy(engine, other), 'You', 'still the player\'s - the weave did not flap');
 });
 
-test('a confirmed song wearing off (natural expiry) without renewing drops confidence for every OTHER confirmed song too', () => {
+test('a bard song attributed to You expiring naturally just clears that one tile', () => {
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
@@ -586,7 +586,9 @@ test('a confirmed song wearing off (natural expiry) without renewing drops confi
   const [songEntry] = [...engine.bardSongs.values()].filter((s) => s.name === SONG);
   songEntry.expiresAt = Date.now() - 1000;
   engine._tick();
-  assert.equal(engine.bardSongConfirmedMine.size, 0);
+  assert.equal(engine.bardSongConfirmedMine.size, 2, 'the confirmed set is untouched');
+  assert.ok(!engine.getActiveBardSongs().some((s) => s.name === SONG), 'the expired tile is gone');
+  assert.ok(engine.getActiveBardSongs().some((s) => s.name === other), 'the rest of the weave stays');
 });
 
 test('expiry removes a bard song from the aura, same as any other timer', () => {

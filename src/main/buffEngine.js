@@ -560,6 +560,17 @@ class BuffEngine extends EventEmitter {
     // scoping currentlyMemorized per profile already exists to prevent.
     this.bardSongConfirmedMineByProfile = new Map();
     this.bardSongConfirmedMine = this._getOrCreateBardSongConfirmedSet(this.activeProfileId);
+    // The highest mote/AA rank the player has ever been SEEN self-casting each spell, lowercased
+    // base name -> integer rank. A mote upgrade is permanent (owner, 9 Sep - "if the user is seen
+    // to cast a spell it should be recorded permanently until it is seen again at a higher level"),
+    // and the rank only ever appears on the player's OWN "You begin casting/singing X V." line -
+    // never on a memorize line, and never for a song renewed by re-memming (which is how a bard
+    // twist keeps buff songs up on EQL). So a song you sang once at rank V keeps scaling at V for
+    // every later mem-twisted renewal, this session and after a restart. Persisted; NOT
+    // profile-scoped - a character's motes are the character's, not the loadout's.
+    this.selfCastRankByName = new Map(
+      Object.entries(store.loadJson('selfCastRanks', {}) || {}).map(([k, v]) => [k, Number(v) || 0])
+    );
     this.blockedNames = new Map(); // lowercased name -> original-case name, see blockBuff()
     this.spellbookCheckFn = null; // (name) => boolean
     this.trackOthersEnabled = false;
@@ -1040,6 +1051,7 @@ class BuffEngine extends EventEmitter {
       // misattribute a rank onto an unrelated burst-landed buff; it only ever fires for a landing
       // that is, by name, the very thing that was just activated.
       this.recentSelfCast = { name: activated, expiresAt: Date.now() + FALLBACK_CONFIRM_WINDOW_MS };
+      this._noteSelfCastRank(activated);
       this._checkForEndedBuffs(line);
       return;
     }
@@ -1104,10 +1116,14 @@ class BuffEngine extends EventEmitter {
     if (forgotten) {
       this.currentlyMemorized.delete(forgotten.toLowerCase());
       this._gemVerified.delete(forgotten.toLowerCase());
-      this.bardSongConfirmedMine.delete(forgotten.toLowerCase());
-      // Also clears the raw memorize-window evidence itself (not just the durable confirmation
-      // built from it) - otherwise a forget arriving within BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS of
-      // the original memorize could immediately re-confirm the very attribution just cleared.
+      // NOT bardSongConfirmedMine - a bard twist keeps a buff song up by re-memming it, so a
+      // "You forget X." on a song still pulsing on the player is part of the twist, not "I put
+      // this song away." Once confirmed yours this session it stays yours; a genuinely retired
+      // song stops pulsing on its own timer and drops off the aura then (owner, 9 Sep - "still
+      // having the issue where my bard songs are not getting displayed").
+      // Also clears the raw memorize-window evidence itself - otherwise a forget arriving within
+      // BARD_MEMORIZE_ATTRIBUTION_WINDOW_MS of the original memorize could re-confirm off a window
+      // that no longer means anything.
       this.recentlyMemorizedAt.delete(forgotten.toLowerCase());
       this._saveCurrentlyMemorized();
       this.emit('memorizedChanged', this.getCurrentlyMemorized());
@@ -2042,6 +2058,7 @@ class BuffEngine extends EventEmitter {
       // on ally-buff tracking for why a group buff needs this to outlive
       // the caster's own landing confirmation.
       this.recentSelfCast = { name: castName, expiresAt: Date.now() + FALLBACK_CONFIRM_WINDOW_MS };
+      this._noteSelfCastRank(castName);
       this._checkForEndedBuffs(line);
       return;
     }
@@ -2104,9 +2121,6 @@ class BuffEngine extends EventEmitter {
       if (song.endedText && line.includes(song.endedText)) {
         this.bardSongs.delete(key);
         changed = true;
-        if (song.castBy === 'You' && this.bardSongConfirmedMine.has(song.name.toLowerCase())) {
-          this._dropBardSongConfidence(song.name);
-        }
       }
     }
     if (changed) this.emit('bardSongsChanged', this.getActiveBardSongs());
@@ -2514,7 +2528,25 @@ class BuffEngine extends EventEmitter {
       if (!castName) continue;
       if (stripRankSuffix(castName).toLowerCase() === wanted) return rankValue(castName);
     }
-    return 0;
+    // No cast line for THIS landing (a bard twist renews a buff song by re-memming, with no
+    // "begin singing" line) - fall back to the highest rank the player was ever seen casting it.
+    return this.selfCastRankByName.get(wanted) || 0;
+  }
+
+  // Record a rank off the player's own "You begin casting/singing/activate X <rank>." line.
+  // Monotonic: a mote upgrade is permanent, so only a HIGHER rank than what is stored replaces it
+  // (a later cast of a lower rank - a different gem loadout of the same song - never downgrades).
+  _noteSelfCastRank(castName) {
+    if (!castName) return;
+    const rank = rankValue(castName);
+    if (rank <= 0) return;
+    const base = stripRankSuffix(castName).toLowerCase();
+    if (rank <= (this.selfCastRankByName.get(base) || 0)) return;
+    this.selfCastRankByName.set(base, rank);
+    this._debugLog(`RANK "${stripRankSuffix(castName)}" - recorded rank ${rank} from your own cast`);
+    try {
+      this.store.saveJson('selfCastRanks', Object.fromEntries(this.selfCastRankByName));
+    } catch { /* best-effort, same as the other stores */ }
   }
 
   // P0c. The spell's own cast time, scaled the same linear-per-tier way as _scaledDuration, for
@@ -2763,16 +2795,18 @@ class BuffEngine extends EventEmitter {
     // source. A non-groupmate falls through to Unknown, and getActiveBardSongs then drops it.
     const other = this._recentOtherCaster(name);
     if (other && this._isSelfOrGroupmate(other)) return other;
-    // The song is in one of the player's own fourteen gem slots. On EverQuest Legends a bard
-    // "renews" a song by re-memming it (the twist-via-mem mechanic - CLAUDE.md "Server context"),
-    // and a memmed song auto-sings with NO "You begin singing X." line at all, so recentSelfCast
-    // and the 30s memorize window both come up empty on a long-held weave song. A non-groupmate's
-    // song can never be in your gembar, so a memmed bard song landing on you is yours. Reported
-    // live 8 Sep, twice: "Cantata of Soothing stopped entering my bard aura even though i am
-    // renewing it on myself" (it had been memmed 34 min, pulsing 5000+ times, all "Unknown").
-    // currentlyMemorized can go stale after gems are changed with the app CLOSED (gotcha #16);
-    // accepted - a stale "you have this memmed" crediting your own weave to you beats it vanishing.
-    if (this.currentlyMemorized.has(lower)) {
+    // The song is in one of the player's own gem slots OR has been confirmed the player's own at
+    // any point THIS session. On EverQuest Legends a bard renews a buff song by re-memming it (the
+    // twist-via-mem mechanic - CLAUDE.md "Server context"), with NO "You begin singing X." line at
+    // all, and a twist forgets each song for a beat before re-memming it - so recentSelfCast, the
+    // memorize window, AND currentlyMemorized all blink empty mid-twist while the song is very much
+    // still the player's and still pulsing. bardSongConfirmedMine is the sticky record of "seen to
+    // be yours this session" (no longer cleared by a forget or by a neighbour wearing off), which
+    // is what keeps the whole weave attributed steadily instead of flapping to Unknown. Reported
+    // live 8 + 9 Sep: "Cantata stopped entering my aura even though i am renewing it on myself" /
+    // "still having the issue where my bard songs are not getting displayed". A non-groupmate's
+    // song can never be in your gembar, so this can't misfire on a pub bard.
+    if (this.currentlyMemorized.has(lower) || this.bardSongConfirmedMine.has(lower)) {
       this.bardSongConfirmedMine.add(lower);
       return 'You';
     }
@@ -2810,25 +2844,12 @@ class BuffEngine extends EventEmitter {
     return null;
   }
 
-  // A confirmed-mine song wearing off WITHOUT ever being renewed by a fresh landing (as opposed
-  // to simply being overwritten in place, which never reaches this - see _trackBardSongOnPlayer's
-  // bardSongs.set()) is treated as a signal that whatever made the memorize-window confirmations
-  // trustworthy for this stretch of play may have changed - most likely a loadout swap this app
-  // has no other way to see (CLAUDE.md gotcha #9 explicitly rejected a general swap-detector as
-  // unreliable; this is a narrower, bard-song-specific signal built from a real observation - a
-  // song actually stopping - not that same rejected idea). Requested directly: "if a song stops
-  // being played, the confidence of the entire list drops." Un-confirms every OTHER confirmed-mine
-  // song too, not just this one, so a later repeat of any of them needs fresh evidence again
-  // rather than continuing to coast on confirmations that may now be stale. Deliberately does NOT
-  // touch currentlyMemorized/recentlyMemorizedAt - the gem itself may genuinely still be
-  // memorized, this is purely about whether the ATTRIBUTION is still trustworthy.
-  _dropBardSongConfidence(name) {
-    if (this.bardSongConfirmedMine.size === 0) return;
-    this._debugLog(
-      `BARD SONG CONFIDENCE DROP - "${name}" wore off without renewing, un-confirming ${this.bardSongConfirmedMine.size} song(s)`
-    );
-    this.bardSongConfirmedMine.clear();
-  }
+  // (removed 9 Sep) A song wearing off used to clear the whole confirmed-mine set, on the theory
+  // that it might signal a loadout swap the app can't see. But on EQL a bard twist keeps buff
+  // songs up by re-memming, so songs lapse and re-land constantly during ordinary play - and the
+  // clear was firing on every one of those, dropping the player's own weave to "Unknown" the
+  // moment any song in it blinked. bardSongConfirmedMine is now session-sticky (rebuilt fresh each
+  // launch, per profile) and only ever grows; a genuinely retired song stops pulsing on its own.
 
   // Ally-buff equivalent of _land() - same blocked-name guard (blocking a
   // buff stops tracking it everywhere, not just for yourself), same
@@ -3318,9 +3339,6 @@ class BuffEngine extends EventEmitter {
       if (song.expiresAt <= now) {
         this.bardSongs.delete(key);
         this._debugLog(`EXPIRED "${song.name}" (bard song, cast by ${song.castBy || 'unknown'}) - duration ran out`);
-        if (song.castBy === 'You' && this.bardSongConfirmedMine.has(song.name.toLowerCase())) {
-          this._dropBardSongConfidence(song.name);
-        }
       }
     }
     this.emit('bardSongsChanged', this.getActiveBardSongs());
