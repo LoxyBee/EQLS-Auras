@@ -101,7 +101,7 @@ test('the in-game command is wired: listener -> activateProfile, IPC, preload, L
 
   // A dedicated log-line listener that reads the failed /tell and matches it to a profile word.
   assert.match(main, /onLogLine\('profileCommand'/);
-  assert.match(main, /profileStore\.getAll\(\)\.find\(\(p\) => \(p\.tellCommand \|\| ''\) === word\)/);
+  assert.match(main, /all\.find\(\(p\) => \(p\.tellCommand \|\| ''\) === word\)/);
   // It switches the loadout through the SAME path the chip bar and modal use.
   assert.match(main, /function activateProfile\(id\)/);
   assert.match(main, /if \(activateProfile\(match\.id\)\)/);

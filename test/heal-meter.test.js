@@ -115,6 +115,41 @@ test('a mob "healing" another mob is dropped, not shown on the meter', () => {
   assert.equal(rows.find((r) => r.name === 'a zol ghoul knight'), undefined);
 });
 
+// Reported live 7 Sep, Befallen: a "Charmed pets" row on the HEAL meter healing ~1.1k, with no
+// charm anywhere in the session. Cause: in a charm-war zone a hostile mob's name drifts onto the
+// friend side through the bootstrap, and once it has, its constant self-heals get credited to the
+// group's "Charmed pets" heal row. An article-prefixed name petTracker never saw a charm line for
+// contributes damage (a possible wild charm) but never healing.
+test('a leaked hostile mob\'s self-heals never reach the "Charmed pets" heal row', () => {
+  const e = new DamageEngine();
+  // "an ice bones" leaks onto the friend side by hitting a mob the player tagged (rule 2).
+  e.handleLine(`${T}You crush a greater mummy for 60 points of damage.`, 1000);
+  e.handleLine(`${T}an ice bones hits a greater mummy for 20 points of damage.`, 1000);
+  // ...then it self-heals, the way hostiles do all fight.
+  e.handleLine(`${T}an ice bones healed itself for 300 hit points by Symbol of Ryltan.`, 1000);
+  e.handleLine(`${T}an ice bones healed itself for 300 hit points by Symbol of Ryltan.`, 1000);
+  const heal = e.getActive(1000, 'all', 'healing');
+  assert.equal(heal.find((r) => r.name === 'Charmed pets'), undefined, 'no phantom Charmed pets heal row');
+  // Its DAMAGE still folds into Charmed pets - that could be a real wild charm (gotcha #40).
+  const dmg = e.getActive(1000, 'all', 'damage');
+  assert.ok(dmg.find((r) => r.name === 'Charmed pets'), 'damage side is unchanged');
+});
+
+test('a wild charm petTracker DID see a charm line for still shows its healing', () => {
+  const e = new DamageEngine();
+  e.setPetsFn(() => ({
+    ownPetKeyByName: new Map(),
+    unknownPetNames: new Set(['a spite golem']),
+    allyPetLeader: new Map(),
+  }));
+  e.handleLine(`${T}You crush a greater mummy for 60 points of damage.`, 1000);
+  e.handleLine(`${T}a spite golem hits a greater mummy for 20 points of damage.`, 1000);
+  e.handleLine(`${T}a spite golem healed itself for 120 hit points by Regrowth.`, 1000);
+  const heal = e.getActive(1000, 'all', 'healing');
+  const charmed = heal.find((r) => r.name === 'Charmed pets');
+  assert.ok(charmed && /120/.test(charmed.valueText), 'a vouched charmed pet\'s heal is still counted');
+});
+
 test('damage and healing are tallied completely separately', () => {
   const e = new DamageEngine();
   e.handleLine(`${T}A flouting gargoyle has taken 100 damage from your Frost Bolt.`, 1000);

@@ -678,6 +678,45 @@ test('a raid AE buff during the player\'s own Quick Buff is ignored, not queued 
   assert.ok(log.some((m) => m.includes('incoming AE')));
 });
 
+test('an ally Quick Buff: a remembered self-resolution does NOT auto-land a shared-text buff', () => {
+  // Reported live (8 Sep): "someone else's quick buff cast was picked up as my own even though i
+  // didn't cast it - because i had the buffs memmed, which is wrong." A remembered resolution
+  // ("last time i saw this text it was my Shield of Words") answers "which of MY spells", never
+  // "is this landing even mine" - and an ally's raid-wide Quick Buff printing that shared text is
+  // exactly when the answer is no. The spellbook/gem narrow tiers already bail here (gotcha #34);
+  // the remembered-choice path was the one that didn't.
+  const { engine, buffStore, log } = makeEngine();
+  const text = 'You feel the favor of the gods upon you.';
+  const shared = buffStore.getAll().filter((b) => b.landingText === text && !b.isBardSong);
+  assert.ok(shared.length > 1, 'fixture: the landing text is shared by several non-song buffs');
+  // The player has two of them scribed, and has answered this text as shared[0] before.
+  engine.setSpellbookCheckFn((name) => name === shared[0].name || name === shared[1].name);
+  engine.selfAmbiguousResolutions.set(text, shared[0].name);
+
+  engine.handleLine('Cavity activates Quick Buff.'); // an ALLY's Quick Buff - not the player's
+  engine.handleLine(text);
+
+  assert.deepEqual(names(engine), [], 'the remembered choice must not land during an ally Quick Buff');
+  assert.ok(
+    log.some((m) => m.includes('IGNORED') && m.includes('an ally just fired')),
+    'it is ignored (track others off), not landed as a remembered self-cast'
+  );
+});
+
+test('an ally Quick Buff: a renewal of a buff the player is already running still lands', () => {
+  // suppressNarrow spares an already-active candidate - a renewal of something the player has up
+  // is theirs, ally Quick Buff or not.
+  const { engine, buffStore } = makeEngine();
+  const text = 'You feel the favor of the gods upon you.';
+  const shared = buffStore.getAll().filter((b) => b.landingText === text && !b.isBardSong);
+  engine.setSpellbookCheckFn((name) => name === shared[0].name || name === shared[1].name);
+  engine.selfAmbiguousResolutions.set(text, shared[0].name);
+  engine._land(shared[0]); // already running
+  engine.handleLine('Cavity activates Quick Buff.');
+  engine.handleLine(text);
+  assert.ok(names(engine).includes(shared[0].name), 'a renewal of a running buff still lands');
+});
+
 test('a normal ambiguous landing with only a couple of other recipients still narrows by spellbook', () => {
   // The AE guard must not swallow the ordinary case: the player casts a group buff, it lands on
   // her two groupmates and herself. Below the crowd threshold, spellbook-narrowing still works.

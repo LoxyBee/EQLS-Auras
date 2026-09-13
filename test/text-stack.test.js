@@ -148,10 +148,10 @@ test('a Resist flash aura the user had already widened keeps its own "Lines visi
   assert.equal(w.maxStackTextLines, 4);
 });
 
-test('the store version lands on 6 after the migrations', () => {
+test('the store version lands on 7 after the migrations', () => {
   const store = loadWith([{ id: 'sb', kind: 'self-buffs-builtin', name: 'Self Buffs' }]);
   store.getById('sb'); // force load
-  assert.equal(store.data.version, 6);
+  assert.equal(store.data.version, 7);
 });
 
 test('v5 -> v6 strips the dead `enabled` field from every widget', () => {
@@ -204,7 +204,7 @@ test('v3->v4 drops a GCD-tracker aura and strips a stray anyCast timer', () => {
   assert.ok(!store.getById('gcd'), 'the GCD aura survived the migration');
   const mixed = store.getById('mixed');
   assert.deepEqual(mixed.customTimers.map((t) => t.id), ['keep'], 'the stray anyCast timer was not stripped');
-  assert.equal(store.data.version, 6);
+  assert.equal(store.data.version, 7);
 });
 
 // ---------------------------------------------------------------------------

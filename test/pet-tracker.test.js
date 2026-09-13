@@ -87,5 +87,35 @@ test('a stale pet is dropped on tick', () => {
   assert.equal(p.snapshot().ownPetKeyByName.size, 0);
 });
 
+// charmSeen - the damage meter reads this to decide whether an unattributable article-prefixed
+// "friendly attacker" is a wild charm (show it as "Charmed pets") or bootstrap pollution (drop it).
+test('charmSeen is false with no charm activity at all', () => {
+  const p = new PetTracker();
+  p.handleLine(`${T}You begin casting Minor Healing.`, 1000);
+  p.handleLine(`${T}a greater kobold hits YOU for 10 points of damage.`, 2000);
+  assert.equal(p.snapshot(3000).charmSeen, false);
+});
+
+test('charmSeen is true right after a charm cast, even before any pet lands', () => {
+  const p = new PetTracker();
+  p.handleLine(`${T}You begin casting Beguile.`, 1000);
+  assert.equal(p.snapshot(2000).charmSeen, true);
+});
+
+test('charmSeen is true while an ally pet is tracked, and after a bare charm landing', () => {
+  const p = new PetTracker();
+  p.handleLine(`${T}a spite golem has been charmed.`, 1000); // no preceding cast -> unknown-owner
+  assert.equal(p.snapshot(2000).charmSeen, true);
+});
+
+test('charmSeen decays STALE_MS after the last charm activity, once no pet is tracked', () => {
+  const p = new PetTracker();
+  p.handleLine(`${T}You begin casting Beguile.`, 1000);
+  p.handleLine(`${T}a spite golem has been charmed.`, 2000); // last charm activity: t=2000
+  p.handleLine(`${T}a spite golem has been slain by Bob!`, 3000); // pet gone
+  assert.equal(p.snapshot(2000 + STALE_MS - 1).charmSeen, true, 'still within the window');
+  assert.equal(p.snapshot(2000 + STALE_MS + 1).charmSeen, false, 'decayed');
+});
+
 module.exports = () => report('pet-tracker');
 if (require.main === module) report('pet-tracker').then((n) => process.exit(n ? 1 : 0));

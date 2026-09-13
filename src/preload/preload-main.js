@@ -169,11 +169,13 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createLockoutBoardWidget: (name) => ipcRenderer.invoke('widget:createLockoutBoard', { name }),
   createFirstAggroWidget: (name) => ipcRenderer.invoke('widget:createFirstAggro', { name }),
   setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
+  setWidgetTravelIncludeSuccor: (id, include) => ipcRenderer.invoke('widget:setTravelIncludeSuccor', { id, include }),
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
   // Raid lockouts. Read-only from the renderer's side: it asks for a projection and is told when
   // one changed. Nothing here can write state.
   getLogRotationStatus: () => ipcRenderer.invoke('logRotation:getStatus'),
   setLogRotationEnabled: (enabled) => ipcRenderer.invoke('logRotation:setEnabled', enabled),
+  getLockoutSkeleton: () => ipcRenderer.invoke('lockouts:skeleton'),
   getLockouts: () => ipcRenderer.invoke('lockouts:get'),
   rescanLockouts: () => ipcRenderer.invoke('lockouts:rescan'),
   onLockoutsChanged: (cb) => { ipcRenderer.on('lockouts:changed', (_e, s) => cb(s)); },
@@ -339,6 +341,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetTriggerCombineMode: (id, mode) => ipcRenderer.invoke('widget:setTriggerCombineMode', { id, mode }),
   setWidgetAndWindowSec: (id, seconds) => ipcRenderer.invoke('widget:setAndWindowSec', { id, seconds }),
   setWidgetReverseDetection: (id, enabled) => ipcRenderer.invoke('widget:setReverseDetection', { id, enabled }),
+  setWidgetDynamicChatTimer: (id, enabled) => ipcRenderer.invoke('widget:setDynamicChatTimer', { id, enabled }),
+  setWidgetScale: (id, scale) => ipcRenderer.invoke('widget:setScale', { id, scale }),
   updateWidgetCustomTimer: (id, timerId, timer) =>
     ipcRenderer.invoke('widget:updateCustomTimer', { id, timerId, ...timer }),
   removeWidgetCustomTimer: (id, timerId) => ipcRenderer.invoke('widget:removeCustomTimer', { id, timerId }),
@@ -351,6 +355,10 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createProfile: (name, widgetIdsToMigrate) => ipcRenderer.invoke('profiles:create', { name, widgetIdsToMigrate }),
   renameProfile: (id, name) => ipcRenderer.invoke('profiles:rename', { id, name }),
   setProfileTellCommand: (id, word) => ipcRenderer.invoke('profiles:setTellCommand', { id, word }),
+  getProfileCycleCommand: () => ipcRenderer.invoke('profiles:getCycleCommand'),
+  setProfileCycleCommand: (word) => ipcRenderer.invoke('profiles:setCycleCommand', word),
+  getProfileFlashEnabled: () => ipcRenderer.invoke('profiles:getFlashEnabled'),
+  setProfileFlashEnabled: (on) => ipcRenderer.invoke('profiles:setFlashEnabled', on),
   setActiveProfile: (id) => ipcRenderer.invoke('profiles:setActive', id),
   deleteProfile: (id) => ipcRenderer.invoke('profiles:delete', id),
   onProfilesChanged: (callback) => {

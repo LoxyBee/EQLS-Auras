@@ -2612,6 +2612,28 @@ body.sidebar-resizing .sidebar {
    "open" must never be confusable at a glance, because the whole point of the feature is that they
    are different facts. not-looked is deliberately the most washed-out: an absence of evidence
    should look like an absence, not like a verdict. */
+.lockout-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.lockout-tab {
+  padding: 5px 14px;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 5px 5px 0 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+}
+.lockout-tab:hover { opacity: 0.85; }
+/* The selected tab uses the app's standard "this is on" look - the global `button.active` rule's
+   accent fill with dark text (owner: match the hover state, which is the readable one). Only the
+   opacity needs resetting here; colour and fill come from button.active. */
+.lockout-tab.active { opacity: 1; }
+
 .lockout-grid {
   border-collapse: collapse;
   margin: 10px 0;
@@ -2620,16 +2642,42 @@ body.sidebar-resizing .sidebar {
 .lockout-grid th,
 .lockout-grid td {
   border: 1px solid var(--line);
-  padding: 5px 9px;
+  padding: 0 9px;
   text-align: center;
   white-space: nowrap;
+  vertical-align: middle;
+  /* Fixed row height. th is a single line so this is exact; td's content is clipped to the same
+     height by .lockout-cell-inner below, so a two-line "done" cell can't push its row taller
+     (owner, 6 Sep: "they all need to be static"). Do NOT set display:flex on th/td - that stops
+     them being table cells and collapses the header row. */
+  height: 46px;
 }
+.lockout-grid td .lockout-cell-inner {
+  height: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+}
+.lockout-status { line-height: 1.2; }
 .lockout-grid th {
   text-align: left;
   font-weight: 600;
   opacity: 0.85;
 }
 .lockout-cell { cursor: help; }
+/* The skeleton drawn while the log read runs - a faint pulsing dot, no verdict colour. */
+.lockout-loading { cursor: default; }
+.lockout-loading .lockout-status {
+  opacity: 0.3;
+  animation: lockout-skel-pulse 1.3s ease-in-out infinite;
+}
+@keyframes lockout-skel-pulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.5; }
+}
 .lockout-completed { background: rgba(80, 190, 120, 0.20); }
 .lockout-open      { background: rgba(90, 150, 235, 0.18); }
 .lockout-conditional { background: rgba(232, 176, 75, 0.22); }
@@ -2645,7 +2693,7 @@ body.sidebar-resizing .sidebar {
   font-size: 12px;
   cursor: help;
 }
-.lockout-pivot { opacity: 0.7; font-size: 11px; }
-.lockout-killdate { display: block; opacity: 0.65; font-size: 11px; white-space: nowrap; }
+.lockout-pivot { opacity: 0.7; font-size: 10px; line-height: 1.1; }
+.lockout-killdate { opacity: 0.65; font-size: 10px; line-height: 1.1; white-space: nowrap; }
 /* A gap in the record is not a detail. It is the reason a cell above might be wrong. */
 .lockout-gapwarn { border-left: 3px solid #e8b04b; padding-left: 10px; margin-top: 6px; }

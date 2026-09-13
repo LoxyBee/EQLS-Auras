@@ -238,6 +238,47 @@ test('a maintained bard song keeps its mote rank across renewals, past the cast 
   assert.equal(renewed, 36, 'the renewal keeps the rank-VIII duration, not the base 12 x 1.65 -> 18');
 });
 
+test('a rank the player was seen casting is remembered permanently, across the cast window and a restart', () => {
+  // Owner, 9 Sep: "mote upgrade is permanent, so if the user is seen to cast a spell it should be
+  // recorded permanently until it is seen again at a higher level." A bard renews buff songs by
+  // re-memming (no "begin singing" line), so a song sung once at rank V keeps scaling at V for
+  // every mem-twisted renewal after - and after a restart.
+  const data = {};
+  const store = {
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  };
+  const buffStore = new BuffStore(store);
+  buffStore.markBardSong("Rizlona's Embers"); // unique landing text, base 12 - the real reported song
+
+  const e1 = new BuffEngine(buffStore, store);
+  e1.stop();
+  e1.setDurationMultiplierFn(() => 1.65);
+  e1.handleLine("[Thu Aug 20 12:00:00 2026] You begin singing Rizlona's Embers V.");
+  assert.equal(data.selfCastRanks["rizlona's embers"], 5, 'the rank was persisted');
+
+  // A much later renewal in a FRESH engine (a restart), no cast line at all - reads the stored rank.
+  const e2 = new BuffEngine(buffStore, store);
+  e2.stop();
+  e2.setDurationMultiplierFn(() => 1.65);
+  e2.handleLine("[Thu Aug 20 13:00:00 2026] Rizlona's embers pulse through your body.");
+  const dur = e2.getActiveBuffs().find((b) => b.name === "Rizlona's Embers").durationSec;
+  assert.equal(dur, 30, 'renewal after restart scales at rank V: 12 x 1.5 x 1.65 = 29.7 -> 30');
+});
+
+test('the remembered rank is monotonic - a later cast of a lower rank does not downgrade it', () => {
+  const data = {};
+  const store = {
+    loadJson: (n, f) => (n in data ? JSON.parse(JSON.stringify(data[n])) : f),
+    saveJson: (n, v) => { data[n] = JSON.parse(JSON.stringify(v)); },
+  };
+  const e = new BuffEngine(new BuffStore(store), store);
+  e.stop();
+  e.handleLine('[Thu Aug 20 12:00:00 2026] You begin singing Chant of Battle VIII.');
+  e.handleLine('[Thu Aug 20 12:05:00 2026] You begin singing Chant of Battle III.');
+  assert.equal(data.selfCastRanks['chant of battle'], 8, 'the higher rank stands');
+});
+
 // The rank comes from the cast that is landing. A stale cast of something else must not lend it.
 test('a tier from a different spell is never borrowed', () => {
   const e = afterCasting(makeEngine(1), 'Cannibalize VII');

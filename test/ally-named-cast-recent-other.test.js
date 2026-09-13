@@ -65,6 +65,27 @@ test('the skip is bounded - a groupmate cast >60s ago no longer suppresses', () 
   assert.ok(allyBuffs(engine).some((s) => s.startsWith('Spirit of the Puma@Chrysaetos')));
 });
 
+test("a group buff landing on a groupmate's warder is kept off the Ally Buffs aura", () => {
+  // Reported live 8 Sep: "Xarn" (a beastlord warder - name fits EQ's summoned-pet shape) showed
+  // on the player's Spirit of the Puma aura. A Group-target buff hits a groupmate's pet too; the
+  // aura is for allies, not the group's pets.
+  const { engine } = makeEngine();
+  engine.handleLine(`${TS(9)}You begin casting Spirit of the Puma VII.`);
+  engine.handleLine(`${TS(10)}Xarn growls with the spirit of the puma.`);
+  assert.ok(
+    !allyBuffs(engine).some((s) => s.startsWith('Spirit of the Puma@Xarn')),
+    'a warder is not shown on the aura'
+  );
+  // A real player recipient of the same shape IS shown once the group roster vouches for them.
+  engine.setGroupRosterFn(() => ['xander']);
+  engine.handleLine(`${TS(11)}You begin casting Spirit of the Puma VII.`);
+  engine.handleLine(`${TS(12)}Xander growls with the spirit of the puma.`);
+  assert.ok(
+    allyBuffs(engine).some((s) => s.startsWith('Spirit of the Puma@Xander')),
+    'a rostered player of the same name shape still shows'
+  );
+});
+
 test('re-casting a non-song buff on an ally who cast it ~30s ago still refreshes their tile', () => {
   // Reported live (3 Sep): Jarlaxle (a shaman) cast Spirit of the Puma once; for the next 60s
   // every re-cast Shara landed on him was IGNORED as "Jarlaxle just self-cast it" and his aura

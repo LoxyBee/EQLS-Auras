@@ -489,7 +489,35 @@ function initProfileBar() {
     });
   }
 
-  setupModalToggle('manage-profiles-modal-backdrop', 'profile-manage-btn', 'close-manage-profiles-modal', renderManageProfilesList);
+  // Cycle-to-next command word + the on-change flash - both global (not per-profile), edited in
+  // the Manage Loadouts modal. Populated whenever it opens.
+  const cycleCmdInput = document.getElementById('profile-cycle-command');
+  const flashCheckbox = document.getElementById('profile-flash-checkbox');
+  function loadProfileExtras() {
+    if (cycleCmdInput) {
+      window.eqTracker.getProfileCycleCommand().then((w) => {
+        if (document.activeElement !== cycleCmdInput) cycleCmdInput.value = w || 'eqldnext';
+      });
+    }
+    if (flashCheckbox) {
+      window.eqTracker.getProfileFlashEnabled().then((on) => { flashCheckbox.checked = on !== false; });
+    }
+  }
+  if (cycleCmdInput) {
+    cycleCmdInput.addEventListener('change', () => {
+      window.eqTracker.setProfileCycleCommand(cycleCmdInput.value).then((w) => { cycleCmdInput.value = w; });
+    });
+  }
+  if (flashCheckbox) {
+    flashCheckbox.addEventListener('change', () => {
+      window.eqTracker.setProfileFlashEnabled(flashCheckbox.checked);
+    });
+  }
+
+  setupModalToggle('manage-profiles-modal-backdrop', 'profile-manage-btn', 'close-manage-profiles-modal', () => {
+    renderManageProfilesList();
+    loadProfileExtras();
+  });
 
   function refresh() {
     return Promise.all([window.eqTracker.getProfiles(), window.eqTracker.getActiveProfileId()]).then(([list, id]) => {
@@ -538,6 +566,7 @@ function initProfileBar() {
   function reopenManage() {
     manageBackdrop.style.display = 'flex';
     renderManageProfilesList();
+    loadProfileExtras();
   }
   document.getElementById('manage-profiles-add-btn').addEventListener('click', () => {
     manageBackdrop.style.display = 'none';
@@ -998,16 +1027,52 @@ function initDetectionSettingsPanel() {
 // Shared by both the static sidebar buttons and the dynamically-created
 // widget submenu buttons (added/removed as widgets are created/deleted),
 // so it can't just be a one-time querySelectorAll like a static nav could.
+// Browser-style back / forward through the pages visited this session, driven by the mouse's side
+// buttons (Mouse 4 = back, Mouse 5 = forward - MouseEvent.button 3 and 4). Every activateNavButton
+// records the page it lands on; goPageHistory walks the list without recording.
+let pageHistory = [];
+let pageHistoryPos = -1;
+let navigatingPageHistory = false;
+
+function recordPageVisit(pageId) {
+  if (!pageId || navigatingPageHistory) return;
+  if (pageHistory[pageHistoryPos] === pageId) return; // same page again - not a move
+  pageHistory = pageHistory.slice(0, pageHistoryPos + 1);
+  pageHistory.push(pageId);
+  pageHistoryPos = pageHistory.length - 1;
+}
+
+function goPageHistory(delta) {
+  const target = pageHistoryPos + delta;
+  if (target < 0 || target >= pageHistory.length) return;
+  pageHistoryPos = target;
+  const btn = document.querySelector(`.nav-btn[data-page="${pageHistory[target]}"]`);
+  if (!btn) return;
+  navigatingPageHistory = true;
+  try { activateNavButton(btn); } finally { navigatingPageHistory = false; }
+}
+
 function activateNavButton(btn) {
   document.querySelectorAll('.nav-btn, .nav-sub-btn').forEach((b) => b.classList.remove('active'));
   btn.classList.add('active');
   const pageId = btn.dataset.page;
   document.querySelectorAll('.page').forEach((page) => page.classList.toggle('active', page.id === pageId));
+  recordPageVisit(pageId);
 }
 
 function initNavigation() {
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => activateNavButton(btn));
+  });
+
+  // The side buttons. preventDefault on mousedown stops any stray in-page history navigation; the
+  // action runs on mouseup so a press-and-drag off the window doesn't trigger it.
+  window.addEventListener('mousedown', (e) => {
+    if (e.button === 3 || e.button === 4) e.preventDefault();
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (e.button === 3) { e.preventDefault(); goPageHistory(-1); }
+    else if (e.button === 4) { e.preventDefault(); goPageHistory(1); }
   });
 
   // Plain in-page links to another page (e.g. the trimmed Widgets intro
@@ -1663,6 +1728,8 @@ function initWidgetsPanel() {
   const iconsPerRowValueEl = document.getElementById('widget-icons-per-row-value');
   const rowSizeSlider = document.getElementById('widget-row-size-slider');
   const rowSizeValueEl = document.getElementById('widget-row-size-value');
+  const scaleSlider = document.getElementById('widget-scale-slider');
+  const scaleValueEl = document.getElementById('widget-scale-value');
   const listWidthSlider = document.getElementById('widget-list-width-slider');
   const listWidthValueEl = document.getElementById('widget-list-width-value');
   const showRowIconCheckbox = document.getElementById('widget-show-row-icon-checkbox');
@@ -1732,6 +1799,7 @@ function initWidgetsPanel() {
   const travelSettingsEl = document.getElementById('widget-travel-settings');
   const travelDestinationCurrentEl = document.getElementById('widget-travel-destination-current');
   const travelCommandInputEl = document.getElementById('widget-travel-command-input');
+  const travelSuccorCb = document.getElementById('widget-travel-succor-checkbox');
   const lockoutSettingsEl = document.getElementById('widget-lockout-settings');
   const lockoutTriggerWordInput = document.getElementById('widget-lockout-command-input');
   const lockoutAutoHideSlider = document.getElementById('widget-lockout-autohide-slider');
@@ -1784,7 +1852,9 @@ function initWidgetsPanel() {
       'widget-text-instant-row', 'widget-text-stack-row', 'widget-travel-settings',
       'widget-damage-settings', 'widget-lockout-settings',
     ],
-    'topic-panel-size': ['widget-list-only-settings', 'widget-icon-only-settings'],
+    // widget-scale-row is always visible (scale applies to every aura kind), so the Size topic
+    // never collapses now - which is what makes Scale reachable on a travel guide / damage meter.
+    'topic-panel-size': ['widget-scale-row', 'widget-list-only-settings', 'widget-icon-only-settings'],
     'topic-panel-text': ['widget-text-size-row', 'widget-text-justify-row'],
     'topic-panel-layout': [
       'widget-display-mode-row', 'widget-sort-order-row', 'widget-merge-row', 'widget-borders-row',
@@ -1930,6 +2000,13 @@ function initWidgetsPanel() {
   const andWindowSlider = document.getElementById('widget-and-window-slider');
   const andWindowValueEl = document.getElementById('widget-and-window-value');
   const reverseDetectionCheckbox = document.getElementById('widget-reverse-detection-checkbox');
+  const dynamicChatTimerCheckbox = document.getElementById('widget-dynamic-chat-timer-checkbox');
+  // The fixed Duration boxes do nothing while "Set duration from the chat line" is on - grey them
+  // out so it's clear the value is coming from somewhere else now.
+  function applyDynamicChatTimerState(on) {
+    triggerDurationMinInput.disabled = !!on;
+    triggerDurationSecInput.disabled = !!on;
+  }
   const newTimerNameInput = document.getElementById('widget-new-timer-name');
   const newTimerCooldownMinInput = document.getElementById('widget-new-timer-cooldown-min');
   const newTimerCooldownSecInput = document.getElementById('widget-new-timer-cooldown-sec');
@@ -3337,6 +3414,11 @@ function initWidgetsPanel() {
     iconsPerRowValueEl.textContent = String(widget.iconsPerRow);
     rowSizeSlider.value = widget.rowSize;
     rowSizeValueEl.textContent = `${widget.rowSize}px`;
+    if (scaleSlider) {
+      const pct = Math.round((typeof widget.scale === 'number' ? widget.scale : 1) * 100);
+      scaleSlider.value = String(pct);
+      scaleValueEl.textContent = `${pct}%`;
+    }
     listWidthSlider.value = widget.listWidth;
     listWidthValueEl.textContent = `${widget.listWidth}px`;
     showRowIconCheckbox.checked = !!widget.showRowIcon;
@@ -3535,6 +3617,7 @@ function initWidgetsPanel() {
     if (fields.has('travel-settings')) {
       showTravelDestination(widget.travelDestination);
       showTravelPickerCommand();
+      if (travelSuccorCb) travelSuccorCb.checked = widget.travelIncludeSuccor === true;
     }
 
     if (fields.has('lockout-settings') && lockoutTriggerWordInput) {
@@ -3564,6 +3647,8 @@ function initWidgetsPanel() {
       andWindowSlider.value = andWindowSec;
       andWindowValueEl.textContent = `${andWindowSec}s`;
       reverseDetectionCheckbox.checked = !!widget.reverseDetection;
+      dynamicChatTimerCheckbox.checked = !!widget.dynamicChatTimer;
+      applyDynamicChatTimerState(widget.dynamicChatTimer);
     }
 
     if (fields.has('track-others')) {
@@ -5075,6 +5160,15 @@ function initWidgetsPanel() {
     rowSizeValueEl.textContent = `${size}px`;
     window.eqTracker.setWidgetRowSize(selectedId, size);
   });
+  if (scaleSlider && scaleValueEl) {
+    scaleSlider.addEventListener('input', () => {
+      const pct = Number(scaleSlider.value) || 100;
+      scaleValueEl.textContent = `${pct}%`;
+      window.eqTracker.setWidgetScale(selectedId, pct / 100).then((cfg) => {
+        if (cfg) updateLocalWidgetCache(cfg);
+      });
+    });
+  }
   listWidthSlider.addEventListener('input', () => {
     const width = Number(listWidthSlider.value);
     listWidthValueEl.textContent = `${width}px`;
@@ -5193,6 +5287,12 @@ function initWidgetsPanel() {
       showTravelDestination(findWidget(selectedId)?.travelDestination);
     });
   });
+
+  if (travelSuccorCb) {
+    travelSuccorCb.addEventListener('change', () => {
+      window.eqTracker.setWidgetTravelIncludeSuccor(selectedId, travelSuccorCb.checked);
+    });
+  }
 
   fightTimeoutSlider.addEventListener('input', () => {
     const sec = Number(fightTimeoutSlider.value);
@@ -5505,6 +5605,10 @@ function initWidgetsPanel() {
   reverseDetectionCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetReverseDetection(selectedId, reverseDetectionCheckbox.checked).then(updateLocalWidgetCache);
   });
+  dynamicChatTimerCheckbox.addEventListener('change', () => {
+    applyDynamicChatTimerState(dynamicChatTimerCheckbox.checked);
+    window.eqTracker.setWidgetDynamicChatTimer(selectedId, dynamicChatTimerCheckbox.checked).then(updateLocalWidgetCache);
+  });
   newTimerChooseIconBtn.addEventListener('click', () => {
     const showing = newTimerIconPicker.style.display !== 'none';
     newTimerIconPicker.innerHTML = '';
@@ -5703,6 +5807,27 @@ function initWidgetsPanel() {
   const lockoutGridEl = document.getElementById('lockout-grid');
   let lockoutData = null;
 
+  // Weekly / Daily tab. Daily is the same grid over the last 24h (see lockoutService's dailyGrid).
+  let lockoutTab = 'weekly';
+  try {
+    const saved = localStorage.getItem('lockoutTab');
+    if (saved === 'daily' || saved === 'weekly') lockoutTab = saved;
+  } catch (_e) { /* private mode / blocked storage - default weekly */ }
+  const lockoutTabBtns = document.querySelectorAll('.lockout-tab');
+  function paintLockoutTabs() {
+    lockoutTabBtns.forEach((b) => b.classList.toggle('active', b.dataset.lktab === lockoutTab));
+  }
+  paintLockoutTabs();
+  lockoutTabBtns.forEach((b) => {
+    b.addEventListener('click', () => {
+      if (lockoutTab === b.dataset.lktab) return;
+      lockoutTab = b.dataset.lktab;
+      try { localStorage.setItem('lockoutTab', lockoutTab); } catch (_e) { /* ignore */ }
+      paintLockoutTabs();
+      renderLockouts();
+    });
+  });
+
   // --- Log tools ---
   // "Change log file" / "Back to live log" sit next to Rescan. "Add split files" and "Trim to
   // this week" are created inline next to the gap / multi-week notice in renderLockouts(), so they
@@ -5829,24 +5954,33 @@ function initWidgetsPanel() {
     const td = document.createElement('td');
     const meta = LOCKOUT_STATES[cell.state] || { text: cell.state, title: '' };
     td.className = `lockout-cell lockout-${cell.state}`;
-    td.textContent = meta.text;
     // `because` is the module's own sentence explaining this exact cell. Shown rather than
     // summarised, because a paraphrase is where hedging gets lost.
     td.title = `${meta.title}\n\n${cell.because || ''}`.trim();
+    // Everything goes in a fixed-height inner box so a "done" cell (status + kill date, two lines)
+    // is exactly as tall as a one-line "open" cell - the row height must not depend on the cell
+    // contents (owner, 6 Sep). The box clips rather than grows.
+    const inner = document.createElement('div');
+    inner.className = 'lockout-cell-inner';
+    const status = document.createElement('span');
+    status.className = 'lockout-status';
+    status.textContent = meta.text;
+    inner.appendChild(status);
     // A "done" cell shows WHEN it was done - the first completion's date. The module already
     // carries it as a field (cell.completedAt, "YYYY-MM-DD HH:MM:SS"); render the date part.
     if (cell.state === 'completed' && cell.completedAt) {
       const d = document.createElement('span');
       d.className = 'lockout-killdate';
-      d.textContent = ` ${lkPrettyDate(String(cell.completedAt).slice(0, 10))}`;
-      td.appendChild(d);
+      d.textContent = lkPrettyDate(String(cell.completedAt).slice(0, 10));
+      inner.appendChild(d);
     }
     if (cell.decidedBy) {
       const s = document.createElement('span');
       s.className = 'lockout-pivot';
-      s.textContent = ` (${cell.decidedBy.pivot})`;
-      td.appendChild(s);
+      s.textContent = `(${cell.decidedBy.pivot})`;
+      inner.appendChild(s);
     }
+    td.appendChild(inner);
     return td;
   }
 
@@ -5857,6 +5991,9 @@ function initWidgetsPanel() {
     lockoutGridEl.innerHTML = '';
     lockoutSummaryEl.textContent = '';
     if (lockoutPeriodHeadingEl) lockoutPeriodHeadingEl.textContent = 'This period';
+    // Weekly (entry.grid) or Daily (entry.dailyGrid - same shape, 24-hour window). A daily grid was
+    // added later, so an older cached projection may not carry one - fall back to weekly.
+    const isDaily = lockoutTab === 'daily' && entry && entry.dailyGrid;
     if (!entry || !entry.grid) {
       // Say WHICH nothing this is. "No logs read yet" covers three different situations - never
       // scanned, scanned and found no EverQuest folder, scanned and found no character logs - and
@@ -5875,29 +6012,38 @@ function initWidgetsPanel() {
       return;
     }
 
-    const grid = entry.grid;
+    const grid = isDaily ? entry.dailyGrid : entry.grid;
     const cells = grid.cells || [];
     const raids = [...new Set(cells.map((c) => c.raid))];
     const tiers = [...new Set(cells.map((c) => c.difficultyLabel))];
 
-    // The week's date range, in the heading. Dates only - the reset time lives in the "Reset time"
-    // control below. periodEnd should always be there (lockoutCore fills it); fall back to
-    // start + 7 days so the heading never shows a "?".
+    // The period, in the heading. Weekly: the week's date range. Daily: "since <date> <hour>:00",
+    // one line because the window is a single day. periodStart carries the hour when it is known
+    // (always, for the daily grid).
     if (lockoutPeriodHeadingEl && grid.period) {
       const p = grid.period;
-      const start = String(p.periodStart || p.boundaryDay || '').slice(0, 10);
-      let end = String(p.periodEnd || '').slice(0, 10);
-      if (!end && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
-        const d = new Date(`${start}T00:00:00`);
-        d.setDate(d.getDate() + 7);
-        end = d.toISOString().slice(0, 10);
-      }
-      if (start && end) {
-        const sameYear = start.slice(0, 4) === end.slice(0, 4);
-        lockoutPeriodHeadingEl.textContent =
-          `This period: ${lkPrettyDate(start, !sameYear)} – ${lkPrettyDate(end, true)}`;
+      if (isDaily) {
+        const startIso = String(p.periodStart || p.boundaryDay || '');
+        const day = startIso.slice(0, 10);
+        const hm = /(\d{2}:\d{2})/.exec(startIso);
+        lockoutPeriodHeadingEl.textContent = day
+          ? `Since ${lkPrettyDate(day, true)}${hm ? `, ${hm[1]}` : ''} (last 24h)`
+          : 'Last 24 hours';
       } else {
-        lockoutPeriodHeadingEl.textContent = 'This period';
+        const start = String(p.periodStart || p.boundaryDay || '').slice(0, 10);
+        let end = String(p.periodEnd || '').slice(0, 10);
+        if (!end && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+          const d = new Date(`${start}T00:00:00`);
+          d.setDate(d.getDate() + 7);
+          end = d.toISOString().slice(0, 10);
+        }
+        if (start && end) {
+          const sameYear = start.slice(0, 4) === end.slice(0, 4);
+          lockoutPeriodHeadingEl.textContent =
+            `This period: ${lkPrettyDate(start, !sameYear)} – ${lkPrettyDate(end, true)}`;
+        } else {
+          lockoutPeriodHeadingEl.textContent = 'This period';
+        }
       }
     }
 
@@ -6008,7 +6154,7 @@ function initWidgetsPanel() {
     // prior-week coverage is coming from those files, not the live log - trimming the live log
     // would do nothing useful, so the offer is hidden.
     const multiLog = (lkStatus.extraLogs || 0) > 0;
-    if (entry.spansPriorWeek && onLiveLog && !multiLog) {
+    if (entry.spansPriorWeek && onLiveLog && !multiLog && !isDaily) {
       const p = document.createElement('p');
       p.className = 'hint';
       p.textContent = 'This log covers more than the current week. ';
@@ -6055,12 +6201,52 @@ function initWidgetsPanel() {
     renderLogTools(data);
   }
 
-  // Loaded the first time the page is opened, never at startup. The scan reads every log file in
-  // the folder, and a user who never opens this page should not pay for it.
+  // The grid's shape, drawn instantly on first open while the real read runs. Same table markup as
+  // renderLockouts (header row + one row per raid), every cell a muted placeholder. Skipped if the
+  // real projection has already arrived.
+  function renderLockoutSkeleton(sk) {
+    if (lockoutData || !sk || !sk.raids) return;
+    lockoutGridEl.innerHTML = '';
+    lockoutSummaryEl.textContent = 'Reading your log…';
+    if (lockoutPeriodHeadingEl) lockoutPeriodHeadingEl.textContent = 'This period';
+    const head = document.createElement('tr');
+    head.appendChild(document.createElement('th'));
+    for (const t of sk.tiers) {
+      const th = document.createElement('th');
+      th.textContent = Number.isInteger(t.difficulty) ? `D${t.difficulty} - ${t.difficultyLabel}` : t.difficultyLabel;
+      head.appendChild(th);
+    }
+    lockoutGridEl.appendChild(head);
+    for (const r of sk.raids) {
+      const tr = document.createElement('tr');
+      const th = document.createElement('th');
+      th.textContent = r.label;
+      th.title = r.bosses && r.bosses.length ? `Bosses: ${r.bosses.join(', ')}` : '';
+      tr.appendChild(th);
+      for (let i = 0; i < sk.tiers.length; i += 1) {
+        const td = document.createElement('td');
+        td.className = 'lockout-cell lockout-loading';
+        const inner = document.createElement('div');
+        inner.className = 'lockout-cell-inner';
+        const s = document.createElement('span');
+        s.className = 'lockout-status';
+        s.textContent = '·';
+        inner.appendChild(s);
+        td.appendChild(inner);
+        tr.appendChild(td);
+      }
+      lockoutGridEl.appendChild(tr);
+    }
+  }
+
+  // Loaded the first time the page is opened, never at startup. The scan reads a week of the live
+  // log, several seconds on a big file - so the grid's shape is drawn immediately and the results
+  // fill in when the read lands (owner, 6 Sep).
   function loadLockoutsOnce() {
     if (lockoutLoaded) return;
     lockoutLoaded = true;
     lockoutScanStatus.textContent = 'reading…';
+    window.eqTracker.getLockoutSkeleton().then(renderLockoutSkeleton).catch(() => {});
     window.eqTracker.getLockouts().then(applyLockoutData);
   }
 

@@ -142,6 +142,15 @@ function makeSelfOnlySong(buffStore, name = SONG) {
   buffStore.getByName(name).targets = 'Self';
 }
 
+// The raw attribution _attributeBardSongCaster decided, read straight from the tracked entry -
+// 'You', a groupmate name, or 'Unknown'. getActiveBardSongs() only surfaces You/groupmate/debuff
+// (an unattributable song is noise, not shown - EQL prints no cast line for others' songs), so the
+// attribution-logic tests below check the entry directly rather than the filtered aura output.
+function rawCastBy(engine, name = SONG) {
+  const s = [...engine.bardSongs.values()].find((x) => x.name === name);
+  return s ? (s.castBy || 'Unknown') : undefined;
+}
+
 test('a self-cast bard song is attributed to "You"', () => {
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
@@ -186,9 +195,10 @@ test('memorizing a spell reclaims it from "Unknown" - bard buffs don\'t stack, s
   // spell, that same spell should be removed from the unknown list."
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
-  // Lands with no evidence at all first - genuinely "Unknown".
+  // Lands with no evidence at all first - genuinely "Unknown", so it is not on the aura yet.
   engine.handleLine(`${TS}${SONG} takes hold.`);
-  assert.equal(engine.getActiveBardSongs()[0].allyName, 'Unknown');
+  assert.equal(rawCastBy(engine), 'Unknown');
+  assert.equal(engine.getActiveBardSongs().length, 0, 'an unattributable song is not shown');
 
   // Now the player is seen memorizing that exact spell.
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
@@ -201,6 +211,7 @@ test('memorizing a spell reclaims it from a real ally caster too, not just "Unkn
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.setTrackOthersEnabled(true);
+  engine.setGroupRosterFn(() => ['baxa']); // a bard song only lands from a groupmate
   engine.handleLine(`${TS}Baxa begins singing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
   assert.equal(engine.getActiveBardSongs()[0].allyName, 'Baxa');
@@ -228,12 +239,50 @@ test('an ally-cast bard song lands and is attributed, even with "Track others" O
   // _attributeBardSongCaster ever got a chance to look at it.
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
+  engine.setGroupRosterFn(() => ['baxa']); // a bard song only lands from a groupmate
   assert.equal(engine.trackOthersEnabled, false, 'sanity: this is testing the default, not an opt-in');
   engine.handleLine(`${TS}Baxa begins singing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
   const songs = engine.getActiveBardSongs();
   assert.equal(songs.length, 1);
   assert.equal(songs[0].allyName, 'Baxa');
+});
+
+test('a non-groupmate bard singing near you never puts a song on your Bard Songs aura', () => {
+  // Reported live 7 Sep, open Befallen (a crowded public zone): "Bulvye" then "Losi" - bards
+  // nobody grouped with - kept showing on the aura. A bard song can only be cast on a groupmate
+  // (owner's game fact), so a passing bard's AE text is not your song.
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  engine.setTrackOthersEnabled(true);
+  engine.setGroupRosterFn(() => ['tenam', 'avenrae']); // Bulvye is not in it
+  engine.handleLine(`${TS}Bulvye begins singing ${SONG}.`);
+  engine.handleLine(`${TS}${SONG} takes hold.`);
+  const songs = engine.getActiveBardSongs();
+  assert.ok(songs.every((s) => s.allyName !== 'Bulvye'), 'no "Bulvye" tile');
+  assert.equal(songs.length, 0, 'and not an "Unknown" tile from a stranger either');
+});
+
+test('an unattributable buff song (raid bard, no cast line) is kept off the aura entirely', () => {
+  // Reported live 7 + 8 + 8 Sep: a raid bard weaving Cantata of Soothing / Elemental Rhythms /
+  // Guardian Rhythms onto the player, pulsing every 6s for hours, all "Unknown". EverQuest Legends
+  // prints no "<Name> begins singing X." line for anyone else's songs, so the app can never
+  // attribute them - and an "Unknown" caster reads as a random pub bard. Owner: "i was literally
+  // standing around doing nothing." So a song the app cannot confirm is the player's own simply
+  // does not go on the aura.
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  // The song pulses on the player over and over with no cast line ever.
+  for (let i = 0; i < 5; i++) engine.handleLine(`${TS}${SONG} takes hold.`);
+  assert.equal(rawCastBy(engine), 'Unknown', 'the engine still tracks it, honestly unattributed');
+  assert.equal(engine.getActiveBardSongs().length, 0, 'but it is not shown');
+  // A real groupmate keeping the SAME song up, once its cast line is caught, does show.
+  engine.setGroupRosterFn(() => ['avenrae']);
+  engine.handleLine(`${TS}Avenrae begins singing ${SONG}.`);
+  engine.handleLine(`${TS}${SONG} takes hold.`);
+  const songs = engine.getActiveBardSongs();
+  assert.equal(songs.length, 1);
+  assert.equal(songs[0].allyName, 'Avenrae');
 });
 
 test('the veto waiver is scoped to bard songs only - an ordinary ally-cast spell is still IGNORED with "Track others" OFF', () => {
@@ -246,15 +295,14 @@ test('the veto waiver is scoped to bard songs only - an ordinary ally-cast spell
   assert.ok(log.some((l) => l.includes('IGNORED') && l.includes('track others OFF')));
 });
 
-test('a landing with no cast-begin evidence either way lands "Unknown", not a guess', () => {
+test('a landing with no cast-begin evidence either way is "Unknown", not a guess - and not on the aura', () => {
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   // No "You begin singing"/"<Name> begins singing" line at all - e.g. a song that was already
   // running when the app started, or whose cast line was missed.
   engine.handleLine(`${TS}${SONG} takes hold.`);
-  const songs = engine.getActiveBardSongs();
-  assert.equal(songs.length, 1);
-  assert.equal(songs[0].allyName, 'Unknown');
+  assert.equal(rawCastBy(engine), 'Unknown', 'the attribution is honest about not knowing');
+  assert.equal(engine.getActiveBardSongs().length, 0, 'so it is kept off the aura');
   // Still lands as a self buff, same as it always has - the app presumes its own casts by
   // default. Only the DEDICATED bard-song attribution is honest about not actually knowing.
   assert.deepEqual(engine.getActiveBuffs().map((b) => b.name), [SONG]);
@@ -274,18 +322,34 @@ test('a song memorized moments ago, with no cast-begin line at all, is still att
   assert.equal(songs[0].allyName, 'You');
 });
 
-test('the memorize-attribution fallback expires - a landing well after the memorize is still "Unknown"', () => {
+test('a still-memmed song is "You" no matter how long ago the memorize was - the auto-sing weave case', () => {
+  // Reported live 8 Sep: "Cantata of Soothing stopped entering my bard aura even though i am
+  // renewing it on myself." On EQL a bard renews a song by re-memming it and a memmed song
+  // auto-sings with no cast line, so recentSelfCast AND the 30s memorize window both come up empty
+  // on a song held for half an hour. It is in the gembar - it is the player's.
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
-  // Backdate the recorded memorize time rather than sleeping the test - same effect as the landing
-  // arriving long after the memorize, without a real wall-clock wait. Past the 30s window (widened
-  // from 6s on 3 Sep to cover a real bard weave that re-mems every ~24s).
-  engine.recentlyMemorizedAt.set(SONG.toLowerCase(), Date.now() - 35000);
+  engine.recentlyMemorizedAt.set(SONG.toLowerCase(), Date.now() - 35000); // memorize window long gone
+  engine.recentSelfCast = null;
   engine.handleLine(`${TS}${SONG} takes hold.`);
-  const songs = engine.getActiveBardSongs();
-  assert.equal(songs.length, 1);
-  assert.equal(songs[0].allyName, 'Unknown');
+  assert.equal(rawCastBy(engine), 'You');
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'You', 'and it is on the aura');
+
+  // A "You forget X." mid-twist does NOT demote it - the song is still pulsing, the forget is
+  // part of the twist. Once confirmed yours this session it stays yours (owner, 9 Sep).
+  engine.handleLine(`${TS}You forget ${SONG}.`);
+  engine.recentSelfCast = null;
+  engine.bardSongs.delete(`you::${SONG.toLowerCase()}`);
+  engine.handleLine(`${TS}${SONG} takes hold.`);
+  assert.equal(rawCastBy(engine), 'You', 'a twist forget does not drop the attribution');
+
+  // A fresh engine (a restart) starts the confirmed set empty - Unknown again until re-observed.
+  const fresh = makeEngine();
+  makeSong(fresh.buffStore);
+  fresh.engine.handleLine(`${TS}${SONG} takes hold.`);
+  assert.equal(rawCastBy(fresh.engine), 'Unknown');
+  assert.equal(fresh.engine.getActiveBardSongs().length, 0);
 });
 
 test('a song that re-lands within the (widened) 30s memorize window is attributed to You - the weave case', () => {
@@ -326,7 +390,10 @@ test('once confirmed by the memorize window, later re-lands stay "You" even well
   assert.equal(songs[0].allyName, 'You');
 });
 
-test('un-memorizing the song clears its confirmed attribution - a later repeat reads "Unknown" again, not a stale "You"', () => {
+test('un-memorizing a song mid-twist keeps it attributed to You - the forget is part of the twist', () => {
+  // On EQL a bard twist re-mems each buff song to renew it, forgetting it for a beat in between.
+  // A "You forget X." while the song is still pulsing is not "I retired this song" - it is the
+  // twist. The confirmed-mine attribution is session-sticky and survives it (owner, 9 Sep).
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
@@ -335,18 +402,17 @@ test('un-memorizing the song clears its confirmed attribution - a later repeat r
 
   engine.handleLine(`${TS}You forget ${SONG}.`);
   engine.recentSelfCast = null;
-  // Also remove the still-active tracked entry, so the separate "reuse an existing active
-  // attribution" fallback (a different tier - see its own test above) can't mask this one.
+  engine.recentlyMemorizedAt.clear();
   engine.bardSongs.delete(`you::${SONG.toLowerCase()}`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
-  const songs = engine.getActiveBardSongs();
-  assert.equal(songs.length, 1);
-  assert.equal(songs[0].allyName, 'Unknown');
+  assert.equal(rawCastBy(engine), 'You', 'the twist forget did not drop the attribution');
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'You', 'still on the aura');
 });
 
 test('real ally cast-begin evidence still wins over a coincidental recent self-memorize', () => {
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
+  engine.setGroupRosterFn(() => ['baxa']);
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
   engine.handleLine(`${TS}Baxa begins singing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
@@ -391,9 +457,8 @@ test('the reuse-existing-attribution fallback does not invent a caster once ther
   const key = `you::${SONG.toLowerCase()}`;
   engine.bardSongs.delete(key);
   engine.handleLine(`${TS}${SONG} takes hold.`);
-  const songs = engine.getActiveBardSongs();
-  assert.equal(songs.length, 1);
-  assert.equal(songs[0].allyName, 'Unknown');
+  assert.equal(rawCastBy(engine), 'Unknown', 'no invented caster once there is no entry to reuse');
+  assert.equal(engine.getActiveBardSongs().length, 0);
 });
 
 test('two different casters maintaining the same song are two separate entries', () => {
@@ -405,6 +470,7 @@ test('two different casters maintaining the same song are two separate entries',
   const other = 'Other Song of Otherness';
   makeSong(buffStore, other);
   engine.setTrackOthersEnabled(true);
+  engine.setGroupRosterFn(() => ['baxa']);
   engine.handleLine(`${TS}Baxa begins singing ${other}.`);
   engine.handleLine(`${TS}${other} takes hold.`);
 
@@ -420,6 +486,7 @@ test('ended text removes the right caster\'s entry without touching another cast
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.setTrackOthersEnabled(true);
+  engine.setGroupRosterFn(() => ['baxa']);
   engine.handleLine(`${TS}You begin singing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
   // Simulates the self-cast evidence having aged out before the ally's own cast is seen - without
@@ -478,18 +545,15 @@ test('an UNRANKED self-cast still worked before the fix, and still works after i
   assert.equal(engine.getActiveBardSongs()[0].allyName, 'You');
 });
 
-test('a confirmed song wearing off (ended text) without renewing drops confidence for every OTHER confirmed song too', () => {
-  // Requested directly: "if a song stops being played, the confidence of the entire list drops" -
-  // clarified as specifically meaning a CONFIRMED song's own timer actually running out without a
-  // repeat landing first (as opposed to being un-memorized, which only un-confirms that one song -
-  // see the test above). Treated as a sign that whatever made the memorize-window confirmations
-  // trustworthy may have changed (most likely a loadout swap this app has no other way to see),
-  // so every remaining confirmed song needs fresh evidence again too.
+test('a song wearing off does NOT demote the rest of the confirmed weave', () => {
+  // The old _dropBardSongConfidence cleared the whole confirmed set whenever any confirmed song
+  // lapsed - and on EQL a twist lets songs lapse and re-land constantly, so it was firing all the
+  // time and flapping the player's own weave to Unknown. Removed 9 Sep: bardSongConfirmedMine is
+  // session-sticky. A song stopping just removes that one from the aura on its own timer.
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
   engine.handleLine(`${TS}${SONG} takes hold.`);
-  assert.equal(engine.getActiveBardSongs()[0].allyName, 'You');
 
   const other = 'Other Song of Otherness';
   makeSong(buffStore, other);
@@ -497,22 +561,17 @@ test('a confirmed song wearing off (ended text) without renewing drops confidenc
   engine.handleLine(`${TS}${other} takes hold.`);
   assert.equal(engine.bardSongConfirmedMine.size, 2);
 
-  // SONG's own ended-text line arrives - it actually wore off, nothing renewed it.
+  // SONG's own ended-text arrives, and OTHER is forgotten mid-twist - neither un-confirms.
   engine.handleLine(`${TS}${SONG} fades.`);
-  assert.equal(engine.bardSongConfirmedMine.size, 0, 'confidence should have dropped for the whole list');
-
-  // A later repeat of the OTHER song, still memorized, with no fresh cast-begin evidence, now
-  // needs to re-earn its confirmation rather than coasting on the old one.
-  engine.recentlyMemorizedAt.set(other.toLowerCase(), Date.now() - 999999);
+  engine.handleLine(`${TS}You forget ${other}.`);
   engine.recentSelfCast = null;
+  engine.recentlyMemorizedAt.clear();
   engine.bardSongs.delete(`you::${other.toLowerCase()}`);
   engine.handleLine(`${TS}${other} takes hold.`);
-  const songs = engine.getActiveBardSongs();
-  const theOther = songs.find((s) => s.name === other);
-  assert.equal(theOther.allyName, 'Unknown');
+  assert.equal(rawCastBy(engine, other), 'You', 'still the player\'s - the weave did not flap');
 });
 
-test('a confirmed song wearing off (natural expiry) without renewing drops confidence for every OTHER confirmed song too', () => {
+test('a bard song attributed to You expiring naturally just clears that one tile', () => {
   const { engine, buffStore } = makeEngine();
   makeSong(buffStore);
   engine.handleLine(`${TS}You have finished memorizing ${SONG}.`);
@@ -527,7 +586,9 @@ test('a confirmed song wearing off (natural expiry) without renewing drops confi
   const [songEntry] = [...engine.bardSongs.values()].filter((s) => s.name === SONG);
   songEntry.expiresAt = Date.now() - 1000;
   engine._tick();
-  assert.equal(engine.bardSongConfirmedMine.size, 0);
+  assert.equal(engine.bardSongConfirmedMine.size, 2, 'the confirmed set is untouched');
+  assert.ok(!engine.getActiveBardSongs().some((s) => s.name === SONG), 'the expired tile is gone');
+  assert.ok(engine.getActiveBardSongs().some((s) => s.name === other), 'the rest of the weave stays');
 });
 
 test('expiry removes a bard song from the aura, same as any other timer', () => {
@@ -712,6 +773,81 @@ test('a caster already recorded is purged from recentOtherCasts once they turn h
   assert.equal(engine._recentOtherCaster(song), 'Krudd', 'recorded while allegiance unknown');
   engine.handleLine(`${TS}Krudd casts a spell on you, but you resist.`);
   assert.equal(engine._recentOtherCaster(song), null, 'purged the moment they cast at you');
+});
+
+test('restoreSnapshot downgrades a stale other-player bard-song attribution to Unknown', () => {
+  // Reported live 7 Sep: after an app restart, "Selo's Accelerating Chorus" came back on the Bard
+  // Songs aura still attributed to "Losi" - a bard from a previous zone. sessionRestore persists
+  // the bard song WITH its castBy, and restoreSnapshot put it straight back without re-deriving.
+  // recentOtherCasts is not persisted and the group roster has not rebuilt at that point, so a
+  // specific other-player name cannot be reconfirmed - it becomes Unknown.
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore); // targets defaults to undefined (not 'Self')
+  const future = Date.now() + 60000;
+  engine.restoreSnapshot({
+    bardSongs: [{ name: SONG, castBy: 'Losi', durationSec: 30, expiresAt: future, endedText: `${SONG} fades.` }],
+  });
+  assert.equal(rawCastBy(engine), 'Unknown', 'the stale "Losi" was not carried across the restart');
+  assert.equal(engine.getActiveBardSongs().length, 0, 'and an unattributable restored song is not shown');
+});
+
+test('restoreSnapshot keeps "You" on a restored self-cast bard song', () => {
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  const future = Date.now() + 60000;
+  engine.restoreSnapshot({
+    bardSongs: [{ name: SONG, castBy: 'You', durationSec: 30, expiresAt: future, endedText: `${SONG} fades.` }],
+  });
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'You', 'the player\'s own song is restored as theirs');
+});
+
+test('restoreSnapshot restores a Self-target song as "You" even if it was stored under a name', () => {
+  const { engine, buffStore } = makeEngine();
+  makeSong(buffStore);
+  buffStore.getByName(SONG).targets = 'Self'; // upsert doesn't carry `targets`; set it like makeDebuffSong sets kind
+  const future = Date.now() + 60000;
+  engine.restoreSnapshot({
+    bardSongs: [{ name: SONG, castBy: 'Losi', durationSec: 30, expiresAt: future, endedText: `${SONG} fades.` }],
+  });
+  assert.equal(engine.getActiveBardSongs()[0].allyName, 'You', 'a Self-only song can only ever be the player\'s');
+});
+
+test('a zone change clears stale cross-zone other-cast attribution', () => {
+  // Reported live 7 Sep: in Befallen 4 (Refined), a non-bard cleric saw "Selo's Accelerating
+  // Chorus" pulsing on her attributed to "Losi" - a bard she had passed 65 minutes and 5 zones
+  // earlier. recentOtherCasts has no per-entry expiry (bard-song attribution needs a whole-session
+  // memory), so a bard from a previous zone kept owning a song landing in the new one. A song cast
+  // by someone a zone ago cannot be the source of a landing now.
+  const { engine, buffStore } = makeEngine();
+  const song = "Losi's Test March";
+  buffStore.upsert(song, 30, { landingText: `${song} lands.`, endedText: `${song} fades.` });
+  buffStore.markBardSong(song);
+
+  engine.handleLine(`${TS}Losi begins singing ${song}.`);
+  assert.equal(engine._recentOtherCaster(song), 'Losi', 'recorded while in the same zone');
+
+  engine.setLoadoutLocked(false, 'Northern Felwithe'); // first zone seen
+  engine.setLoadoutLocked(true, 'Befallen'); // a real move - Losi is not here
+  assert.equal(engine._recentOtherCaster(song), null, 'the stale attribution is gone after the zone change');
+  assert.equal(engine.recentOtherCasts.size, 0);
+
+  // The same song now landing on the player attributes to Unknown, never "Losi".
+  engine.handleLine(`${TS}${song} lands.`);
+  const songs = engine.getActiveBardSongs();
+  assert.ok(songs.every((s) => s.allyName !== 'Losi'), 'no stale Losi group on the aura');
+});
+
+test('an entrance->instance echo for the same base zone does NOT clear other-cast attribution', () => {
+  // setLoadoutLocked is keyed on the base zone name so a reconnect echo / "You have entered
+  // Befallen." immediately followed by "Befallen 4 (Refined)." counts as one move, not two.
+  const { engine, buffStore } = makeEngine();
+  const song = 'Group Test Cadence';
+  buffStore.upsert(song, 30, { landingText: `${song} lands.` });
+  buffStore.markBardSong(song);
+  engine.setLoadoutLocked(false, 'Befallen');
+  engine.handleLine(`${TS}Bandmate begins singing ${song}.`);
+  engine.setLoadoutLocked(true, 'Befallen'); // the instance line, same base name
+  assert.equal(engine._recentOtherCaster(song), 'Bandmate', 'a groupmate who zoned in with you is still credited');
 });
 
 module.exports = () => report('bard-songs');

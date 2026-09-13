@@ -537,6 +537,78 @@ test('spansPriorWeek is set when the log reaches before this week', async () => 
 // The grid boundary must be resolved in US Eastern and handed to lockoutCore as pre-computed
 // civil components - never left to lockoutCore's own weekday/hour math, which is only right on an
 // Eastern machine. This pins that lockoutService always passes it.
+// The "Daily" tab: the same grid over the last 24 hours. Owner, 8 Sep.
+test('getProjection carries a dailyGrid: same shape, 24-hour window, hour known', async () => {
+  const file = liveLog([
+    ASSIGN('Lord Nagafen').replace('Aug 10 17:14:49', 'Sep 05 12:00:00'),
+  ]);
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => file);
+  s.setResetRule({ weekday: 2, hour: 11 });
+  await s.backfill();
+  const e = s.getProjection(civilNow(new Date(2026, 8, 5, 18, 0, 0))).characters[0];
+  assert.ok(e.grid && e.dailyGrid, 'both grids present');
+  // Same raids and tiers - it is literally the same projectGrid, just a shorter window.
+  assert.deepEqual(
+    e.dailyGrid.cells.map((c) => `${c.raid}/${c.difficultyLabel}`),
+    e.grid.cells.map((c) => `${c.raid}/${c.difficultyLabel}`)
+  );
+  assert.equal(e.dailyGrid.period.hourKnown, true, 'the daily boundary is a point, not an ambiguous day');
+  assert.equal(e.dailyGrid.period.nowIsOnBoundaryDay, false, 'no boundary-day ambiguity on a daily window');
+  // The window spans exactly one day.
+  const span = new Date(e.dailyGrid.period.periodEnd) - new Date(e.dailyGrid.period.periodStart);
+  assert.equal(span, 86400000, `daily window was ${span / 3600000}h`);
+  // The weekly window is 7 days.
+  const wspan = new Date(e.grid.period.periodEnd) - new Date(e.grid.period.periodStart);
+  assert.equal(wspan, 7 * 86400000);
+});
+
+test('the daily grid uses a short gap tolerance so a big hole reads "not looked", not "open"', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'lockoutService.js'), 'utf8');
+  const call = src.slice(src.indexOf('dailyGrid: core.projectGrid('));
+  assert.match(call.slice(0, 300), /gapToleranceMs: 3 \* 60 \* 60 \* 1000/);
+  // and lockoutCore honours it (additive opt, weekly default preserved)
+  const core = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'lockoutCore.js'), 'utf8');
+  assert.match(core, /Number\.isFinite\(opts\.gapToleranceMs\)\s*\n\s*\? opts\.gapToleranceMs/);
+});
+
+test('getSkeleton returns the grid shape with no log read at all', () => {
+  const s = new LockoutService();
+  // No setCurrentFileFn, no backfill - a pure structural call.
+  const sk = s.getSkeleton();
+  assert.equal(sk.raids.length, 6);
+  assert.deepEqual(sk.raids.map((r) => r.label), [
+    'Lord Nagafen', 'Lady Vox', 'Master Yael', 'Plane of Fear', 'Plane of Hate', 'Phinigel Autropos',
+  ]);
+  assert.deepEqual(sk.tiers.map((t) => t.difficultyLabel), ['Normal', 'Awakened', 'Adaptive', 'Fused', 'Refined']);
+  assert.deepEqual(sk.tiers.map((t) => t.difficulty), [0, 1, 2, 3, 4]);
+  assert.ok(Array.isArray(sk.raids[0].bosses) && sk.raids[0].bosses.length, 'boss list for the tooltip');
+});
+
+test('the page draws the skeleton immediately, then the real data replaces it', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.match(src, /ipcMain\.handle\('lockouts:skeleton', \(\) => lockoutService\.getSkeleton\(\)\)/);
+  const pre = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload', 'preload-main.js'), 'utf8');
+  assert.match(pre, /getLockoutSkeleton: \(\) => ipcRenderer\.invoke\('lockouts:skeleton'\)/);
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  assert.match(js, /function renderLockoutSkeleton\(sk\)/);
+  // it bails once the real projection is in, so a slow skeleton can't clobber the grid
+  assert.match(js, /if \(lockoutData \|\| !sk \|\| !sk\.raids\) return;/);
+  // both calls fire on first open
+  assert.match(js, /window\.eqTracker\.getLockoutSkeleton\(\)\.then\(renderLockoutSkeleton\)/);
+  assert.match(js, /window\.eqTracker\.getLockouts\(\)\.then\(applyLockoutData\)/);
+});
+
+test('the Lockouts page has Weekly / Daily tabs wired to re-render', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'index.html'), 'utf8');
+  assert.match(html, /data-lktab="weekly"/);
+  assert.match(html, /data-lktab="daily"/);
+  const js = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'main-window', 'main-window.js'), 'utf8');
+  assert.match(js, /const isDaily = lockoutTab === 'daily' && entry && entry\.dailyGrid/);
+  assert.match(js, /const grid = isDaily \? entry\.dailyGrid : entry\.grid/);
+  assert.match(js, /localStorage\.setItem\('lockoutTab'/);
+});
+
 test('getProjection always hands lockoutCore a pre-resolved boundaryCivil', async () => {
   const file = liveLog([ASSIGN('Lord Nagafen')]);
   const s = new LockoutService();

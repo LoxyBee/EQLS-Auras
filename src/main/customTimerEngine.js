@@ -7,6 +7,7 @@ const {
   matchZoneChange,
   matchOwnDeath,
   stripRankSuffix,
+  parseChatTimerDuration,
 } = require('./buffParser');
 
 const TICK_INTERVAL_MS = 1000;
@@ -234,6 +235,35 @@ class CustomTimerEngine extends EventEmitter {
         // door-sanitiser. See widgetStore's sanitizeCustomTimers.
         if (!timer || !timer.triggerText) continue;
         const trigger = timer.triggerText.toLowerCase();
+
+        // Dynamic chat timer (widget.dynamicChatTimer): the trigger fires on "<keyword> mm:ss"
+        // appearing on the line, and the mm:ss becomes the duration (read back in handleLine from
+        // lastCapturedTextByTimerId). The keyword is the chat message the user typed
+        // (triggerChat.message) or, for a raw-text trigger, its triggerText - NOT the whole built
+        // "You say, '...'" line, and the exact/contains mode is ignored, because you cannot
+        // exact-match a line that carries a variable time. This is what makes the trigger word
+        // actually get used: you type "pulltimerstart 1:20" and that one line both fires it and
+        // sets it (owner, 5 Sep).
+        if (widget.dynamicChatTimer) {
+          const keyword = String(timer.triggerChat?.message || timer.triggerText || '').trim().toLowerCase();
+          if (!keyword) continue;
+          const idx = lowerLine.indexOf(keyword);
+          if (idx === -1) continue;
+          // The keyword must stand as a whole word, not a prefix of a longer one - otherwise
+          // "pulltimerstart2 7:48" also fires the "pulltimerstart" trigger (owner, 6 Sep). A letter
+          // or digit touching either end means it's part of a bigger word; a quote/space/punct is
+          // fine (chat wraps the message in 'quotes').
+          const beforeCh = idx === 0 ? '' : lowerLine[idx - 1];
+          const afterCh = lowerLine[idx + keyword.length] || '';
+          if (/[a-z0-9]/i.test(beforeCh) || /[a-z0-9]/i.test(afterCh)) continue;
+          const after = strippedLine.slice(idx + keyword.length).trim().replace(/['".!]+$/, '');
+          this.lastCapturedTextByTimerId.set(timer.id, after);
+          const prefix = strippedLine.slice(0, idx).trim();
+          if (prefix) this.lastCapturedPrefixByTimerId.set(timer.id, prefix);
+          matches.push({ widgetId: widget.id, timer });
+          continue;
+        }
+
         // Exact by default, and that default is why this stayed exact for so long: a trigger of
         // "hi" matching every line with "hi" anywhere in it is a timer that fires constantly.
         //
@@ -297,6 +327,10 @@ class CustomTimerEngine extends EventEmitter {
       const widget = widgetsById.get(widgetId);
       const mode = widget?.triggerCombineMode || 'independent';
       const reverse = !!widget?.reverseDetection;
+      // Whole-aura, like reverse - the trigger's duration comes from an mm:ss token on the line
+      // that fired it rather than the fixed Duration control. Carried per activation so handleLine
+      // does not look the widget up again.
+      const dynamicChatTimer = !!widget?.dynamicChatTimer;
       if (mode === 'and') {
         const andWindowMs =
           typeof widget.andWindowSec === 'number' && Number.isFinite(widget.andWindowSec)
@@ -332,13 +366,13 @@ class CustomTimerEngine extends EventEmitter {
         // The widget's first definition is the combo's stable identity - which particular trigger
         // happened to complete the set this time is incidental, not something the tile's name/icon
         // should flicker between.
-        activations.push({ key: `and:${widgetId}`, def: all[0], reverse });
+        activations.push({ key: `and:${widgetId}`, def: all[0], reverse, dynamicChatTimer });
       } else if (mode === 'or') {
         // Whichever definition matched THIS line - unlike 'and' there is no set to complete, so
         // showing the one that actually just fired is the informative choice, not an arbitrary one.
-        activations.push({ key: `or:${widgetId}`, def: timers[timers.length - 1], reverse });
+        activations.push({ key: `or:${widgetId}`, def: timers[timers.length - 1], reverse, dynamicChatTimer });
       } else {
-        for (const t of timers) activations.push({ key: t.id, def: t, reverse });
+        for (const t of timers) activations.push({ key: t.id, def: t, reverse, dynamicChatTimer });
       }
     }
     return activations;
@@ -414,7 +448,7 @@ class CustomTimerEngine extends EventEmitter {
     // Keyed by `key` above, not by name - two definitions are allowed to share a display name
     // (e.g. same trigger text, different icons, meant to both show at once), and keying by name
     // would let the second activation silently overwrite the first in the Map.
-    for (const { key, def, reverse } of activations) {
+    for (const { key, def, reverse, dynamicChatTimer } of activations) {
       // Note 10's Risk, and it is real: this overwrites an active entry whenever the trigger text
       // is seen again. For a plain timer that is right - seeing the line again means it happened
       // again. For one in its COOLDOWN phase it is wrong twice over: the ability is not available,
@@ -428,7 +462,23 @@ class CustomTimerEngine extends EventEmitter {
         continue;
       }
 
-      const durSec = clampSec(def.durationSec, DEFAULT_TRIGGER_DURATION_SEC);
+      let durSec = clampSec(def.durationSec, DEFAULT_TRIGGER_DURATION_SEC);
+      // Dynamic chat timer (widget.dynamicChatTimer): the duration is the mm:ss written right after
+      // the trigger word - "pulltimerstart 1:20". _findTriggerMatches stored the text after the
+      // keyword; parse the time out of that (falling back to the whole line for an AND-combo, whose
+      // def is not the timer that matched). No time -> the trigger does not fire at all (owner: no
+      // fallback). Duration phase only; a cooldown, if set, stays fixed.
+      if (dynamicChatTimer) {
+        const afterKeyword = this.lastCapturedTextByTimerId.get(def.id);
+        const dyn = parseChatTimerDuration(afterKeyword != null ? afterKeyword : stripped);
+        if (dyn == null) {
+          this._debugLog(
+            `IGNORED "${def.name}" - dynamic chat timer, no mm:ss after the trigger word: "${stripped}"`
+          );
+          continue;
+        }
+        durSec = dyn;
+      }
 
       // Reverse detection. See the class's own header comment on the 'hidden' phase for the full
       // shape - this is the other half, seeing the trigger for the first time. `reverse` came from
@@ -578,10 +628,26 @@ class CustomTimerEngine extends EventEmitter {
     const hidingKeys = new Set(
       [...this.activeTimers.values()].filter((t) => t.phase === 'hidden').map((t) => t.id)
     );
+    // Every key a reverse-detection widget owns. A reverse widget's activeTimers entries are only
+    // ever phase:'hidden' (see handleLine's reverse branch) - so a NON-hidden entry under one of
+    // these keys is stale: a real countdown started while the aura was still in normal mode, left
+    // behind when Reverse detection was toggled on. Without dropping it here you get the leftover
+    // countdown AND the synthesized "always on" tile at once (reported live 5 Sep, with the dynamic
+    // chat timer). It also self-heals on the next fire, which overwrites the key.
+    const reverseKeys = new Set();
+    for (const widget of this.getWidgetsFn()) {
+      if (!widget.reverseDetection) continue;
+      const mode = widget.triggerCombineMode || 'independent';
+      if (mode === 'independent') {
+        for (const d of widget.customTimers || []) if (d && d.id) reverseKeys.add(d.id);
+      } else {
+        reverseKeys.add(`${mode}:${widget.id}`);
+      }
+    }
     const results = [...this.activeTimers.values()]
       // 'hidden' means literally hidden - excluded here, not just styled differently, which is
-      // the entire point of a reverse trigger.
-      .filter((t) => t.phase !== 'hidden')
+      // the entire point of a reverse trigger. A stale non-hidden entry on a reverse key goes too.
+      .filter((t) => t.phase !== 'hidden' && !reverseKeys.has(t.id))
       .map((t) => {
         // defId if present (an 'and'/'or' combo instance, whose own `id` is a synthetic per-widget
         // string no definition owns), otherwise `id` itself (an 'independent' trigger, or a

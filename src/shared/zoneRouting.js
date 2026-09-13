@@ -73,19 +73,31 @@ function baseZoneFor(zoneName) {
   return sibling || null;
 }
 
+// A "Succor: X" druid group spell evacuates you to a FIXED point in a named zone from wherever you
+// stand, so the router treats it as an edge from every zone at once - which makes it turn up as a
+// one-hop shortcut on a lot of routes. Some players don't want an emergency-evac spell offered as
+// a travel step, so a travel aura can opt them out (default: out). Only the "Succor:" prefix - the
+// wizard "Evacuate: X" is left in, and "Lesser Succor" isn't inter-zone travel and isn't in the
+// graph at all (see NOT_TRAVEL_SPELLS).
+function isSuccorSpell(spellName) {
+  return /^succor:\s/i.test(String(spellName || ''));
+}
+
 /**
  * Travel spells that land you somewhere, filtered to the ones you actually know.
  *
  * scribedNames is what the spellbook holds. Passing null means "assume none", which is the honest
  * default: a route offering a spell the player does not have is worse than a longer walk, because
  * they will follow it and then be stuck.
+ *
+ * includeSuccor (default false) keeps the "Succor: X" evac spells in the pool - see isSuccorSpell.
  */
-function usableTravelSpells(scribedNames) {
+function usableTravelSpells(scribedNames, { includeSuccor = false } = {}) {
   if (!scribedNames || !scribedNames.length) return [];
   const known = new Set(scribedNames.map(normalize));
-  return TRAVEL_SPELLS.filter((s) => known.has(normalize(s.spell))).filter((s) =>
-    resolveZoneName(s.destination)
-  );
+  return TRAVEL_SPELLS.filter((s) => known.has(normalize(s.spell)))
+    .filter((s) => includeSuccor || !isSuccorSpell(s.spell))
+    .filter((s) => resolveZoneName(s.destination));
 }
 
 /**
@@ -96,7 +108,7 @@ function usableTravelSpells(scribedNames) {
  * never happens between two known zones, but a graph edited later could easily make possible, and
  * a caller should not have to tell "nowhere to go" apart from "already there" by checking lengths.
  */
-function findRoute(fromZone, toZone, { scribedSpells = null } = {}) {
+function findRoute(fromZone, toZone, { scribedSpells = null, includeSuccor = false } = {}) {
   const from = resolveZoneName(fromZone);
   const requested = resolveZoneName(toZone);
   if (!from || !requested) return { ok: false, hops: 0, legs: [], reason: 'unknown-zone' };
@@ -122,7 +134,7 @@ function findRoute(fromZone, toZone, { scribedSpells = null } = {}) {
     return { ok: true, hops: 1, legs: [{ from, ...enterLeg }], reason: null };
   }
 
-  const spells = usableTravelSpells(scribedSpells);
+  const spells = usableTravelSpells(scribedSpells, { includeSuccor });
   // Grouped by destination so the search takes the best spell to a place rather than queueing one
   // frontier entry per spell that happens to go there.
   const spellsTo = new Map();
@@ -299,4 +311,5 @@ module.exports = {
   pickableZoneNames,
   searchPickableZones,
   usableTravelSpells,
+  isSuccorSpell,
 };

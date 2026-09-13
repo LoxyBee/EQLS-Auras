@@ -11,6 +11,7 @@ const {
   clampSoundCooldownSec,
   clampLockoutAutoHideSec,
   cleanLockoutTriggerWord,
+  clampScale,
 } = require('./widgetStore');
 const { loadJson, saveJson } = require('./store');
 const { DEFAULT_PROFILE_ID } = require('./profileStore');
@@ -53,6 +54,11 @@ const originXByWidget = new Map(); // id -> number
 // bug. Applied once, re-centred on the frozen box, when the aura is locked again. { contentWidth,
 // contentHeight, originX }.
 const pendingFitByWidget = new Map(); // id -> { contentWidth, contentHeight, originX }
+// The window size an unlocked aura was last seen at, so the next drag of its edge can be read as
+// a relative size change and turned into a `scale` bump (see the 'resized' handler). Seeded on
+// unlock, cleared on re-lock.
+const resizeRefByWidget = new Map(); // id -> { w, h }
+const SCALE_DRAG_PX_PER_UNIT = 500; // px of edge-drag per 1.0 of scale change
 // Move HUD (moveHudWindow.js). Snap-to-grid state is shared with action bars via positionSnap.js
 // and only ever applies to the one thing being positioned. movedGuard suppresses the extra 'moved'
 // our own snap setPosition fires.
@@ -243,6 +249,26 @@ function createWidgetWindow(config) {
 
   win.on('resized', () => {
     const [width, height] = win.getSize();
+    // While unlocked, dragging the window's edge is the "scale the whole aura" gesture (owner,
+    // 6 Sep) - not a way to set a literal window size, which fitToContent overrides on re-lock
+    // anyway. Read it as a relative change from the last seen size and bump `scale` by that
+    // factor; the box then springs back to fit the resized content when you re-lock.
+    if (isUnlocked(config.id)) {
+      const ref = resizeRefByWidget.get(config.id) || { w: width, h: height };
+      // A FIXED pixel-to-scale rate, not a ratio: a one-row travel guide box is ~36px tall, and a
+      // height ratio there turns a 30px drag into "scale x1.8". SCALE_DRAG_PX_PER_UNIT px of drag
+      // (on the taller of the two axes' change) moves scale by 1.0, whatever the box size.
+      const dPx = Math.abs(width - ref.w) > Math.abs(height - ref.h) ? width - ref.w : height - ref.h;
+      const delta = dPx / SCALE_DRAG_PX_PER_UNIT;
+      if (Number.isFinite(delta) && Math.abs(delta) >= 0.02) {
+        const cur = widgetStore.getById(config.id);
+        const next = clampScale((cur && cur.scale ? cur.scale : 1) + delta);
+        widgetStore.update(config.id, { scale: next });
+        pushConfigChanged(config.id);
+      }
+      resizeRefByWidget.set(config.id, { w: width, h: height });
+      return;
+    }
     widgetStore.saveSize(config.id, { width, height });
   });
 
@@ -250,6 +276,7 @@ function createWidgetWindow(config) {
     windows.delete(config.id);
     runtimeLock.delete(config.id);
     originXByWidget.delete(config.id);
+    resizeRefByWidget.delete(config.id);
   });
 
   windows.set(config.id, win);
@@ -294,6 +321,20 @@ function setAndWindowSec(id, seconds) {
 
 function setReverseDetection(id, enabled) {
   const config = widgetStore.setReverseDetection(id, enabled);
+  pushConfigChanged(id);
+  return config;
+}
+
+function setDynamicChatTimer(id, enabled) {
+  const config = widgetStore.setDynamicChatTimer(id, enabled);
+  pushConfigChanged(id);
+  return config;
+}
+
+// The whole-aura size multiplier - a slider in settings, or the drag-to-scale gesture on the
+// unlocked box (see the 'resized' handler). Re-fits the box on the next render.
+function setScale(id, scale) {
+  const config = widgetStore.update(id, { scale: clampScale(scale) });
   pushConfigChanged(id);
   return config;
 }
@@ -398,6 +439,12 @@ function setTravelDestination(id, destination) {
   const config = widgetStore.update(id, {
     travelDestination: typeof destination === 'string' ? destination : '',
   });
+  pushConfigChanged(id);
+  return config;
+}
+
+function setTravelIncludeSuccor(id, include) {
+  const config = widgetStore.update(id, { travelIncludeSuccor: include === true });
   pushConfigChanged(id);
   return config;
 }
@@ -580,24 +627,40 @@ function fitToContent(id, contentWidth, contentHeight, originX = 0) {
   const anchorX = config.position ? config.position.x : currentX + previousOriginX;
   const targetX = anchorX - roundedOriginX;
 
+  // Grow/shrink DOWNWARD from the box's top edge - the top stays exactly where the user put it and
+  // new rows appear below (owner, 7 Sep: "new rows should grow down by default without adjusting
+  // the position of the aura"). Content is top-aligned in the window (#content-wrap has no
+  // justify-content), so the first row never moves. Centre-anchoring was tried (31 Aug - 7 Sep)
+  // and pushed a top-of-screen aura off the top edge as it filled.
+  let targetY = currentY;
+  // Safety: if a very tall fill would run off the BOTTOM of this display, slide up just enough to
+  // fit - but never above the work-area top, so it can't disappear upward.
+  const wa = screen.getDisplayMatching({ x: currentX, y: currentY, width, height }).workArea;
+  if (targetY + height > wa.y + wa.height) {
+    targetY = Math.max(wa.y, wa.y + wa.height - height);
+  }
+
   const sizeChanged = width !== currentWidth || height !== currentHeight;
   const xChanged = targetX !== currentX;
-  if (!sizeChanged && !xChanged) return;
+  const yChanged = targetY !== currentY;
+  if (!sizeChanged && !xChanged && !yChanged) return;
 
   // Set before setBounds, not after - the 'moved' handler (see
   // createWidgetWindow) reads this map to convert the window's raw
   // post-move x back into the canonical anchor, and needs the NEW offset
   // to do that correctly for the move this call itself triggers.
   originXByWidget.set(id, roundedOriginX);
-  win.setBounds({ x: targetX, y: currentY, width, height });
+  win.setBounds({ x: targetX, y: targetY, width, height });
   widgetStore.update(id, { width, height });
+  // Persist the recentred anchor so a restart (which places at config.position, then fits) does
+  // not creep, and a later drag starts from the right place.
+  if (yChanged) widgetStore.savePosition(id, { x: (config.position ? config.position.x : targetX + roundedOriginX), y: targetY });
 }
 
 // Apply the content size that came in while the aura was unlocked (fitToContent held it back), now
-// that it is locked again. The frozen box's CENTRE stays put - the owner's choice, 31 Aug: a buff
-// landing or expiring while you were positioning the aura should grow it symmetrically from where
-// you left it, not shove one edge. Also rewrites the stored anchor so later (locked) fitToContent
-// calls grow from this new position rather than snapping back.
+// that it is locked again. The box's TOP-LEFT stays where the user left it and content grows down
+// from there - same rule as fitToContent (owner, 7 Sep). Also rewrites the stored anchor so later
+// (locked) fitToContent calls grow from this new position rather than snapping back.
 function applyPendingFit(id) {
   const pending = pendingFitByWidget.get(id);
   pendingFitByWidget.delete(id);
@@ -613,10 +676,13 @@ function applyPendingFit(id) {
   const [currentX, currentY] = win.getPosition();
   if (width === currentWidth && height === currentHeight) return;
 
+  // Keep the top-left where the user left the box during the move; grow down. X still tracks the
+  // centre (horizontal growth from a label a bit wider/narrower shouldn't shift the box sideways).
   const centreX = currentX + currentWidth / 2;
-  const centreY = currentY + currentHeight / 2;
   const targetX = Math.round(centreX - width / 2);
-  const targetY = Math.round(centreY - height / 2);
+  let targetY = currentY;
+  const wa = screen.getDisplayMatching({ x: currentX, y: currentY, width, height }).workArea;
+  if (targetY + height > wa.y + wa.height) targetY = Math.max(wa.y, wa.y + wa.height - height);
 
   const roundedOriginX = Math.round(pending.originX || 0);
   originXByWidget.set(id, roundedOriginX);
@@ -808,8 +874,19 @@ function setLocked(id, locked, { force = true } = {}) {
   // Re-locking: apply whatever size the content settled on while it was frozen, re-centred on the
   // box the user just positioned (see applyPendingFit). Unlocking: nothing to do - fitToContent
   // starts holding sizes back from here on.
-  if (locked) applyPendingFit(id);
-  else pendingFitByWidget.delete(id);
+  if (locked) {
+    applyPendingFit(id);
+    resizeRefByWidget.delete(id);
+  } else {
+    pendingFitByWidget.delete(id);
+    // Seed the drag-to-scale reference with the box's current size, so the first edge-drag
+    // measures against something real.
+    const w2 = windows.get(id);
+    if (w2 && !w2.isDestroyed()) {
+      const [w, h] = w2.getSize();
+      resizeRefByWidget.set(id, { w, h });
+    }
+  }
   return locked;
 }
 
@@ -1590,6 +1667,7 @@ module.exports = {
   setDamageOptions,
   createTravelGuideWidget,
   setTravelDestination,
+  setTravelIncludeSuccor,
   peekShareCode,
   createTextAuraWidget,
   createBuffTimerWidget,
@@ -1716,6 +1794,8 @@ module.exports = {
   setTriggerCombineMode,
   setAndWindowSec,
   setReverseDetection,
+  setDynamicChatTimer,
+  setScale,
   updateCustomTimer,
   removeCustomTimer,
   excludeBuff,

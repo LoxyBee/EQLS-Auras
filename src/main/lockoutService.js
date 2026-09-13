@@ -42,7 +42,12 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const core = require('./lockoutCore');
-const { easternResetBefore, easternResetAfter } = require('../shared/easternReset');
+const {
+  easternResetBefore,
+  easternResetAfter,
+  easternDailyResetBefore,
+  easternDailyResetAfter,
+} = require('../shared/easternReset');
 const { findWeekStartOffset } = require('./logRotation');
 
 // Same shape logWatcher accepts, so a file this service reads is a file that service would watch.
@@ -330,6 +335,19 @@ class LockoutService extends EventEmitter {
   }
 
   /**
+   * The grid's SHAPE only - the raid rows and difficulty columns - with no log read at all. The
+   * renderer draws this instantly on the first page open, then swaps in the real projection once
+   * the (multi-second) backfill of a week of the live log finishes. Both are static constants in
+   * lockoutCore; nothing here touches the filesystem.
+   */
+  getSkeleton() {
+    return {
+      raids: core.RAIDS.map((r) => ({ key: r.key, label: r.label, bosses: r.bosses.slice() })),
+      tiers: core.DIFFICULTY_LABELS.map((label, i) => ({ difficulty: i, difficultyLabel: label })),
+    };
+  }
+
+  /**
    * What the UI renders, per character.
    *
    * `now` is supplied rather than read inside, so a test can drive it and so the projection is a
@@ -351,6 +369,9 @@ class LockoutService extends EventEmitter {
     const boundaryMs = easternResetBefore(nowMs, this.resetRule.weekday, this.resetRule.hour);
     const boundaryCivil = toCivil(boundaryMs);
     const periodEndCivil = toCivil(easternResetAfter(nowMs, this.resetRule.weekday, this.resetRule.hour));
+    // The "Daily" tab: the same grid over the last 24h, boundary at the same reset HOUR each day.
+    const dailyBoundaryCivil = toCivil(easternDailyResetBefore(nowMs, this.resetRule.hour));
+    const dailyPeriodEndCivil = toCivil(easternDailyResetAfter(nowMs, this.resetRule.hour));
     // `firstSeen` is a civilOf() integer - local components run through Date.UTC. Compare like
     // for like: the boundary's local components through the same Date.UTC.
     const b = new Date(boundaryMs);
@@ -380,6 +401,14 @@ class LockoutService extends EventEmitter {
             resetHour: this.resetRule.hour,
             boundaryCivil,
             periodEndCivil,
+          }),
+          // Same grid, 24-hour window. A shorter gap tolerance so a big hole in one day reads as
+          // "not looked", not "open" (a nightly gap can't exceed the window anyway).
+          dailyGrid: core.projectGrid(state, now, {
+            resetHour: this.resetRule.hour,
+            boundaryCivil: dailyBoundaryCivil,
+            periodEndCivil: dailyPeriodEndCivil,
+            gapToleranceMs: 3 * 60 * 60 * 1000,
           }),
         });
       } catch (err) {

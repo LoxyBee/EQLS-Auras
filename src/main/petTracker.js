@@ -55,6 +55,12 @@ const DEFAULT_CHARM_SPELLS = new Set(
 class PetTracker {
   constructor() {
     this._armedUntil = 0;
+    // When any charm activity was last seen - a charm spell cast, a "has been charmed." line, a
+    // pet claiming you as leader. The damage meter reads this (via snapshot) to decide whether an
+    // article-prefixed "friendly attacker" it can't attribute is a wild charm worth a "Charmed
+    // pets" row, or just charm-war bootstrap pollution (gotcha #40). Decays on the same STALE_MS
+    // as a pet does.
+    this._lastCharmSeenAt = 0;
     this._genByName = new Map(); // nameLower -> highest generation issued
     // nameLower -> { key: 'Name#gen', display: original-case name, gen, refreshedAt }
     this.ownPets = new Map();
@@ -104,11 +110,13 @@ class PetTracker {
     const cast = matchCastBegin(line);
     if (cast && this._isCharmSpell(cast)) {
       this._armedUntil = now + ARM_WINDOW_MS;
+      this._lastCharmSeenAt = now;
       return;
     }
 
     const charmed = matchCharmed(line);
     if (charmed) {
+      this._lastCharmSeenAt = now;
       if (now <= this._armedUntil) {
         this._bindOwn(charmed, now);
         this._armedUntil = 0;
@@ -124,6 +132,7 @@ class PetTracker {
       const ownName = String(this._ownNameFn() || '').toLowerCase();
       if (ownName && leader.leaderName.toLowerCase() === ownName) {
         // The pet itself says it is ours - treat it exactly like an armed charm landing.
+        this._lastCharmSeenAt = now;
         if (!this.ownPets.has(petKey)) this._bindOwn(leader.petName, now);
         else this.ownPets.get(petKey).refreshedAt = now;
       } else if (this.otherPets.has(petKey)) {
@@ -159,8 +168,12 @@ class PetTracker {
    *  - unknownPetNames: charmed mobs with no known owner - folded into one "Charmed pets" row
    *  - allyPetLeader:   charmed mobs owned by a named other player - counted in "group" scope only
    *                     when that player is admitted
+   *  - charmSeen:       is there ANY charm activity to justify a "Charmed pets" row - a tracked
+   *                     pet, or a charm cast / landing within the last STALE_MS. When false, an
+   *                     article-prefixed "friendly attacker" the meter can't place is bootstrap
+   *                     pollution, not a wild charm (gotcha #40).
    */
-  snapshot() {
+  snapshot(now = Date.now()) {
     const ownPetKeyByName = new Map();
     for (const [k, v] of this.ownPets) ownPetKeyByName.set(k, v.key);
     const unknownPetNames = new Set();
@@ -169,7 +182,12 @@ class PetTracker {
       if (v.leader) allyPetLeader.set(k, v.leader);
       else unknownPetNames.add(k);
     }
-    return { ownPetKeyByName, unknownPetNames, allyPetLeader };
+    const charmSeen =
+      ownPetKeyByName.size > 0 ||
+      unknownPetNames.size > 0 ||
+      allyPetLeader.size > 0 ||
+      (this._lastCharmSeenAt > 0 && now - this._lastCharmSeenAt < STALE_MS);
+    return { ownPetKeyByName, unknownPetNames, allyPetLeader, charmSeen };
   }
 }
 

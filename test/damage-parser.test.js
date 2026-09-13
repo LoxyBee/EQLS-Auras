@@ -283,6 +283,54 @@ test('a DoT / melody-song tick does not hold the fight open past the last real h
   assert.equal(e.totalDamage, 40, 'the crush (200) and the 6s tick fell out when the fight ended');
 });
 
+test("a known friend's melee on a fresh article-prefixed mob is credited without waiting on the player", () => {
+  // Owner, 10 Sep: after a group reform the roster resets, so a groupmate's melee on the next pull
+  // sat unclassified until the player's own (slow, AE) damage landed - 30s+ for a bard - and the
+  // meter showed no fight in between. A known friend hitting an "a/an/the <mob>" name proves the
+  // mob hostile now, since an article name is always a mob (gotcha #20).
+  const e = new DamageEngine();
+  // Baxa is learned a friend the ordinary way (hitting a mob the player already tagged).
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Baxa slashes Fright for 300 points of damage.`, 1000);
+  assert.ok(e.friends.has('baxa'));
+
+  // Now a brand-new pull. The player has not touched "a phantasm" at all yet.
+  e.handleLine(`${T}Baxa slashes a phantasm for 250 points of damage.`, 5000);
+  assert.ok(e.enemies.has('a phantasm'), 'the mob was proven hostile by Baxa hitting it');
+  assert.equal(e.byAttacker.get('Baxa').damage, 550, "Baxa's melee on it counts immediately");
+});
+
+test("the friend-hits-mob rule never fires on a player-shaped target, or off a damage shield", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Fright has taken 100 damage from your Plague III.`, 1000);
+  e.handleLine(`${T}Baxa slashes Fright for 300 points of damage.`, 1000);
+  // A one-word target (could be a player) is NOT auto-tagged an enemy off a friend's hit.
+  e.handleLine(`${T}Baxa slashes Zorrick for 40 points of damage.`, 2000);
+  assert.ok(!e.enemies.has('zorrick'), 'friendly fire is not a mob');
+  // A damage-shield line ("burned by ... flames") never teaches.
+  e.handleLine(`${T}Baxa is burned by a phantasm's flames for 13 points of non-melee damage.`, 3000);
+  assert.ok(!e.enemies.has('a phantasm'), 'a DS line does not tag the shield holder');
+});
+
+test('a fight is not ended while unclassified combat is still flowing', () => {
+  // Owner, 10 Sep: "combat ending even when i'm dealing damage, avenrae attacking, ongoing." Right
+  // after a group reform, a groupmate's melee stays pending until the player personally hits the
+  // mob. Ending the fight in that gap - and dropping the held lines with it - is the bug.
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}You crush Fright for 500 points of damage.`, 1000); // an old fight
+  e.tick(1000);
+  // 15s later: the old fight has timed out, but an UNCLASSIFIABLE groupmate is meleeing a fresh
+  // mob (name not yet a known enemy, mate not yet a known friend - a plain melee, no article).
+  e.handleLine(`${T}Newmate slashes Somemob for 120 points of damage.`, 16000);
+  e.handleLine(`${T}Newmate slashes Somemob for 90 points of damage.`, 18000);
+  e.tick(19000);
+  assert.equal(e.pending.length, 2, 'the held lines are not thrown away while combat is live');
+  // The player finally lands their slow AE - the held lines belong to this fight.
+  e.handleLine(`${T}Somemob has taken 300 damage from your Plague III.`, 20000);
+  assert.equal(e.byAttacker.get('Newmate').damage, 210, 'nothing was lost to a premature fight end');
+});
+
 test('a directly-cast nuke DOES hold the fight open (it is a real hit)', () => {
   const e = new DamageEngine();
   e.setOptions({ fightTimeoutSec: 10 });
@@ -615,6 +663,39 @@ test('a damage-shield line does not add anyone to the friend or enemy sets', () 
   e.friends.add('avenrae');
   e.handleLine(`${T}Avenrae is burned by Footman of V\`Zher's flames for 7 points of non-melee damage.`, 1000);
   assert.ok(!e.enemies.has('avenrae'), 'the groupmate is not flipped to enemy by a shield hit');
+});
+
+// Reported live 7 Sep, Befallen (no charms all session): a "Charmed pets" damage row (78, 2%)
+// with nothing charmed. In a charm-war zone the friend/enemy bootstrap leaks a hostile mob onto
+// the friend side; its outgoing damage was folding into a "Charmed pets" row that shouldn't exist.
+// The fold now requires petTracker to report SOME charm activity this session.
+test('an article-prefixed friendly attacker is NOT folded into Charmed pets when nothing has been charmed', () => {
+  const e = new DamageEngine();
+  e.setPetsFn(() => ({
+    ownPetKeyByName: new Map(),
+    unknownPetNames: new Set(),
+    allyPetLeader: new Map(),
+    charmSeen: false,
+  }));
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000);
+  e.handleLine(`${T}a Teir\`Dal rogue backstabs a zol ghoul knight for 400 points of damage.`, 1000);
+  const rows = e.getActive(1000, 'all');
+  assert.equal(rows.find((r) => r.name === 'Charmed pets'), undefined, 'no phantom Charmed pets row');
+  assert.equal(rows.find((r) => /Teir/i.test(r.name)), undefined, 'and the leaked mob is not its own row');
+});
+
+test('...but it IS folded when petTracker reports a charm this session', () => {
+  const e = new DamageEngine();
+  e.setPetsFn(() => ({
+    ownPetKeyByName: new Map(),
+    unknownPetNames: new Set(),
+    allyPetLeader: new Map(),
+    charmSeen: true, // an enchanter in the group is charm-farming
+  }));
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000);
+  e.handleLine(`${T}a Teir\`Dal rogue backstabs a zol ghoul knight for 400 points of damage.`, 1000);
+  const charmed = e.getActive(1000, 'all').find((r) => r.name === 'Charmed pets');
+  assert.ok(charmed && /^400/.test(charmed.valueText), 'a real wild charm still folds in');
 });
 
 test("scope 'mine': an article-prefixed friendly attacker is dropped, not shown", () => {

@@ -14,7 +14,7 @@
 const assert = require('node:assert/strict');
 const { test, report } = require('./harness');
 const { ZONES, TRAVEL_SPELLS, NOT_TRAVEL_SPELLS } = require('../src/shared/data/zoneGraph');
-const { findRoute, describeLeg, resolveZoneName, allZoneNames, usableTravelSpells } =
+const { findRoute, describeLeg, resolveZoneName, allZoneNames, usableTravelSpells, isSuccorSpell } =
   require('../src/shared/zoneRouting');
 
 const zoneNames = () => Object.keys(ZONES);
@@ -191,6 +191,30 @@ test('the spellbook filter matches by name, not by hope', () => {
   assert.equal(usableTravelSpells(['Not A Spell']).length, 0);
   assert.equal(usableTravelSpells([]).length, 0);
   assert.equal(usableTravelSpells(null).length, 0);
+});
+
+test('Succor spells are left out of the pool unless the aura opts in', () => {
+  const book = ['Succor: East Karana', 'Greater Faydark Portal'];
+  assert.equal(usableTravelSpells(book).length, 1, 'Succor is dropped by default');
+  assert.deepEqual(usableTravelSpells(book).map((s) => s.spell), ['Greater Faydark Portal']);
+  assert.equal(usableTravelSpells(book, { includeSuccor: true }).length, 2, 'opt-in keeps it');
+  assert.ok(isSuccorSpell('Succor: North Karana'));
+  assert.ok(!isSuccorSpell('Evacuate: North Karana'), 'the wizard evac is not a Succor spell');
+  assert.ok(!isSuccorSpell('Circle of North Karana'));
+});
+
+test('a route only uses Succor as a shortcut when includeSuccor is set', () => {
+  // Succor: East Karana lands you in The Eastern Plains of Karana from anywhere.
+  const to = 'The Eastern Plains of Karana';
+  const book = ['Succor: East Karana'];
+  const withoutOptIn = findRoute('The Greater Faydark', to, { scribedSpells: book });
+  const withOptIn = findRoute('The Greater Faydark', to, { scribedSpells: book, includeSuccor: true });
+  assert.ok(withOptIn.legs.some((l) => l.spell === 'Succor: East Karana'), 'opt-in: one-hop cast');
+  assert.equal(withOptIn.hops, 1);
+  assert.ok(
+    !withoutOptIn.legs.some((l) => l.spell === 'Succor: East Karana'),
+    'default: the route walks instead of casting Succor'
+  );
 });
 
 // ---------------------------------------------------------------------------

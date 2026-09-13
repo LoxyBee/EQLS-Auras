@@ -162,6 +162,15 @@ function clampHealColor(value) {
   return clampHexColor(value, DEFAULT_HEAL_COLOR);
 }
 
+// One multiplier on top of icon size / row size / text size, so the whole aura grows or shrinks in
+// one motion (a slider, or dragging the unlocked box's edge). 1 = the individual sliders as set.
+// 0.3..3 - the same range as the Scale slider (30-300%), so the drag gesture can't push past what
+// the slider shows. Junk -> 1.
+function clampScale(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.max(0.3, Math.min(3, n)) : 1;
+}
+
 // 'both' track mode: seconds between flipping a row's number from damage to healing and back, so
 // each metric gets the full row width (rate, share, everything). 0 = show both side by side (no
 // cycle). 1..20; a non-number (an old aura, a share code) -> the default 10.
@@ -457,6 +466,8 @@ function defaultCustomWidget(name) {
     timerFormat: 'minutes-seconds',
     textSize: DEFAULT_TEXT_SIZE,
     iconSize: DEFAULT_ICON_SIZE,
+    // Whole-aura size multiplier - see clampScale.
+    scale: 1,
     contentAnchor: DEFAULT_ANCHOR,
     // 1, not DEFAULT_ICONS_PER_ROW (4, used by the two "show everything"
     // builtins) - a custom buff widget or custom timer widget almost always
@@ -521,6 +532,11 @@ function defaultCustomWidget(name) {
     // combine-mode control, not a flag set on each individual trigger. See customTimerEngine.js
     // for the actual show/hide mechanics.
     reverseDetection: false,
+    // Dynamic chat timer: every trigger on this aura takes its duration from an mm:ss token on the
+    // line that fired it ("/say timerstart 8:10" -> 8m10s), ignoring the fixed Duration above. No
+    // token on the line -> the trigger does not fire. Whole-aura, next to reverseDetection - same
+    // "one checkbox, not a per-trigger flag" reasoning. See customTimerEngine.js / parseChatTimerDuration.
+    dynamicChatTimer: false,
     locked: true,
     sortOrder: 'default',
     sortDirection: 'asc',
@@ -882,6 +898,13 @@ const SHAREABLE_FIELDS = [
   'textJustify',
   'allyGroupBy',
   'sortDirection',
+  // dynamicChatTimer was briefly inserted mid-list (after reverseDetection) in a Sep 6 commit,
+  // which shifted the wire index of every field below it. Moved to the true end here - APPEND ONLY
+  // means APPEND. A v3 code shared in the few hours that mistake was live decodes a handful of
+  // fields wrong; nothing can be done about those, and the window was tiny.
+  'dynamicChatTimer',
+  'scale',
+  'travelIncludeSuccor',
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -979,6 +1002,7 @@ function normalizeWidget(widget) {
       Math.max(8, typeof widget.textSize === 'number' ? widget.textSize : LEGACY_TEXT_SIZE_PX[widget.textSize] || DEFAULT_TEXT_SIZE)
     ),
     iconSize: typeof widget.iconSize === 'number' ? widget.iconSize : DEFAULT_ICON_SIZE,
+    scale: clampScale(widget.scale),
     contentAnchor: widget.contentAnchor || DEFAULT_ANCHOR,
     iconsPerRow: typeof widget.iconsPerRow === 'number' ? widget.iconsPerRow : DEFAULT_ICONS_PER_ROW,
     rowSize: typeof widget.rowSize === 'number' ? widget.rowSize : DEFAULT_ROW_SIZE,
@@ -1027,6 +1051,10 @@ function normalizeWidget(widget) {
     // but only read when buffSource === 'lockout'.
     lockoutTriggerWord: cleanLockoutTriggerWord(widget.lockoutTriggerWord),
     lockoutAutoHideSec: clampLockoutAutoHideSec(widget.lockoutAutoHideSec),
+    // Travel guide. "Succor: X" druid evac spells are left OUT of route planning unless this is on
+    // (owner, 7 Sep) - they show as a one-hop shortcut from anywhere and most players don't want an
+    // emergency evac offered as a travel step. Carried for every aura, read only for buffSource 'travel'.
+    travelIncludeSuccor: widget.travelIncludeSuccor === true,
     // A widget saved before this field existed still has its real duration sitting on its first
     // trigger (they were all in sync anyway on every real aura seen so far - see the field's own
     // comment) - read it from there rather than resetting everyone to the bare default. A widget
@@ -1046,6 +1074,7 @@ function normalizeWidget(widget) {
         ? Math.max(0, Math.min(MAX_AND_WINDOW_SEC, Math.round(widget.andWindowSec)))
         : DEFAULT_AND_WINDOW_SEC,
     excludedBuffNames: stringList(widget.excludedBuffNames),
+    dynamicChatTimer: !!widget.dynamicChatTimer,
     sortOrder: widget.sortOrder || 'default',
     sortDirection: widget.sortDirection === 'desc' ? 'desc' : 'asc',
     lowTimeThresholdSec: typeof widget.lowTimeThresholdSec === 'number' ? widget.lowTimeThresholdSec : 30,
@@ -1203,6 +1232,10 @@ const LOSS_OF_CONTROL = [
   { label: 'CHARMED', land: 'You are captivated by the haunting tune.', end: 'You are no longer captivated.', secs: 45 },
   { label: 'AFRAID', land: 'Your mind fills with fear.', end: 'You are no longer afraid.', secs: 30 },
   { label: 'AFRAID', land: 'Your mind snaps in terror.', end: 'You are no longer terrified.', secs: 30 },
+  // Screaming Terror (and other fears that write no "mind fills with fear" line) - confirmed in the
+  // owner's log: "You begin to scream." on the land, "You stop screaming." when it breaks. A third-
+  // person fear reads "<Name> begins to scream." the same way.
+  { label: 'AFRAID', land: 'You begin to scream.', end: 'You stop screaming.', secs: 30 },
   { label: 'ROOTED', land: 'Your feet adhere to the ground.', end: 'Your feet come free.', secs: 40 },
   { label: 'ROOTED', land: 'Your feet become entwined.', end: 'The roots fall from your feet.', secs: 40 },
   { label: 'SNARED', land: 'You are ensnared.', end: 'You are no longer ensnared.', secs: 40 },
@@ -1525,6 +1558,30 @@ class WidgetStore {
         for (const widget of data.widgets) delete widget.enabled;
         data.version = 6;
       }
+      // v6 -> v7: the "Loss of control" premade gained a fear trigger - "You begin to scream." /
+      // "You stop screaming." (label AFRAID), which is what Screaming Terror and similar fears write
+      // instead of "Your mind fills with fear." (confirmed in the owner's log). Add it to any Loss
+      // of control aura that doesn't already carry it. Version-gated: a hand-deleted trigger stays
+      // deleted. Same shape as the v4 -> v5 CONTROLLED add.
+      if (data.version < 7) {
+        for (const widget of data.widgets) {
+          const isLossOfControl =
+            widget.premadeOrigin &&
+            widget.premadeOrigin.kind === 'textAura' &&
+            widget.premadeOrigin.preset === 'lossOfControl';
+          if (!isLossOfControl || !Array.isArray(widget.customTimers)) continue;
+          const already = widget.customTimers.some((t) => t.triggerText === 'You begin to scream.');
+          if (already) continue;
+          widget.customTimers.push({
+            id: crypto.randomUUID(),
+            name: 'AFRAID',
+            durationSec: 30,
+            triggerText: 'You begin to scream.',
+            endedText: 'You stop screaming.',
+          });
+        }
+        data.version = 7;
+      }
       this.store.saveJson('widgets', data);
       return data;
     }
@@ -1544,7 +1601,7 @@ class WidgetStore {
 
     const selfBuffs = defaultSelfBuffsWidget(overrides);
 
-    const data = { version: 6, widgets: [selfBuffs], folders: [] };
+    const data = { version: 7, widgets: [selfBuffs], folders: [] };
     this.store.saveJson('widgets', data);
     return data;
   }
@@ -1905,6 +1962,15 @@ class WidgetStore {
     const widget = this.getById(id);
     if (!widget) return null;
     widget.reverseDetection = !!enabled;
+    this._save();
+    return widget;
+  }
+
+  // Whole-aura, next to reverseDetection - see defaultCustomWidget's field comment.
+  setDynamicChatTimer(id, enabled) {
+    const widget = this.getById(id);
+    if (!widget) return null;
+    widget.dynamicChatTimer = !!enabled;
     this._save();
     return widget;
   }
@@ -2433,6 +2499,7 @@ module.exports = {
   clampDamageBothMode,
   clampDamageColor,
   clampHealColor,
+  clampScale,
   clampLockoutAutoHideSec,
   cleanLockoutTriggerWord,
   DEFAULT_LOCKOUT_AUTO_HIDE_SEC,
