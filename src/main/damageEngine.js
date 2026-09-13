@@ -102,8 +102,12 @@ const MAX_PENDING = 400;
 const MAX_HISTORY = 30;
 
 class DamageEngine extends EventEmitter {
-  constructor() {
+  // `maxHistory` overrides MAX_HISTORY - live gameplay wants a bounded, forever-running buffer,
+  // but a batch scan over an uploaded/archived log (damageLogScan.js) is explicitly enumerating a
+  // FIXED, finite set of past fights the owner asked to review, not something to trim as it goes.
+  constructor({ maxHistory = MAX_HISTORY } = {}) {
     super();
+    this._maxHistory = maxHistory;
     // Lowercased names proven to be things you are fighting. Lowercased because the log is
     // inconsistent about the leading article's case - "A pledge familiar" and "a zol ghoul knight"
     // appear in the same file - and two spellings of one mob would split its fight in half.
@@ -124,6 +128,11 @@ class DamageEngine extends EventEmitter {
     // Completed fights, newest first, capped so this can't grow without bound over a long session.
     // In-memory only for this run of the app - not written to disk (see _captureHistory).
     this.history = [];
+    // Where a fight happened, and which trip to that zone it belongs to - see enterZone(). Null
+    // until the caller has ever told this engine a zone name (plain live gameplay never had to;
+    // batch-scanning a log for the Combat tab's history is what actually needs this).
+    this.currentZoneName = null;
+    this._zoneVisitSeq = 0;
     this.fightStartedAt = null;
     this.lastDamageAt = null;
     // Owner, 5 Sep: a maintained DoT / `/melody` song ticking on a straggler must not hold the
@@ -633,10 +642,27 @@ class DamageEngine extends EventEmitter {
     this.sinceZoneHealLastAt = Math.max(this.sinceZoneHealLastAt || 0, at);
   }
 
-  // A zone line. The fight state is left alone - a zone line mid-fight is rare and the timeout
-  // still ends that fight correctly - but the "since zone-in" tally starts over, because that is
-  // exactly what it measures.
-  enterZone(now = Date.now()) {
+  // A zone line. `zoneName`, when given, is stamped onto whatever fight ends next (see
+  // _captureHistory) so history can be organised by zone - and a real change of zone (not a
+  // same-zone echo, e.g. the instance-line-right-after-the-entrance-line shape) opens a new
+  // "visit", so two separate trips to the same zone group as two entries, not one merged pile.
+  //
+  // A REAL zone change force-closes whatever fight is still open FIRST, via the exact same
+  // reset() a timeout would use (so it is captured to history normally) - before `currentZoneName`
+  // moves on to the new zone. Without this, a fight still technically "open" only because nothing
+  // has hit the idle timeout yet would sit untouched through the zone line, and the NEXT zone's
+  // own first hit would be what finally times it out - stamping it with the zone she'd already
+  // left. (An earlier version of this comment called a zone line mid-fight "rare, and the timeout
+  // still ends it correctly" - true for the live meter's numbers, which never cared which zone a
+  // fight was "in", but wrong the moment fights need a zone tag at all.) A same-zone echo does
+  // nothing here, exactly as before - that is what keeps an instance-line-right-after-the-entrance
+  // line from splitting one real fight into two just because two zone lines announced it.
+  enterZone(now = Date.now(), zoneName = null) {
+    if (zoneName && zoneName !== this.currentZoneName) {
+      if (this.fightStartedAt !== null) this.reset();
+      this._zoneVisitSeq = (this._zoneVisitSeq || 0) + 1;
+    }
+    this.currentZoneName = zoneName || null;
     this.sinceZoneByAttacker.clear();
     this.rawZoneByName.clear();
     this.sinceZoneTotal = 0;
@@ -792,19 +818,23 @@ class DamageEngine extends EventEmitter {
       endedAt,
       durationSec: Math.round(this.fightSeconds(endedAt)),
       totalDamage: this.totalDamage,
+      zone: this.currentZoneName,
+      visitId: this.currentZoneName ? this._zoneVisitSeq : null,
       rows,
     });
-    if (this.history.length > MAX_HISTORY) this.history.length = MAX_HISTORY;
+    if (this.history.length > this._maxHistory) this.history.length = this._maxHistory;
   }
 
   // Every completed fight this session, newest first. In-memory only - see the `history` field
   // comment on why this does not persist across a restart.
   getHistory() {
-    return this.history.map(({ id, endedAt, durationSec, totalDamage, rows }) => ({
+    return this.history.map(({ id, endedAt, durationSec, totalDamage, zone, visitId, rows }) => ({
       id,
       endedAt,
       durationSec,
       totalDamage,
+      zone,
+      visitId,
       topAttacker: rows[0] ? rows[0].name : null,
     }));
   }

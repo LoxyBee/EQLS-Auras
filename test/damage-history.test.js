@@ -107,5 +107,55 @@ test('getHistoryFight returns null for an id that was never recorded, or has age
   assert.equal(e.getHistoryFight(999), null);
 });
 
+// ---------------------------------------------------------------------------
+// Zone / visit tagging (owner's ask, 13 Sep: "organised by zone... each entry to a zone should be
+// grouped so you can check that zone again") - needed for both live play and the log-scan feature.
+// ---------------------------------------------------------------------------
+
+test('a fight is tagged with whatever zone was told to the engine when it happened', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, 'Nagafen\'s Lair');
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  assert.equal(e.getHistory()[0].zone, "Nagafen's Lair");
+});
+
+test('a fight before any zone was ever told to the engine is tagged with no zone, not a stale one', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  assert.equal(e.getHistory()[0].zone, null);
+});
+
+test('two fights in the same zone visit share a visitId; a real zone change starts a new one', () => {
+  const e = new DamageEngine();
+  e.enterZone(100, 'Nagafen\'s Lair');
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  e.enterZone(21500, 'Nagafen\'s Lair'); // same zone again - could be an instance-line echo
+  e.handleLine(`${T}You crush a wan ghoul knight for 20 points of damage.`, 22000);
+  endFight(e, 22000);
+  e.enterZone(43000, 'The Feerrott'); // a genuinely different zone
+  e.handleLine(`${T}You crush a wan ghoul knight for 30 points of damage.`, 44000);
+  endFight(e, 44000);
+  const [newest, middle, oldest] = e.getHistory();
+  assert.equal(oldest.zone, "Nagafen's Lair");
+  assert.equal(middle.zone, "Nagafen's Lair");
+  assert.equal(oldest.visitId, middle.visitId, 'the same-zone echo should not have opened a new visit');
+  assert.equal(newest.zone, 'The Feerrott');
+  assert.notEqual(newest.visitId, middle.visitId, 'a real zone change must open a new visit');
+});
+
+test('maxHistory can be overridden (a log scan enumerates everything, not a bounded live buffer)', () => {
+  const e = new DamageEngine({ maxHistory: Infinity });
+  let t = 1000;
+  for (let i = 0; i < 40; i += 1) {
+    e.handleLine(`${T}You crush a wan ghoul knight for 1 points of damage.`, t);
+    endFight(e, t);
+    t += 25000;
+  }
+  assert.equal(e.getHistory().length, 40, 'the override was not honoured - still capped at 30');
+});
+
 module.exports = () => report('damage-history');
 if (require.main === module) report('damage-history').then((n) => process.exit(n ? 1 : 0));

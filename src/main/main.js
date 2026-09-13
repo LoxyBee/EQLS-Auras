@@ -69,6 +69,7 @@ const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
+const { scanLogForFights } = require('./damageLogScan');
 const { GroupRoster, RESTORE_GRACE_MS: GROUP_ROSTER_GRACE_MS } = require('./groupRoster');
 const { PetTracker } = require('./petTracker');
 const { RaidNamedTracker } = require('./raidNamedTracker');
@@ -993,8 +994,10 @@ onLogLine('zoneChange', (line) => {
   // evidence for detection (see buffEngine.setLoadoutLocked). The base name (suffix stripped) is
   // the key that tells a real move from an entrance->instance / reconnect echo for the same zone.
   buffEngine.setLoadoutLocked(isLoadoutLockedZone(zone), baseZoneName(zone));
-  // The damage meter's "since zone-in" tally starts over here - see damageEngine.enterZone.
-  damageEngine.enterZone();
+  // The damage meter's "since zone-in" tally starts over here - see damageEngine.enterZone. The
+  // BASE name (suffix stripped), so an instance-line echo right after the entrance line reads as
+  // the same zone for the Combat tab's grouping, not two different ones.
+  damageEngine.enterZone(Date.now(), baseZoneName(zone));
   // Note 20. Where you are is half of every route, so a zone line is the main thing that makes a
   // travel aura redraw.
   pushTravelRoutes();
@@ -1931,8 +1934,62 @@ ipcMain.handle('buffs:getActiveBardSongs', () => buffEngine.getActiveBardSongs()
 ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffEngine.removeActiveBardSong(castBy, name));
 
 ipcMain.handle('damage:getActive', () => damageViews());
-ipcMain.handle('damage:getHistory', () => damageEngine.getHistory());
-ipcMain.handle('damage:getHistoryFight', (_event, id) => damageEngine.getHistoryFight(id));
+// Log scanning for the Combat tab (owner, 13 Sep: "an option to back read your current log, or
+// upload a new log and parse out fights"). Each scan keeps its OWN engine alive here rather than
+// merging its fights into the live one - a batch read of a whole archived log has nothing to do
+// with tonight's live session, and the live engine's 30-fight cap would just throw most of a real
+// scan away. Composite ids ("live:3" / "scan:0:7") let damage:getHistory show every source as one
+// list without their own local, per-engine ids colliding.
+const importedScans = []; // { label, scannedAt, engine }
+
+function allHistorySources() {
+  const sources = [{ tag: 'live', label: 'This session', engine: damageEngine }];
+  importedScans.forEach((s, i) => sources.push({ tag: `scan:${i}`, label: s.label, engine: s.engine }));
+  return sources;
+}
+
+function mergedDamageHistory() {
+  const rows = [];
+  for (const { tag, label, engine } of allHistorySources()) {
+    for (const entry of engine.getHistory()) {
+      rows.push({ ...entry, id: `${tag}:${entry.id}`, source: label });
+    }
+  }
+  rows.sort((a, b) => b.endedAt - a.endedAt);
+  return rows;
+}
+
+function findHistoryFight(compositeId) {
+  const key = String(compositeId || '');
+  const cut = key.lastIndexOf(':');
+  if (cut === -1) return null;
+  const tag = key.slice(0, cut);
+  const localId = Number(key.slice(cut + 1));
+  const src = allHistorySources().find((s) => s.tag === tag);
+  if (!src) return null;
+  const fight = src.engine.getHistoryFight(localId);
+  return fight ? { ...fight, id: compositeId, source: src.label } : null;
+}
+
+ipcMain.handle('damage:getCurrentLogPath', () => logService.watcher.getStatus().currentFilePath || null);
+
+ipcMain.handle('damage:scanLogFile', async (_event, filePath) => {
+  if (!filePath) return { ok: false, reason: 'No file given.' };
+  try {
+    const engine = await scanLogForFights(filePath);
+    const fights = engine.getHistory().length;
+    const label = `${path.basename(filePath)} (scanned ${new Date().toLocaleString()})`;
+    importedScans.push({ label, scannedAt: Date.now(), engine });
+    debugLog(`COMBAT scan "${filePath}" -> ${fights} fight${fights === 1 ? '' : 's'} found`);
+    return { ok: true, fights, label };
+  } catch (err) {
+    debugLog(`COMBAT scan "${filePath}" failed: ${err.message}`);
+    return { ok: false, reason: err.message || 'Could not read that file.' };
+  }
+});
+
+ipcMain.handle('damage:getHistory', () => mergedDamageHistory());
+ipcMain.handle('damage:getHistoryFight', (_event, id) => findHistoryFight(id));
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
 ipcMain.handle('resetPrompt:getPending', () => resetPromptWindow.getPending());
 ipcMain.handle('resetPrompt:answer', (_event, choice) => resetPromptWindow.answer(choice));

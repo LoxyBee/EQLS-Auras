@@ -1045,20 +1045,25 @@
         </div>
       </section>
 
-      <!-- Raid lockouts. Reads the current EQ log only; grid derived per boss-raid x tier. -->
       <section id="page-combat" class="page">
         <h2 class="page-title">Combat</h2>
 
         <div class="card">
-          <h3 title="Every fight the damage meter tracked this session, most recent first. Closing the app clears this - it's not saved to disk.">Past fights</h3>
-          <div id="combat-history-wrap" style="overflow-x:auto">
-            <table id="combat-history-table" class="lockout-grid">
-              <thead>
-                <tr><th>When</th><th>Duration</th><th>Total damage</th><th>Top</th></tr>
-              </thead>
-              <tbody id="combat-history-body"></tbody>
-            </table>
+          <h3 title="Reads the file once, from the start, looking for damage lines and zone changes - like the live meter, but all at once instead of line by line as you play.">Scan a log for fights</h3>
+          <div class="row">
+            <button type="button" id="combat-scan-current">Scan my current log</button>
+            <button type="button" id="combat-scan-file">Scan a different log file…</button>
           </div>
+          <p class="scan-status" id="combat-scan-status" style="display:none"></p>
+        </div>
+
+        <div class="card">
+          <h3 title="Every fight tracked this session plus anything found by a scan above, grouped by zone and then by each separate trip into it. Closing the app clears this - it's not saved to disk.">Past fights</h3>
+          <div class="row">
+            <span class="label">Zone</span>
+            <select id="combat-zone-filter" class="text-input"></select>
+          </div>
+          <div id="combat-history-groups"></div>
           <p class="empty-note" id="combat-history-empty">No fights tracked yet this session.</p>
         </div>
 
@@ -1071,6 +1076,7 @@
         </div>
       </section>
 
+      <!-- Raid lockouts. Reads the current EQ log only; grid derived per boss-raid x tier. -->
       <section id="page-lockouts" class="page">
         <h2 class="page-title">Raid lockouts</h2>
 

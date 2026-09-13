@@ -9721,13 +9721,20 @@ function initBuffPlanner() {
 // like Lockouts' log scan) since new fights complete while the app just sits open - there's no
 // expensive read behind it, just whatever damageEngine already has in memory.
 function initCombatPage() {
-  const historyBody = document.getElementById('combat-history-body');
+  const historyGroups = document.getElementById('combat-history-groups');
   const historyEmpty = document.getElementById('combat-history-empty');
+  const zoneFilter = document.getElementById('combat-zone-filter');
   const detailCard = document.getElementById('combat-detail-card');
   const detailTitle = document.getElementById('combat-detail-title');
   const detailRows = document.getElementById('combat-detail-rows');
   const closeBtn = document.getElementById('combat-detail-close');
-  if (!historyBody) return; // Combat tab not in this build
+  const scanCurrentBtn = document.getElementById('combat-scan-current');
+  const scanFileBtn = document.getElementById('combat-scan-file');
+  const scanStatus = document.getElementById('combat-scan-status');
+  if (!historyGroups) return; // Combat tab not in this build
+
+  const UNKNOWN_ZONE = '(zone unknown)';
+  let lastHistory = []; // cached so the zone filter can re-render without re-fetching
 
   function formatDamage(n) {
     if (n < 10000) return String(n);
@@ -9741,9 +9748,13 @@ function initCombatPage() {
     return m > 0 ? `${m}m ${s}s` : `${s}s`;
   }
 
+  const isToday = (ms) => new Date(ms).toDateString() === new Date().toDateString();
+  // A live fight from tonight only needs a clock time; anything from a scanned log could be any
+  // day, so "dated" (the owner's own word for this) means showing the date once it isn't obvious.
   function formatWhen(ms) {
     const d = new Date(ms);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return isToday(ms) ? time : `${d.toLocaleDateString()} ${time}`;
   }
 
   function closeDetail() {
@@ -9793,22 +9804,146 @@ function initCombatPage() {
     detailCard.style.display = '';
   }
 
-  async function loadHistory() {
-    const history = await window.eqTracker.getDamageHistory();
-    historyBody.innerHTML = '';
-    historyEmpty.style.display = history.length ? 'none' : '';
-    for (const fight of history) {
+  function fightTable(fights) {
+    const table = document.createElement('table');
+    table.className = 'lockout-grid combat-fight-table';
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (const label of ['When', 'Duration', 'Total damage', 'Top']) headRow.appendChild(cell(label));
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    for (const fight of fights) {
       const tr = document.createElement('tr');
       tr.appendChild(cell(formatWhen(fight.endedAt)));
       tr.appendChild(cell(formatDuration(fight.durationSec)));
       tr.appendChild(cell(formatDamage(fight.totalDamage)));
       tr.appendChild(cell(fight.topAttacker || '—'));
       tr.addEventListener('click', () => openFight(fight.id));
-      historyBody.appendChild(tr);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    return table;
+  }
+
+  // Zone -> visit -> fights, each level newest-first - which falls out for free from `history`
+  // already arriving newest-first: the FIRST fight seen for a zone (or a visit within it) is
+  // always its most recent, so a plain Map preserves the right order with no separate sort.
+  function groupByZoneAndVisit(history) {
+    const zones = new Map();
+    for (const fight of history) {
+      const zoneKey = fight.zone || UNKNOWN_ZONE;
+      if (!zones.has(zoneKey)) zones.set(zoneKey, new Map());
+      const visits = zones.get(zoneKey);
+      const visitKey = fight.visitId != null ? fight.visitId : `single-${fight.id}`;
+      if (!visits.has(visitKey)) visits.set(visitKey, []);
+      visits.get(visitKey).push(fight);
+    }
+    return zones;
+  }
+
+  function renderGroups(history) {
+    historyGroups.innerHTML = '';
+    const zones = groupByZoneAndVisit(history);
+    for (const [zoneName, visits] of zones) {
+      const zoneEl = document.createElement('div');
+      zoneEl.className = 'combat-zone-group';
+      const title = document.createElement('h4');
+      title.className = 'combat-zone-title';
+      title.textContent = zoneName;
+      zoneEl.appendChild(title);
+      for (const fights of visits.values()) {
+        const visitEl = document.createElement('div');
+        visitEl.className = 'combat-visit-group';
+        const header = document.createElement('div');
+        header.className = 'combat-visit-header';
+        const started = fights[fights.length - 1].endedAt - fights[fights.length - 1].durationSec * 1000;
+        const n = fights.length;
+        header.textContent = `Visit starting ${formatWhen(started)} — ${n} fight${n === 1 ? '' : 's'}`;
+        visitEl.appendChild(header);
+        visitEl.appendChild(fightTable(fights));
+        zoneEl.appendChild(visitEl);
+      }
+      historyGroups.appendChild(zoneEl);
     }
   }
 
+  function populateZoneFilter(history) {
+    const zones = [...new Set(history.map((f) => f.zone || UNKNOWN_ZONE))].sort();
+    const previous = zoneFilter.value;
+    zoneFilter.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = `All zones (${history.length})`;
+    zoneFilter.appendChild(allOpt);
+    for (const zone of zones) {
+      const opt = document.createElement('option');
+      opt.value = zone;
+      opt.textContent = zone;
+      zoneFilter.appendChild(opt);
+    }
+    if (zones.includes(previous)) zoneFilter.value = previous;
+  }
+
+  function render() {
+    historyEmpty.style.display = lastHistory.length ? 'none' : '';
+    populateZoneFilter(lastHistory);
+    const filter = zoneFilter.value;
+    const filtered = filter ? lastHistory.filter((f) => (f.zone || UNKNOWN_ZONE) === filter) : lastHistory;
+    renderGroups(filtered);
+  }
+
+  async function loadHistory() {
+    lastHistory = await window.eqTracker.getDamageHistory();
+    render();
+  }
+
+  function setScanStatus(text, isError) {
+    scanStatus.textContent = text;
+    scanStatus.style.display = text ? '' : 'none';
+    scanStatus.classList.toggle('scan-error', !!isError);
+  }
+
+  async function runScan(filePath) {
+    if (!filePath) return;
+    setScanStatus(`Scanning ${filePath}…`, false);
+    scanCurrentBtn.disabled = true;
+    scanFileBtn.disabled = true;
+    try {
+      const result = await window.eqTracker.scanDamageLogFile(filePath);
+      if (!result.ok) {
+        setScanStatus(`Could not scan that log: ${result.reason}`, true);
+      } else {
+        setScanStatus(`Found ${result.fights} fight${result.fights === 1 ? '' : 's'} in ${result.label}.`, false);
+        await loadHistory();
+      }
+    } finally {
+      scanCurrentBtn.disabled = false;
+      scanFileBtn.disabled = false;
+    }
+  }
+
+  if (scanCurrentBtn) {
+    scanCurrentBtn.addEventListener('click', async () => {
+      const current = await window.eqTracker.getDamageCurrentLogPath();
+      if (!current) { setScanStatus('No live log is being watched right now.', true); return; }
+      runScan(current);
+    });
+  }
+  if (scanFileBtn) {
+    scanFileBtn.addEventListener('click', async () => {
+      const groups = await window.eqTracker.listLockoutLogFiles();
+      const picked = await pickLogFiles({
+        title: 'Choose a log to scan for fights',
+        hint: 'Any log file - your live log, a per-day Split file, or a weekly Archive - read once from the start for fights and zone changes.',
+        multi: false,
+        groups,
+      });
+      if (picked && picked[0]) runScan(picked[0]);
+    });
+  }
   if (closeBtn) closeBtn.addEventListener('click', closeDetail);
+  if (zoneFilter) zoneFilter.addEventListener('change', render);
   const navBtnCombat = document.getElementById('combat-nav-btn');
   if (navBtnCombat) navBtnCombat.addEventListener('click', loadHistory);
   loadHistory();
