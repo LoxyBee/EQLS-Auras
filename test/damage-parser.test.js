@@ -31,12 +31,12 @@ const T = '[Wed Aug 19 21:14:02 2026] ';
 
 test('your own spell damage names you as the attacker', () => {
   const hit = parseDamageLine(`${T}Fright has taken 394 damage from your Envenomed Bolt IV.`);
-  assert.deepEqual(hit, { attacker: 'You', target: 'Fright', amount: 394, kind: 'spell' });
+  assert.deepEqual(hit, { attacker: 'You', target: 'Fright', amount: 394, kind: 'spell', skill: 'Envenomed Bolt IV' });
 });
 
 test('your own melee damage names you as the attacker', () => {
   const hit = parseDamageLine(`${T}You crush a wan ghoul knight for 60 points of damage.`);
-  assert.deepEqual(hit, { attacker: 'You', target: 'a wan ghoul knight', amount: 60, kind: 'melee' });
+  assert.deepEqual(hit, { attacker: 'You', target: 'a wan ghoul knight', amount: 60, kind: 'melee', skill: 'Melee' });
 });
 
 // The single most important case in the file. 44,508 lines in the owner's logs have an
@@ -57,12 +57,12 @@ test('a damage shield credits the person wearing it', () => {
   const hit = parseDamageLine(
     `${T}A zol ghoul knight is pierced by Baxa's thorns for 8 points of non-melee damage.`
   );
-  assert.deepEqual(hit, { attacker: 'Baxa', target: 'A zol ghoul knight', amount: 8, kind: 'shield' });
+  assert.deepEqual(hit, { attacker: 'Baxa', target: 'A zol ghoul knight', amount: 8, kind: 'shield', skill: 'thorns' });
 });
 
 test('someone else melee is read with both sides', () => {
   const hit = parseDamageLine(`${T}Baxa slashes a zol ghoul knight for 47 points of damage.`);
-  assert.deepEqual(hit, { attacker: 'Baxa', target: 'a zol ghoul knight', amount: 47, kind: 'melee' });
+  assert.deepEqual(hit, { attacker: 'Baxa', target: 'a zol ghoul knight', amount: 47, kind: 'melee', skill: 'Melee' });
 });
 
 test('a monster casting a spell is read the same way, attacker and all', () => {
@@ -96,15 +96,15 @@ test('a line with no timestamp still parses', () => {
 test('the melee verbs added from the fixture cross-check all parse', () => {
   assert.deepEqual(
     parseDamageLine(`${T}Baxa cleaves a zol ghoul knight for 88 points of damage.`),
-    { attacker: 'Baxa', target: 'a zol ghoul knight', amount: 88, kind: 'melee' }
+    { attacker: 'Baxa', target: 'a zol ghoul knight', amount: 88, kind: 'melee', skill: 'Melee' }
   );
   assert.deepEqual(
     parseDamageLine(`${T}Krung frenzies on a zol ghoul knight for 21 points of damage.`),
-    { attacker: 'Krung', target: 'a zol ghoul knight', amount: 21, kind: 'melee' }
+    { attacker: 'Krung', target: 'a zol ghoul knight', amount: 21, kind: 'melee', skill: 'Melee' }
   );
   assert.deepEqual(
     parseDamageLine(`${T}Sneaky backstabs a wan ghoul knight for 512 points of damage.`),
-    { attacker: 'Sneaky', target: 'a wan ghoul knight', amount: 512, kind: 'melee' }
+    { attacker: 'Sneaky', target: 'a wan ghoul knight', amount: 512, kind: 'melee', skill: 'Melee' }
   );
 });
 
@@ -113,7 +113,7 @@ test('the melee verbs added from the fixture cross-check all parse', () => {
 test('a damage shield worn by the player is credited to You', () => {
   assert.deepEqual(
     parseDamageLine(`${T}A rock golem is pierced by YOUR thorns for 5 points of non-melee damage.`),
-    { attacker: 'You', target: 'A rock golem', amount: 5, kind: 'shield' }
+    { attacker: 'You', target: 'A rock golem', amount: 5, kind: 'shield', skill: 'thorns' }
   );
 });
 
@@ -123,7 +123,7 @@ test('a damage shield worn by the player is credited to You', () => {
 test('a single-digit-day timestamp is still stripped', () => {
   assert.deepEqual(
     parseDamageLine(`[Fri Aug  1 21:00:00 2026] You crush a wan ghoul knight for 60 points of damage.`),
-    { attacker: 'You', target: 'a wan ghoul knight', amount: 60, kind: 'melee' }
+    { attacker: 'You', target: 'a wan ghoul knight', amount: 60, kind: 'melee', skill: 'Melee' }
   );
 });
 
@@ -132,11 +132,11 @@ test('a single-digit-day timestamp is still stripped', () => {
 test('the direct-damage-spell wording is read, first and third person', () => {
   assert.deepEqual(
     parseDamageLine(`${T}You hit a greater kobold for 943 points of magic damage by Energy Storm.`),
-    { attacker: 'You', target: 'a greater kobold', amount: 943, kind: 'spell', direct: true }
+    { attacker: 'You', target: 'a greater kobold', amount: 943, kind: 'spell', direct: true, skill: 'Energy Storm' }
   );
   assert.deepEqual(
     parseDamageLine(`${T}Gebektik hit Guard Xyxax for 42 points of magic damage by Lifebite.`),
-    { attacker: 'Gebektik', target: 'Guard Xyxax', amount: 42, kind: 'spell', direct: true }
+    { attacker: 'Gebektik', target: 'Guard Xyxax', amount: 42, kind: 'spell', direct: true, skill: 'Lifebite' }
   );
 });
 

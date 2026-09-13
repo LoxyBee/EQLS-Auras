@@ -87,22 +87,28 @@ const DAMAGE_SHIELD =
 // damage line on days 1-9 of a month.
 const STAMP = /^\[\w{3} \w{3}\s+\d{1,2} \d{2}:\d{2}:\d{2} \d{4}\]\s*/;
 
+// The bucket every melee swing (no matter the verb - slash, crush, bite, ...) files under for the
+// per-skill breakdown. A melee line names no ability, only a verb tied to the weapon type, and
+// splitting by verb would read as several different things when it is really one: your weapon.
+const MELEE_SKILL = 'Melee';
+
 /**
  * One damage line, or null.
  *
- * Returns { attacker, target, amount, kind } where attacker is the literal string 'You' for your
- * own damage - the log's own word for you, kept rather than translated so nothing downstream has
- * to know the character's name to find her row.
+ * Returns { attacker, target, amount, kind, skill } where attacker is the literal string 'You' for
+ * your own damage - the log's own word for you, kept rather than translated so nothing downstream
+ * has to know the character's name to find her row. `skill` is the per-skill-breakdown bucket: the
+ * spell/ability name for a spell or shield hit, or the fixed MELEE_SKILL label for a swing.
  */
 function parseDamageLine(line) {
   if (typeof line !== 'string') return null;
   const body = line.replace(STAMP, '');
 
   let m = YOUR_SPELL.exec(body);
-  if (m) return { attacker: 'You', target: m[1], amount: Number(m[2]), kind: 'spell' };
+  if (m) return { attacker: 'You', target: m[1], amount: Number(m[2]), kind: 'spell', skill: m[3] };
 
   m = OTHER_SPELL.exec(body);
-  if (m) return { attacker: m[4], target: m[1], amount: Number(m[2]), kind: 'spell' };
+  if (m) return { attacker: m[4], target: m[1], amount: Number(m[2]), kind: 'spell', skill: m[3] };
 
   m = DIRECT_SPELL.exec(body);
   if (m) {
@@ -113,12 +119,12 @@ function parseDamageLine(line) {
       // Z") as opposed to the "X has taken N damage from ..." shape, which is a DoT / song / proc
       // tick. damageEngine keys the fight-end timer off real hits (melee + direct nukes) so a
       // maintained DoT ticking on a straggler does not hold the meter's fight open on its own.
-      return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'spell', direct: true };
+      return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'spell', direct: true, skill: m[4] };
     }
   }
 
   m = YOUR_MELEE.exec(body);
-  if (m) return { attacker: 'You', target: m[1], amount: Number(m[2]), kind: 'melee' };
+  if (m) return { attacker: 'You', target: m[1], amount: Number(m[2]), kind: 'melee', skill: MELEE_SKILL };
 
   // Before OTHER_MELEE: a damage-shield line ends "points of non-melee damage" and the melee
   // pattern requires "points of damage", so they cannot collide - but the order is fixed anyway
@@ -126,13 +132,13 @@ function parseDamageLine(line) {
   m = DAMAGE_SHIELD.exec(body);
   if (m) {
     const attacker = m[2] === 'YOUR' ? 'You' : m[2].replace(/'s$/, '');
-    return { attacker, target: m[1], amount: Number(m[4]), kind: 'shield' };
+    return { attacker, target: m[1], amount: Number(m[4]), kind: 'shield', skill: m[3] };
   }
 
   m = OTHER_MELEE.exec(body);
-  if (m) return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'melee' };
+  if (m) return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'melee', skill: MELEE_SKILL };
 
   return null;
 }
 
-module.exports = { parseDamageLine };
+module.exports = { parseDamageLine, MELEE_SKILL };

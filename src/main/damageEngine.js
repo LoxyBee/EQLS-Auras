@@ -96,6 +96,11 @@ const DEFAULT_FIGHT_TIMEOUT_SEC = 10;
 // the total rather than complete it.
 const MAX_PENDING = 400;
 
+// How many completed fights the in-memory history keeps (newest first). A generous session's
+// worth, not a database - the owner's ask was "don't lose it the moment the meter resets", not a
+// permanent record, so this does not persist across a restart.
+const MAX_HISTORY = 30;
+
 class DamageEngine extends EventEmitter {
   constructor() {
     super();
@@ -110,6 +115,15 @@ class DamageEngine extends EventEmitter {
     this.friends = new Set(['you']);
     // attacker -> { damage, hits }
     this.byAttacker = new Map();
+    // attacker -> (skill name -> { damage, hits }) - the per-skill breakdown behind a fight-history
+    // row (owner's weekly notes, 13 Sep: "per-skill breakdowns"). One fight's worth only, cleared
+    // with byAttacker in reset() - a completed fight's own breakdown is preserved in `history`
+    // first. `skill` on a parsed hit is the spell/ability name, or the fixed melee bucket
+    // (damageLines.MELEE_SKILL) - see parseDamageLine's own header.
+    this.bySkillByAttacker = new Map();
+    // Completed fights, newest first, capped so this can't grow without bound over a long session.
+    // In-memory only for this run of the app - not written to disk (see _captureHistory).
+    this.history = [];
     this.fightStartedAt = null;
     this.lastDamageAt = null;
     // Owner, 5 Sep: a maintained DoT / `/melody` song ticking on a straggler must not hold the
@@ -450,7 +464,7 @@ class DamageEngine extends EventEmitter {
       this._expireIfIdle(now);
       this._flushPending(now);
       this._flushHealPending(now);
-      if (dir === 'out') this._credit(hit.attacker, hit.amount, now, hit.kind === 'melee' || !!hit.direct);
+      if (dir === 'out') this._credit(hit.attacker, hit.amount, now, hit.kind === 'melee' || !!hit.direct, hit.skill);
       if (dir !== 'drop') this.emit('activeChanged', this.getActive(now));
       return;
     }
@@ -510,7 +524,7 @@ class DamageEngine extends EventEmitter {
           continue;
         }
         resolvedAny = true;
-        if (dir === 'out') this._credit(p.attacker, p.amount, p.at, p.kind === 'melee' || !!p.direct);
+        if (dir === 'out') this._credit(p.attacker, p.amount, p.at, p.kind === 'melee' || !!p.direct, p.skill);
       }
       this.pending = keep;
       if (!resolvedAny) return;
@@ -549,7 +563,7 @@ class DamageEngine extends EventEmitter {
     bump(this.rawZoneByName);
   }
 
-  _credit(attacker, amount, at, isRealHit) {
+  _credit(attacker, amount, at, isRealHit, skill) {
     if (this.fightStartedAt === null) this.fightStartedAt = at;
     // A retro-credited line can predate the line that opened the fight.
     if (at < this.fightStartedAt) this.fightStartedAt = at;
@@ -557,6 +571,14 @@ class DamageEngine extends EventEmitter {
     row.damage += amount;
     row.hits += 1;
     this.byAttacker.set(attacker, row);
+    if (skill) {
+      const bySkill = this.bySkillByAttacker.get(attacker) || new Map();
+      const srow = bySkill.get(skill) || { damage: 0, hits: 0 };
+      srow.damage += amount;
+      srow.hits += 1;
+      bySkill.set(skill, srow);
+      this.bySkillByAttacker.set(attacker, bySkill);
+    }
     this.totalDamage += amount;
     this.lastDamageAt = Math.max(this.lastDamageAt || 0, at);
     if (isRealHit) this.lastRealHitAt = Math.max(this.lastRealHitAt || 0, at);
@@ -744,11 +766,62 @@ class DamageEngine extends EventEmitter {
     return true;
   }
 
+  // The fight is ending (reset() is about to wipe it) - save a permanent record of it first, if it
+  // amounted to anything. Uses the exact same raw/classified reconciliation the live meter draws
+  // from (_reconcileRaw), so a groupmate recognised late still shows their full damage in history,
+  // not just what landed after the bootstrap caught up - a second, independent read of the fight
+  // would silently disagree with what the overlay actually showed.
+  _captureHistory() {
+    if (this.totalDamage <= 0 || this.fightStartedAt === null) return;
+    const endedAt = this.lastDamageAt || this.fightStartedAt;
+    const reconciled = this._reconcileRaw(this.byAttacker, this.rawFightByName);
+    const rows = [...reconciled.entries()]
+      .map(([name, r]) => ({
+        name,
+        damage: r.damage,
+        hits: r.hits,
+        bySkill: [...(this.bySkillByAttacker.get(name) || [])]
+          .map(([skill, s]) => ({ skill, damage: s.damage, hits: s.hits }))
+          .sort((a, b) => b.damage - a.damage),
+      }))
+      .sort((a, b) => b.damage - a.damage);
+    if (!rows.length) return;
+    this._historySeq = (this._historySeq || 0) + 1;
+    this.history.unshift({
+      id: this._historySeq,
+      endedAt,
+      durationSec: Math.round(this.fightSeconds(endedAt)),
+      totalDamage: this.totalDamage,
+      rows,
+    });
+    if (this.history.length > MAX_HISTORY) this.history.length = MAX_HISTORY;
+  }
+
+  // Every completed fight this session, newest first. In-memory only - see the `history` field
+  // comment on why this does not persist across a restart.
+  getHistory() {
+    return this.history.map(({ id, endedAt, durationSec, totalDamage, rows }) => ({
+      id,
+      endedAt,
+      durationSec,
+      totalDamage,
+      topAttacker: rows[0] ? rows[0].name : null,
+    }));
+  }
+
+  // One fight's full row list (including each row's own per-skill breakdown) - what the Combat
+  // tab's detail view actually renders when a history entry is opened.
+  getHistoryFight(id) {
+    return this.history.find((f) => f.id === id) || null;
+  }
+
   // A fight ending does NOT clear the friend and enemy sets. The same mobs and the same group are
   // usually still there on the next pull, and forgetting them would make every pull re-bootstrap
   // from your own first hit - losing exactly the opening seconds the bootstrap exists to keep.
   reset() {
+    this._captureHistory();
     this.byAttacker.clear();
+    this.bySkillByAttacker.clear();
     this.rawFightByName.clear();
     this.totalDamage = 0;
     this.fightStartedAt = null;
@@ -996,14 +1069,15 @@ class DamageEngine extends EventEmitter {
    *   `scope` is the EFFECTIVE scope actually applied (may differ from the requested one - see
    *   `fellBack` below).
    */
-  _aggregate(byAttacker, scope = 'all', pets = null, rawByName = null, metric = 'damage') {
-    // Reconcile the classified tally with the raw one (see the rawFightByName / rawZoneByName field
-    // comment). For a name that is a CONFIRMED friend right now - the player, someone in the group
-    // roster, or a name the bootstrap already added to `friends` - its outgoing damage is fully in
-    // the raw tally, so use whichever figure is larger. This is what makes the split retroactive: a
-    // groupmate credited to "Other" (or not credited at all) while unrecognised gets their complete
-    // damage the moment they're recognised, rather than only what landed after. Enemies and
-    // still-unknown names are untouched - raw is not consulted for them.
+  // Reconcile the classified tally with the raw one (see the rawFightByName / rawZoneByName field
+  // comment). For a name that is a CONFIRMED friend right now - the player, someone in the group
+  // roster, or a name the bootstrap already added to `friends` - its outgoing damage is fully in
+  // the raw tally, so use whichever figure is larger. This is what makes the split retroactive: a
+  // groupmate credited to "Other" (or not credited at all) while unrecognised gets their complete
+  // damage the moment they're recognised, rather than only what landed after. Enemies and
+  // still-unknown names are untouched - raw is not consulted for them. Shared by _aggregate (the
+  // live meter) and _captureHistory (a completed fight's permanent record) so the two never drift.
+  _reconcileRaw(byAttacker, rawByName, metric = 'damage') {
     const effective = new Map(byAttacker);
     if (rawByName) {
       for (const [rawName, r] of rawByName) {
@@ -1019,7 +1093,11 @@ class DamageEngine extends EventEmitter {
         if (r.damage > cur.damage) effective.set(rawName, { damage: r.damage, hits: Math.max(r.hits, cur.hits) });
       }
     }
-    byAttacker = effective;
+    return effective;
+  }
+
+  _aggregate(byAttacker, scope = 'all', pets = null, rawByName = null, metric = 'damage') {
+    byAttacker = this._reconcileRaw(byAttacker, rawByName, metric);
     const admittedList = (() => {
       try {
         return (this.groupFn() || []).map((n) => String(n).toLowerCase());
