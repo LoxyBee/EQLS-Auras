@@ -72,6 +72,11 @@ class RaidNamedTracker extends EventEmitter {
     // A session-restore snapshot waiting for its zone's board to be built (startup ordering - see
     // restoreState). Consumed by _enterZone.
     this._pendingRestore = null;
+    // A "same zone, ambiguous whether it's a fresh run" question waiting on the owner's own
+    // answer - see _enterZone's comment on why this can't be decided automatically. Null when
+    // nothing is being asked. { zone } - just enough to know what resolveResetPrompt is answering
+    // FOR, and to check she hasn't already walked off before answering.
+    this.pendingResetPrompt = null;
     this.tickTimer = setInterval(() => this._tick(), 1000);
   }
 
@@ -191,6 +196,7 @@ class RaidNamedTracker extends EventEmitter {
     // `raid: true` flag no longer gates VISIBILITY; `viaVoidling` is kept only as metadata (it's
     // what tells a raid-lockout instance from a group run, the same signal lockoutCore keys on).
     if (!entry) {
+      this.pendingResetPrompt = null; // the question about the OLD zone is moot now
       if (this.currentZone !== null) {
         this.currentZone = null;
         this.viaVoidling = false;
@@ -202,16 +208,32 @@ class RaidNamedTracker extends EventEmitter {
     }
 
     // Already in this base zone and got another line for it - the instance line right after the
-    // entrance line ("The Ruins of Old Paineel" then "... 1 (Awakened)"), or a reconnect echo.
-    // Keep the board and its kills. EXCEPT a fresh Voidling "danger" hail into the same zone: that
-    // is a brand-new raid instance, so it resets (a fresh instance = a fresh board).
-    if (this.currentZone === baseZone && !viaVoidling) return;
+    // entrance line ("The Ruins of Old Paineel" then "... 1 (Awakened)"), or a reconnect echo. A
+    // fresh Voidling "danger" hail into the same zone falls through below regardless (a brand-new
+    // raid instance always resets, no need to ask - see the "authoritative in both directions"
+    // comment above). Short of that hail, the zone string alone cannot tell an instance-line echo
+    // (keep is right) from a second, later trip back into a genuinely new dungeon instance (reset
+    // is right) - owner's own report, 13 Sep: the board wasn't resetting between real runs of the
+    // same dungeon. So: if there is nothing lost either way (nothing killed yet), just keep
+    // quietly, same as before. If there IS something that could be lost, ask rather than guess -
+    // once per re-entry, not once per line (the entrance-then-instance-suffix pair would otherwise
+    // ask twice for the one visit).
+    if (this.currentZone === baseZone && !viaVoidling) {
+      const hasKills = [...this.board.values()].some((e) => e.killedAt);
+      if (hasKills && !this._seeding && !this.pendingResetPrompt) {
+        this.pendingResetPrompt = { zone: baseZone };
+        this._debugLog(`RAID BOARD - re-entered "${baseZone}" with kills already tracked - asking whether to reset`);
+        this.emit('resetPromptNeeded', { zone: baseZone });
+      }
+      return;
+    }
+
+    // A real zone change is happening - any question about the zone being LEFT is moot.
+    this.pendingResetPrompt = null;
 
     this.currentZone = baseZone;
     this.viaVoidling = !!viaVoidling;
-    this.board = new Map(
-      entry.nameds.map((n) => [bareName(n.name), { name: n.name, tier: n.tier || 'mini', killedAt: null, respawnAt: null }])
-    );
+    this.board = RaidNamedTracker._freshBoard(entry);
     this._debugLog(
       `RAID BOARD - entered "${baseZone}"${viaVoidling ? ' (via Voidling)' : ''}, ${this.board.size} named up`
     );
@@ -221,6 +243,36 @@ class RaidNamedTracker extends EventEmitter {
     // board should be all-up.
     if (this._seeding) this._applyPendingRestore();
     else this._pendingRestore = null;
+  }
+
+  static _freshBoard(entry) {
+    return new Map(
+      entry.nameds.map((n) => [bareName(n.name), { name: n.name, tier: n.tier || 'mini', killedAt: null, respawnAt: null }])
+    );
+  }
+
+  // The owner's own answer to the "reset or keep progress" question _enterZone raised. A no-op if
+  // nothing is pending (the answer arrived after she'd already walked off, or twice for the same
+  // question - the popup only ever offers one). 'reset' rebuilds only if she is STILL in that zone
+  // (she may have already left before answering, in which case there is nothing left to reset).
+  resolveResetPrompt(choice) {
+    const pending = this.pendingResetPrompt;
+    if (!pending) return false;
+    this.pendingResetPrompt = null;
+    if (choice !== 'reset') {
+      this._debugLog(`RAID BOARD - kept "${pending.zone}"'s progress (owner said keep)`);
+      return true;
+    }
+    if (this.currentZone !== pending.zone) return true; // moot - she's not there any more
+    const entry = RAID_ZONE_NAMEDS[pending.zone];
+    this.board = RaidNamedTracker._freshBoard(entry);
+    this._debugLog(`RAID BOARD - reset "${pending.zone}" (owner said reset)`);
+    this.emit('changed', this.getActive());
+    return true;
+  }
+
+  getPendingResetPrompt() {
+    return this.pendingResetPrompt;
   }
 
   _recordKill(slainName) {

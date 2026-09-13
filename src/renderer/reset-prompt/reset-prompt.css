@@ -1,0 +1,87 @@
+* {
+  box-sizing: border-box;
+}
+
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 17, 22, 0.94);
+  overflow: hidden;
+}
+
+#drag-bar {
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #dfe3ee;
+  background: rgba(60, 90, 200, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: center;
+}
+
+#message {
+  flex: 1;
+  padding: 12px 14px 4px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #dfe3ee;
+}
+
+#buttons {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px 14px;
+}
+
+#buttons button {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+}
+
+#keep-btn {
+  background: #2a2e38;
+  color: #dfe3ee;
+}
+
+#keep-btn:hover {
+  background: #363b47;
+}
+
+#reset-btn {
+  background: rgba(200, 90, 60, 0.35);
+  color: #ffe3d9;
+}
+
+#reset-btn:hover {
+  background: rgba(200, 90, 60, 0.5);
+}

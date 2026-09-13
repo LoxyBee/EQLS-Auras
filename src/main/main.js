@@ -101,6 +101,7 @@ const widgetManager = require('./widgetManager');
 const actionBarManager = require('./actionBarManager');
 const { AbilityGroupTracker, KNOWN_STANCES, KNOWN_INVOCATIONS } = require('./abilityGroups');
 const ambiguousPopup = require('./ambiguousPopup');
+const resetPromptWindow = require('./resetPromptWindow');
 const zonePromptPopup = require('./zonePromptPopup');
 const moveHudWindow = require('./moveHudWindow');
 const gridGuideWindow = require('./gridGuideWindow');
@@ -1111,6 +1112,20 @@ damageEngine.on('activeChanged', () => {
 // Backlog #33 - the named-kill board. Each row becomes an infinite buff-shaped tile (killed ones
 // flagged so overlay.js can dim them); a row with a live respawn countdown carries remainingSec.
 raidNamedTracker.on('changed', (rows) => broadcast('raidNamed:active', rows.map(raidNamedTile)));
+// Owner's weekly notes, 13 Sep - re-entering the same zone with kills already tracked is genuinely
+// ambiguous (an instance-line echo vs. a real second trip into a fresh instance), so the tracker
+// asks instead of guessing. This is the one place that decides what the two answers DO; the popup
+// window itself (resetPromptWindow.js) only shows a message and reports back which button was hit.
+raidNamedTracker.on('resetPromptNeeded', ({ zone }) => {
+  resetPromptWindow.ask(
+    {
+      message: `You're back in ${zone} and it still shows earlier kills. Reset the board for a new run, or keep what's tracked?`,
+      resetLabel: 'Reset board',
+      keepLabel: 'Keep progress',
+    },
+    (choice) => raidNamedTracker.resolveResetPrompt(choice)
+  );
+});
 firstAggroEngine.on('changed', (rows) => {
   broadcast('firstAggro:active', rows.map(firstAggroTile));
   sessionRestore.scheduleSave();
@@ -1917,6 +1932,8 @@ ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffE
 
 ipcMain.handle('damage:getActive', () => damageViews());
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
+ipcMain.handle('resetPrompt:getPending', () => resetPromptWindow.getPending());
+ipcMain.handle('resetPrompt:answer', (_event, choice) => resetPromptWindow.answer(choice));
 ipcMain.handle('firstAggro:getActive', () => firstAggroEngine.getActive().map(firstAggroTile));
 ipcMain.handle('zoneTimer:getActive', () => zoneTimerRow());
 ipcMain.handle('travel:getRoutes', () => travelRoutes());

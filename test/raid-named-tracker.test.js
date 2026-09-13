@@ -369,5 +369,100 @@ test('a non-respawning zone leaves the kill greyed with no countdown', () => {
   assert.equal(row.respawnRemainingSec, null);
 });
 
+// ---------------------------------------------------------------------------
+// "reset or keep progress?" prompt (owner's weekly notes, 13 Sep) - re-entering the same base
+// zone with no hail either way is genuinely ambiguous (an instance-line echo vs. a real second
+// trip into a fresh dungeon instance), so it asks rather than silently guessing either way.
+// ---------------------------------------------------------------------------
+
+test('re-entering the same zone with kills already tracked, no hail either way, asks rather than guessing', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  let asked = null;
+  t.on('resetPromptNeeded', (payload) => { asked = payload; });
+  enterOpen(t, "Nagafen's Lair");
+  assert.deepEqual(asked, { zone: "Nagafen's Lair" });
+  assert.deepEqual(t.getPendingResetPrompt(), { zone: "Nagafen's Lair" });
+  // Nothing changes until she answers - same as the existing "keeps the board" behaviour.
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, true);
+});
+
+test('re-entering the same zone with NOTHING killed yet never asks - there is nothing to lose either way', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  let asked = false;
+  t.on('resetPromptNeeded', () => { asked = true; });
+  enterOpen(t, "Nagafen's Lair");
+  assert.equal(asked, false);
+  assert.equal(t.getPendingResetPrompt(), null);
+});
+
+test('the entrance-then-instance-suffix pair for one visit does not ask twice', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  let count = 0;
+  t.on('resetPromptNeeded', () => { count += 1; });
+  enterOpen(t, "Nagafen's Lair 4 (Refined)");
+  enterOpen(t, "Nagafen's Lair 4 (Refined)");
+  assert.equal(count, 1, 'the second identical line re-asked instead of a no-op');
+});
+
+test('answering "reset" while still in the zone rebuilds the board fresh', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  assert.ok(t.getPendingResetPrompt());
+  let changed = false;
+  t.on('changed', () => { changed = true; });
+  assert.equal(t.resolveResetPrompt('reset'), true);
+  assert.equal(t.getPendingResetPrompt(), null);
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, false, 'the kill was not cleared');
+  assert.ok(changed, 'nothing told the overlay the board changed');
+});
+
+test('answering "keep" leaves the board exactly as it was', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  t.resolveResetPrompt('keep');
+  assert.equal(t.getPendingResetPrompt(), null);
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, true);
+});
+
+test('answering after she already left the zone is a harmless no-op', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  t.handleLine(`${TS}You have entered Qeynos.`); // walked off before answering
+  assert.equal(t.getPendingResetPrompt(), null, 'leaving did not cancel the moot question');
+  assert.equal(t.resolveResetPrompt('reset'), false, 'answering a question that no longer exists');
+});
+
+test('a real zone change while a prompt is pending cancels it rather than leaving it stale', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  assert.ok(t.getPendingResetPrompt());
+  enterOpen(t, 'The Plane of Fear'); // a genuinely different tracked zone
+  assert.equal(t.getPendingResetPrompt(), null);
+});
+
+test('a fresh Voidling re-entry still resets automatically even with a question already pending', () => {
+  const { t } = make();
+  enter(t, 'The Plane of Fear');
+  slay(t, 'Terror');
+  enterOpen(t, 'The Plane of Fear'); // ambiguous - queues a question
+  assert.ok(t.getPendingResetPrompt());
+  enter(t, 'The Plane of Fear'); // a real hail this time - a genuinely fresh instance
+  assert.equal(t.getPendingResetPrompt(), null, 'the stale question was not cleared');
+  assert.equal(t.getActive().find((r) => r.name === 'Terror').killed, false, 'the fresh instance did not reset');
+});
+
 module.exports = () => report('raid-named-tracker');
 if (require.main === module) report('raid-named-tracker').then((n) => process.exit(n ? 1 : 0));
