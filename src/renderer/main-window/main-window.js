@@ -64,6 +64,7 @@ async function init() {
   if (window.eqTracker.onModulesChanged) window.eqTracker.onModulesChanged(refreshModuleRegistry);
   initBuffPlanner();
   initLoggingWatch();
+  initCombatPage();
 }
 
 
@@ -9713,4 +9714,102 @@ function initBuffPlanner() {
   window.eqTracker.onActiveProfileChanged(() => loadInput());
 
   loadInput();
+}
+
+// The Combat tab (owner's weekly notes, 13 Sep) - past-fight history plus a per-player,
+// per-skill breakdown for whichever fight is open. Re-fetched on every visit (not loaded once
+// like Lockouts' log scan) since new fights complete while the app just sits open - there's no
+// expensive read behind it, just whatever damageEngine already has in memory.
+function initCombatPage() {
+  const historyBody = document.getElementById('combat-history-body');
+  const historyEmpty = document.getElementById('combat-history-empty');
+  const detailCard = document.getElementById('combat-detail-card');
+  const detailTitle = document.getElementById('combat-detail-title');
+  const detailRows = document.getElementById('combat-detail-rows');
+  const closeBtn = document.getElementById('combat-detail-close');
+  if (!historyBody) return; // Combat tab not in this build
+
+  function formatDamage(n) {
+    if (n < 10000) return String(n);
+    if (n < 1000000) return `${(n / 1000).toFixed(1)}k`;
+    return `${(n / 1000000).toFixed(2)}m`;
+  }
+
+  function formatDuration(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  }
+
+  function formatWhen(ms) {
+    const d = new Date(ms);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function closeDetail() {
+    detailCard.style.display = 'none';
+    detailRows.innerHTML = '';
+  }
+
+  // Names/skills below come from parsed log text (a player name, a mob name, a spell) - built as
+  // real DOM nodes with .textContent throughout, never innerHTML, the same rule the ambiguous-cast
+  // popup already follows for the same reason (an attacker/spell name is not this app's own text).
+  const cell = (text) => { const td = document.createElement('td'); td.textContent = text; return td; };
+  const span = (text, className) => {
+    const el = document.createElement('span');
+    if (className) el.className = className;
+    el.textContent = text;
+    return el;
+  };
+
+  async function openFight(id) {
+    const fight = await window.eqTracker.getDamageHistoryFight(id);
+    if (!fight) { closeDetail(); return; }
+    detailTitle.textContent = `Fight at ${formatWhen(fight.endedAt - fight.durationSec * 1000)} (${formatDuration(fight.durationSec)}, ${formatDamage(fight.totalDamage)} total)`;
+    detailRows.innerHTML = '';
+    for (const row of fight.rows) {
+      const pct = fight.totalDamage > 0 ? Math.round((row.damage / fight.totalDamage) * 100) : 0;
+      const details = document.createElement('details');
+      details.className = 'combat-player-row';
+      const summary = document.createElement('summary');
+      summary.appendChild(span(row.name));
+      const amountSpan = document.createElement('span');
+      amountSpan.appendChild(span(`${pct}% `, 'combat-player-pct'));
+      amountSpan.appendChild(document.createTextNode(formatDamage(row.damage)));
+      summary.appendChild(amountSpan);
+      details.appendChild(summary);
+      const list = document.createElement('div');
+      list.className = 'combat-skill-list';
+      for (const s of row.bySkill) {
+        const line = document.createElement('div');
+        line.className = 'combat-skill-row';
+        line.appendChild(span(s.skill, 'combat-skill-name'));
+        line.appendChild(span(formatDamage(s.damage)));
+        list.appendChild(line);
+      }
+      details.appendChild(list);
+      detailRows.appendChild(details);
+    }
+    detailCard.style.display = '';
+  }
+
+  async function loadHistory() {
+    const history = await window.eqTracker.getDamageHistory();
+    historyBody.innerHTML = '';
+    historyEmpty.style.display = history.length ? 'none' : '';
+    for (const fight of history) {
+      const tr = document.createElement('tr');
+      tr.appendChild(cell(formatWhen(fight.endedAt)));
+      tr.appendChild(cell(formatDuration(fight.durationSec)));
+      tr.appendChild(cell(formatDamage(fight.totalDamage)));
+      tr.appendChild(cell(fight.topAttacker || '—'));
+      tr.addEventListener('click', () => openFight(fight.id));
+      historyBody.appendChild(tr);
+    }
+  }
+
+  if (closeBtn) closeBtn.addEventListener('click', closeDetail);
+  const navBtnCombat = document.getElementById('combat-nav-btn');
+  if (navBtnCombat) navBtnCombat.addEventListener('click', loadHistory);
+  loadHistory();
 }

@@ -165,6 +165,9 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createModuleAuraWidget: (name, moduleId) => ipcRenderer.invoke('widget:createModuleAura', { name, moduleId }),
   createDebuffWidget: (name) => ipcRenderer.invoke('widget:createDebuff', { name }),
   createDamageMeterWidget: (name, mineOnly) => ipcRenderer.invoke('widget:createDamageMeter', { name, mineOnly }),
+  // The Combat tab's fight history - summary list, then one fight's full row/skill detail on click.
+  getDamageHistory: () => ipcRenderer.invoke('damage:getHistory'),
+  getDamageHistoryFight: (id) => ipcRenderer.invoke('damage:getHistoryFight', id),
   createTravelGuideWidget: (name, destination) => ipcRenderer.invoke('widget:createTravelGuide', { name, destination }),
   createLockoutBoardWidget: (name) => ipcRenderer.invoke('widget:createLockoutBoard', { name }),
   createFirstAggroWidget: (name) => ipcRenderer.invoke('widget:createFirstAggro', { name }),

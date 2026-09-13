@@ -2697,3 +2697,37 @@ body.sidebar-resizing .sidebar {
 .lockout-killdate { opacity: 0.65; font-size: 10px; line-height: 1.1; white-space: nowrap; }
 /* A gap in the record is not a detail. It is the reason a cell above might be wrong. */
 .lockout-gapwarn { border-left: 3px solid #e8b04b; padding-left: 10px; margin-top: 6px; }
+
+/* Combat tab - past-fight history and the per-player/per-skill breakdown. */
+.empty-note { opacity: 0.6; font-size: 13px; }
+#combat-history-table tbody tr { cursor: pointer; }
+#combat-history-table tbody tr:hover { background: var(--surface-hover, rgba(255, 255, 255, 0.05)); }
+.combat-player-row {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-bottom: 6px;
+  padding: 0;
+  overflow: hidden;
+}
+.combat-player-row summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 600;
+  list-style: none;
+}
+.combat-player-row summary::-webkit-details-marker { display: none; }
+.combat-player-row summary .combat-player-pct { opacity: 0.65; font-weight: 400; font-size: 12px; }
+.combat-skill-list { padding: 2px 10px 8px 22px; }
+.combat-skill-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  padding: 3px 0;
+  border-top: 1px solid var(--line);
+}
+.combat-skill-row:first-child { border-top: none; }
+.combat-skill-name { opacity: 0.85; }

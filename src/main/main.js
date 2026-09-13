@@ -1931,6 +1931,8 @@ ipcMain.handle('buffs:getActiveBardSongs', () => buffEngine.getActiveBardSongs()
 ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffEngine.removeActiveBardSong(castBy, name));
 
 ipcMain.handle('damage:getActive', () => damageViews());
+ipcMain.handle('damage:getHistory', () => damageEngine.getHistory());
+ipcMain.handle('damage:getHistoryFight', (_event, id) => damageEngine.getHistoryFight(id));
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
 ipcMain.handle('resetPrompt:getPending', () => resetPromptWindow.getPending());
 ipcMain.handle('resetPrompt:answer', (_event, choice) => resetPromptWindow.answer(choice));
