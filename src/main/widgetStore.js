@@ -1238,6 +1238,11 @@ const LOSS_OF_CONTROL = [
   { label: 'AFRAID', land: 'You begin to scream.', end: 'You stop screaming.', secs: 30 },
   { label: 'ROOTED', land: 'Your feet adhere to the ground.', end: 'Your feet come free.', secs: 40 },
   { label: 'ROOTED', land: 'Your feet become entwined.', end: 'The roots fall from your feet.', secs: 40 },
+  // Earth Elemental Attack (an NPC-only proc, not a player spell) - confirmed spell data, 13 Sep:
+  // "Your feet sink into the ground." on land, "Your feet come free." on wear-off (3 ticks = 18s;
+  // the 40s safety net matches the rest of this ROOTED family rather than the exact spell duration,
+  // same reasoning as the entries above it).
+  { label: 'ROOTED', land: 'Your feet sink into the ground.', end: 'Your feet come free.', secs: 40 },
   { label: 'SNARED', land: 'You are ensnared.', end: 'You are no longer ensnared.', secs: 40 },
   { label: 'SNARED', land: 'Your legs feel weak.', end: 'Strength returns to your legs.', secs: 40 },
   { label: 'SNARED', land: 'You slow down as your feet are covered in tangling weeds.', end: 'The tangling weeds wither away.', secs: 40 },
