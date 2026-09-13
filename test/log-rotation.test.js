@@ -224,7 +224,12 @@ test('the next week does rotate', () => {
   const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': LINE });
   const s = svc(dir);
   s.rotateIfDue(new Date(2026, 8, 2, 12, 0, 0));
-  fs.appendFileSync(path.join(dir, 'eqlog_Baxa_rivervale.txt'), LINE);
+  const reopened = path.join(dir, 'eqlog_Baxa_rivervale.txt');
+  fs.appendFileSync(reopened, LINE);
+  // See the LANDMINE WARNING above: this write's real mtime must be pinned into the fake week,
+  // not left at the real wall-clock time, or the quiet "looks like it's from the future" check
+  // starts refusing to rotate the moment real time passes the hardcoded 9 Sep "now" below.
+  fs.utimesSync(reopened, new Date(2026, 8, 5), new Date(2026, 8, 5));
   assert.equal(s.rotateIfDue(new Date(2026, 8, 9, 12, 0, 0)).rotated.length, 1);
   assert.deepEqual(archived(dir), [
     'eqlog_Baxa_rivervale_week_2026-09-01.txt',
