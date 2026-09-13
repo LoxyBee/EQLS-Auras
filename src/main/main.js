@@ -977,6 +977,7 @@ function applyZoneChangeAndNotify(zone) {
   const changed = widgetManager.applyZoneChange(zone);
   const win = getMainWindow();
   if (win && !win.isDestroyed()) win.webContents.send('zone:changed', changed);
+  pushZoneTimer();
   return changed;
 }
 
@@ -1470,6 +1471,54 @@ function popLockoutBoard(word) {
   return true;
 }
 
+// -------------------------------------------------------------------------------------------------
+// The Zone Timer aura (owner's weekly notes, 13 Sep). One row - "<zone> <elapsed>" - counting up
+// since the app last saw a zone change. Same broadcast shape as First aggro (one shared value, not
+// per-widget - there's only ever one current zone) but this one has to tick every second on its
+// own, unlike every other tile here which only redraws when something actually happens: nothing
+// EVENTS this aura, time just passes. A dedicated 1s interval (gated cheap when no such aura
+// exists, same as hasLockoutWidget()'s own guard) rather than reusing buffEngine's tick, since this
+// has nothing to do with buffs and doesn't need buffEngine running to make sense.
+function hasZoneTimerWidget() {
+  return widgetManager.getAllWidgetConfigs().some((w) => w.buffSource === 'zoneTimer');
+}
+
+function formatElapsed(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function zoneTimerRow() {
+  const zone = widgetManager.getCurrentZone();
+  const enteredAt = widgetManager.getZoneEnteredAt();
+  if (!zone || !enteredAt) return [];
+  const elapsedSec = Math.max(0, Math.floor((Date.now() - enteredAt) / 1000));
+  return [{
+    name: zone,
+    valueText: formatElapsed(elapsedSec),
+    barPercent: 0,
+    remainingSec: null,
+    durationSec: 0,
+    infinite: true,
+    instant: false,
+    landedAt: null,
+    showOnOverlay: true,
+    iconUrl: null,
+    isBardSong: false,
+    spellCategory: null,
+  }];
+}
+
+function pushZoneTimer() {
+  if (!hasZoneTimerWidget()) return;
+  broadcast('zoneTimer:active', zoneTimerRow());
+}
+setInterval(pushZoneTimer, 1000);
+
 // QOL #6/#42. A failed `/tell <word>` whose word is a profile's own command word switches the app
 // to that profile - the macro-friendly way to keep the app's loadout in step with an in-game
 // loadout swap without alt-tabbing. Editable per profile in the Loadouts modal; same "read the
@@ -1869,6 +1918,7 @@ ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffE
 ipcMain.handle('damage:getActive', () => damageViews());
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
 ipcMain.handle('firstAggro:getActive', () => firstAggroEngine.getActive().map(firstAggroTile));
+ipcMain.handle('zoneTimer:getActive', () => zoneTimerRow());
 ipcMain.handle('travel:getRoutes', () => travelRoutes());
 ipcMain.handle('lockout:getBoard', () => lockoutBoardRoutes());
 ipcMain.handle('travel:getZones', () => allZoneNames());
@@ -2297,6 +2347,9 @@ ipcMain.handle('widget:createLockoutBoard', (_event, { name }) =>
 );
 ipcMain.handle('widget:createFirstAggro', (_event, { name }) =>
   widgetManager.createFirstAggroWidget(name)
+);
+ipcMain.handle('widget:createZoneTimer', (_event, { name }) =>
+  widgetManager.createZoneTimerWidget(name)
 );
 ipcMain.handle('widget:createTravelGuide', (_event, { name, destination }) =>
   widgetManager.createTravelGuideWidget(name, destination)

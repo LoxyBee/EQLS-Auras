@@ -32,6 +32,11 @@ contextBridge.exposeInMainWorld('eqOverlay', {
   onFirstAggroChanged: (callback) => {
     ipcRenderer.on('firstAggro:active', (_event, rows) => callback(rows));
   },
+  // Zone timer - one shared row, re-sent every second so the elapsed time visibly counts up.
+  getZoneTimer: () => ipcRenderer.invoke('zoneTimer:getActive'),
+  onZoneTimerChanged: (callback) => {
+    ipcRenderer.on('zoneTimer:active', (_event, rows) => callback(rows));
+  },
   getActiveDamage: () => ipcRenderer.invoke('damage:getActive'),
   onActiveDamageChanged: (callback) => {
     ipcRenderer.on('damage:active', (_event, rows) => callback(rows));

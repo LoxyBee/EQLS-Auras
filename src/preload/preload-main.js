@@ -168,6 +168,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createTravelGuideWidget: (name, destination) => ipcRenderer.invoke('widget:createTravelGuide', { name, destination }),
   createLockoutBoardWidget: (name) => ipcRenderer.invoke('widget:createLockoutBoard', { name }),
   createFirstAggroWidget: (name) => ipcRenderer.invoke('widget:createFirstAggro', { name }),
+  createZoneTimerWidget: (name) => ipcRenderer.invoke('widget:createZoneTimer', { name }),
   setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
   setWidgetTravelIncludeSuccor: (id, include) => ipcRenderer.invoke('widget:setTravelIncludeSuccor', { id, include }),
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),

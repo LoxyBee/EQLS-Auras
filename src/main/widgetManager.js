@@ -474,6 +474,14 @@ function createFirstAggroWidget(name) {
   return config;
 }
 
+function createZoneTimerWidget(name) {
+  const config = widgetStore.createZoneTimerAura(name, {
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
 function exportWidget(id) {
   return widgetStore.exportCode(id);
 }
@@ -725,14 +733,23 @@ function setLoadoutLabelEnabledState(enabled) {
 // state until the first zone change after launch. See visibleInZones in widgetStore for why null
 // has to mean "show everything" rather than "hide everything".
 let currentZone = null;
+// When the app last learned it - for the Zone Timer aura's "time in this zone" readout. Set to
+// the instant the app noticed, not backdated to the log line's own timestamp: this app never
+// replays history (same reasoning as currentlyMemorized/zone tracking elsewhere), so a restart
+// mid-zone starts the clock over rather than guessing how long she'd really been there.
+let zoneEnteredAt = null;
 function setCurrentZone(zone) {
   const next = zone || null;
   if (next === currentZone) return false;
   currentZone = next;
+  zoneEnteredAt = Date.now();
   return true;
 }
 function getCurrentZone() {
   return currentZone;
+}
+function getZoneEnteredAt() {
+  return zoneEnteredAt;
 }
 
 // Whether this aura is allowed in the zone the player is in. The rule itself lives in
@@ -1664,6 +1681,7 @@ module.exports = {
   createDamageMeterWidget,
   createLockoutBoardWidget,
   createFirstAggroWidget,
+  createZoneTimerWidget,
   setDamageOptions,
   createTravelGuideWidget,
   setTravelDestination,
@@ -1740,6 +1758,7 @@ module.exports = {
   setVisibleInZones,
   applyZoneChange,
   getCurrentZone,
+  getZoneEnteredAt,
   isVisibleInCurrentZone,
   setLoadoutLabelEnabled,
   setLoadoutLabelEnabledState,

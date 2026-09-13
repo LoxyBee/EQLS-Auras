@@ -1345,6 +1345,9 @@ function visibleBuffs(buffs, opts = {}) {
   // First aggro - one row the engine decided; nothing to filter.
   if (currentConfig.buffSource === 'firstAggro') return buffs;
 
+  // Zone timer - one row, the main process already decided what it says; nothing to filter.
+  if (currentConfig.buffSource === 'zoneTimer') return buffs;
+
   // Backlog #33. The board already IS the current zone's whole named list - every row is meant to
   // show, killed ones just dimmed (see the .killed class in render). No picker, no duration cap,
   // same argument as travel/damage above.
@@ -2023,6 +2026,22 @@ function render(buffs) {
     (!grouped && listEl.children.length !== visibleKeys.length) ||
     visibleKeys.some((key) => !tileRefs.has(key));
 
+  // TEMP DEBUG 7 Sep - "pull reset timer stuck flashing". Remove once diagnosed.
+  if (currentConfig.buffSource === 'customTimer' && window.eqOverlay && window.eqOverlay.debugLog) {
+    try {
+      window.eqOverlay.debugLog(
+        `RDBG "${currentConfig.name}" struct=${structureChanged} ` +
+          `preview=${previewActive}/${showingPreviewSample} ` +
+          `raw=[${[...rawSet].join(',')}] ` +
+          `newly=[${[...newlyLanded].join(',')}] ` +
+          `nlr=[${[...newlyLandedRaw].join(',')}] ` +
+          `refs=[${[...tileRefs.keys()].join(',')}] ` +
+          `kids=${listEl.children.length}/${visibleKeys.length} ` +
+          `low=[${tileBuffs.map((b) => `${b.name}:${b.remainingSec}`).join(',')}]`
+      );
+    } catch (e) { /* ignore */ }
+  }
+
   if (structureChanged) {
     listEl.innerHTML = '';
     tileRefs.clear();
@@ -2152,6 +2171,7 @@ let lastTravelRoutes = {};
 let lastLockoutBoard = {};
 // First aggro - one shared row (like the raid-named board), not per-aura.
 let lastFirstAggro = [];
+let lastZoneTimer = [];
 // feat/module-system. One broadcast carries every custom module's live entries, keyed by module
 // id; a module aura reads its own slice by currentConfig.moduleId.
 let lastModuleEntries = {};
@@ -2324,6 +2344,7 @@ function realSourceBuffs() {
   if (currentConfig.buffSource === 'travel') return lastTravelRoutes[widgetId] || [];
   if (currentConfig.buffSource === 'lockout') return lastLockoutBoard[widgetId] || [];
   if (currentConfig.buffSource === 'firstAggro') return lastFirstAggro;
+  if (currentConfig.buffSource === 'zoneTimer') return lastZoneTimer;
   // Backlog #33. One shared board (the current zone's named list), not per-widget - like damage,
   // unlike travel/customTimer.
   if (currentConfig.buffSource === 'raidNamed') return lastRaidNamed;
@@ -2599,6 +2620,17 @@ if (window.eqOverlay.getFirstAggro) {
   });
   window.eqOverlay.onFirstAggroChanged((rows) => {
     lastFirstAggro = rows || [];
+    render(currentSourceBuffs());
+  });
+}
+
+if (window.eqOverlay.getZoneTimer) {
+  window.eqOverlay.getZoneTimer().then((rows) => {
+    lastZoneTimer = rows || [];
+    render(currentSourceBuffs());
+  });
+  window.eqOverlay.onZoneTimerChanged((rows) => {
+    lastZoneTimer = rows || [];
     render(currentSourceBuffs());
   });
 }

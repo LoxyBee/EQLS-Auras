@@ -1847,6 +1847,22 @@ class WidgetStore {
     return widget;
   }
 
+  // The "Zone timer" aura (owner's weekly notes, 13 Sep): one line, "<zone name> <elapsed>",
+  // counting up from the moment the app last saw a zone change - answers "how long have I been
+  // here" at a glance. A plain custom aura, buffSource 'zoneTimer'. Like First aggro, no settings
+  // of its own: it just shows the current zone and how long she's been in it.
+  createZoneTimerAura(name, { activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name || 'Zone timer');
+    widget.buffSource = 'zoneTimer';
+    widget.sortOrder = 'default';
+    widget.listWidth = 220;
+    widget.landingGlowEnabled = false;
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
   // Note 19. The damage meter.
   //
   // A plain custom aura with buffSource 'damage', not a new kind. That is the whole reason this

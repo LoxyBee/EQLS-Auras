@@ -3068,6 +3068,7 @@ function initWidgetsPanel() {
     if (widget.buffSource === 'travel') return 'Travel guide';
     if (widget.buffSource === 'lockout') return 'Raid lockouts';
     if (widget.buffSource === 'firstAggro') return 'First aggro';
+    if (widget.buffSource === 'zoneTimer') return 'Zone timer';
     if (widget.displayMode === 'text') return 'Custom text';
     if (widget.buffSource === 'customTimer') return 'Custom timer';
     if (widget.buffSource === 'ally' && widget.trackOnEnemies) return 'Custom debuff';
@@ -3125,6 +3126,7 @@ function initWidgetsPanel() {
     if (widget.buffSource === 'travel') return 'travel';
     if (widget.buffSource === 'lockout') return 'lockout';
     if (widget.buffSource === 'firstAggro') return 'first-aggro';
+    if (widget.buffSource === 'zoneTimer') return 'zone-timer';
     if (widget.displayMode === 'text') {
       if (widget.allyDebuffAlert) return 'ally-alert';
       return widget.buffSource === 'customTimer' ? 'text-customTimer' : 'text';
@@ -3180,6 +3182,10 @@ function initWidgetsPanel() {
     // First aggro - one engine-decided line. No picker, no sort/merge; a sound on a body pull
     // is worth having, so 'alerts' stays.
     'first-aggro': ['list-format', 'timer-text', 'opacity', 'position', 'alerts'],
+    // Zone timer - one line, "<zone> <elapsed>", ticking up since the last zone change. No picker,
+    // no sort/merge/borders (nothing to pick, one row, no duration/category), no 'alerts' either -
+    // nothing here ever lands or expires for a sound to attach to.
+    'zone-timer': ['list-format', 'timer-text', 'opacity', 'position'],
   };
 
   // Applies one shape's field set to every optional row/card, and returns the Set so
@@ -4491,6 +4497,15 @@ function initWidgetsPanel() {
         'mob hitting one of yours first (the body-pull tell). Clears when the mob dies or you zone. ' +
         'Only as complete as your own log.',
       create: (name) => window.eqTracker.createFirstAggroWidget(name),
+    },
+    {
+      id: 'zone-timer',
+      name: 'Zone timer',
+      group: 'standalone',
+      description:
+        'The current zone and how long you have been in it, counting up from the moment you ' +
+        'zoned in. Resets on every zone change.',
+      create: (name) => window.eqTracker.createZoneTimerWidget(name),
     },
   ];
 
