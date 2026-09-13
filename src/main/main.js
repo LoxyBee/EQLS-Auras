@@ -1660,7 +1660,7 @@ app.whenReady().then(() => {
     const found = readLastZoneEntry(logPath);
     if (!found) return;
     applyZoneChangeAndNotify(found.zone);
-    raidNamedTracker.setZone(found.zone, found.viaVoidling);
+    raidNamedTracker.setZone(found.zone);
     // Seed loadout-locked state too - but NOT the verified gems: a memorise seen before the app
     // started was never observed, and re-entering a locked zone deliberately starts the gem
     // evidence fresh (see setLoadoutLocked). This only sets the flag so memorises from here on count.
@@ -3197,8 +3197,25 @@ app.on('web-contents-created', (_event, contents) => {
   });
 });
 
-app.on('render-process-gone', (_event, _contents, details) => {
-  debugLog(`SHUTDOWN: render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
+app.on('render-process-gone', (_event, contents, details) => {
+  // Which window crashed, not just that one did - `contents.getURL()` survives its renderer's
+  // death (it's state on the WebContents object, not the dead process), and every window's own
+  // file name plus query string (widgetId for an aura) is enough to tell them apart without
+  // needing to tag anything at window-creation time. Added 13 Sep after a real recurring crash
+  // (7 times in one evening, Sep 12) that this line alone could not yet distinguish main window
+  // from overlay from a specific aura.
+  let win = 'unknown';
+  try {
+    const url = contents.getURL();
+    if (url) {
+      const [filePath, query] = url.split('?');
+      const short = filePath.split(/[\\/]/).filter(Boolean).slice(-2).join('/');
+      win = query ? `${short}?${query}` : short;
+    } else {
+      win = '(no URL)';
+    }
+  } catch { /* contents may already be fully gone */ }
+  debugLog(`SHUTDOWN: render-process-gone reason=${details.reason} exitCode=${details.exitCode} window=${win}`);
 });
 app.on('child-process-gone', (_event, details) => {
   debugLog(`SHUTDOWN: child-process-gone type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`);

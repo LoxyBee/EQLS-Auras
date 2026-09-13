@@ -1,7 +1,7 @@
 'use strict';
 
 const { EventEmitter } = require('events');
-const { matchZoneChange, matchSlain, matchOwnVoidlingDanger } = require('./buffParser');
+const { matchZoneChange, matchSlain } = require('./buffParser');
 const { RAID_ZONE_NAMEDS } = require('../shared/data/raidZoneNameds');
 
 // Backlog #33 - a named-kill board. Enter a tracked zone, every named in that zone's list shows as
@@ -11,9 +11,10 @@ const { RAID_ZONE_NAMEDS } = require('../shared/data/raidZoneNameds');
 // EVERY tracked zone shows the board on a plain "You have entered X." line. Owner, 2 Sep:
 // "anything that is a RAID is also a separate DUNGEON" - a Voidling raid instance and an ordinary
 // group/dungeon run of the same zone show the same board. The `raid: true` flag in
-// raidZoneNameds.js no longer gates visibility; the Voidling "danger" hail (`viaVoidling` /
-// `this.viaVoidling`) is kept only as metadata for whoever needs to tell a raid-lockout instance
-// from a group run (lockoutCore keys its weekly-attempt event on the same signal).
+// raidZoneNameds.js no longer gates visibility; `this.viaVoidling` (read off the zone string's own
+// " - Group" marker - see GROUP_INSTANCE_RE) is kept only as metadata for whoever needs to tell a
+// raid-lockout instance from a group run. lockoutCore's own weekly-attempt tracking is separate and
+// correctly still keys on the player's own hail - an attempt is about who personally asked for it.
 //
 // Its own small engine rather than a mode on customTimerEngine or a hook in damageEngine: the
 // state is per-zone and resets wholesale on a zone line, which is nothing like a trigger timer or
@@ -24,9 +25,22 @@ const { RAID_ZONE_NAMEDS } = require('../shared/data/raidZoneNameds');
 // " 1 (Awakened)", " - Group 4 (Refined)".
 const INSTANCE_SUFFIX = / (?:- Group(?: \d+ \([^)]+\))?|\d+ \([^)]+\))\s*$/;
 
+// The " - Group" marker IS the raid-lockout instance, confirmed by the owner (13 Sep) and checked
+// against a full week of real logs: every "- Group" zone entry has a Voidling hail within seconds
+// of it; every entry without "- Group" either has none nearby or one that is hours old and
+// unrelated. It is a direct, always-present signal - unlike catching THIS player's own "danger"
+// hail, which misses every time someone else forms the raid and just invites you in, or you
+// reconnect into an already-running one without re-hailing yourself. See _enterZone.
+const GROUP_INSTANCE_RE = / - Group(?:\s|$)/;
+
 /** "The Plane of Hate - Group 3 (Fused)" / "Nagafen's Lair 1 (Awakened)" -> the base zone name. */
 function stripInstanceSuffix(zone) {
   return String(zone || '').replace(INSTANCE_SUFFIX, '').trim();
+}
+
+/** Is this the raid-lockout instance, going purely off what the zone string itself says? */
+function isGroupInstance(rawZone) {
+  return GROUP_INSTANCE_RE.test(String(rawZone || ''));
 }
 
 /** Drop a leading article so "A dracoliche" and "dracoliche" compare equal. */
@@ -45,13 +59,9 @@ class RaidNamedTracker extends EventEmitter {
     // bareName(namedName) -> { name, tier, killedAt: ms|null, respawnAt: ms|null }
     this.board = new Map();
     this.debugLogFn = null;
-    // The player's own "You say, 'danger'" to the Voidling arms a raid entry; the next zone change
-    // consumes it (the raid instance you land in). Same signal lockoutCore keys its weekly-attempt
-    // event on. Cleared on any zone change, raid or not.
-    this._raidEntryArmed = false;
-    // True when the current tracked zone was entered right after the player's own Voidling
-    // "danger" hail - i.e. it's the raid-lockout instance, not a plain group run. Metadata only;
-    // the board shows either way now.
+    // True when the current tracked zone IS the raid-lockout instance, not a plain group run -
+    // read straight off the zone string's own " - Group" marker (see isGroupInstance). Metadata
+    // only; the board shows either way now.
     this.viaVoidling = false;
     // Called on every board change so the session-restore registry can persist it - a raid runs
     // for well over an hour and the app gets restarted mid-raid (crash, or to pick up a fix), and
@@ -132,13 +142,7 @@ class RaidNamedTracker extends EventEmitter {
   handleLine(line) {
     const zone = matchZoneChange(line);
     if (zone) {
-      const viaVoidling = this._raidEntryArmed;
-      this._raidEntryArmed = false; // a zone change consumes the pending raid entry either way
-      this._enterZone(zone, viaVoidling);
-      return;
-    }
-    if (matchOwnVoidlingDanger(line)) {
-      this._raidEntryArmed = true;
+      this._enterZone(zone);
       return;
     }
     const slain = matchSlain(line);
@@ -147,22 +151,28 @@ class RaidNamedTracker extends EventEmitter {
 
   // Startup zone recovery (see logZonePeek.js). The player entered this zone before the app was
   // watching, so the board is rebuilt full - nothing has been killed as far as the app can know.
-  // The board shows for ANY tracked zone here, same as a live entry (c3479d4) - `viaVoidling` is
-  // only metadata saying whether the log tail also carried the player's own raid-entry hail.
-  setZone(zone, viaVoidling = false) {
+  // The board shows for ANY tracked zone here, same as a live entry (c3479d4).
+  setZone(zone) {
     if (!zone) return;
     this._seeding = true;
     try {
-      this._enterZone(zone, viaVoidling);
+      this._enterZone(zone);
     } finally {
       this._seeding = false;
     }
   }
 
-  // `rawZone` is the zone name exactly as the log gave it, difficulty suffix and all. `viaVoidling`
-  // is true only when the raid-entry dialogue (hail the Voidling, say "danger") immediately
-  // preceded this zone change.
-  _enterZone(rawZone, viaVoidling) {
+  // `rawZone` is the zone name exactly as the log gave it, difficulty suffix and all. Whether it is
+  // the raid-lockout instance is read straight off its own " - Group" marker (see
+  // GROUP_INSTANCE_RE), confirmed by the owner and by a full week of real logs checked line by
+  // line, and authoritative in both directions - a "- Group" zone is the raid instance even with
+  // no hail at all (someone else formed it and just invited this player in, or a reconnect landed
+  // back in one), and a bare zone is NOT the raid instance even if a hail happened to occur nearby
+  // (someone else's unrelated raid forming at the same time). An earlier version guessed instead
+  // from whether THIS player's own "danger" line had just preceded the zone change, and got both
+  // directions wrong.
+  _enterZone(rawZone) {
+    const viaVoidling = isGroupInstance(rawZone);
     const baseZone = stripInstanceSuffix(rawZone);
     const entry = RAID_ZONE_NAMEDS[baseZone];
     // A group/raid instance carries a difficulty suffix ("- Group", "N (Awakened)"). If one of
@@ -271,4 +281,4 @@ class RaidNamedTracker extends EventEmitter {
   }
 }
 
-module.exports = { RaidNamedTracker, stripInstanceSuffix, bareName };
+module.exports = { RaidNamedTracker, stripInstanceSuffix, bareName, isGroupInstance };

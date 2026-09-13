@@ -104,16 +104,17 @@ test('respects maxBytes - a zone line older than the cap is not found', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('RaidNamedTracker.setZone rebuilds the board for a raid zone, Voidling hail or not (owner, 2 Sep)', () => {
+test('RaidNamedTracker.setZone rebuilds the board for a raid zone, "- Group" or not (owner, 2 Sep / 13 Sep)', () => {
   const t = new RaidNamedTracker();
   try {
     // The Plane of Fear is a `raid: true` entry, but "anything that is a RAID is also a separate
-    // DUNGEON" - the board shows on a plain group entry too. The hail only sets `viaVoidling`.
-    t.setZone('The Plane of Fear 4 (Refined)', false);
+    // DUNGEON" - the board shows on a plain group entry too. The zone string's own "- Group"
+    // marker is what sets `viaVoidling` - not a hail, which setZone never sees at startup anyway.
+    t.setZone('The Plane of Fear 4 (Refined)');
     assert.equal(t.getCurrentZone(), 'The Plane of Fear', 'the board shows on a plain entry');
     assert.equal(t.viaVoidling, false);
     assert.ok(t.getActive().length > 0);
-    t.setZone('The Plane of Fear 4 (Refined)', true); // fresh Voidling instance -> reset + flagged
+    t.setZone('The Plane of Fear - Group 4 (Refined)'); // the raid-lockout instance -> reset + flagged
     assert.equal(t.getCurrentZone(), 'The Plane of Fear');
     assert.equal(t.viaVoidling, true);
   } finally { t.stop(); }
@@ -122,16 +123,16 @@ test('RaidNamedTracker.setZone rebuilds the board for a raid zone, Voidling hail
 test('RaidNamedTracker.setZone rebuilds a DUNGEON board with no confirmation needed', () => {
   const t = new RaidNamedTracker();
   try {
-    t.setZone("Nagafen's Lair 4 (Refined)", false); // group dungeon - no `raid` flag
+    t.setZone("Nagafen's Lair 4 (Refined)"); // group dungeon - no `raid` flag
     assert.equal(t.getCurrentZone(), "Nagafen's Lair");
     assert.ok(t.getActive().some((r) => r.name === 'Efreeti Lord Djarn'));
   } finally { t.stop(); }
 });
 
-test('RaidNamedTracker.setZone is a no-op for an untracked zone even with confirmation', () => {
+test('RaidNamedTracker.setZone is a no-op for an untracked zone', () => {
   const t = new RaidNamedTracker();
   try {
-    t.setZone('The Bazaar', true);
+    t.setZone('The Bazaar');
     assert.equal(t.getCurrentZone(), null);
     assert.deepEqual(t.getActive(), []);
   } finally { t.stop(); }

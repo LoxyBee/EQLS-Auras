@@ -6,10 +6,15 @@
  *   - a DUNGEON entry (no `raid` flag): the board lights up on a plain "You have entered X." line,
  *     the way #33 originally asked for - "every tracked zone, not just raids".
  *   - a RAID entry (`raid: true` - the Planes, and the classic raid-boss lists): the board lights
- *     up ONLY after the player's own "You say, 'danger'" to the Voidling, then a zone change. The
- *     "- Group" / difficulty-suffix grammar does NOT tell a raid instance from a group one
- *     (measured: the owner's real Plane of Fear raid entered as "... - Group 4 (Refined)"), so the
- *     dialogue is the only gate - the same signal lockoutCore keys its weekly-attempt event on.
+ *     up for the raid-lockout instance, which the zone string's own " - Group" marker names
+ *     directly - corrected 13 Sep after the owner's own correction and a full week of real logs
+ *     checked line by line: every " - Group" zone entry has a Voidling hail within seconds of it,
+ *     every entry without one has none nearby (or one hours old and unrelated). The player's own
+ *     "You say, 'danger'" is kept as a fallback signal (isGroupInstance() ORs it in), but it is not
+ *     the gate any more - it used to be the ONLY one, which missed every time someone ELSE formed
+ *     the raid and just invited this player in, or a reconnect landed back in one with no fresh
+ *     hail. lockoutCore's own weekly-attempt tracking is separate and untouched - it correctly
+ *     still requires the PLAYER's own hail, because an attempt is about who asked for the weekly.
  *
  * A "<name> has been slain by ..." line greys a named; re-entering rebuilds the board.
  */
@@ -21,8 +26,17 @@ const { RAID_ZONE_NAMEDS } = require('../src/shared/data/raidZoneNameds');
 
 const TS = '[Wed Aug 19 19:23:03 2026] ';
 const sayDanger = (t) => t.handleLine(`${TS}You say, 'danger'`);
-// A RAID entry: the player's own "danger" to the Voidling, then the zone change.
-const enter = (t, z) => { sayDanger(t); t.handleLine(`${TS}You have entered ${z}.`); };
+// A RAID entry: the player's own "danger" to the Voidling, then the zone change - into the
+// raid-lockout instance, which the real game marks with its own " - Group" suffix (see
+// GROUP_INSTANCE_RE in raidNamedTracker.js). The hail is kept here for flavor/realism, but what
+// actually makes this a raid entry post-13-Sep is the "- Group" the helper inserts below, not the
+// hail line - callers that want a NON-raid entry into the same zone use enterOpen() instead.
+const enter = (t, z) => {
+  sayDanger(t);
+  const raidZone = /^(.*?)( \d+ \([^)]+\))?$/.exec(z);
+  const withGroup = raidZone[2] ? `${raidZone[1]} - Group${raidZone[2]}` : `${z} - Group`;
+  t.handleLine(`${TS}You have entered ${withGroup}.`);
+};
 // A DUNGEON / open / untracked entry: a plain zone line, no Voidling dialogue.
 const enterOpen = (t, z) => t.handleLine(`${TS}You have entered ${z}.`);
 const slay = (t, n) => t.handleLine(`${TS}${n} has been slain by Avenrae!`);
@@ -139,7 +153,7 @@ test('the board survives a restart: killed nameds come back greyed, not all-up (
   // restart: restoreState runs BEFORE the log-tail zone recovery (setZone), so it stashes
   const { t: t2 } = make();
   assert.equal(t2.restoreState(snap), 0, 'stashed - no board to apply to yet');
-  t2.setZone('The Plane of Hate', false); // startup seed
+  t2.setZone('The Plane of Hate'); // startup seed
   const killed = t2.getActive().filter((r) => r.killed).map((r) => r.name).sort();
   assert.deepEqual(killed, ['Lord of Ire', 'Maestro of Rancor', 'Magi P`tasa']);
 });
@@ -152,7 +166,7 @@ test('a restart into a DIFFERENT zone than the snapshot gets a fresh board, no s
 
   const { t: t2 } = make();
   t2.restoreState(snap);
-  t2.setZone('The Plane of Fear', false); // she left Hate, restarted in Fear
+  t2.setZone('The Plane of Fear'); // she left Hate, restarted in Fear
   assert.equal(t2.getActive().filter((r) => r.killed).length, 0, 'Fear board must be all-up');
   assert.equal(t2.getCurrentZone(), 'The Plane of Fear');
 });
@@ -208,6 +222,22 @@ test("a groupmate's \"danger\" hail: the board shows, but it is not flagged as t
   t.handleLine(`${TS}You have entered The Plane of Fear 1 (Awakened).`);
   assert.equal(t.getCurrentZone(), 'The Plane of Fear', 'the board still shows');
   assert.equal(t.viaVoidling, false, "someone else's hail is not proof the PLAYER raided");
+});
+
+test('a "- Group" zone entry is the raid-lockout instance even with no hail from anyone (invited in by someone else)', () => {
+  const { t } = make();
+  // No danger line at all - reached purely by accepting another player's "asked you to join the
+  // instance" invite. The zone string alone proves it.
+  t.handleLine(`${TS}You have entered The Plane of Hate - Group 4 (Refined).`);
+  assert.equal(t.getCurrentZone(), 'The Plane of Hate');
+  assert.equal(t.viaVoidling, true, 'the zone string names the raid instance directly');
+});
+
+test('a bare instance suffix with no "- Group" is never the raid instance, even with a hail nearby', () => {
+  const { t } = make();
+  t.handleLine(`${TS}You say, 'danger'`);
+  t.handleLine(`${TS}You have entered The Plane of Fear 4 (Refined).`);
+  assert.equal(t.viaVoidling, false, 'no "- Group" in the string means this was not the raid version');
 });
 
 test('viaVoidling is consumed by the zone change - a plain re-entry drops the raid flag but keeps the board', () => {
