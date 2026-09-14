@@ -2926,3 +2926,13 @@ body.sidebar-resizing .sidebar {
 .combat-fight-label { flex: 0 0 auto; font-weight: 600; color: var(--accent, #c99a3f); }
 .combat-fight-label-trash { font-weight: 400; opacity: 0.55; color: inherit; }
 .combat-fight-bars { padding: 4px 4px 10px 20px; }
+/* Damage / Healing / Both (owner, 14 Sep) - the "Both" heading between the two stacked charts. */
+.combat-metric-heading {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  margin: 10px 0 4px;
+}
+.combat-metric-heading:first-child { margin-top: 0; }

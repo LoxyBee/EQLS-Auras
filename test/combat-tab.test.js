@@ -114,7 +114,7 @@ test('clicking a visit\'s zone opens the shared detail screen with that visit\'s
   const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'openVisit has been restructured or removed');
   assert.match(fn[1], /getDamageHistoryFight\(f\.id\)/, 'a visit\'s totals must come from its real fights, not a guess');
-  assert.match(fn[1], /renderBars\(detailBars, rows, totalDuration\)/);
+  assert.match(fn[1], /renderMetricBars\(detailBars, details\)/);
   assert.match(fn[1], /detailFightList\.appendChild\(fightAccordionRow/, 'the individual fights must still be reachable from here');
 });
 
@@ -123,7 +123,7 @@ test('a fight expands its own chart in place instead of navigating to a new scre
   const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'fightAccordionRow has been restructured or removed');
   assert.match(fn[1], /createElement\('details'\)/, 'a fight row must be an accordion, not a link to another screen');
-  assert.match(fn[1], /renderBars\(nested, detail\.rows, detail\.durationSec\)/, 'expanding it must draw its OWN chart, not reuse the visit\'s combined one');
+  assert.match(fn[1], /renderMetricBars\(nested, \[detail\]\)/, 'expanding it must draw its OWN chart, not reuse the visit\'s combined one');
   assert.doesNotMatch(fn[1], /showDetail\(\)|display = ''/, 'expanding a fight must not switch screens');
 });
 
@@ -197,8 +197,8 @@ test('the fight-row accordion styles its OWN summary only - a direct-child combi
 // both. This pins that the merge actually carries them, not just damage.
 test('a visit\'s combined skill totals carry hits and crits through the merge, not just damage', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(fn, 'openVisit has been restructured or removed');
+  const fn = renderer.match(/function aggregateFightRows\(details, rowsKey\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'aggregateFightRows has been restructured or removed');
   assert.match(
     fn[1], /\{ skill: s\.skill, damage: 0, hits: 0, crits: 0 \}/,
     'the per-skill accumulator must seed hits/crits, not just damage - the exact bug: crit % showed 0% for every skill on a multi-fight visit'
@@ -209,7 +209,7 @@ test('a visit\'s combined skill totals carry hits and crits through the merge, n
 
 test('the skill breakdown shows each skill\'s share of the player\'s OWN total, and its crit rate', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(
     fn[1], /row\.damage > 0 \? Math\.round\(\(s\.damage \/ row\.damage\) \* 100\)/,
@@ -225,7 +225,7 @@ test('the skill breakdown shows each skill\'s share of the player\'s OWN total, 
 // biggest skill, same "biggest, not the total" reasoning the player bars already use.
 test('the skill breakdown has a labelled header row and each skill row has its own coloured bar', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(fn[1], /combat-skill-header/, 'no header row - the columns would be unlabeled again');
   for (const label of ['Skill', 'Damage', '% of total', 'Crit %']) {
@@ -250,14 +250,14 @@ test('the skill breakdown has a labelled header row and each skill row has its o
 // bare background.
 test('the skill bar spans the whole Damage/percent/crit area, not just the Damage column', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(
     fn[1], /combat-skill-track-area/,
     'the track/fill must live in a wrapper spanning the whole numbers area, not just the Damage column'
   );
   assert.match(
-    fn[1], /trackArea\.appendChild\(track\)[\s\S]*trackArea\.appendChild\(amount\)[\s\S]*trackArea\.appendChild\(span\(`\$\{share\}%`, 'combat-skill-share'\)\)[\s\S]*trackArea\.appendChild\(span\(`\$\{critPct\}%`, 'combat-skill-crit'\)\)/,
+    fn[1], /trackArea\.appendChild\(track\)[\s\S]*trackArea\.appendChild\(amount\)[\s\S]*trackArea\.appendChild\(span\(`\$\{share\}%`, 'combat-skill-share'\)\)[\s\S]*trackArea\.appendChild\(span\(critPct === null[\s\S]*?'combat-skill-crit'\)\)/,
     'the amount, share and crit numbers must all sit on top of the same wide track, not the bare row'
   );
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
@@ -278,7 +278,7 @@ test('the skill bar spans the whole Damage/percent/crit area, not just the Damag
 // as the skill-row bars, with no separate stats column at all.
 test('the DPS figure on a player bar is inset into the track, not stranded in a column past it', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(fn[1], /combat-bar-dps/, 'the DPS element must exist');
   assert.match(
@@ -330,7 +330,7 @@ test('the skill breakdown\'s Damage/percent/crit columns are centred, header and
 // same way `row.bySkill` already is, never from a damage-log skill list.
 test('the class estimate is the first thing in the damage bar, in its own column ahead of the amount', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/async function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars must exist and be async - it awaits a class estimate for every row');
   assert.match(
     fn[1], /window\.eqTracker\.estimateDamageClasses\(row\.castSkills \|\| \[\]\)/,
@@ -362,8 +362,8 @@ test('a confirmed class renders green, a maybe class renders orange - distinct c
 // data model precedent bySkill already established.
 test('a visit\'s combined chart unions its fights\' cast-skill evidence, not just damage/bySkill', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(fn, 'openVisit has been restructured or removed');
+  const fn = renderer.match(/function aggregateFightRows\(details, rowsKey\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'aggregateFightRows has been restructured or removed');
   assert.match(fn[1], /castSkills: new Set\(\)/, 'the per-attacker aggregate must have a castSkills accumulator');
   assert.match(
     fn[1], /for \(const skill of row\.castSkills \|\| \[\]\) agg\.castSkills\.add\(skill\)/,
@@ -392,6 +392,65 @@ test('the visit list uses a real grid with a fixed time column, not flex natural
   assert.match(
     css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 1fr auto;/s,
     'the time column must be a fixed width so a short "today" time and a long dated one both start the zone name at the same x'
+  );
+});
+
+// Owner, 14 Sep: "there is still no button to toggle between healing, damage, or both, i asked
+// for this several turns ago" - top-level buttons, not attached to any one fight, that refresh
+// every chart currently on screen when clicked.
+test('the Damage/Healing/Both toggle exists as its own top-level control, not attached to a fight', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="combat-view-toggle"');
+  assert.ok(start !== -1, 'the view-toggle control is missing from the page');
+  const section = html.slice(start, start + 500);
+  assert.match(section, /data-view="damage"/);
+  assert.match(section, /data-view="healing"/);
+  assert.match(section, /data-view="both"/);
+});
+
+test('toggling the view mode refreshes every chart currently open, not just the next one clicked', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
+  assert.ok(fn, 'initCombatPage has been restructured');
+  assert.match(fn[1], /const openRenders = new Map\(\)/, 'there must be a registry of what is currently visible');
+  assert.match(
+    fn[1], /for \(const \[container, details\] of openRenders\)[\s\S]*?renderMetricBars\(container, details\)/,
+    'clicking a view button must re-render every registered container, not just set a variable'
+  );
+});
+
+test('a single fight\'s own chart is registered as open (and unregistered on collapse), so it refreshes too', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'fightAccordionRow has been restructured or removed');
+  assert.match(fn[1], /openRenders\.set\(nested, \[detail\]\)/, 'an expanded fight must register itself as open');
+  assert.match(fn[1], /openRenders\.delete\(nested\)/, 'a collapsed fight must unregister itself - it is no longer visible');
+  assert.match(
+    fn[1], /nested\.dataset\.renderedMode !== viewMode/,
+    'a plain "already rendered" flag would leave stale content showing if the mode changed while this fight was collapsed'
+  );
+});
+
+// Owner, 14 Sep: "using a summary of dps and heal" for the combined view - both metrics shown
+// together, not just whichever was clicked last.
+test('"Both" mode renders damage and healing as two labelled sections, not one or the other', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderMetricBars\(container, details\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderMetricBars has been restructured or removed');
+  assert.match(fn[1], /viewMode === 'both'/);
+  assert.match(fn[1], /aggregateFightRows\(details, 'rows'\)/, 'must aggregate the damage side');
+  assert.match(fn[1], /aggregateFightRows\(details, 'healRows'\)/, 'must aggregate the healing side');
+  assert.match(fn[1], /renderBars\(dmgBox, dmg\.rows, dmg\.totalDuration, 'damage'\)/);
+  assert.match(fn[1], /renderBars\(healBox, heal\.rows, heal\.totalDuration, 'heal'\)/);
+});
+
+test('healing mode never shows a fabricated Crit % - healLines.js does not track crits', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(
+    fn[1], /metric === 'heal' \? null : /,
+    'heal mode must not compute a crit percentage from data that was never collected'
   );
 });
 

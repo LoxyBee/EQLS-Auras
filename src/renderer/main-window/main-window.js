@@ -9753,6 +9753,17 @@ function initCombatPage() {
   const BAR_COLORS = ['#c9a13a', '#4a9fd8', '#6fc47a', '#d8794a', '#9a7fd8', '#d84a8f', '#4ad8c4', '#d8d24a'];
   let lastHistory = []; // flat, cached so the zone filter can re-render without re-fetching
 
+  // Damage / Healing / Both (owner, 14 Sep: "buttons... top level, and not attached to specific
+  // fight logs, swapping one view should swap it for all open logs"). One shared mode for the
+  // whole page - switching it re-renders whatever's currently on screen (the open visit, if any)
+  // rather than only affecting the next thing clicked.
+  let viewMode = 'damage'; // 'damage' | 'healing' | 'both'
+  // Every bar-chart container currently visible on screen (the open visit's own combined chart,
+  // plus any expanded fight accordion under it) - Map<container, fightDetailsArray>. Toggling the
+  // view mode re-renders every one of these in place, which is what makes the buttons "top level"
+  // rather than only affecting whatever gets opened next (owner, 14 Sep).
+  const openRenders = new Map();
+
   function formatDamage(n) {
     if (n < 10000) return String(n);
     if (n < 1000000) return `${(n / 1000).toFixed(1)}k`;
@@ -9806,7 +9817,10 @@ function initCombatPage() {
   // live overlay's own bars already use), click to accordion its skill breakdown open underneath.
   // Fetched up front for every row in parallel, not per-row as the DOM is built, so one slow
   // lookup can't stagger the chart appearing row by row.
-  async function renderBars(container, rows, durationSec) {
+  // `metric` ('damage' | 'heal') only changes labelling - crit % isn't tracked for heals
+  // (healLines.js carries no critical flag), so that column reads "—" rather than a misleading
+  // "0%" implying it was measured and came back zero.
+  async function renderBars(container, rows, durationSec, metric = 'damage') {
     container.innerHTML = '';
     const top = rows.length ? rows[0].damage : 0;
     // Class estimate (owner, 13-14 Sep): only ever built from skills this attacker was actually
@@ -9871,7 +9885,7 @@ function initCombatPage() {
         const header = document.createElement('div');
         header.className = 'combat-skill-row combat-skill-header';
         header.appendChild(span('Skill'));
-        header.appendChild(span('Damage'));
+        header.appendChild(span(metric === 'heal' ? 'Healing' : 'Damage'));
         header.appendChild(span('% of total'));
         header.appendChild(span('Crit %'));
         list.appendChild(header);
@@ -9883,7 +9897,7 @@ function initCombatPage() {
         // % of THIS PLAYER's own total (owner, 13 Sep) - not the fight's, since that's already
         // the point of the bar above it; this answers "of what Avenrae did, how much was this".
         const share = row.damage > 0 ? Math.round((s.damage / row.damage) * 100) : 0;
-        const critPct = s.hits > 0 ? Math.round((s.crits / s.hits) * 100) : 0;
+        const critPct = metric === 'heal' ? null : (s.hits > 0 ? Math.round((s.crits / s.hits) * 100) : 0);
         line.appendChild(span(s.skill, 'combat-skill-name'));
 
         // A coloured bar spanning the WHOLE Damage/%/Crit area, not just the Damage column (owner,
@@ -9907,7 +9921,7 @@ function initCombatPage() {
         amount.textContent = formatDamage(s.damage);
         trackArea.appendChild(amount);
         trackArea.appendChild(span(`${share}%`, 'combat-skill-share'));
-        trackArea.appendChild(span(`${critPct}%`, 'combat-skill-crit'));
+        trackArea.appendChild(span(critPct === null ? '—' : `${critPct}%`, 'combat-skill-crit'));
         line.appendChild(trackArea);
         list.appendChild(line);
       });
@@ -9937,38 +9951,39 @@ function initCombatPage() {
       nested.className = 'combat-fight-bars';
       row.appendChild(nested);
       // Rendered lazily, on first expand, not for every fight up front - a visit can hold a
-      // couple dozen of these, and only the one(s) actually opened need their bars built. The
-      // dataset flag (not childElementCount) guards re-entry - renderBars is async now (it awaits
-      // the class estimate for every row first), so a quick close/reopen during that gap would
-      // otherwise pass the "still empty" check twice and render the same fight's bars twice over.
+      // couple dozen of these, and only the one(s) actually opened need their bars built.
+      // `renderedMode` (not just a rendered/not-rendered flag) tracks WHICH mode it was last drawn
+      // in, so re-expanding a fight after the view toggle changed while it was collapsed still
+      // redraws it - a plain "already rendered" flag would leave stale content showing. Registered
+      // in openRenders while expanded, so the top-level view toggle can refresh it too (owner, 14
+      // Sep: "swapping one view should swap it for all open logs") - removed on collapse, since a
+      // hidden chart has no reason to keep re-rendering itself on every toggle.
       row.addEventListener('toggle', () => {
-        if (row.open && !nested.dataset.rendered) {
-          nested.dataset.rendered = '1';
-          renderBars(nested, detail.rows, detail.durationSec);
+        if (row.open) {
+          openRenders.set(nested, [detail]);
+          if (nested.dataset.renderedMode !== viewMode) {
+            nested.dataset.renderedMode = viewMode;
+            renderMetricBars(nested, [detail]);
+          }
+        } else {
+          openRenders.delete(nested);
         }
       }, { once: false });
     }
     return row;
   }
 
-  // "Clicking on the zone itself should show the totals of that encounter" - every fight in the
-  // visit, summed per player and per skill, as one combined chart; the individual fights are
-  // listed underneath, each expanding to its own chart in place rather than navigating anywhere.
-  async function openVisit(visit) {
-    showDetail();
-    const zoneLabel = visit.zone || UNKNOWN_ZONE;
-    detailTitle.textContent = `${zoneLabel} — ${formatWhen(visit.startedAt)}, ${visit.fights.length} fight${visit.fights.length === 1 ? '' : 's'}`;
-    detailBars.innerHTML = '';
-    detailBars.appendChild(span('Loading…', 'empty-note'));
-    detailFightList.innerHTML = '';
-
-    const details = await Promise.all(visit.fights.map((f) => window.eqTracker.getDamageHistoryFight(f.id)));
+  // Sums a list of fight-detail records into one combined per-player chart - shared by the visit
+  // view and (for the "both" toggle) whichever metric is being aggregated. `rowsKey` picks which
+  // side of each fight record to sum ('rows' for damage, 'healRows' for healing - see
+  // damageEngine.js's _captureHistory).
+  function aggregateFightRows(details, rowsKey) {
     const byName = new Map(); // name -> { name, damage, bySkill: Map<skill, {damage}>, castSkills: Set<name> }
     let totalDuration = 0;
     for (const fight of details) {
       if (!fight) continue;
       totalDuration += fight.durationSec;
-      for (const row of fight.rows) {
+      for (const row of fight[rowsKey] || []) {
         const agg = byName.get(row.name) || { name: row.name, damage: 0, bySkill: new Map(), castSkills: new Set() };
         agg.damage += row.damage;
         for (const s of row.bySkill) {
@@ -9993,9 +10008,49 @@ function initCombatPage() {
         castSkills: [...r.castSkills],
       }))
       .sort((a, b) => b.damage - a.damage);
-    // The visit's own DPS divides by the SUM of its fights' durations, not the wall-clock span
+    // The visit's own rate divides by the SUM of its fights' durations, not the wall-clock span
     // between the first and last - the gaps in between are downtime, not part of any fight.
-    await renderBars(detailBars, rows, totalDuration);
+    return { rows, totalDuration };
+  }
+
+  // Draws whichever metric(s) the top-level Damage/Healing/Both toggle currently selects into
+  // `container` - one bar chart for a single metric, or two labelled sections stacked for "both"
+  // (owner, 14 Sep: "toggle between damage, healing, or both... using a summary of dps and heal").
+  async function renderMetricBars(container, details) {
+    container.innerHTML = '';
+    if (viewMode === 'both') {
+      const dmg = aggregateFightRows(details, 'rows');
+      const heal = aggregateFightRows(details, 'healRows');
+      container.appendChild(span('Damage', 'combat-metric-heading'));
+      const dmgBox = document.createElement('div');
+      container.appendChild(dmgBox);
+      await renderBars(dmgBox, dmg.rows, dmg.totalDuration, 'damage');
+      container.appendChild(span('Healing', 'combat-metric-heading'));
+      const healBox = document.createElement('div');
+      container.appendChild(healBox);
+      await renderBars(healBox, heal.rows, heal.totalDuration, 'heal');
+      return;
+    }
+    const rowsKey = viewMode === 'healing' ? 'healRows' : 'rows';
+    const { rows, totalDuration } = aggregateFightRows(details, rowsKey);
+    await renderBars(container, rows, totalDuration, viewMode === 'healing' ? 'heal' : 'damage');
+  }
+
+  // "Clicking on the zone itself should show the totals of that encounter" - every fight in the
+  // visit, summed per player and per skill, as one combined chart; the individual fights are
+  // listed underneath, each expanding to its own chart in place rather than navigating anywhere.
+  async function openVisit(visit) {
+    showDetail();
+    openRenders.clear(); // leaving the previous visit (if any) - nothing from it stays "open"
+    const zoneLabel = visit.zone || UNKNOWN_ZONE;
+    detailTitle.textContent = `${zoneLabel} — ${formatWhen(visit.startedAt)}, ${visit.fights.length} fight${visit.fights.length === 1 ? '' : 's'}`;
+    detailBars.innerHTML = '';
+    detailBars.appendChild(span('Loading…', 'empty-note'));
+    detailFightList.innerHTML = '';
+
+    const details = await Promise.all(visit.fights.map((f) => window.eqTracker.getDamageHistoryFight(f.id)));
+    openRenders.set(detailBars, details);
+    await renderMetricBars(detailBars, details);
 
     // "Fights should be organised earliest first" - visit.fights is already in that order (see
     // buildVisits), so the fight list below the combined chart reads as "pull 1, pull 2, ..." top
@@ -10141,5 +10196,22 @@ function initCombatPage() {
   }
   const navBtnCombat = document.getElementById('combat-nav-btn');
   if (navBtnCombat) navBtnCombat.addEventListener('click', loadHistory);
+
+  // Damage / Healing / Both - top level, refreshes every chart currently on screen, not just
+  // whatever gets opened next (owner, 14 Sep).
+  const viewButtons = [...document.querySelectorAll('.combat-view-btn')];
+  viewButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.view;
+      if (mode === viewMode) return;
+      viewMode = mode;
+      viewButtons.forEach((b) => b.classList.toggle('active', b === btn));
+      for (const [container, details] of openRenders) {
+        if (container.dataset) container.dataset.renderedMode = viewMode;
+        renderMetricBars(container, details);
+      }
+    });
+  });
+
   loadHistory();
 }

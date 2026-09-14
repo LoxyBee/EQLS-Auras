@@ -336,5 +336,83 @@ test('a pet\'s own cast lines never contribute class evidence - pets have no cla
   assert.deepEqual(e.getCastSkills('Jebantik'), [], 'a summoned pet\'s own ability must not be recorded as class evidence');
 });
 
+// Owner, 14 Sep, live-caught against her own real log: "avenrae switches classes a LOT... between
+// instances, not during an instance" - a whole-day scan had mixed together cast evidence from
+// several genuinely different loadouts Avenrae used in different zones that day (confirmed
+// Enchanter/Paladin spells from hours later, in a different zone, bleeding into an earlier fight's
+// estimate). Cast evidence must survive ACROSS FIGHTS within one continuous zone visit (a song sung
+// once still counts fights later - see the "survives a fight ending" test above), but must NOT
+// survive a REAL zone change, since that's exactly where a loadout swap can happen.
+test('cast history is cleared on a REAL zone change - a loadout swap happens between instances, not mid-instance', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, "Nagafen's Lair");
+  e.handleLine(`${T}Avenrae begins casting Mesmerization.`, 1000);
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1200);
+  endFight(e, 1200);
+  e.enterZone(30000, 'The Plane of Fear'); // a genuinely different zone
+  assert.deepEqual(e.getCastSkills('Avenrae'), [], 'a real zone change must clear cast evidence - the next zone may be a different loadout entirely');
+});
+
+test('cast history survives a SAME-zone re-entry echo (an instance-line right after the entrance line), not just a fight ending', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, "Nagafen's Lair");
+  e.handleLine(`${T}Avenrae begins casting Call of Flame.`, 1000);
+  e.enterZone(1500, "Nagafen's Lair"); // same zone name again - not a real change
+  // Note: even a same-zone echo clears the "since zone" trackers today (existing, pre-existing
+  // behaviour for sinceZoneByAttacker etc.) - castsByAttacker deliberately matches that same
+  // convention rather than inventing a special case just for itself.
+  assert.deepEqual(e.getCastSkills('Avenrae'), [], 'matches the existing sinceZoneByAttacker convention: any enterZone call clears it, echo or not');
+});
+
+test('cast history survives multiple fights within the SAME zone visit - only a real zone change clears it', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, "Nagafen's Lair");
+  e.handleLine(`${T}You begin casting Energy Storm.`, 1000);
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1200);
+  endFight(e, 1200); // fight ends, but no zone change
+  e.handleLine(`${T}You crush a wan ghoul knight for 5 points of damage.`, 30000);
+  endFight(e, 30000); // a second, later fight in the SAME zone visit
+  assert.deepEqual(e.getCastSkills('You'), ['Energy Storm'], 'still within the same zone visit - the earlier cast must still count');
+});
+
+// ---------------------------------------------------------------------------
+// Healing capture into history - the same fight record now carries healRows alongside rows
+// (owner, 14 Sep: "the damage meter tab should also do all the same functionality but for
+// healing tracking as well"). A fight is still damage-defined (see damageEngine.js's own header);
+// this only adds whatever healing happened DURING an already-real fight.
+// ---------------------------------------------------------------------------
+
+test('a fight\'s healing is captured alongside its damage, with its own per-skill breakdown', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a flouting gargoyle for 10 points of damage.`, 1000);
+  e.handleLine(`${T}Baxa slashes a flouting gargoyle for 5 points of damage.`, 1050); // proves Baxa a friend
+  e.handleLine(`${T}Chouder healed Baxa for 100 hit points by Superior Healing.`, 1100);
+  e.handleLine(`${T}Chouder healed Baxa for 50 hit points by Superior Healing.`, 1150);
+  endFight(e, 1150);
+  const fight = e.getHistoryFight(e.getHistory()[0].id);
+  assert.equal(e.getHistory()[0].totalHealing, 150);
+  const chouder = fight.healRows.find((r) => r.name === 'Chouder');
+  assert.ok(chouder, 'Chouder never appeared in healRows at all');
+  assert.equal(chouder.damage, 150);
+  assert.deepEqual(chouder.bySkill, [{ skill: 'Superior Healing', damage: 150, hits: 2 }]);
+});
+
+test('topHealer is reported on the history summary, the same way topAttacker already is', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You healed Baxa for 500 hit points by Complete Heal.`, 1000); // your own heal always credits
+  e.handleLine(`${T}You crush a flouting gargoyle for 10 points of damage.`, 1050);
+  endFight(e, 1050);
+  assert.equal(e.getHistory()[0].topHealer, 'You');
+});
+
+test('a fight with damage but no healing at all still has an empty healRows array, not a crash', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  const fight = e.getHistoryFight(e.getHistory()[0].id);
+  assert.deepEqual(fight.healRows, []);
+  assert.equal(e.getHistory()[0].topHealer, null);
+});
+
 module.exports = () => report('damage-history');
 if (require.main === module) report('damage-history').then((n) => process.exit(n ? 1 : 0));

@@ -135,18 +135,19 @@ class DamageEngine extends EventEmitter {
     // Lowercase attacker name -> Set of real-cased spell names actually seen begin-cast (self
     // "You begin casting/singing X" or third-person "X begins casting/singing Y.") - the ONLY
     // input to the Combat tab's class estimate (owner, 14 Sep - see classEstimator.js's header).
-    // SESSION-WIDE, not cleared by reset() - a first attempt scoped this to one fight per the
-    // owner's own words ("it is only supposed to take into account that fight"), but that broke
-    // real cases within a day: a bard sings a song ONCE and it auto-pulses for the rest of the
-    // night with no fresh cast line each pulse (Denon's Desperate Dirge is exactly this shape -
-    // see gotcha #33/#38's "no per-pulse line" precedent), and a heal is a cast line the same as
-    // any other spell, so a healer's OWN class evidence is just as vulnerable to the same gap. A
-    // narrower scope loses the single strongest piece of evidence the moment it's more than one
-    // fight old. The "too many classes" problem this was trying to solve is instead handled by
-    // classEstimator.js's cap-at-3 (a hard fact - a character has exactly 3 classes), which needed
-    // no scope change to work. Snapshotted into `history` per fight regardless (see
-    // _captureHistory) - each fight's own row reflects everything known up to that moment, which
-    // naturally grows across a session as more evidence accumulates.
+    // Scoped to ONE ZONE VISIT, cleared on a real zone change in enterZone() (same trigger as
+    // sinceZoneByAttacker etc.) - not per-fight (too narrow: a bard sings a song ONCE and it
+    // auto-pulses for the rest of the night with no fresh cast line each pulse - Denon's Desperate
+    // Dirge, gotcha #33/#38's "no per-pulse line" precedent), and NOT session-wide either (too
+    // wide: live-verified against the owner's own real log - "avenrae switches classes a lot...
+    // between instances, not during an instance" - a whole day's scan mixed together evidence from
+    // several genuinely different loadouts she used in different zones that day, confidently
+    // reporting Enchanter/Paladin spells from hours later as if they applied to an earlier fight in
+    // a different zone entirely). One continuous zone visit is the right unit: long enough that a
+    // song sung once still counts fights later in the same visit, short enough that a real loadout
+    // swap between visits can't bleed through. Snapshotted into `history` per fight regardless (see
+    // _captureHistory) - each fight's own row reflects everything known up to that moment WITHIN
+    // the current visit.
     this.castsByAttacker = new Map();
     // Completed fights, newest first, capped so this can't grow without bound over a long session.
     // In-memory only for this run of the app - not written to disk (see _captureHistory).
@@ -192,6 +193,10 @@ class DamageEngine extends EventEmitter {
     // See _classifyHeal for how a heal line (which always names both parties, unlike a melee line)
     // still needs the same hold-until-provable treatment as damage before it can be credited.
     this.byHealer = new Map();
+    // Per-skill breakdown behind a heal, the same shape as bySkillByAttacker (owner, 14 Sep: a
+    // Combat tab toggle between Damage / Healing / Both, "several turns ago"). One fight's worth,
+    // cleared with byHealer in reset().
+    this.bySkillByHealer = new Map();
     this.lastHealAt = null;
     this.totalHealing = 0;
     this.sinceZoneByHealer = new Map();
@@ -543,7 +548,7 @@ class DamageEngine extends EventEmitter {
     this._expireIfIdle(now);
     this._flushPending(now);
     this._flushHealPending(now);
-    if (dir === 'out') this._creditHeal(heal.healer, heal.amount, now);
+    if (dir === 'out') this._creditHeal(heal.healer, heal.amount, now, heal.spell);
     if (dir !== 'drop') this.emit('activeChanged', this.getActive(now));
   }
 
@@ -586,7 +591,7 @@ class DamageEngine extends EventEmitter {
           continue;
         }
         resolvedAny = true;
-        if (dir === 'out') this._creditHeal(p.healer, p.amount, p.at);
+        if (dir === 'out') this._creditHeal(p.healer, p.amount, p.at, p.spell);
       }
       this.healPending = keep;
       if (!resolvedAny) return;
@@ -684,11 +689,19 @@ class DamageEngine extends EventEmitter {
   // (reported live 5 Sep). Heals land in the fight tally while a damage fight is underway, and in
   // the since-zone tally always; when the damage fight times out, reset() clears the heal fight
   // tally with it.
-  _creditHeal(healer, amount, at) {
+  _creditHeal(healer, amount, at, skill) {
     const row = this.byHealer.get(healer) || { damage: 0, hits: 0 };
     row.damage += amount;
     row.hits += 1;
     this.byHealer.set(healer, row);
+    if (skill) {
+      const bySkill = this.bySkillByHealer.get(healer) || new Map();
+      const srow = bySkill.get(skill) || { damage: 0, hits: 0 };
+      srow.damage += amount;
+      srow.hits += 1;
+      bySkill.set(skill, srow);
+      this.bySkillByHealer.set(healer, bySkill);
+    }
     this.totalHealing += amount;
     this.lastHealAt = Math.max(this.lastHealAt || 0, at);
 
@@ -733,6 +746,7 @@ class DamageEngine extends EventEmitter {
     this.sinceZoneHealTotal = 0;
     this.sinceZoneHealStartedAt = null;
     this.sinceZoneHealLastAt = null;
+    this.castsByAttacker.clear();
     this.emit('activeChanged', this.getActive(now));
   }
 
@@ -883,16 +897,35 @@ class DamageEngine extends EventEmitter {
       }))
       .sort((a, b) => b.damage - a.damage);
     if (!rows.length) return;
+    // Healing during the same fight window (owner, 14 Sep: a Combat tab toggle between Damage /
+    // Healing / Both, "several turns ago") - same reconciliation the live meter's heal side
+    // already uses (metric:'heal' drops charm-war-pollution self-heals, gotcha #40). A fight
+    // itself is still damage-defined (see this file's own header on why); a period with real
+    // damage from ANYONE captures whatever healing happened alongside it too.
+    const healReconciled = this._reconcileRaw(this.byHealer, this.rawHealFightByName, 'heal');
+    const healRows = [...healReconciled.entries()]
+      .map(([name, r]) => ({
+        name,
+        damage: r.damage,
+        hits: r.hits,
+        bySkill: [...(this.bySkillByHealer.get(name) || [])]
+          .map(([skill, s]) => ({ skill, damage: s.damage, hits: s.hits }))
+          .sort((a, b) => b.damage - a.damage),
+        castSkills: [...(this.castsByAttacker.get(name.toLowerCase()) || [])],
+      }))
+      .sort((a, b) => b.damage - a.damage);
     this._historySeq = (this._historySeq || 0) + 1;
     this.history.unshift({
       id: this._historySeq,
       endedAt,
       durationSec: Math.round(this.fightSeconds(endedAt)),
       totalDamage: this.totalDamage,
+      totalHealing: this.totalHealing,
       zone: this.currentZoneName,
       visitId: this.currentZoneName ? this._zoneVisitSeq : null,
       label: labelFight([...this.enemyTargetsThisFight]),
       rows,
+      healRows,
     });
     if (this.history.length > this._maxHistory) this.history.length = this._maxHistory;
   }
@@ -900,15 +933,17 @@ class DamageEngine extends EventEmitter {
   // Every completed fight this session, newest first. In-memory only - see the `history` field
   // comment on why this does not persist across a restart.
   getHistory() {
-    return this.history.map(({ id, endedAt, durationSec, totalDamage, zone, visitId, label, rows }) => ({
+    return this.history.map(({ id, endedAt, durationSec, totalDamage, totalHealing, zone, visitId, label, rows, healRows }) => ({
       id,
       endedAt,
       durationSec,
       totalDamage,
+      totalHealing,
       zone,
       visitId,
       label,
       topAttacker: rows[0] ? rows[0].name : null,
+      topHealer: healRows[0] ? healRows[0].name : null,
     }));
   }
 
@@ -934,6 +969,7 @@ class DamageEngine extends EventEmitter {
     this.lastRealHitAt = null;
     this.pending = [];
     this.byHealer.clear();
+    this.bySkillByHealer.clear();
     this.rawHealFightByName.clear();
     this.totalHealing = 0;
     this.lastHealAt = null;
