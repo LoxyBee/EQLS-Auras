@@ -821,5 +821,20 @@ test('openLiveFight and openVisit each turn the OTHER kind of "live" state off, 
   assert.match(openLiveFn[1], /currentZoneVisits = \[\];/, 'a single live fight has no siblings to step through - Older/Newer must not carry over stale state from whatever was open before');
 });
 
+// Owner, 14 Sep: a live fight showed "(zone unknown)" in the Combat tab despite genuinely being
+// in a known zone the whole time - a session that had been running for a while (or restarted
+// mid-fight) with no NEW "You have entered X." line since. Every other zone-aware engine already
+// gets seeded from the startup log-tail recovery (readLastZoneEntry) - the damage meter never was.
+test('the damage meter is seeded from the startup zone recovery, same as the raid board/travel guide/etc.', () => {
+  const main = read('src', 'main', 'main.js');
+  const start = main.indexOf('const found = readLastZoneEntry(logPath);');
+  assert.ok(start !== -1, 'the startup zone-recovery block has moved or been removed');
+  const block = main.slice(start, start + 1200);
+  assert.match(
+    block, /damageEngine\.enterZone\(Date\.now\(\), baseZoneName\(found\.zone\), difficultyLabel\(found\.zone\), isRaidInstance\(found\.zone\)\)/,
+    'the damage meter must be seeded the same way the live zone-change handler seeds it - raw zone string in, base name + difficulty + raid/group out'
+  );
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

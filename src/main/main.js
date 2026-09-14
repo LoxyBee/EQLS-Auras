@@ -1735,6 +1735,12 @@ app.whenReady().then(() => {
     if (!found) return;
     applyZoneChangeAndNotify(found.zone);
     raidNamedTracker.setZone(found.zone);
+    // Owner, 14 Sep: a live fight showed "(zone unknown)" in the Combat tab despite standing in a
+    // real, known zone the whole time. Every other zone-aware engine gets seeded from this same
+    // startup recovery (the raid board two lines above, loadoutLocked/customTimer/travel below) -
+    // the damage meter never was, so it stayed blind to where the player was until the NEXT real
+    // zone line, which for a long session in one zone (or restarting mid-fight) could be never.
+    damageEngine.enterZone(Date.now(), baseZoneName(found.zone), difficultyLabel(found.zone), isRaidInstance(found.zone));
     // Seed loadout-locked state too - but NOT the verified gems: a memorise seen before the app
     // started was never observed, and re-entering a locked zone deliberately starts the gem
     // evidence fresh (see setLoadoutLocked). This only sets the flag so memorises from here on count.
