@@ -481,12 +481,24 @@ test('the zone entry point (both live and scanned) passes the RAW zone string\'s
   );
 });
 
-test('a visit\'s zone display includes its difficulty when it has one, unchanged when it does not', () => {
+// Owner, 14 Sep: "mark them as D4 - [name]" (was "[name] (d4)"), plus "each difficulty prefix
+// should be coloured as well, a different colour per difficulty, but the zone name should stay
+// gold... d4 should have the most prominent colouring, d0 should be almost white but not white."
+test('a visit\'s zone display puts a coloured "D<n> - " prefix ahead of the name, unchanged when it has no difficulty', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function zoneWithDifficulty\(zone, difficulty\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(fn, 'zoneWithDifficulty has been restructured or removed');
-  assert.match(fn[1], /difficulty \? `\$\{name\} \(\$\{difficulty\}\)` : name/);
-  assert.match(read('src', 'renderer', 'main-window', 'main-window.js'), /zoneWithDifficulty\(visit\.zone, visit\.difficulty\)/g);
+  const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'appendZoneLabel has been restructured or removed');
+  assert.match(fn[1], /zone-diff-d\$\{tier\}/, 'the prefix must carry a per-tier CSS class, not just plain text');
+  assert.match(fn[1], /toUpperCase\(\)/, 'the difficulty must render as "D4", not lowercase "d4"');
+  assert.match(renderer, /appendZoneLabel\(zoneLink, visit\.zone, visit\.difficulty\)/);
+  assert.match(renderer, /appendZoneLabel\(detailTitle, visit\.zone, visit\.difficulty\)/);
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  for (const tier of ['d0', 'd1', 'd2', 'd3', 'd4']) {
+    assert.match(css, new RegExp(`\\.zone-diff-${tier}\\s*\\{`), `missing a colour rule for ${tier}`);
+  }
+  // the zone name itself must never get a difficulty-coloured class - only the prefix does
+  assert.match(fn[1], /container\.appendChild\(document\.createTextNode\(zone \|\| UNKNOWN_ZONE\)\)/);
 });
 
 test('buildVisits carries the difficulty from whichever fight creates the visit', () => {

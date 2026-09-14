@@ -2735,6 +2735,17 @@ body.sidebar-resizing .sidebar {
   white-space: nowrap;
 }
 .combat-visit-zone:hover { text-decoration: underline; }
+
+/* Difficulty-tier prefix ("D0 - " .. "D4 - ") on a raid/group instance's zone name - owner, 14
+   Sep: a different colour per tier, zone name stays gold, D0 almost white, D4 the most prominent.
+   A plain heat ramp (near-white -> yellow -> orange -> red), D4 additionally bold + a faint glow
+   so it reads as the standout tier at a glance, not just another step in the ramp. */
+.zone-diff-tag { font-weight: 700; }
+.zone-diff-d0 { color: #ded9ce; }
+.zone-diff-d1 { color: #dccb6c; }
+.zone-diff-d2 { color: #e0a13c; }
+.zone-diff-d3 { color: #e06a2f; }
+.zone-diff-d4 { color: #ff3b30; text-shadow: 0 0 6px rgba(255, 59, 48, 0.55); }
 .combat-visit-meta { opacity: 0.6; font-size: 12px; text-align: right; white-space: nowrap; }
 
 /* The two drill-down screens - one fight, or a whole visit's combined totals - share this same

@@ -10063,8 +10063,11 @@ function initCombatPage() {
   async function openVisit(visit) {
     showDetail();
     openRenders.clear(); // leaving the previous visit (if any) - nothing from it stays "open"
-    const zoneLabel = zoneWithDifficulty(visit.zone, visit.difficulty);
-    detailTitle.textContent = `${zoneLabel} — ${formatWhen(visit.startedAt)}, ${visit.fights.length} fight${visit.fights.length === 1 ? '' : 's'}`;
+    detailTitle.textContent = '';
+    appendZoneLabel(detailTitle, visit.zone, visit.difficulty);
+    detailTitle.appendChild(document.createTextNode(
+      ` — ${formatWhen(visit.startedAt)}, ${visit.fights.length} fight${visit.fights.length === 1 ? '' : 's'}`
+    ));
     detailBars.innerHTML = '';
     detailBars.appendChild(span('Loading…', 'empty-note'));
     detailFightList.innerHTML = '';
@@ -10109,11 +10112,23 @@ function initCombatPage() {
     return order.sort((a, b) => a.startedAt - b.startedAt);
   }
 
-  // "(d0)", "(d4)", etc, appended to a zone name only when it's a private instance - a plain
-  // open-world zone has no difficulty at all (zoneDifficulty.js returns null) and shows unchanged.
-  function zoneWithDifficulty(zone, difficulty) {
-    const name = zone || UNKNOWN_ZONE;
-    return difficulty ? `${name} (${difficulty})` : name;
+  // "D0" - "D4" shown as a coloured prefix before the zone name, only when it's a private
+  // instance - a plain open-world zone has no difficulty at all (zoneDifficulty.js returns null)
+  // and shows unchanged. Owner, 14 Sep: "mark them as D4 - [name]", "each difficulty prefix
+  // should be coloured as well, a different colour per difficulty, but the zone name should stay
+  // gold... d4 should have the most prominent colouring, d0 should be almost white but not white."
+  // The prefix's colour comes from CSS (`zone-diff-d0`..`zone-diff-d4`, see main-window.css) so the
+  // zone name itself keeps the ordinary `.combat-visit-zone`/title gold colour untouched.
+  function appendZoneLabel(container, zone, difficulty) {
+    container.textContent = '';
+    if (difficulty) {
+      const tier = Math.min(4, Math.max(0, parseInt(String(difficulty).replace(/[^0-9]/g, ''), 10) || 0));
+      const tag = document.createElement('span');
+      tag.className = `zone-diff-tag zone-diff-d${tier}`;
+      tag.textContent = `${String(difficulty).toUpperCase()} - `;
+      container.appendChild(tag);
+    }
+    container.appendChild(document.createTextNode(zone || UNKNOWN_ZONE));
   }
 
   function renderList(visits) {
@@ -10122,7 +10137,9 @@ function initCombatPage() {
       const row = document.createElement('div');
       row.className = 'combat-visit-row';
       row.appendChild(span(formatWhen(visit.startedAt), 'combat-visit-time'));
-      const zoneLink = span(zoneWithDifficulty(visit.zone, visit.difficulty), 'combat-visit-zone');
+      const zoneLink = document.createElement('span');
+      zoneLink.className = 'combat-visit-zone';
+      appendZoneLabel(zoneLink, visit.zone, visit.difficulty);
       zoneLink.addEventListener('click', () => openVisit(visit));
       row.appendChild(zoneLink);
       const n = visit.fights.length;
