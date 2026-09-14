@@ -548,5 +548,48 @@ test('a genuine echo - the exact same zone, difficulty, and raid/group flag - do
   assert.equal(oldest.visitId, newest.visitId, 'an identical re-announcement of the same instance must not split one visit into two');
 });
 
+// ---------------------------------------------------------------------------
+// getLiveFight (owner, 14 Sep: "i need some way to be able to live read the current combat from
+// this combat tab") - a fight only ever reaches getHistory()/getHistoryFight() once it ENDS, so an
+// active pull that hasn't hit the idle timeout yet was invisible to the Combat tab no matter how
+// long it ran. This reads the SAME live state the overlay's own meter draws from, mid-fight.
+// ---------------------------------------------------------------------------
+
+test('getLiveFight returns the in-progress fight, in the same shape a completed history entry has', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, 'The Plane of Fear', 'd4', true);
+  e.handleLine(`${T}You crush a wan ghoul knight for 40 points of damage.`, 1000);
+  e.handleLine(`${T}Baxa slashes a wan ghoul knight for 100 points of damage.`, 2000);
+  const live = e.getLiveFight();
+  assert.ok(live, 'a fight with real damage under way must not read as "nothing happening"');
+  assert.equal(live.id, 'live', 'must never collide with a real numeric history id');
+  assert.equal(live.totalDamage, 140);
+  assert.equal(live.zone, 'The Plane of Fear');
+  assert.equal(live.difficulty, 'd4');
+  assert.equal(live.raidInstance, true);
+  assert.ok(live.rows.find((r) => r.name === 'Baxa'), 'must carry full per-attacker rows, not a summary');
+  assert.ok(Array.isArray(live.rows.find((r) => r.name === 'Baxa').bySkill), 'must carry the per-skill breakdown too - the same chart code renders both a live and a completed fight');
+});
+
+test('getLiveFight returns null before any fight has started, and after one ends', () => {
+  const e = new DamageEngine();
+  assert.equal(e.getLiveFight(), null, 'nothing has happened yet');
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  assert.ok(e.getLiveFight(), 'a fight is now genuinely under way');
+  endFight(e, 1000);
+  assert.equal(e.getLiveFight(), null, 'the fight already ended and was captured to history - it is no longer "live"');
+});
+
+test('getLiveFight never mutates state - checking it repeatedly does not end or double-count the fight', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  e.getLiveFight();
+  e.getLiveFight();
+  e.getLiveFight();
+  e.handleLine(`${T}You crush a wan ghoul knight for 5 points of damage.`, 2000);
+  const live = e.getLiveFight();
+  assert.equal(live.totalDamage, 15, 'repeated reads must not have reset or otherwise disturbed the running fight');
+});
+
 module.exports = () => report('damage-history');
 if (require.main === module) report('damage-history').then((n) => process.exit(n ? 1 : 0));

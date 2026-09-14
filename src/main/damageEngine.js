@@ -917,14 +917,12 @@ class DamageEngine extends EventEmitter {
     return true;
   }
 
-  // The fight is ending (reset() is about to wipe it) - save a permanent record of it first, if it
-  // amounted to anything. Uses the exact same raw/classified reconciliation the live meter draws
-  // from (_reconcileRaw), so a groupmate recognised late still shows their full damage in history,
-  // not just what landed after the bootstrap caught up - a second, independent read of the fight
-  // would silently disagree with what the overlay actually showed.
-  _captureHistory() {
-    if (this.totalDamage <= 0 || this.fightStartedAt === null) return;
-    const endedAt = this.lastDamageAt || this.fightStartedAt;
+  // The row-building half of both _captureHistory (a fight that just ended) AND getLiveFight (one
+  // still in progress) - factored out so the two can never quietly disagree about how a row is
+  // built. Uses the exact same raw/classified reconciliation the live meter draws from
+  // (_reconcileRaw), so a groupmate recognised late still shows their full damage, not just what
+  // landed after the bootstrap caught up.
+  _snapshotRows() {
     const reconciled = this._reconcileRaw(this.byAttacker, this.rawFightByName);
     const rows = [...reconciled.entries()]
       .map(([name, r]) => ({
@@ -937,7 +935,6 @@ class DamageEngine extends EventEmitter {
         castSkills: [...(this.castsByAttacker.get(name.toLowerCase()) || [])],
       }))
       .sort((a, b) => b.damage - a.damage);
-    if (!rows.length) return;
     // Healing during the same fight window (owner, 14 Sep: a Combat tab toggle between Damage /
     // Healing / Both, "several turns ago") - same reconciliation the live meter's heal side
     // already uses (metric:'heal' drops charm-war-pollution self-heals, gotcha #40). A fight
@@ -955,6 +952,16 @@ class DamageEngine extends EventEmitter {
         castSkills: [...(this.castsByAttacker.get(name.toLowerCase()) || [])],
       }))
       .sort((a, b) => b.damage - a.damage);
+    return { rows, healRows };
+  }
+
+  // The fight is ending (reset() is about to wipe it) - save a permanent record of it first, if it
+  // amounted to anything.
+  _captureHistory() {
+    if (this.totalDamage <= 0 || this.fightStartedAt === null) return;
+    const endedAt = this.lastDamageAt || this.fightStartedAt;
+    const { rows, healRows } = this._snapshotRows();
+    if (!rows.length) return;
     this._historySeq = (this._historySeq || 0) + 1;
     this.history.unshift({
       id: this._historySeq,
@@ -971,6 +978,36 @@ class DamageEngine extends EventEmitter {
       healRows,
     });
     if (this.history.length > this._maxHistory) this.history.length = this._maxHistory;
+  }
+
+  // "I need some way to be able to live read the current combat from this combat tab" (owner, 14
+  // Sep) - a fight only ever reaches `history` once it ENDS (_captureHistory, above), so an active
+  // pull that hasn't hit the idle timeout yet was invisible to the Combat tab no matter how long it
+  // ran. This is the same shape `getHistoryFight` returns (rows/healRows with each attacker's own
+  // per-skill breakdown), built from the SAME `_snapshotRows()` a completed fight uses, so the
+  // Combat tab's existing chart-rendering code needs no changes to show a live fight - it is just
+  // another "fight" record whose numbers happen to still be moving. `id` is the string `'live'`,
+  // never a real numeric history id, so it can't collide with one. Returns null when nothing is
+  // actually underway (matches getActive()'s own "in fight AND has damage" gate).
+  getLiveFight() {
+    if (this.fightStartedAt === null || this.totalDamage <= 0) return null;
+    const { rows, healRows } = this._snapshotRows();
+    if (!rows.length) return null;
+    const now = Date.now();
+    return {
+      id: 'live',
+      endedAt: now,
+      durationSec: Math.round(this.fightSeconds(now)),
+      totalDamage: this.totalDamage,
+      totalHealing: this.totalHealing,
+      zone: this.currentZoneName,
+      difficulty: this.currentZoneDifficulty,
+      raidInstance: this.currentZoneRaidInstance,
+      visitId: this.currentZoneName ? this._zoneVisitSeq : null,
+      label: labelFight([...this.enemyTargetsThisFight]),
+      rows,
+      healRows,
+    };
   }
 
   // Every completed fight this session, newest first. In-memory only - see the `history` field

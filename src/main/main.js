@@ -1113,6 +1113,11 @@ function damageViews() {
 damageEngine.on('activeChanged', () => {
   broadcast('damage:active', damageViews());
   sessionRestore.scheduleSave();
+  // Combat tab "live read the current combat" (owner, 14 Sep) - a lightweight ping, not the row
+  // data itself (that would mean building the full per-skill breakdown on every single hit for
+  // every window, whether or not the Combat tab is even open to care). The renderer re-fetches via
+  // damage:getLiveFight only when it actually has a live view on screen to update.
+  broadcast('damage:liveFightTick', null);
 });
 // Backlog #33 - the named-kill board. Each row becomes an infinite buff-shaped tile (killed ones
 // flagged so overlay.js can dim them); a row with a live respawn countdown carries remainingSec.
@@ -2000,6 +2005,11 @@ ipcMain.handle('damage:scanLogFile', async (_event, filePath) => {
 
 ipcMain.handle('damage:getHistory', () => mergedDamageHistory());
 ipcMain.handle('damage:getHistoryFight', (_event, id) => findHistoryFight(id));
+// "I need some way to be able to live read the current combat from this combat tab" (owner, 14
+// Sep) - the LIVE session's engine only, never an imported scan (a scanned file has no "now").
+// Same shape getHistoryFight returns (see getLiveFight's own comment), so the renderer's existing
+// chart code needs no changes to draw it.
+ipcMain.handle('damage:getLiveFight', () => damageEngine.getLiveFight());
 // "I need some way to be able to live read the current combat... or check recent past events of
 // the zone i'm in, fast" (owner, 14 Sep). `widgetManager.getCurrentZone()` holds the RAW zone
 // string (difficulty suffix and all - see gotcha near applyZoneChangeAndNotify); the Combat tab's

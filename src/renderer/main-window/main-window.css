@@ -2752,6 +2752,12 @@ body.sidebar-resizing .sidebar {
 .combat-visit-zone:hover { text-decoration: underline; }
 .combat-visit-instance { white-space: nowrap; }
 
+/* The "Live now" row (owner, 14 Sep) - same grid shape as an ordinary visit row so its columns
+   line up with the list below it, but visually set apart (green-tinted border, no bottom rule of
+   its own) since it isn't a finished visit and clicking it opens a fight still in progress. */
+.combat-live-row { border: 1px solid rgba(111, 214, 122, 0.35); border-radius: 4px; margin-bottom: 6px; cursor: pointer; }
+.combat-live-row .combat-visit-zone { cursor: pointer; }
+
 /* Difficulty-tier code ("D0".."D4") - owner, 14 Sep: a different colour per tier, zone name stays
    gold, D0 almost white, D4 the most prominent. A plain heat ramp (near-white -> yellow -> orange
    -> red), D4 additionally bold + a faint glow so it reads as the standout tier at a glance, not

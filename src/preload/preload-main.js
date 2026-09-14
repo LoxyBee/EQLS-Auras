@@ -169,6 +169,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getDamageHistory: () => ipcRenderer.invoke('damage:getHistory'),
   getDamageHistoryFight: (id) => ipcRenderer.invoke('damage:getHistoryFight', id),
   getCombatCurrentZoneBase: () => ipcRenderer.invoke('combat:getCurrentZoneBase'),
+  getLiveFight: () => ipcRenderer.invoke('damage:getLiveFight'),
+  onLiveFightTick: (cb) => ipcRenderer.on('damage:liveFightTick', () => cb()),
   estimateDamageClasses: (castSkillNames) => ipcRenderer.invoke('damage:estimateClasses', castSkillNames),
   // "Back read your current log, or upload a new log and parse out fights" (owner, 13 Sep).
   getDamageCurrentLogPath: () => ipcRenderer.invoke('damage:getCurrentLogPath'),

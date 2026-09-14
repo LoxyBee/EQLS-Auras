@@ -1066,6 +1066,17 @@
             <input type="number" id="combat-min-damage" class="text-input" min="0" step="1000" style="width:7em">
             <button type="button" id="combat-jump-current-zone" title="Jump straight to the most recent activity in the zone you're in right now.">Current zone</button>
           </div>
+          <!-- Owner, 14 Sep: "i need some way to be able to live read the current combat from
+               this combat tab" - a fight in progress hasn't ended yet, so it isn't in history at
+               all until it does. This row is the entry point into it while it's still happening;
+               hidden whenever nothing is currently underway. -->
+          <div class="combat-visit-row combat-live-row" id="combat-live-row" style="display:none">
+            <span class="live-indicator">● Live</span>
+            <span></span>
+            <span id="combat-live-zone" class="combat-visit-zone"></span>
+            <span></span>
+            <span id="combat-live-meta" class="combat-visit-meta"></span>
+          </div>
           <div id="combat-visit-list"></div>
           <p class="empty-note" id="combat-history-empty">No fights yet this session - still watching your log.</p>
         </div>

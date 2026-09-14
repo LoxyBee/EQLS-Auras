@@ -9748,6 +9748,9 @@ function initCombatPage() {
   const jumpCurrentZoneBtn = document.getElementById('combat-jump-current-zone');
   const olderBtn = document.getElementById('combat-visit-older');
   const newerBtn = document.getElementById('combat-visit-newer');
+  const liveRow = document.getElementById('combat-live-row');
+  const liveZoneEl = document.getElementById('combat-live-zone');
+  const liveMetaEl = document.getElementById('combat-live-meta');
   if (!visitList) return; // Combat tab not in this build
 
   const UNKNOWN_ZONE = '(zone unknown)';
@@ -9773,6 +9776,12 @@ function initCombatPage() {
   // floor instead of a stale snapshot from whenever the list was last rendered.
   let currentZoneVisits = [];
   let currentVisitIndex = -1;
+  // "Live read the current combat" (owner, 14 Sep) - whether the detail screen is currently
+  // showing the IN-PROGRESS fight rather than a completed one. `liveRenderInFlight` drops a tick
+  // that arrives mid-render instead of queueing it - the NEXT tick brings the view current anyway,
+  // and a fight can emit a tick per hit, so overlapping renders would only pile up.
+  let liveFightOpen = false;
+  let liveRenderInFlight = false;
 
   function formatDamage(n) {
     if (n < 10000) return String(n);
@@ -10078,6 +10087,7 @@ function initCombatPage() {
   // visit, summed per player and per skill, as one combined chart; the individual fights are
   // listed underneath, each expanding to its own chart in place rather than navigating anywhere.
   async function openVisit(visit) {
+    liveFightOpen = false; // leaving the live view (if that's what was open) for a completed one
     showDetail();
     openRenders.clear(); // leaving the previous visit (if any) - nothing from it stays "open"
     detailTitle.textContent = '';
@@ -10123,14 +10133,85 @@ function initCombatPage() {
     newerBtn.disabled = currentVisitIndex === -1 || currentVisitIndex >= currentZoneVisits.length - 1;
   }
 
+  // The always-on-top-of-the-list "Live now" row (owner, 14 Sep) - hidden whenever nothing is
+  // currently underway. `fight` is whatever damage:getLiveFight() last returned - the exact same
+  // shape a completed history entry has (see damageEngine.getLiveFight's own comment).
+  function updateLiveRow(fight) {
+    if (!liveRow) return;
+    if (!fight) {
+      liveRow.style.display = 'none';
+      return;
+    }
+    liveRow.style.display = '';
+    liveZoneEl.textContent = fight.zone || UNKNOWN_ZONE;
+    liveMetaEl.textContent = `${formatDuration(fight.durationSec)} · ${formatDamage(fight.totalDamage)} · top: ${fight.rows[0] ? fight.rows[0].name : '—'}`;
+  }
+
+  // Redraws the open live-fight chart from a fresh snapshot - shared by openLiveFight (the first
+  // time it opens) and every later tick while it's still open, so the numbers keep moving instead
+  // of freezing at whatever they were the moment it was opened.
+  async function renderLiveDetail(fight) {
+    detailTitle.textContent = '';
+    appendZoneLabel(detailTitle, fight.zone, fight.difficulty, fight.raidInstance);
+    detailTitle.appendChild(document.createTextNode(` — Live now, ${formatDuration(fight.durationSec)}`));
+    openRenders.set(detailBars, [fight]);
+    await renderMetricBars(detailBars, [fight]);
+  }
+
+  // Opens the in-progress fight in the shared detail screen - a single "fight", not a multi-fight
+  // visit, so there is no fight-accordion list beneath it and no Older/Newer (nothing to step to;
+  // there is only ever one live fight at a time).
+  function openLiveFight(fight) {
+    showDetail();
+    openRenders.clear();
+    detailFightList.innerHTML = '';
+    currentZoneVisits = [];
+    currentVisitIndex = -1;
+    updateVisitNavButtons();
+    liveFightOpen = true;
+    detailBars.innerHTML = '';
+    detailBars.appendChild(span('Loading…', 'empty-note'));
+    renderLiveDetail(fight);
+  }
+
+  // Fired on every damage:liveFightTick ping (see main.js - one per credited hit, roughly). Always
+  // refreshes the list-screen "Live now" row; additionally redraws the open detail chart when
+  // that's what's on screen. When the fight has just ended between two ticks (the idle timeout
+  // fired), it is now an ordinary history entry - fall back to the list and reload rather than
+  // trying to keep rendering a "live" view of something that no longer exists.
+  async function onLiveFightTick() {
+    if (liveRenderInFlight) return;
+    liveRenderInFlight = true;
+    try {
+      const fight = await window.eqTracker.getLiveFight();
+      updateLiveRow(fight);
+      if (liveFightOpen) {
+        if (!fight) {
+          liveFightOpen = false;
+          showList();
+          loadHistory();
+        } else {
+          await renderLiveDetail(fight);
+        }
+      }
+    } finally {
+      liveRenderInFlight = false;
+    }
+  }
+
   // "I need some way to be able to live read the current combat from this combat tab... a fast
   // way to check recent past events of the zone i'm in" (owner, 14 Sep). Re-fetches history for
   // freshness (this is meant to answer "what just happened here"), then jumps straight past the
-  // list into whichever zone the player is standing in right now, opening its most recent visit -
-  // skipping "find it in the list" entirely. Falls back to just showing the (freshly reloaded)
-  // list when the current zone is unknown or has no history yet.
+  // list to whatever's most relevant right now: the fight in progress if there is one, otherwise
+  // the current zone's most recent completed visit - skipping "find it in the list" entirely.
+  // Falls back to just showing the (freshly reloaded) list when neither exists.
   async function jumpToCurrentZone() {
     await loadHistory();
+    const live = await window.eqTracker.getLiveFight();
+    if (live) {
+      openLiveFight(live);
+      return;
+    }
     const zone = await window.eqTracker.getCombatCurrentZoneBase();
     if (!zone) return;
     zoneFilter.value = zone; // picked up by populateZoneFilter inside render(), if it's a real option
@@ -10375,7 +10456,7 @@ function initCombatPage() {
       if (picked && picked[0]) runScan(picked[0]);
     });
   }
-  if (backBtn) backBtn.addEventListener('click', showList);
+  if (backBtn) backBtn.addEventListener('click', () => { liveFightOpen = false; showList(); });
   if (zoneFilter) zoneFilter.addEventListener('change', render);
   if (minDamageInput) {
     minDamageInput.value = String(DEFAULT_MIN_DAMAGE);
@@ -10399,6 +10480,15 @@ function initCombatPage() {
       }
     });
   }
+  if (liveRow) {
+    liveRow.addEventListener('click', async () => {
+      const fight = await window.eqTracker.getLiveFight();
+      if (fight) openLiveFight(fight);
+    });
+  }
+  // Pushed by main.js once per credited hit (roughly) - keeps the "Live now" row, and the open
+  // live chart if that's what's on screen, moving without the Combat tab having to poll for it.
+  window.eqTracker.onLiveFightTick(onLiveFightTick);
 
   // Damage / Healing / Both - top level, refreshes every chart currently on screen, not just
   // whatever gets opened next (owner, 14 Sep).
@@ -10417,5 +10507,6 @@ function initCombatPage() {
   });
 
   updateVisitNavButtons(); // no visit open yet - both start disabled
+  onLiveFightTick(); // a fight already under way when the tab first opens gets no NEW tick until its next hit
   loadHistory();
 }

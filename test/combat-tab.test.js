@@ -160,7 +160,10 @@ test('Back always returns to the list - there is only ever one screen of depth n
   assert.doesNotMatch(renderer, /function openFight\(/, 'a per-fight navigation screen would reintroduce the "Back skips a screen" bug');
   const fn = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
   assert.ok(fn);
-  assert.match(fn[1], /backBtn\.addEventListener\('click', showList\)/, 'Back must go straight to showList, not through an intermediate screen');
+  assert.match(
+    fn[1], /backBtn\.addEventListener\('click', \(\) => \{ liveFightOpen = false; showList\(\); \}\)/,
+    'Back must go straight to showList (also clearing liveFightOpen, so a stray tick after leaving the live view can\'t redraw over the list), not through an intermediate screen'
+  );
 });
 
 test('the zone filter is populated from the actual history and narrows what renders', () => {
@@ -753,6 +756,69 @@ test('Older/Newer disable at the ends of the same-zone visit list instead of wra
     renderer,
     /if \(currentVisitIndex !== -1 && currentVisitIndex < currentZoneVisits\.length - 1\) \{\s*openVisit\(currentZoneVisits\[currentVisitIndex \+ 1\]\);/
   );
+});
+
+// ---------------------------------------------------------------------------
+// "Live read the current combat" (owner, 14 Sep) - a "Live now" row above the list, and the
+// detail screen showing the in-progress fight, both kept moving by a lightweight push from main.js
+// rather than the Combat tab polling for it.
+// ---------------------------------------------------------------------------
+
+test('the "Live now" row markup exists and is hidden by default', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="combat-live-row"');
+  assert.ok(start !== -1, 'the live row is missing from the page');
+  const section = html.slice(Math.max(0, start - 60), start + 300);
+  assert.match(section, /style="display:none"/, 'must start hidden - nothing is live until a tick says otherwise');
+  assert.match(html, /id="combat-live-zone"/);
+  assert.match(html, /id="combat-live-meta"/);
+});
+
+test('main.js exposes the live fight over IPC, and pings the renderer on every credited hit', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(
+    main, /ipcMain\.handle\('damage:getLiveFight', \(\) => damageEngine\.getLiveFight\(\)\)/,
+    'must read the LIVE session\'s engine, never an imported scan - a scanned file has no "now"'
+  );
+  assert.match(
+    main, /damageEngine\.on\('activeChanged', \(\) => \{[\s\S]*?broadcast\('damage:liveFightTick', null\)/,
+    'must ping on the same event the overlay\'s own live meter already updates from'
+  );
+  const preload = read('src', 'preload', 'preload-main.js');
+  assert.match(preload, /getLiveFight: \(\) => ipcRenderer\.invoke\('damage:getLiveFight'\)/);
+  assert.match(preload, /onLiveFightTick: \(cb\) => ipcRenderer\.on\('damage:liveFightTick', \(\) => cb\(\)\)/);
+});
+
+test('a tick refreshes the Live row, and redraws the open live chart only when that is what is showing', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function onLiveFightTick\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'onLiveFightTick has been restructured or removed');
+  assert.match(fn[1], /if \(liveRenderInFlight\) return;/, 'a fight can tick once per hit - an overlapping render must be dropped, not queued');
+  assert.match(fn[1], /updateLiveRow\(fight\)/, 'the list-screen row must refresh on every tick regardless of which screen is showing');
+  assert.match(fn[1], /if \(liveFightOpen\)/, 'the detail chart must only redraw when the live view is actually the one on screen');
+  assert.match(fn[1], /liveFightOpen = false;\s*showList\(\);\s*loadHistory\(\);/, 'a fight ending between ticks must fall back to the list, not keep trying to render something that no longer exists');
+});
+
+test('jumpToCurrentZone opens the live fight first, falling back to the latest completed visit only when nothing is live', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'jumpToCurrentZone has been restructured or removed');
+  const liveIdx = fn[1].indexOf('getLiveFight');
+  const zoneIdx = fn[1].indexOf('getCombatCurrentZoneBase');
+  assert.ok(liveIdx !== -1 && zoneIdx !== -1 && liveIdx < zoneIdx, 'must check for a live fight BEFORE falling back to the completed-visit path');
+  assert.match(fn[1], /if \(live\) \{\s*openLiveFight\(live\);\s*return;/);
+});
+
+test('openLiveFight and openVisit each turn the OTHER kind of "live" state off, so a stray tick can\'t redraw the wrong screen', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const openVisitFn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(openVisitFn);
+  assert.match(openVisitFn[1], /liveFightOpen = false;/, 'opening a completed visit must clear liveFightOpen, or a tick could redraw the live chart over it');
+
+  const openLiveFn = renderer.match(/function openLiveFight\(fight\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(openLiveFn, 'openLiveFight has been restructured or removed');
+  assert.match(openLiveFn[1], /liveFightOpen = true;/);
+  assert.match(openLiveFn[1], /currentZoneVisits = \[\];/, 'a single live fight has no siblings to step through - Older/Newer must not carry over stale state from whatever was open before');
 });
 
 module.exports = () => report('combat-tab');
