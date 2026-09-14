@@ -275,25 +275,58 @@ test('someone never seen casting anything has no cast skills at all', () => {
   assert.deepEqual(e.getCastSkills('Avenrae'), []);
 });
 
-// Owner correction, 14 Sep: "did the class estimate take into account the ENTIRE log? it is only
-// supposed to take into account that fight" - cast evidence is scoped to ONE fight, same as
-// bySkillByAttacker, not session-wide.
-test('cast history is cleared when the fight it happened in ends - scoped to that fight, not the session', () => {
+// Owner correction, 14 Sep: cast evidence was briefly scoped to ONE fight only (per an earlier
+// instruction "it is only supposed to take into account that fight"), then reverted the SAME day
+// after live testing showed it broke real cases: "shara is no longer a bard, despite using
+// denon's desperate dirge" and "avenrae is no longer a ranger, despite using call of flame and
+// flaming arrow" - a bard sings a song ONCE and it auto-pulses for the rest of the night with no
+// fresh cast line each pulse, so if that original cast happened even one fight ago, a per-fight
+// scope loses it forever. Cast evidence is session-wide; only classEstimator.js's cap-at-3 bounds it.
+test('cast history survives a fight ending - a song sung once must still count many fights later', () => {
   const e = new DamageEngine();
   e.handleLine(`${T}You begin casting Energy Storm.`, 1000);
   e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1200);
   endFight(e, 1200);
-  assert.deepEqual(e.getCastSkills('You'), [], 'reset() must clear cast history along with everything else fight-scoped');
+  assert.deepEqual(e.getCastSkills('You'), ['Energy Storm'], 'reset() must NOT wipe cast history - it is a fact about the person, not the current pull');
 });
 
-test('a fight\'s own cast skills are captured into its history record, per attacker, like bySkill already is', () => {
+test('a fight\'s own captured cast skills reflect everything known up to that point, including casts from an EARLIER fight', () => {
   const e = new DamageEngine();
-  e.handleLine(`${T}You begin casting Energy Storm.`, 1000);
+  // Cast once, in an early fight that then ends...
+  e.handleLine(`${T}You begin casting Complete Heal.`, 1000);
   e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1200);
   endFight(e, 1200);
-  const fight = e.getHistoryFight(e.getHistory()[0].id);
+  // ...then a LATER, separate fight with no fresh cast line for it at all (the maintained-song /
+  // re-mem-without-a-cast-line shape - see gotcha #33/#38).
+  e.handleLine(`${T}You crush a wan ghoul knight for 20 points of damage.`, 30000);
+  endFight(e, 30000);
+  const later = e.getHistory()[0]; // newest first
+  const fight = e.getHistoryFight(later.id);
   const you = fight.rows.find((r) => r.name === 'You');
-  assert.deepEqual(you.castSkills, ['Energy Storm']);
+  assert.deepEqual(you.castSkills, ['Complete Heal'], 'evidence from a PRIOR fight must still reach a later one\'s own captured row');
+});
+
+// Owner, 14 Sep: "i also should be classed as a cleric from the healing side of the logs" - a heal
+// cast line ("You begin casting <heal>.") is recorded by the exact same, spell-type-agnostic
+// _noteCast() as any damage spell - there is no separate "heal evidence" path to build, healing
+// was never excluded, it was only ever a casualty of the (now-reverted) per-fight scoping above.
+test('a cast line for a HEAL spell is recorded identically to a damage spell - no separate path needed', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You begin casting Complete Heal.`, 1000);
+  assert.deepEqual(e.getCastSkills('You'), ['Complete Heal']);
+});
+
+test('the end-to-end estimate actually resolves a Cleric-only heal cast from an earlier fight to "Clr" in a later fight\'s row', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You begin casting Complete Heal.`, 1000);
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1200);
+  endFight(e, 1200);
+  e.handleLine(`${T}You crush a wan ghoul knight for 20 points of damage.`, 30000);
+  endFight(e, 30000);
+  const you = e.getHistoryFight(e.getHistory()[0].id).rows.find((r) => r.name === 'You');
+  const lookup = (name) => (name === 'Complete Heal' ? ['Clr'] : null);
+  const { estimateClasses } = require('../src/shared/classEstimator');
+  assert.deepEqual(estimateClasses(you.castSkills, lookup), [{ name: 'Clr', confidence: 'confirmed' }]);
 });
 
 test('a pet\'s own cast lines never contribute class evidence - pets have no class of their own', () => {

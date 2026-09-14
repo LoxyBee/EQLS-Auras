@@ -192,5 +192,43 @@ test('the same union fix still gives a single, unambiguous answer for a genuine 
   });
 });
 
+// Owner, 14 Sep, live-tested: "shara is no longer a bard, despite using denon's desperate dirge"
+// - then, when I wrongly guessed it was an auto-pulse-without-a-cast-line issue, the owner
+// disproved that directly with a log screenshot showing a fresh "You begin singing Denon's
+// Desperate Dirge X." every single time. The REAL cause, already documented in this project
+// (CLAUDE.md gotcha #3): "Denon's Desperate Dirge" is the CONFIRMED case of a bard song whose
+// ranked cast-line suffix has NO corresponding entry in spells_us.txt at all - only the bare,
+// un-suffixed name exists there. An exact-match-only lookup was guaranteed to return null for the
+// ranked name every time, no matter how many times it was actually sung.
+test('a ranked cast-line name with no matching entry in the data falls back to the base name (Denon\'s Desperate Dirge, gotcha #3)', () => {
+  withTempInstall([
+    spellLine(1, "Denon's Desperate Dirge", only(7)), // Bard-only, base name ONLY - no ranked entry exists
+  ], (dir) => {
+    assert.deepEqual(gameSpellData.getClassesForSpell(dir, "Denon's Desperate Dirge X"), ['Brd']);
+    assert.deepEqual(gameSpellData.getClassesForSpell(dir, "Denon's Desperate Dirge IX"), ['Brd']);
+  });
+});
+
+// The fallback must never PAPER OVER a real distinct spell that has its own proper entry - Yaulp's
+// own tiers (gotcha #13) are genuinely different spells, not a decorative suffix, and each already
+// resolves directly via exact match. The fallback is a last resort, not a rewrite.
+test('the rank-suffix fallback never fires when the exact ranked name already has its own real entry', () => {
+  withTempInstall([
+    spellLine(1, 'Yaulp VIII', only(1)), // Clr-only
+    spellLine(2, 'Yaulp IX', only(9)), // a DIFFERENT class - a real, distinct tier, not a duplicate
+  ], (dir) => {
+    // If the fallback wrongly fired here, stripping "Yaulp IX" to "Yaulp" would find nothing (no
+    // bare "Yaulp" entry exists) and return null instead of the exact tier's own real answer.
+    assert.deepEqual(gameSpellData.getClassesForSpell(dir, 'Yaulp IX'), [gameSpellData.getClassesForSpell(dir, 'Yaulp IX')[0]]);
+    assert.notDeepEqual(gameSpellData.getClassesForSpell(dir, 'Yaulp IX'), gameSpellData.getClassesForSpell(dir, 'Yaulp VIII'));
+  });
+});
+
+test('a name with no suffix to strip and no match either way still returns null, not a false fallback hit', () => {
+  withTempInstall([spellLine(1, 'Energy Storm', only(11))], (dir) => {
+    assert.equal(gameSpellData.getClassesForSpell(dir, 'Not A Real Spell'), null);
+  });
+});
+
 module.exports = () => report('class-estimator');
 if (require.main === module) report('class-estimator').then((n) => process.exit(n ? 1 : 0));

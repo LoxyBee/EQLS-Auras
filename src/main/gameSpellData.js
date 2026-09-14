@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { stripRankSuffix } = require('./buffParser');
 
 // Single parse of the game's own spells_us.txt, shared by everything that
 // needs facts about spells the app's own roster doesn't have. The roster
@@ -167,7 +168,19 @@ function getBardSongRecords(installRoot) {
 function getClassesForSpell(installRoot, name) {
   const data = load(installRoot);
   if (!data || !name) return null;
-  const set = data.classesByName.get(name.toLowerCase());
+  let set = data.classesByName.get(name.toLowerCase());
+  // A bare trailing Roman numeral in a cast line ("Denon's Desperate Dirge X") sometimes has NO
+  // corresponding entry in spells_us.txt at all - confirmed, gotcha #3's own example: only the
+  // un-suffixed base name exists there. Exact match failing is not "unrecognised spell", it's
+  // exactly buffStore.getByName()'s already-established fallback case, applied here too - strip
+  // the suffix and try again before giving up. (This is a permissive FALLBACK only, same caution
+  // as buffStore's: a bare numeral is sometimes a genuinely different spell with its own real
+  // entry - see gotcha #13 - but when the suffixed name isn't in the data at all, the stripped
+  // name is the only thing left to try.)
+  if (!set) {
+    const stripped = stripRankSuffix(name);
+    if (stripped !== name) set = data.classesByName.get(stripped.toLowerCase());
+  }
   if (!set) return null;
   // Canonical class-id order regardless of which entry's fields happened to be read last while
   // building the union, so the result is deterministic.

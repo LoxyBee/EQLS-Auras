@@ -135,11 +135,18 @@ class DamageEngine extends EventEmitter {
     // Lowercase attacker name -> Set of real-cased spell names actually seen begin-cast (self
     // "You begin casting/singing X" or third-person "X begins casting/singing Y.") - the ONLY
     // input to the Combat tab's class estimate (owner, 14 Sep - see classEstimator.js's header).
-    // Scoped to ONE FIGHT, same as bySkillByAttacker - the owner's own correction: "it is only
-    // supposed to take into account that fight", not the whole session. Cleared with byAttacker in
-    // reset(); a completed fight's own cast list is captured into `history` first, per attacker,
-    // the same way bySkill already is - a VISIT's combined estimate then unions each of its
-    // fights' own captured lists client-side, exactly like bySkill's own cross-fight merge.
+    // SESSION-WIDE, not cleared by reset() - a first attempt scoped this to one fight per the
+    // owner's own words ("it is only supposed to take into account that fight"), but that broke
+    // real cases within a day: a bard sings a song ONCE and it auto-pulses for the rest of the
+    // night with no fresh cast line each pulse (Denon's Desperate Dirge is exactly this shape -
+    // see gotcha #33/#38's "no per-pulse line" precedent), and a heal is a cast line the same as
+    // any other spell, so a healer's OWN class evidence is just as vulnerable to the same gap. A
+    // narrower scope loses the single strongest piece of evidence the moment it's more than one
+    // fight old. The "too many classes" problem this was trying to solve is instead handled by
+    // classEstimator.js's cap-at-3 (a hard fact - a character has exactly 3 classes), which needed
+    // no scope change to work. Snapshotted into `history` per fight regardless (see
+    // _captureHistory) - each fight's own row reflects everything known up to that moment, which
+    // naturally grows across a session as more evidence accumulates.
     this.castsByAttacker = new Map();
     // Completed fights, newest first, capped so this can't grow without bound over a long session.
     // In-memory only for this run of the app - not written to disk (see _captureHistory).
@@ -919,7 +926,7 @@ class DamageEngine extends EventEmitter {
     this.byAttacker.clear();
     this.bySkillByAttacker.clear();
     this.enemyTargetsThisFight.clear();
-    this.castsByAttacker.clear();
+    // castsByAttacker is deliberately NOT cleared here - see its own field comment.
     this.rawFightByName.clear();
     this.totalDamage = 0;
     this.fightStartedAt = null;
