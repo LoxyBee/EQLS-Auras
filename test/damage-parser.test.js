@@ -31,12 +31,12 @@ const T = '[Wed Aug 19 21:14:02 2026] ';
 
 test('your own spell damage names you as the attacker', () => {
   const hit = parseDamageLine(`${T}Fright has taken 394 damage from your Envenomed Bolt IV.`);
-  assert.deepEqual(hit, { attacker: 'You', target: 'Fright', amount: 394, kind: 'spell', skill: 'Envenomed Bolt IV' });
+  assert.deepEqual(hit, { attacker: 'You', target: 'Fright', amount: 394, kind: 'spell', skill: 'Envenomed Bolt IV', critical: false });
 });
 
 test('your own melee damage names you as the attacker', () => {
   const hit = parseDamageLine(`${T}You crush a wan ghoul knight for 60 points of damage.`);
-  assert.deepEqual(hit, { attacker: 'You', target: 'a wan ghoul knight', amount: 60, kind: 'melee', skill: 'Melee' });
+  assert.deepEqual(hit, { attacker: 'You', target: 'a wan ghoul knight', amount: 60, kind: 'melee', skill: 'Melee', critical: false });
 });
 
 // The single most important case in the file. 44,508 lines in the owner's logs have an
@@ -57,12 +57,12 @@ test('a damage shield credits the person wearing it', () => {
   const hit = parseDamageLine(
     `${T}A zol ghoul knight is pierced by Baxa's thorns for 8 points of non-melee damage.`
   );
-  assert.deepEqual(hit, { attacker: 'Baxa', target: 'A zol ghoul knight', amount: 8, kind: 'shield', skill: 'thorns' });
+  assert.deepEqual(hit, { attacker: 'Baxa', target: 'A zol ghoul knight', amount: 8, kind: 'shield', skill: 'thorns', critical: false });
 });
 
 test('someone else melee is read with both sides', () => {
   const hit = parseDamageLine(`${T}Baxa slashes a zol ghoul knight for 47 points of damage.`);
-  assert.deepEqual(hit, { attacker: 'Baxa', target: 'a zol ghoul knight', amount: 47, kind: 'melee', skill: 'Melee' });
+  assert.deepEqual(hit, { attacker: 'Baxa', target: 'a zol ghoul knight', amount: 47, kind: 'melee', skill: 'Melee', critical: false });
 });
 
 test('a monster casting a spell is read the same way, attacker and all', () => {
@@ -96,15 +96,15 @@ test('a line with no timestamp still parses', () => {
 test('the melee verbs added from the fixture cross-check all parse', () => {
   assert.deepEqual(
     parseDamageLine(`${T}Baxa cleaves a zol ghoul knight for 88 points of damage.`),
-    { attacker: 'Baxa', target: 'a zol ghoul knight', amount: 88, kind: 'melee', skill: 'Melee' }
+    { attacker: 'Baxa', target: 'a zol ghoul knight', amount: 88, kind: 'melee', skill: 'Melee', critical: false }
   );
   assert.deepEqual(
     parseDamageLine(`${T}Krung frenzies on a zol ghoul knight for 21 points of damage.`),
-    { attacker: 'Krung', target: 'a zol ghoul knight', amount: 21, kind: 'melee', skill: 'Melee' }
+    { attacker: 'Krung', target: 'a zol ghoul knight', amount: 21, kind: 'melee', skill: 'Melee', critical: false }
   );
   assert.deepEqual(
     parseDamageLine(`${T}Sneaky backstabs a wan ghoul knight for 512 points of damage.`),
-    { attacker: 'Sneaky', target: 'a wan ghoul knight', amount: 512, kind: 'melee', skill: 'Melee' }
+    { attacker: 'Sneaky', target: 'a wan ghoul knight', amount: 512, kind: 'melee', skill: 'Melee', critical: false }
   );
 });
 
@@ -113,7 +113,7 @@ test('the melee verbs added from the fixture cross-check all parse', () => {
 test('a damage shield worn by the player is credited to You', () => {
   assert.deepEqual(
     parseDamageLine(`${T}A rock golem is pierced by YOUR thorns for 5 points of non-melee damage.`),
-    { attacker: 'You', target: 'A rock golem', amount: 5, kind: 'shield', skill: 'thorns' }
+    { attacker: 'You', target: 'A rock golem', amount: 5, kind: 'shield', skill: 'thorns', critical: false }
   );
 });
 
@@ -123,7 +123,7 @@ test('a damage shield worn by the player is credited to You', () => {
 test('a single-digit-day timestamp is still stripped', () => {
   assert.deepEqual(
     parseDamageLine(`[Fri Aug  1 21:00:00 2026] You crush a wan ghoul knight for 60 points of damage.`),
-    { attacker: 'You', target: 'a wan ghoul knight', amount: 60, kind: 'melee', skill: 'Melee' }
+    { attacker: 'You', target: 'a wan ghoul knight', amount: 60, kind: 'melee', skill: 'Melee', critical: false }
   );
 });
 
@@ -132,11 +132,11 @@ test('a single-digit-day timestamp is still stripped', () => {
 test('the direct-damage-spell wording is read, first and third person', () => {
   assert.deepEqual(
     parseDamageLine(`${T}You hit a greater kobold for 943 points of magic damage by Energy Storm.`),
-    { attacker: 'You', target: 'a greater kobold', amount: 943, kind: 'spell', direct: true, skill: 'Energy Storm' }
+    { attacker: 'You', target: 'a greater kobold', amount: 943, kind: 'spell', direct: true, skill: 'Energy Storm', critical: false }
   );
   assert.deepEqual(
     parseDamageLine(`${T}Gebektik hit Guard Xyxax for 42 points of magic damage by Lifebite.`),
-    { attacker: 'Gebektik', target: 'Guard Xyxax', amount: 42, kind: 'spell', direct: true, skill: 'Lifebite' }
+    { attacker: 'Gebektik', target: 'Guard Xyxax', amount: 42, kind: 'spell', direct: true, skill: 'Lifebite', critical: false }
   );
 });
 
@@ -152,6 +152,62 @@ test('a trailing " (Critical)" (or "(Riposte)") does not drop the hit', () => {
   assert.equal(
     parseDamageLine(`${T}Baxa crushes a zol ghoul knight for 47 points of damage. (Riposte)`).amount,
     47
+  );
+});
+
+// Owner, 13 Sep - crit rate on the per-skill breakdown. The game brackets several different things
+// the same way ("(Critical)", "(Riposte)", "(Strikethrough)", ...); only the exact word "Critical"
+// means a crit; the others must read as false, not just "truthy suffix present".
+test('critical is true only for the exact "(Critical)" suffix, across every wording that carries one', () => {
+  assert.equal(
+    parseDamageLine(`${T}You hit a lava guardian for 943 points of fire damage by Energy Storm. (Critical)`).critical,
+    true
+  );
+  assert.equal(
+    parseDamageLine(`${T}Gebektik hit Guard Xyxax for 42 points of magic damage by Lifebite. (Critical)`).critical,
+    true
+  );
+  assert.equal(
+    parseDamageLine(`${T}Baxa crushes a zol ghoul knight for 88 points of damage. (Critical)`).critical,
+    true
+  );
+  assert.equal(
+    parseDamageLine(`${T}You crush a wan ghoul knight for 60 points of damage. (Critical)`).critical,
+    true
+  );
+  assert.equal(
+    parseDamageLine(`${T}A zol ghoul knight has taken 32 damage from Ice Comet by Baxa. (Critical)`).critical,
+    true
+  );
+  assert.equal(
+    parseDamageLine(`${T}Fright has taken 394 damage from your Envenomed Bolt IV. (Critical)`).critical,
+    true
+  );
+});
+
+test('a "(Riposte)"/"(Strikethrough)" suffix is not mistaken for a crit', () => {
+  assert.equal(
+    parseDamageLine(`${T}Baxa crushes a zol ghoul knight for 47 points of damage. (Riposte)`).critical,
+    false
+  );
+  assert.equal(
+    parseDamageLine(`${T}Baxa crushes a zol ghoul knight for 47 points of damage. (Strikethrough)`).critical,
+    false
+  );
+});
+
+test('an ordinary hit with no bracketed suffix at all is not a crit', () => {
+  assert.equal(
+    parseDamageLine(`${T}Baxa crushes a zol ghoul knight for 47 points of damage.`).critical,
+    false
+  );
+});
+
+// Damage shields are pure retaliation - the game never crit-flags them.
+test('a damage shield is never a crit', () => {
+  assert.equal(
+    parseDamageLine(`${T}A zol ghoul knight is pierced by Baxa's thorns for 8 points of non-melee damage.`).critical,
+    false
   );
 });
 

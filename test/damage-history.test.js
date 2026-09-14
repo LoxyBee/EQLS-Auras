@@ -69,7 +69,28 @@ test('a name that folds two attacks into one skill (repeated Melee) sums into a 
   endFight(e, 1500);
   const fight = e.getHistoryFight(e.getHistory()[0].id);
   const baxa = fight.rows.find((r) => r.name === 'Baxa');
-  assert.deepEqual(baxa.bySkill, [{ skill: 'Melee', damage: 65, hits: 2 }]);
+  assert.deepEqual(baxa.bySkill, [{ skill: 'Melee', damage: 65, hits: 2, crits: 0 }]);
+});
+
+// Owner, 13 Sep - crit rate on the per-skill breakdown. Counted per skill (not just per attacker)
+// since a caster's nukes and their melee crit at completely different rates.
+test('crits are counted per skill, alongside hits - a mix of crit and non-crit swings', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 1 points of damage.`, 900);
+  e.handleLine(`${T}Baxa crushes a zol ghoul knight for 40 points of damage. (Critical)`, 1000);
+  e.handleLine(`${T}Baxa crushes a zol ghoul knight for 20 points of damage.`, 1200);
+  e.handleLine(`${T}Baxa hit a zol ghoul knight for 90 points of magic damage by Energy Storm. (Critical)`, 1400);
+  endFight(e, 1400);
+  const fight = e.getHistoryFight(e.getHistory()[0].id);
+  const baxa = fight.rows.find((r) => r.name === 'Baxa');
+  assert.deepEqual(
+    baxa.bySkill.find((s) => s.skill === 'Melee'),
+    { skill: 'Melee', damage: 60, hits: 2, crits: 1 }
+  );
+  assert.deepEqual(
+    baxa.bySkill.find((s) => s.skill === 'Energy Storm'),
+    { skill: 'Energy Storm', damage: 90, hits: 1, crits: 1 }
+  );
 });
 
 test('a groupmate recognised late still shows their FULL damage in history, not just what landed after', () => {

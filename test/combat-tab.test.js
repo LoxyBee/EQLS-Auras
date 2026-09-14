@@ -159,5 +159,34 @@ test('the fight-row accordion styles its OWN summary only - a direct-child combi
   assert.match(block, /\.combat-fight-list-row > summary \{/, 'the direct-child fix is missing');
 });
 
+// Owner, 13 Sep: crit % and each skill's share of a player's OWN total, added to the skill
+// breakdown. Confirmed live (via a real render against mock data) that a single fight's own chart
+// showed real crit rates while a VISIT's combined chart showed 0% crit on every skill, every time
+// - openVisit's cross-fight aggregation built a fresh { skill, damage } object per skill with no
+// hits/crits fields at all, so summing several fights' worth of the same skill silently discarded
+// both. This pins that the merge actually carries them, not just damage.
+test('a visit\'s combined skill totals carry hits and crits through the merge, not just damage', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'openVisit has been restructured or removed');
+  assert.match(
+    fn[1], /\{ skill: s\.skill, damage: 0, hits: 0, crits: 0 \}/,
+    'the per-skill accumulator must seed hits/crits, not just damage - the exact bug: crit % showed 0% for every skill on a multi-fight visit'
+  );
+  assert.match(fn[1], /srow\.hits \+= s\.hits \|\| 0/);
+  assert.match(fn[1], /srow\.crits \+= s\.crits \|\| 0/);
+});
+
+test('the skill breakdown shows each skill\'s share of the player\'s OWN total, and its crit rate', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(
+    fn[1], /row\.damage > 0 \? Math\.round\(\(s\.damage \/ row\.damage\) \* 100\)/,
+    'share must be against the PLAYER\'s own total, not the fight\'s (that\'s already the point of the bar above it)'
+  );
+  assert.match(fn[1], /s\.hits > 0 \? Math\.round\(\(s\.crits \/ s\.hits\) \* 100\)/);
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

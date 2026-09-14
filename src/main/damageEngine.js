@@ -473,7 +473,7 @@ class DamageEngine extends EventEmitter {
       this._expireIfIdle(now);
       this._flushPending(now);
       this._flushHealPending(now);
-      if (dir === 'out') this._credit(hit.attacker, hit.amount, now, hit.kind === 'melee' || !!hit.direct, hit.skill);
+      if (dir === 'out') this._credit(hit.attacker, hit.amount, now, hit.kind === 'melee' || !!hit.direct, hit.skill, hit.critical);
       if (dir !== 'drop') this.emit('activeChanged', this.getActive(now));
       return;
     }
@@ -533,7 +533,7 @@ class DamageEngine extends EventEmitter {
           continue;
         }
         resolvedAny = true;
-        if (dir === 'out') this._credit(p.attacker, p.amount, p.at, p.kind === 'melee' || !!p.direct, p.skill);
+        if (dir === 'out') this._credit(p.attacker, p.amount, p.at, p.kind === 'melee' || !!p.direct, p.skill, p.critical);
       }
       this.pending = keep;
       if (!resolvedAny) return;
@@ -572,7 +572,7 @@ class DamageEngine extends EventEmitter {
     bump(this.rawZoneByName);
   }
 
-  _credit(attacker, amount, at, isRealHit, skill) {
+  _credit(attacker, amount, at, isRealHit, skill, critical) {
     if (this.fightStartedAt === null) this.fightStartedAt = at;
     // A retro-credited line can predate the line that opened the fight.
     if (at < this.fightStartedAt) this.fightStartedAt = at;
@@ -582,9 +582,10 @@ class DamageEngine extends EventEmitter {
     this.byAttacker.set(attacker, row);
     if (skill) {
       const bySkill = this.bySkillByAttacker.get(attacker) || new Map();
-      const srow = bySkill.get(skill) || { damage: 0, hits: 0 };
+      const srow = bySkill.get(skill) || { damage: 0, hits: 0, crits: 0 };
       srow.damage += amount;
       srow.hits += 1;
+      if (critical) srow.crits += 1;
       bySkill.set(skill, srow);
       this.bySkillByAttacker.set(attacker, bySkill);
     }
@@ -807,7 +808,7 @@ class DamageEngine extends EventEmitter {
         damage: r.damage,
         hits: r.hits,
         bySkill: [...(this.bySkillByAttacker.get(name) || [])]
-          .map(([skill, s]) => ({ skill, damage: s.damage, hits: s.hits }))
+          .map(([skill, s]) => ({ skill, damage: s.damage, hits: s.hits, crits: s.crits || 0 }))
           .sort((a, b) => b.damage - a.damage),
       }))
       .sort((a, b) => b.damage - a.damage);

@@ -9835,7 +9835,16 @@ function initCombatPage() {
         const line = document.createElement('div');
         line.className = 'combat-skill-row';
         line.appendChild(span(s.skill, 'combat-skill-name'));
-        line.appendChild(span(formatDamage(s.damage)));
+        const stats = document.createElement('span');
+        stats.className = 'combat-skill-stats';
+        // % of THIS PLAYER's own total (owner, 13 Sep) - not the fight's, since that's already
+        // the point of the bar above it; this answers "of what Avenrae did, how much was this".
+        const share = row.damage > 0 ? Math.round((s.damage / row.damage) * 100) : 0;
+        const critPct = s.hits > 0 ? Math.round((s.crits / s.hits) * 100) : 0;
+        stats.appendChild(span(formatDamage(s.damage)));
+        stats.appendChild(span(`${share}%`, 'combat-skill-share'));
+        stats.appendChild(span(`${critPct}% crit`, 'combat-skill-crit'));
+        line.appendChild(stats);
         list.appendChild(line);
       }
       details.appendChild(list);
@@ -9889,8 +9898,10 @@ function initCombatPage() {
         const agg = byName.get(row.name) || { name: row.name, damage: 0, bySkill: new Map() };
         agg.damage += row.damage;
         for (const s of row.bySkill) {
-          const srow = agg.bySkill.get(s.skill) || { skill: s.skill, damage: 0 };
+          const srow = agg.bySkill.get(s.skill) || { skill: s.skill, damage: 0, hits: 0, crits: 0 };
           srow.damage += s.damage;
+          srow.hits += s.hits || 0;
+          srow.crits += s.crits || 0;
           agg.bySkill.set(s.skill, srow);
         }
         byName.set(row.name, agg);

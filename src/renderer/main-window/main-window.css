@@ -2775,6 +2775,16 @@ body.sidebar-resizing .sidebar {
 }
 .combat-skill-row:first-child { border-top: none; }
 .combat-skill-name { opacity: 0.85; }
+/* Damage, then its share of THIS PLAYER's own total, then its crit rate - three numbers, evenly
+   spaced and right-aligned so a column of them lines up down the list. */
+.combat-skill-stats {
+  display: flex;
+  gap: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.combat-skill-stats > span { min-width: 3.5em; text-align: right; }
+.combat-skill-share { opacity: 0.6; }
+.combat-skill-crit { opacity: 0.6; }
 /* Each fight is its own accordion now, not a navigation - clicking one expands its bar chart in
    place (owner, 13 Sep: "so you can find yourself again faster") instead of opening a screen that
    then needs its own way back.
