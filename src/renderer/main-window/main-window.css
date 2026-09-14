@@ -2741,6 +2741,9 @@ body.sidebar-resizing .sidebar {
    A plain heat ramp (near-white -> yellow -> orange -> red), D4 additionally bold + a faint glow
    so it reads as the standout tier at a glance, not just another step in the ramp. */
 .zone-diff-tag { font-weight: 700; }
+/* Fixed-width box for just the "D<n>" code, so the dash after it lands at the same x for every
+   row regardless of how wide that code renders (owner, 14 Sep). */
+.zone-diff-code { display: inline-block; width: 22px; text-align: left; font-variant-numeric: tabular-nums; }
 .zone-diff-d0 { color: #ded9ce; }
 .zone-diff-d1 { color: #dccb6c; }
 .zone-diff-d2 { color: #e0a13c; }

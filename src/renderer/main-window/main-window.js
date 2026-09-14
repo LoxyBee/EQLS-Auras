@@ -10125,7 +10125,16 @@ function initCombatPage() {
       const tier = Math.min(4, Math.max(0, parseInt(String(difficulty).replace(/[^0-9]/g, ''), 10) || 0));
       const tag = document.createElement('span');
       tag.className = `zone-diff-tag zone-diff-d${tier}`;
-      tag.textContent = `${String(difficulty).toUpperCase()} - `;
+      // The difficulty code sits in its own fixed-width box (owner, 14 Sep: "make sure all the
+      // hyphens line up equally, they should be at a static width and not dependent on the width
+      // of the difficulty prefix") - the dash then always starts right after that box, at the
+      // same x regardless of whether the code is "D0" or a wider one, instead of drifting with
+      // however wide the code itself happens to render.
+      const code = document.createElement('span');
+      code.className = 'zone-diff-code';
+      code.textContent = String(difficulty).toUpperCase();
+      tag.appendChild(code);
+      tag.appendChild(document.createTextNode(' - '));
       container.appendChild(tag);
     }
     container.appendChild(document.createTextNode(zone || UNKNOWN_ZONE));

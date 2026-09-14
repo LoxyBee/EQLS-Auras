@@ -501,6 +501,23 @@ test('a visit\'s zone display puts a coloured "D<n> - " prefix ahead of the name
   assert.match(fn[1], /container\.appendChild\(document\.createTextNode\(zone \|\| UNKNOWN_ZONE\)\)/);
 });
 
+// Owner, 14 Sep (follow-up): "make sure all the hyphen's line up equally, they should be at a
+// static width and not dependent on the width of the difficulty prefix" - "D0" and "D4" render at
+// slightly different widths, which was shifting the dash (and the zone name after it) row to row.
+test('the difficulty code sits in its own fixed-width box, so the dash lands at the same x regardless of the code', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'appendZoneLabel has been restructured or removed');
+  assert.match(fn[1], /className = 'zone-diff-code'/, 'the difficulty code must be its own element, not inline text with the dash');
+  assert.match(fn[1], /createTextNode\(' - '\)/, 'the dash must be appended AFTER the fixed-width code box, not baked into its text');
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  const rule = css.match(/\.zone-diff-code\s*\{([\s\S]*?)\}/);
+  assert.ok(rule, 'missing a .zone-diff-code rule');
+  assert.match(rule[1], /display:\s*inline-block/, 'a fixed width only holds still on an inline-block (or block) box');
+  assert.match(rule[1], /width:\s*\d/, 'the code box needs an explicit fixed width');
+});
+
 test('buildVisits carries the difficulty from whichever fight creates the visit', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function buildVisits\(history\) \{([\s\S]*?)\n {2}\}/);
