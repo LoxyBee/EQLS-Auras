@@ -414,5 +414,42 @@ test('a fight with damage but no healing at all still has an empty healRows arra
   assert.equal(e.getHistory()[0].topHealer, null);
 });
 
+// ---------------------------------------------------------------------------
+// Zone difficulty (owner, 14 Sep: "let's make all raid entries include their difficulty level").
+// See src/shared/zoneDifficulty.js - the CALLER computes the label from the raw zone string and
+// passes it in, since by the time zoneName reaches enterZone() it's already the stripped base name.
+// ---------------------------------------------------------------------------
+
+test('a fight is tagged with the difficulty told to the engine at zone entry', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, 'The Permafrost Caverns', 'd4');
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  assert.equal(e.getHistory()[0].difficulty, 'd4');
+});
+
+test('a fight with no difficulty told to the engine (an open-world zone) has none, not a stale one', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, "Nagafen's Lair"); // no third argument - matches an ordinary, non-instanced entry
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  assert.equal(e.getHistory()[0].difficulty, null);
+});
+
+test('two visits to the SAME zone at DIFFERENT difficulties are tagged correctly, not stuck on the first one seen', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, 'The Permafrost Caverns', 'd1');
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  e.enterZone(30000, 'The Feerrott'); // a real zone change in between
+  e.enterZone(60000, 'The Permafrost Caverns', 'd4'); // back in, at a different tier this time
+  e.handleLine(`${T}You crush a wan ghoul knight for 20 points of damage.`, 61000);
+  endFight(e, 61000);
+  const [newest, oldest] = e.getHistory();
+  assert.equal(oldest.difficulty, 'd1');
+  assert.equal(newest.difficulty, 'd4');
+  assert.notEqual(oldest.visitId, newest.visitId, 'these must be two separate visits, not one merged pile');
+});
+
 module.exports = () => report('damage-history');
 if (require.main === module) report('damage-history').then((n) => process.exit(n ? 1 : 0));

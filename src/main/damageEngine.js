@@ -156,6 +156,9 @@ class DamageEngine extends EventEmitter {
     // until the caller has ever told this engine a zone name (plain live gameplay never had to;
     // batch-scanning a log for the Combat tab's history is what actually needs this).
     this.currentZoneName = null;
+    // The instance's difficulty tier ("d0".."d4"), or null for a non-instanced zone - see
+    // enterZone()'s own comment for the real-log example this exists for.
+    this.currentZoneDifficulty = null;
     this._zoneVisitSeq = 0;
     this.fightStartedAt = null;
     this.lastDamageAt = null;
@@ -719,6 +722,13 @@ class DamageEngine extends EventEmitter {
   // _captureHistory) so history can be organised by zone - and a real change of zone (not a
   // same-zone echo, e.g. the instance-line-right-after-the-entrance-line shape) opens a new
   // "visit", so two separate trips to the same zone group as two entries, not one merged pile.
+  // `difficulty` (owner, 14 Sep: "let's make all raid entries include their difficulty level") is
+  // the caller's own already-computed tier label (zoneDifficulty.js's difficultyLabel against the
+  // RAW, un-stripped zone string - by the time `zoneName` reaches here it's already the STRIPPED
+  // base name, so the tier has to travel in separately) - stamped onto history the same way `zone`
+  // already is. Real EQL data (the owner's own logs): "The Permafrost Caverns" alone has FIVE
+  // distinct instance strings (Group / 1 (Awakened) / 2 (Adaptive) / 3 (Fused) / 4 (Refined)) that
+  // all strip to the identical base name - without this they were indistinguishable in history.
   //
   // A REAL zone change force-closes whatever fight is still open FIRST, via the exact same
   // reset() a timeout would use (so it is captured to history normally) - before `currentZoneName`
@@ -730,12 +740,13 @@ class DamageEngine extends EventEmitter {
   // fight was "in", but wrong the moment fights need a zone tag at all.) A same-zone echo does
   // nothing here, exactly as before - that is what keeps an instance-line-right-after-the-entrance
   // line from splitting one real fight into two just because two zone lines announced it.
-  enterZone(now = Date.now(), zoneName = null) {
+  enterZone(now = Date.now(), zoneName = null, difficulty = null) {
     if (zoneName && zoneName !== this.currentZoneName) {
       if (this.fightStartedAt !== null) this.reset();
       this._zoneVisitSeq = (this._zoneVisitSeq || 0) + 1;
     }
     this.currentZoneName = zoneName || null;
+    this.currentZoneDifficulty = difficulty || null;
     this.sinceZoneByAttacker.clear();
     this.rawZoneByName.clear();
     this.sinceZoneTotal = 0;
@@ -922,6 +933,7 @@ class DamageEngine extends EventEmitter {
       totalDamage: this.totalDamage,
       totalHealing: this.totalHealing,
       zone: this.currentZoneName,
+      difficulty: this.currentZoneDifficulty,
       visitId: this.currentZoneName ? this._zoneVisitSeq : null,
       label: labelFight([...this.enemyTargetsThisFight]),
       rows,
@@ -933,13 +945,14 @@ class DamageEngine extends EventEmitter {
   // Every completed fight this session, newest first. In-memory only - see the `history` field
   // comment on why this does not persist across a restart.
   getHistory() {
-    return this.history.map(({ id, endedAt, durationSec, totalDamage, totalHealing, zone, visitId, label, rows, healRows }) => ({
+    return this.history.map(({ id, endedAt, durationSec, totalDamage, totalHealing, zone, difficulty, visitId, label, rows, healRows }) => ({
       id,
       endedAt,
       durationSec,
       totalDamage,
       totalHealing,
       zone,
+      difficulty,
       visitId,
       label,
       topAttacker: rows[0] ? rows[0].name : null,

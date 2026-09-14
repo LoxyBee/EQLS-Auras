@@ -464,5 +464,37 @@ test('a Crit % column only appears where crits were actually tracked - per skill
   );
 });
 
+// Owner, 14 Sep: "these permafrost caverns should be raid instances, let's make all raid entries
+// include their difficulty level (d0, d4, etc etc)" - confirmed against the owner's own real log
+// that "The Permafrost Caverns" alone has 5 genuinely different instance difficulties that all
+// strip to the same base zone name, indistinguishable without this.
+test('the zone entry point (both live and scanned) passes the RAW zone string\'s difficulty to enterZone', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(
+    main, /damageEngine\.enterZone\(Date\.now\(\), baseZoneName\(zone\), difficultyLabel\(zone\)\)/,
+    'the live zone-change handler must compute difficulty from the RAW zone string, not the stripped base name'
+  );
+  const scan = read('src', 'main', 'damageLogScan.js');
+  assert.match(
+    scan, /engine\.enterZone\(ms, baseZoneName\(zone\), difficultyLabel\(zone\)\)/,
+    'a batch log scan must tag difficulty the same way live play does'
+  );
+});
+
+test('a visit\'s zone display includes its difficulty when it has one, unchanged when it does not', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function zoneWithDifficulty\(zone, difficulty\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'zoneWithDifficulty has been restructured or removed');
+  assert.match(fn[1], /difficulty \? `\$\{name\} \(\$\{difficulty\}\)` : name/);
+  assert.match(read('src', 'renderer', 'main-window', 'main-window.js'), /zoneWithDifficulty\(visit\.zone, visit\.difficulty\)/g);
+});
+
+test('buildVisits carries the difficulty from whichever fight creates the visit', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function buildVisits\(history\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'buildVisits has been restructured or removed');
+  assert.match(fn[1], /difficulty: fight\.difficulty \|\| null/);
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

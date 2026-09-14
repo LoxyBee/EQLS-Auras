@@ -10063,7 +10063,7 @@ function initCombatPage() {
   async function openVisit(visit) {
     showDetail();
     openRenders.clear(); // leaving the previous visit (if any) - nothing from it stays "open"
-    const zoneLabel = visit.zone || UNKNOWN_ZONE;
+    const zoneLabel = zoneWithDifficulty(visit.zone, visit.difficulty);
     detailTitle.textContent = `${zoneLabel} — ${formatWhen(visit.startedAt)}, ${visit.fights.length} fight${visit.fights.length === 1 ? '' : 's'}`;
     detailBars.innerHTML = '';
     detailBars.appendChild(span('Loading…', 'empty-note'));
@@ -10090,7 +10090,10 @@ function initCombatPage() {
     for (const fight of history) {
       const key = fight.visitId != null ? `${fight.zone}:${fight.visitId}` : `single:${fight.id}`;
       if (!byKey.has(key)) {
-        const visit = { zone: fight.zone, fights: [] };
+        // difficulty is constant for the life of one visit (owner, 14 Sep: "let's make all raid
+        // entries include their difficulty level (d0, d4, etc etc)") - taken from whichever fight
+        // creates the visit, since every fight in it shares the same zone AND difficulty.
+        const visit = { zone: fight.zone, difficulty: fight.difficulty || null, fights: [] };
         byKey.set(key, visit);
         order.push(visit);
       }
@@ -10106,13 +10109,20 @@ function initCombatPage() {
     return order.sort((a, b) => a.startedAt - b.startedAt);
   }
 
+  // "(d0)", "(d4)", etc, appended to a zone name only when it's a private instance - a plain
+  // open-world zone has no difficulty at all (zoneDifficulty.js returns null) and shows unchanged.
+  function zoneWithDifficulty(zone, difficulty) {
+    const name = zone || UNKNOWN_ZONE;
+    return difficulty ? `${name} (${difficulty})` : name;
+  }
+
   function renderList(visits) {
     visitList.innerHTML = '';
     for (const visit of visits) {
       const row = document.createElement('div');
       row.className = 'combat-visit-row';
       row.appendChild(span(formatWhen(visit.startedAt), 'combat-visit-time'));
-      const zoneLink = span(visit.zone || UNKNOWN_ZONE, 'combat-visit-zone');
+      const zoneLink = span(zoneWithDifficulty(visit.zone, visit.difficulty), 'combat-visit-zone');
       zoneLink.addEventListener('click', () => openVisit(visit));
       row.appendChild(zoneLink);
       const n = visit.fights.length;
