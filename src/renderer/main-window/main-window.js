@@ -9850,24 +9850,29 @@ function initCombatPage() {
         const critPct = s.hits > 0 ? Math.round((s.crits / s.hits) * 100) : 0;
         line.appendChild(span(s.skill, 'combat-skill-name'));
 
-        // A coloured bar here too (owner, 13 Sep: "the rows need colours to display their %") -
+        // A coloured bar spanning the WHOLE Damage/%/Crit area, not just the Damage column (owner,
+        // 13 Sep: "the coloured bar should extend underneath the crit and damage % numbers") -
         // sized against this player's OWN biggest skill, same "biggest, not the total" reasoning
-        // as the player bars above.
+        // as the player bars above. The track/fill sit behind as one absolutely-positioned pair;
+        // the three numbers are laid out on top in a matching sub-grid so they still land in the
+        // same columns the header uses.
+        const trackArea = document.createElement('div');
+        trackArea.className = 'combat-skill-track-area';
         const track = document.createElement('div');
         track.className = 'combat-skill-track';
         const fill = document.createElement('div');
         fill.className = 'combat-skill-fill';
         fill.style.width = `${skillTop > 0 ? Math.max(2, (s.damage / skillTop) * 100) : 0}%`;
         fill.style.background = BAR_COLORS[si % BAR_COLORS.length];
+        track.appendChild(fill);
+        trackArea.appendChild(track);
         const amount = document.createElement('div');
         amount.className = 'combat-skill-amount';
         amount.textContent = formatDamage(s.damage);
-        track.appendChild(fill);
-        track.appendChild(amount);
-        line.appendChild(track);
-
-        line.appendChild(span(`${share}%`, 'combat-skill-share'));
-        line.appendChild(span(`${critPct}%`, 'combat-skill-crit'));
+        trackArea.appendChild(amount);
+        trackArea.appendChild(span(`${share}%`, 'combat-skill-share'));
+        trackArea.appendChild(span(`${critPct}%`, 'combat-skill-crit'));
+        line.appendChild(trackArea);
         list.appendChild(line);
       });
       details.appendChild(list);

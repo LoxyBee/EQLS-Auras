@@ -2767,10 +2767,14 @@ body.sidebar-resizing .sidebar {
 /* Skill / Damage / % of total / Crit % - a real labelled grid (owner, 13 Sep: "needs dedicated
    columns... columns are unlabeled"), the same four columns for the header and every data row so
    the numbers line up underneath their names instead of just being spaced apart by eye. The
-   Damage column carries its own coloured bar (owner, same note: "the rows need colours to display
-   their %") - sized against this player's own biggest skill, same reasoning the player bars above
-   already use ("biggest, not the total" - otherwise one dominant nuke leaves every other skill's
-   bar too short to read). */
+   coloured bar spans the WHOLE Damage/% of total/Crit % area, not just the Damage column (owner,
+   13 Sep: "the coloured bar should extend underneath the crit and damage % numbers") - a
+   `.combat-skill-track-area` grid item covering columns 2 to the end, itself a sub-grid with the
+   same "2fr 64px 56px" proportions so the three numbers still land in the same visual columns the
+   header uses, layered (z-index) over the track/fill which sit behind as one absolutely-positioned
+   pair spanning the whole area. Sized against this player's own biggest skill, same reasoning the
+   player bars above already use ("biggest, not the total" - otherwise one dominant nuke leaves
+   every other skill's bar too short to read). */
 .combat-skill-list { padding: 6px 4px 4px 140px; }
 .combat-skill-row {
   display: grid;
@@ -2782,7 +2786,6 @@ body.sidebar-resizing .sidebar {
   border-top: 1px solid var(--line);
 }
 .combat-skill-row:first-child { border-top: none; }
-.combat-skill-row > span:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .combat-skill-name { opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combat-skill-header {
   font-size: 10.5px;
@@ -2793,11 +2796,25 @@ body.sidebar-resizing .sidebar {
   padding-bottom: 6px;
 }
 .combat-skill-header span:first-child { text-align: left; }
-.combat-skill-share { opacity: 0.7; }
-.combat-skill-crit { opacity: 0.7; }
-.combat-skill-track {
+.combat-skill-track-area {
+  grid-column: 2 / -1;
   position: relative;
+  display: grid;
+  grid-template-columns: 2fr 64px 56px;
+  align-items: center;
+  gap: 10px;
   height: 16px;
+}
+.combat-skill-share, .combat-skill-crit {
+  position: relative;
+  z-index: 1;
+  text-align: right;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.combat-skill-track {
+  position: absolute;
+  inset: 0;
   background: rgba(255, 255, 255, 0.06);
   border-radius: 3px;
   overflow: hidden;
@@ -2809,10 +2826,11 @@ body.sidebar-resizing .sidebar {
   opacity: 0.8;
 }
 .combat-skill-amount {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
+  height: 100%;
   padding: 0 6px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;

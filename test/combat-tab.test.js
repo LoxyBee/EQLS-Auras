@@ -214,5 +214,32 @@ test('the skill breakdown has a labelled header row and each skill row has its o
   );
 });
 
+// Owner, 13 Sep, third round: "the coloured bar should extend underneath the crit and damage %
+// numbers" - the track/fill must span the whole Damage/%/Crit area (columns 2 to the end), not
+// just the Damage column, with the three numbers laid on top of it rather than off to the side on
+// bare background.
+test('the skill bar spans the whole Damage/percent/crit area, not just the Damage column', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(
+    fn[1], /combat-skill-track-area/,
+    'the track/fill must live in a wrapper spanning the whole numbers area, not just the Damage column'
+  );
+  assert.match(
+    fn[1], /trackArea\.appendChild\(track\)[\s\S]*trackArea\.appendChild\(amount\)[\s\S]*trackArea\.appendChild\(span\(`\$\{share\}%`, 'combat-skill-share'\)\)[\s\S]*trackArea\.appendChild\(span\(`\$\{critPct\}%`, 'combat-skill-crit'\)\)/,
+    'the amount, share and crit numbers must all sit on top of the same wide track, not the bare row'
+  );
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-skill-track-area \{[^}]*grid-column: 2 \/ -1;/s,
+    'the track-area must span from the Damage column to the end of the row, covering %/Crit too'
+  );
+  assert.match(
+    css, /\.combat-skill-track \{[^}]*position: absolute;[^}]*inset: 0;/s,
+    'the track background must fill its whole wide area, not just the Damage-column slice'
+  );
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));
