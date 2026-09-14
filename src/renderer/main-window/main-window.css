@@ -2713,10 +2713,14 @@ body.sidebar-resizing .sidebar {
    shows a full date too ("01/09/2026 15:26:56"), and flex's `0 0 auto` sizing let that shorter
    width shift the zone name (and everything after it) row to row. The time column is now a fixed
    width wide enough for the long form, so every row's zone starts at the exact same x regardless
-   of which format that particular row happens to use. */
+   of which format that particular row happens to use.
+   The difficulty column (owner, 14 Sep, third round: "it should be a prefix, like D1/d4, with
+   it's own column" - was inline text ahead of the zone name) is its own fixed-width slot between
+   time and zone name; a row with no difficulty at all just leaves it empty, same as an ordinary
+   grid cell with nothing in it. */
 .combat-visit-row {
   display: grid;
-  grid-template-columns: 150px 1fr auto;
+  grid-template-columns: 150px 36px minmax(80px, 1fr) auto;
   align-items: baseline;
   gap: 10px;
   padding: 7px 4px;
@@ -2725,6 +2729,7 @@ body.sidebar-resizing .sidebar {
 }
 .combat-visit-row:last-child { border-bottom: none; }
 .combat-visit-time { font-variant-numeric: tabular-nums; opacity: 0.75; white-space: nowrap; }
+.combat-visit-diff { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .combat-visit-zone {
   cursor: pointer;
   font-weight: 600;
@@ -2736,13 +2741,15 @@ body.sidebar-resizing .sidebar {
 }
 .combat-visit-zone:hover { text-decoration: underline; }
 
-/* Difficulty-tier prefix ("D0 - " .. "D4 - ") on a raid/group instance's zone name - owner, 14
-   Sep: a different colour per tier, zone name stays gold, D0 almost white, D4 the most prominent.
-   A plain heat ramp (near-white -> yellow -> orange -> red), D4 additionally bold + a faint glow
-   so it reads as the standout tier at a glance, not just another step in the ramp. */
+/* Difficulty-tier code ("D0".."D4") - owner, 14 Sep: a different colour per tier, zone name stays
+   gold, D0 almost white, D4 the most prominent. A plain heat ramp (near-white -> yellow -> orange
+   -> red), D4 additionally bold + a faint glow so it reads as the standout tier at a glance, not
+   just another step in the ramp. Shared by the visit list's own dedicated column
+   (.combat-visit-diff) and the detail screen's inline title prefix (.zone-diff-code, below). */
 .zone-diff-tag { font-weight: 700; }
-/* Fixed-width box for just the "D<n>" code, so the dash after it lands at the same x for every
-   row regardless of how wide that code renders (owner, 14 Sep). */
+/* Fixed-width box for just the "D<n>" code INSIDE the detail title's inline prefix, so the dash
+   after it lands at the same x for every title regardless of how wide that code renders (owner,
+   14 Sep). Not used by the visit list any more - a real grid column does that job there now. */
 .zone-diff-code { display: inline-block; width: 22px; text-align: left; font-variant-numeric: tabular-nums; }
 .zone-diff-d0 { color: #ded9ce; }
 .zone-diff-d1 { color: #dccb6c; }

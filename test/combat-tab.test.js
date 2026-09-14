@@ -448,8 +448,8 @@ test('the class estimate is wired IPC -> preload -> renderer', () => {
 test('the visit list uses a real grid with a fixed time column, not flex natural-sizing', () => {
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
-    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 1fr auto;/s,
-    'the time column must be a fixed width so a short "today" time and a long dated one both start the zone name at the same x'
+    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 36px minmax\(80px, 1fr\) auto;/s,
+    'the time and difficulty columns must be a fixed width so a short "today" time and a long dated one both start the zone name at the same x'
   );
 });
 
@@ -542,13 +542,15 @@ test('the zone entry point (both live and scanned) passes the RAW zone string\'s
 // Owner, 14 Sep: "mark them as D4 - [name]" (was "[name] (d4)"), plus "each difficulty prefix
 // should be coloured as well, a different colour per difficulty, but the zone name should stay
 // gold... d4 should have the most prominent colouring, d0 should be almost white but not white."
-test('a visit\'s zone display puts a coloured "D<n> - " prefix ahead of the name, unchanged when it has no difficulty', () => {
+// This inline "D4 - Name" form is the detail SCREEN TITLE's own format now (a single heading
+// line, not a table) - the Past Fights LIST uses its own dedicated grid column instead, see the
+// next test.
+test('the detail title puts a coloured "D<n> - " prefix ahead of the name, unchanged when it has no difficulty', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty, raidInstance\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'appendZoneLabel has been restructured or removed');
-  assert.match(fn[1], /zone-diff-d\$\{tier\}/, 'the prefix must carry a per-tier CSS class, not just plain text');
+  assert.match(fn[1], /zone-diff-d\$\{zoneDiffTier\(difficulty\)\}/, 'the prefix must carry a per-tier CSS class, not just plain text');
   assert.match(fn[1], /toUpperCase\(\)/, 'the difficulty must render as "D4", not lowercase "d4"');
-  assert.match(renderer, /appendZoneLabel\(zoneLink, visit\.zone, visit\.difficulty, visit\.raidInstance\)/);
   assert.match(renderer, /appendZoneLabel\(detailTitle, visit\.zone, visit\.difficulty, visit\.raidInstance\)/);
 
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
@@ -557,6 +559,26 @@ test('a visit\'s zone display puts a coloured "D<n> - " prefix ahead of the name
   }
   // the zone name itself must never get a difficulty-coloured class - only the prefix does
   assert.match(fn[1], /container\.appendChild\(document\.createTextNode\(zone \|\| UNKNOWN_ZONE\)\)/);
+});
+
+// Owner, 14 Sep, third round on this feature: "it should be a prefix, like D1/d4. with it's own
+// column" - the Past Fights LIST used to put the same inline "D4 - Name" text inside the zone
+// cell; now the difficulty code lives in its own grid column (`.combat-visit-diff`, see the grid
+// test above) and the zone cell holds only the name + the (Raid)/(Group) badge.
+test('the visit list shows the difficulty code in its OWN column, separate from the zone name', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const badgeFn = renderer.match(/function zoneDifficultyBadge\(difficulty\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(badgeFn, 'zoneDifficultyBadge has been restructured or removed');
+  assert.match(badgeFn[1], /if \(!difficulty\) return null/, 'a non-instanced zone must contribute nothing to the column, not an empty coloured box');
+  assert.match(badgeFn[1], /zone-diff-d\$\{zoneDiffTier\(difficulty\)\}/);
+  assert.doesNotMatch(badgeFn[1], /' - '/, 'no dash here - the grid column gap does that job now, not a baked-in separator');
+
+  const nameFn = renderer.match(/function appendZoneNameBadge\(container, zone, raidInstance\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(nameFn, 'appendZoneNameBadge has been restructured or removed');
+  assert.doesNotMatch(nameFn[1], /zone-diff/, 'the difficulty code must not leak back into the name cell');
+
+  assert.match(renderer, /const badge = zoneDifficultyBadge\(visit\.difficulty\)/, 'renderList must build the difficulty column from the visit\'s own difficulty');
+  assert.match(renderer, /appendZoneNameBadge\(zoneLink, visit\.zone, visit\.raidInstance\)/, 'renderList\'s zone cell must use the name-only helper, not the inline-prefix one');
 });
 
 // Owner, 14 Sep (follow-up): "make sure all the hyphen's line up equally, they should be at a
@@ -607,6 +629,32 @@ test('the zone label shows a (Raid)/(Group) badge when the visit has one, nothin
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(css, /\.zone-instance-raid\s*\{/, 'missing a colour rule for the raid badge');
   assert.match(css, /\.zone-instance-group\s*\{/, 'missing a colour rule for the group badge');
+
+  // The visit list's own name-only helper must carry the identical badge logic, not a copy that
+  // drifts from this one.
+  const nameFn = renderer.match(/function appendZoneNameBadge\(container, zone, raidInstance\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(nameFn, 'appendZoneNameBadge has been restructured or removed');
+  assert.match(nameFn[1], /typeof raidInstance === 'boolean'/);
+  assert.match(nameFn[1], /zone-instance-badge zone-instance-\$\{raidInstance \? 'raid' : 'group'\}/);
+});
+
+// Owner, 14 Sep, second follow-up: a real reported case where one untagged trailing fight, right
+// after being removed from a raid instance, silently erased the D4/Group tag off the 15 real
+// tagged fights that came before it in the same visit. Fix, chosen by the owner: treat stepping
+// out of (or into a different) difficulty/raid-or-group tag as a real visit boundary, the same as
+// stepping into a different zone - not just a same-zone echo to ignore.
+test('leaving an instance (or changing tier) opens a NEW visit, even though the base zone name is unchanged', () => {
+  const engine = read('src', 'main', 'damageEngine.js');
+  const fn = engine.match(/enterZone\(now = Date\.now\(\), zoneName = null, difficulty = null, raidInstance = null\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'enterZone has been restructured or removed');
+  assert.match(
+    fn[1], /normDifficulty !== this\.currentZoneDifficulty/,
+    'a difficulty change alone (same zone name, different tier) must open a new visit'
+  );
+  assert.match(
+    fn[1], /normRaidInstance !== this\.currentZoneRaidInstance/,
+    'a raid/group change alone (same zone name and tier, different instance kind) must open a new visit'
+  );
 });
 
 module.exports = () => report('combat-tab');

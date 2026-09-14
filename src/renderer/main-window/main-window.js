@@ -10101,8 +10101,12 @@ function initCombatPage() {
       const key = fight.visitId != null ? `${fight.zone}:${fight.visitId}` : `single:${fight.id}`;
       if (!byKey.has(key)) {
         // difficulty (and whether it's the raid-lockout instance or a plain group run of the same
-        // zone) is constant for the life of one visit (owner, 14 Sep) - taken from whichever fight
-        // creates the visit, since every fight in it shares the same zone/difficulty/raid-or-group.
+        // zone) is now GUARANTEED constant for the life of one visit - damageEngine.enterZone
+        // opens a new visit the moment either one changes, not just the zone name (owner, 14 Sep,
+        // after a real reported case: a trailing untagged fight right after being removed from a
+        // raid instance was silently erasing the D4/Group tag off the 15 real tagged fights before
+        // it, because they used to share one visit keyed on zone name alone). So it is safe to
+        // take it from whichever fight happens to create the visit here.
         const visit = {
           zone: fight.zone,
           difficulty: fight.difficulty || null,
@@ -10124,6 +10128,13 @@ function initCombatPage() {
     return order.sort((a, b) => a.startedAt - b.startedAt);
   }
 
+  // Shared by appendZoneLabel (the detail title) and zoneDifficultyBadge (the visit list's own
+  // column) - the tier number a difficulty string like "d4" maps to, clamped to the 5 colours
+  // main-window.css actually defines.
+  function zoneDiffTier(difficulty) {
+    return Math.min(4, Math.max(0, parseInt(String(difficulty).replace(/[^0-9]/g, ''), 10) || 0));
+  }
+
   // "D0" - "D4" shown as a coloured prefix before the zone name, only when it's a private
   // instance - a plain open-world zone has no difficulty at all (zoneDifficulty.js returns null)
   // and shows unchanged. Owner, 14 Sep: "mark them as D4 - [name]", "each difficulty prefix
@@ -10139,12 +10150,16 @@ function initCombatPage() {
   // (Refined)" - see zoneDifficulty.isRaidInstance). Appended AFTER the zone name, not between the
   // difficulty code and its dash, so it can't reopen the "hyphens don't line up" bug just fixed
   // above - nothing between the fixed-width code box and the dash ever changes width now.
+  //
+  // Used for the detail screen's own single-line title only (owner, 14 Sep, third round: "it
+  // should be a prefix, like D1/d4, with it's own column" - a request specifically about the
+  // Past Fights LIST, which now uses the separate zoneDifficultyBadge/appendZoneNameBadge pair
+  // below instead so the code can live in its own grid column there).
   function appendZoneLabel(container, zone, difficulty, raidInstance) {
     container.textContent = '';
     if (difficulty) {
-      const tier = Math.min(4, Math.max(0, parseInt(String(difficulty).replace(/[^0-9]/g, ''), 10) || 0));
       const tag = document.createElement('span');
-      tag.className = `zone-diff-tag zone-diff-d${tier}`;
+      tag.className = `zone-diff-tag zone-diff-d${zoneDiffTier(difficulty)}`;
       // The difficulty code sits in its own fixed-width box (owner, 14 Sep: "make sure all the
       // hyphens line up equally, they should be at a static width and not dependent on the width
       // of the difficulty prefix") - the dash then always starts right after that box, at the
@@ -10166,15 +10181,47 @@ function initCombatPage() {
     }
   }
 
+  // The Past Fights list's own difficulty column (owner, 14 Sep, third round on this same
+  // feature): "it should be a prefix, like D1/d4, with it's own column" - was inline text ahead
+  // of the zone name; a dedicated grid column keeps every row's zone name starting at the same x
+  // regardless of whether a row has a difficulty at all, the same reasoning as the fixed time
+  // column beside it. Returns null (append nothing) for a non-instanced zone. No dash here - the
+  // grid's own column gap does that job, so there is nothing for the code's own width to affect.
+  function zoneDifficultyBadge(difficulty) {
+    if (!difficulty) return null;
+    const badge = document.createElement('span');
+    badge.className = `zone-diff-tag zone-diff-d${zoneDiffTier(difficulty)}`;
+    badge.textContent = String(difficulty).toUpperCase();
+    return badge;
+  }
+
+  // The zone name (kept gold) plus an optional "(Raid)"/"(Group)" badge after it - the difficulty
+  // code is NOT part of this any more, see zoneDifficultyBadge above for its own column.
+  function appendZoneNameBadge(container, zone, raidInstance) {
+    container.textContent = '';
+    container.appendChild(document.createTextNode(zone || UNKNOWN_ZONE));
+    if (typeof raidInstance === 'boolean') {
+      const badge = document.createElement('span');
+      badge.className = `zone-instance-badge zone-instance-${raidInstance ? 'raid' : 'group'}`;
+      badge.textContent = ` (${raidInstance ? 'Raid' : 'Group'})`;
+      container.appendChild(badge);
+    }
+  }
+
   function renderList(visits) {
     visitList.innerHTML = '';
     for (const visit of visits) {
       const row = document.createElement('div');
       row.className = 'combat-visit-row';
       row.appendChild(span(formatWhen(visit.startedAt), 'combat-visit-time'));
+      const diffCell = document.createElement('span');
+      diffCell.className = 'combat-visit-diff';
+      const badge = zoneDifficultyBadge(visit.difficulty);
+      if (badge) diffCell.appendChild(badge);
+      row.appendChild(diffCell);
       const zoneLink = document.createElement('span');
       zoneLink.className = 'combat-visit-zone';
-      appendZoneLabel(zoneLink, visit.zone, visit.difficulty, visit.raidInstance);
+      appendZoneNameBadge(zoneLink, visit.zone, visit.raidInstance);
       zoneLink.addEventListener('click', () => openVisit(visit));
       row.appendChild(zoneLink);
       const n = visit.fights.length;

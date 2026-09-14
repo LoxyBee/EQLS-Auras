@@ -724,38 +724,59 @@ class DamageEngine extends EventEmitter {
   }
 
   // A zone line. `zoneName`, when given, is stamped onto whatever fight ends next (see
-  // _captureHistory) so history can be organised by zone - and a real change of zone (not a
-  // same-zone echo, e.g. the instance-line-right-after-the-entrance-line shape) opens a new
-  // "visit", so two separate trips to the same zone group as two entries, not one merged pile.
-  // `difficulty` (owner, 14 Sep: "let's make all raid entries include their difficulty level") is
-  // the caller's own already-computed tier label (zoneDifficulty.js's difficultyLabel against the
+  // _captureHistory) so history can be organised by zone - and a real change of zone OR of
+  // difficulty/raid-vs-group (not a bare echo of the exact same one) opens a new "visit", so two
+  // separate trips group as two entries, not one merged pile.
+  // `difficulty`/`raidInstance` (owner, 14 Sep) are the caller's own already-computed tier label
+  // and raid-lockout-or-group flag (zoneDifficulty.js's difficultyLabel/isRaidInstance against the
   // RAW, un-stripped zone string - by the time `zoneName` reaches here it's already the STRIPPED
-  // base name, so the tier has to travel in separately) - stamped onto history the same way `zone`
+  // base name, so both have to travel in separately) - stamped onto history the same way `zone`
   // already is. Real EQL data (the owner's own logs): "The Permafrost Caverns" alone has FIVE
   // distinct instance strings (Group / 1 (Awakened) / 2 (Adaptive) / 3 (Fused) / 4 (Refined)) that
   // all strip to the identical base name - without this they were indistinguishable in history.
   //
-  // A REAL zone change force-closes whatever fight is still open FIRST, via the exact same
+  // A visit boundary is now keyed on the zone name AND the difficulty/raid tag together, not the
+  // zone name alone (owner, 14 Sep, second follow-up: chose "split into two visits" after a real
+  // reported case - confirmed against her own log). Real EQL sequence, same base zone throughout:
+  // "You have entered The Plane of Fear." (bare, no fights yet) -> raid invite -> "You have
+  // entered The Plane of Fear 4 (Refined)." (tagged, 15 real fights) -> "...has been removed from
+  // The Plane of Fear." -> "You have entered The Plane of Fear." (bare again, ONE trailing fight
+  // in the antechamber). Keying on zone name alone put all 16 fights in ONE visit, and picking the
+  // visit's displayed tag from whichever fight happened to be newest (see buildVisits in the
+  // renderer) meant that one untagged trailing fight silently erased the D4/Group tag off the 15
+  // real raid fights that came before it. Now stepping back out of the tag (or into a different
+  // one) is itself a real visit boundary, exactly like stepping into a different zone entirely - a
+  // sub-period with no fights in it simply never produces a visible row (buildVisits only ever
+  // shows visits that actually contain fights), so this costs nothing on the common "walk through
+  // an untagged entrance, no fighting, then enter the tagged instance" case.
+  //
+  // A REAL zone/tag change force-closes whatever fight is still open FIRST, via the exact same
   // reset() a timeout would use (so it is captured to history normally) - before `currentZoneName`
   // moves on to the new zone. Without this, a fight still technically "open" only because nothing
   // has hit the idle timeout yet would sit untouched through the zone line, and the NEXT zone's
   // own first hit would be what finally times it out - stamping it with the zone she'd already
   // left. (An earlier version of this comment called a zone line mid-fight "rare, and the timeout
   // still ends it correctly" - true for the live meter's numbers, which never cared which zone a
-  // fight was "in", but wrong the moment fights need a zone tag at all.) A same-zone echo does
-  // nothing here, exactly as before - that is what keeps an instance-line-right-after-the-entrance
-  // line from splitting one real fight into two just because two zone lines announced it.
+  // fight was "in", but wrong the moment fights need a zone tag at all.) A genuine echo (the exact
+  // same zone name AND the exact same difficulty/raid tag) still does nothing, same as before.
   enterZone(now = Date.now(), zoneName = null, difficulty = null, raidInstance = null) {
-    if (zoneName && zoneName !== this.currentZoneName) {
+    const normDifficulty = difficulty || null;
+    // Tri-state, NOT `|| null` - `false` (a plain group instance, see zoneDifficulty.isRaidInstance)
+    // is a real, meaningful value here and must not collapse to null the way an empty difficulty
+    // string does.
+    const normRaidInstance = typeof raidInstance === 'boolean' ? raidInstance : null;
+    const isRealChange = zoneName && (
+      zoneName !== this.currentZoneName
+      || normDifficulty !== this.currentZoneDifficulty
+      || normRaidInstance !== this.currentZoneRaidInstance
+    );
+    if (isRealChange) {
       if (this.fightStartedAt !== null) this.reset();
       this._zoneVisitSeq = (this._zoneVisitSeq || 0) + 1;
     }
     this.currentZoneName = zoneName || null;
-    this.currentZoneDifficulty = difficulty || null;
-    // Tri-state, NOT `|| null` - `false` (a plain group instance, see zoneDifficulty.isRaidInstance)
-    // is a real, meaningful value here and must not collapse to null the way an empty difficulty
-    // string does.
-    this.currentZoneRaidInstance = typeof raidInstance === 'boolean' ? raidInstance : null;
+    this.currentZoneDifficulty = normDifficulty;
+    this.currentZoneRaidInstance = normRaidInstance;
     this.sinceZoneByAttacker.clear();
     this.rawZoneByName.clear();
     this.sinceZoneTotal = 0;

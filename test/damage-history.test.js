@@ -482,5 +482,71 @@ test('an open-world zone with no raid/group flag told to the engine has null, no
   assert.equal(e.getHistory()[0].raidInstance, null);
 });
 
+// ---------------------------------------------------------------------------
+// Visit boundary now keys on the zone AND its difficulty/raid-or-group tag together, not the
+// zone name alone (owner, 14 Sep, second follow-up). Real reported case, confirmed against the
+// owner's own log: raid-invited into "The Plane of Fear 4 (Refined)", 15 real tagged fights,
+// removed back to bare "The Plane of Fear", ONE trailing untagged fight in the antechamber - all
+// of it used to land in ONE visit (base zone name never changed), and picking the visit's
+// displayed tag from whichever fight happened to be newest meant that one trailing untagged fight
+// silently erased the D4/Group tag off the 15 real fights before it.
+// ---------------------------------------------------------------------------
+
+test('stepping out of an instance (back to the bare zone) opens a NEW visit, even though the base zone name is unchanged', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, 'The Plane of Fear', 'd4', false); // raid-invited into the tagged instance
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  e.enterZone(30000, 'The Plane of Fear'); // removed from the instance, back in the bare antechamber
+  e.handleLine(`${T}You crush a wan ghoul knight for 5 points of damage.`, 31000);
+  endFight(e, 31000);
+  const [newest, oldest] = e.getHistory();
+  assert.equal(oldest.difficulty, 'd4');
+  assert.equal(oldest.raidInstance, false);
+  assert.equal(newest.difficulty, null, 'the trailing antechamber fight must have no tag of its own');
+  assert.equal(newest.raidInstance, null);
+  assert.notEqual(oldest.visitId, newest.visitId, 'the exact reported bug: these must be two separate visits, or the untagged fight erases the real tag off the tagged one');
+});
+
+test('a difficulty change alone (same zone, different tier) opens a new visit', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, 'The Plane of Fear', 'd2', false);
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  e.enterZone(30000, 'The Plane of Fear', 'd4', false); // re-invited at a different tier, same session
+  e.handleLine(`${T}You crush a wan ghoul knight for 20 points of damage.`, 31000);
+  endFight(e, 31000);
+  const [newest, oldest] = e.getHistory();
+  assert.equal(oldest.difficulty, 'd2');
+  assert.equal(newest.difficulty, 'd4');
+  assert.notEqual(oldest.visitId, newest.visitId);
+});
+
+test('a raid-vs-group change alone (same zone and tier, different instance kind) opens a new visit', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, 'The Plane of Fear', 'd4', false); // a group run
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  e.enterZone(30000, 'The Plane of Fear', 'd4', true); // the raid-lockout instance, same tier
+  e.handleLine(`${T}You crush a wan ghoul knight for 20 points of damage.`, 31000);
+  endFight(e, 31000);
+  const [newest, oldest] = e.getHistory();
+  assert.equal(oldest.raidInstance, false);
+  assert.equal(newest.raidInstance, true);
+  assert.notEqual(oldest.visitId, newest.visitId);
+});
+
+test('a genuine echo - the exact same zone, difficulty, and raid/group flag - does NOT open a new visit', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, 'The Plane of Fear', 'd4', true);
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  e.enterZone(2000, 'The Plane of Fear', 'd4', true); // an echoed zone line, nothing actually changed
+  e.handleLine(`${T}You crush a wan ghoul knight for 20 points of damage.`, 3000);
+  endFight(e, 3000);
+  const [newest, oldest] = e.getHistory();
+  assert.equal(oldest.visitId, newest.visitId, 'an identical re-announcement of the same instance must not split one visit into two');
+});
+
 module.exports = () => report('damage-history');
 if (require.main === module) report('damage-history').then((n) => process.exit(n ? 1 : 0));
