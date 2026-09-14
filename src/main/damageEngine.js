@@ -81,6 +81,7 @@ const {
   petOwnerFromName,
   looksLikeGeneratedPetName,
   isArticlePrefixedMobName,
+  looksLikePet,
 } = require('../shared/petNames');
 
 // Seconds without counted damage before the fight is considered over. Ten is the conventional
@@ -134,10 +135,11 @@ class DamageEngine extends EventEmitter {
     // Lowercase attacker name -> Set of real-cased spell names actually seen begin-cast (self
     // "You begin casting/singing X" or third-person "X begins casting/singing Y.") - the ONLY
     // input to the Combat tab's class estimate (owner, 14 Sep - see classEstimator.js's header).
-    // Session-wide, never reset by reset()/enterZone(): which classes a character has is a fact
-    // about the PERSON, not the current pull or zone, so a fresh fight or a new zone must not
-    // throw away what was already learned. A batch log scan (damageLogScan.js) gets this for free
-    // - it runs every line through this same handleLine(), so it accumulates across the whole file.
+    // Scoped to ONE FIGHT, same as bySkillByAttacker - the owner's own correction: "it is only
+    // supposed to take into account that fight", not the whole session. Cleared with byAttacker in
+    // reset(); a completed fight's own cast list is captured into `history` first, per attacker,
+    // the same way bySkill already is - a VISIT's combined estimate then unions each of its
+    // fights' own captured lists client-side, exactly like bySkill's own cross-fight merge.
     this.castsByAttacker = new Map();
     // Completed fights, newest first, capped so this can't grow without bound over a long session.
     // In-memory only for this run of the app - not written to disk (see _captureHistory).
@@ -489,7 +491,7 @@ class DamageEngine extends EventEmitter {
       this._flushHealPending(now);
       if (dir === 'out') {
         this._credit(hit.attacker, hit.amount, now, hit.kind === 'melee' || !!hit.direct, hit.skill, hit.critical);
-        this._noteEnemyTarget(hit.target);
+        if (hit.kind !== 'shield') this._noteEnemyTarget(hit.target);
       }
       if (dir !== 'drop') this.emit('activeChanged', this.getActive(now));
       return;
@@ -555,7 +557,7 @@ class DamageEngine extends EventEmitter {
         resolvedAny = true;
         if (dir === 'out') {
           this._credit(p.attacker, p.amount, p.at, p.kind === 'melee' || !!p.direct, p.skill, p.critical);
-          this._noteEnemyTarget(p.target);
+          if (p.kind !== 'shield') this._noteEnemyTarget(p.target);
         }
       }
       this.pending = keep;
@@ -603,9 +605,13 @@ class DamageEngine extends EventEmitter {
   }
 
   // See castsByAttacker's own field comment. Kept as the real (non-lowercased) name, since that's
-  // what's actually passed to classesForSpell (an exact-name lookup, case folded there instead).
+  // what's actually passed to classesForSpell (an exact-name lookup, case folded there instead). A
+  // pet has its own "begins casting" lines for its innate abilities, but a pet has no class of its
+  // own to guess - reported live (14 Sep): summoned pets ("Jebantik", "Genartik", ...) were showing
+  // class guesses that "didn't before... before was correct". Excluded at the point of recording,
+  // not at display time, so nothing downstream has to remember to filter them back out.
   _noteCast(attackerName, spellName) {
-    if (!attackerName || !spellName) return;
+    if (!attackerName || !spellName || looksLikePet(attackerName)) return;
     const key = attackerName.toLowerCase();
     const set = this.castsByAttacker.get(key) || new Set();
     set.add(spellName);
@@ -866,6 +872,7 @@ class DamageEngine extends EventEmitter {
         bySkill: [...(this.bySkillByAttacker.get(name) || [])]
           .map(([skill, s]) => ({ skill, damage: s.damage, hits: s.hits, crits: s.crits || 0 }))
           .sort((a, b) => b.damage - a.damage),
+        castSkills: [...(this.castsByAttacker.get(name.toLowerCase()) || [])],
       }))
       .sort((a, b) => b.damage - a.damage);
     if (!rows.length) return;
@@ -912,6 +919,7 @@ class DamageEngine extends EventEmitter {
     this.byAttacker.clear();
     this.bySkillByAttacker.clear();
     this.enemyTargetsThisFight.clear();
+    this.castsByAttacker.clear();
     this.rawFightByName.clear();
     this.totalDamage = 0;
     this.fightStartedAt = null;

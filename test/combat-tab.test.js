@@ -114,7 +114,7 @@ test('clicking a visit\'s zone opens the shared detail screen with that visit\'s
   const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'openVisit has been restructured or removed');
   assert.match(fn[1], /getDamageHistoryFight\(f\.id\)/, 'a visit\'s totals must come from its real fights, not a guess');
-  assert.match(fn[1], /renderBars\(detailBars, rows, totalDuration, visit\.fights\[0\]\?\.id\)/);
+  assert.match(fn[1], /renderBars\(detailBars, rows, totalDuration\)/);
   assert.match(fn[1], /detailFightList\.appendChild\(fightAccordionRow/, 'the individual fights must still be reachable from here');
 });
 
@@ -123,7 +123,7 @@ test('a fight expands its own chart in place instead of navigating to a new scre
   const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'fightAccordionRow has been restructured or removed');
   assert.match(fn[1], /createElement\('details'\)/, 'a fight row must be an accordion, not a link to another screen');
-  assert.match(fn[1], /renderBars\(nested, detail\.rows, detail\.durationSec, fight\.id\)/, 'expanding it must draw its OWN chart, not reuse the visit\'s combined one');
+  assert.match(fn[1], /renderBars\(nested, detail\.rows, detail\.durationSec\)/, 'expanding it must draw its OWN chart, not reuse the visit\'s combined one');
   assert.doesNotMatch(fn[1], /showDetail\(\)|display = ''/, 'expanding a fight must not switch screens');
 });
 
@@ -209,7 +209,7 @@ test('a visit\'s combined skill totals carry hits and crits through the merge, n
 
 test('the skill breakdown shows each skill\'s share of the player\'s OWN total, and its crit rate', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec, sourceFightId\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(
     fn[1], /row\.damage > 0 \? Math\.round\(\(s\.damage \/ row\.damage\) \* 100\)/,
@@ -225,7 +225,7 @@ test('the skill breakdown shows each skill\'s share of the player\'s OWN total, 
 // biggest skill, same "biggest, not the total" reasoning the player bars already use.
 test('the skill breakdown has a labelled header row and each skill row has its own coloured bar', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec, sourceFightId\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(fn[1], /combat-skill-header/, 'no header row - the columns would be unlabeled again');
   for (const label of ['Skill', 'Damage', '% of total', 'Crit %']) {
@@ -250,7 +250,7 @@ test('the skill breakdown has a labelled header row and each skill row has its o
 // bare background.
 test('the skill bar spans the whole Damage/percent/crit area, not just the Damage column', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec, sourceFightId\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(
     fn[1], /combat-skill-track-area/,
@@ -278,7 +278,7 @@ test('the skill bar spans the whole Damage/percent/crit area, not just the Damag
 // as the skill-row bars, with no separate stats column at all.
 test('the DPS figure on a player bar is inset into the track, not stranded in a column past it', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec, sourceFightId\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(fn[1], /combat-bar-dps/, 'the DPS element must exist');
   assert.match(
@@ -322,19 +322,19 @@ test('the skill breakdown\'s Damage/percent/crit columns are centred, header and
   );
 });
 
-// Owner, 13-14 Sep: "add in the class estimation and put it as the first text in the damage
-// coloured bar... make sure that it is it's own column" - then corrected: "buffs can be used to
-// guess a class, but ONLY if they are seen being cast... damage from puma is not [an indicator]".
-// The estimate is built from cast-line evidence for THIS specific attacker (by name, via the
-// fight's own composite id naming which engine holds it), never from this row's own damage-log
-// skill list - a proc's damage can't prove who cast the buff behind it.
+// Owner, 13-14 Sep, several rounds: "add in the class estimation and put it as the first text in
+// the damage coloured bar... make sure that it is it's own column" - then "buffs can be used to
+// guess a class, but ONLY if they are seen being cast... damage from puma is not [an indicator]" -
+// then "it is only supposed to take into account that fight" (not the whole session). The estimate
+// is built from `row.castSkills` - captured per-fight (or unioned across a visit's fights) the
+// same way `row.bySkill` already is, never from a damage-log skill list.
 test('the class estimate is the first thing in the damage bar, in its own column ahead of the amount', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, sourceFightId\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars must exist and be async - it awaits a class estimate for every row');
   assert.match(
-    fn[1], /window\.eqTracker\.estimateDamageClasses\(sourceFightId, row\.name\)/,
-    'the estimate must be looked up by THIS attacker\'s name against the right engine, never this row\'s own damage skill list'
+    fn[1], /window\.eqTracker\.estimateDamageClasses\(row\.castSkills \|\| \[\]\)/,
+    'the estimate must come from THIS row\'s own captured cast-skill list, never a damage-log skill list'
   );
   assert.match(
     fn[1], /label\.appendChild\(classWrap\)[\s\S]*label\.appendChild\(span\(formatDamage\(row\.damage\), 'combat-bar-amount'\)\)/,
@@ -358,20 +358,40 @@ test('a confirmed class renders green, a maybe class renders orange - distinct c
   assert.match(css, /\.combat-bar-class-maybe \{ color: #e0a94e; \}/);
 });
 
-// The IPC round trip the class estimate above depends on - main.js hosts the actual lookup
-// (gameSpellData needs the installed spells_us.txt, which only the main process can read) and
-// resolves WHICH engine's cast history to read via the fight id's own source tag (live session vs
-// one specific log scan) - a scanned log's casts must never blend with the live session's.
-test('the class estimate is wired IPC -> preload -> renderer, resolved against the right engine', () => {
-  const main = read('src', 'main', 'main.js');
-  const handler = main.match(/ipcMain\.handle\('damage:estimateClasses', \(_event, \{ fightId, attackerName \} = \{\}\) => \{([\s\S]*?)\n\}\);/);
-  assert.ok(handler, 'the damage:estimateClasses handler has been restructured or removed');
-  assert.match(handler[1], /sourceForCompositeId\(fightId\)/, 'must resolve the SOURCE engine, not always the live session');
-  assert.match(handler[1], /resolved\.src\.engine\.getCastSkills\(attackerName\)/, 'must read cast history, never a damage-log skill list');
-  assert.match(handler[1], /gameSpellData\.getClassesForSpell\(currentInstallRoot, name\)/);
-  const preload = read('src', 'preload', 'preload-main.js');
+// A visit's combined chart must union its fights' cast evidence, not just their damage - the same
+// data model precedent bySkill already established.
+test('a visit\'s combined chart unions its fights\' cast-skill evidence, not just damage/bySkill', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'openVisit has been restructured or removed');
+  assert.match(fn[1], /castSkills: new Set\(\)/, 'the per-attacker aggregate must have a castSkills accumulator');
   assert.match(
-    preload, /estimateDamageClasses: \(fightId, attackerName\) => ipcRenderer\.invoke\('damage:estimateClasses', \{ fightId, attackerName \}\)/
+    fn[1], /for \(const skill of row\.castSkills \|\| \[\]\) agg\.castSkills\.add\(skill\)/,
+    'every fight\'s cast skills must be folded into the visit\'s combined set'
+  );
+  assert.match(fn[1], /castSkills: \[\.\.\.r\.castSkills\]/, 'the final row shape must expose castSkills as a plain array for renderBars');
+});
+
+// The IPC round trip the class estimate above depends on - main.js hosts the actual lookup
+// (gameSpellData needs the installed spells_us.txt, which only the main process can read).
+test('the class estimate is wired IPC -> preload -> renderer', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(
+    main, /ipcMain\.handle\('damage:estimateClasses', \(_event, castSkills\) => \(\s*classEstimator\.estimateClasses\(castSkills, \(name\) => gameSpellData\.getClassesForSpell\(currentInstallRoot, name\)\)/,
+    'the handler must exist and use the CURRENT install root, not a stale/hardcoded one'
+  );
+  const preload = read('src', 'preload', 'preload-main.js');
+  assert.match(preload, /estimateDamageClasses: \(castSkillNames\) => ipcRenderer\.invoke\('damage:estimateClasses', castSkillNames\)/);
+});
+
+// Owner, 14 Sep: "date and location fields need their own columns to justify text correctly" -
+// today's fights show a bare time while older ones show a full date too, and flex's natural
+// sizing let that shorter width shift the zone name (and everything after it) row to row.
+test('the visit list uses a real grid with a fixed time column, not flex natural-sizing', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 1fr auto;/s,
+    'the time column must be a fixed width so a short "today" time and a long dated one both start the zone name at the same x'
   );
 });
 

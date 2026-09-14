@@ -30,6 +30,15 @@ const ARTICLE_MOB = /^(?:a|an|the)\s+\S/i;
 // by EQEmu era and this is a corroborating signal, not a gate.
 const GENERATED_PET = /^[GJKLVXZ][a-z]{1,6}(?:er|ab|n|tik)$/;
 
+// A generic, un-owned pet/charm description - "giant wooly spider pet", "a sarnak warder" (the
+// article itself is stripped by ARTICLE_MOB elsewhere; this only needs the trailing word). No
+// owner name at all, unlike POSSESSIVE_PET, so it needs its own check.
+const PET_TYPE_WORD = /\b(?:pet|warder|familiar|ward)$/i;
+
+function looksLikePetTypeName(name) {
+  return PET_TYPE_WORD.test(String(name || '').trim());
+}
+
 function isPossessivePetName(name) {
   return POSSESSIVE_PET.test(String(name || '').trim());
 }
@@ -52,4 +61,17 @@ function looksLikeGeneratedPetName(name) {
   return n.length >= 3 && n.length <= 9 && GENERATED_PET.test(n);
 }
 
-module.exports = { isPossessivePetName, petOwnerFromName, looksLikeGeneratedPetName, isArticlePrefixedMobName };
+// Any of the three pet signals at once - a convenience for callers (class estimation, fight
+// labelling) that just need "is this a pet, not a real player", and don't care which signal fired.
+function looksLikePet(name) {
+  return isPossessivePetName(name) || looksLikeGeneratedPetName(name) || looksLikePetTypeName(name);
+}
+
+module.exports = {
+  isPossessivePetName,
+  petOwnerFromName,
+  looksLikeGeneratedPetName,
+  looksLikePetTypeName,
+  looksLikePet,
+  isArticlePrefixedMobName,
+};

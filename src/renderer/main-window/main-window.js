@@ -9805,18 +9805,17 @@ function initCombatPage() {
   // measured against the total leaves every bar short in a five-person group, same reasoning the
   // live overlay's own bars already use), click to accordion its skill breakdown open underneath.
   // Fetched up front for every row in parallel, not per-row as the DOM is built, so one slow
-  // lookup can't stagger the chart appearing row by row. `sourceFightId` is any one composite
-  // fight id belonging to the SAME engine this row's data came from (the live session, or one
-  // specific log scan) - the class estimate reads that engine's own castsByAttacker, and a scanned
-  // log's casts must never blend with the live session's.
-  async function renderBars(container, rows, durationSec, sourceFightId) {
+  // lookup can't stagger the chart appearing row by row.
+  async function renderBars(container, rows, durationSec) {
     container.innerHTML = '';
     const top = rows.length ? rows[0].damage : 0;
     // Class estimate (owner, 13-14 Sep): only ever built from skills this attacker was actually
-    // seen CASTING - never damage, which can't say who cast a buff whose proc it's crediting. See
-    // classEstimator.js's own header comment.
+    // seen CASTING, scoped to just this fight (or visit) - never damage, which can't say who cast
+    // a buff whose proc it's crediting, and never the whole session. See classEstimator.js's own
+    // header comment. `row.castSkills` is already the right list either way: one fight's own
+    // capture, or a visit's union of its fights' captures (see openVisit's aggregation below).
     const classEstimates = await Promise.all(
-      rows.map((row) => window.eqTracker.estimateDamageClasses(sourceFightId, row.name))
+      rows.map((row) => window.eqTracker.estimateDamageClasses(row.castSkills || []))
     );
     rows.forEach((row, i) => {
       const details = document.createElement('details');
@@ -9945,7 +9944,7 @@ function initCombatPage() {
       row.addEventListener('toggle', () => {
         if (row.open && !nested.dataset.rendered) {
           nested.dataset.rendered = '1';
-          renderBars(nested, detail.rows, detail.durationSec, fight.id);
+          renderBars(nested, detail.rows, detail.durationSec);
         }
       }, { once: false });
     }
@@ -9964,13 +9963,13 @@ function initCombatPage() {
     detailFightList.innerHTML = '';
 
     const details = await Promise.all(visit.fights.map((f) => window.eqTracker.getDamageHistoryFight(f.id)));
-    const byName = new Map(); // name -> { name, damage, bySkill: Map<skill, {damage}> }
+    const byName = new Map(); // name -> { name, damage, bySkill: Map<skill, {damage}>, castSkills: Set<name> }
     let totalDuration = 0;
     for (const fight of details) {
       if (!fight) continue;
       totalDuration += fight.durationSec;
       for (const row of fight.rows) {
-        const agg = byName.get(row.name) || { name: row.name, damage: 0, bySkill: new Map() };
+        const agg = byName.get(row.name) || { name: row.name, damage: 0, bySkill: new Map(), castSkills: new Set() };
         agg.damage += row.damage;
         for (const s of row.bySkill) {
           const srow = agg.bySkill.get(s.skill) || { skill: s.skill, damage: 0, hits: 0, crits: 0 };
@@ -9979,17 +9978,24 @@ function initCombatPage() {
           srow.crits += s.crits || 0;
           agg.bySkill.set(s.skill, srow);
         }
+        // Class estimate evidence, unioned across the visit's fights the same way bySkill is - a
+        // spell this attacker was seen casting in ANY of this visit's pulls still counts toward
+        // the visit's own combined guess (owner, 14 Sep: scoped to "that fight" - a visit's combined
+        // chart is still one coherent view of the SAME fights, not the whole session).
+        for (const skill of row.castSkills || []) agg.castSkills.add(skill);
         byName.set(row.name, agg);
       }
     }
     const rows = [...byName.values()]
-      .map((r) => ({ ...r, bySkill: [...r.bySkill.values()].sort((a, b) => b.damage - a.damage) }))
+      .map((r) => ({
+        ...r,
+        bySkill: [...r.bySkill.values()].sort((a, b) => b.damage - a.damage),
+        castSkills: [...r.castSkills],
+      }))
       .sort((a, b) => b.damage - a.damage);
     // The visit's own DPS divides by the SUM of its fights' durations, not the wall-clock span
     // between the first and last - the gaps in between are downtime, not part of any fight.
-    // Any one fight in the visit names the right engine for the class estimate (see
-    // sourceForCompositeId in main.js) - a visit never spans more than one source in practice.
-    await renderBars(detailBars, rows, totalDuration, visit.fights[0]?.id);
+    await renderBars(detailBars, rows, totalDuration);
 
     // "Fights should be organised earliest first" - visit.fights is already in that order (see
     // buildVisits), so the fight list below the combined chart reads as "pull 1, pull 2, ..." top

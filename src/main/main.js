@@ -2002,14 +2002,14 @@ ipcMain.handle('damage:getHistoryFight', (_event, id) => findHistoryFight(id));
 // Combat tab class estimate (owner, 13-14 Sep): a spell only one class can cast is real evidence
 // of one of an attacker's (possibly multiclass) classes - but ONLY when that attacker was actually
 // seen CASTING it, never from a damage-log skill name (a buff's proc damage doesn't say who cast
-// the buff) - see classEstimator.js's own header comment. `fightId` names which engine's
-// castsByAttacker this attacker's evidence lives in (the live session, or one specific log scan) -
-// a scanned log's own casts must never be attributed against the live session's, or vice versa.
-ipcMain.handle('damage:estimateClasses', (_event, { fightId, attackerName } = {}) => {
-  const resolved = sourceForCompositeId(fightId);
-  const castSkills = resolved ? resolved.src.engine.getCastSkills(attackerName) : [];
-  return classEstimator.estimateClasses(castSkills, (name) => gameSpellData.getClassesForSpell(currentInstallRoot, name));
-});
+// the buff), and scoped to the ONE fight (or visit) being viewed, never the whole session - see
+// classEstimator.js's own header comment. The renderer already has the right cast-skill list on
+// hand (captured per-fight into history, same as bySkill, and unioned across a visit's fights the
+// same way bySkill already is) - this just needs gameSpellData, which only the main process can
+// read.
+ipcMain.handle('damage:estimateClasses', (_event, castSkills) => (
+  classEstimator.estimateClasses(castSkills, (name) => gameSpellData.getClassesForSpell(currentInstallRoot, name))
+));
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
 ipcMain.handle('resetPrompt:getPending', () => resetPromptWindow.getPending());
 ipcMain.handle('resetPrompt:answer', (_event, choice) => resetPromptWindow.answer(choice));

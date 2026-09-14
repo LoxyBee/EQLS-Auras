@@ -2707,9 +2707,16 @@ body.sidebar-resizing .sidebar {
    first. Kept to one line each on purpose - a full fight-by-fight table for every visit is what
    made this page unusably long; that detail lives one click away instead (see the two screens
    below). Time leads because that's how the owner reads this list; the zone name is what's
-   clickable, since it's the thing that actually navigates somewhere. */
+   clickable, since it's the thing that actually navigates somewhere.
+   A real grid, not flex (owner, 14 Sep: "date and location fields need their own columns to
+   justify text correctly") - today's fights show a bare time ("15:26:56") while anything older
+   shows a full date too ("01/09/2026 15:26:56"), and flex's `0 0 auto` sizing let that shorter
+   width shift the zone name (and everything after it) row to row. The time column is now a fixed
+   width wide enough for the long form, so every row's zone starts at the exact same x regardless
+   of which format that particular row happens to use. */
 .combat-visit-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
   align-items: baseline;
   gap: 10px;
   padding: 7px 4px;
@@ -2717,15 +2724,18 @@ body.sidebar-resizing .sidebar {
   font-size: 13px;
 }
 .combat-visit-row:last-child { border-bottom: none; }
-.combat-visit-time { font-variant-numeric: tabular-nums; opacity: 0.75; flex: 0 0 auto; white-space: nowrap; }
+.combat-visit-time { font-variant-numeric: tabular-nums; opacity: 0.75; white-space: nowrap; }
 .combat-visit-zone {
   cursor: pointer;
   font-weight: 600;
   color: var(--accent, #c99a3f);
   text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .combat-visit-zone:hover { text-decoration: underline; }
-.combat-visit-meta { opacity: 0.6; font-size: 12px; flex: 1 1 auto; text-align: right; white-space: nowrap; }
+.combat-visit-meta { opacity: 0.6; font-size: 12px; text-align: right; white-space: nowrap; }
 
 /* The two drill-down screens - one fight, or a whole visit's combined totals - share this same
    bar-chart layout, just fed a different row list. The DPS figure is INSET into the track, laid

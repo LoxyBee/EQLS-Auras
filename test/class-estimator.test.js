@@ -62,6 +62,45 @@ test('no skill names at all (or a null/undefined list) yields no classes, not a 
   assert.deepEqual(estimateClasses(undefined, lookup), []);
 });
 
+// Owner, 14 Sep: "what in the fuck happened to the class estimation? lol" - a screenshot showing
+// 10-13 classes listed for a single attacker. Root cause: with enough DIFFERENT ambiguous
+// 2-3-class spells observed, a plain set union of "maybe" candidates has no ceiling - given enough
+// distinct spells, it approaches every class in the game. A multiclass character has EXACTLY 3
+// classes, never more (the same fact the Buff Planner's own 3-class design relies on), so the
+// result must never exceed that regardless of how much evidence comes in.
+test('the result never exceeds 3 classes total, no matter how many different ambiguous spells were seen', () => {
+  const lookup = (name) => ({
+    a: ['Wiz', 'Mag'], b: ['Enc', 'Nec'], c: ['Shm', 'Dru'], d: ['Clr', 'Pal'],
+    e: ['Rng', 'Bst'], f: ['War', 'SHD'], g: ['Mnk', 'Rog'], h: ['Brd', 'Ber'],
+  }[name.toLowerCase()] || null);
+  const result = estimateClasses(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'], lookup);
+  assert.ok(result.length <= 3, `expected at most 3 classes, got ${result.length}: ${JSON.stringify(result)}`);
+});
+
+test('when capping "maybe" candidates, the classes seen across the MOST distinct spells win, not an arbitrary set order', () => {
+  // Nec shows up in 3 different ambiguous spells; Wiz and Mag only 1 each - Nec should survive a
+  // cap to 1 remaining slot, not whichever happened to be inserted into the Set first.
+  const lookup = (name) => ({
+    a: ['Nec', 'Wiz'], b: ['Nec', 'Mag'], c: ['Nec', 'Shm'],
+  }[name.toLowerCase()] || null);
+  const result = estimateClasses(['A', 'B', 'C'], lookup);
+  const names = result.map((c) => c.name);
+  assert.ok(names.includes('Nec'), `the most-corroborated class must survive the cap: ${JSON.stringify(result)}`);
+});
+
+test('confirmed evidence always outranks maybe evidence when both compete for the 3 slots', () => {
+  const lookup = (name) => ({
+    real1: ['Nec'], real2: ['Shm'], real3: ['Rng'],
+    ambiguous: ['Wiz', 'Mag'],
+  }[name.toLowerCase()] || null);
+  const result = estimateClasses(['real1', 'real2', 'real3', 'ambiguous'], lookup);
+  assert.deepEqual(
+    result.map((c) => c.confidence),
+    ['confirmed', 'confirmed', 'confirmed'],
+    'with 3 confirmed classes already, no maybe slot should remain'
+  );
+});
+
 test('three single-class skills from three different classes surface all three - the whole point for a multiclass character', () => {
   const lookup = (name) => ({ 'a': ['Rng'], 'b': ['Nec'], 'c': ['Shm'] }[name.toLowerCase()] || null);
   const names = new Set(estimateClasses(['A', 'B', 'C'], lookup).map((c) => c.name));

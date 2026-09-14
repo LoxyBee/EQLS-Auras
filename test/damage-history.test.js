@@ -210,6 +210,41 @@ test('a rare friendly-fire hit on a real groupmate is never mistaken for a named
   assert.equal(e.getHistory()[0].label, 'Trash');
 });
 
+// Owner, 14 Sep: "same here, trash listed as named" (a pet's damage-shield retaliation showed up
+// as a named kill). "A giant wooly spider pet is pierced by YOUR thorns..." puts the pet's generic
+// type name in the SENTENCE-INITIAL position, capitalised purely by grammar, not because it's a
+// proper noun - and it also lacks an article once that leading "A " is (correctly) read as the
+// article, not part of the name. Damage-shield hits are excluded from the label altogether.
+test('a damage-shield retaliation never contributes to the fight label - its target is grammar-capitalised, not a real name', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a giant wooly spider pet for 10 points of damage.`, 1000);
+  e.handleLine(`${T}A giant wooly spider pet is pierced by YOUR thorns for 5 points of non-melee damage.`, 1100);
+  endFight(e, 1100);
+  assert.equal(e.getHistory()[0].label, 'Trash');
+});
+
+test('a wild pet\'s generic type name is never treated as a named mob, even when properly capitalised', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush Giant wooly spider pet for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  assert.equal(e.getHistory()[0].label, 'Trash');
+});
+
+// Isolates the shield-exclusion mechanism specifically. A target that carries an article ("a rock
+// golem") is already protected regardless of shield-vs-not, since ARTICLE_MOB matches case-
+// insensitively - "A rock golem" (sentence-initial) still reads as article-prefixed. The real gap
+// is a mob type with NO article at all ("bejeweled elemental", the owner's own reported example) -
+// mid-sentence it stays lowercase ("bejeweled elemental"), but sentence-initial in a shield line it
+// capitalises its own first letter with nothing to absorb it ("Bejeweled elemental"), and that
+// capitalised form is not pet-shaped either, so only the shield-kind exclusion catches it.
+test('a damage-shield hit is excluded even for a no-article target that is not pet-shaped', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush bejeweled elemental for 10 points of damage.`, 1000);
+  e.handleLine(`${T}Bejeweled elemental is pierced by YOUR thorns for 5 points of non-melee damage.`, 1100);
+  endFight(e, 1100);
+  assert.equal(e.getHistory()[0].label, 'Trash');
+});
+
 // ---------------------------------------------------------------------------
 // Cast tracking - castsByAttacker / getCastSkills (owner, 13-14 Sep: the ONLY input to the Combat
 // tab's class estimate - never a damage-log skill name, since damage can't prove who cast a buff).
@@ -240,19 +275,32 @@ test('someone never seen casting anything has no cast skills at all', () => {
   assert.deepEqual(e.getCastSkills('Avenrae'), []);
 });
 
-test('cast history survives a fight ending - it is a fact about the PERSON, not the current pull', () => {
+// Owner correction, 14 Sep: "did the class estimate take into account the ENTIRE log? it is only
+// supposed to take into account that fight" - cast evidence is scoped to ONE fight, same as
+// bySkillByAttacker, not session-wide.
+test('cast history is cleared when the fight it happened in ends - scoped to that fight, not the session', () => {
   const e = new DamageEngine();
   e.handleLine(`${T}You begin casting Energy Storm.`, 1000);
   e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1200);
   endFight(e, 1200);
-  assert.deepEqual(e.getCastSkills('You'), ['Energy Storm'], 'reset() must not wipe cast history');
+  assert.deepEqual(e.getCastSkills('You'), [], 'reset() must clear cast history along with everything else fight-scoped');
 });
 
-test('cast history survives a zone change too', () => {
+test('a fight\'s own cast skills are captured into its history record, per attacker, like bySkill already is', () => {
   const e = new DamageEngine();
   e.handleLine(`${T}You begin casting Energy Storm.`, 1000);
-  e.enterZone(2000, 'The Feerrott');
-  assert.deepEqual(e.getCastSkills('You'), ['Energy Storm'], 'enterZone() must not wipe cast history');
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1200);
+  endFight(e, 1200);
+  const fight = e.getHistoryFight(e.getHistory()[0].id);
+  const you = fight.rows.find((r) => r.name === 'You');
+  assert.deepEqual(you.castSkills, ['Energy Storm']);
+});
+
+test('a pet\'s own cast lines never contribute class evidence - pets have no class of their own', () => {
+  const e = new DamageEngine();
+  // "Jebantik" fits EQ's generated-pet-name shape (petNames.js's GENERATED_PET).
+  e.handleLine(`${T}Jebantik begins casting Minor Healing.`, 1000);
+  assert.deepEqual(e.getCastSkills('Jebantik'), [], 'a summoned pet\'s own ability must not be recorded as class evidence');
 });
 
 module.exports = () => report('damage-history');
