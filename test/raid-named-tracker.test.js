@@ -464,5 +464,52 @@ test('a fresh Voidling re-entry still resets automatically even with a question 
   assert.equal(t.getActive().find((r) => r.name === 'Terror').killed, false, 'the fresh instance did not reset');
 });
 
+// ---------------------------------------------------------------------------
+// Auto-reset on an unanswered prompt (owner, 14 Sep). Confirmed against her own real ~12-hour log:
+// the "reset or keep?" popup fired 3 separate times and was never answered once - each time the
+// board just sat showing stale kills until she happened to leave the zone for something else. Her
+// own call: auto-answer "reset" after a timeout instead of leaving it stuck indefinitely.
+// ---------------------------------------------------------------------------
+
+test('an unanswered reset prompt auto-resolves as "reset" after the timeout', async () => {
+  const { t, log } = make();
+  t.setOptions({ resetPromptAutoResetMs: 20 }); // real timer, shrunk so the test doesn't wait 18s
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair"); // ambiguous re-entry - queues the question
+  assert.ok(t.getPendingResetPrompt(), 'the question must be pending before the timeout can auto-answer it');
+  let changed = false;
+  t.on('changed', () => { changed = true; });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(t.getPendingResetPrompt(), null, 'an unanswered question must not sit pending forever');
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, false, 'the auto-answer must actually be "reset", not "keep"');
+  assert.ok(changed, 'the overlay must be told the board changed when the auto-reset fires');
+  assert.ok(log.some((m) => /auto-resetting/.test(m)), 'the debug log should say WHY the board reset with no one clicking anything');
+});
+
+test('answering manually before the timeout cancels the auto-reset - it does not fire twice', async () => {
+  const { t } = make();
+  t.setOptions({ resetPromptAutoResetMs: 20 });
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  t.resolveResetPrompt('keep'); // she answered before the timer fired
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, true, 'a stale timer must not override her own "keep" answer');
+});
+
+test('leaving the zone before the timeout cancels the auto-reset harmlessly', async () => {
+  const { t } = make();
+  t.setOptions({ resetPromptAutoResetMs: 20 });
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  enterOpen(t, 'The Plane of Fear'); // walked off before the timer fired
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  // No crash, and the new zone's own (unrelated) board is untouched by a stale timer callback.
+  assert.equal(t.getCurrentZone(), 'The Plane of Fear');
+  assert.equal(t.getPendingResetPrompt(), null);
+});
+
 module.exports = () => report('raid-named-tracker');
 if (require.main === module) report('raid-named-tracker').then((n) => process.exit(n ? 1 : 0));

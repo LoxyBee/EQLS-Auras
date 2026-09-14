@@ -33,6 +33,15 @@ const INSTANCE_SUFFIX = / (?:- Group(?: \d+ \([^)]+\))?|\d+ \([^)]+\))\s*$/;
 // reconnect into an already-running one without re-hailing yourself. See _enterZone.
 const GROUP_INSTANCE_RE = / - Group(?:\s|$)/;
 
+// Owner, 14 Sep: a real ~12-hour session showed the "reset or keep progress?" popup fire 3 times
+// and go unanswered all 3 times (confirmed against her own log - no "reset"/"kept" debug line
+// ever followed one before she eventually left the zone for something else), each time leaving
+// the board silently stuck showing stale kills until she happened to leave. Her own call on the
+// fix: auto-answer "reset" if she hasn't answered within this window - a real re-entry is far
+// more often a fresh attempt than an echo, and an unattended board is worse than an occasional
+// wrongly-reset one. Overridable via setOptions() for tests.
+const RESET_PROMPT_AUTO_RESET_MS = 18000;
+
 /** "The Plane of Hate - Group 3 (Fused)" / "Nagafen's Lair 1 (Awakened)" -> the base zone name. */
 function stripInstanceSuffix(zone) {
   return String(zone || '').replace(INSTANCE_SUFFIX, '').trim();
@@ -77,7 +86,15 @@ class RaidNamedTracker extends EventEmitter {
     // nothing is being asked. { zone } - just enough to know what resolveResetPrompt is answering
     // FOR, and to check she hasn't already walked off before answering.
     this.pendingResetPrompt = null;
+    // The live setTimeout backing the auto-reset above - cleared whenever the question is
+    // answered (either way) or becomes moot (she left the zone) before it fires.
+    this._resetPromptTimer = null;
+    this._resetPromptAutoResetMs = RESET_PROMPT_AUTO_RESET_MS;
     this.tickTimer = setInterval(() => this._tick(), 1000);
+  }
+
+  setOptions(opts = {}) {
+    if (typeof opts.resetPromptAutoResetMs === 'number') this._resetPromptAutoResetMs = opts.resetPromptAutoResetMs;
   }
 
   setDebugLogFn(fn) {
@@ -142,6 +159,14 @@ class RaidNamedTracker extends EventEmitter {
 
   stop() {
     clearInterval(this.tickTimer);
+    this._clearResetPromptTimer();
+  }
+
+  _clearResetPromptTimer() {
+    if (this._resetPromptTimer) {
+      clearTimeout(this._resetPromptTimer);
+      this._resetPromptTimer = null;
+    }
   }
 
   handleLine(line) {
@@ -196,6 +221,7 @@ class RaidNamedTracker extends EventEmitter {
     // `raid: true` flag no longer gates VISIBILITY; `viaVoidling` is kept only as metadata (it's
     // what tells a raid-lockout instance from a group run, the same signal lockoutCore keys on).
     if (!entry) {
+      this._clearResetPromptTimer();
       this.pendingResetPrompt = null; // the question about the OLD zone is moot now
       if (this.currentZone !== null) {
         this.currentZone = null;
@@ -224,11 +250,20 @@ class RaidNamedTracker extends EventEmitter {
         this.pendingResetPrompt = { zone: baseZone };
         this._debugLog(`RAID BOARD - re-entered "${baseZone}" with kills already tracked - asking whether to reset`);
         this.emit('resetPromptNeeded', { zone: baseZone });
+        // Owner, 14 Sep: a real popup went unanswered 3 times in one session and the board just
+        // sat stuck each time. If nothing has answered by the time this fires, answer "reset" on
+        // her behalf - see the constant's own comment for why that default was chosen.
+        this._resetPromptTimer = setTimeout(() => {
+          this._resetPromptTimer = null;
+          this._debugLog(`RAID BOARD - "${baseZone}"'s reset prompt went unanswered - auto-resetting`);
+          this.resolveResetPrompt('reset');
+        }, this._resetPromptAutoResetMs);
       }
       return;
     }
 
     // A real zone change is happening - any question about the zone being LEFT is moot.
+    this._clearResetPromptTimer();
     this.pendingResetPrompt = null;
 
     this.currentZone = baseZone;
@@ -258,6 +293,7 @@ class RaidNamedTracker extends EventEmitter {
   resolveResetPrompt(choice) {
     const pending = this.pendingResetPrompt;
     if (!pending) return false;
+    this._clearResetPromptTimer(); // a no-op when this IS the timer's own callback - already null by then
     this.pendingResetPrompt = null;
     if (choice !== 'reset') {
       this._debugLog(`RAID BOARD - kept "${pending.zone}"'s progress (owner said keep)`);
