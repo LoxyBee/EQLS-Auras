@@ -1057,22 +1057,25 @@
           <p class="scan-status" id="combat-scan-status" style="display:none"></p>
         </div>
 
-        <div class="card">
-          <h3 title="Every fight tracked this session plus anything found by a scan above, grouped by zone and then by each separate trip into it. Closing the app clears this - it's not saved to disk.">Past fights</h3>
+        <div class="card" id="combat-list-screen">
+          <h3 title="Every fight tracked this session plus anything found by a scan above. Newest first. Closing the app clears this - it's not saved to disk.">Past fights</h3>
           <div class="row">
             <span class="label">Zone</span>
             <select id="combat-zone-filter" class="text-input"></select>
           </div>
-          <div id="combat-history-groups"></div>
+          <div id="combat-visit-list"></div>
           <p class="empty-note" id="combat-history-empty">No fights tracked yet this session.</p>
         </div>
 
-        <div class="card" id="combat-detail-card" style="display:none">
+        <!-- One shared screen for both drill-downs: click a zone on the list above for the whole
+             visit's combined totals, or a single fight inside that for just its own numbers. -->
+        <div class="card" id="combat-detail-screen" style="display:none">
           <div class="row">
-            <h3 id="combat-detail-title" title="Click a player to see how much of their damage came from each spell versus melee.">Fight detail</h3>
-            <button type="button" id="combat-detail-close">Close</button>
+            <button type="button" id="combat-detail-back">&larr; Back to fights</button>
+            <h3 id="combat-detail-title"></h3>
           </div>
-          <div id="combat-detail-rows"></div>
+          <div id="combat-detail-bars" title="Click a player to see how much of their damage came from each spell versus melee."></div>
+          <div id="combat-detail-fightlist"></div>
         </div>
       </section>
 

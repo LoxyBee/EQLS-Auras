@@ -19,8 +19,10 @@ test('the Combat nav button and page section exist', () => {
   const html = read('src', 'renderer', 'main-window', 'index.html');
   assert.match(html, /<button class="nav-btn" data-page="page-combat" id="combat-nav-btn">Combat<\/button>/);
   assert.match(html, /<section id="page-combat" class="page">/);
-  assert.match(html, /id="combat-history-groups"/);
-  assert.match(html, /id="combat-detail-rows"/);
+  assert.match(html, /id="combat-visit-list"/);
+  assert.match(html, /id="combat-detail-bars"/);
+  assert.match(html, /id="combat-detail-fightlist"/);
+  assert.match(html, /id="combat-detail-back"/);
   assert.match(html, /id="combat-zone-filter"/);
   assert.match(html, /id="combat-scan-current"/);
   assert.match(html, /id="combat-scan-file"/);
@@ -32,7 +34,7 @@ test('the page uses a title= tooltip for its explanation, not a <p class="hint">
   const end = html.indexOf('</section>', start);
   const section = html.slice(start, end);
   assert.doesNotMatch(section, /class="hint"/, 'explanatory subtext belongs in a title= hover, not a hint paragraph');
-  assert.match(section, /title="[^"]*grouped by zone/, 'the explanation moved somewhere, but not into a title=');
+  assert.match(section, /title="[^"]*Newest first/, 'the explanation moved somewhere, but not into a title=');
 });
 
 test('it is wired IPC -> preload -> renderer', () => {
@@ -88,17 +90,29 @@ test('player/skill names are built as DOM text nodes, never interpolated into in
   for (const a of assignments) {
     assert.match(a, /innerHTML = '';/, `found a non-empty innerHTML assignment: ${a}`);
   }
-  assert.match(fn[1], /\.textContent = row\.name|span\(row\.name\)/, 'row.name should be set as text, not markup');
+  assert.match(fn[1], /\.textContent = row\.name|span\(row\.name/, 'row.name should be set as text, not markup');
 });
 
-test('fights are grouped zone -> visit before rendering, not shown as one flat list', () => {
+test('fights are grouped into visits, sorted newest-first by the owner\'s own "dated first" rule', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function groupByZoneAndVisit\(history\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(fn, 'groupByZoneAndVisit has been restructured or removed');
-  assert.match(fn[1], /fight\.zone \|\| UNKNOWN_ZONE/, 'a fight with no zone must still land in a group, not vanish');
-  assert.match(fn[1], /fight\.visitId/, 'fights are not being split by visit within a zone');
-  const renderFn = renderer.match(/function renderGroups\(history\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(renderFn, 'renderGroups has been restructured or removed');
+  const fn = renderer.match(/function buildVisits\(history\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'buildVisits has been restructured or removed');
+  assert.match(fn[1], /fight\.visitId/, 'fights are not being grouped into visits at all');
+  assert.match(fn[1], /order\.sort\(\(a, b\) => b\.endedAt - a\.endedAt\)/, 'the list must sort by time, newest first');
+  const renderFn = renderer.match(/function renderList\(visits\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(renderFn, 'renderList has been restructured or removed');
+});
+
+test('clicking a visit\'s zone opens the shared detail screen with that visit\'s combined totals', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'openVisit has been restructured or removed');
+  assert.match(fn[1], /getDamageHistoryFight\(f\.id\)/, 'a visit\'s totals must come from its real fights, not a guess');
+  assert.match(fn[1], /renderBars\(detailBars, rows, totalDuration\)/);
+  assert.match(fn[1], /detailFightList\.appendChild/, 'the individual fights must still be reachable from here');
+  const fightFn = renderer.match(/async function openFight\(id\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fightFn, 'openFight has been restructured or removed');
+  assert.doesNotMatch(fightFn[1], /detailFightList\.appendChild/, 'a single fight has nothing further to drill into');
 });
 
 test('the zone filter is populated from the actual history and narrows what renders', () => {

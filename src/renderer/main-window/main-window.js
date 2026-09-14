@@ -9720,21 +9720,33 @@ function initBuffPlanner() {
 // per-skill breakdown for whichever fight is open. Re-fetched on every visit (not loaded once
 // like Lockouts' log scan) since new fights complete while the app just sits open - there's no
 // expensive read behind it, just whatever damageEngine already has in memory.
+// Owner, 13 Sep, live-testing the first version of this tab: the inline "opens at the bottom"
+// detail was disconnected from what you clicked, the flat zone>visit>table layout made the page
+// unusably long, and the list wasn't sorted the way she reads it (time first, zone second). This
+// rebuild: a short, date-sorted list of VISITS (one line each, no inline fight table); clicking a
+// visit's zone name navigates to a shared detail screen showing that whole visit's COMBINED totals
+// as a bar-per-player chart (her reference image) with the individual fights listed below it, each
+// of which navigates to that same screen again for just its own numbers. One "Back" undoes either.
 function initCombatPage() {
-  const historyGroups = document.getElementById('combat-history-groups');
+  const listScreen = document.getElementById('combat-list-screen');
+  const visitList = document.getElementById('combat-visit-list');
   const historyEmpty = document.getElementById('combat-history-empty');
   const zoneFilter = document.getElementById('combat-zone-filter');
-  const detailCard = document.getElementById('combat-detail-card');
+  const detailScreen = document.getElementById('combat-detail-screen');
   const detailTitle = document.getElementById('combat-detail-title');
-  const detailRows = document.getElementById('combat-detail-rows');
-  const closeBtn = document.getElementById('combat-detail-close');
+  const detailBars = document.getElementById('combat-detail-bars');
+  const detailFightList = document.getElementById('combat-detail-fightlist');
+  const backBtn = document.getElementById('combat-detail-back');
   const scanCurrentBtn = document.getElementById('combat-scan-current');
   const scanFileBtn = document.getElementById('combat-scan-file');
   const scanStatus = document.getElementById('combat-scan-status');
-  if (!historyGroups) return; // Combat tab not in this build
+  if (!visitList) return; // Combat tab not in this build
 
   const UNKNOWN_ZONE = '(zone unknown)';
-  let lastHistory = []; // cached so the zone filter can re-render without re-fetching
+  // A fixed, readable rotation - not per-class (this app doesn't know classes), just enough colour
+  // variety that ten bars in a row are easy to tell apart, matching the reference image's look.
+  const BAR_COLORS = ['#c9a13a', '#4a9fd8', '#6fc47a', '#d8794a', '#9a7fd8', '#d84a8f', '#4ad8c4', '#d8d24a'];
+  let lastHistory = []; // flat, cached so the zone filter can re-render without re-fetching
 
   function formatDamage(n) {
     if (n < 10000) return String(n);
@@ -9757,15 +9769,9 @@ function initCombatPage() {
     return isToday(ms) ? time : `${d.toLocaleDateString()} ${time}`;
   }
 
-  function closeDetail() {
-    detailCard.style.display = 'none';
-    detailRows.innerHTML = '';
-  }
-
-  // Names/skills below come from parsed log text (a player name, a mob name, a spell) - built as
-  // real DOM nodes with .textContent throughout, never innerHTML, the same rule the ambiguous-cast
-  // popup already follows for the same reason (an attacker/spell name is not this app's own text).
-  const cell = (text) => { const td = document.createElement('td'); td.textContent = text; return td; };
+  // Names/skills/zones below come from parsed log text (a player name, a mob name, a spell) -
+  // built as real DOM nodes with .textContent throughout, never innerHTML, the same rule the
+  // ambiguous-cast popup already follows for the same reason (that text is not this app's own).
   const span = (text, className) => {
     const el = document.createElement('span');
     if (className) el.className = className;
@@ -9773,21 +9779,47 @@ function initCombatPage() {
     return el;
   };
 
-  async function openFight(id) {
-    const fight = await window.eqTracker.getDamageHistoryFight(id);
-    if (!fight) { closeDetail(); return; }
-    detailTitle.textContent = `Fight at ${formatWhen(fight.endedAt - fight.durationSec * 1000)} (${formatDuration(fight.durationSec)}, ${formatDamage(fight.totalDamage)} total)`;
-    detailRows.innerHTML = '';
-    for (const row of fight.rows) {
-      const pct = fight.totalDamage > 0 ? Math.round((row.damage / fight.totalDamage) * 100) : 0;
+  function showList() {
+    detailScreen.style.display = 'none';
+    listScreen.style.display = '';
+    detailBars.innerHTML = '';
+    detailFightList.innerHTML = '';
+  }
+
+  function showDetail() {
+    listScreen.style.display = 'none';
+    detailScreen.style.display = '';
+  }
+
+  // One player's row: a coloured bar sized against the BIGGEST row (not the total - a bar
+  // measured against the total leaves every bar short in a five-person group, same reasoning the
+  // live overlay's own bars already use), click to accordion its skill breakdown open underneath.
+  function renderBars(container, rows, durationSec) {
+    container.innerHTML = '';
+    const top = rows.length ? rows[0].damage : 0;
+    rows.forEach((row, i) => {
       const details = document.createElement('details');
-      details.className = 'combat-player-row';
+      details.className = 'combat-bar-row';
       const summary = document.createElement('summary');
-      summary.appendChild(span(row.name));
-      const amountSpan = document.createElement('span');
-      amountSpan.appendChild(span(`${pct}% `, 'combat-player-pct'));
-      amountSpan.appendChild(document.createTextNode(formatDamage(row.damage)));
-      summary.appendChild(amountSpan);
+
+      summary.appendChild(span(row.name, 'combat-bar-name'));
+
+      const track = document.createElement('div');
+      track.className = 'combat-bar-track';
+      const fill = document.createElement('div');
+      fill.className = 'combat-bar-fill';
+      fill.style.width = `${top > 0 ? Math.max(2, (row.damage / top) * 100) : 0}%`;
+      fill.style.background = BAR_COLORS[i % BAR_COLORS.length];
+      const amount = document.createElement('div');
+      amount.className = 'combat-bar-amount';
+      amount.textContent = formatDamage(row.damage);
+      track.appendChild(fill);
+      track.appendChild(amount);
+      summary.appendChild(track);
+
+      const dps = durationSec > 0 ? Math.round(row.damage / durationSec) : 0;
+      summary.appendChild(span(`${formatDamage(dps)}/s`, 'combat-bar-stats'));
+
       details.appendChild(summary);
       const list = document.createElement('div');
       list.className = 'combat-skill-list';
@@ -9799,72 +9831,103 @@ function initCombatPage() {
         list.appendChild(line);
       }
       details.appendChild(list);
-      detailRows.appendChild(details);
-    }
-    detailCard.style.display = '';
+      container.appendChild(details);
+    });
   }
 
-  function fightTable(fights) {
-    const table = document.createElement('table');
-    table.className = 'lockout-grid combat-fight-table';
-    const thead = document.createElement('thead');
-    const headRow = document.createElement('tr');
-    for (const label of ['When', 'Duration', 'Total damage', 'Top']) headRow.appendChild(cell(label));
-    thead.appendChild(headRow);
-    table.appendChild(thead);
-    const tbody = document.createElement('tbody');
-    for (const fight of fights) {
-      const tr = document.createElement('tr');
-      tr.appendChild(cell(formatWhen(fight.endedAt)));
-      tr.appendChild(cell(formatDuration(fight.durationSec)));
-      tr.appendChild(cell(formatDamage(fight.totalDamage)));
-      tr.appendChild(cell(fight.topAttacker || '—'));
-      tr.addEventListener('click', () => openFight(fight.id));
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-    return table;
+  // A single fight's own numbers - no fight list underneath, there's nothing further to drill into.
+  async function openFight(id) {
+    const fight = await window.eqTracker.getDamageHistoryFight(id);
+    if (!fight) return;
+    showDetail();
+    detailTitle.textContent = `${formatWhen(fight.endedAt - fight.durationSec * 1000)} — ${formatDuration(fight.durationSec)}, ${formatDamage(fight.totalDamage)} total`;
+    detailFightList.innerHTML = '';
+    renderBars(detailBars, fight.rows, fight.durationSec);
   }
 
-  // Zone -> visit -> fights, each level newest-first - which falls out for free from `history`
-  // already arriving newest-first: the FIRST fight seen for a zone (or a visit within it) is
-  // always its most recent, so a plain Map preserves the right order with no separate sort.
-  function groupByZoneAndVisit(history) {
-    const zones = new Map();
-    for (const fight of history) {
-      const zoneKey = fight.zone || UNKNOWN_ZONE;
-      if (!zones.has(zoneKey)) zones.set(zoneKey, new Map());
-      const visits = zones.get(zoneKey);
-      const visitKey = fight.visitId != null ? fight.visitId : `single-${fight.id}`;
-      if (!visits.has(visitKey)) visits.set(visitKey, []);
-      visits.get(visitKey).push(fight);
-    }
-    return zones;
-  }
+  // "Clicking on the zone itself should show the totals of that encounter" - every fight in the
+  // visit, summed per player and per skill, as one combined chart; the individual fights are
+  // listed underneath so a specific one is still one more click away.
+  async function openVisit(visit) {
+    showDetail();
+    const zoneLabel = visit.zone || UNKNOWN_ZONE;
+    detailTitle.textContent = `${zoneLabel} — ${formatWhen(visit.startedAt)}, ${visit.fights.length} fight${visit.fights.length === 1 ? '' : 's'}`;
+    detailBars.innerHTML = '';
+    detailBars.appendChild(span('Loading…', 'empty-note'));
+    detailFightList.innerHTML = '';
 
-  function renderGroups(history) {
-    historyGroups.innerHTML = '';
-    const zones = groupByZoneAndVisit(history);
-    for (const [zoneName, visits] of zones) {
-      const zoneEl = document.createElement('div');
-      zoneEl.className = 'combat-zone-group';
-      const title = document.createElement('h4');
-      title.className = 'combat-zone-title';
-      title.textContent = zoneName;
-      zoneEl.appendChild(title);
-      for (const fights of visits.values()) {
-        const visitEl = document.createElement('div');
-        visitEl.className = 'combat-visit-group';
-        const header = document.createElement('div');
-        header.className = 'combat-visit-header';
-        const started = fights[fights.length - 1].endedAt - fights[fights.length - 1].durationSec * 1000;
-        const n = fights.length;
-        header.textContent = `Visit starting ${formatWhen(started)} — ${n} fight${n === 1 ? '' : 's'}`;
-        visitEl.appendChild(header);
-        visitEl.appendChild(fightTable(fights));
-        zoneEl.appendChild(visitEl);
+    const details = await Promise.all(visit.fights.map((f) => window.eqTracker.getDamageHistoryFight(f.id)));
+    const byName = new Map(); // name -> { name, damage, bySkill: Map<skill, {damage}> }
+    let totalDuration = 0;
+    for (const fight of details) {
+      if (!fight) continue;
+      totalDuration += fight.durationSec;
+      for (const row of fight.rows) {
+        const agg = byName.get(row.name) || { name: row.name, damage: 0, bySkill: new Map() };
+        agg.damage += row.damage;
+        for (const s of row.bySkill) {
+          const srow = agg.bySkill.get(s.skill) || { skill: s.skill, damage: 0 };
+          srow.damage += s.damage;
+          agg.bySkill.set(s.skill, srow);
+        }
+        byName.set(row.name, agg);
       }
-      historyGroups.appendChild(zoneEl);
+    }
+    const rows = [...byName.values()]
+      .map((r) => ({ ...r, bySkill: [...r.bySkill.values()].sort((a, b) => b.damage - a.damage) }))
+      .sort((a, b) => b.damage - a.damage);
+    // The visit's own DPS divides by the SUM of its fights' durations, not the wall-clock span
+    // between the first and last - the gaps in between are downtime, not part of any fight.
+    renderBars(detailBars, rows, totalDuration);
+
+    for (const fight of visit.fights) {
+      const row = document.createElement('div');
+      row.className = 'combat-fight-list-row';
+      row.appendChild(span(formatWhen(fight.endedAt)));
+      row.appendChild(span(`${formatDuration(fight.durationSec)}, ${formatDamage(fight.totalDamage)}, top: ${fight.topAttacker || '—'}`));
+      row.addEventListener('click', () => openFight(fight.id));
+      detailFightList.appendChild(row);
+    }
+  }
+
+  // Flat history (newest-first) -> visits (newest-first), each visit carrying its own fights in
+  // the same order. A fight with no visitId (no zone was ever told to the engine) is its own
+  // singleton visit rather than being lumped together under one giant "unknown" bucket.
+  function buildVisits(history) {
+    const byKey = new Map();
+    const order = [];
+    for (const fight of history) {
+      const key = fight.visitId != null ? `${fight.zone}:${fight.visitId}` : `single:${fight.id}`;
+      if (!byKey.has(key)) {
+        const visit = { zone: fight.zone, fights: [] };
+        byKey.set(key, visit);
+        order.push(visit);
+      }
+      byKey.get(key).fights.push(fight);
+    }
+    for (const visit of order) {
+      const oldest = visit.fights[visit.fights.length - 1];
+      visit.startedAt = oldest.endedAt - oldest.durationSec * 1000;
+      visit.endedAt = visit.fights[0].endedAt;
+      visit.totalDamage = visit.fights.reduce((s, f) => s + f.totalDamage, 0);
+    }
+    // Newest-first by each visit's own most recent fight - "dated/timestamped first" (owner's own
+    // words): time is the sort key and the leading column, the zone is what's clickable beside it.
+    return order.sort((a, b) => b.endedAt - a.endedAt);
+  }
+
+  function renderList(visits) {
+    visitList.innerHTML = '';
+    for (const visit of visits) {
+      const row = document.createElement('div');
+      row.className = 'combat-visit-row';
+      row.appendChild(span(formatWhen(visit.startedAt), 'combat-visit-time'));
+      const zoneLink = span(visit.zone || UNKNOWN_ZONE, 'combat-visit-zone');
+      zoneLink.addEventListener('click', () => openVisit(visit));
+      row.appendChild(zoneLink);
+      const n = visit.fights.length;
+      row.appendChild(span(`${n} fight${n === 1 ? '' : 's'} · ${formatDamage(visit.totalDamage)}`, 'combat-visit-meta'));
+      visitList.appendChild(row);
     }
   }
 
@@ -9890,7 +9953,7 @@ function initCombatPage() {
     populateZoneFilter(lastHistory);
     const filter = zoneFilter.value;
     const filtered = filter ? lastHistory.filter((f) => (f.zone || UNKNOWN_ZONE) === filter) : lastHistory;
-    renderGroups(filtered);
+    renderList(buildVisits(filtered));
   }
 
   async function loadHistory() {
@@ -9942,7 +10005,7 @@ function initCombatPage() {
       if (picked && picked[0]) runScan(picked[0]);
     });
   }
-  if (closeBtn) closeBtn.addEventListener('click', closeDetail);
+  if (backBtn) backBtn.addEventListener('click', showList);
   if (zoneFilter) zoneFilter.addEventListener('change', render);
   const navBtnCombat = document.getElementById('combat-nav-btn');
   if (navBtnCombat) navBtnCombat.addEventListener('click', loadHistory);
