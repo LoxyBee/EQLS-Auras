@@ -1,26 +1,42 @@
 'use strict';
 
-// Guesses which of a multiclass character's (up to 3) classes a set of combat SKILLS came from.
-// Owner, 13 Sep: a buff landing (e.g. Spirit of the Puma) can't be used for this - the landing
-// text never says who cast it, so an ally casting it on the attacker would look identical to the
-// attacker casting it on themselves. A combat/damage line has no such ambiguity: `"Baxa hits X for
-// N by Puma Maw."` names the actual attacker outright, the same way a self-cast line always means
-// "You". So this only ever looks at skill names already attributed to one specific attacker (the
-// Combat tab's own per-skill breakdown), never at buffs.
+// Guesses which of a multiclass character's (up to 3) classes an attacker's SKILLS came from.
 //
-// A skill castable by exactly one class is real evidence for that class. A skill several classes
-// share (most nukes/procs) is ambiguous and contributes nothing - same "don't guess" rule the buff
-// engine already follows for shared landing text. `classesForSpell(name)` is injected so this stays
-// pure and testable without touching gameSpellData's file I/O; it should return either an array of
-// class abbreviations able to cast that spell, or a falsy value when the spell isn't recognised.
-function estimateClasses(skillNames, classesForSpell) {
-  const found = new Set();
-  for (const name of skillNames || []) {
+// Owner, 13-14 Sep, in two parts:
+//   - Buffs can be used for this, but ONLY when actually seen being CAST ("X cast puma" is an
+//     indicator) - never from their damage. A buff's landing/proc damage (Puma Maw, say) proves
+//     nothing about who cast the buff: it could be an ally's buff sitting on this attacker. A cast
+//     line has no such ambiguity - "X begins casting Y." (or singing, for bard songs) always names
+//     the real caster. So the ONLY input this takes is skill names already tied to a CAST line for
+//     this specific attacker (self "You begin casting/singing X" or third-person "X begins
+//     casting/singing Y.") - never a damage-log skill name. See damageEngine.js's
+//     `castsByAttacker` for where these are collected.
+//   - "Colour the classes by green for 100% guaranteed, orange for maybe" - a skill castable by
+//     exactly one class is CONFIRMED. A skill shared by a small number of classes narrows things
+//     down without confirming anything - MAYBE, for each of those classes, unless one of them is
+//     already confirmed by something else. A skill shared by more classes than MAX_MAYBE_CLASSES
+//     says nothing useful (a spell every caster class knows is not evidence of any one of them) and
+//     is ignored outright.
+const MAX_MAYBE_CLASSES = 3;
+
+function estimateClasses(castSkillNames, classesForSpell) {
+  const confirmed = new Set();
+  const maybe = new Set();
+  for (const name of castSkillNames || []) {
     if (!name) continue;
     const classes = classesForSpell(name);
-    if (classes && classes.length === 1) found.add(classes[0]);
+    if (!classes || !classes.length) continue;
+    if (classes.length === 1) {
+      confirmed.add(classes[0]);
+    } else if (classes.length <= MAX_MAYBE_CLASSES) {
+      for (const c of classes) maybe.add(c);
+    }
   }
-  return [...found];
+  for (const c of confirmed) maybe.delete(c);
+  return [
+    ...[...confirmed].map((name) => ({ name, confidence: 'confirmed' })),
+    ...[...maybe].map((name) => ({ name, confidence: 'maybe' })),
+  ];
 }
 
-module.exports = { estimateClasses };
+module.exports = { estimateClasses, MAX_MAYBE_CLASSES };

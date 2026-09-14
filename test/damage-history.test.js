@@ -178,5 +178,82 @@ test('maxHistory can be overridden (a log scan enumerates everything, not a boun
   assert.equal(e.getHistory().length, 40, 'the override was not honoured - still capped at 30');
 });
 
+// ---------------------------------------------------------------------------
+// Fight label - "Named" vs "Trash" (owner, 14 Sep: "if a named was fought it should list the
+// named, if no named was found it should just say Trash"). See src/shared/fightLabel.js for the
+// pure decision; this is the wiring through the engine's own credit path into history.
+// ---------------------------------------------------------------------------
+
+test('a fight against only trash (article-prefixed) targets is labelled Trash', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  assert.equal(e.getHistory()[0].label, 'Trash');
+});
+
+test('a fight against a bare-named target lists that name, both in the summary and the detail', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush Fright for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  assert.equal(e.getHistory()[0].label, 'Fright');
+  assert.equal(e.getHistoryFight(e.getHistory()[0].id).label, 'Fright');
+});
+
+test('a rare friendly-fire hit on a real groupmate is never mistaken for a named kill', () => {
+  const e = new DamageEngine();
+  // "You crush Zorrick" - a groupmate accidentally hit, not a mob. Zorrick is a friend from the
+  // group roster, so this must not make the fight read as having fought someone named Zorrick.
+  e.setGroupFn(() => ['zorrick']);
+  e.handleLine(`${T}You crush Zorrick for 5 points of damage.`, 1000);
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1500);
+  endFight(e, 1500);
+  assert.equal(e.getHistory()[0].label, 'Trash');
+});
+
+// ---------------------------------------------------------------------------
+// Cast tracking - castsByAttacker / getCastSkills (owner, 13-14 Sep: the ONLY input to the Combat
+// tab's class estimate - never a damage-log skill name, since damage can't prove who cast a buff).
+// ---------------------------------------------------------------------------
+
+test('a self cast line is recorded under "You"', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You begin casting Energy Storm.`, 1000);
+  assert.deepEqual(e.getCastSkills('You'), ['Energy Storm']);
+});
+
+test('a third-person cast line is recorded under the caster\'s own name, case-insensitively looked up', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Avenrae begins casting Spirit of the Puma.`, 1000);
+  assert.deepEqual(e.getCastSkills('avenrae'), ['Spirit of the Puma']);
+  assert.deepEqual(e.getCastSkills('AVENRAE'), ['Spirit of the Puma']);
+});
+
+test('a bard song counts too - "begins singing" is a cast line the same as "begins casting"', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Avenrae begins singing Selo's Accelerando.`, 1000);
+  assert.deepEqual(e.getCastSkills('Avenrae'), ["Selo's Accelerando"]);
+});
+
+test('someone never seen casting anything has no cast skills at all', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 40 points of damage.`, 1000);
+  assert.deepEqual(e.getCastSkills('Avenrae'), []);
+});
+
+test('cast history survives a fight ending - it is a fact about the PERSON, not the current pull', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You begin casting Energy Storm.`, 1000);
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1200);
+  endFight(e, 1200);
+  assert.deepEqual(e.getCastSkills('You'), ['Energy Storm'], 'reset() must not wipe cast history');
+});
+
+test('cast history survives a zone change too', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You begin casting Energy Storm.`, 1000);
+  e.enterZone(2000, 'The Feerrott');
+  assert.deepEqual(e.getCastSkills('You'), ['Energy Storm'], 'enterZone() must not wipe cast history');
+});
+
 module.exports = () => report('damage-history');
 if (require.main === module) report('damage-history').then((n) => process.exit(n ? 1 : 0));

@@ -1062,6 +1062,8 @@
           <div class="row">
             <span class="label">Zone</span>
             <select id="combat-zone-filter" class="text-input"></select>
+            <span class="label" title="Hides any fight below this total damage - trash mobs and stray hits, not a real pull. Set to 0 to show everything.">Min damage</span>
+            <input type="number" id="combat-min-damage" class="text-input" min="0" step="1000" style="width:7em">
           </div>
           <div id="combat-visit-list"></div>
           <p class="empty-note" id="combat-history-empty">No fights tracked yet this session.</p>

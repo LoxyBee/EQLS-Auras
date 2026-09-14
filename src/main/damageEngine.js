@@ -69,6 +69,7 @@ const EventEmitter = require('events');
 const { parseDamageLine } = require('../shared/damageLines');
 const { parseHealLine } = require('../shared/healLines');
 const { matchCastBegin, matchOtherCastBegin, stripRankSuffix } = require('./buffParser');
+const { labelFight } = require('../shared/fightLabel');
 
 // A delayed / "promised" heal fires later as "<Target> healed himself ... by <Base> Trigger <N>",
 // which reads as the target's own heal even though the CASTER did it. Re-credited to whoever cast
@@ -125,6 +126,19 @@ class DamageEngine extends EventEmitter {
     // first. `skill` on a parsed hit is the spell/ability name, or the fixed melee bucket
     // (damageLines.MELEE_SKILL) - see parseDamageLine's own header.
     this.bySkillByAttacker = new Map();
+    // Real display-cased target names actually damaged as a confirmed enemy this fight (owner, 14
+    // Sep: "the fight breakdown... should say what fight it is - if a named was fought it should
+    // list the named"). Cleared with byAttacker in reset() - see labelFight() in
+    // src/shared/fightLabel.js for how this becomes "Trash" or a real name.
+    this.enemyTargetsThisFight = new Set();
+    // Lowercase attacker name -> Set of real-cased spell names actually seen begin-cast (self
+    // "You begin casting/singing X" or third-person "X begins casting/singing Y.") - the ONLY
+    // input to the Combat tab's class estimate (owner, 14 Sep - see classEstimator.js's header).
+    // Session-wide, never reset by reset()/enterZone(): which classes a character has is a fact
+    // about the PERSON, not the current pull or zone, so a fresh fight or a new zone must not
+    // throw away what was already learned. A batch log scan (damageLogScan.js) gets this for free
+    // - it runs every line through this same handleLine(), so it accumulates across the whole file.
+    this.castsByAttacker = new Map();
     // Completed fights, newest first, capped so this can't grow without bound over a long session.
     // In-memory only for this run of the app - not written to disk (see _captureHistory).
     this.history = [];
@@ -473,7 +487,10 @@ class DamageEngine extends EventEmitter {
       this._expireIfIdle(now);
       this._flushPending(now);
       this._flushHealPending(now);
-      if (dir === 'out') this._credit(hit.attacker, hit.amount, now, hit.kind === 'melee' || !!hit.direct, hit.skill, hit.critical);
+      if (dir === 'out') {
+        this._credit(hit.attacker, hit.amount, now, hit.kind === 'melee' || !!hit.direct, hit.skill, hit.critical);
+        this._noteEnemyTarget(hit.target);
+      }
       if (dir !== 'drop') this.emit('activeChanged', this.getActive(now));
       return;
     }
@@ -482,9 +499,12 @@ class DamageEngine extends EventEmitter {
     // caster rather than the target it lands on.
     const ownCast = matchCastBegin(line);
     const otherCast = ownCast ? null : matchOtherCastBegin(line);
-    if (ownCast) this.recentHealCasts.set(stripRankSuffix(ownCast).toLowerCase(), { caster: 'You', at: now });
-    else if (otherCast) {
+    if (ownCast) {
+      this.recentHealCasts.set(stripRankSuffix(ownCast).toLowerCase(), { caster: 'You', at: now });
+      this._noteCast('You', ownCast);
+    } else if (otherCast) {
       this.recentHealCasts.set(stripRankSuffix(otherCast.spellName).toLowerCase(), { caster: otherCast.casterName, at: now });
+      this._noteCast(otherCast.casterName, otherCast.spellName);
     }
 
     const heal = parseHealLine(line);
@@ -533,7 +553,10 @@ class DamageEngine extends EventEmitter {
           continue;
         }
         resolvedAny = true;
-        if (dir === 'out') this._credit(p.attacker, p.amount, p.at, p.kind === 'melee' || !!p.direct, p.skill, p.critical);
+        if (dir === 'out') {
+          this._credit(p.attacker, p.amount, p.at, p.kind === 'melee' || !!p.direct, p.skill, p.critical);
+          this._noteEnemyTarget(p.target);
+        }
       }
       this.pending = keep;
       if (!resolvedAny) return;
@@ -570,6 +593,29 @@ class DamageEngine extends EventEmitter {
     };
     bump(this.rawFightByName);
     bump(this.rawZoneByName);
+  }
+
+  // Records the real-cased target name for the fight's "Named"/"Trash" label - only when the
+  // target isn't already a known FRIEND, so a rare friendly-fire hit ("You crush Zorrick" -
+  // gotcha in _classify's own comment) can never make the fight read as having fought a groupmate.
+  _noteEnemyTarget(target) {
+    if (target && !this._isFriend(target.toLowerCase())) this.enemyTargetsThisFight.add(target);
+  }
+
+  // See castsByAttacker's own field comment. Kept as the real (non-lowercased) name, since that's
+  // what's actually passed to classesForSpell (an exact-name lookup, case folded there instead).
+  _noteCast(attackerName, spellName) {
+    if (!attackerName || !spellName) return;
+    const key = attackerName.toLowerCase();
+    const set = this.castsByAttacker.get(key) || new Set();
+    set.add(spellName);
+    this.castsByAttacker.set(key, set);
+  }
+
+  // Every spell name this attacker was actually seen CASTING (never a damage-log skill name - see
+  // classEstimator.js). Feeds the Combat tab's class estimate for this one attacker.
+  getCastSkills(attackerName) {
+    return [...(this.castsByAttacker.get(String(attackerName || '').toLowerCase()) || [])];
   }
 
   _credit(attacker, amount, at, isRealHit, skill, critical) {
@@ -693,6 +739,8 @@ class DamageEngine extends EventEmitter {
       enemies: [...this.enemies],
       friends: [...this.friends],
       byAttacker: [...this.byAttacker],
+      enemyTargetsThisFight: [...this.enemyTargetsThisFight],
+      castsByAttacker: [...this.castsByAttacker].map(([k, v]) => [k, [...v]]),
       rawFightByName: [...this.rawFightByName],
       rawZoneByName: [...this.rawZoneByName],
       fightStartedAt: this.fightStartedAt,
@@ -731,6 +779,14 @@ class DamageEngine extends EventEmitter {
     }
     for (const pair of Array.isArray(s.byAttacker) ? s.byAttacker : []) {
       if (Array.isArray(pair)) this.byAttacker.set(pair[0], pair[1]);
+    }
+    for (const n of Array.isArray(s.enemyTargetsThisFight) ? s.enemyTargetsThisFight : []) this.enemyTargetsThisFight.add(n);
+    for (const pair of Array.isArray(s.castsByAttacker) ? s.castsByAttacker : []) {
+      if (Array.isArray(pair) && Array.isArray(pair[1])) {
+        const set = this.castsByAttacker.get(pair[0]) || new Set();
+        for (const spell of pair[1]) set.add(spell);
+        this.castsByAttacker.set(pair[0], set);
+      }
     }
     for (const pair of Array.isArray(s.sinceZoneByAttacker) ? s.sinceZoneByAttacker : []) {
       if (Array.isArray(pair)) this.sinceZoneByAttacker.set(pair[0], pair[1]);
@@ -821,6 +877,7 @@ class DamageEngine extends EventEmitter {
       totalDamage: this.totalDamage,
       zone: this.currentZoneName,
       visitId: this.currentZoneName ? this._zoneVisitSeq : null,
+      label: labelFight([...this.enemyTargetsThisFight]),
       rows,
     });
     if (this.history.length > this._maxHistory) this.history.length = this._maxHistory;
@@ -829,13 +886,14 @@ class DamageEngine extends EventEmitter {
   // Every completed fight this session, newest first. In-memory only - see the `history` field
   // comment on why this does not persist across a restart.
   getHistory() {
-    return this.history.map(({ id, endedAt, durationSec, totalDamage, zone, visitId, rows }) => ({
+    return this.history.map(({ id, endedAt, durationSec, totalDamage, zone, visitId, label, rows }) => ({
       id,
       endedAt,
       durationSec,
       totalDamage,
       zone,
       visitId,
+      label,
       topAttacker: rows[0] ? rows[0].name : null,
     }));
   }
@@ -853,6 +911,7 @@ class DamageEngine extends EventEmitter {
     this._captureHistory();
     this.byAttacker.clear();
     this.bySkillByAttacker.clear();
+    this.enemyTargetsThisFight.clear();
     this.rawFightByName.clear();
     this.totalDamage = 0;
     this.fightStartedAt = null;

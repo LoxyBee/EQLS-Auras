@@ -168,7 +168,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   // The Combat tab's fight history - summary list, then one fight's full row/skill detail on click.
   getDamageHistory: () => ipcRenderer.invoke('damage:getHistory'),
   getDamageHistoryFight: (id) => ipcRenderer.invoke('damage:getHistoryFight', id),
-  estimateDamageClasses: (skillNames) => ipcRenderer.invoke('damage:estimateClasses', skillNames),
+  estimateDamageClasses: (fightId, attackerName) => ipcRenderer.invoke('damage:estimateClasses', { fightId, attackerName }),
   // "Back read your current log, or upload a new log and parse out fights" (owner, 13 Sep).
   getDamageCurrentLogPath: () => ipcRenderer.invoke('damage:getCurrentLogPath'),
   scanDamageLogFile: (filePath) => ipcRenderer.invoke('damage:scanLogFile', filePath),

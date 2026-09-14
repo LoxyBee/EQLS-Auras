@@ -67,9 +67,14 @@ test('merged history ids are namespaced by source, so a scan can never collide w
   const fn = main.match(/function mergedDamageHistory\(\) \{([\s\S]*?)\n}\n/);
   assert.ok(fn, 'mergedDamageHistory has been restructured');
   assert.match(fn[1], /id: `\$\{tag\}:\$\{entry\.id\}`/);
-  const lookup = main.match(/function findHistoryFight\(compositeId\) \{([\s\S]*?)\n}\n/);
-  assert.ok(lookup, 'findHistoryFight has been restructured');
+  // The id-splitting logic moved into a shared sourceForCompositeId() (also used by the class
+  // estimate handler, which needs the SAME tag resolution) - check that one now.
+  const lookup = main.match(/function sourceForCompositeId\(compositeId\) \{([\s\S]*?)\n}\n/);
+  assert.ok(lookup, 'sourceForCompositeId has been restructured or removed');
   assert.match(lookup[1], /lastIndexOf\(':'\)/, 'a scan tag ("scan:0") itself contains a colon - splitting on the first one would break it');
+  const fightFn = main.match(/function findHistoryFight\(compositeId\) \{([\s\S]*?)\n}\n/);
+  assert.ok(fightFn, 'findHistoryFight has been restructured');
+  assert.match(fightFn[1], /sourceForCompositeId\(compositeId\)/, 'findHistoryFight must reuse the shared resolver, not its own copy');
 });
 
 test('history is re-fetched on every visit to the tab, not loaded once', () => {
@@ -109,7 +114,7 @@ test('clicking a visit\'s zone opens the shared detail screen with that visit\'s
   const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'openVisit has been restructured or removed');
   assert.match(fn[1], /getDamageHistoryFight\(f\.id\)/, 'a visit\'s totals must come from its real fights, not a guess');
-  assert.match(fn[1], /renderBars\(detailBars, rows, totalDuration\)/);
+  assert.match(fn[1], /renderBars\(detailBars, rows, totalDuration, visit\.fights\[0\]\?\.id\)/);
   assert.match(fn[1], /detailFightList\.appendChild\(fightAccordionRow/, 'the individual fights must still be reachable from here');
 });
 
@@ -118,8 +123,18 @@ test('a fight expands its own chart in place instead of navigating to a new scre
   const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'fightAccordionRow has been restructured or removed');
   assert.match(fn[1], /createElement\('details'\)/, 'a fight row must be an accordion, not a link to another screen');
-  assert.match(fn[1], /renderBars\(nested, detail\.rows, detail\.durationSec\)/, 'expanding it must draw its OWN chart, not reuse the visit\'s combined one');
+  assert.match(fn[1], /renderBars\(nested, detail\.rows, detail\.durationSec, fight\.id\)/, 'expanding it must draw its OWN chart, not reuse the visit\'s combined one');
   assert.doesNotMatch(fn[1], /showDetail\(\)|display = ''/, 'expanding a fight must not switch screens');
+});
+
+// Owner, 14 Sep: "the fight breakdown for each zone should say what fight it is... if a named was
+// fought it should list the named, if no named was found it should just say Trash".
+test('each fight row shows what it was - a named mob\'s name, or Trash when none was found', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'fightAccordionRow has been restructured or removed');
+  assert.match(fn[1], /fight\.label \|\| 'Trash'/, 'a fight record with no label at all must fall back to Trash, not blank');
+  assert.match(fn[1], /combat-fight-label-trash/, 'Trash needs its own dimmer style so it does not read as a real named kill');
 });
 
 test('Back always returns to the list - there is only ever one screen of depth now', () => {
@@ -137,7 +152,22 @@ test('the zone filter is populated from the actual history and narrows what rend
   const fn = page[1].match(/function render\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'render has been restructured or removed');
   assert.match(fn[1], /populateZoneFilter\(lastHistory\)/);
-  assert.match(fn[1], /filter \? lastHistory\.filter/, 'an empty filter value must mean "all zones", not "no zones"');
+  assert.match(fn[1], /!filter \|\|/, 'an empty filter value must mean "all zones", not "no zones"');
+});
+
+// Owner, 14 Sep: "a filter... to exclude logs of fights under a certain total damage value...
+// defaulted to anything less than 50k" - a stray one-hit trash fight was showing up as its own
+// noise entry in the list. Filters individual FIGHTS (not whole visits) before grouping.
+test('a minimum-damage filter hides small fights, defaulted to 50k', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const page = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
+  assert.ok(page, 'initCombatPage has been restructured');
+  assert.match(page[1], /DEFAULT_MIN_DAMAGE = 50000/);
+  const fn = page[1].match(/function render\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'render has been restructured or removed');
+  assert.match(fn[1], /f\.totalDamage >= floor/, 'the filter must compare each FIGHT\'s own total, not a visit total');
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-min-damage"/, 'the min-damage input must exist on the page');
 });
 
 // Confirmed live, 13 Sep: a nested .combat-bar-row (a fight's own per-player bars, expanded inside
@@ -179,7 +209,7 @@ test('a visit\'s combined skill totals carry hits and crits through the merge, n
 
 test('the skill breakdown shows each skill\'s share of the player\'s OWN total, and its crit rate', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, sourceFightId\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(
     fn[1], /row\.damage > 0 \? Math\.round\(\(s\.damage \/ row\.damage\) \* 100\)/,
@@ -195,7 +225,7 @@ test('the skill breakdown shows each skill\'s share of the player\'s OWN total, 
 // biggest skill, same "biggest, not the total" reasoning the player bars already use.
 test('the skill breakdown has a labelled header row and each skill row has its own coloured bar', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, sourceFightId\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(fn[1], /combat-skill-header/, 'no header row - the columns would be unlabeled again');
   for (const label of ['Skill', 'Damage', '% of total', 'Crit %']) {
@@ -220,7 +250,7 @@ test('the skill breakdown has a labelled header row and each skill row has its o
 // bare background.
 test('the skill bar spans the whole Damage/percent/crit area, not just the Damage column', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, sourceFightId\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(
     fn[1], /combat-skill-track-area/,
@@ -248,7 +278,7 @@ test('the skill bar spans the whole Damage/percent/crit area, not just the Damag
 // as the skill-row bars, with no separate stats column at all.
 test('the DPS figure on a player bar is inset into the track, not stranded in a column past it', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, sourceFightId\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(fn[1], /combat-bar-dps/, 'the DPS element must exist');
   assert.match(
@@ -292,22 +322,27 @@ test('the skill breakdown\'s Damage/percent/crit columns are centred, header and
   );
 });
 
-// Owner, 13 Sep, sixth round: "add in the class estimation and put it as the first text in the
-// damage coloured bar... make sure that it is it's own column" - a guessed class (from
-// classEstimator.js, fed by combat skills already attributed to this specific attacker - never
-// buffs, which don't say who cast them) rendered ahead of the damage amount, in a distinct,
-// consistently-sized slot rather than mixed into the same text.
+// Owner, 13-14 Sep: "add in the class estimation and put it as the first text in the damage
+// coloured bar... make sure that it is it's own column" - then corrected: "buffs can be used to
+// guess a class, but ONLY if they are seen being cast... damage from puma is not [an indicator]".
+// The estimate is built from cast-line evidence for THIS specific attacker (by name, via the
+// fight's own composite id naming which engine holds it), never from this row's own damage-log
+// skill list - a proc's damage can't prove who cast the buff behind it.
 test('the class estimate is the first thing in the damage bar, in its own column ahead of the amount', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/async function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, sourceFightId\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars must exist and be async - it awaits a class estimate for every row');
   assert.match(
-    fn[1], /window\.eqTracker\.estimateDamageClasses\(row\.bySkill\.map\(\(s\) => s\.skill\)\)/,
-    'the estimate must be built from THIS row\'s own combat skills, not buffs or another row\'s data'
+    fn[1], /window\.eqTracker\.estimateDamageClasses\(sourceFightId, row\.name\)/,
+    'the estimate must be looked up by THIS attacker\'s name against the right engine, never this row\'s own damage skill list'
   );
   assert.match(
-    fn[1], /label\.appendChild\(span\([\s\S]*?'combat-bar-class'\)\)[\s\S]*label\.appendChild\(span\(formatDamage\(row\.damage\), 'combat-bar-amount'\)\)/,
+    fn[1], /label\.appendChild\(classWrap\)[\s\S]*label\.appendChild\(span\(formatDamage\(row\.damage\), 'combat-bar-amount'\)\)/,
     'the class element must be appended BEFORE the amount element - it has to read first in the bar'
+  );
+  assert.match(
+    fn[1], /classWrap\.appendChild\(span\(c\.name, `combat-bar-class-\$\{c\.confidence\}`\)\)/,
+    'each class must be coloured by its OWN confidence tier, not one flat colour for the whole guess'
   );
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
@@ -316,16 +351,28 @@ test('the class estimate is the first thing in the damage bar, in its own column
   );
 });
 
+// Owner, 13 Sep: "colour the classes by green for 100% guaranteed, orange for maybe".
+test('a confirmed class renders green, a maybe class renders orange - distinct colours, not the same one', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-bar-class-confirmed \{ color: #6fd67a; \}/);
+  assert.match(css, /\.combat-bar-class-maybe \{ color: #e0a94e; \}/);
+});
+
 // The IPC round trip the class estimate above depends on - main.js hosts the actual lookup
-// (gameSpellData needs the installed spells_us.txt, which only the main process can read).
-test('the class estimate is wired IPC -> preload -> renderer', () => {
+// (gameSpellData needs the installed spells_us.txt, which only the main process can read) and
+// resolves WHICH engine's cast history to read via the fight id's own source tag (live session vs
+// one specific log scan) - a scanned log's casts must never blend with the live session's.
+test('the class estimate is wired IPC -> preload -> renderer, resolved against the right engine', () => {
   const main = read('src', 'main', 'main.js');
-  assert.match(
-    main, /ipcMain\.handle\('damage:estimateClasses', \(_event, skillNames\) => \(\s*classEstimator\.estimateClasses\(skillNames, \(name\) => gameSpellData\.getClassesForSpell\(currentInstallRoot, name\)\)/,
-    'the handler must exist and use the CURRENT install root, not a stale/hardcoded one'
-  );
+  const handler = main.match(/ipcMain\.handle\('damage:estimateClasses', \(_event, \{ fightId, attackerName \} = \{\}\) => \{([\s\S]*?)\n\}\);/);
+  assert.ok(handler, 'the damage:estimateClasses handler has been restructured or removed');
+  assert.match(handler[1], /sourceForCompositeId\(fightId\)/, 'must resolve the SOURCE engine, not always the live session');
+  assert.match(handler[1], /resolved\.src\.engine\.getCastSkills\(attackerName\)/, 'must read cast history, never a damage-log skill list');
+  assert.match(handler[1], /gameSpellData\.getClassesForSpell\(currentInstallRoot, name\)/);
   const preload = read('src', 'preload', 'preload-main.js');
-  assert.match(preload, /estimateDamageClasses: \(skillNames\) => ipcRenderer\.invoke\('damage:estimateClasses', skillNames\)/);
+  assert.match(
+    preload, /estimateDamageClasses: \(fightId, attackerName\) => ipcRenderer\.invoke\('damage:estimateClasses', \{ fightId, attackerName \}\)/
+  );
 });
 
 module.exports = () => report('combat-tab');

@@ -69,7 +69,16 @@ function parse(installRoot) {
   const bardOnlyNames = new Set();
   const iconIdByName = new Map();
   const bardSongs = []; // full records, only for bard-only spells
-  const classesByName = new Map(); // lower name -> class abbrev[] that can cast it
+  // lower name -> Set of class abbrevs, UNION across every entry sharing that name - not
+  // first-entry-wins. A short generic-sounding name ("Chaos Flux", say) can genuinely name two
+  // totally unrelated spells for two different classes, not just rank tiers of one spell (unlike
+  // bardOnlyNames/iconIdByName above, where first-wins is correct because repeats there really are
+  // just tiers). Picking the first entry arbitrarily meant a name could confidently resolve to
+  // whichever class's version of it the file happened to list first - confirmed live 14 Sep: a
+  // combat skill was reported as "Enchanter" when the caster had never touched an Enchanter spell.
+  // The union makes a name honestly ambiguous (2+ classes) when it really does mean more than one
+  // spell, instead of silently picking a winner - see classEstimator.js's own MAX_MAYBE_CLASSES.
+  const classesByName = new Map();
 
   for (const line of raw.split(/\r\n|\n/)) {
     if (!line) continue;
@@ -96,7 +105,12 @@ function parse(installRoot) {
       else anyOtherCanCast = true;
       castableBy.push(CLASS_ABBREVS[i]);
     }
-    if (!classesByName.has(lower)) classesByName.set(lower, castableBy);
+    const existingClasses = classesByName.get(lower);
+    if (existingClasses) {
+      for (const c of castableBy) existingClasses.add(c);
+    } else {
+      classesByName.set(lower, new Set(castableBy));
+    }
 
     if (!bardCanCast || anyOtherCanCast) continue;
 
@@ -153,7 +167,11 @@ function getBardSongRecords(installRoot) {
 function getClassesForSpell(installRoot, name) {
   const data = load(installRoot);
   if (!data || !name) return null;
-  return data.classesByName.get(name.toLowerCase()) || null;
+  const set = data.classesByName.get(name.toLowerCase());
+  if (!set) return null;
+  // Canonical class-id order regardless of which entry's fields happened to be read last while
+  // building the union, so the result is deterministic.
+  return CLASS_ABBREVS.filter((c) => set.has(c));
 }
 
 module.exports = { getBardOnlyNames, getIconId, getBardSongRecords, getClassesForSpell };

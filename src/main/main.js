@@ -1960,16 +1960,24 @@ function mergedDamageHistory() {
   return rows;
 }
 
-function findHistoryFight(compositeId) {
+// The composite id ("live:3" / "scan:0:7") names which engine a fight/visit actually belongs to -
+// shared by findHistoryFight and the class-estimate handler below, which needs the SAME engine's
+// castsByAttacker for whichever attacker is being estimated, not always the live session's.
+function sourceForCompositeId(compositeId) {
   const key = String(compositeId || '');
   const cut = key.lastIndexOf(':');
   if (cut === -1) return null;
   const tag = key.slice(0, cut);
   const localId = Number(key.slice(cut + 1));
   const src = allHistorySources().find((s) => s.tag === tag);
-  if (!src) return null;
-  const fight = src.engine.getHistoryFight(localId);
-  return fight ? { ...fight, id: compositeId, source: src.label } : null;
+  return src ? { src, localId } : null;
+}
+
+function findHistoryFight(compositeId) {
+  const resolved = sourceForCompositeId(compositeId);
+  if (!resolved) return null;
+  const fight = resolved.src.engine.getHistoryFight(resolved.localId);
+  return fight ? { ...fight, id: compositeId, source: resolved.src.label } : null;
 }
 
 ipcMain.handle('damage:getCurrentLogPath', () => logService.watcher.getStatus().currentFilePath || null);
@@ -1991,14 +1999,17 @@ ipcMain.handle('damage:scanLogFile', async (_event, filePath) => {
 
 ipcMain.handle('damage:getHistory', () => mergedDamageHistory());
 ipcMain.handle('damage:getHistoryFight', (_event, id) => findHistoryFight(id));
-// Combat tab class estimate (owner, 13 Sep): a skill name only one class can cast is real
-// evidence of one of an attacker's (possibly multiclass) classes - see classEstimator.js's own
-// header comment for why a buff landing (e.g. Puma) can't be used the same way. Runs here because
-// gameSpellData needs the installed spells_us.txt; the renderer sends up whichever skill names are
-// already showing in that row's own breakdown.
-ipcMain.handle('damage:estimateClasses', (_event, skillNames) => (
-  classEstimator.estimateClasses(skillNames, (name) => gameSpellData.getClassesForSpell(currentInstallRoot, name))
-));
+// Combat tab class estimate (owner, 13-14 Sep): a spell only one class can cast is real evidence
+// of one of an attacker's (possibly multiclass) classes - but ONLY when that attacker was actually
+// seen CASTING it, never from a damage-log skill name (a buff's proc damage doesn't say who cast
+// the buff) - see classEstimator.js's own header comment. `fightId` names which engine's
+// castsByAttacker this attacker's evidence lives in (the live session, or one specific log scan) -
+// a scanned log's own casts must never be attributed against the live session's, or vice versa.
+ipcMain.handle('damage:estimateClasses', (_event, { fightId, attackerName } = {}) => {
+  const resolved = sourceForCompositeId(fightId);
+  const castSkills = resolved ? resolved.src.engine.getCastSkills(attackerName) : [];
+  return classEstimator.estimateClasses(castSkills, (name) => gameSpellData.getClassesForSpell(currentInstallRoot, name));
+});
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
 ipcMain.handle('resetPrompt:getPending', () => resetPromptWindow.getPending());
 ipcMain.handle('resetPrompt:answer', (_event, choice) => resetPromptWindow.answer(choice));

@@ -9735,6 +9735,8 @@ function initCombatPage() {
   const visitList = document.getElementById('combat-visit-list');
   const historyEmpty = document.getElementById('combat-history-empty');
   const zoneFilter = document.getElementById('combat-zone-filter');
+  const minDamageInput = document.getElementById('combat-min-damage');
+  const DEFAULT_MIN_DAMAGE = 50000;
   const detailScreen = document.getElementById('combat-detail-screen');
   const detailTitle = document.getElementById('combat-detail-title');
   const detailBars = document.getElementById('combat-detail-bars');
@@ -9803,15 +9805,18 @@ function initCombatPage() {
   // measured against the total leaves every bar short in a five-person group, same reasoning the
   // live overlay's own bars already use), click to accordion its skill breakdown open underneath.
   // Fetched up front for every row in parallel, not per-row as the DOM is built, so one slow
-  // lookup can't stagger the chart appearing row by row.
-  async function renderBars(container, rows, durationSec) {
+  // lookup can't stagger the chart appearing row by row. `sourceFightId` is any one composite
+  // fight id belonging to the SAME engine this row's data came from (the live session, or one
+  // specific log scan) - the class estimate reads that engine's own castsByAttacker, and a scanned
+  // log's casts must never blend with the live session's.
+  async function renderBars(container, rows, durationSec, sourceFightId) {
     container.innerHTML = '';
     const top = rows.length ? rows[0].damage : 0;
-    // Class estimate (owner, 13 Sep): a buff landing (Puma, etc.) can't be used for this - it
-    // never says who cast it, only who it landed on - but a combat skill always names the real
-    // attacker, so a skill only one class can cast is real evidence. See classEstimator.js.
+    // Class estimate (owner, 13-14 Sep): only ever built from skills this attacker was actually
+    // seen CASTING - never damage, which can't say who cast a buff whose proc it's crediting. See
+    // classEstimator.js's own header comment.
     const classEstimates = await Promise.all(
-      rows.map((row) => window.eqTracker.estimateDamageClasses(row.bySkill.map((s) => s.skill)))
+      rows.map((row) => window.eqTracker.estimateDamageClasses(sourceFightId, row.name))
     );
     rows.forEach((row, i) => {
       const details = document.createElement('details');
@@ -9831,10 +9836,22 @@ function initCombatPage() {
       // The class estimate is the FIRST text in the bar, its own column ahead of the damage
       // amount (owner, 13 Sep) - a fixed-width slot so every row lines up the same way whether or
       // not that row actually resolved to anything ("-" when it didn't, never a missing column).
+      // Each class is coloured by its own confidence (owner, 13 Sep: "green for 100% guaranteed,
+      // orange for maybe") - see classEstimator.js for how confirmed/maybe are decided.
       const label = document.createElement('div');
       label.className = 'combat-bar-label';
+      const classWrap = document.createElement('span');
+      classWrap.className = 'combat-bar-class';
       const classes = classEstimates[i];
-      label.appendChild(span(classes && classes.length ? classes.join('/') : '—', 'combat-bar-class'));
+      if (classes && classes.length) {
+        classes.forEach((c, ci) => {
+          if (ci > 0) classWrap.appendChild(document.createTextNode('/'));
+          classWrap.appendChild(span(c.name, `combat-bar-class-${c.confidence}`));
+        });
+      } else {
+        classWrap.appendChild(span('—', 'combat-bar-class-unknown'));
+      }
+      label.appendChild(classWrap);
       label.appendChild(span(formatDamage(row.damage), 'combat-bar-amount'));
       track.appendChild(label);
 
@@ -9910,6 +9927,10 @@ function initCombatPage() {
     row.className = 'combat-fight-list-row';
     const summary = document.createElement('summary');
     summary.appendChild(span(formatWhen(fight.endedAt)));
+    // "The fight breakdown for each zone should say what fight it is - if a named was fought it
+    // should list the named, if no named was found it should just say Trash" (owner, 14 Sep).
+    const label = fight.label || 'Trash';
+    summary.appendChild(span(label, label === 'Trash' ? 'combat-fight-label combat-fight-label-trash' : 'combat-fight-label'));
     summary.appendChild(span(`${formatDuration(fight.durationSec)}, ${formatDamage(fight.totalDamage)}, top: ${fight.topAttacker || '—'}`));
     row.appendChild(summary);
     if (detail) {
@@ -9924,7 +9945,7 @@ function initCombatPage() {
       row.addEventListener('toggle', () => {
         if (row.open && !nested.dataset.rendered) {
           nested.dataset.rendered = '1';
-          renderBars(nested, detail.rows, detail.durationSec);
+          renderBars(nested, detail.rows, detail.durationSec, fight.id);
         }
       }, { once: false });
     }
@@ -9966,7 +9987,9 @@ function initCombatPage() {
       .sort((a, b) => b.damage - a.damage);
     // The visit's own DPS divides by the SUM of its fights' durations, not the wall-clock span
     // between the first and last - the gaps in between are downtime, not part of any fight.
-    await renderBars(detailBars, rows, totalDuration);
+    // Any one fight in the visit names the right engine for the class estimate (see
+    // sourceForCompositeId in main.js) - a visit never spans more than one source in practice.
+    await renderBars(detailBars, rows, totalDuration, visit.fights[0]?.id);
 
     // "Fights should be organised earliest first" - visit.fights is already in that order (see
     // buildVisits), so the fight list below the combined chart reads as "pull 1, pull 2, ..." top
@@ -10033,11 +10056,25 @@ function initCombatPage() {
     if (zones.includes(previous)) zoneFilter.value = previous;
   }
 
+  // "A filter to exclude logs of fights under a certain total damage value... defaulted to
+  // anything less than 50k" (owner, 14 Sep) - a one-hit trash mob or stray retaliation swing
+  // showing up as its own "1 fight" visit was pure noise. Filters individual FIGHTS (not whole
+  // visits) before they're grouped - a visit that had one real pull and one throwaway hit keeps
+  // the real pull and loses only the throwaway; a visit made up ENTIRELY of small fights simply
+  // stops appearing, same as the zone filter already does for an empty zone.
+  function minDamage() {
+    const n = Number(minDamageInput.value);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+
   function render() {
     historyEmpty.style.display = lastHistory.length ? 'none' : '';
     populateZoneFilter(lastHistory);
     const filter = zoneFilter.value;
-    const filtered = filter ? lastHistory.filter((f) => (f.zone || UNKNOWN_ZONE) === filter) : lastHistory;
+    const floor = minDamage();
+    const filtered = lastHistory.filter((f) => (
+      (!filter || (f.zone || UNKNOWN_ZONE) === filter) && f.totalDamage >= floor
+    ));
     renderList(buildVisits(filtered));
   }
 
@@ -10092,6 +10129,10 @@ function initCombatPage() {
   }
   if (backBtn) backBtn.addEventListener('click', showList);
   if (zoneFilter) zoneFilter.addEventListener('change', render);
+  if (minDamageInput) {
+    minDamageInput.value = String(DEFAULT_MIN_DAMAGE);
+    minDamageInput.addEventListener('input', render);
+  }
   const navBtnCombat = document.getElementById('combat-nav-btn');
   if (navBtnCombat) navBtnCombat.addEventListener('click', loadHistory);
   loadHistory();

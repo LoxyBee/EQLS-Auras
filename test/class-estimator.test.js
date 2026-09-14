@@ -1,10 +1,11 @@
 'use strict';
 /**
- * Combat tab class estimate (owner, 13 Sep). Buffs can't be used for this - a buff landing on the
- * attacker doesn't say who cast it, so an ally casting Puma on them would look identical to a
- * self-cast. A combat/damage line has no such ambiguity: it always names the actual attacker. So
- * estimateClasses() only ever looks at skill names already attributed to one specific attacker,
- * and only counts a skill as evidence when it's castable by exactly one class.
+ * Combat tab class estimate (owner, 13-14 Sep). ONLY ever built from skill names an attacker was
+ * actually seen CASTING - never a damage-log skill name, which can't prove who cast a buff (a
+ * proc's damage sits on the attacker whether they cast the buff themselves or an ally did). A
+ * skill castable by exactly one class is CONFIRMED evidence (rendered green); a skill shared by a
+ * small number of classes is MAYBE evidence for each of them (orange); a skill shared by too many
+ * classes to mean anything is ignored outright.
  */
 
 const assert = require('node:assert/strict');
@@ -15,14 +16,33 @@ const { test, report } = require('./harness');
 const { estimateClasses } = require('../src/shared/classEstimator');
 const gameSpellData = require('../src/main/gameSpellData');
 
-test('a skill castable by exactly one class is counted as evidence for that class', () => {
-  const lookup = (name) => ({ 'energy storm': ['Wiz'], 'puma maw': ['Rng'] }[name.toLowerCase()] || null);
-  assert.deepEqual(estimateClasses(['Energy Storm', 'Puma Maw'], lookup), ['Wiz', 'Rng']);
+test('a spell castable by exactly one class is CONFIRMED evidence for that class', () => {
+  const lookup = (name) => ({ 'energy storm': ['Wiz'], 'spirit of the puma': ['Rng'] }[name.toLowerCase()] || null);
+  assert.deepEqual(
+    estimateClasses(['Energy Storm', 'Spirit of the Puma'], lookup),
+    [{ name: 'Wiz', confidence: 'confirmed' }, { name: 'Rng', confidence: 'confirmed' }]
+  );
 });
 
-test('a skill shared by several classes contributes nothing - ambiguous, not guessed', () => {
-  const lookup = (name) => ({ 'fireball': ['Wiz', 'Mag'], 'harm touch': ['Wiz'] }[name.toLowerCase()] || null);
-  assert.deepEqual(estimateClasses(['Fireball', 'Harm Touch'], lookup), ['Wiz']);
+test('a spell shared by a small number of classes is MAYBE for each of them, not confirmed', () => {
+  const lookup = () => ['Wiz', 'Mag'];
+  assert.deepEqual(
+    estimateClasses(['Fireball'], lookup),
+    [{ name: 'Wiz', confidence: 'maybe' }, { name: 'Mag', confidence: 'maybe' }]
+  );
+});
+
+test('a class already confirmed elsewhere is not also listed as maybe', () => {
+  const lookup = (name) => ({ 'harm touch': ['Wiz'], 'fireball': ['Wiz', 'Mag'] }[name.toLowerCase()] || null);
+  assert.deepEqual(
+    estimateClasses(['Harm Touch', 'Fireball'], lookup),
+    [{ name: 'Wiz', confidence: 'confirmed' }, { name: 'Mag', confidence: 'maybe' }]
+  );
+});
+
+test('a spell shared by too many classes to mean anything contributes nothing at all', () => {
+  const lookup = () => ['War', 'Clr', 'Pal', 'Rng', 'SHD']; // 5 classes - past MAX_MAYBE_CLASSES
+  assert.deepEqual(estimateClasses(['Generic AA'], lookup), []);
 });
 
 test('an unrecognised skill name (lookup returns null) is silently skipped, not an error', () => {
@@ -32,7 +52,7 @@ test('an unrecognised skill name (lookup returns null) is silently skipped, not 
 
 test('duplicate single-class skills only count their class once', () => {
   const lookup = () => ['Nec'];
-  assert.deepEqual(estimateClasses(['Lifetap', 'Lifetap II'], lookup), ['Nec']);
+  assert.deepEqual(estimateClasses(['Lifetap', 'Lifetap II'], lookup), [{ name: 'Nec', confidence: 'confirmed' }]);
 });
 
 test('no skill names at all (or a null/undefined list) yields no classes, not a crash', () => {
@@ -44,7 +64,8 @@ test('no skill names at all (or a null/undefined list) yields no classes, not a 
 
 test('three single-class skills from three different classes surface all three - the whole point for a multiclass character', () => {
   const lookup = (name) => ({ 'a': ['Rng'], 'b': ['Nec'], 'c': ['Shm'] }[name.toLowerCase()] || null);
-  assert.deepEqual(new Set(estimateClasses(['A', 'B', 'C'], lookup)), new Set(['Rng', 'Nec', 'Shm']));
+  const names = new Set(estimateClasses(['A', 'B', 'C'], lookup).map((c) => c.name));
+  assert.deepEqual(names, new Set(['Rng', 'Nec', 'Shm']));
 });
 
 // ---------------------------------------------------------------------------
@@ -103,6 +124,32 @@ test('a spell several classes can cast lists every one of them, in class-id orde
 test('an unrecognised spell name returns null, not an empty array (so the estimator can tell "no data" from "no class")', () => {
   withTempInstall([spellLine(1, 'Energy Storm', only(11))], (dir) => {
     assert.equal(gameSpellData.getClassesForSpell(dir, 'Not A Real Spell'), null);
+  });
+});
+
+// Owner-reported bug, 14 Sep: a combat skill was confidently reported as "Enchanter" for a
+// character who never touched an Enchanter spell. Root cause: two UNRELATED spells (not rank
+// tiers of one spell) sharing the exact same name resolved via "first entry in the file wins" -
+// whichever class's version happened to be listed first. The fix is a UNION across every entry
+// sharing a name: a name that really does mean two different spells for two different classes now
+// honestly reports "2 classes" (demoting it out of "confirmed" entirely, since MAX_MAYBE_CLASSES
+// in classEstimator.js only starts at 2) instead of confidently picking a winner.
+test('two different spells that happen to share a name resolve to the UNION of both classes, not whichever came first', () => {
+  withTempInstall([
+    spellLine(1, 'Chaos Flux', only(13)), // Enc-only, listed FIRST
+    spellLine(2, 'Chaos Flux', only(3)), // Rng-only, listed second - would be shadowed by first-wins
+  ], (dir) => {
+    assert.deepEqual(gameSpellData.getClassesForSpell(dir, 'Chaos Flux'), ['Rng', 'Enc']);
+  });
+});
+
+test('the same union fix still gives a single, unambiguous answer for a genuine rank ladder (one real spell, several entries)', () => {
+  withTempInstall([
+    spellLine(1, 'Yaulp VIII', only(1)), // Clr-only
+    spellLine(2, 'Yaulp IX', only(1)), // Clr-only - same class, not a different spell for a different class
+  ], (dir) => {
+    assert.deepEqual(gameSpellData.getClassesForSpell(dir, 'Yaulp VIII'), ['Clr']);
+    assert.deepEqual(gameSpellData.getClassesForSpell(dir, 'Yaulp IX'), ['Clr']);
   });
 });
 

@@ -2785,8 +2785,13 @@ body.sidebar-resizing .sidebar {
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  opacity: 0.8;
 }
+/* Confidence colour (owner, 13 Sep: "colour the classes by green for 100% guaranteed, orange for
+   maybe") - see classEstimator.js for how confirmed/maybe are decided. "-" (nothing resolved) gets
+   neither colour, just a dim neutral, so it never looks like a low-confidence guess. */
+.combat-bar-class-confirmed { color: #6fd67a; }
+.combat-bar-class-maybe { color: #e0a94e; }
+.combat-bar-class-unknown { opacity: 0.6; }
 .combat-bar-amount { flex: 0 0 auto; }
 .combat-bar-dps {
   position: absolute;
@@ -2904,4 +2909,10 @@ body.sidebar-resizing .sidebar {
 .combat-fight-list-row > summary::-webkit-details-marker { display: none; }
 .combat-fight-list-row:hover > summary { background: var(--surface-hover, rgba(255, 255, 255, 0.05)); }
 .combat-fight-list-row > summary span:first-child { flex: 0 0 auto; opacity: 0.75; font-variant-numeric: tabular-nums; }
+/* What was actually fought (owner, 14 Sep: "if a named was fought it should list the named, if no
+   named was found it should just say Trash") - see src/shared/fightLabel.js. A real name reads
+   like the zone-link accent colour (a genuine, notable fact about the fight); "Trash" stays muted
+   - it's the absence of one. */
+.combat-fight-label { flex: 0 0 auto; font-weight: 600; color: var(--accent, #c99a3f); }
+.combat-fight-label-trash { font-weight: 400; opacity: 0.55; color: inherit; }
 .combat-fight-bars { padding: 4px 4px 10px 20px; }
