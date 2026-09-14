@@ -32,12 +32,29 @@ test('a spell shared by a small number of classes is MAYBE for each of them, not
   );
 });
 
-test('a class already confirmed elsewhere is not also listed as maybe', () => {
+// Owner, live-caught against real data (Avenrae, The Plane of Fear, 12 Sep): a shared spell is
+// fully explained the moment one of its candidates is already confirmed - it contributes nothing
+// FURTHER, including to a bystander candidate that has no other evidence of its own. Fireball
+// (Wiz/Mag) here is completely accounted for by Wiz (already confirmed via Harm Touch), so Mag -
+// which has no spell of its own naming it - gets no boost from a spell that isn't really evidence
+// of Mag at all.
+test('a spell fully explained by an already-confirmed class gives no boost to its unconfirmed co-candidate', () => {
   const lookup = (name) => ({ 'harm touch': ['Wiz'], 'fireball': ['Wiz', 'Mag'] }[name.toLowerCase()] || null);
   assert.deepEqual(
     estimateClasses(['Harm Touch', 'Fireball'], lookup),
-    [{ name: 'Wiz', confidence: 'confirmed' }, { name: 'Mag', confidence: 'maybe' }]
+    [{ name: 'Wiz', confidence: 'confirmed' }]
   );
+});
+
+// But a class that DOES have its own independent evidence still keeps it - "explaining away" only
+// withholds a FURTHER boost from an already-explained spell, it never erases real evidence a class
+// already earned on its own.
+test('a spell fully explained by a confirmed class does not erase real evidence its co-candidate already has', () => {
+  const lookup = (name) => ({
+    'harm touch': ['Wiz'], 'fireball': ['Wiz', 'Mag'], 'lifetap': ['Mag'],
+  }[name.toLowerCase()] || null);
+  const result = estimateClasses(['Harm Touch', 'Fireball', 'Lifetap'], lookup);
+  assert.deepEqual(new Set(result.map((c) => c.name)), new Set(['Wiz', 'Mag']));
 });
 
 test('a spell shared by too many classes to mean anything contributes nothing at all', () => {
@@ -118,6 +135,53 @@ test('a class confirmed by SEVERAL distinct spells still outranks a lone maybe c
   const result = estimateClasses(['A', 'B', 'C', 'D'], lookup);
   assert.equal(result[0].name, 'Nec');
   assert.equal(result[0].confidence, 'confirmed');
+});
+
+// Owner, 14 Sep, live-caught against her OWN real log (Avenrae, The Plane of Fear, 12 Sep 2026,
+// verified directly against the real spells_us.txt and the real cast lines - not synthetic data):
+// "avenrae is now a druid" was wrong. Real evidence: 6 Ranger-exclusive spells and 5 Wizard-
+// exclusive spells (both real, correct), plus 4 spells shared between Ranger/Druid and exactly one
+// genuinely Druid-only spell. Counting every shared spell toward EVERY candidate let those 4
+// shared spells inflate Druid to nearly Ranger's own total (Ranger was already proven six times
+// over and needed no help from Druid to explain them), crowding the real Wizard evidence out of
+// the top 3. The owner's own stated ground truth for this exact fight is Wiz/SHD/Rng.
+test('the owner\'s own real-log scenario: Ranger/Druid overlap must not crowd out independently-proven Wizard', () => {
+  const lookup = (name) => ({
+    // 6 real Ranger-exclusive spells (a sample; the real fight had more)
+    'call of sky': ['Rng'], 'call of earth': ['Rng'], "force of nature": ['Rng'],
+    "nature's precision": ['Rng'], 'call of flame x': ['Rng'], 'scorching arrow vi': ['Rng'],
+    // 5 real Wizard-exclusive spells
+    'frost storm vii': ['Wiz'], 'supernova vi': ['Wiz'], "garrison's mighty mana shock x": ['Wiz'],
+    'improved familiar i': ['Wiz'], 'lesser familiar': ['Wiz'],
+    // Spells genuinely shared between Ranger and Druid - 6 of them, deliberately MORE than Wiz's
+    // 5 exclusive spells, so a test relying on "explain away" actually distinguishes the fix from
+    // the bug (5 shared vs Wiz's 5 would only ever produce a coincidental TIE, which a stable sort
+    // can resolve either way by pure insertion-order luck without the fix doing anything at all -
+    // confirmed by mutation-testing this exact test against the un-fixed code).
+    'spikecoat': ['Rng', 'Dru'], 'wolf form': ['Rng', 'Dru'],
+    'shield of brambles': ['Rng', 'Dru'], 'bramblecoat': ['Rng', 'Dru'],
+    'nature walk': ['Rng', 'Dru'], "predator's eye": ['Rng', 'Dru'],
+    // exactly one real Druid-only spell
+    'circle of feerrott': ['Dru'],
+    // some SHD spells too, so SHD legitimately outranks everyone (matches the real fight)
+    'summon dead vi': ['SHD'], 'strengthen death': ['SHD'], 'scream of death': ['SHD'],
+    'dark temptation': ['SHD'], 'spear of pain': ['SHD'], 'shroud of hate': ['SHD'],
+    'shroud of pain': ['SHD'], 'terror of shadows': ['SHD'], 'scream of pain': ['SHD'],
+    'harm touch x': ['SHD'], 'voice of darkness': ['SHD'],
+  }[name.toLowerCase()] || null);
+  const castSkills = [
+    'Call of Sky', 'Call of Earth', 'Force of Nature', "Nature's Precision", 'Call of Flame X', 'Scorching Arrow VI',
+    'Frost Storm VII', 'Supernova VI', "Garrison's Mighty Mana Shock X", 'Improved Familiar I', 'Lesser Familiar',
+    'Spikecoat', 'Wolf Form', 'Shield of Brambles', 'Bramblecoat', 'Nature Walk', "Predator's Eye", 'Circle of Feerrott',
+    'Summon Dead VI', 'Strengthen Death', 'Scream of Death', 'Dark Temptation', 'Spear of Pain',
+    'Shroud of Hate', 'Shroud of Pain', 'Terror of Shadows', 'Scream of Pain', 'Harm Touch X', 'Voice of Darkness',
+  ];
+  const result = estimateClasses(castSkills, lookup);
+  assert.deepEqual(
+    result.map((c) => c.name),
+    ['SHD', 'Rng', 'Wiz'],
+    `expected the owner's own verified ground truth Wiz/SHD/Rng (Druid crowded out by real evidence): ${JSON.stringify(result)}`
+  );
 });
 
 test('three single-class skills from three different classes surface all three - the whole point for a multiclass character', () => {
