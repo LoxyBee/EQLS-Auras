@@ -2777,12 +2777,19 @@ body.sidebar-resizing .sidebar {
 .combat-skill-name { opacity: 0.85; }
 /* Each fight is its own accordion now, not a navigation - clicking one expands its bar chart in
    place (owner, 13 Sep: "so you can find yourself again faster") instead of opening a screen that
-   then needs its own way back. */
+   then needs its own way back.
+   `> summary` (direct child), not a bare descendant selector, on every rule below - a nested
+   .combat-bar-row's OWN <summary> lives inside this element too (fight -> its per-player bars),
+   and a same-specificity descendant selector here would win by file order and silently flatten
+   every nested bar's grid layout to this row's flex one. That exact bug shipped once already:
+   "no colours" on every player inside an expanded fight - the DOM and the inline bar-fill colour
+   were both correct, only the CHOSEN display mode was wrong, because this rule reached two levels
+   deeper than intended. */
 .combat-fight-list-row {
   border-bottom: 1px solid var(--line);
 }
 .combat-fight-list-row:last-child { border-bottom: none; }
-.combat-fight-list-row summary {
+.combat-fight-list-row > summary {
   display: flex;
   gap: 10px;
   padding: 6px 4px;
@@ -2790,7 +2797,7 @@ body.sidebar-resizing .sidebar {
   cursor: pointer;
   list-style: none;
 }
-.combat-fight-list-row summary::-webkit-details-marker { display: none; }
-.combat-fight-list-row:hover summary { background: var(--surface-hover, rgba(255, 255, 255, 0.05)); }
-.combat-fight-list-row summary span:first-child { flex: 0 0 auto; opacity: 0.75; font-variant-numeric: tabular-nums; }
+.combat-fight-list-row > summary::-webkit-details-marker { display: none; }
+.combat-fight-list-row:hover > summary { background: var(--surface-hover, rgba(255, 255, 255, 0.05)); }
+.combat-fight-list-row > summary span:first-child { flex: 0 0 auto; opacity: 0.75; font-variant-numeric: tabular-nums; }
 .combat-fight-bars { padding: 4px 4px 10px 20px; }

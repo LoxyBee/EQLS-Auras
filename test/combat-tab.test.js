@@ -140,5 +140,24 @@ test('the zone filter is populated from the actual history and narrows what rend
   assert.match(fn[1], /filter \? lastHistory\.filter/, 'an empty filter value must mean "all zones", not "no zones"');
 });
 
+// Confirmed live, 13 Sep: a nested .combat-bar-row (a fight's own per-player bars, expanded inside
+// a .combat-fight-list-row) came out with no colour, no bar, no damage amount - the DOM and the
+// inline fill colour were both correct (checked directly), only the applied `display` was wrong.
+// Cause: `.combat-fight-list-row summary { display: flex; ... }` is a DESCENDANT selector, so it
+// also matched the nested bar-row's own <summary> two levels down; same specificity as
+// `.combat-bar-row summary { display: grid; ... }`, and later in the file, so it won. Pinning the
+// `>` (direct-child) fix so this can't silently regress the next time either block is touched.
+test('the fight-row accordion styles its OWN summary only - a direct-child combinator, not a descendant one', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  const start = css.indexOf('.combat-fight-list-row {');
+  assert.ok(start !== -1, 'the fight-list-row CSS block has moved or been removed');
+  const block = css.slice(start, start + 700);
+  assert.doesNotMatch(
+    block, /\.combat-fight-list-row summary\b/,
+    'a bare descendant selector here leaks into the nested .combat-bar-row summary two levels down and silently overrides its grid layout with flex'
+  );
+  assert.match(block, /\.combat-fight-list-row > summary \{/, 'the direct-child fix is missing');
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));
