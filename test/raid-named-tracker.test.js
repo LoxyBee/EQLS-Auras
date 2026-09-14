@@ -455,13 +455,40 @@ test('a real zone change while a prompt is pending cancels it rather than leavin
 
 test('a fresh Voidling re-entry still resets automatically even with a question already pending', () => {
   const { t } = make();
-  enter(t, 'The Plane of Fear');
+  // A repeated TAGGED (non-"- Group") entry - not a tagged->bare exit (see the "exiting a d4 into
+  // public" test below) - is still genuinely ambiguous and queues a question.
+  enterOpen(t, 'The Plane of Fear 1 (Awakened)');
   slay(t, 'Terror');
-  enterOpen(t, 'The Plane of Fear'); // ambiguous - queues a question
+  enterOpen(t, 'The Plane of Fear 1 (Awakened)');
   assert.ok(t.getPendingResetPrompt());
   enter(t, 'The Plane of Fear'); // a real hail this time - a genuinely fresh instance
   assert.equal(t.getPendingResetPrompt(), null, 'the stale question was not cleared');
   assert.equal(t.getActive().find((r) => r.name === 'Terror').killed, false, 'the fresh instance did not reset');
+});
+
+// Owner, 14 Sep: "raid got prompted exiting a d4 into public again" - real bug, screenshot-
+// confirmed live. Stepping OUT of a tagged instance into the bare, suffix-less zone name can never
+// be a fresh attempt (leaving is not starting a new pull), so it must never ask.
+test('leaving a tagged instance for the bare public zone never asks, even with kills tracked', () => {
+  const { t } = make();
+  enterOpen(t, 'The Plane of Fear 4 (Refined)');
+  slay(t, 'Terror');
+  let asked = false;
+  t.on('resetPromptNeeded', () => { asked = true; });
+  enterOpen(t, 'The Plane of Fear'); // stepping out to the public hub, no tag at all
+  assert.equal(asked, false, 'exiting to the bare zone must never trigger the reset-or-keep popup');
+  assert.equal(t.getPendingResetPrompt(), null);
+  assert.equal(t.getActive().find((r) => r.name === 'Terror').killed, true, 'the board must keep showing progress while standing in the hub');
+});
+
+test('a bare-to-bare repeat (no tiered form exists, e.g. Nagafen\'s Lair) still asks - the exit-to-public exception does not apply', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  let asked = false;
+  t.on('resetPromptNeeded', () => { asked = true; });
+  enterOpen(t, "Nagafen's Lair"); // bare re-entry, same as before - the ONLY shape a real 2nd attempt can take here
+  assert.equal(asked, true, 'a dungeon with no difficulty tiers must still get to ask on a same-shape re-entry');
 });
 
 // ---------------------------------------------------------------------------

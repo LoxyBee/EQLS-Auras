@@ -68,6 +68,10 @@ class RaidNamedTracker extends EventEmitter {
     // bareName(namedName) -> { name, tier, killedAt: ms|null, respawnAt: ms|null }
     this.board = new Map();
     this.debugLogFn = null;
+    // Whether the entry line that built the CURRENT board carried any instance suffix at all
+    // (tagged or not) - see _enterZone's "exiting a d4 into public" comment. Only meaningful
+    // together with currentZone; reset alongside it.
+    this._currentHasSuffix = false;
     // True when the current tracked zone IS the raid-lockout instance, not a plain group run -
     // read straight off the zone string's own " - Group" marker (see isGroupInstance). Metadata
     // only; the board shows either way now.
@@ -226,6 +230,7 @@ class RaidNamedTracker extends EventEmitter {
       if (this.currentZone !== null) {
         this.currentZone = null;
         this.viaVoidling = false;
+        this._currentHasSuffix = false;
         this.board = new Map();
         this._debugLog(`RAID BOARD - left tracked zone, board cleared`);
         this.emit('changed', this.getActive());
@@ -244,7 +249,20 @@ class RaidNamedTracker extends EventEmitter {
     // quietly, same as before. If there IS something that could be lost, ask rather than guess -
     // once per re-entry, not once per line (the entrance-then-instance-suffix pair would otherwise
     // ask twice for the one visit).
+    const hasSuffix = baseZone !== String(rawZone || '').trim();
     if (this.currentZone === baseZone && !viaVoidling) {
+      // Owner, 14 Sep: "raid got prompted exiting a d4 into public again" - stepping OUT of a
+      // tagged instance back into the bare, suffix-less hub can never be a fresh attempt (you
+      // cannot start a new pull by leaving), so that specific transition never asks. A bare-to-
+      // bare repeat is left alone below and still asks when kills exist - for a dungeon with no
+      // tiered form at all (Nagafen's Lair), a bare re-entry is the ONLY shape a genuine second
+      // attempt can take, and that ambiguity is exactly what the ask exists for.
+      const wasTagged = this._currentHasSuffix;
+      this._currentHasSuffix = hasSuffix;
+      if (wasTagged && !hasSuffix) {
+        this._debugLog(`RAID BOARD - left the tagged instance for the bare hub of "${baseZone}" - keeping progress, not asking`);
+        return;
+      }
       const hasKills = [...this.board.values()].some((e) => e.killedAt);
       if (hasKills && !this._seeding && !this.pendingResetPrompt) {
         this.pendingResetPrompt = { zone: baseZone };
@@ -268,6 +286,7 @@ class RaidNamedTracker extends EventEmitter {
 
     this.currentZone = baseZone;
     this.viaVoidling = !!viaVoidling;
+    this._currentHasSuffix = hasSuffix;
     this.board = RaidNamedTracker._freshBoard(entry);
     this._debugLog(
       `RAID BOARD - entered "${baseZone}"${viaVoidling ? ' (via Voidling)' : ''}, ${this.board.size} named up`
