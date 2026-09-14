@@ -195,6 +195,53 @@ test('the fight-row accordion styles its OWN summary only - a direct-child combi
 // - openVisit's cross-fight aggregation built a fresh { skill, damage } object per skill with no
 // hits/crits fields at all, so summing several fights' worth of the same skill silently discarded
 // both. This pins that the merge actually carries them, not just damage.
+// Owner, 14 Sep: "let's also make this have distinct columns. date, boss/trash name, time, total
+// damage, top dps. top dps should be right most, the name field should be the longest one that
+// fills the section." - was one combined "36s, 77.4k, top: You" string tacked onto a flex row.
+test('each fight row has 5 distinct columns - date, name, time, damage, top dps - name is the flexible one, top dps is rightmost', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'fightAccordionRow has been restructured or removed');
+  assert.match(fn[1], /span\(formatWhen\(fight\.endedAt\), 'combat-fight-date'\)/);
+  assert.match(fn[1], /span\(formatDuration\(fight\.durationSec\), 'combat-fight-duration'\)/);
+  assert.match(fn[1], /span\(formatDamage\(fight\.totalDamage\), 'combat-fight-damage'\)/);
+  assert.match(fn[1], /span\(fight\.topAttacker \|\| '—', 'combat-fight-top'\)/);
+  // top dps must be the LAST column appended, since a grid lays out children in DOM order
+  const order = ['combat-fight-date', 'combat-fight-label', 'combat-fight-duration', 'combat-fight-damage', 'combat-fight-top']
+    .map((cls) => fn[1].indexOf(cls));
+  assert.ok(order.every((i) => i !== -1), 'one of the 5 column classes is missing');
+  for (let i = 1; i < order.length; i++) {
+    assert.ok(order[i] > order[i - 1], 'the 5 columns must be appended in date/name/time/damage/top-dps order, top dps last (rightmost)');
+  }
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-fight-list-row > summary \{[^}]*grid-template-columns: [^;]*1fr/s,
+    'the name column must be the flexible (1fr) one that fills the row, not a fixed width like every other column'
+  );
+  // A bare `1fr` column that also has `overflow: hidden` (needed for the ellipsis) collapses to
+  // ZERO width under a tight window, because overflow:hidden makes its automatic minimum size 0 -
+  // confirmed via a real browser render at a narrow width, where the name text vanished entirely
+  // rather than truncating. `minmax(<floor>, 1fr)` gives it an explicit floor instead.
+  assert.match(
+    css, /\.combat-fight-list-row > summary \{[^}]*grid-template-columns: 150px minmax\(\d+px, 1fr\)/s,
+    'the name column needs an explicit minmax() floor, or it can collapse to 0 width under overflow:hidden + a tight window'
+  );
+});
+
+test('the Back/Damage/Healing/Both buttons are all on one row', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="combat-detail-toolbar"');
+  assert.ok(start !== -1, 'the combat-detail-toolbar row is missing - the toggle got split back onto its own row');
+  const end = html.indexOf('</div>', html.indexOf('combat-detail-title'));
+  const section = html.slice(start, end);
+  assert.match(section, /id="combat-detail-back"/);
+  assert.match(section, /id="combat-view-toggle"/);
+  assert.match(section, /data-view="damage"/);
+  assert.match(section, /data-view="healing"/);
+  assert.match(section, /data-view="both"/);
+});
+
 test('a visit\'s combined skill totals carry hits and crits through the merge, not just damage', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function aggregateFightRows\(details, rowsKey\) \{([\s\S]*?)\n {2}\}/);

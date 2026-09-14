@@ -1072,15 +1072,16 @@
         <!-- One shared screen for both drill-downs: click a zone on the list above for the whole
              visit's combined totals, or a single fight inside that for just its own numbers. -->
         <div class="card" id="combat-detail-screen" style="display:none">
-          <div class="row">
+          <!-- All four buttons on one row (owner, 14 Sep). The view toggle is top level, not
+               attached to any one fight - switches every chart currently on screen at once, not
+               just whatever gets opened next. -->
+          <div class="row" id="combat-detail-toolbar">
             <button type="button" id="combat-detail-back">&larr; Back to fights</button>
-          </div>
-          <!-- Top level, not attached to any one fight (owner, 14 Sep) - switches every chart
-               currently on screen at once, not just whatever gets opened next. -->
-          <div class="row" id="combat-view-toggle">
-            <button type="button" class="combat-view-btn active" data-view="damage" title="Damage dealt - who hit what, and with what.">Damage</button>
-            <button type="button" class="combat-view-btn" data-view="healing" title="Healing done - who healed, and with what.">Healing</button>
-            <button type="button" class="combat-view-btn" data-view="both" title="Damage and healing combined into one total per person.">Both</button>
+            <div id="combat-view-toggle">
+              <button type="button" class="combat-view-btn active" data-view="damage" title="Damage dealt - who hit what, and with what.">Damage</button>
+              <button type="button" class="combat-view-btn" data-view="healing" title="Healing done - who healed, and with what.">Healing</button>
+              <button type="button" class="combat-view-btn" data-view="both" title="Damage and healing combined into one total per person.">Both</button>
+            </div>
           </div>
           <div class="row">
             <h3 id="combat-detail-title"></h3>

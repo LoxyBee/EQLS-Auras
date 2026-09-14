@@ -9944,13 +9944,20 @@ function initCombatPage() {
   function fightAccordionRow(fight, detail) {
     const row = document.createElement('details');
     row.className = 'combat-fight-list-row';
+    // Distinct columns (owner, 14 Sep: "let's also make this have distinct columns - date,
+    // boss/trash name, time, total damage, top dps... top dps should be right most, the name
+    // field should be the longest one that fills the section") - a real CSS grid (see
+    // main-window.css), not the flex row this used to be, with the name column taking the
+    // remaining space (`1fr`) and every other column a fixed width so nothing shifts row to row.
     const summary = document.createElement('summary');
-    summary.appendChild(span(formatWhen(fight.endedAt)));
+    summary.appendChild(span(formatWhen(fight.endedAt), 'combat-fight-date'));
     // "The fight breakdown for each zone should say what fight it is - if a named was fought it
     // should list the named, if no named was found it should just say Trash" (owner, 14 Sep).
     const label = fight.label || 'Trash';
     summary.appendChild(span(label, label === 'Trash' ? 'combat-fight-label combat-fight-label-trash' : 'combat-fight-label'));
-    summary.appendChild(span(`${formatDuration(fight.durationSec)}, ${formatDamage(fight.totalDamage)}, top: ${fight.topAttacker || '—'}`));
+    summary.appendChild(span(formatDuration(fight.durationSec), 'combat-fight-duration'));
+    summary.appendChild(span(formatDamage(fight.totalDamage), 'combat-fight-damage'));
+    summary.appendChild(span(fight.topAttacker || '—', 'combat-fight-top'));
     row.appendChild(summary);
     if (detail) {
       const nested = document.createElement('div');

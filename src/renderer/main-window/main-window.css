@@ -2922,8 +2922,13 @@ body.sidebar-resizing .sidebar {
   border-bottom: 1px solid var(--line);
 }
 .combat-fight-list-row:last-child { border-bottom: none; }
+/* Distinct columns (owner, 14 Sep): date, boss/trash name, time, total damage, top dps - top dps
+   RIGHTMOST, name is the flexible column that takes whatever space is left over. A real grid
+   (like .combat-visit-row above it), not flex natural-sizing, so nothing drifts row to row. */
 .combat-fight-list-row > summary {
-  display: flex;
+  display: grid;
+  grid-template-columns: 150px minmax(80px, 1fr) 70px 80px 100px;
+  align-items: baseline;
   gap: 10px;
   padding: 6px 4px;
   font-size: 12.5px;
@@ -2932,13 +2937,22 @@ body.sidebar-resizing .sidebar {
 }
 .combat-fight-list-row > summary::-webkit-details-marker { display: none; }
 .combat-fight-list-row:hover > summary { background: var(--surface-hover, rgba(255, 255, 255, 0.05)); }
-.combat-fight-list-row > summary span:first-child { flex: 0 0 auto; opacity: 0.75; font-variant-numeric: tabular-nums; }
+.combat-fight-date { opacity: 0.75; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* What was actually fought (owner, 14 Sep: "if a named was fought it should list the named, if no
    named was found it should just say Trash") - see src/shared/fightLabel.js. A real name reads
    like the zone-link accent colour (a genuine, notable fact about the fight); "Trash" stays muted
    - it's the absence of one. */
-.combat-fight-label { flex: 0 0 auto; font-weight: 600; color: var(--accent, #c99a3f); }
+.combat-fight-label {
+  font-weight: 600;
+  color: var(--accent, #c99a3f);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .combat-fight-label-trash { font-weight: 400; opacity: 0.55; color: inherit; }
+.combat-fight-duration { font-variant-numeric: tabular-nums; opacity: 0.75; text-align: right; white-space: nowrap; }
+.combat-fight-damage { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.combat-fight-top { text-align: right; opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combat-fight-bars { padding: 4px 4px 10px 20px; }
 /* Damage / Healing / Both (owner, 14 Sep) - the "Both" heading between the two stacked charts. */
 .combat-metric-heading {
@@ -2951,4 +2965,8 @@ body.sidebar-resizing .sidebar {
 }
 .combat-metric-heading:first-child { margin-top: 0; }
 /* Centred under the Back button, above the visit title (owner, 14 Sep layout request). */
-#combat-view-toggle { justify-content: center; }
+/* All four buttons on one row (owner, 14 Sep) - Back to fights stays left, the auto margins
+   centre the Damage/Healing/Both group in whatever space is left over, matching the earlier
+   "toggle centred between Back and the title" layout the owner asked for. */
+#combat-detail-toolbar { justify-content: flex-start; }
+#combat-view-toggle { display: flex; gap: 8px; margin: 0 auto; }
