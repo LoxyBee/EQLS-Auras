@@ -2760,16 +2760,34 @@ body.sidebar-resizing .sidebar {
   border-radius: 4px;
   opacity: 0.85;
 }
-.combat-bar-amount {
+/* Class estimate (owner, 13 Sep: "add in the class estimation and put it as the first text in
+   the damage coloured bar... make sure that it is it's own column") - `.combat-bar-label` is the
+   left-hand overlay (inset:0, same trick as the DPS one on the right), holding two children in a
+   fixed order: the class guess first, then the damage amount. `.combat-bar-class` gets its own
+   min-width so it reads as a real column - every row reserves the same slot for it, "-" when
+   nothing could be resolved, rather than the amount sliding left/right depending on whether that
+   particular row happened to guess anything. */
+.combat-bar-label {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
+  gap: 10px;
   padding: 0 8px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
+.combat-bar-class {
+  flex: 0 0 auto;
+  min-width: 46px;
+  font-weight: 600;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.8;
+}
+.combat-bar-amount { flex: 0 0 auto; }
 .combat-bar-dps {
   position: absolute;
   inset: 0;
@@ -2813,7 +2831,13 @@ body.sidebar-resizing .sidebar {
   border-top: none;
   padding-bottom: 6px;
 }
+/* Header labels and their data values must share the SAME alignment or the columns visibly don't
+   line up (owner, 13 Sep: "column text needs to be centered to line up correctly") - centred for
+   every column but Skill, which stays left (names, with the ellipsis overflow, read better
+   anchored left) on both the header and the data ('Skill' via :first-child below, the name cells
+   via .combat-skill-name's own default left alignment). */
 .combat-skill-header span:first-child { text-align: left; }
+.combat-skill-header span:not(:first-child) { text-align: center; }
 .combat-skill-track-area {
   grid-column: 2 / -1;
   position: relative;
@@ -2826,7 +2850,7 @@ body.sidebar-resizing .sidebar {
 .combat-skill-share, .combat-skill-crit {
   position: relative;
   z-index: 1;
-  text-align: right;
+  text-align: center;
   opacity: 0.7;
   font-variant-numeric: tabular-nums;
 }
@@ -2848,6 +2872,7 @@ body.sidebar-resizing .sidebar {
   z-index: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
   height: 100%;
   padding: 0 6px;
   font-size: 11px;

@@ -270,5 +270,63 @@ test('the DPS figure on a player bar is inset into the track, not stranded in a 
   );
 });
 
+// Owner, 13 Sep, fifth round: "column text needs to be centered to line up correctly" - the
+// previous round's restructure (moving share/crit off the bare row and into the track-area
+// sub-grid) dropped the header's own right-alignment for those columns without replacing it, so
+// "% OF TOTAL"/"CRIT %" (left-aligned by default) no longer lined up with their own right-aligned
+// data values. Centre is the actual fix requested, applied to both header and data so they can
+// never drift apart from each other again regardless of which side either one is anchored to.
+test('the skill breakdown\'s Damage/percent/crit columns are centred, header and data alike', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-skill-header span:not\(:first-child\) \{ text-align: center; \}/,
+    'every header label but Skill must be centred, or it drifts from its own centred data column'
+  );
+  assert.match(
+    css, /\.combat-skill-share, \.combat-skill-crit \{[^}]*text-align: center;/s,
+    'the % of total / crit % data values must be centred, matching their now-centred headers'
+  );
+  assert.match(
+    css, /\.combat-skill-amount \{[^}]*justify-content: center;/s,
+    'the damage amount must be centred too, matching the centred "Damage" header above it'
+  );
+});
+
+// Owner, 13 Sep, sixth round: "add in the class estimation and put it as the first text in the
+// damage coloured bar... make sure that it is it's own column" - a guessed class (from
+// classEstimator.js, fed by combat skills already attributed to this specific attacker - never
+// buffs, which don't say who cast them) rendered ahead of the damage amount, in a distinct,
+// consistently-sized slot rather than mixed into the same text.
+test('the class estimate is the first thing in the damage bar, in its own column ahead of the amount', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars must exist and be async - it awaits a class estimate for every row');
+  assert.match(
+    fn[1], /window\.eqTracker\.estimateDamageClasses\(row\.bySkill\.map\(\(s\) => s\.skill\)\)/,
+    'the estimate must be built from THIS row\'s own combat skills, not buffs or another row\'s data'
+  );
+  assert.match(
+    fn[1], /label\.appendChild\(span\([\s\S]*?'combat-bar-class'\)\)[\s\S]*label\.appendChild\(span\(formatDamage\(row\.damage\), 'combat-bar-amount'\)\)/,
+    'the class element must be appended BEFORE the amount element - it has to read first in the bar'
+  );
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-bar-class \{[^}]*min-width:/s,
+    'the class slot needs a fixed width so it reads as a real column, not text that shifts the amount around row to row'
+  );
+});
+
+// The IPC round trip the class estimate above depends on - main.js hosts the actual lookup
+// (gameSpellData needs the installed spells_us.txt, which only the main process can read).
+test('the class estimate is wired IPC -> preload -> renderer', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(
+    main, /ipcMain\.handle\('damage:estimateClasses', \(_event, skillNames\) => \(\s*classEstimator\.estimateClasses\(skillNames, \(name\) => gameSpellData\.getClassesForSpell\(currentInstallRoot, name\)\)/,
+    'the handler must exist and use the CURRENT install root, not a stale/hardcoded one'
+  );
+  const preload = read('src', 'preload', 'preload-main.js');
+  assert.match(preload, /estimateDamageClasses: \(skillNames\) => ipcRenderer\.invoke\('damage:estimateClasses', skillNames\)/);
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

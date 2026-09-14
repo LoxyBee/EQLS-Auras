@@ -9802,9 +9802,17 @@ function initCombatPage() {
   // One player's row: a coloured bar sized against the BIGGEST row (not the total - a bar
   // measured against the total leaves every bar short in a five-person group, same reasoning the
   // live overlay's own bars already use), click to accordion its skill breakdown open underneath.
-  function renderBars(container, rows, durationSec) {
+  // Fetched up front for every row in parallel, not per-row as the DOM is built, so one slow
+  // lookup can't stagger the chart appearing row by row.
+  async function renderBars(container, rows, durationSec) {
     container.innerHTML = '';
     const top = rows.length ? rows[0].damage : 0;
+    // Class estimate (owner, 13 Sep): a buff landing (Puma, etc.) can't be used for this - it
+    // never says who cast it, only who it landed on - but a combat skill always names the real
+    // attacker, so a skill only one class can cast is real evidence. See classEstimator.js.
+    const classEstimates = await Promise.all(
+      rows.map((row) => window.eqTracker.estimateDamageClasses(row.bySkill.map((s) => s.skill)))
+    );
     rows.forEach((row, i) => {
       const details = document.createElement('details');
       details.className = 'combat-bar-row';
@@ -9818,11 +9826,17 @@ function initCombatPage() {
       fill.className = 'combat-bar-fill';
       fill.style.width = `${top > 0 ? Math.max(2, (row.damage / top) * 100) : 0}%`;
       fill.style.background = BAR_COLORS[i % BAR_COLORS.length];
-      const amount = document.createElement('div');
-      amount.className = 'combat-bar-amount';
-      amount.textContent = formatDamage(row.damage);
       track.appendChild(fill);
-      track.appendChild(amount);
+
+      // The class estimate is the FIRST text in the bar, its own column ahead of the damage
+      // amount (owner, 13 Sep) - a fixed-width slot so every row lines up the same way whether or
+      // not that row actually resolved to anything ("-" when it didn't, never a missing column).
+      const label = document.createElement('div');
+      label.className = 'combat-bar-label';
+      const classes = classEstimates[i];
+      label.appendChild(span(classes && classes.length ? classes.join('/') : '—', 'combat-bar-class'));
+      label.appendChild(span(formatDamage(row.damage), 'combat-bar-amount'));
+      track.appendChild(label);
 
       // Inset into the track, not a separate column past its end (owner, 13 Sep: "dps numbers
       // should also go on top of the coloured bars... it should still be inset") - a short bar
@@ -9903,9 +9917,15 @@ function initCombatPage() {
       nested.className = 'combat-fight-bars';
       row.appendChild(nested);
       // Rendered lazily, on first expand, not for every fight up front - a visit can hold a
-      // couple dozen of these, and only the one(s) actually opened need their bars built.
+      // couple dozen of these, and only the one(s) actually opened need their bars built. The
+      // dataset flag (not childElementCount) guards re-entry - renderBars is async now (it awaits
+      // the class estimate for every row first), so a quick close/reopen during that gap would
+      // otherwise pass the "still empty" check twice and render the same fight's bars twice over.
       row.addEventListener('toggle', () => {
-        if (row.open && !nested.childElementCount) renderBars(nested, detail.rows, detail.durationSec);
+        if (row.open && !nested.dataset.rendered) {
+          nested.dataset.rendered = '1';
+          renderBars(nested, detail.rows, detail.durationSec);
+        }
       }, { once: false });
     }
     return row;
@@ -9946,7 +9966,7 @@ function initCombatPage() {
       .sort((a, b) => b.damage - a.damage);
     // The visit's own DPS divides by the SUM of its fights' durations, not the wall-clock span
     // between the first and last - the gaps in between are downtime, not part of any fight.
-    renderBars(detailBars, rows, totalDuration);
+    await renderBars(detailBars, rows, totalDuration);
 
     // "Fights should be organised earliest first" - visit.fights is already in that order (see
     // buildVisits), so the fight list below the combined chart reads as "pull 1, pull 2, ..." top

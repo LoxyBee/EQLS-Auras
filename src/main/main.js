@@ -93,6 +93,7 @@ const { tagBardSongs } = require('./bardSongTagger');
 // now - see applyInstallRoot. test/roster.test.js fails if the module or a call to it comes back.
 const { SessionRestore } = require('./sessionRestore');
 const gameSpellData = require('./gameSpellData');
+const classEstimator = require('../shared/classEstimator');
 const { makeStackingService } = require('./stackingService');
 const spellEffects = require('./spellEffects');
 const buffLines = require('../shared/buffLines');
@@ -1990,6 +1991,14 @@ ipcMain.handle('damage:scanLogFile', async (_event, filePath) => {
 
 ipcMain.handle('damage:getHistory', () => mergedDamageHistory());
 ipcMain.handle('damage:getHistoryFight', (_event, id) => findHistoryFight(id));
+// Combat tab class estimate (owner, 13 Sep): a skill name only one class can cast is real
+// evidence of one of an attacker's (possibly multiclass) classes - see classEstimator.js's own
+// header comment for why a buff landing (e.g. Puma) can't be used the same way. Runs here because
+// gameSpellData needs the installed spells_us.txt; the renderer sends up whichever skill names are
+// already showing in that row's own breakdown.
+ipcMain.handle('damage:estimateClasses', (_event, skillNames) => (
+  classEstimator.estimateClasses(skillNames, (name) => gameSpellData.getClassesForSpell(currentInstallRoot, name))
+));
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
 ipcMain.handle('resetPrompt:getPending', () => resetPromptWindow.getPending());
 ipcMain.handle('resetPrompt:answer', (_event, choice) => resetPromptWindow.answer(choice));

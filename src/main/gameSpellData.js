@@ -30,6 +30,11 @@ const DURATION_TICKS_FIELD = 12;
 const CLASS_LEVEL_FIRST_FIELD = 36;
 const CLASS_COUNT = 16;
 const BARD_OFFSET = 7; // War, Clr, Pal, Rng, SHD, Dru, Mnk, Brd, ...
+// Standard EQ class id order, matching the field-36..51 layout above exactly (index 7 = Bard,
+// already verified against BARD_OFFSET). Used by getClassesForSpell (class-estimation feature,
+// 13 Sep) - nothing before that needed the OTHER 15 classes named, only whether Bard was one of
+// the castable ones.
+const CLASS_ABBREVS = ['War', 'Clr', 'Pal', 'Rng', 'SHD', 'Dru', 'Mnk', 'Brd', 'Rog', 'Shm', 'Nec', 'Wiz', 'Mag', 'Enc', 'Bst', 'Ber'];
 const NEVER_CASTABLE = 255;
 const ICON_FIELD = 75;
 const STR_LANDED_ON_ME = 3;
@@ -64,6 +69,7 @@ function parse(installRoot) {
   const bardOnlyNames = new Set();
   const iconIdByName = new Map();
   const bardSongs = []; // full records, only for bard-only spells
+  const classesByName = new Map(); // lower name -> class abbrev[] that can cast it
 
   for (const line of raw.split(/\r\n|\n/)) {
     if (!line) continue;
@@ -82,12 +88,16 @@ function parse(installRoot) {
 
     let bardCanCast = false;
     let anyOtherCanCast = false;
+    const castableBy = [];
     for (let i = 0; i < CLASS_COUNT; i++) {
       const level = Number(fields[CLASS_LEVEL_FIRST_FIELD + i]);
       if (!Number.isFinite(level) || level >= NEVER_CASTABLE) continue;
       if (i === BARD_OFFSET) bardCanCast = true;
       else anyOtherCanCast = true;
+      castableBy.push(CLASS_ABBREVS[i]);
     }
+    if (!classesByName.has(lower)) classesByName.set(lower, castableBy);
+
     if (!bardCanCast || anyOtherCanCast) continue;
 
     if (bardOnlyNames.has(lower)) continue; // first entry wins here too
@@ -104,7 +114,7 @@ function parse(installRoot) {
     });
   }
 
-  return { installRoot, bardOnlyNames, iconIdByName, bardSongs };
+  return { installRoot, bardOnlyNames, iconIdByName, bardSongs, classesByName };
 }
 
 function load(installRoot) {
@@ -136,4 +146,14 @@ function getBardSongRecords(installRoot) {
   return load(installRoot)?.bardSongs || null;
 }
 
-module.exports = { getBardOnlyNames, getIconId, getBardSongRecords };
+// Which class(es) can cast a spell by exact name (case-insensitive), or null if the name isn't
+// recognised at all. Feeds classEstimator.js's "a skill only one class can cast is real evidence"
+// rule (13 Sep) - not exposed as a bard-song-style Set because callers need the actual class list,
+// not just a yes/no.
+function getClassesForSpell(installRoot, name) {
+  const data = load(installRoot);
+  if (!data || !name) return null;
+  return data.classesByName.get(name.toLowerCase()) || null;
+}
+
+module.exports = { getBardOnlyNames, getIconId, getBardSongRecords, getClassesForSpell };
