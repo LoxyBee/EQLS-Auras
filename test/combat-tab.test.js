@@ -526,16 +526,16 @@ test('a Crit % column only appears where crits were actually tracked - per skill
 // include their difficulty level (d0, d4, etc etc)" - confirmed against the owner's own real log
 // that "The Permafrost Caverns" alone has 5 genuinely different instance difficulties that all
 // strip to the same base zone name, indistinguishable without this.
-test('the zone entry point (both live and scanned) passes the RAW zone string\'s difficulty to enterZone', () => {
+test('the zone entry point (both live and scanned) passes the RAW zone string\'s difficulty AND raid/group flag to enterZone', () => {
   const main = read('src', 'main', 'main.js');
   assert.match(
-    main, /damageEngine\.enterZone\(Date\.now\(\), baseZoneName\(zone\), difficultyLabel\(zone\)\)/,
-    'the live zone-change handler must compute difficulty from the RAW zone string, not the stripped base name'
+    main, /damageEngine\.enterZone\(Date\.now\(\), baseZoneName\(zone\), difficultyLabel\(zone\), isRaidInstance\(zone\)\)/,
+    'the live zone-change handler must compute difficulty AND raid/group from the RAW zone string, not the stripped base name'
   );
   const scan = read('src', 'main', 'damageLogScan.js');
   assert.match(
-    scan, /engine\.enterZone\(ms, baseZoneName\(zone\), difficultyLabel\(zone\)\)/,
-    'a batch log scan must tag difficulty the same way live play does'
+    scan, /engine\.enterZone\(ms, baseZoneName\(zone\), difficultyLabel\(zone\), isRaidInstance\(zone\)\)/,
+    'a batch log scan must tag difficulty AND raid/group the same way live play does'
   );
 });
 
@@ -544,12 +544,12 @@ test('the zone entry point (both live and scanned) passes the RAW zone string\'s
 // gold... d4 should have the most prominent colouring, d0 should be almost white but not white."
 test('a visit\'s zone display puts a coloured "D<n> - " prefix ahead of the name, unchanged when it has no difficulty', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty, raidInstance\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'appendZoneLabel has been restructured or removed');
   assert.match(fn[1], /zone-diff-d\$\{tier\}/, 'the prefix must carry a per-tier CSS class, not just plain text');
   assert.match(fn[1], /toUpperCase\(\)/, 'the difficulty must render as "D4", not lowercase "d4"');
-  assert.match(renderer, /appendZoneLabel\(zoneLink, visit\.zone, visit\.difficulty\)/);
-  assert.match(renderer, /appendZoneLabel\(detailTitle, visit\.zone, visit\.difficulty\)/);
+  assert.match(renderer, /appendZoneLabel\(zoneLink, visit\.zone, visit\.difficulty, visit\.raidInstance\)/);
+  assert.match(renderer, /appendZoneLabel\(detailTitle, visit\.zone, visit\.difficulty, visit\.raidInstance\)/);
 
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   for (const tier of ['d0', 'd1', 'd2', 'd3', 'd4']) {
@@ -564,7 +564,7 @@ test('a visit\'s zone display puts a coloured "D<n> - " prefix ahead of the name
 // slightly different widths, which was shifting the dash (and the zone name after it) row to row.
 test('the difficulty code sits in its own fixed-width box, so the dash lands at the same x regardless of the code', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty\) \{([\s\S]*?)\n {2}\}/);
+  const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty, raidInstance\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'appendZoneLabel has been restructured or removed');
   assert.match(fn[1], /className = 'zone-diff-code'/, 'the difficulty code must be its own element, not inline text with the dash');
   assert.match(fn[1], /createTextNode\(' - '\)/, 'the dash must be appended AFTER the fixed-width code box, not baked into its text');
@@ -576,11 +576,37 @@ test('the difficulty code sits in its own fixed-width box, so the dash lands at 
   assert.match(rule[1], /width:\s*\d/, 'the code box needs an explicit fixed width');
 });
 
-test('buildVisits carries the difficulty from whichever fight creates the visit', () => {
+test('buildVisits carries the difficulty AND raid/group flag from whichever fight creates the visit', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function buildVisits\(history\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'buildVisits has been restructured or removed');
   assert.match(fn[1], /difficulty: fight\.difficulty \|\| null/);
+  assert.match(
+    fn[1], /raidInstance: typeof fight\.raidInstance === 'boolean' \? fight\.raidInstance : null/,
+    'raidInstance is tri-state (true/false/null) - a bare `fight.raidInstance || null` would wrongly collapse a real `false` (group instance) to null'
+  );
+});
+
+// Owner, 14 Sep follow-up: "there needs to be an identifier for (group)/raid instance" - a
+// difficulty tier alone doesn't say whether THIS visit was the raid-lockout instance or a plain
+// group run of the same zone.
+test('the zone label shows a (Raid)/(Group) badge when the visit has one, nothing when it does not', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty, raidInstance\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'appendZoneLabel has been restructured or removed');
+  assert.match(fn[1], /typeof raidInstance === 'boolean'/, 'must gate on the tri-state flag, not just truthiness (false is a real, valid value)');
+  assert.match(fn[1], /raidInstance \? 'Raid' : 'Group'/);
+  // the badge must be a SEPARATE element/class from the difficulty code+dash, appended AFTER the
+  // zone name - inserting it between the code and the dash would reopen the "hyphens don't line
+  // up" bug the previous commit fixed.
+  assert.match(fn[1], /zone-instance-badge zone-instance-\$\{raidInstance \? 'raid' : 'group'\}/);
+  const afterZoneName = fn[1].indexOf('createTextNode(zone || UNKNOWN_ZONE)');
+  const badgeIdx = fn[1].indexOf('zone-instance-badge');
+  assert.ok(afterZoneName !== -1 && badgeIdx > afterZoneName, 'the raid/group badge must be appended AFTER the zone name, not before it or between the code and dash');
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.zone-instance-raid\s*\{/, 'missing a colour rule for the raid badge');
+  assert.match(css, /\.zone-instance-group\s*\{/, 'missing a colour rule for the group badge');
 });
 
 module.exports = () => report('combat-tab');

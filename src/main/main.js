@@ -64,7 +64,7 @@ const { LogService } = require('./logService');
 const { matchZoneChange, matchForgetSpell, matchMemorizeFinished } = require('./buffParser');
 const { isLoadoutLockedZone, INSTANCE_SUFFIX } = require('../shared/loadoutLockedZones');
 const baseZoneName = (z) => String(z || '').replace(INSTANCE_SUFFIX, '').trim();
-const { difficultyLabel } = require('../shared/zoneDifficulty');
+const { difficultyLabel, isRaidInstance } = require('../shared/zoneDifficulty');
 const KNOWN_ZONES = require('../shared/data/zones');
 const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
@@ -999,7 +999,7 @@ onLogLine('zoneChange', (line) => {
   // The damage meter's "since zone-in" tally starts over here - see damageEngine.enterZone. The
   // BASE name (suffix stripped), so an instance-line echo right after the entrance line reads as
   // the same zone for the Combat tab's grouping, not two different ones.
-  damageEngine.enterZone(Date.now(), baseZoneName(zone), difficultyLabel(zone));
+  damageEngine.enterZone(Date.now(), baseZoneName(zone), difficultyLabel(zone), isRaidInstance(zone));
   // Note 20. Where you are is half of every route, so a zone line is the main thing that makes a
   // travel aura redraw.
   pushTravelRoutes();

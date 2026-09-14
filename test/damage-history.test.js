@@ -451,5 +451,36 @@ test('two visits to the SAME zone at DIFFERENT difficulties are tagged correctly
   assert.notEqual(oldest.visitId, newest.visitId, 'these must be two separate visits, not one merged pile');
 });
 
+// ---------------------------------------------------------------------------
+// Raid-vs-group instance flag (owner, 14 Sep: "there needs to be an identifier for (group)/raid
+// instance") - a difficulty tier alone doesn't say whether a visit was the raid-lockout instance
+// or a plain group run of the same zone. Tri-state (true/false/null), like difficulty's own null
+// for "not an instance" - see src/shared/zoneDifficulty.js's isRaidInstance.
+// ---------------------------------------------------------------------------
+
+test('a fight is tagged with the raid/group flag told to the engine at zone entry', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, 'The Plane of Fear', 'd4', true);
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  assert.equal(e.getHistory()[0].raidInstance, true);
+});
+
+test('a group-run instance is tagged false, not conflated with "not an instance" (null)', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, 'The Plane of Fear', 'd4', false);
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  assert.equal(e.getHistory()[0].raidInstance, false, '`false` must survive as false, not collapse to null the way an empty difficulty does');
+});
+
+test('an open-world zone with no raid/group flag told to the engine has null, not a stale one', () => {
+  const e = new DamageEngine();
+  e.enterZone(500, "Nagafen's Lair"); // no 3rd/4th argument - matches an ordinary, non-instanced entry
+  e.handleLine(`${T}You crush a wan ghoul knight for 10 points of damage.`, 1000);
+  endFight(e, 1000);
+  assert.equal(e.getHistory()[0].raidInstance, null);
+});
+
 module.exports = () => report('damage-history');
 if (require.main === module) report('damage-history').then((n) => process.exit(n ? 1 : 0));

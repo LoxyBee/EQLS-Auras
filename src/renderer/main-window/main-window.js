@@ -10071,7 +10071,7 @@ function initCombatPage() {
     showDetail();
     openRenders.clear(); // leaving the previous visit (if any) - nothing from it stays "open"
     detailTitle.textContent = '';
-    appendZoneLabel(detailTitle, visit.zone, visit.difficulty);
+    appendZoneLabel(detailTitle, visit.zone, visit.difficulty, visit.raidInstance);
     detailTitle.appendChild(document.createTextNode(
       ` — ${formatWhen(visit.startedAt)}, ${visit.fights.length} fight${visit.fights.length === 1 ? '' : 's'}`
     ));
@@ -10100,10 +10100,15 @@ function initCombatPage() {
     for (const fight of history) {
       const key = fight.visitId != null ? `${fight.zone}:${fight.visitId}` : `single:${fight.id}`;
       if (!byKey.has(key)) {
-        // difficulty is constant for the life of one visit (owner, 14 Sep: "let's make all raid
-        // entries include their difficulty level (d0, d4, etc etc)") - taken from whichever fight
-        // creates the visit, since every fight in it shares the same zone AND difficulty.
-        const visit = { zone: fight.zone, difficulty: fight.difficulty || null, fights: [] };
+        // difficulty (and whether it's the raid-lockout instance or a plain group run of the same
+        // zone) is constant for the life of one visit (owner, 14 Sep) - taken from whichever fight
+        // creates the visit, since every fight in it shares the same zone/difficulty/raid-or-group.
+        const visit = {
+          zone: fight.zone,
+          difficulty: fight.difficulty || null,
+          raidInstance: typeof fight.raidInstance === 'boolean' ? fight.raidInstance : null,
+          fights: [],
+        };
         byKey.set(key, visit);
         order.push(visit);
       }
@@ -10126,7 +10131,15 @@ function initCombatPage() {
   // gold... d4 should have the most prominent colouring, d0 should be almost white but not white."
   // The prefix's colour comes from CSS (`zone-diff-d0`..`zone-diff-d4`, see main-window.css) so the
   // zone name itself keeps the ordinary `.combat-visit-zone`/title gold colour untouched.
-  function appendZoneLabel(container, zone, difficulty) {
+  //
+  // "There needs to be an identifier for (group) /raid instance" (owner, 14 Sep follow-up) - a
+  // difficulty tier alone doesn't say whether THIS visit was the raid-lockout instance or an
+  // ordinary group run of the same zone (confirmed against the owner's real log: the same zone
+  // shows up both ways, e.g. "The Plane of Fear 4 (Refined)" vs "The Plane of Fear - Group 4
+  // (Refined)" - see zoneDifficulty.isRaidInstance). Appended AFTER the zone name, not between the
+  // difficulty code and its dash, so it can't reopen the "hyphens don't line up" bug just fixed
+  // above - nothing between the fixed-width code box and the dash ever changes width now.
+  function appendZoneLabel(container, zone, difficulty, raidInstance) {
     container.textContent = '';
     if (difficulty) {
       const tier = Math.min(4, Math.max(0, parseInt(String(difficulty).replace(/[^0-9]/g, ''), 10) || 0));
@@ -10145,6 +10158,12 @@ function initCombatPage() {
       container.appendChild(tag);
     }
     container.appendChild(document.createTextNode(zone || UNKNOWN_ZONE));
+    if (typeof raidInstance === 'boolean') {
+      const badge = document.createElement('span');
+      badge.className = `zone-instance-badge zone-instance-${raidInstance ? 'raid' : 'group'}`;
+      badge.textContent = ` (${raidInstance ? 'Raid' : 'Group'})`;
+      container.appendChild(badge);
+    }
   }
 
   function renderList(visits) {
@@ -10155,7 +10174,7 @@ function initCombatPage() {
       row.appendChild(span(formatWhen(visit.startedAt), 'combat-visit-time'));
       const zoneLink = document.createElement('span');
       zoneLink.className = 'combat-visit-zone';
-      appendZoneLabel(zoneLink, visit.zone, visit.difficulty);
+      appendZoneLabel(zoneLink, visit.zone, visit.difficulty, visit.raidInstance);
       zoneLink.addEventListener('click', () => openVisit(visit));
       row.appendChild(zoneLink);
       const n = visit.fights.length;

@@ -2749,6 +2749,14 @@ body.sidebar-resizing .sidebar {
 .zone-diff-d2 { color: #e0a13c; }
 .zone-diff-d3 { color: #e06a2f; }
 .zone-diff-d4 { color: #ff3b30; text-shadow: 0 0 6px rgba(255, 59, 48, 0.55); }
+
+/* "(Raid)" / "(Group)" badge (owner, 14 Sep: "there needs to be an identifier for (group)/raid
+   instance") - a different colour family from the D-tier heat ramp above so the two ideas
+   (difficulty vs raid-lockout-or-not) don't visually blur together. Kept lighter/smaller than the
+   zone name - it's a secondary fact about the visit, not the headline. */
+.zone-instance-badge { font-size: 0.9em; font-weight: 600; opacity: 0.85; }
+.zone-instance-raid { color: #b98cff; }
+.zone-instance-group { color: #8fb3c9; }
 .combat-visit-meta { opacity: 0.6; font-size: 12px; text-align: right; white-space: nowrap; }
 
 /* The two drill-down screens - one fight, or a whole visit's combined totals - share this same

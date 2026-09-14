@@ -9,7 +9,7 @@
 
 const assert = require('node:assert/strict');
 const { test, report } = require('./harness');
-const { difficultyLabel } = require('../src/shared/zoneDifficulty');
+const { difficultyLabel, isRaidInstance } = require('../src/shared/zoneDifficulty');
 
 test('a bare "- Group" suffix (no number) is the base tier, d0', () => {
   assert.equal(difficultyLabel('The Permafrost Caverns - Group'), 'd0');
@@ -35,6 +35,36 @@ test('an empty/missing zone string returns null, not a crash', () => {
   assert.equal(difficultyLabel(''), null);
   assert.equal(difficultyLabel(null), null);
   assert.equal(difficultyLabel(undefined), null);
+});
+
+// ---------------------------------------------------------------------------
+// Raid-vs-group instance identifier (owner, 14 Sep follow-up: "there needs to be an identifier
+// for (group)/raid instance"). Confirmed against the owner's REAL log, not assumed: the same zone
+// shows up with BOTH suffix shapes on different visits - "The Plane of Fear 4 (Refined)" (group,
+// 2026-09-11) and "The Plane of Fear - Group 4 (Refined)" (raid, 2026-08-31) - proving these are
+// two genuinely different instance kinds of the same zone, not two spellings of the same thing.
+// ---------------------------------------------------------------------------
+
+test('a "- Group" suffix (with or without a number) IS the raid-lockout instance', () => {
+  assert.equal(isRaidInstance('The Permafrost Caverns - Group'), true);
+  assert.equal(isRaidInstance('The Plane of Fear - Group 4 (Refined)'), true);
+  assert.equal(isRaidInstance('The Ruins of Old Paineel - Group'), true);
+});
+
+test('a bare "N (Name)" suffix with no "- Group" prefix is a plain group run, not a raid instance', () => {
+  assert.equal(isRaidInstance('The Plane of Fear 4 (Refined)'), false);
+  assert.equal(isRaidInstance('The Ruins of Old Paineel 1 (Awakened)'), false);
+});
+
+test('a zone with no instance suffix at all is neither - returns null, not false', () => {
+  assert.equal(isRaidInstance('The Plane of Fear'), null);
+  assert.equal(isRaidInstance('The Ruins of Old Paineel'), null);
+});
+
+test('an empty/missing zone string returns null, not a crash', () => {
+  assert.equal(isRaidInstance(''), null);
+  assert.equal(isRaidInstance(null), null);
+  assert.equal(isRaidInstance(undefined), null);
 });
 
 module.exports = () => report('zone-difficulty');

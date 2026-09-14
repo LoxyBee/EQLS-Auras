@@ -159,6 +159,11 @@ class DamageEngine extends EventEmitter {
     // The instance's difficulty tier ("d0".."d4"), or null for a non-instanced zone - see
     // enterZone()'s own comment for the real-log example this exists for.
     this.currentZoneDifficulty = null;
+    // true = the raid-lockout instance of this zone, false = a plain group run of it, null = not
+    // an instance at all (see zoneDifficulty.isRaidInstance - confirmed against the owner's real
+    // logs, the SAME zone shows up both ways at different times, e.g. "The Plane of Fear 4
+    // (Refined)" (group) vs "The Plane of Fear - Group 4 (Refined)" (raid)).
+    this.currentZoneRaidInstance = null;
     this._zoneVisitSeq = 0;
     this.fightStartedAt = null;
     this.lastDamageAt = null;
@@ -740,13 +745,17 @@ class DamageEngine extends EventEmitter {
   // fight was "in", but wrong the moment fights need a zone tag at all.) A same-zone echo does
   // nothing here, exactly as before - that is what keeps an instance-line-right-after-the-entrance
   // line from splitting one real fight into two just because two zone lines announced it.
-  enterZone(now = Date.now(), zoneName = null, difficulty = null) {
+  enterZone(now = Date.now(), zoneName = null, difficulty = null, raidInstance = null) {
     if (zoneName && zoneName !== this.currentZoneName) {
       if (this.fightStartedAt !== null) this.reset();
       this._zoneVisitSeq = (this._zoneVisitSeq || 0) + 1;
     }
     this.currentZoneName = zoneName || null;
     this.currentZoneDifficulty = difficulty || null;
+    // Tri-state, NOT `|| null` - `false` (a plain group instance, see zoneDifficulty.isRaidInstance)
+    // is a real, meaningful value here and must not collapse to null the way an empty difficulty
+    // string does.
+    this.currentZoneRaidInstance = typeof raidInstance === 'boolean' ? raidInstance : null;
     this.sinceZoneByAttacker.clear();
     this.rawZoneByName.clear();
     this.sinceZoneTotal = 0;
@@ -934,6 +943,7 @@ class DamageEngine extends EventEmitter {
       totalHealing: this.totalHealing,
       zone: this.currentZoneName,
       difficulty: this.currentZoneDifficulty,
+      raidInstance: this.currentZoneRaidInstance,
       visitId: this.currentZoneName ? this._zoneVisitSeq : null,
       label: labelFight([...this.enemyTargetsThisFight]),
       rows,
@@ -945,7 +955,7 @@ class DamageEngine extends EventEmitter {
   // Every completed fight this session, newest first. In-memory only - see the `history` field
   // comment on why this does not persist across a restart.
   getHistory() {
-    return this.history.map(({ id, endedAt, durationSec, totalDamage, totalHealing, zone, difficulty, visitId, label, rows, healRows }) => ({
+    return this.history.map(({ id, endedAt, durationSec, totalDamage, totalHealing, zone, difficulty, raidInstance, visitId, label, rows, healRows }) => ({
       id,
       endedAt,
       durationSec,
@@ -953,6 +963,7 @@ class DamageEngine extends EventEmitter {
       totalHealing,
       zone,
       difficulty,
+      raidInstance,
       visitId,
       label,
       topAttacker: rows[0] ? rows[0].name : null,

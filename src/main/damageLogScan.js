@@ -18,7 +18,7 @@ const { DamageEngine } = require('./damageEngine');
 const { matchZoneChange } = require('./buffParser');
 const { extractTimestampMs } = require('./logSplitter');
 const { INSTANCE_SUFFIX } = require('../shared/loadoutLockedZones');
-const { difficultyLabel } = require('../shared/zoneDifficulty');
+const { difficultyLabel, isRaidInstance } = require('../shared/zoneDifficulty');
 
 const baseZoneName = (z) => String(z || '').replace(INSTANCE_SUFFIX, '').trim();
 
@@ -44,7 +44,7 @@ async function scanLogForFights(filePath, onProgress) {
     lastMs = ms;
     const zone = matchZoneChange(line);
     if (zone) {
-      engine.enterZone(ms, baseZoneName(zone), difficultyLabel(zone));
+      engine.enterZone(ms, baseZoneName(zone), difficultyLabel(zone), isRaidInstance(zone));
       continue; // a "You have entered X." line is never also a damage line
     }
     engine.handleLine(line, ms);
