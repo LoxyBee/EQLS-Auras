@@ -241,5 +241,34 @@ test('the skill bar spans the whole Damage/percent/crit area, not just the Damag
   );
 });
 
+// Owner, 13 Sep, fourth round: "dps numbers should also go on top of the coloured bars... it
+// should still be inset" - a short player bar (scaled against the fight's top attacker) used to
+// leave the DPS figure stranded in blank space past the end of it, in its own 90px column. The
+// DPS figure now lives INSIDE the track as a second overlay (right-aligned), same layering trick
+// as the skill-row bars, with no separate stats column at all.
+test('the DPS figure on a player bar is inset into the track, not stranded in a column past it', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(fn[1], /combat-bar-dps/, 'the DPS element must exist');
+  assert.match(
+    fn[1], /track\.appendChild\(dpsEl\)/,
+    'the DPS element must be appended INTO the track, not as a sibling column outside it'
+  );
+  assert.doesNotMatch(
+    fn[1], /combat-bar-stats/,
+    'the old separate stats column should be gone entirely, not left dangling alongside the inset DPS'
+  );
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-bar-row summary \{[^}]*grid-template-columns: 130px 1fr;/s,
+    'the summary grid must drop the old 90px stats column - the track now owns all remaining width'
+  );
+  assert.match(
+    css, /\.combat-bar-dps \{[^}]*position: absolute;[^}]*inset: 0;[^}]*justify-content: flex-end;/s,
+    'the DPS overlay must be absolutely positioned over the whole track and right-aligned within it'
+  );
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

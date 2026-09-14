@@ -2728,13 +2728,20 @@ body.sidebar-resizing .sidebar {
 .combat-visit-meta { opacity: 0.6; font-size: 12px; flex: 1 1 auto; text-align: right; white-space: nowrap; }
 
 /* The two drill-down screens - one fight, or a whole visit's combined totals - share this same
-   bar-chart layout, just fed a different row list. */
+   bar-chart layout, just fed a different row list. The DPS figure is INSET into the track, laid
+   over its right edge, rather than sitting in its own column past the end of it (owner, 13 Sep:
+   "dps numbers should also go on top of the coloured bars... it should still be inset") - a short
+   bar (a low-damage attacker, scaled against the fight's top attacker) used to leave the DPS
+   number stranded out past a lot of bare background, which is also what made a short row look
+   like wasted space rather than a shorter bar. Track now owns the full 1fr column with no
+   separate stats column at all; amount and DPS are two independent overlays inset:0 within it,
+   left- and right-aligned respectively, same layering trick as the skill-row bars. */
 .combat-bar-row + .combat-bar-row { margin-top: 8px; }
 .combat-bar-row summary {
   cursor: pointer;
   list-style: none;
   display: grid;
-  grid-template-columns: 130px 1fr 90px;
+  grid-template-columns: 130px 1fr;
   align-items: center;
   gap: 10px;
 }
@@ -2763,7 +2770,18 @@ body.sidebar-resizing .sidebar {
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
-.combat-bar-stats { text-align: right; font-size: 12px; opacity: 0.75; font-variant-numeric: tabular-nums; }
+.combat-bar-dps {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 8px;
+  font-size: 12px;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
 /* Skill / Damage / % of total / Crit % - a real labelled grid (owner, 13 Sep: "needs dedicated
    columns... columns are unlabeled"), the same four columns for the header and every data row so
    the numbers line up underneath their names instead of just being spaced apart by eye. The

@@ -9823,10 +9823,16 @@ function initCombatPage() {
       amount.textContent = formatDamage(row.damage);
       track.appendChild(fill);
       track.appendChild(amount);
-      summary.appendChild(track);
 
+      // Inset into the track, not a separate column past its end (owner, 13 Sep: "dps numbers
+      // should also go on top of the coloured bars... it should still be inset") - a short bar
+      // used to leave this number stranded in blank space to the right of it.
       const dps = durationSec > 0 ? Math.round(row.damage / durationSec) : 0;
-      summary.appendChild(span(`${formatDamage(dps)}/s`, 'combat-bar-stats'));
+      const dpsEl = document.createElement('div');
+      dpsEl.className = 'combat-bar-dps';
+      dpsEl.textContent = `${formatDamage(dps)}/s`;
+      track.appendChild(dpsEl);
+      summary.appendChild(track);
 
       details.appendChild(summary);
       const list = document.createElement('div');
