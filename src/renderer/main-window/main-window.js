@@ -9817,9 +9817,10 @@ function initCombatPage() {
   // live overlay's own bars already use), click to accordion its skill breakdown open underneath.
   // Fetched up front for every row in parallel, not per-row as the DOM is built, so one slow
   // lookup can't stagger the chart appearing row by row.
-  // `metric` ('damage' | 'heal') only changes labelling - crit % isn't tracked for heals
-  // (healLines.js carries no critical flag), so that column reads "—" rather than a misleading
-  // "0%" implying it was measured and came back zero.
+  // `metric` ('damage' | 'heal' | 'both') only changes the Damage/Healing/Total column heading -
+  // whether a given SKILL row shows a real Crit % or "—" is decided per-row below, from whether
+  // that row's own data ever tracked crits at all (healLines.js carries no critical flag), which
+  // is what makes "Both" mode's mixed damage+heal skill list label each row correctly.
   async function renderBars(container, rows, durationSec, metric = 'damage') {
     container.innerHTML = '';
     const top = rows.length ? rows[0].damage : 0;
@@ -9885,7 +9886,7 @@ function initCombatPage() {
         const header = document.createElement('div');
         header.className = 'combat-skill-row combat-skill-header';
         header.appendChild(span('Skill'));
-        header.appendChild(span(metric === 'heal' ? 'Healing' : 'Damage'));
+        header.appendChild(span(metric === 'heal' ? 'Healing' : metric === 'both' ? 'Total' : 'Damage'));
         header.appendChild(span('% of total'));
         header.appendChild(span('Crit %'));
         list.appendChild(header);
@@ -9897,7 +9898,12 @@ function initCombatPage() {
         // % of THIS PLAYER's own total (owner, 13 Sep) - not the fight's, since that's already
         // the point of the bar above it; this answers "of what Avenrae did, how much was this".
         const share = row.damage > 0 ? Math.round((s.damage / row.damage) * 100) : 0;
-        const critPct = metric === 'heal' ? null : (s.hits > 0 ? Math.round((s.crits / s.hits) * 100) : 0);
+        // A skill row's own shape says whether crits were ever tracked for it - a damage skill
+        // always has the field (even at 0), a healing one never does (healLines.js carries no
+        // critical flag). Checking per-row rather than by the overall `metric` is what makes
+        // "Both" mode work correctly too: a healer who also melees gets a real Crit % on their
+        // Melee row and "—" on their heal rows, in the same combined list.
+        const critPct = s.crits === undefined ? null : (s.hits > 0 ? Math.round((s.crits / s.hits) * 100) : 0);
         line.appendChild(span(s.skill, 'combat-skill-name'));
 
         // A coloured bar spanning the WHOLE Damage/%/Crit area, not just the Damage column (owner,
@@ -10013,22 +10019,37 @@ function initCombatPage() {
     return { rows, totalDuration };
   }
 
-  // Draws whichever metric(s) the top-level Damage/Healing/Both toggle currently selects into
-  // `container` - one bar chart for a single metric, or two labelled sections stacked for "both"
-  // (owner, 14 Sep: "toggle between damage, healing, or both... using a summary of dps and heal").
+  // "Both" is one combined total per person, not two separate charts (owner, 14 Sep: "it should
+  // be a combined total graph that shows one graph of the sum of a player's damage and healing") -
+  // merges each side's rows by NAME into a single bar sized by damage+healing together, with both
+  // sides' skills folded into one breakdown list (so a healer who also melees shows both).
+  function aggregateBothRows(details) {
+    const dmg = aggregateFightRows(details, 'rows');
+    const heal = aggregateFightRows(details, 'healRows');
+    const byName = new Map();
+    for (const r of dmg.rows) byName.set(r.name, { name: r.name, damage: r.damage, bySkill: [...r.bySkill], castSkills: new Set(r.castSkills) });
+    for (const r of heal.rows) {
+      const agg = byName.get(r.name) || { name: r.name, damage: 0, bySkill: [], castSkills: new Set() };
+      agg.damage += r.damage;
+      agg.bySkill = agg.bySkill.concat(r.bySkill);
+      for (const c of r.castSkills) agg.castSkills.add(c);
+      byName.set(r.name, agg);
+    }
+    const rows = [...byName.values()]
+      .map((r) => ({ ...r, bySkill: r.bySkill.sort((a, b) => b.damage - a.damage), castSkills: [...r.castSkills] }))
+      .sort((a, b) => b.damage - a.damage);
+    // Both sides sum duration over the exact same fights in `details`, so they already agree -
+    // either one is the right rate basis.
+    return { rows, totalDuration: dmg.totalDuration };
+  }
+
+  // Draws whichever metric the top-level Damage/Healing/Both toggle currently selects into
+  // `container` (owner, 14 Sep: "toggle between damage, healing, or both").
   async function renderMetricBars(container, details) {
     container.innerHTML = '';
     if (viewMode === 'both') {
-      const dmg = aggregateFightRows(details, 'rows');
-      const heal = aggregateFightRows(details, 'healRows');
-      container.appendChild(span('Damage', 'combat-metric-heading'));
-      const dmgBox = document.createElement('div');
-      container.appendChild(dmgBox);
-      await renderBars(dmgBox, dmg.rows, dmg.totalDuration, 'damage');
-      container.appendChild(span('Healing', 'combat-metric-heading'));
-      const healBox = document.createElement('div');
-      container.appendChild(healBox);
-      await renderBars(healBox, heal.rows, heal.totalDuration, 'heal');
+      const { rows, totalDuration } = aggregateBothRows(details);
+      await renderBars(container, rows, totalDuration, 'both');
       return;
     }
     const rowsKey = viewMode === 'healing' ? 'healRows' : 'rows';

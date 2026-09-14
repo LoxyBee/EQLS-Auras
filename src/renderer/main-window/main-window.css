@@ -2936,3 +2936,5 @@ body.sidebar-resizing .sidebar {
   margin: 10px 0 4px;
 }
 .combat-metric-heading:first-child { margin-top: 0; }
+/* Centred under the Back button, above the visit title (owner, 14 Sep layout request). */
+#combat-view-toggle { justify-content: center; }

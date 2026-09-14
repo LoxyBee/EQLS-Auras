@@ -1048,15 +1048,6 @@
       <section id="page-combat" class="page">
         <h2 class="page-title">Combat</h2>
 
-        <!-- Top level, not attached to any one fight (owner, 14 Sep) - switches every chart
-             currently on screen at once, not just whatever gets opened next. -->
-        <div class="row" id="combat-view-toggle">
-          <span class="label">Show</span>
-          <button type="button" class="combat-view-btn active" data-view="damage" title="Damage dealt - who hit what, and with what.">Damage</button>
-          <button type="button" class="combat-view-btn" data-view="healing" title="Healing done - who healed, and with what.">Healing</button>
-          <button type="button" class="combat-view-btn" data-view="both" title="Damage and healing together, one summary line each per person.">Both</button>
-        </div>
-
         <div class="card">
           <h3 title="Reads the file once, from the start, looking for damage lines and zone changes - like the live meter, but all at once instead of line by line as you play.">Scan a log for fights</h3>
           <div class="row">
@@ -1083,6 +1074,15 @@
         <div class="card" id="combat-detail-screen" style="display:none">
           <div class="row">
             <button type="button" id="combat-detail-back">&larr; Back to fights</button>
+          </div>
+          <!-- Top level, not attached to any one fight (owner, 14 Sep) - switches every chart
+               currently on screen at once, not just whatever gets opened next. -->
+          <div class="row" id="combat-view-toggle">
+            <button type="button" class="combat-view-btn active" data-view="damage" title="Damage dealt - who hit what, and with what.">Damage</button>
+            <button type="button" class="combat-view-btn" data-view="healing" title="Healing done - who healed, and with what.">Healing</button>
+            <button type="button" class="combat-view-btn" data-view="both" title="Damage and healing combined into one total per person.">Both</button>
+          </div>
+          <div class="row">
             <h3 id="combat-detail-title"></h3>
           </div>
           <div id="combat-detail-bars" title="Click a player to see how much of their damage came from each spell versus melee."></div>

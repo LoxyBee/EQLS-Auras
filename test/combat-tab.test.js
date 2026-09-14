@@ -431,26 +431,36 @@ test('a single fight\'s own chart is registered as open (and unregistered on col
   );
 });
 
-// Owner, 14 Sep: "using a summary of dps and heal" for the combined view - both metrics shown
-// together, not just whichever was clicked last.
-test('"Both" mode renders damage and healing as two labelled sections, not one or the other', () => {
+// Owner, 14 Sep, corrected same day: "the 'both' tab should not be two graphs, it should be a
+// combined total graph that shows one graph of the sum of a player's damage and healer" - one bar
+// per person, sized by damage+healing together, not two separate charts.
+test('"Both" mode combines damage and healing into ONE total per person, not two separate charts', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/async function renderMetricBars\(container, details\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(fn, 'renderMetricBars has been restructured or removed');
-  assert.match(fn[1], /viewMode === 'both'/);
-  assert.match(fn[1], /aggregateFightRows\(details, 'rows'\)/, 'must aggregate the damage side');
-  assert.match(fn[1], /aggregateFightRows\(details, 'healRows'\)/, 'must aggregate the healing side');
-  assert.match(fn[1], /renderBars\(dmgBox, dmg\.rows, dmg\.totalDuration, 'damage'\)/);
-  assert.match(fn[1], /renderBars\(healBox, heal\.rows, heal\.totalDuration, 'heal'\)/);
+  const aggFn = renderer.match(/function aggregateBothRows\(details\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(aggFn, 'aggregateBothRows has been restructured or removed');
+  assert.match(aggFn[1], /aggregateFightRows\(details, 'rows'\)/, 'must start from the damage side');
+  assert.match(aggFn[1], /aggregateFightRows\(details, 'healRows'\)/, 'must start from the healing side');
+  assert.match(aggFn[1], /agg\.damage \+= r\.damage/, 'a person\'s damage and healing totals must be SUMMED into one number');
+  assert.match(aggFn[1], /agg\.bySkill = agg\.bySkill\.concat\(r\.bySkill\)/, 'both sides\' skills must fold into one breakdown list');
+
+  const renderFn = renderer.match(/async function renderMetricBars\(container, details\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(renderFn, 'renderMetricBars has been restructured or removed');
+  assert.match(renderFn[1], /viewMode === 'both'/);
+  assert.match(renderFn[1], /aggregateBothRows\(details\)/);
+  assert.match(
+    renderFn[1], /await renderBars\(container, rows, totalDuration, 'both'\)/,
+    'Both must draw ONE chart into the given container, not two side-by-side sub-charts'
+  );
 });
 
-test('healing mode never shows a fabricated Crit % - healLines.js does not track crits', () => {
+test('a Crit % column only appears where crits were actually tracked - per skill row, not per overall mode', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(
-    fn[1], /metric === 'heal' \? null : /,
-    'heal mode must not compute a crit percentage from data that was never collected'
+    fn[1], /s\.crits === undefined \? null : /,
+    'checking per-row (not the overall metric) is what lets "Both" mode show a real Crit % on a ' +
+    'healer\'s own melee row and "—" on their heal rows, in the same combined skill list'
   );
 });
 
