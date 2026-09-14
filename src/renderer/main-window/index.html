@@ -1064,6 +1064,7 @@
             <select id="combat-zone-filter" class="text-input"></select>
             <span class="label" title="Hides any fight below this total damage - trash mobs and stray hits, not a real pull. Set to 0 to show everything.">Min damage</span>
             <input type="number" id="combat-min-damage" class="text-input" min="0" step="1000" style="width:7em">
+            <button type="button" id="combat-jump-current-zone" title="Jump straight to the most recent activity in the zone you're in right now.">Current zone</button>
           </div>
           <div id="combat-visit-list"></div>
           <p class="empty-note" id="combat-history-empty">No fights tracked yet this session.</p>
@@ -1081,6 +1082,10 @@
               <button type="button" class="combat-view-btn active" data-view="damage" title="Damage dealt - who hit what, and with what.">Damage</button>
               <button type="button" class="combat-view-btn" data-view="healing" title="Healing done - who healed, and with what.">Healing</button>
               <button type="button" class="combat-view-btn" data-view="both" title="Damage and healing combined into one total per person.">Both</button>
+            </div>
+            <div id="combat-visit-nav">
+              <button type="button" id="combat-visit-older" title="The previous (older) visit to this same zone.">&larr; Older</button>
+              <button type="button" id="combat-visit-newer" title="The next (newer) visit to this same zone.">Newer &rarr;</button>
             </div>
           </div>
           <div class="row">

@@ -77,11 +77,17 @@ test('merged history ids are namespaced by source, so a scan can never collide w
   assert.match(fightFn[1], /sourceForCompositeId\(compositeId\)/, 'findHistoryFight must reuse the shared resolver, not its own copy');
 });
 
+// Owner, 14 Sep: clicking into the Combat tab now jumps to the current zone's latest visit
+// (jumpToCurrentZone), which itself re-fetches history first for freshness - so the original
+// "re-fetched on every visit" guarantee still holds, just through a different function.
 test('history is re-fetched on every visit to the tab, not loaded once', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
   assert.ok(fn, 'initCombatPage has been restructured');
-  assert.match(fn[1], /navBtnCombat\.addEventListener\('click', loadHistory\)/);
+  assert.match(fn[1], /navBtnCombat\.addEventListener\('click', jumpToCurrentZone\)/);
+  const jumpFn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(jumpFn, 'jumpToCurrentZone has been restructured or removed');
+  assert.match(jumpFn[1], /await loadHistory\(\)/, 'the nav-button jump must re-fetch, not reuse stale history');
   assert.ok(fn[1].trim().endsWith('loadHistory();'), 'no initial load - the tab would open blank the first time');
 });
 
@@ -670,6 +676,70 @@ test('leaving an instance (or changing tier) opens a NEW visit, even though the 
   assert.match(
     fn[1], /normRaidInstance !== this\.currentZoneRaidInstance/,
     'a raid/group change alone (same zone name and tier, different instance kind) must open a new visit'
+  );
+});
+
+// ---------------------------------------------------------------------------
+// "Live read the current combat... or check recent past events of the zone i'm in, fast" (owner,
+// 14 Sep). Jumping straight into the current zone's latest visit, plus Older/Newer to step
+// through that same zone's history without going back through the full list.
+// ---------------------------------------------------------------------------
+
+test('the current-zone jump button and Older/Newer controls exist', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-jump-current-zone"/);
+  assert.match(html, /id="combat-visit-older"/);
+  assert.match(html, /id="combat-visit-newer"/);
+});
+
+test('the main process resolves the live current zone to its STRIPPED base name, not the raw suffixed string', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(
+    main, /ipcMain\.handle\('combat:getCurrentZoneBase', \(\) => baseZoneName\(widgetManager\.getCurrentZone\(\)\)\)/,
+    'the renderer has no Node require() access to strip the suffix itself - this must arrive already stripped'
+  );
+  const preload = read('src', 'preload', 'preload-main.js');
+  assert.match(preload, /getCombatCurrentZoneBase: \(\) => ipcRenderer\.invoke\('combat:getCurrentZoneBase'\)/);
+});
+
+test('jumpToCurrentZone opens the current zone\'s latest visit, or falls back to the list', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'jumpToCurrentZone has been restructured or removed');
+  assert.match(fn[1], /if \(!zone\) return;/, 'an unknown current zone must not crash or open something arbitrary');
+  assert.match(fn[1], /zoneFilter\.value = zone/, 'the zone filter should reflect the jump, not silently diverge from what is shown');
+  assert.match(fn[1], /openVisit\(visits\[visits\.length - 1\]\)/, 'must open the LATEST (most recent) visit, not the earliest');
+  assert.match(fn[1], /showList\(\)/, 'a zone with no history yet must fall back to the list, not open nothing silently');
+});
+
+test('openVisit recomputes the same-zone sibling list and index every time, for Older/Newer', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'openVisit has been restructured or removed');
+  assert.match(fn[1], /currentZoneVisits = siblingVisits\(visit\.zone\)/, 'must scope navigation to the SAME zone, not the whole history');
+  assert.match(
+    fn[1], /v\.fights\[0\] && visit\.fights\[0\] && v\.fights\[0\]\.id === visit\.fights\[0\]\.id/,
+    'buildVisits() returns fresh objects every call - matching by object identity would never find the visit just opened'
+  );
+  assert.match(fn[1], /updateVisitNavButtons\(\)/);
+
+  const siblingFn = renderer.match(/function siblingVisits\(zone\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(siblingFn, 'siblingVisits has been restructured or removed');
+  assert.match(siblingFn[1], /f\.totalDamage >= floor/, 'sibling visits should respect the same min-damage floor as the rest of the page');
+});
+
+test('Older/Newer disable at the ends of the same-zone visit list instead of wrapping or erroring', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function updateVisitNavButtons\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'updateVisitNavButtons has been restructured or removed');
+  assert.match(fn[1], /olderBtn\.disabled = currentVisitIndex <= 0/);
+  assert.match(
+    fn[1], /newerBtn\.disabled = currentVisitIndex === -1 \|\| currentVisitIndex >= currentZoneVisits\.length - 1/
+  );
+  assert.match(renderer, /if \(currentVisitIndex > 0\) openVisit\(currentZoneVisits\[currentVisitIndex - 1\]\)/);
+  assert.match(
+    renderer,
+    /if \(currentVisitIndex !== -1 && currentVisitIndex < currentZoneVisits\.length - 1\) \{\s*openVisit\(currentZoneVisits\[currentVisitIndex \+ 1\]\);/
   );
 });
 

@@ -2997,3 +2997,8 @@ body.sidebar-resizing .sidebar {
    "toggle centred between Back and the title" layout the owner asked for. */
 #combat-detail-toolbar { justify-content: flex-start; }
 #combat-view-toggle { display: flex; gap: 8px; margin: 0 auto; }
+/* Older/Newer visit navigation (owner, 14 Sep: "a fast way to... move forwards/backwards in fight
+   history") - sits at the far right of the toolbar, the auto-margined toggle group already takes
+   the centre so this naturally lands on the opposite end from Back without its own margin rule. */
+#combat-visit-nav { display: flex; gap: 8px; }
+#combat-visit-nav button:disabled { opacity: 0.4; cursor: default; }

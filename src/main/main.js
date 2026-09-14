@@ -2000,6 +2000,14 @@ ipcMain.handle('damage:scanLogFile', async (_event, filePath) => {
 
 ipcMain.handle('damage:getHistory', () => mergedDamageHistory());
 ipcMain.handle('damage:getHistoryFight', (_event, id) => findHistoryFight(id));
+// "I need some way to be able to live read the current combat... or check recent past events of
+// the zone i'm in, fast" (owner, 14 Sep). `widgetManager.getCurrentZone()` holds the RAW zone
+// string (difficulty suffix and all - see gotcha near applyZoneChangeAndNotify); the Combat tab's
+// own history entries are keyed on the STRIPPED base name (baseZoneName(zone), same as every
+// enterZone call above), so this returns it already stripped rather than making the renderer
+// duplicate that regex (it has no Node `require` access to loadoutLockedZones.js at all - a
+// sandboxed renderer, everything reaches it through preload/IPC).
+ipcMain.handle('combat:getCurrentZoneBase', () => baseZoneName(widgetManager.getCurrentZone()));
 // Combat tab class estimate (owner, 13-14 Sep): a spell only one class can cast is real evidence
 // of one of an attacker's (possibly multiclass) classes - but ONLY when that attacker was actually
 // seen CASTING it, never from a damage-log skill name (a buff's proc damage doesn't say who cast

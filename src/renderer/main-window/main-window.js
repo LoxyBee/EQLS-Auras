@@ -9745,6 +9745,9 @@ function initCombatPage() {
   const scanCurrentBtn = document.getElementById('combat-scan-current');
   const scanFileBtn = document.getElementById('combat-scan-file');
   const scanStatus = document.getElementById('combat-scan-status');
+  const jumpCurrentZoneBtn = document.getElementById('combat-jump-current-zone');
+  const olderBtn = document.getElementById('combat-visit-older');
+  const newerBtn = document.getElementById('combat-visit-newer');
   if (!visitList) return; // Combat tab not in this build
 
   const UNKNOWN_ZONE = '(zone unknown)';
@@ -9763,6 +9766,13 @@ function initCombatPage() {
   // view mode re-renders every one of these in place, which is what makes the buttons "top level"
   // rather than only affecting whatever gets opened next (owner, 14 Sep).
   const openRenders = new Map();
+  // Older/Newer navigation (owner, 14 Sep: "a fast way to... move forwards/backwards in fight
+  // history") - every visit to the SAME zone as whatever's currently open, sorted earliest-first
+  // (see buildVisits), plus the open visit's own index into that list. Recomputed on every
+  // openVisit() call rather than cached, so it always reflects the current zone filter/min-damage
+  // floor instead of a stale snapshot from whenever the list was last rendered.
+  let currentZoneVisits = [];
+  let currentVisitIndex = -1;
 
   function formatDamage(n) {
     if (n < 10000) return String(n);
@@ -10079,6 +10089,16 @@ function initCombatPage() {
     detailBars.appendChild(span('Loading…', 'empty-note'));
     detailFightList.innerHTML = '';
 
+    // Older/Newer navigation - every visit to this SAME zone, so stepping through history stays
+    // scoped to "recent past events of the zone i'm in" rather than jumping across unrelated
+    // zones. Matched by the first fight's id (stable) since buildVisits() builds fresh objects
+    // every call, so object identity can't be relied on.
+    currentZoneVisits = siblingVisits(visit.zone);
+    currentVisitIndex = currentZoneVisits.findIndex(
+      (v) => v.fights[0] && visit.fights[0] && v.fights[0].id === visit.fights[0].id
+    );
+    updateVisitNavButtons();
+
     const details = await Promise.all(visit.fights.map((f) => window.eqTracker.getDamageHistoryFight(f.id)));
     openRenders.set(detailBars, details);
     await renderMetricBars(detailBars, details);
@@ -10087,6 +10107,40 @@ function initCombatPage() {
     // buildVisits), so the fight list below the combined chart reads as "pull 1, pull 2, ..." top
     // to bottom, matching how the visit itself actually played out.
     visit.fights.forEach((fight, i) => detailFightList.appendChild(fightAccordionRow(fight, details[i])));
+  }
+
+  // Every visit to ONE zone, earliest first, under the page's own current min-damage floor - the
+  // pool Older/Newer step through, and what jumpToCurrentZone() picks the latest entry from.
+  function siblingVisits(zone) {
+    const floor = minDamage();
+    const filtered = lastHistory.filter((f) => (f.zone || UNKNOWN_ZONE) === zone && f.totalDamage >= floor);
+    return buildVisits(filtered);
+  }
+
+  function updateVisitNavButtons() {
+    if (!olderBtn || !newerBtn) return;
+    olderBtn.disabled = currentVisitIndex <= 0;
+    newerBtn.disabled = currentVisitIndex === -1 || currentVisitIndex >= currentZoneVisits.length - 1;
+  }
+
+  // "I need some way to be able to live read the current combat from this combat tab... a fast
+  // way to check recent past events of the zone i'm in" (owner, 14 Sep). Re-fetches history for
+  // freshness (this is meant to answer "what just happened here"), then jumps straight past the
+  // list into whichever zone the player is standing in right now, opening its most recent visit -
+  // skipping "find it in the list" entirely. Falls back to just showing the (freshly reloaded)
+  // list when the current zone is unknown or has no history yet.
+  async function jumpToCurrentZone() {
+    await loadHistory();
+    const zone = await window.eqTracker.getCombatCurrentZoneBase();
+    if (!zone) return;
+    zoneFilter.value = zone; // picked up by populateZoneFilter inside render(), if it's a real option
+    render();
+    const visits = siblingVisits(zone);
+    if (visits.length) {
+      openVisit(visits[visits.length - 1]); // most recent
+    } else {
+      showList();
+    }
   }
 
   // Flat history (arrives newest-first from the backend) -> visits, EARLIEST first (owner, 13
@@ -10327,8 +10381,24 @@ function initCombatPage() {
     minDamageInput.value = String(DEFAULT_MIN_DAMAGE);
     minDamageInput.addEventListener('input', render);
   }
+  // Owner, 14 Sep: "i need some way to... check recent past events of the zone i'm in, i need a
+  // fast way to do that" - clicking into the Combat tab (or the explicit button below) now jumps
+  // straight to the current zone's latest visit instead of always landing back on the full list.
   const navBtnCombat = document.getElementById('combat-nav-btn');
-  if (navBtnCombat) navBtnCombat.addEventListener('click', loadHistory);
+  if (navBtnCombat) navBtnCombat.addEventListener('click', jumpToCurrentZone);
+  if (jumpCurrentZoneBtn) jumpCurrentZoneBtn.addEventListener('click', jumpToCurrentZone);
+  if (olderBtn) {
+    olderBtn.addEventListener('click', () => {
+      if (currentVisitIndex > 0) openVisit(currentZoneVisits[currentVisitIndex - 1]);
+    });
+  }
+  if (newerBtn) {
+    newerBtn.addEventListener('click', () => {
+      if (currentVisitIndex !== -1 && currentVisitIndex < currentZoneVisits.length - 1) {
+        openVisit(currentZoneVisits[currentVisitIndex + 1]);
+      }
+    });
+  }
 
   // Damage / Healing / Both - top level, refreshes every chart currently on screen, not just
   // whatever gets opened next (owner, 14 Sep).
@@ -10346,5 +10416,6 @@ function initCombatPage() {
     });
   });
 
+  updateVisitNavButtons(); // no visit open yet - both start disabled
   loadHistory();
 }
