@@ -2717,10 +2717,14 @@ body.sidebar-resizing .sidebar {
    The difficulty column (owner, 14 Sep, third round: "it should be a prefix, like D1/d4, with
    it's own column" - was inline text ahead of the zone name) is its own fixed-width slot between
    time and zone name; a row with no difficulty at all just leaves it empty, same as an ordinary
-   grid cell with nothing in it. */
+   grid cell with nothing in it.
+   The raid/group column (owner, 14 Sep, follow-up: "raid / group tags are still the same as
+   before and not resolved, they do not have their own column" - was inline text tacked onto the
+   zone name, same original mistake as the difficulty prefix) gets the identical treatment: its
+   own fixed-width slot AFTER the zone name, empty when the visit isn't an instance at all. */
 .combat-visit-row {
   display: grid;
-  grid-template-columns: 150px 36px minmax(80px, 1fr) auto;
+  grid-template-columns: 150px 36px minmax(80px, 1fr) 60px auto;
   align-items: baseline;
   gap: 10px;
   padding: 7px 4px;
@@ -2740,6 +2744,7 @@ body.sidebar-resizing .sidebar {
   white-space: nowrap;
 }
 .combat-visit-zone:hover { text-decoration: underline; }
+.combat-visit-instance { white-space: nowrap; }
 
 /* Difficulty-tier code ("D0".."D4") - owner, 14 Sep: a different colour per tier, zone name stays
    gold, D0 almost white, D4 the most prominent. A plain heat ramp (near-white -> yellow -> orange
@@ -2757,10 +2762,12 @@ body.sidebar-resizing .sidebar {
 .zone-diff-d3 { color: #e06a2f; }
 .zone-diff-d4 { color: #ff3b30; text-shadow: 0 0 6px rgba(255, 59, 48, 0.55); }
 
-/* "(Raid)" / "(Group)" badge (owner, 14 Sep: "there needs to be an identifier for (group)/raid
-   instance") - a different colour family from the D-tier heat ramp above so the two ideas
-   (difficulty vs raid-lockout-or-not) don't visually blur together. Kept lighter/smaller than the
-   zone name - it's a secondary fact about the visit, not the headline. */
+/* Raid/group badge (owner, 14 Sep: "there needs to be an identifier for (group)/raid instance") -
+   a different colour family from the D-tier heat ramp above so the two ideas (difficulty vs
+   raid-lockout-or-not) don't visually blur together. Kept lighter/smaller than the zone name -
+   it's a secondary fact about the visit, not the headline. Text is bare "Raid"/"Group" (no
+   parens) in the visit list's own column; the detail title's inline form (appendZoneLabel) still
+   wraps it in parens since there it's trailing text after the name, not a column of its own. */
 .zone-instance-badge { font-size: 0.9em; font-weight: 600; opacity: 0.85; }
 .zone-instance-raid { color: #b98cff; }
 .zone-instance-group { color: #8fb3c9; }

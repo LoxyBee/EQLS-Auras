@@ -445,11 +445,11 @@ test('the class estimate is wired IPC -> preload -> renderer', () => {
 // Owner, 14 Sep: "date and location fields need their own columns to justify text correctly" -
 // today's fights show a bare time while older ones show a full date too, and flex's natural
 // sizing let that shorter width shift the zone name (and everything after it) row to row.
-test('the visit list uses a real grid with a fixed time column, not flex natural-sizing', () => {
+test('the visit list uses a real grid with fixed time/difficulty/raid-group columns, not flex natural-sizing', () => {
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
-    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 36px minmax\(80px, 1fr\) auto;/s,
-    'the time and difficulty columns must be a fixed width so a short "today" time and a long dated one both start the zone name at the same x'
+    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 36px minmax\(80px, 1fr\) 60px auto;/s,
+    'the time, difficulty and raid/group columns must all be fixed widths so a short "today" time and a long dated one both start the zone name at the same x'
   );
 });
 
@@ -564,7 +564,7 @@ test('the detail title puts a coloured "D<n> - " prefix ahead of the name, uncha
 // Owner, 14 Sep, third round on this feature: "it should be a prefix, like D1/d4. with it's own
 // column" - the Past Fights LIST used to put the same inline "D4 - Name" text inside the zone
 // cell; now the difficulty code lives in its own grid column (`.combat-visit-diff`, see the grid
-// test above) and the zone cell holds only the name + the (Raid)/(Group) badge.
+// test above) and the zone cell holds only the bare name.
 test('the visit list shows the difficulty code in its OWN column, separate from the zone name', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const badgeFn = renderer.match(/function zoneDifficultyBadge\(difficulty\) \{([\s\S]*?)\n {2}\}/);
@@ -573,12 +573,29 @@ test('the visit list shows the difficulty code in its OWN column, separate from 
   assert.match(badgeFn[1], /zone-diff-d\$\{zoneDiffTier\(difficulty\)\}/);
   assert.doesNotMatch(badgeFn[1], /' - '/, 'no dash here - the grid column gap does that job now, not a baked-in separator');
 
-  const nameFn = renderer.match(/function appendZoneNameBadge\(container, zone, raidInstance\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(nameFn, 'appendZoneNameBadge has been restructured or removed');
-  assert.doesNotMatch(nameFn[1], /zone-diff/, 'the difficulty code must not leak back into the name cell');
+  assert.match(renderer, /const diffBadge = zoneDifficultyBadge\(visit\.difficulty\)/, 'renderList must build the difficulty column from the visit\'s own difficulty');
+  assert.match(
+    renderer, /const zoneLink = span\(visit\.zone \|\| UNKNOWN_ZONE, 'combat-visit-zone'\)/,
+    'the zone cell must hold only the bare name now - the difficulty code AND the raid/group badge both moved to their own columns'
+  );
+});
 
-  assert.match(renderer, /const badge = zoneDifficultyBadge\(visit\.difficulty\)/, 'renderList must build the difficulty column from the visit\'s own difficulty');
-  assert.match(renderer, /appendZoneNameBadge\(zoneLink, visit\.zone, visit\.raidInstance\)/, 'renderList\'s zone cell must use the name-only helper, not the inline-prefix one');
+// Owner, 14 Sep, follow-up to the D-code column: "raid / group tags are still the same as before
+// and not resolved, they do not have their own column" - the (Raid)/(Group) badge was still tacked
+// onto the zone name text, the same original mistake the D-code prefix had just been fixed for.
+test('the visit list shows the raid/group tag in its OWN column too, separate from the zone name', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const badgeFn = renderer.match(/function zoneInstanceBadge\(raidInstance\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(badgeFn, 'zoneInstanceBadge has been restructured or removed');
+  assert.match(badgeFn[1], /typeof raidInstance !== 'boolean'\) return null/, 'a non-instanced visit must contribute nothing to the column');
+  assert.match(badgeFn[1], /zone-instance-badge zone-instance-\$\{raidInstance \? 'raid' : 'group'\}/);
+  assert.match(badgeFn[1], /raidInstance \? 'Raid' : 'Group'/, 'no parens here - it is its own column, not trailing text after a name');
+
+  assert.match(renderer, /const instanceBadge = zoneInstanceBadge\(visit\.raidInstance\)/, 'renderList must build the raid/group column from the visit\'s own flag');
+  assert.match(renderer, /instanceCell\.className = 'combat-visit-instance'/, 'the raid/group badge needs its own grid cell, not a spot inside the zone cell');
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-visit-instance\s*\{/, 'missing a CSS rule for the new column');
 });
 
 // Owner, 14 Sep (follow-up): "make sure all the hyphen's line up equally, they should be at a
@@ -630,12 +647,11 @@ test('the zone label shows a (Raid)/(Group) badge when the visit has one, nothin
   assert.match(css, /\.zone-instance-raid\s*\{/, 'missing a colour rule for the raid badge');
   assert.match(css, /\.zone-instance-group\s*\{/, 'missing a colour rule for the group badge');
 
-  // The visit list's own name-only helper must carry the identical badge logic, not a copy that
-  // drifts from this one.
-  const nameFn = renderer.match(/function appendZoneNameBadge\(container, zone, raidInstance\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(nameFn, 'appendZoneNameBadge has been restructured or removed');
-  assert.match(nameFn[1], /typeof raidInstance === 'boolean'/);
-  assert.match(nameFn[1], /zone-instance-badge zone-instance-\$\{raidInstance \? 'raid' : 'group'\}/);
+  // The visit list's own column helper must carry the identical badge class logic, not a copy
+  // that drifts from this one - see the dedicated column test below for its own checks.
+  const badgeFn = renderer.match(/function zoneInstanceBadge\(raidInstance\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(badgeFn, 'zoneInstanceBadge has been restructured or removed');
+  assert.match(badgeFn[1], /zone-instance-badge zone-instance-\$\{raidInstance \? 'raid' : 'group'\}/);
 });
 
 // Owner, 14 Sep, second follow-up: a real reported case where one untagged trailing fight, right

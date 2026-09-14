@@ -10195,17 +10195,17 @@ function initCombatPage() {
     return badge;
   }
 
-  // The zone name (kept gold) plus an optional "(Raid)"/"(Group)" badge after it - the difficulty
-  // code is NOT part of this any more, see zoneDifficultyBadge above for its own column.
-  function appendZoneNameBadge(container, zone, raidInstance) {
-    container.textContent = '';
-    container.appendChild(document.createTextNode(zone || UNKNOWN_ZONE));
-    if (typeof raidInstance === 'boolean') {
-      const badge = document.createElement('span');
-      badge.className = `zone-instance-badge zone-instance-${raidInstance ? 'raid' : 'group'}`;
-      badge.textContent = ` (${raidInstance ? 'Raid' : 'Group'})`;
-      container.appendChild(badge);
-    }
+  // The Past Fights list's own raid/group column (owner, 14 Sep, follow-up to the D-code column:
+  // "raid / group tags are still the same as before and not resolved, they do not have their own
+  // column") - was still inline text tacked onto the zone name; now its own dedicated span, same
+  // pattern as zoneDifficultyBadge beside it. Returns null (append nothing) when the visit isn't
+  // an instance at all.
+  function zoneInstanceBadge(raidInstance) {
+    if (typeof raidInstance !== 'boolean') return null;
+    const badge = document.createElement('span');
+    badge.className = `zone-instance-badge zone-instance-${raidInstance ? 'raid' : 'group'}`;
+    badge.textContent = raidInstance ? 'Raid' : 'Group';
+    return badge;
   }
 
   function renderList(visits) {
@@ -10216,14 +10216,17 @@ function initCombatPage() {
       row.appendChild(span(formatWhen(visit.startedAt), 'combat-visit-time'));
       const diffCell = document.createElement('span');
       diffCell.className = 'combat-visit-diff';
-      const badge = zoneDifficultyBadge(visit.difficulty);
-      if (badge) diffCell.appendChild(badge);
+      const diffBadge = zoneDifficultyBadge(visit.difficulty);
+      if (diffBadge) diffCell.appendChild(diffBadge);
       row.appendChild(diffCell);
-      const zoneLink = document.createElement('span');
-      zoneLink.className = 'combat-visit-zone';
-      appendZoneNameBadge(zoneLink, visit.zone, visit.raidInstance);
+      const zoneLink = span(visit.zone || UNKNOWN_ZONE, 'combat-visit-zone');
       zoneLink.addEventListener('click', () => openVisit(visit));
       row.appendChild(zoneLink);
+      const instanceCell = document.createElement('span');
+      instanceCell.className = 'combat-visit-instance';
+      const instanceBadge = zoneInstanceBadge(visit.raidInstance);
+      if (instanceBadge) instanceCell.appendChild(instanceBadge);
+      row.appendChild(instanceCell);
       const n = visit.fights.length;
       row.appendChild(span(`${n} fight${n === 1 ? '' : 's'} · ${formatDamage(visit.totalDamage)}`, 'combat-visit-meta'));
       visitList.appendChild(row);
