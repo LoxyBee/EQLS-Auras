@@ -10179,6 +10179,12 @@ function initCombatPage() {
   // that's what's on screen. When the fight has just ended between two ticks (the idle timeout
   // fired), it is now an ordinary history entry - fall back to the list and reload rather than
   // trying to keep rendering a "live" view of something that no longer exists.
+  //
+  // "This menu should be open always without a click into the fight when it's live" (owner, 14
+  // Sep follow-up) - the list screen auto-opens the live view itself the moment one exists,
+  // rather than waiting for the "Live now" row to be clicked. Scoped to the LIST screen only
+  // (never while a specific historical visit is already open) - a live fight starting should not
+  // yank you out of something you're actively reviewing.
   async function onLiveFightTick() {
     if (liveRenderInFlight) return;
     liveRenderInFlight = true;
@@ -10193,6 +10199,8 @@ function initCombatPage() {
         } else {
           await renderLiveDetail(fight);
         }
+      } else if (fight && listScreen.style.display !== 'none') {
+        openLiveFight(fight);
       }
     } finally {
       liveRenderInFlight = false;

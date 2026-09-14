@@ -799,6 +799,19 @@ test('a tick refreshes the Live row, and redraws the open live chart only when t
   assert.match(fn[1], /liveFightOpen = false;\s*showList\(\);\s*loadHistory\(\);/, 'a fight ending between ticks must fall back to the list, not keep trying to render something that no longer exists');
 });
 
+// Owner, 14 Sep, follow-up: "this menu should be open always without a click into the fight when
+// it's live" - waiting for the "Live now" row to be clicked wasn't good enough; the list screen
+// should open the live view itself the moment a fight exists.
+test('a tick auto-opens the live view when the list screen is showing, but never yanks the user out of a historical visit', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function onLiveFightTick\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'onLiveFightTick has been restructured or removed');
+  assert.match(
+    fn[1], /\} else if \(fight && listScreen\.style\.display !== 'none'\) \{\s*openLiveFight\(fight\);/,
+    'auto-open must be gated on the LIST screen specifically being what is showing, not on liveFightOpen being false alone - a historical visit is also "not the live view" and must not get yanked away from'
+  );
+});
+
 test('jumpToCurrentZone opens the live fight first, falling back to the latest completed visit only when nothing is live', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
