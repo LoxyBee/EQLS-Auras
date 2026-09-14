@@ -2775,14 +2775,22 @@ body.sidebar-resizing .sidebar {
 }
 .combat-skill-row:first-child { border-top: none; }
 .combat-skill-name { opacity: 0.85; }
+/* Each fight is its own accordion now, not a navigation - clicking one expands its bar chart in
+   place (owner, 13 Sep: "so you can find yourself again faster") instead of opening a screen that
+   then needs its own way back. */
 .combat-fight-list-row {
+  border-bottom: 1px solid var(--line);
+}
+.combat-fight-list-row:last-child { border-bottom: none; }
+.combat-fight-list-row summary {
   display: flex;
   gap: 10px;
   padding: 6px 4px;
-  border-bottom: 1px solid var(--line);
   font-size: 12.5px;
   cursor: pointer;
+  list-style: none;
 }
-.combat-fight-list-row:hover { background: var(--surface-hover, rgba(255, 255, 255, 0.05)); }
-.combat-fight-list-row:last-child { border-bottom: none; }
-.combat-fight-list-row span:first-child { flex: 0 0 auto; opacity: 0.75; font-variant-numeric: tabular-nums; }
+.combat-fight-list-row summary::-webkit-details-marker { display: none; }
+.combat-fight-list-row:hover summary { background: var(--surface-hover, rgba(255, 255, 255, 0.05)); }
+.combat-fight-list-row summary span:first-child { flex: 0 0 auto; opacity: 0.75; font-variant-numeric: tabular-nums; }
+.combat-fight-bars { padding: 4px 4px 10px 20px; }

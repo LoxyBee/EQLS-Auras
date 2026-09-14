@@ -48,7 +48,7 @@ test('it is wired IPC -> preload -> renderer', () => {
   assert.match(renderer, /function initCombatPage\(\)/);
   assert.match(renderer, /initCombatPage\(\);/);
   assert.match(renderer, /window\.eqTracker\.getDamageHistory\(\)/);
-  assert.match(renderer, /window\.eqTracker\.getDamageHistoryFight\(id\)/);
+  assert.match(renderer, /window\.eqTracker\.getDamageHistoryFight\(f\.id\)/);
 });
 
 test('scanning a log is wired IPC -> preload, and a scan gets its own kept-alive engine', () => {
@@ -93,12 +93,13 @@ test('player/skill names are built as DOM text nodes, never interpolated into in
   assert.match(fn[1], /\.textContent = row\.name|span\(row\.name/, 'row.name should be set as text, not markup');
 });
 
-test('fights are grouped into visits, sorted newest-first by the owner\'s own "dated first" rule', () => {
+test('fights are grouped into visits, sorted EARLIEST first per the owner\'s own correction', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function buildVisits\(history\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'buildVisits has been restructured or removed');
   assert.match(fn[1], /fight\.visitId/, 'fights are not being grouped into visits at all');
-  assert.match(fn[1], /order\.sort\(\(a, b\) => b\.endedAt - a\.endedAt\)/, 'the list must sort by time, newest first');
+  assert.match(fn[1], /fights\.reverse\(\)/, 'a visit\'s own fights must be earliest-first too, not just the outer list');
+  assert.match(fn[1], /order\.sort\(\(a, b\) => a\.startedAt - b\.startedAt\)/, 'the list must sort earliest first, not newest first');
   const renderFn = renderer.match(/function renderList\(visits\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(renderFn, 'renderList has been restructured or removed');
 });
@@ -109,10 +110,24 @@ test('clicking a visit\'s zone opens the shared detail screen with that visit\'s
   assert.ok(fn, 'openVisit has been restructured or removed');
   assert.match(fn[1], /getDamageHistoryFight\(f\.id\)/, 'a visit\'s totals must come from its real fights, not a guess');
   assert.match(fn[1], /renderBars\(detailBars, rows, totalDuration\)/);
-  assert.match(fn[1], /detailFightList\.appendChild/, 'the individual fights must still be reachable from here');
-  const fightFn = renderer.match(/async function openFight\(id\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(fightFn, 'openFight has been restructured or removed');
-  assert.doesNotMatch(fightFn[1], /detailFightList\.appendChild/, 'a single fight has nothing further to drill into');
+  assert.match(fn[1], /detailFightList\.appendChild\(fightAccordionRow/, 'the individual fights must still be reachable from here');
+});
+
+test('a fight expands its own chart in place instead of navigating to a new screen', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'fightAccordionRow has been restructured or removed');
+  assert.match(fn[1], /createElement\('details'\)/, 'a fight row must be an accordion, not a link to another screen');
+  assert.match(fn[1], /renderBars\(nested, detail\.rows, detail\.durationSec\)/, 'expanding it must draw its OWN chart, not reuse the visit\'s combined one');
+  assert.doesNotMatch(fn[1], /showDetail\(\)|display = ''/, 'expanding a fight must not switch screens');
+});
+
+test('Back always returns to the list - there is only ever one screen of depth now', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.doesNotMatch(renderer, /function openFight\(/, 'a per-fight navigation screen would reintroduce the "Back skips a screen" bug');
+  const fn = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
+  assert.ok(fn);
+  assert.match(fn[1], /backBtn\.addEventListener\('click', showList\)/, 'Back must go straight to showList, not through an intermediate screen');
 });
 
 test('the zone filter is populated from the actual history and narrows what renders', () => {

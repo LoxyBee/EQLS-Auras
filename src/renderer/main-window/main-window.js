@@ -9720,13 +9720,16 @@ function initBuffPlanner() {
 // per-skill breakdown for whichever fight is open. Re-fetched on every visit (not loaded once
 // like Lockouts' log scan) since new fights complete while the app just sits open - there's no
 // expensive read behind it, just whatever damageEngine already has in memory.
-// Owner, 13 Sep, live-testing the first version of this tab: the inline "opens at the bottom"
+// Owner, 13 Sep, live-testing two rounds of this tab. Round 1: the inline "opens at the bottom"
 // detail was disconnected from what you clicked, the flat zone>visit>table layout made the page
-// unusably long, and the list wasn't sorted the way she reads it (time first, zone second). This
-// rebuild: a short, date-sorted list of VISITS (one line each, no inline fight table); clicking a
-// visit's zone name navigates to a shared detail screen showing that whole visit's COMBINED totals
-// as a bar-per-player chart (her reference image) with the individual fights listed below it, each
-// of which navigates to that same screen again for just its own numbers. One "Back" undoes either.
+// unusably long, and the list wasn't sorted the way she reads it. Round 2, after moving to a
+// separate fight screen: "Back" skipped past the visit screen straight to the list (two screens
+// back, not one), and a fight should expand under its own entry instead of navigating anywhere -
+// "so you can find yourself again faster". Landed on exactly two screens: a short list of VISITS
+// (earliest first, one line each), and one visit's own screen showing its COMBINED totals as a
+// bar-per-player chart (her reference image) with the individual fights listed underneath -
+// each expanding ITS OWN chart in place on click, an accordion, never a navigation. "Back" only
+// ever means "the list" now, because nothing here is more than one screen deep any more.
 function initCombatPage() {
   const listScreen = document.getElementById('combat-list-screen');
   const visitList = document.getElementById('combat-visit-list');
@@ -9790,6 +9793,11 @@ function initCombatPage() {
     listScreen.style.display = 'none';
     detailScreen.style.display = '';
   }
+  // Only ever two screens now (list, and one visit's detail) - a single fight's own numbers
+  // expand IN PLACE under its own row instead of being a third screen, per the owner's own
+  // report: navigating to a fight, then "Back", used to skip past the visit screen entirely
+  // because Back only ever knew how to return to the list. Nothing left to fix there now -
+  // Back always means "the list", because a fight never left this screen to begin with.
 
   // One player's row: a coloured bar sized against the BIGGEST row (not the total - a bar
   // measured against the total leaves every bar short in a five-person group, same reasoning the
@@ -9835,19 +9843,34 @@ function initCombatPage() {
     });
   }
 
-  // A single fight's own numbers - no fight list underneath, there's nothing further to drill into.
-  async function openFight(id) {
-    const fight = await window.eqTracker.getDamageHistoryFight(id);
-    if (!fight) return;
-    showDetail();
-    detailTitle.textContent = `${formatWhen(fight.endedAt - fight.durationSec * 1000)} — ${formatDuration(fight.durationSec)}, ${formatDamage(fight.totalDamage)} total`;
-    detailFightList.innerHTML = '';
-    renderBars(detailBars, fight.rows, fight.durationSec);
+  // One fight, folded into an accordion row under the visit's own chart - clicking it expands its
+  // own bar chart in place (owner, 13 Sep: "should expand under the entry... so you can find
+  // yourself again faster"), reusing the detail this visit already fetched rather than a fresh
+  // round trip - the whole point of asking for `Promise.all` up front in openVisit was so a click
+  // here never has to wait on anything.
+  function fightAccordionRow(fight, detail) {
+    const row = document.createElement('details');
+    row.className = 'combat-fight-list-row';
+    const summary = document.createElement('summary');
+    summary.appendChild(span(formatWhen(fight.endedAt)));
+    summary.appendChild(span(`${formatDuration(fight.durationSec)}, ${formatDamage(fight.totalDamage)}, top: ${fight.topAttacker || '—'}`));
+    row.appendChild(summary);
+    if (detail) {
+      const nested = document.createElement('div');
+      nested.className = 'combat-fight-bars';
+      row.appendChild(nested);
+      // Rendered lazily, on first expand, not for every fight up front - a visit can hold a
+      // couple dozen of these, and only the one(s) actually opened need their bars built.
+      row.addEventListener('toggle', () => {
+        if (row.open && !nested.childElementCount) renderBars(nested, detail.rows, detail.durationSec);
+      }, { once: false });
+    }
+    return row;
   }
 
   // "Clicking on the zone itself should show the totals of that encounter" - every fight in the
   // visit, summed per player and per skill, as one combined chart; the individual fights are
-  // listed underneath so a specific one is still one more click away.
+  // listed underneath, each expanding to its own chart in place rather than navigating anywhere.
   async function openVisit(visit) {
     showDetail();
     const zoneLabel = visit.zone || UNKNOWN_ZONE;
@@ -9880,19 +9903,17 @@ function initCombatPage() {
     // between the first and last - the gaps in between are downtime, not part of any fight.
     renderBars(detailBars, rows, totalDuration);
 
-    for (const fight of visit.fights) {
-      const row = document.createElement('div');
-      row.className = 'combat-fight-list-row';
-      row.appendChild(span(formatWhen(fight.endedAt)));
-      row.appendChild(span(`${formatDuration(fight.durationSec)}, ${formatDamage(fight.totalDamage)}, top: ${fight.topAttacker || '—'}`));
-      row.addEventListener('click', () => openFight(fight.id));
-      detailFightList.appendChild(row);
-    }
+    // "Fights should be organised earliest first" - visit.fights is already in that order (see
+    // buildVisits), so the fight list below the combined chart reads as "pull 1, pull 2, ..." top
+    // to bottom, matching how the visit itself actually played out.
+    visit.fights.forEach((fight, i) => detailFightList.appendChild(fightAccordionRow(fight, details[i])));
   }
 
-  // Flat history (newest-first) -> visits (newest-first), each visit carrying its own fights in
-  // the same order. A fight with no visitId (no zone was ever told to the engine) is its own
-  // singleton visit rather than being lumped together under one giant "unknown" bucket.
+  // Flat history (arrives newest-first from the backend) -> visits, EARLIEST first (owner, 13
+  // Sep) - both the visit list itself and each visit's own fights inside it, so a visit's fight
+  // list reads "pull 1, pull 2, ..." top to bottom the way it actually happened. A fight with no
+  // visitId (no zone was ever told to the engine) is its own singleton visit rather than being
+  // lumped together under one giant "unknown" bucket.
   function buildVisits(history) {
     const byKey = new Map();
     const order = [];
@@ -9903,17 +9924,16 @@ function initCombatPage() {
         byKey.set(key, visit);
         order.push(visit);
       }
-      byKey.get(key).fights.push(fight);
+      byKey.get(key).fights.push(fight); // still newest-first here; reversed below
     }
     for (const visit of order) {
-      const oldest = visit.fights[visit.fights.length - 1];
+      visit.fights.reverse(); // earliest first
+      const oldest = visit.fights[0];
       visit.startedAt = oldest.endedAt - oldest.durationSec * 1000;
-      visit.endedAt = visit.fights[0].endedAt;
+      visit.endedAt = visit.fights[visit.fights.length - 1].endedAt;
       visit.totalDamage = visit.fights.reduce((s, f) => s + f.totalDamage, 0);
     }
-    // Newest-first by each visit's own most recent fight - "dated/timestamped first" (owner's own
-    // words): time is the sort key and the leading column, the zone is what's clickable beside it.
-    return order.sort((a, b) => b.endedAt - a.endedAt);
+    return order.sort((a, b) => a.startedAt - b.startedAt);
   }
 
   function renderList(visits) {
