@@ -88,17 +88,36 @@ test('when capping "maybe" candidates, the classes seen across the MOST distinct
   assert.ok(names.includes('Nec'), `the most-corroborated class must survive the cap: ${JSON.stringify(result)}`);
 });
 
-test('confirmed evidence always outranks maybe evidence when both compete for the 3 slots', () => {
+// Owner, 14 Sep, live-caught: "avenrae... is not an enchanter. you are using chaos flux as
+// evidence but that is specifically an enchanter skill that is on a weapon PROC that a ranger can
+// have... you are seeing 1 evidence of enchanter and ignoring the 3 cases of ranger. 3 > 1." A
+// weapon proc fires the same cast line for WHOEVER wields it, regardless of their real class, so a
+// lone single-class "confirmed" match is not more trustworthy than three separate real casts of
+// shared-but-narrowing spells. Ranking is by volume (distinct corroborating spells), never by tier.
+test('volume wins over tier - three "maybe" corroborations for one class beat a single "confirmed" spell for another', () => {
   const lookup = (name) => ({
-    real1: ['Nec'], real2: ['Shm'], real3: ['Rng'],
-    ambiguous: ['Wiz', 'Mag'],
+    'chaos flux': ['Enc'], // a real spell, but reached here via a weapon proc, not Avenrae's own cast
+    'call of flame': ['Rng', 'Dru'],
+    'flaming arrow': ['Rng', 'Bst'],
+    'scorching arrow': ['Rng', 'Mnk'],
   }[name.toLowerCase()] || null);
-  const result = estimateClasses(['real1', 'real2', 'real3', 'ambiguous'], lookup);
-  assert.deepEqual(
-    result.map((c) => c.confidence),
-    ['confirmed', 'confirmed', 'confirmed'],
-    'with 3 confirmed classes already, no maybe slot should remain'
-  );
+  const result = estimateClasses(['Chaos Flux', 'Call of Flame', 'Flaming Arrow', 'Scorching Arrow'], lookup);
+  const names = result.map((c) => c.name);
+  assert.equal(names[0], 'Rng', `Ranger has 3 corroborating spells to Enchanter's 1 - it must rank first: ${JSON.stringify(result)}`);
+  assert.ok(!names.slice(0, 1).includes('Enc'), 'a single proc-sourced "confirmed" spell must not outrank three real corroborations');
+});
+
+// A genuinely well-corroborated confirmed class (several single-class spells, not just one) still
+// beats a single maybe candidate - "confirmed" isn't penalised, it's just no longer an automatic
+// trump card regardless of how little evidence backs it.
+test('a class confirmed by SEVERAL distinct spells still outranks a lone maybe candidate', () => {
+  const lookup = (name) => ({
+    a: ['Nec'], b: ['Nec'], c: ['Nec'],
+    d: ['Wiz', 'Mag'],
+  }[name.toLowerCase()] || null);
+  const result = estimateClasses(['A', 'B', 'C', 'D'], lookup);
+  assert.equal(result[0].name, 'Nec');
+  assert.equal(result[0].confidence, 'confirmed');
 });
 
 test('three single-class skills from three different classes surface all three - the whole point for a multiclass character', () => {
