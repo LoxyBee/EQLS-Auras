@@ -25,10 +25,29 @@ const { isArticlePrefixedMobName, looksLikePet } = require('./petNames');
 //     one fight ("giant wooly spider pet" and, before the shield exclusion above, "Giant wooly
 //     spider pet") - joined case-INsensitively so a fight is never labelled with what is really
 //     one target listed twice under two spellings.
+//   - A "<Race> <role>" trash mob ("Amygdalan warrior", "Amygdalan knight") - the SAME shape as
+//     "a Teir`Dal rogue" (an article-prefixed mob elsewhere in this codebase), just missing the
+//     article this particular zone's mob type happens to omit. Confirmed against the owner's own
+//     curated named list for this exact zone (raidZoneNameds.js's "The Plane of Fear" entry) -
+//     "Phoboplasm" is a real curated mini-boss there, "Amygdalan warrior"/"Amygdalan knight" are
+//     not listed at all. A real named mob's name is either ONE word (Fright, Phoboplasm), or every
+//     significant word in it is capitalised (Efreeti Lord Djarn) or a short grammatical connector
+//     (Stonesoul THE Unmoving) - never a bare lowercase common noun as the LAST word, which is
+//     exactly the tell a race+role trash name always has.
 // Several DIFFERENT named targets in one fight (an add pull alongside the boss) are still all
 // joined, rather than picking one arbitrarily and silently dropping the rest.
+function endsInLowercaseWord(name) {
+  const words = name.trim().split(/\s+/);
+  return /^[a-z]/.test(words[words.length - 1]);
+}
+
 function looksLikeNamedMob(name) {
-  return /^[A-Z]/.test(name) && !isArticlePrefixedMobName(name) && !looksLikePet(name);
+  return (
+    /^[A-Z]/.test(name) &&
+    !isArticlePrefixedMobName(name) &&
+    !looksLikePet(name) &&
+    !endsInLowercaseWord(name)
+  );
 }
 
 function labelFight(enemyTargets) {
