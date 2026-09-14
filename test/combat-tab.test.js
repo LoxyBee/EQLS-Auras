@@ -242,6 +242,17 @@ test('the Back/Damage/Healing/Both buttons are all on one row', () => {
   assert.match(section, /data-view="both"/);
 });
 
+// Owner, 14 Sep: "there needs to be more separation between sum total graph and the sub fights" -
+// the combined chart's own last row and the first individual-fight row sat right on top of each
+// other with only the fight list's border to tell them apart.
+test('there is a visible gap and a heavier rule between the combined chart and the individual fight list', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  const rule = css.match(/#combat-detail-fightlist\s*\{([\s\S]*?)\}/);
+  assert.ok(rule, 'missing a #combat-detail-fightlist rule');
+  assert.match(rule[1], /margin-top:\s*\d/, 'needs real space above it, not just a border touching the chart');
+  assert.match(rule[1], /border-top:\s*2px/, 'the separating rule should read heavier than the fight list\'s own 1px row borders, so it reads as a section break');
+});
+
 test('a visit\'s combined skill totals carry hits and crits through the merge, not just damage', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function aggregateFightRows\(details, rowsKey\) \{([\s\S]*?)\n {2}\}/);

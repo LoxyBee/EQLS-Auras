@@ -2954,6 +2954,11 @@ body.sidebar-resizing .sidebar {
 .combat-fight-damage { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .combat-fight-top { text-align: right; opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combat-fight-bars { padding: 4px 4px 10px 20px; }
+/* Owner, 14 Sep: "there needs to be more separation between sum total graph and the sub fights" -
+   the combined chart's last row and the first individual-fight row used to sit right on top of
+   each other with nothing but the fight list's own top border between them. A visible gap plus a
+   heavier rule reads as "end of one section, start of another" the way a shared border did not. */
+#combat-detail-fightlist { margin-top: 22px; padding-top: 14px; border-top: 2px solid var(--line); }
 /* Damage / Healing / Both (owner, 14 Sep) - the "Both" heading between the two stacked charts. */
 .combat-metric-heading {
   display: block;
