@@ -1058,7 +1058,7 @@
         </div>
 
         <div class="card" id="combat-list-screen">
-          <h3 title="Every fight tracked this session plus anything found by a scan above. Newest first. Closing the app clears this - it's not saved to disk.">Past fights</h3>
+          <h3 title="Every fight tracked this session plus anything found by a scan above. Newest first. Closing the app clears this - it's not saved to disk.">Past fights <span class="live-indicator" title="Always on while the app is open - a fight lands here automatically the moment it ends, no scan needed for anything happening right now.">● Live</span></h3>
           <div class="row">
             <span class="label">Zone</span>
             <select id="combat-zone-filter" class="text-input"></select>
@@ -1067,7 +1067,7 @@
             <button type="button" id="combat-jump-current-zone" title="Jump straight to the most recent activity in the zone you're in right now.">Current zone</button>
           </div>
           <div id="combat-visit-list"></div>
-          <p class="empty-note" id="combat-history-empty">No fights tracked yet this session.</p>
+          <p class="empty-note" id="combat-history-empty">No fights yet this session - still watching your log.</p>
         </div>
 
         <!-- One shared screen for both drill-downs: click a zone on the list above for the whole

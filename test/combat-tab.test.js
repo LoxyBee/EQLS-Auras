@@ -28,6 +28,18 @@ test('the Combat nav button and page section exist', () => {
   assert.match(html, /id="combat-scan-file"/);
 });
 
+// Owner, 14 Sep: "it needs to be obvious that there is a live tracking option, since currently
+// there is not placeholder ui showing that it will go there" - a fresh session's empty Past
+// Fights list gave no hint that it was actually watching, live, for the next fight to land in it.
+test('a "Live" badge next to Past Fights, and the empty state, both say tracking is actually on', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /class="live-indicator"[^>]*>● Live</, 'the badge must be visible year-round, not conditional on having any history yet');
+  assert.match(html, /id="combat-history-empty">No fights yet this session - still watching your log\.</);
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.live-indicator\s*\{/, 'missing styling for the badge');
+});
+
 test('the page uses a title= tooltip for its explanation, not a <p class="hint"> block (owner\'s standing rule)', () => {
   const html = read('src', 'renderer', 'main-window', 'index.html');
   const start = html.indexOf('id="page-combat"');

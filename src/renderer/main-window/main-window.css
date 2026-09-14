@@ -2699,6 +2699,12 @@ body.sidebar-resizing .sidebar {
 .lockout-gapwarn { border-left: 3px solid #e8b04b; padding-left: 10px; margin-top: 6px; }
 
 /* Combat tab - past-fight history and the per-player/per-skill breakdown. */
+/* Owner, 14 Sep: "it needs to be obvious that there is a live tracking option, since currently
+   there is no placeholder ui showing that it will go there" - a fresh session shows an empty list
+   with nothing telling you it's actually watching. A small always-on badge next to the heading,
+   not a paragraph (this project's own rule: hover text for explanation, never subtext under a
+   heading) - the hover title carries the "why", the badge itself just says the fact. */
+.live-indicator { font-size: 0.6em; font-weight: 600; color: #6fd67a; vertical-align: middle; margin-left: 6px; letter-spacing: 0.02em; }
 .empty-note { opacity: 0.6; font-size: 13px; }
 .scan-status { font-size: 12.5px; opacity: 0.8; margin: 8px 0 0; }
 .scan-status.scan-error { color: #e08a3c; opacity: 1; }
