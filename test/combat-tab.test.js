@@ -188,5 +188,31 @@ test('the skill breakdown shows each skill\'s share of the player\'s OWN total, 
   assert.match(fn[1], /s\.hits > 0 \? Math\.round\(\(s\.crits \/ s\.hits\) \* 100\)/);
 });
 
+// Owner, 13 Sep, second round: "needs dedicated columns... columns are unlabeled" and "still no
+// colours for the dps breakdown... the rows need colours to display their %". The skill list is a
+// real 4-column grid now (Skill / Damage / % of total / Crit %) with a header row using the SAME
+// columns, and the Damage cell carries its own coloured bar - sized against this player's own
+// biggest skill, same "biggest, not the total" reasoning the player bars already use.
+test('the skill breakdown has a labelled header row and each skill row has its own coloured bar', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(fn[1], /combat-skill-header/, 'no header row - the columns would be unlabeled again');
+  for (const label of ['Skill', 'Damage', '% of total', 'Crit %']) {
+    assert.ok(fn[1].includes(`'${label}'`), `header is missing the "${label}" column label`);
+  }
+  assert.match(fn[1], /combat-skill-track/, 'each skill needs its own bar track, not just a bare number');
+  assert.match(fn[1], /combat-skill-fill/);
+  assert.match(
+    fn[1], /BAR_COLORS\[si % BAR_COLORS\.length\]/,
+    'each skill bar must actually be coloured, not left the default track colour'
+  );
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-skill-row \{[^}]*display: grid;[^}]*grid-template-columns: 1fr 2fr 64px 56px;/s,
+    'the header and data rows must share one grid-template-columns or the labels will not line up with their values'
+  );
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

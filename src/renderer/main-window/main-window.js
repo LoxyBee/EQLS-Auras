@@ -9831,22 +9831,45 @@ function initCombatPage() {
       details.appendChild(summary);
       const list = document.createElement('div');
       list.className = 'combat-skill-list';
-      for (const s of row.bySkill) {
+      if (row.bySkill.length) {
+        const header = document.createElement('div');
+        header.className = 'combat-skill-row combat-skill-header';
+        header.appendChild(span('Skill'));
+        header.appendChild(span('Damage'));
+        header.appendChild(span('% of total'));
+        header.appendChild(span('Crit %'));
+        list.appendChild(header);
+      }
+      const skillTop = row.bySkill.length ? row.bySkill[0].damage : 0;
+      row.bySkill.forEach((s, si) => {
         const line = document.createElement('div');
         line.className = 'combat-skill-row';
-        line.appendChild(span(s.skill, 'combat-skill-name'));
-        const stats = document.createElement('span');
-        stats.className = 'combat-skill-stats';
         // % of THIS PLAYER's own total (owner, 13 Sep) - not the fight's, since that's already
         // the point of the bar above it; this answers "of what Avenrae did, how much was this".
         const share = row.damage > 0 ? Math.round((s.damage / row.damage) * 100) : 0;
         const critPct = s.hits > 0 ? Math.round((s.crits / s.hits) * 100) : 0;
-        stats.appendChild(span(formatDamage(s.damage)));
-        stats.appendChild(span(`${share}%`, 'combat-skill-share'));
-        stats.appendChild(span(`${critPct}% crit`, 'combat-skill-crit'));
-        line.appendChild(stats);
+        line.appendChild(span(s.skill, 'combat-skill-name'));
+
+        // A coloured bar here too (owner, 13 Sep: "the rows need colours to display their %") -
+        // sized against this player's OWN biggest skill, same "biggest, not the total" reasoning
+        // as the player bars above.
+        const track = document.createElement('div');
+        track.className = 'combat-skill-track';
+        const fill = document.createElement('div');
+        fill.className = 'combat-skill-fill';
+        fill.style.width = `${skillTop > 0 ? Math.max(2, (s.damage / skillTop) * 100) : 0}%`;
+        fill.style.background = BAR_COLORS[si % BAR_COLORS.length];
+        const amount = document.createElement('div');
+        amount.className = 'combat-skill-amount';
+        amount.textContent = formatDamage(s.damage);
+        track.appendChild(fill);
+        track.appendChild(amount);
+        line.appendChild(track);
+
+        line.appendChild(span(`${share}%`, 'combat-skill-share'));
+        line.appendChild(span(`${critPct}%`, 'combat-skill-crit'));
         list.appendChild(line);
-      }
+      });
       details.appendChild(list);
       container.appendChild(details);
     });

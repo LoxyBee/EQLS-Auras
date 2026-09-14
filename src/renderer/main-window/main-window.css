@@ -2764,27 +2764,60 @@ body.sidebar-resizing .sidebar {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 .combat-bar-stats { text-align: right; font-size: 12px; opacity: 0.75; font-variant-numeric: tabular-nums; }
+/* Skill / Damage / % of total / Crit % - a real labelled grid (owner, 13 Sep: "needs dedicated
+   columns... columns are unlabeled"), the same four columns for the header and every data row so
+   the numbers line up underneath their names instead of just being spaced apart by eye. The
+   Damage column carries its own coloured bar (owner, same note: "the rows need colours to display
+   their %") - sized against this player's own biggest skill, same reasoning the player bars above
+   already use ("biggest, not the total" - otherwise one dominant nuke leaves every other skill's
+   bar too short to read). */
 .combat-skill-list { padding: 6px 4px 4px 140px; }
 .combat-skill-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr 2fr 64px 56px;
+  align-items: center;
   gap: 10px;
   font-size: 12.5px;
-  padding: 3px 0;
+  padding: 4px 0;
   border-top: 1px solid var(--line);
 }
 .combat-skill-row:first-child { border-top: none; }
-.combat-skill-name { opacity: 0.85; }
-/* Damage, then its share of THIS PLAYER's own total, then its crit rate - three numbers, evenly
-   spaced and right-aligned so a column of them lines up down the list. */
-.combat-skill-stats {
-  display: flex;
-  gap: 14px;
-  font-variant-numeric: tabular-nums;
+.combat-skill-row > span:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.combat-skill-name { opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combat-skill-header {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  border-top: none;
+  padding-bottom: 6px;
 }
-.combat-skill-stats > span { min-width: 3.5em; text-align: right; }
-.combat-skill-share { opacity: 0.6; }
-.combat-skill-crit { opacity: 0.6; }
+.combat-skill-header span:first-child { text-align: left; }
+.combat-skill-share { opacity: 0.7; }
+.combat-skill-crit { opacity: 0.7; }
+.combat-skill-track {
+  position: relative;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.combat-skill-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  opacity: 0.8;
+}
+.combat-skill-amount {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
 /* Each fight is its own accordion now, not a navigation - clicking one expands its bar chart in
    place (owner, 13 Sep: "so you can find yourself again faster") instead of opening a screen that
    then needs its own way back.
