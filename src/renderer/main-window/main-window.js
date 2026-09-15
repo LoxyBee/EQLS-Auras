@@ -9965,6 +9965,10 @@ function initCombatPage() {
         header.className = 'combat-skill-row combat-skill-header';
         header.appendChild(span('Skill'));
         header.appendChild(span(metric === 'heal' ? 'Healing' : metric === 'both' ? 'Total' : 'Damage'));
+        // Owner, 15 Sep: "is it possible to add/check for amount of times skill used/activated...
+        // how many puma procs, things like that" - the count was already tracked internally
+        // (bySkill's own `hits`, already used for Crit % below) and just never surfaced.
+        header.appendChild(span('Hits'));
         header.appendChild(span('% of total'));
         header.appendChild(span('Crit %'));
         list.appendChild(header);
@@ -10007,6 +10011,7 @@ function initCombatPage() {
         amount.className = 'combat-skill-amount';
         amount.textContent = formatDamage(s.damage);
         trackArea.appendChild(amount);
+        trackArea.appendChild(span(String(s.hits), 'combat-skill-hits'));
         trackArea.appendChild(span(`${share}%`, 'combat-skill-share'));
         trackArea.appendChild(span(critPct === null ? '—' : `${critPct}%`, 'combat-skill-crit'));
         line.appendChild(trackArea);

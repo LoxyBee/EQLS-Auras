@@ -2979,7 +2979,12 @@ body.sidebar-resizing .sidebar {
 .combat-skill-list { padding: 6px 4px 4px 140px; }
 .combat-skill-row {
   display: grid;
-  grid-template-columns: 1fr 2fr 64px 56px;
+  /* Owner, 15 Sep: "is it possible to add/check for amount of times skill used/activated... it
+     would really help check how often something happens in the log, like weapon procs" - a Hits
+     column, right after the amount so "134.9k from N hits" reads in order. The count was already
+     tracked internally (bySkill's own `hits` field, used for Crit % all along) - this is a
+     display-only addition, no engine change. */
+  grid-template-columns: 1fr 2fr 56px 64px 56px;
   align-items: center;
   gap: 10px;
   font-size: 12.5px;
@@ -3007,12 +3012,12 @@ body.sidebar-resizing .sidebar {
   grid-column: 2 / -1;
   position: relative;
   display: grid;
-  grid-template-columns: 2fr 64px 56px;
+  grid-template-columns: 2fr 56px 64px 56px;
   align-items: center;
   gap: 10px;
   height: 16px;
 }
-.combat-skill-share, .combat-skill-crit {
+.combat-skill-share, .combat-skill-crit, .combat-skill-hits {
   position: relative;
   z-index: 1;
   text-align: center;

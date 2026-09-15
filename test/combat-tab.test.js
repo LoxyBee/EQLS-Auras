@@ -299,15 +299,16 @@ test('the skill breakdown shows each skill\'s share of the player\'s OWN total, 
 
 // Owner, 13 Sep, second round: "needs dedicated columns... columns are unlabeled" and "still no
 // colours for the dps breakdown... the rows need colours to display their %". The skill list is a
-// real 4-column grid now (Skill / Damage / % of total / Crit %) with a header row using the SAME
-// columns, and the Damage cell carries its own coloured bar - sized against this player's own
-// biggest skill, same "biggest, not the total" reasoning the player bars already use.
+// real grid (Skill / Damage / Hits / % of total / Crit %, the Hits column added 15 Sep) with a
+// header row using the SAME columns, and the Damage cell carries its own coloured bar - sized
+// against this player's own biggest skill, same "biggest, not the total" reasoning the player bars
+// already use.
 test('the skill breakdown has a labelled header row and each skill row has its own coloured bar', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'renderBars has been restructured or removed');
   assert.match(fn[1], /combat-skill-header/, 'no header row - the columns would be unlabeled again');
-  for (const label of ['Skill', 'Damage', '% of total', 'Crit %']) {
+  for (const label of ['Skill', 'Damage', 'Hits', '% of total', 'Crit %']) {
     assert.ok(fn[1].includes(`'${label}'`), `header is missing the "${label}" column label`);
   }
   assert.match(fn[1], /combat-skill-track/, 'each skill needs its own bar track, not just a bare number');
@@ -318,7 +319,7 @@ test('the skill breakdown has a labelled header row and each skill row has its o
   );
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
-    css, /\.combat-skill-row \{[^}]*display: grid;[^}]*grid-template-columns: 1fr 2fr 64px 56px;/s,
+    css, /\.combat-skill-row \{[^}]*display: grid;[^}]*grid-template-columns: 1fr 2fr 56px 64px 56px;/s,
     'the header and data rows must share one grid-template-columns or the labels will not line up with their values'
   );
 });
@@ -336,8 +337,8 @@ test('the skill bar spans the whole Damage/percent/crit area, not just the Damag
     'the track/fill must live in a wrapper spanning the whole numbers area, not just the Damage column'
   );
   assert.match(
-    fn[1], /trackArea\.appendChild\(track\)[\s\S]*trackArea\.appendChild\(amount\)[\s\S]*trackArea\.appendChild\(span\(`\$\{share\}%`, 'combat-skill-share'\)\)[\s\S]*trackArea\.appendChild\(span\(critPct === null[\s\S]*?'combat-skill-crit'\)\)/,
-    'the amount, share and crit numbers must all sit on top of the same wide track, not the bare row'
+    fn[1], /trackArea\.appendChild\(track\)[\s\S]*trackArea\.appendChild\(amount\)[\s\S]*trackArea\.appendChild\(span\(String\(s\.hits\), 'combat-skill-hits'\)\)[\s\S]*trackArea\.appendChild\(span\(`\$\{share\}%`, 'combat-skill-share'\)\)[\s\S]*trackArea\.appendChild\(span\(critPct === null[\s\S]*?'combat-skill-crit'\)\)/,
+    'the amount, hits, share and crit numbers must all sit on top of the same wide track, not the bare row'
   );
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
@@ -392,8 +393,8 @@ test('the skill breakdown\'s Damage/percent/crit columns are centred, header and
     'every header label but Skill must be centred, or it drifts from its own centred data column'
   );
   assert.match(
-    css, /\.combat-skill-share, \.combat-skill-crit \{[^}]*text-align: center;/s,
-    'the % of total / crit % data values must be centred, matching their now-centred headers'
+    css, /\.combat-skill-share, \.combat-skill-crit, \.combat-skill-hits \{[^}]*text-align: center;/s,
+    'the % of total / crit % / hits data values must be centred, matching their now-centred headers'
   );
   assert.match(
     css, /\.combat-skill-amount \{[^}]*justify-content: center;/s,
@@ -1385,6 +1386,27 @@ test('the themed dropdown\'s visible control actually fills its wrap once the wr
   assert.match(
     css, /\.sd-display \{[^}]*(?<!max-)width: 100%;/s,
     '.sd-display must claim the full width of .sd-wrap with an actual `width: 100%` - `max-width: 100%` alone is only an upper bound and a growing wrap just becomes invisible blank space beside a still-compact control'
+  );
+});
+
+// Owner, 15 Sep: "is it possible to add/check for amount of times skill used/activated? for
+// example, how much instances of desperate dirge, or how many puma procs... it would really help
+// check how often something happens in the log, like weapon procs" - the count was already
+// tracked internally (bySkill's own `hits`, already used to compute Crit %) and simply never
+// surfaced in the UI. Display-only addition, no damageEngine change needed.
+test('the skill breakdown shows how many times each skill fired, not just its total damage', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(fn[1], /header\.appendChild\(span\('Hits'\)\)/, 'the header must label the new column');
+  assert.match(
+    fn[1], /trackArea\.appendChild\(span\(String\(s\.hits\), 'combat-skill-hits'\)\)/,
+    'must render the real per-skill hit count (bySkill.hits), not a placeholder'
+  );
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-skill-track-area \{[^}]*grid-template-columns: 2fr 56px 64px 56px;/s,
+    'the track-area sub-grid must reserve a track for Hits alongside Damage/%/Crit, or it will not line up under its own header'
   );
 });
 
