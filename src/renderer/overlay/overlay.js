@@ -324,6 +324,12 @@ function colorForName(name) {
 // drawn at ~40% of the picked saturation. The Total row (barPercent null) keeps the full colour.
 const DEFAULT_DAMAGE_HEX = '#e0603a'; // red-orange
 const DEFAULT_HEAL_HEX = '#37b56a'; // green
+// Owner, 14 Sep: "denon's desperate dirge to have it's own coloured section... coloured bright
+// red" - the same fixed colour the Combat tab uses for it, here too, so it reads as one consistent
+// "this is Denon's" colour wherever damage shows up in the app, not a shade tied to the meter's
+// own colour scheme (which is why this is a plain hex, not run through meterShade like everything
+// else on this bar).
+const DENON_BAR_COLOR = '#ff2b2b';
 
 function hexToHsl(hex) {
   const s = String(hex || '').trim().replace(/^#/, '');
@@ -1138,6 +1144,15 @@ function updateRef(ref, buff, isIcon) {
           const dir = currentConfig.mirrorRowDirection ? 'to left' : 'to right';
           ref.barEl.style.background =
             `linear-gradient(${dir}, ${dmgColor} 0%, ${dmgColor} ${splitPct}%, ${healColor} ${splitPct}%, ${healColor} 100%)`;
+        } else if (typeof buff.denonPercent === 'number' && buff.denonPercent > 0) {
+          // Same hard-stop-gradient trick as barSplit above, just against a fixed colour instead
+          // of a second metric's own shade - `denonPercent` is already "how much of THIS row's
+          // own bar", so it needs no rescaling against anything else.
+          const baseColor = damageBarColor(singleMetricKind(), buff.barPercent);
+          const denonSplitPct = Math.max(0, Math.min(100, buff.denonPercent));
+          const dir = currentConfig.mirrorRowDirection ? 'to left' : 'to right';
+          ref.barEl.style.background =
+            `linear-gradient(${dir}, ${DENON_BAR_COLOR} 0%, ${DENON_BAR_COLOR} ${denonSplitPct}%, ${baseColor} ${denonSplitPct}%, ${baseColor} 100%)`;
         } else {
           ref.barEl.style.background = damageBarColor(singleMetricKind(), buff.barPercent);
         }

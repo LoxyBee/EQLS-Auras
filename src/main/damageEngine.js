@@ -1379,6 +1379,21 @@ class DamageEngine extends EventEmitter {
     return effective;
   }
 
+  // How much of one raw attacker's OWN damage came from a Denon's Desperate Dirge cast (owner, 14
+  // Sep - the same bright-red bar segment the Combat tab already shows, now for the live overlay
+  // meter too). Prefix match, not exact equality - the real cast line carries a rank numeral
+  // ("Denon's Desperate Dirge V"), the documented case in gotcha #3, confirmed against the owner's
+  // own log. Reads `bySkillByAttacker`, the same per-skill map _snapshotRows already draws from.
+  _denonDamageForAttacker(rawName) {
+    const bySkill = this.bySkillByAttacker.get(rawName);
+    if (!bySkill) return 0;
+    let sum = 0;
+    for (const [skill, s] of bySkill) {
+      if (typeof skill === 'string' && skill.startsWith("Denon's Desperate Dirge")) sum += s.damage;
+    }
+    return sum;
+  }
+
   _aggregate(byAttacker, scope = 'all', pets = null, rawByName = null, metric = 'damage') {
     byAttacker = this._reconcileRaw(byAttacker, rawByName, metric);
     const admittedList = (() => {
@@ -1400,15 +1415,25 @@ class DamageEngine extends EventEmitter {
 
     // Fold raw attacker rows into the display buckets the scope allows. Anything the scope excludes
     // never enters `agg`, so `totalDamage` and the shares below are its own denominator.
-    const agg = new Map(); // displayName -> { damage, hits, isPet, unknownPets }
+    const agg = new Map(); // displayName -> { damage, hits, isPet, unknownPets, denonDamage }
+    // Owner, 14 Sep: "denon's desperate dirge to have it's own coloured section" on the live
+    // overlay meter too, not just the Combat tab. Set once per raw name below (closed over by
+    // `bump`, rather than threading a new argument through every call site) - a summary row like
+    // "Pets"/"Other" can fold several real attackers together, so this accumulates across every
+    // raw name that lands in the same display bucket, same as damage/hits already do. Damage-only:
+    // Denon's is never a heal, and reusing this for a heal-metric pass would attach a damage-side
+    // number to a heal row, which means nothing.
+    let currentDenon = 0;
     const bump = (name, r, extra) => {
-      const cur = agg.get(name) || { damage: 0, hits: 0 };
+      const cur = agg.get(name) || { damage: 0, hits: 0, denonDamage: 0 };
       cur.damage += r.damage;
       cur.hits += r.hits;
+      cur.denonDamage += currentDenon;
       agg.set(name, Object.assign(cur, extra || {}));
     };
 
     for (const [rawName, r] of byAttacker) {
+      currentDenon = metric === 'damage' ? this._denonDamageForAttacker(rawName) : 0;
       const key = rawName.toLowerCase();
       const isSelf = rawName === 'You' || key === 'you' || key === 'yourself';
       const petKey = ownPetKey.get(key);
@@ -1495,7 +1520,7 @@ class DamageEngine extends EventEmitter {
 
     const totalDamage = [...agg.values()].reduce((s, r) => s + r.damage, 0);
     const rows = [...agg.entries()]
-      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits, isPet: !!r.isPet, unknownPets: !!r.unknownPets, isOther: !!r.isOther }))
+      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits, denonDamage: r.denonDamage || 0, isPet: !!r.isPet, unknownPets: !!r.unknownPets, isOther: !!r.isOther }))
       // biggest first, but the "Pets" and "Other" summary rows always sink to the bottom above the
       // total, regardless of how much damage they carry.
       .sort((a, b) => {
@@ -1524,6 +1549,11 @@ class DamageEngine extends EventEmitter {
         // every bar short in a five-person group, with even the longest only a fifth of the way
         // across - which reads as everybody doing badly rather than as a comparison.
         barPercent: top > 0 ? Math.max(0, Math.min(100, (r.damage / top) * 100)) : 0,
+        // What share of THIS row's own bar is Denon's Desperate Dirge (owner, 14 Sep: the same
+        // bright-red segment the Combat tab shows, now for the live overlay too) - a fraction of
+        // the row's own bar length, not a separate number, so overlay.js only needs to paint a
+        // second colour inset at this point rather than draw anything new.
+        denonPercent: r.damage > 0 ? Math.max(0, Math.min(100, (r.denonDamage / r.damage) * 100)) : 0,
         // `isPet` - a charmed pet you or a groupmate own (own pets carry a #gen in the name).
         // `unknownPets` - the combined "Charmed pets" row for owner-unknown charms. Both are
         // display hints for the overlay; nothing downstream needs them.

@@ -187,5 +187,22 @@ test('the overlay derives the shade from barPercent so #1 is the pure pick and t
   assert.match(overlaySrc, /const healColor = damageBarColor\('heal', buff\.barPercent\)/);
 });
 
+// Owner, 14 Sep: "this should also apply to the aura version of the combat meter" - the Combat
+// tab's Denon's Desperate Dirge bright-red bar slice, now for the live overlay meter too.
+// `denonPercent` (damageEngine.js) is "what share of THIS row's own bar" - the overlay paints it
+// with the same hard-stop-gradient trick already used for barSplit, just against a fixed colour.
+test('a Denon\'s Desperate Dirge share paints as a fixed bright-red segment, same gradient trick barSplit uses', () => {
+  assert.match(overlaySrc, /const DENON_BAR_COLOR = '#ff2b2b'/);
+  assert.match(
+    overlaySrc, /else if \(typeof buff\.denonPercent === 'number' && buff\.denonPercent > 0\) \{/,
+    'must only kick in when this row actually has a Denon\'s share - everyone else keeps the plain single colour'
+  );
+  assert.match(
+    overlaySrc,
+    /`linear-gradient\(\$\{dir\}, \$\{DENON_BAR_COLOR\} 0%, \$\{DENON_BAR_COLOR\} \$\{denonSplitPct\}%, \$\{baseColor\} \$\{denonSplitPct\}%, \$\{baseColor\} 100%\)`/,
+    'must be a fixed red for the Denon\'s portion, the row\'s own shaded colour for the rest - a hard stop, not a blend'
+  );
+});
+
 module.exports = () => report('damage-row-cap');
 if (require.main === module) report('damage-row-cap').then((n) => process.exit(n ? 1 : 0));

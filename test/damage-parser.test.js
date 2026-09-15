@@ -860,6 +860,49 @@ test('captureState / restoreState also carries each attacker\'s per-skill breakd
   assert.equal(melee.hits, 2);
 });
 
+// ---------------------------------------------------------------------------
+// Denon's Desperate Dirge gets its own bright-red slice of the LIVE overlay meter's bar too, not
+// just the Combat tab (owner, 14 Sep: "this should also apply to the aura version of the combat
+// meter"). `denonPercent` on a getActive() tile is "what share of THIS row's own bar" - a fraction
+// overlay.js paints as a second colour inset into the same bar, never a separate number.
+// ---------------------------------------------------------------------------
+
+test('a getActive() tile carries denonPercent - the share of that row\'s own damage from Denon\'s Desperate Dirge', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a fire giant for 10 points of damage.`, 500); // establish "a fire giant" as the enemy first
+  e.handleLine(`${T}A fire giant has taken 300 damage from Denon's Desperate Dirge V by Aristirin.`, 1000);
+  e.handleLine(`${T}Aristirin slashes a fire giant for 100 points of damage.`, 1500);
+  const tiles = e.getActive(1500);
+  const row = tiles.find((t) => t.name === 'Aristirin');
+  assert.ok(row, 'Aristirin must have a row');
+  // 300 of Aristirin's own 400 damage (300 dirge + 100 melee) is the dirge - 75%.
+  assert.equal(row.denonPercent, 75);
+});
+
+test('a row with no Denon\'s damage at all gets denonPercent 0, not undefined', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 40 points of damage.`, 1000);
+  const row = e.getActive(1000).find((t) => t.name === 'You');
+  assert.equal(row.denonPercent, 0);
+});
+
+test('a rank suffix on the dirge is still recognised ("Denon\'s Desperate Dirge" alone, and higher ranks)', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a fire giant for 10 points of damage.`, 500); // establish "a fire giant" as the enemy first
+  e.handleLine(`${T}A fire giant has taken 200 damage from Denon's Desperate Dirge IX by Aristirin.`, 1000);
+  const row = e.getActive(1000).find((t) => t.name === 'Aristirin');
+  assert.equal(row.denonPercent, 100, 'a rank numeral must not stop the prefix match');
+});
+
+test('the heal side never gets a denonPercent - Denon\'s is a damage skill, not a heal', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1000);
+  e.handleLine(`${T}You have healed Baxa for 50 points by Light Healing.`, 1500);
+  const healTiles = e.getActive(1500, 'all', 'healing');
+  const row = healTiles.find((t) => t.name === 'Baxa' || t.name === 'You');
+  if (row) assert.equal(row.denonPercent, undefined, 'a heal-metric tile has no reason to carry a damage-only field at all');
+});
+
 test('nothing counted -> captureState is null', () => {
   assert.equal(new DamageEngine().captureState(), null);
 });
