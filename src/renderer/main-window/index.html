@@ -1093,7 +1093,15 @@
                attached to any one fight - switches every chart currently on screen at once, not
                just whatever gets opened next. -->
           <div class="row" id="combat-detail-toolbar">
+            <!-- Owner, 14 Sep: "back to fights button needs deleting here, because now it should
+                 be open by default" - a live fight auto-reopens itself the moment you leave the
+                 list screen (see onLiveFightTick), so Back is a dead click while it's showing:
+                 clicking it does nothing but flicker back on the next tick. Swapped for the SAME
+                 live badge the Past Fights heading uses ("also, the live marker needs to be moved
+                 here instead when you're on the most recent active[fight]") - one or the other is
+                 shown, never both; see openLiveFight/openVisit. -->
             <button type="button" id="combat-detail-back">&larr; Back to fights</button>
+            <span class="live-indicator" id="combat-detail-live-badge" style="display:none">● Live</span>
             <div id="combat-view-toggle">
               <button type="button" class="combat-view-btn active" data-view="damage" title="Damage dealt - who hit what, and with what.">Damage</button>
               <button type="button" class="combat-view-btn" data-view="healing" title="Healing done - who healed, and with what.">Healing</button>

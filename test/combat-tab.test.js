@@ -817,7 +817,7 @@ test('a tick refreshes the Live row, and redraws the open live chart only when t
   assert.match(fn[1], /if \(liveRenderInFlight\) return;/, 'a fight can tick once per hit - an overlapping render must be dropped, not queued');
   assert.match(fn[1], /updateLiveRow\(fight\)/, 'the list-screen row must refresh on every tick regardless of which screen is showing');
   assert.match(fn[1], /if \(liveFightOpen\)/, 'the detail chart must only redraw when the live view is actually the one on screen');
-  assert.match(fn[1], /liveFightOpen = false;\s*showList\(\);\s*loadHistory\(\);/, 'a fight ending between ticks must fall back to the list, not keep trying to render something that no longer exists');
+  assert.match(fn[1], /liveFightOpen = false;\s*setDetailToolbarLive\(false\);\s*showList\(\);\s*loadHistory\(\);/, 'a fight ending between ticks must fall back to the list, not keep trying to render something that no longer exists');
 });
 
 // Owner, 14 Sep, follow-up: "this menu should be open always without a click into the fight when
@@ -913,6 +913,35 @@ test('the Combat tab\'s fight history is registered with sessionRestore, with no
   assert.doesNotMatch(block, /maxGapMs/, 'a completed fight record does not go stale - it must not be given a staleness limit the way the live "damage" registration has');
   assert.match(block, /capture: \(\) => damageEngine\.captureHistory\(\)/);
   assert.match(block, /restore: \(d\) => damageEngine\.restoreHistory\(d\)/);
+});
+
+// ---------------------------------------------------------------------------
+// Owner, 14 Sep, follow-up: "back to fights button needs deleting here, because now it should be
+// open by default. also, the live marker needs to be moved here instead when you're on the most
+// recent active[fight]." Back is a dead click while the live view is open - it auto-reopens on
+// the very next tick (onLiveFightTick's own list-screen gate) - so it's swapped for the same
+// "● Live" badge the Past Fights heading already uses, in the exact seat Back occupied.
+// ---------------------------------------------------------------------------
+
+test('the detail toolbar has a live badge alongside Back, hidden by default', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="combat-detail-toolbar"');
+  const end = html.indexOf('id="combat-view-toggle"', start);
+  const section = html.slice(start, end);
+  assert.match(section, /id="combat-detail-back"/);
+  assert.match(section, /id="combat-detail-live-badge"[^>]*style="display:none"/, 'the live badge must start hidden - Back is the default until a live fight is actually open');
+});
+
+test('setDetailToolbarLive swaps Back and the live badge - exactly one visible at a time', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function setDetailToolbarLive\(isLive\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'setDetailToolbarLive has been restructured or removed');
+  assert.match(fn[1], /backBtn\.style\.display = isLive \? 'none' : ''/);
+  assert.match(fn[1], /detailLiveBadge\.style\.display = isLive \? '' : 'none'/);
+
+  // Wired at both entry points, each turning the OTHER's toolbar state on for itself.
+  assert.match(renderer, /function openLiveFight\(fight\) \{[\s\S]*?setDetailToolbarLive\(true\)/);
+  assert.match(renderer, /async function openVisit\(visit\) \{[\s\S]*?setDetailToolbarLive\(false\)/);
 });
 
 module.exports = () => report('combat-tab');

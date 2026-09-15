@@ -3016,6 +3016,11 @@ body.sidebar-resizing .sidebar {
    "toggle centred between Back and the title" layout the owner asked for. */
 #combat-detail-toolbar { justify-content: flex-start; }
 #combat-view-toggle { display: flex; gap: 8px; margin: 0 auto; }
+/* The live badge takes Back's seat while a live fight is open (owner, 14 Sep: Back is a dead
+   click there since the view auto-reopens on the next tick anyway - see setDetailToolbarLive).
+   .live-indicator's own 0.6em is sized for sitting next to bigger heading text; standalone in the
+   toolbar it needs to read at normal size instead. */
+#combat-detail-live-badge { font-size: 14px; font-weight: 700; margin-left: 0; }
 /* Older/Newer visit navigation (owner, 14 Sep: "a fast way to... move forwards/backwards in fight
    history") - sits at the far right of the toolbar, the auto-margined toggle group already takes
    the centre so this naturally lands on the opposite end from Back without its own margin rule. */

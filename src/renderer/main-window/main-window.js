@@ -9742,6 +9742,7 @@ function initCombatPage() {
   const detailBars = document.getElementById('combat-detail-bars');
   const detailFightList = document.getElementById('combat-detail-fightlist');
   const backBtn = document.getElementById('combat-detail-back');
+  const detailLiveBadge = document.getElementById('combat-detail-live-badge');
   const scanCurrentBtn = document.getElementById('combat-scan-current');
   const scanFileBtn = document.getElementById('combat-scan-file');
   const scanStatus = document.getElementById('combat-scan-status');
@@ -10100,8 +10101,19 @@ function initCombatPage() {
   // "Clicking on the zone itself should show the totals of that encounter" - every fight in the
   // visit, summed per player and per skill, as one combined chart; the individual fights are
   // listed underneath, each expanding to its own chart in place rather than navigating anywhere.
+  // Owner, 14 Sep: "back to fights button needs deleting here, because now it should be open by
+  // default... the live marker needs to be moved here instead when you're on the most recent
+  // active[fight]" - Back is a dead click while the live view is showing (it auto-reopens on the
+  // very next tick, see onLiveFightTick), so it's swapped for the same "● Live" badge the Past
+  // Fights heading uses. Exactly one of the two is ever visible.
+  function setDetailToolbarLive(isLive) {
+    if (backBtn) backBtn.style.display = isLive ? 'none' : '';
+    if (detailLiveBadge) detailLiveBadge.style.display = isLive ? '' : 'none';
+  }
+
   async function openVisit(visit) {
     liveFightOpen = false; // leaving the live view (if that's what was open) for a completed one
+    setDetailToolbarLive(false);
     showDetail();
     openRenders.clear(); // leaving the previous visit (if any) - nothing from it stays "open"
     detailTitle.textContent = '';
@@ -10183,6 +10195,7 @@ function initCombatPage() {
   // there is only ever one live fight at a time).
   function openLiveFight(fight) {
     showDetail();
+    setDetailToolbarLive(true);
     openRenders.clear();
     detailFightList.innerHTML = '';
     currentZoneVisits = [];
@@ -10213,7 +10226,9 @@ function initCombatPage() {
       updateLiveRow(fight);
       if (liveFightOpen) {
         if (!fight) {
+          // The toolbar is hidden either way (showList below) - just leaving it in a clean state for the next real open.
           liveFightOpen = false;
+          setDetailToolbarLive(false);
           showList();
           loadHistory();
         } else {
