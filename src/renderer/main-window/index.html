@@ -1085,7 +1085,9 @@
                    mattered. "Current zone" now resets the Source filter itself (see
                    jumpToCurrentZone) - one button back to live instead of two that only differed
                    when nothing was different. -->
-              <button type="button" id="combat-jump-current-zone" title="Jump straight to the most recent activity in the zone you're in right now - clears the Source filter too, since a scanned file is never 'right now'.">Current zone</button>
+              <!-- Owner, 15 Sep: renamed from "Current zone" - it only ever shows while browsing a
+                   scan now (see updateListHeading), where its whole job is getting back to live. -->
+              <button type="button" id="combat-jump-current-zone" title="Jump straight to whatever's live right now, in the zone you're actually in - clears the Source filter too, since a scanned file is never 'right now'.">Return to live</button>
               <!-- Hidden until a scan has actually happened this session (nothing to return to
                    otherwise), and again once you're already viewing it - see runScan/returnToScan/
                    updateScanButtons in main-window.js. -->
@@ -1095,9 +1097,18 @@
           <!-- The filters row is allowed to wrap on its own too (owner, 15 Sep: "the row of
                buttons is clipped on smaller screens, there is too many buttons in one row") - six
                controls in one unwrapping flex row ran off the edge of a narrower window. -->
+          <!-- Owner, 15 Sep, follow-up to the wrap fix: "it drops down underneath when it still
+               has space, but it split from it's text label which is bad" - each label and its own
+               control were separate flex children, so flex-wrap could (and did) wrap a control
+               onto its own new line while its label stayed behind on the line above, leaving what
+               looked like an unlabelled empty box. Each label+control pair is now grouped into one
+               .combat-filter-pair flex item, so wrapping moves the WHOLE pair together or not at
+               all - a label can never be separated from its own control again. -->
           <div class="row combat-filter-row">
-            <span class="label">Zone</span>
-            <select id="combat-zone-filter" class="text-input"></select>
+            <span class="combat-filter-pair">
+              <span class="label">Zone</span>
+              <select id="combat-zone-filter" class="text-input"></select>
+            </span>
             <!-- Owner, 14 Sep, follow-up to the scan-blank-list fix: "you need a way to return to
                  last scan as well" - a scan's own fights get merged into the same list as your
                  live session's, with no way to isolate just that scan's results again once you've
@@ -1105,10 +1116,14 @@
                  mergedDamageHistory - "This session" for the live engine, the scan's own label for
                  an imported one), so this filters on that instead of adding a whole parallel
                  concept. -->
-            <span class="label" title="Which source this list is showing - your live session, or one specific scanned log file.">Source</span>
-            <select id="combat-source-filter" class="text-input"></select>
-            <span class="label" title="Hides any fight below this total damage - trash mobs and stray hits, not a real pull. Set to 0 to show everything.">Min damage</span>
-            <input type="number" id="combat-min-damage" class="text-input" min="0" step="1000" style="width:7em">
+            <span class="combat-filter-pair">
+              <span class="label" title="Which source this list is showing - your live session, or one specific scanned log file.">Source</span>
+              <select id="combat-source-filter" class="text-input"></select>
+            </span>
+            <span class="combat-filter-pair">
+              <span class="label" title="Hides any fight below this total damage - trash mobs and stray hits, not a real pull. Set to 0 to show everything.">Min damage</span>
+              <input type="number" id="combat-min-damage" class="text-input" min="0" step="1000" style="width:7em">
+            </span>
           </div>
           <p class="scan-status" id="combat-jump-status" style="display:none"></p>
           <!-- Owner, 14 Sep: "i need some way to be able to live read the current combat from

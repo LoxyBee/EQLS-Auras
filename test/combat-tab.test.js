@@ -1307,5 +1307,52 @@ test('the damage column is a fixed width, not `auto` - independent per-row grids
   );
 });
 
+// Owner, 15 Sep: "rename this button to 'return to live'" - it only ever shows while browsing a
+// scan now (updateListHeading), where its whole job is getting back to live; "Current zone" no
+// longer described what it does now that Back to live's own reset moved into it.
+test('the id="combat-jump-current-zone" button reads "Return to live", not "Current zone"', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-jump-current-zone"[^>]*>Return to live</);
+  assert.doesNotMatch(html, />Current zone</);
+});
+
+// Owner, 15 Sep, follow-up to the filters-row wrap fix: "it drops down underneath when it still
+// has space, but it split from it's text label which is bad" - each label and its own control
+// were separate flex children of .combat-filter-row, so wrapping could move a control onto its own
+// new line while its label stayed behind on the line above - an apparently unlabelled empty box.
+test('each filter label stays with its own control when the row wraps - they are one flex item, not two', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('class="row combat-filter-row"', html.indexOf('id="combat-list-screen"'));
+  const section = html.slice(start, html.indexOf('</div>', start));
+  const pairs = [...section.matchAll(/<span class="combat-filter-pair">/g)];
+  assert.equal(pairs.length, 3, 'Zone, Source, and Min damage must each be their own label+control pair');
+  // Every id must appear INSIDE some pair, not as a bare sibling of the row.
+  for (const id of ['combat-zone-filter', 'combat-source-filter', 'combat-min-damage']) {
+    const idIdx = section.indexOf(`id="${id}"`);
+    const pairStart = section.lastIndexOf('<span class="combat-filter-pair">', idIdx);
+    const pairEnd = section.indexOf('</span>', idIdx);
+    assert.ok(pairStart !== -1 && pairStart < idIdx && idIdx < pairEnd, `#${id} must be inside its own .combat-filter-pair, next to its label`);
+  }
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-filter-pair\s*\{[^}]*display:\s*inline-flex/s,
+    'the pair must be one flex item so flex-wrap can only move the whole label+control together'
+  );
+});
+
+// Owner, 15 Sep: "you can see that there is plenty of gaps that can be used that need to be
+// removed" (screenshot: a wide empty gap between "Zone"/"Source" and their own dropdowns) - the
+// shared `.label` class defaults to `min-width: 110px` for the left-aligned settings-form rows it
+// was built for, which just wastes space on these short, inline filter labels and makes the row
+// wrap sooner than it needs to.
+test('filter labels do not carry the settings-form min-width - they sit snug against their own control', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-filter-pair \.label\s*\{\s*min-width:\s*0;\s*\}/,
+    'must override the shared .label min-width down to 0 inside a filter pair specifically'
+  );
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

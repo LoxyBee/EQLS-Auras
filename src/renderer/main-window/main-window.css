@@ -2723,6 +2723,17 @@ body.sidebar-resizing .sidebar {
    Scoped to just the Combat tab's own filter rows, not `.row` globally - most of this app's other
    `.row`s are short label+input pairs that are fine staying on one line. */
 .combat-filter-row { flex-wrap: wrap; row-gap: 6px; }
+/* Owner, 15 Sep, follow-up: "it drops down underneath when it still has space, but it split from
+   it's text label which is bad" - each label and its own control used to be separate flex
+   children of .combat-filter-row, so wrapping could (and did) move a control onto its own new
+   line while its label stayed behind on the line above, reading as an unlabelled empty box. Each
+   pair is grouped into one flex item now, so a wrap moves the whole label+control pair together
+   or not at all. */
+.combat-filter-pair { display: inline-flex; align-items: center; gap: 8px; }
+/* The shared `.label` class defaults to `min-width: 110px` for the left-aligned settings-form rows
+   it was built for - padding "Zone"/"Source" out to 110px here just wastes width these short,
+   inline filter labels don't need, making the row wrap more often than it has to. */
+.combat-filter-pair .label { min-width: 0; }
 
 /* Owner, 15 Sep, second follow-up: "you still did not move the buttons where i told you to" - a
    row of its own beneath the heading still wasn't "the top row" in the sense meant; the heading's
