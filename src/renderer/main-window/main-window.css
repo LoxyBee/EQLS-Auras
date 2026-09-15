@@ -1932,6 +1932,16 @@ select.sd-native {
   gap: 8px;
   min-width: 8em;
   max-width: 100%;
+  /* Owner, 15 Sep: "scale the fields to fill the gaps is what i said, not the anchor points,
+     dynamic field sizes" - screenshot showed the Combat tab's Zone/Source dropdowns staying at
+     their own compact size while a big blank gap opened up next to them, even though their
+     wrapping .sd-wrap WAS flex-growing correctly. Root cause: .sd-wrap growing does not make
+     .sd-display (an inline-flex button, shrink-to-fit by default) grow WITH it - `max-width: 100%`
+     is only an upper bound, nothing here previously claimed the width once the wrap had it to
+     give. `width: 100%` makes the visible control actually fill however wide its wrap is - a
+     no-op everywhere .sd-wrap doesn't itself grow (its shrink-to-fit width already equals 100% of
+     itself), and the real fix everywhere it does. */
+  width: 100%;
   background: var(--panel-2);
   border: 1px solid var(--line);
   color: var(--ink);

@@ -1374,5 +1374,18 @@ test('the filter controls grow to fill spare row width, and can still shrink bac
   // needed; the owner's own two requirements (grow AND shrink-back) are one flexbox behaviour.
 });
 
+// Owner, 15 Sep, follow-up screenshot: "scale the fields to fill the gaps is what i said, not the
+// anchor points, dynamic field sizes" - the Zone/Source dropdowns still sat at their own compact
+// size with a big blank gap next to them, even though .combat-filter-pair's flex-grow was
+// correctly widening their .sd-wrap. .sd-display (the visible button) never claimed that width -
+// `max-width: 100%` is only an upper bound, nothing made it actually fill the now-wider wrap.
+test('the themed dropdown\'s visible control actually fills its wrap once the wrap has grown, not just capped below it', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.sd-display \{[^}]*(?<!max-)width: 100%;/s,
+    '.sd-display must claim the full width of .sd-wrap with an actual `width: 100%` - `max-width: 100%` alone is only an upper bound and a growing wrap just becomes invisible blank space beside a still-compact control'
+  );
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));
