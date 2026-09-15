@@ -1133,7 +1133,7 @@ test('a completed scan lands you on THAT scan\'s own results and remembers it fo
   const successBranch = fn[1].slice(fn[1].indexOf('result.ok'));
   assert.match(successBranch, /sourceFilter\.value = result\.label/, 'must land specifically on this scan\'s own results, not mixed with everything else');
   assert.match(successBranch, /lastScanLabel = result\.label/, 'must remember which scan, for Return to last scan');
-  assert.match(successBranch, /returnToScanBtn\.style\.display = ''/, 'the Return button must actually appear once there is something to return to');
+  assert.match(successBranch, /render\(\);/, 'must re-render after setting lastScanLabel, so updateScanButtons() picks up the new state');
 
   const returnFn = renderer.match(/function returnToScan\(\) \{([\s\S]*?)\n  \}\n/);
   assert.ok(returnFn, 'returnToScan has been restructured or removed');
@@ -1161,6 +1161,74 @@ test('jumpToCurrentZone reports WHY nothing was found, instead of silently doing
     fn[1], /No activity found in \$\{zone\} above your \$\{formatDamage\(floor\)\} min-damage floor/,
     'a real min-damage floor hiding everything must be named as the reason, not left to guesswork'
   );
+});
+
+// ---------------------------------------------------------------------------
+// Owner, 15 Sep, three fixes reported together against the batch above:
+//   - "the row of buttons is clipped on smaller screens, there is too many buttons in one row"
+//   - "back to live button flashes the return to last scan when already on the live tab"
+//   - "reading a log still says 'live'" / "and live version still says 'past fights'"
+// ---------------------------------------------------------------------------
+
+test('the filter controls and action buttons are split across two wrapping rows, not one', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="combat-list-screen"');
+  const section = html.slice(start, html.indexOf('id="combat-visit-list"', start));
+  const rowMatches = [...section.matchAll(/<div class="row combat-filter-row">/g)];
+  assert.equal(rowMatches.length, 2, 'the filters (Zone/Source/Min damage) and the action buttons must be two separate rows, not one crowded one');
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-filter-row\s*\{[^}]*flex-wrap:\s*wrap/s,
+    'must actually wrap on a narrow window, not just rely on being split into two rows - two rows can still each individually overflow'
+  );
+});
+
+test('Back to live and Return to last scan are mutually exclusive, not both visible together', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-back-to-live" style="display:none"/, 'must start hidden - the default view has nothing to reset');
+
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function updateScanButtons\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'updateScanButtons has been restructured or removed');
+  assert.match(
+    fn[1], /const atDefaultFilters = !zoneFilter\.value && sourceIsLive && minDamage\(\) === DEFAULT_MIN_DAMAGE;/,
+    'Back to live must only show when there is actually something to reset (a non-default zone, source, or damage floor)'
+  );
+  assert.match(fn[1], /backToLiveBtn\.style\.display = atDefaultFilters \? 'none' : ''/);
+  assert.match(
+    fn[1], /const alreadyOnLastScan = !!lastScanLabel && sourceFilter\.value === lastScanLabel;/,
+    'Return to last scan must hide itself once you are already viewing that exact scan - offering to go somewhere you already are is the "flash" that was reported'
+  );
+
+  const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
+  const renderFn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(renderFn, 'render() has been restructured');
+  assert.match(renderFn[1], /updateScanButtons\(\)/, 'render() must actually call it, or the buttons never update when filters change');
+});
+
+test('the "Past fights" heading reacts to what is actually being shown - a scan, live idle, or a live fight', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-list-heading-text">Past fights</);
+  assert.match(html, /class="live-indicator" id="combat-list-live-badge"/, 'the text and the live badge must be independent elements now, not one fixed string');
+
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function updateListHeading\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'updateListHeading has been restructured or removed');
+  assert.match(
+    fn[1], /listHeadingText\.textContent = 'Scan results';[\s\S]*?listLiveBadge\.style\.display = 'none';/,
+    'a scanned file is never "live" no matter what - browsing one must drop the live badge entirely, not just rename the heading'
+  );
+  assert.match(
+    fn[1], /listHeadingText\.textContent = lastKnownLiveFight \? 'Live fight' : 'Past fights';/,
+    'the live session\'s own heading must say when a fight is actually happening right now, not always "Past fights"'
+  );
+
+  assert.match(renderer, /lastKnownLiveFight = fight;\s*updateListHeading\(\);/, 'updateLiveRow must keep the heading in sync with the live tick, not just the list-screen row');
+  const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
+  const renderFn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(renderFn, 'render() has been restructured');
+  assert.match(renderFn[1], /updateListHeading\(\)/, 'render() must also refresh the heading when the Source filter itself changes, not only on a live tick');
 });
 
 module.exports = () => report('combat-tab');

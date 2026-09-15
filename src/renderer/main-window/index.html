@@ -1058,8 +1058,22 @@
         </div>
 
         <div class="card" id="combat-list-screen">
-          <h3 title="Every fight tracked this session plus anything found by a scan above. Newest first. Closing the app clears this - it's not saved to disk.">Past fights <span class="live-indicator" title="Always on while the app is open - a fight lands here automatically the moment it ends, no scan needed for anything happening right now.">● Live</span></h3>
-          <div class="row">
+          <!-- Owner, 15 Sep: "reading a log still says 'live'" / "live version still says 'past
+               fights'" - this heading used to be one fixed string ("Past fights ● Live") no
+               matter what the Source filter showed, so browsing a static scanned file still
+               carried a "Live" badge, and the live session's own view never said anything
+               different while a fight was actually in progress. Both pieces are now their own
+               elements (updateListHeading in main-window.js) so the text and the badge can change
+               independently based on what's actually being shown. -->
+          <h3 title="Every fight tracked this session plus anything found by a scan above. Newest first. Closing the app clears this - it's not saved to disk.">
+            <span id="combat-list-heading-text">Past fights</span>
+            <span class="live-indicator" id="combat-list-live-badge" title="Always on while the app is open - a fight lands here automatically the moment it ends, no scan needed for anything happening right now.">● Live</span>
+          </h3>
+          <!-- Split into a filters row and an actions row, both allowed to wrap (owner, 15 Sep:
+               "the row of buttons is clipped on smaller screens, there is too many buttons in one
+               row") - six controls plus three buttons in one unwrapping flex row ran off the edge
+               of a narrower window with no way to reach the clipped ones. -->
+          <div class="row combat-filter-row">
             <span class="label">Zone</span>
             <select id="combat-zone-filter" class="text-input"></select>
             <!-- Owner, 14 Sep, follow-up to the scan-blank-list fix: "you need a way to return to
@@ -1073,8 +1087,16 @@
             <select id="combat-source-filter" class="text-input"></select>
             <span class="label" title="Hides any fight below this total damage - trash mobs and stray hits, not a real pull. Set to 0 to show everything.">Min damage</span>
             <input type="number" id="combat-min-damage" class="text-input" min="0" step="1000" style="width:7em">
+          </div>
+          <div class="row combat-filter-row">
             <button type="button" id="combat-jump-current-zone" title="Jump straight to the most recent activity in the zone you're in right now.">Current zone</button>
-            <button type="button" id="combat-back-to-live" title="Clear every filter and jump back to whatever's live right now - the way back out after browsing a scanned log.">Back to live</button>
+            <!-- Back to live / Return to last scan are mutually exclusive, not both-always-visible
+                 (owner, 15 Sep: "back to live button flashes the return to last scan when already
+                 on the live tab") - showing "get back to live" while already viewing the live
+                 session, right next to a button inviting you into a scan, was confusing and
+                 redundant. updateScanButtons() in main-window.js toggles between them based on
+                 whether the current filters are already "the default live view". -->
+            <button type="button" id="combat-back-to-live" style="display:none" title="Clear every filter and jump back to whatever's live right now - the way back out after browsing a scanned log.">Back to live</button>
             <!-- Hidden until a scan has actually happened this session (nothing to return to
                  otherwise) - see runScan/returnToScan in main-window.js. -->
             <button type="button" id="combat-return-to-scan" style="display:none">Return to last scan</button>

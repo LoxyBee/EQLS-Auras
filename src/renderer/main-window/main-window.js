@@ -9736,6 +9736,8 @@ function initCombatPage() {
   const historyEmpty = document.getElementById('combat-history-empty');
   const zoneFilter = document.getElementById('combat-zone-filter');
   const sourceFilter = document.getElementById('combat-source-filter');
+  const listHeadingText = document.getElementById('combat-list-heading-text');
+  const listLiveBadge = document.getElementById('combat-list-live-badge');
   const jumpStatus = document.getElementById('combat-jump-status');
   const returnToScanBtn = document.getElementById('combat-return-to-scan');
   const minDamageInput = document.getElementById('combat-min-damage');
@@ -9781,6 +9783,10 @@ function initCombatPage() {
   // label, e.g. "eqlog_Shara_rivervale.txt (scanned ...)") - null until a scan has actually
   // happened this session. Powers "Return to last scan" (owner, 14 Sep).
   let lastScanLabel = null;
+  // The most recent damage:getLiveFight() result, kept purely so the list heading (see
+  // updateListHeading) can react to "is a fight actually live right now" from render() too, not
+  // only from the tick handler that originally fetched it.
+  let lastKnownLiveFight = null;
 
   // Damage / Healing / Both (owner, 14 Sep: "buttons... top level, and not attached to specific
   // fight logs, swapping one view should swap it for all open logs"). One shared mode for the
@@ -10216,6 +10222,28 @@ function initCombatPage() {
     newerBtn.disabled = currentVisitIndex === -1 || currentVisitIndex >= currentZoneVisits.length - 1;
   }
 
+  // "Reading a log still says 'live'" / "live version still says 'past fights'" (owner, 15 Sep) -
+  // the card heading used to be one fixed "Past fights ● Live" string regardless of what the
+  // Source filter was actually showing, so a static scanned file still carried the live badge, and
+  // the live session's own view never distinguished "just browsing history" from "a fight is
+  // happening right now". Three states instead of one fixed label:
+  //   - browsing a specific past scan: "Scan results", no live badge at all (a scan file is never
+  //     live, no matter what)
+  //   - the live session, nothing currently fighting: "Past fights" + the live badge (tracking is
+  //     on, this just happens to be history so far)
+  //   - the live session, a fight actually in progress right now: "Live fight" + the live badge
+  function updateListHeading() {
+    if (!listHeadingText) return;
+    const browsingScan = sourceFilter.value && sourceFilter.value !== LIVE_SOURCE;
+    if (browsingScan) {
+      listHeadingText.textContent = 'Scan results';
+      if (listLiveBadge) listLiveBadge.style.display = 'none';
+      return;
+    }
+    listHeadingText.textContent = lastKnownLiveFight ? 'Live fight' : 'Past fights';
+    if (listLiveBadge) listLiveBadge.style.display = '';
+  }
+
   // The always-on-top-of-the-list "Live now" row (owner, 14 Sep, follow-up: "put a placeholder
   // copy of the entire ui there even when no active fight log is happening") - never hidden;
   // shows a muted placeholder when nothing's underway instead of disappearing, so the row itself
@@ -10223,6 +10251,8 @@ function initCombatPage() {
   // progress. `fight` is whatever damage:getLiveFight() last returned - the exact same shape a
   // completed history entry has (see damageEngine.getLiveFight's own comment).
   function updateLiveRow(fight) {
+    lastKnownLiveFight = fight;
+    updateListHeading();
     if (!liveRow) return;
     liveRow.classList.toggle('combat-live-row-idle', !fight);
     if (!fight) {
@@ -10575,9 +10605,28 @@ function initCombatPage() {
     return Number.isFinite(n) && n >= 0 ? n : 0;
   }
 
+  // "Back to live button flashes the return to last scan when already on the live tab" (owner, 15
+  // Sep) - both buttons used to be visible together all the time once a scan had happened, so
+  // clicking "Back to live" while there was nothing to actually reset (already on the default
+  // live view) was a confusing no-op sitting right next to an equally-visible invitation into a
+  // scan. Made mutually exclusive instead, gated on whether there is currently anything to reset -
+  // exactly one of the two shows at a time, same "show only the button that does something right
+  // now" idea as the detail toolbar's Back/Live-badge swap.
+  function updateScanButtons() {
+    const sourceIsLive = !sourceFilter.value || sourceFilter.value === LIVE_SOURCE;
+    const atDefaultFilters = !zoneFilter.value && sourceIsLive && minDamage() === DEFAULT_MIN_DAMAGE;
+    if (backToLiveBtn) backToLiveBtn.style.display = atDefaultFilters ? 'none' : '';
+    if (returnToScanBtn) {
+      const alreadyOnLastScan = !!lastScanLabel && sourceFilter.value === lastScanLabel;
+      returnToScanBtn.style.display = (lastScanLabel && !alreadyOnLastScan) ? '' : 'none';
+    }
+  }
+
   function render() {
     populateZoneFilter(lastHistory);
     populateSourceFilter(lastHistory);
+    updateListHeading();
+    updateScanButtons();
     const filter = zoneFilter.value;
     const sourceValue = sourceFilter.value;
     const floor = minDamage();
@@ -10655,8 +10704,7 @@ function initCombatPage() {
         // yanking you away mid-review (see onLiveFightTick's browsingOtherSource guard).
         sourceFilter.value = result.label;
         lastScanLabel = result.label;
-        if (returnToScanBtn) returnToScanBtn.style.display = '';
-        render();
+        render(); // also runs updateScanButtons(), which shows Back to live now that source != live
       }
     } finally {
       scanCurrentBtn.disabled = false;
