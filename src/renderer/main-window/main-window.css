@@ -2730,7 +2730,15 @@ body.sidebar-resizing .sidebar {
    own fixed-width slot AFTER the zone name, empty when the visit isn't an instance at all. */
 .combat-visit-row {
   display: grid;
-  grid-template-columns: 150px 36px minmax(80px, 1fr) 60px auto;
+  /* Two more fixed tracks than the raid/group column got (owner, 14 Sep, screenshot-confirmed:
+     "these 3 pieces of text need their own columns to proper align text") - fight count and
+     damage total used to share ONE right-aligned cell as a single "N fights · 3.64m" string, so
+     the two numbers drifted against each other row to row (a 2-digit fight count vs a 1-digit one
+     shifts the whole string, damage total included, even though the string's own right edge stays
+     put). Splitting them into their own tracks - the same fix already applied to the D-code and
+     raid/group columns earlier the same day - lines up fight counts under fight counts and damage
+     totals under damage totals. */
+  grid-template-columns: 150px 36px minmax(80px, 1fr) 60px 70px auto;
   align-items: baseline;
   gap: 10px;
   padding: 7px 4px;
@@ -2790,7 +2798,12 @@ body.sidebar-resizing .sidebar {
 .zone-instance-badge { font-size: 0.9em; font-weight: 600; opacity: 0.85; }
 .zone-instance-raid { color: #b98cff; }
 .zone-instance-group { color: #8fb3c9; }
-.combat-visit-meta { opacity: 0.6; font-size: 12px; text-align: right; white-space: nowrap; }
+.combat-visit-fights, .combat-visit-damage { opacity: 0.6; font-size: 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* The live row's own meta text (duration + damage + top attacker, one combined string - it isn't
+   a multi-fight visit, so there's no separate "fight count" to give its own column) still needs
+   the room BOTH new trailing tracks give it. Explicit placement, not just DOM order - the row's
+   other un-positioned cells (status/zone) still auto-flow into columns 1-4 same as before. */
+.combat-live-row .combat-visit-meta { grid-column: 5 / 7; opacity: 0.6; font-size: 12px; text-align: right; white-space: nowrap; }
 
 /* The two drill-down screens - one fight, or a whole visit's combined totals - share this same
    bar-chart layout, just fed a different row list. The DPS figure is INSET into the track, laid

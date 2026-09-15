@@ -469,9 +469,30 @@ test('the class estimate is wired IPC -> preload -> renderer', () => {
 test('the visit list uses a real grid with fixed time/difficulty/raid-group columns, not flex natural-sizing', () => {
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
-    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 36px minmax\(80px, 1fr\) 60px auto;/s,
+    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 36px minmax\(80px, 1fr\) 60px 70px auto;/s,
     'the time, difficulty and raid/group columns must all be fixed widths so a short "today" time and a long dated one both start the zone name at the same x'
   );
+});
+
+// Owner, 14 Sep, screenshot-confirmed: "these 3 pieces of text need their own columns to proper
+// align text" - fight count and damage total used to share one right-aligned "N fights · 3.64m"
+// string, so a 2-digit fight count vs a 1-digit one shifted the whole string (damage total
+// included) even though the string's own right edge stayed fixed - the fight counts and damage
+// totals never actually lined up under each other.
+test('fight count and damage total are separate grid columns, not one combined string', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.doesNotMatch(
+    renderer, /\$\{n\} fight\$\{n === 1 \? '' : 's'\} · \$\{formatDamage/,
+    'must not go back to one combined "N fights · 3.64m" span - that is exactly what did not align'
+  );
+  assert.match(renderer, /span\(`\$\{n\} fight\$\{n === 1 \? '' : 's'\}`, 'combat-visit-fights'\)/);
+  assert.match(renderer, /span\(formatDamage\(visit\.totalDamage\), 'combat-visit-damage'\)/);
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-visit-fights,\s*\.combat-visit-damage\s*\{[^}]*text-align:\s*right/s);
+  // The live row's own meta (duration + damage + top attacker - one combined string, since it is
+  // a single in-progress fight, not a multi-fight visit with its own count) still needs to occupy
+  // both new trailing columns or its text has nowhere near enough room.
+  assert.match(css, /\.combat-live-row \.combat-visit-meta\s*\{[^}]*grid-column:\s*5\s*\/\s*7/s);
 });
 
 // Owner, 14 Sep: "there is still no button to toggle between healing, damage, or both, i asked

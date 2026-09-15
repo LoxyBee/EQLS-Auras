@@ -10456,8 +10456,14 @@ function initCombatPage() {
       const instanceBadge = zoneInstanceBadge(visit.raidInstance);
       if (instanceBadge) instanceCell.appendChild(instanceBadge);
       row.appendChild(instanceCell);
+      // Two separate columns, not one combined string (owner, 14 Sep, screenshot-confirmed: "these
+      // 3 pieces of text need their own columns to proper align text") - a single right-aligned
+      // "N fights · 3.64m" string kept its own right edge fixed, but the fight count's own digit
+      // width (2 vs 44) shifted the damage number along with it, so damage totals never lined up
+      // under each other the way the D-code/raid-group columns already do.
       const n = visit.fights.length;
-      row.appendChild(span(`${n} fight${n === 1 ? '' : 's'} · ${formatDamage(visit.totalDamage)}`, 'combat-visit-meta'));
+      row.appendChild(span(`${n} fight${n === 1 ? '' : 's'}`, 'combat-visit-fights'));
+      row.appendChild(span(formatDamage(visit.totalDamage), 'combat-visit-damage'));
       visitList.appendChild(row);
     }
   }
