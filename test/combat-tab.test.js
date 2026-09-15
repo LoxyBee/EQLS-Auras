@@ -764,14 +764,35 @@ test('Older/Newer disable at the ends of the same-zone visit list instead of wra
 // rather than the Combat tab polling for it.
 // ---------------------------------------------------------------------------
 
-test('the "Live now" row markup exists and is hidden by default', () => {
+// Owner, 14 Sep, follow-up: "put a placeholder copy of the entire ui there even when no active
+// fight log is happening" - the row used to be display:none until something was live, which gave
+// no hint the feature even existed unless you happened to already be mid-fight when you opened the
+// tab. It's always visible now, defaulting to a muted "idle" placeholder state in the markup
+// itself (updateLiveRow reinforces this at runtime, but the HTML must not flash a blank/wrong
+// state before the first tick arrives).
+test('the "Live now" row is always visible, defaulting to a muted idle placeholder, never hidden', () => {
   const html = read('src', 'renderer', 'main-window', 'index.html');
   const start = html.indexOf('id="combat-live-row"');
   assert.ok(start !== -1, 'the live row is missing from the page');
-  const section = html.slice(Math.max(0, start - 60), start + 300);
-  assert.match(section, /style="display:none"/, 'must start hidden - nothing is live until a tick says otherwise');
+  const section = html.slice(Math.max(0, start - 200), start + 400);
+  assert.doesNotMatch(section, /style="display:\s*none"/, 'must not start (or ever become, via inline style) hidden - it is the placeholder for the feature itself');
+  assert.match(section, /combat-live-row-idle/, 'must default to the muted idle state in the markup, not just via a JS call that runs a tick later');
+  assert.match(html, /id="combat-live-status"/);
   assert.match(html, /id="combat-live-zone"/);
   assert.match(html, /id="combat-live-meta"/);
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-live-row\.combat-live-row-idle\s*\{/, 'missing the muted-placeholder styling');
+});
+
+test('updateLiveRow toggles the idle placeholder class and text, rather than hiding the row', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function updateLiveRow\(fight\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'updateLiveRow has been restructured or removed');
+  assert.doesNotMatch(fn[1], /style\.display/, 'must not hide/show via display any more - the idle CLASS carries the placeholder state instead');
+  assert.match(fn[1], /liveRow\.classList\.toggle\('combat-live-row-idle', !fight\)/);
+  assert.match(fn[1], /liveStatusEl\.textContent = '○ No fight'/);
+  assert.match(fn[1], /liveStatusEl\.textContent = '● Live'/);
 });
 
 test('main.js exposes the live fight over IPC, and pings the renderer on every credited hit', () => {

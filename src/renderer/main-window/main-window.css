@@ -2754,9 +2754,16 @@ body.sidebar-resizing .sidebar {
 
 /* The "Live now" row (owner, 14 Sep) - same grid shape as an ordinary visit row so its columns
    line up with the list below it, but visually set apart (green-tinted border, no bottom rule of
-   its own) since it isn't a finished visit and clicking it opens a fight still in progress. */
+   its own) since it isn't a finished visit and clicking it opens a fight still in progress.
+   Always present, never display:none (owner follow-up: "put a placeholder copy of the entire ui
+   there even when no active fight log is happening") - `.combat-live-row-idle` is the muted
+   placeholder state shown whenever nothing's actually underway, so the row itself demonstrates
+   where live tracking will appear rather than only existing once you happen to catch a fight. */
 .combat-live-row { border: 1px solid rgba(111, 214, 122, 0.35); border-radius: 4px; margin-bottom: 6px; cursor: pointer; }
 .combat-live-row .combat-visit-zone { cursor: pointer; }
+.combat-live-row.combat-live-row-idle { border-color: var(--line); cursor: default; opacity: 0.6; }
+.combat-live-row.combat-live-row-idle .combat-visit-zone { cursor: default; font-weight: 400; color: inherit; }
+.combat-live-row.combat-live-row-idle .live-indicator { color: inherit; }
 
 /* Difficulty-tier code ("D0".."D4") - owner, 14 Sep: a different colour per tier, zone name stays
    gold, D0 almost white, D4 the most prominent. A plain heat ramp (near-white -> yellow -> orange

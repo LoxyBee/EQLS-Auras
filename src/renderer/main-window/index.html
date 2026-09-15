@@ -1068,12 +1068,17 @@
           </div>
           <!-- Owner, 14 Sep: "i need some way to be able to live read the current combat from
                this combat tab" - a fight in progress hasn't ended yet, so it isn't in history at
-               all until it does. This row is the entry point into it while it's still happening;
-               hidden whenever nothing is currently underway. -->
-          <div class="combat-visit-row combat-live-row" id="combat-live-row" style="display:none">
-            <span class="live-indicator">● Live</span>
+               all until it does. This row is the entry point into it while it's still happening.
+               Follow-up: "put a placeholder copy of the entire ui there even when no active fight
+               log is happening" - was hidden entirely (display:none) until something was live,
+               which gave no hint the feature existed at all if you never happened to catch a
+               fight in progress. Always visible now, in a muted "idle" state
+               (.combat-live-row-idle) when nothing's underway, so the row itself is the
+               placeholder for what appears there once a fight starts. -->
+          <div class="combat-visit-row combat-live-row combat-live-row-idle" id="combat-live-row">
+            <span class="live-indicator" id="combat-live-status">○ No fight</span>
             <span></span>
-            <span id="combat-live-zone" class="combat-visit-zone"></span>
+            <span id="combat-live-zone" class="combat-visit-zone">Nothing happening right now</span>
             <span></span>
             <span id="combat-live-meta" class="combat-visit-meta"></span>
           </div>

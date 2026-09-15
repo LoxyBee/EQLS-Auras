@@ -9749,6 +9749,7 @@ function initCombatPage() {
   const olderBtn = document.getElementById('combat-visit-older');
   const newerBtn = document.getElementById('combat-visit-newer');
   const liveRow = document.getElementById('combat-live-row');
+  const liveStatusEl = document.getElementById('combat-live-status');
   const liveZoneEl = document.getElementById('combat-live-zone');
   const liveMetaEl = document.getElementById('combat-live-meta');
   if (!visitList) return; // Combat tab not in this build
@@ -10133,16 +10134,22 @@ function initCombatPage() {
     newerBtn.disabled = currentVisitIndex === -1 || currentVisitIndex >= currentZoneVisits.length - 1;
   }
 
-  // The always-on-top-of-the-list "Live now" row (owner, 14 Sep) - hidden whenever nothing is
-  // currently underway. `fight` is whatever damage:getLiveFight() last returned - the exact same
-  // shape a completed history entry has (see damageEngine.getLiveFight's own comment).
+  // The always-on-top-of-the-list "Live now" row (owner, 14 Sep, follow-up: "put a placeholder
+  // copy of the entire ui there even when no active fight log is happening") - never hidden;
+  // shows a muted placeholder when nothing's underway instead of disappearing, so the row itself
+  // demonstrates where live tracking appears rather than only existing once a fight is caught in
+  // progress. `fight` is whatever damage:getLiveFight() last returned - the exact same shape a
+  // completed history entry has (see damageEngine.getLiveFight's own comment).
   function updateLiveRow(fight) {
     if (!liveRow) return;
+    liveRow.classList.toggle('combat-live-row-idle', !fight);
     if (!fight) {
-      liveRow.style.display = 'none';
+      liveStatusEl.textContent = '○ No fight';
+      liveZoneEl.textContent = 'Nothing happening right now';
+      liveMetaEl.textContent = '';
       return;
     }
-    liveRow.style.display = '';
+    liveStatusEl.textContent = '● Live';
     liveZoneEl.textContent = fight.zone || UNKNOWN_ZONE;
     liveMetaEl.textContent = `${formatDuration(fight.durationSec)} · ${formatDamage(fight.totalDamage)} · top: ${fight.rows[0] ? fight.rows[0].name : '—'}`;
   }
