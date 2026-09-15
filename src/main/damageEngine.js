@@ -76,6 +76,23 @@ const { labelFight } = require('../shared/fightLabel');
 // the base spell within this window (Promised Renewal etc. are ~9s delays but can sit for their
 // whole duration; a minute and a half is comfortably clear of a stale earlier cast).
 const TRIGGER_HEAL_ATTR_WINDOW_MS = 90000;
+
+// "You healed <Target> for N hit points." with no "by <Spell>" clause at all - confirmed live 15
+// Sep (owner: "a bunch of my healing is missing... i do not think it is tracking healing from my
+// divine invocation"). It WAS being counted (healLines.js's own `by` clause is already optional,
+// and _creditHeal adds to the total regardless of skill), just invisibly - with no skill name it
+// never reached the per-skill breakdown, so it vanished from every list without vanishing from the
+// total, which reads as "missing" all the same. Checked against the owner's own real log: every
+// single one of 1123 such bare heal lines that day landed while "You begin reciting the divine
+// invocation." was the last invocation line seen, and zero landed under any other invocation - a
+// passive effect of that specific invocation, not a general parsing gap (gotcha-worthy: this file's
+// own header comment claims every heal line names a spell; that turned out to have exactly one
+// exception, tracked here rather than "fixed" by second-guessing healLines.js's already-correct
+// optional `by` clause). Mirrors abilityGroups.js's own INVOCATION_LINE regex - deliberately not
+// wired to that tracker, which only ever activates when a matching Action Bar gem is configured
+// (unrelated feature); this needs to work regardless.
+const INVOCATION_LINE = /^You begin reciting the (.+) invocation\.$/i;
+const DIVINE_INVOCATION_HEAL_SKILL = 'Divine Invocation';
 const {
   isPossessivePetName,
   petOwnerFromName,
@@ -223,6 +240,11 @@ class DamageEngine extends EventEmitter {
     // base-spell-name (lowercased, rank stripped) -> { caster, at } for re-crediting a delayed
     // "... by <Base> Trigger <N>" heal to whoever actually cast <Base> (see TRIGGER_HEAL_ATTR_WINDOW_MS).
     this.recentHealCasts = new Map();
+    // The player's own currently-active invocation, lowercased ("divine", "recovery", ...) - see
+    // INVOCATION_LINE's own comment. null until the first "You begin reciting..." line this
+    // session; a character state (like a stance), not a timed thing, so it is never cleared except
+    // by a real switch.
+    this.activeInvocation = null;
     // Enemies known from elsewhere - the mez/snare/slow targets buffEngine already tracks. Lets a
     // character who debuffs but does not attack still seed the set.
     this.knownEnemiesFn = () => [];
@@ -523,6 +545,9 @@ class DamageEngine extends EventEmitter {
       return;
     }
 
+    const invocationMatch = INVOCATION_LINE.exec(line.replace(/^\[[^\]]*\]\s*/, '').trim());
+    if (invocationMatch) this.activeInvocation = invocationMatch[1].toLowerCase();
+
     // Track who casts what, so a delayed "... by <Base> Trigger" heal can be credited to the real
     // caster rather than the target it lands on.
     const ownCast = matchCastBegin(line);
@@ -537,6 +562,14 @@ class DamageEngine extends EventEmitter {
 
     const heal = parseHealLine(line);
     if (!heal) return;
+
+    // See INVOCATION_LINE's own comment - a bare "You healed X for N hit points." with no spell at
+    // all, unique to Divine Invocation being active, would otherwise vanish from the per-skill
+    // breakdown (it was always in the total - see _creditHeal's `if (skill)` guard - just never
+    // named). Scoped to the player's own heals only, since only "You" invocation lines are seen.
+    if (!heal.spell && heal.healer === 'You' && this.activeInvocation === 'divine') {
+      heal.spell = DIVINE_INVOCATION_HEAL_SKILL;
+    }
 
     // "<Target> healed himself ... by Promised Renewal Trigger I" - a delayed heal that reads as a
     // self-heal but was cast BY someone else (reported live 5 Sep: the player's Promised Renewal
@@ -852,6 +885,7 @@ class DamageEngine extends EventEmitter {
       sinceZoneHealTotal: this.sinceZoneHealTotal,
       sinceZoneHealStartedAt: this.sinceZoneHealStartedAt,
       sinceZoneHealLastAt: this.sinceZoneHealLastAt,
+      activeInvocation: this.activeInvocation,
     };
   }
 
@@ -943,6 +977,7 @@ class DamageEngine extends EventEmitter {
     if (typeof s.sinceZoneHealStartedAt === 'number') this.sinceZoneHealStartedAt = s.sinceZoneHealStartedAt;
     if (typeof s.sinceZoneHealLastAt === 'number') this.sinceZoneHealLastAt = s.sinceZoneHealLastAt;
     if (typeof s.sinceZoneHealTotal === 'number') this.sinceZoneHealTotal = s.sinceZoneHealTotal;
+    if (typeof s.activeInvocation === 'string') this.activeInvocation = s.activeInvocation;
     this._expireIfIdle(now); // a fight that timed out during the gap ends here, sets kept
     const rows = this.byAttacker.size + this.sinceZoneByAttacker.size + this.byHealer.size + this.sinceZoneByHealer.size;
     if (rows) this.emit('activeChanged', this.getActive(now));
