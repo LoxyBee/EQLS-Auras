@@ -1230,28 +1230,31 @@ test('Return to last scan hides itself once you are already viewing that exact s
   assert.match(renderFn[1], /updateScanButtons\(\)/, 'render() must actually call it, or the button never updates when filters change');
 });
 
-test('the "Past fights" heading reacts to what is actually being shown - a scan, live idle, or a live fight', () => {
+// Owner, 15 Sep, repeated: "past fights is also not correct, it is not past, that is actually
+// live" - the first attempt at this (0zq) drew the line at "is a fight literally happening this
+// second", which was the wrong axis - the live session's own view IS "the live version" the whole
+// time it's selected, fight in progress or not, because the app tracks it live either way. Only
+// the Source (live vs a specific past scan) matters now - two states, not three.
+test('the list heading never calls the live session "past fights" - only Source (live vs a scan) decides the wording', () => {
   const html = read('src', 'renderer', 'main-window', 'index.html');
-  assert.match(html, /id="combat-list-heading-text">Past fights</);
-  assert.match(html, /class="live-indicator" id="combat-list-live-badge"/, 'the text and the live badge must be independent elements now, not one fixed string');
+  assert.match(html, /id="combat-list-heading-text">Fights</, 'the default/live-view text must not be "Past fights"');
+  assert.match(html, /class="live-indicator" id="combat-list-live-badge"/, 'the text and the live badge must be independent elements, not one fixed string');
 
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function updateListHeading\(\) \{([\s\S]*?)\n  \}\n/);
   assert.ok(fn, 'updateListHeading has been restructured or removed');
+  assert.doesNotMatch(fn[1], /'Past fights'/, 'must never fall back to "Past fights" - that is exactly the reported bug, twice');
+  assert.doesNotMatch(fn[1], /lastKnownLiveFight \? /, 'whether a fight is literally active right now must not decide the heading text any more - only whether a scan is being browsed does');
   assert.match(
     fn[1], /listHeadingText\.textContent = 'Scan results';[\s\S]*?listLiveBadge\.style\.display = 'none';/,
-    'a scanned file is never "live" no matter what - browsing one must drop the live badge entirely, not just rename the heading'
+    'a scanned file is never "live" no matter what - browsing one must drop the live badge entirely'
   );
-  assert.match(
-    fn[1], /listHeadingText\.textContent = lastKnownLiveFight \? 'Live fight' : 'Past fights';/,
-    'the live session\'s own heading must say when a fight is actually happening right now, not always "Past fights"'
-  );
+  assert.match(fn[1], /listHeadingText\.textContent = 'Fights';/, 'the live source (any fight state) must always read as the live view, never "past"');
 
-  assert.match(renderer, /lastKnownLiveFight = fight;\s*updateListHeading\(\);/, 'updateLiveRow must keep the heading in sync with the live tick, not just the list-screen row');
   const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
   const renderFn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
   assert.ok(renderFn, 'render() has been restructured');
-  assert.match(renderFn[1], /updateListHeading\(\)/, 'render() must also refresh the heading when the Source filter itself changes, not only on a live tick');
+  assert.match(renderFn[1], /updateListHeading\(\)/, 'render() must refresh the heading when the Source filter changes');
 });
 
 // Owner, 15 Sep: "the log file name field can be much shorter" - a scan's own source label (its
@@ -1271,17 +1274,21 @@ test('the Source filter field itself is capped to a real width, with the full la
   );
 });
 
-// Owner, 15 Sep, third follow-up: "current zone is still there as a button when already on live,
-// why?" - fair, once a live fight is actually showing, the always-visible "Live now" row right
-// below is already the way to open it; a second button doing the identical thing was clutter.
-test('Current zone hides itself once a live fight is already showing, since the Live row already covers it', () => {
+// Owner, 15 Sep, repeated: "current zone button is still there on live version. why are you
+// ignoring this? i asked you to change it" - the first attempt (0zs) only hid it while a fight was
+// literally active, which was the wrong axis (same correction as the heading above). The live
+// source IS "the live version" the whole time it's selected, so Current zone must hide for the
+// entire time you're on it, not only during an active fight - it only has a job left while
+// browsing a scan, where it's the one way back to live now that Back to live is gone.
+test('Current zone is hidden for the whole time the live source is selected, not only during an active fight', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function updateListHeading\(\) \{([\s\S]*?)\n  \}\n/);
   assert.ok(fn, 'updateListHeading has been restructured or removed');
   assert.match(
-    fn[1], /jumpCurrentZoneBtn\.style\.display = \(!browsingScan && lastKnownLiveFight\) \? 'none' : '';/,
-    'must hide only when NOT browsing a scan AND a fight is actually live - it is still the only way back to live while browsing a scan, and still the only way to a completed visit while nothing is live'
+    fn[1], /jumpCurrentZoneBtn\.style\.display = browsingScan \? '' : 'none';/,
+    'must be gated on browsingScan alone - shown only while browsing a scan, hidden the entire time the live source is selected regardless of whether a fight happens to be active'
   );
+  assert.doesNotMatch(fn[1], /lastKnownLiveFight/, 'whether a fight is literally active must no longer factor into this decision at all');
 });
 
 // Owner, 15 Sep, follow-up screenshot: "still not column split and even" - the fight-count/damage

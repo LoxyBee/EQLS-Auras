@@ -9782,10 +9782,6 @@ function initCombatPage() {
   // label, e.g. "eqlog_Shara_rivervale.txt (scanned ...)") - null until a scan has actually
   // happened this session. Powers "Return to last scan" (owner, 14 Sep).
   let lastScanLabel = null;
-  // The most recent damage:getLiveFight() result, kept purely so the list heading (see
-  // updateListHeading) can react to "is a fight actually live right now" from render() too, not
-  // only from the tick handler that originally fetched it.
-  let lastKnownLiveFight = null;
 
   // Damage / Healing / Both (owner, 14 Sep: "buttons... top level, and not attached to specific
   // fight logs, swapping one view should swap it for all open logs"). One shared mode for the
@@ -10221,32 +10217,32 @@ function initCombatPage() {
     newerBtn.disabled = currentVisitIndex === -1 || currentVisitIndex >= currentZoneVisits.length - 1;
   }
 
-  // "Reading a log still says 'live'" / "live version still says 'past fights'" (owner, 15 Sep) -
-  // the card heading used to be one fixed "Past fights ● Live" string regardless of what the
-  // Source filter was actually showing, so a static scanned file still carried the live badge, and
-  // the live session's own view never distinguished "just browsing history" from "a fight is
-  // happening right now". Three states instead of one fixed label:
-  //   - browsing a specific past scan: "Scan results", no live badge at all (a scan file is never
-  //     live, no matter what)
-  //   - the live session, nothing currently fighting: "Past fights" + the live badge (tracking is
-  //     on, this just happens to be history so far)
-  //   - the live session, a fight actually in progress right now: "Live fight" + the live badge
+  // "Reading a log still says 'live'" / "past fights is also not correct, it is not past, that is
+  // actually live" (owner, 15 Sep, repeated twice - the first fix's own "is a fight literally
+  // happening THIS SECOND" distinction was the wrong axis entirely). The only distinction that
+  // actually matters is which SOURCE is showing, full stop - the live session's own view is "the
+  // live version" the whole time it's selected, whether or not anything happens to be fighting at
+  // this exact instant, because the app is tracking it live either way. Two states, not three:
+  //   - browsing a specific past scan: "Scan results", no live badge at all (a static file is
+  //     never live, no matter what)
+  //   - the live session (any zone/damage filter): "Fights" + the live badge, always - never
+  //     "Past fights", because calling it "past" while it's the live view is exactly what was
+  //     reported wrong, twice
   function updateListHeading() {
     const browsingScan = sourceFilter.value && sourceFilter.value !== LIVE_SOURCE;
-    // "Current zone is still there as a button when already on live, why?" (owner, 15 Sep) -
-    // fair: once a live fight is actually showing, the always-visible "Live now" row right below
-    // is already the way to open it, so a second button doing the identical thing was pure
-    // clutter. Still shown whenever nothing is currently live (its OTHER job - jumping to a
-    // zone's most recent COMPLETED visit, which the Live row can never do) or while browsing a
-    // scan (it's the only way back to live at all now that Back to live is gone).
-    if (jumpCurrentZoneBtn) jumpCurrentZoneBtn.style.display = (!browsingScan && lastKnownLiveFight) ? 'none' : '';
+    // "Current zone is still there as a button when already on live, why?" (owner, 15 Sep,
+    // repeated) - same axis correction as the heading above: hides whenever you are on the live
+    // source AT ALL (not only when a fight happens to be actively in progress), since the live
+    // view already IS what "Current zone" would otherwise be jumping you to. Shown only while
+    // browsing a scan, where it is now the one way back to live at all (Back to live is gone).
+    if (jumpCurrentZoneBtn) jumpCurrentZoneBtn.style.display = browsingScan ? '' : 'none';
     if (!listHeadingText) return;
     if (browsingScan) {
       listHeadingText.textContent = 'Scan results';
       if (listLiveBadge) listLiveBadge.style.display = 'none';
       return;
     }
-    listHeadingText.textContent = lastKnownLiveFight ? 'Live fight' : 'Past fights';
+    listHeadingText.textContent = 'Fights';
     if (listLiveBadge) listLiveBadge.style.display = '';
   }
 
@@ -10257,8 +10253,6 @@ function initCombatPage() {
   // progress. `fight` is whatever damage:getLiveFight() last returned - the exact same shape a
   // completed history entry has (see damageEngine.getLiveFight's own comment).
   function updateLiveRow(fight) {
-    lastKnownLiveFight = fight;
-    updateListHeading();
     if (!liveRow) return;
     liveRow.classList.toggle('combat-live-row-idle', !fight);
     if (!fight) {
