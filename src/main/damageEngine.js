@@ -684,6 +684,17 @@ class DamageEngine extends EventEmitter {
   }
 
   _credit(attacker, amount, at, isRealHit, skill, critical) {
+    // Reported live 15 Sep (screenshot): "Envenomed Bolt" and "Envenomed Bolt IX" listed as two
+    // separate rows for the SAME cast. Confirmed against the real log - this server's direct-hit
+    // wording ("Tenam hit a shiverback for 55 points of poison damage by Envenomed Bolt.") never
+    // carries the rank numeral at all, while every DoT tick from the identical cast ("... has
+    // taken 460 damage from Envenomed Bolt IX by Tenam.") does. Same shape as gotcha #3's Denon's
+    // Desperate Dirge case (a decorative log-line numeral with nothing behind it, not a genuinely
+    // different spell tier) - stripRankSuffix already exists for exactly this, just was never
+    // applied to a damage skill's own aggregation key before. Splitting a DoT's hit count across
+    // two rows this way is also why the owner's separate "hits seems low for DoTs" impression
+    // showed up on Envenomed Bolt specifically - the true count was always there, just divided.
+    if (skill) skill = stripRankSuffix(skill);
     if (this.fightStartedAt === null) this.fightStartedAt = at;
     // A retro-credited line can predate the line that opened the fight.
     if (at < this.fightStartedAt) this.fightStartedAt = at;
@@ -746,6 +757,9 @@ class DamageEngine extends EventEmitter {
   // the since-zone tally always; when the damage fight times out, reset() clears the heal fight
   // tally with it.
   _creditHeal(healer, amount, at, skill) {
+    // Same reasoning as _credit's own comment - a heal skill can carry the identical rank-numeral
+    // split between its cast line and its landing line.
+    if (skill) skill = stripRankSuffix(skill);
     const row = this.byHealer.get(healer) || { damage: 0, hits: 0 };
     row.damage += amount;
     row.hits += 1;

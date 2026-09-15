@@ -925,5 +925,55 @@ test('nothing counted -> captureState is null', () => {
   assert.equal(new DamageEngine().captureState(), null);
 });
 
+// ---------------------------------------------------------------------------
+// Owner, 15 Sep, screenshot: "Envenomed Bolt" and "Envenomed Bolt IX" listed as two separate skill
+// rows for the same cast, plus "i also worry how inaccurate the hits count is for DOTs since 40
+// seems really low". Confirmed against the real log: this server's direct-hit wording ("Tenam hit
+// a shiverback for 55 points of poison damage by Envenomed Bolt.") never carries the rank numeral,
+// while every DoT tick from the SAME cast ("... has taken 460 damage from Envenomed Bolt IX by
+// Tenam.") does. Same shape as gotcha #3's Denon's Desperate Dirge case (a decorative log-line
+// numeral, not a genuinely different spell) - stripRankSuffix already existed for this, just was
+// never applied to a damage/heal skill's own aggregation key. Splitting one DoT's hit count across
+// two rows is also the direct explanation for the "hits seems low" half of the same report - the
+// true count was always there, just divided between two labels.
+// ---------------------------------------------------------------------------
+
+test('a direct-hit line missing its rank numeral merges into the same row as the DoT ticks that carry it', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a shiverback for 10 points of damage.`, 900); // establish "a shiverback" as the enemy first
+  e.handleLine(`${T}Tenam hit a shiverback for 55 points of poison damage by Envenomed Bolt.`, 1000);
+  e.handleLine(`${T}A shiverback has taken 460 damage from Envenomed Bolt IX by Tenam.`, 1005);
+  e.handleLine(`${T}A shiverback has taken 495 damage from Envenomed Bolt IX by Tenam.`, 1010);
+  const live = e.getLiveFight();
+  const tenam = live.rows.find((r) => r.name === 'Tenam');
+  assert.ok(tenam, 'Tenam must have a row');
+  assert.equal(tenam.bySkill.length, 1, 'must be ONE row, not split across "Envenomed Bolt" and "Envenomed Bolt IX"');
+  assert.equal(tenam.bySkill[0].skill, 'Envenomed Bolt', 'the merged row must not carry a stray rank numeral either');
+  assert.equal(tenam.bySkill[0].damage, 1010, 'all three hits must be summed into the one row');
+  assert.equal(tenam.bySkill[0].hits, 3, 'the hit COUNT must also merge - this is what made the DoT tick count look artificially low');
+});
+
+test('the same rank-suffix merge applies to healing skills, not just damage', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1000);
+  e.handleLine(`${T}You healed Baxa for 100 hit points by Celestial Healing.`, 1500);
+  e.handleLine(`${T}You healed Baxa for 120 hit points by Celestial Healing VII.`, 1600);
+  const live = e.getLiveFight();
+  const you = live.healRows.find((r) => r.name === 'You');
+  assert.equal(you.bySkill.length, 1, 'must merge into one "Celestial Healing" row regardless of which cast carried a rank numeral');
+  assert.equal(you.bySkill[0].damage, 220);
+  assert.equal(you.bySkill[0].hits, 2);
+});
+
+test('a genuinely different skill name is never merged just because it shares a prefix', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a shiverback for 10 points of damage.`, 900);
+  e.handleLine(`${T}Tenam hit a shiverback for 55 points of poison damage by Envenomed Bolt.`, 1000);
+  e.handleLine(`${T}A shiverback has taken 300 damage from Envenomed Breath by Tenam.`, 1005);
+  const live = e.getLiveFight();
+  const tenam = live.rows.find((r) => r.name === 'Tenam');
+  assert.equal(tenam.bySkill.length, 2, 'Envenomed Bolt and Envenomed Breath are different spells and must stay separate rows');
+});
+
 module.exports = () => report('damage-parser');
 if (require.main === module) report('damage-parser').then((n) => process.exit(n ? 1 : 0));
