@@ -32,6 +32,38 @@ against (an aggro line vs. first damage).
 A profile-cycle hotkey, and/or an in-game `/tell` command word your macros can fire (same pattern
 as `/tell eqtm`). Still needs the owner's call: hotkey, chat command, or both.
 
+### 53. Make the damage-meter "highlight one skill in its own colour" bar segment configurable
+— NEW
+Denon's Desperate Dirge currently gets a hardcoded bright-red bar segment on both the Combat tab
+and the live overlay meter (`DENON_SKILL_PREFIX`/`DENON_BAR_COLOR` in `main-window.js` and
+`overlay.js`, `_denonDamageForAttacker` in `damageEngine.js` - one specific spell name, one fixed
+hex colour, no UI to change either). Owner, 14 Sep: turn this into a real sub-system - pick which
+skill(s) get their own coloured slice, and pick the colour, per aura, instead of it only ever being
+Denon's in red. Needs design: a settings row (skill picker, presumably reusing the existing
+buff/spell-picker searchable dropdown; a colour picker), whether more than one skill can be
+highlighted at once on the same bar (multiple colours stacked into the same segment, or one
+highlighted skill per aura), and how `_denonDamageForAttacker`'s prefix-match approach (needed for
+rank-suffixed cast lines, gotcha #3) generalises to an arbitrary chosen skill name. Not scoped in
+detail yet - a real design pass, not a quick follow-up to the fix that shipped 14 Sep.
+
+### 52. Give Damage parser / Zone timer / Travel guide a fixed-size window instead of resizing
+constantly — CHANGE — addresses the deeper cause behind the recurring overlay-crash bug
+Root-caused 14 Sep: these three standalone auras are the only ones whose overlay window has ever
+been seen to crash with a real native crash code, repeatedly, across three separate play days
+(fixed 14 Sep so a crash now rebuilds itself instantly instead of staying blank - see git history,
+commit f4faa38 - but the underlying crash itself is not fixed). The reason it's these three and
+never a plain buff tile: their content changes *shape* almost every second (damage rows, route
+length, digit counts), so the window itself keeps growing/shrinking - and a transparent,
+always-on-top window that resizes that often is a known rough spot for Windows' graphics
+compositor over a long session. Giving each of these three a fixed-size window (content aligns/
+clips inside it, the way a normal buff tile already does, instead of the window itself growing and
+shrinking) would remove the trigger entirely rather than just recovering fast from it. Bigger UI
+work than the recovery fix was - real layout design for what "clipped" or "aligned" should look
+like for a scrolling damage list / a multi-line route - not scoped in detail yet.
+*Alternative not chosen here:* app-wide `disableHardwareAcceleration()` would also remove the
+trigger, cheaper to build, but trades away GPU-accelerated rendering everywhere, not just these
+three - named in the investigation report, left for the owner to weigh against this one.
+
 ---
 
 ## Considered and declined — don't re-propose
