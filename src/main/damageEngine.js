@@ -1256,20 +1256,31 @@ class DamageEngine extends EventEmitter {
    * gradient inside a single bar rather than two separate elements.
    */
   _bothTilesFrom(byAttacker, rawDmgByName, dmgSecs, byHealer, rawHealByName, healSecs, sinceZone, scope, pets) {
-    const dmgAgg = this._aggregate(byAttacker, scope, pets, rawDmgByName, 'damage');
-    const healAgg = this._aggregate(byHealer, scope, pets, rawHealByName, 'heal');
+    // `sinceZone` threaded through to _aggregate (owner, 14 Sep, adding Denon's to Both mode) -
+    // without it, Denon's attribution here would hit the exact same bug _tilesFrom's own zone-total
+    // fix (earlier the same day) was for: the fight's own per-skill map is empty by the time the
+    // meter falls back to the since-zone total, so a fresh Both-mode addition would reintroduce it
+    // immediately rather than just never having had the feature at all.
+    const dmgAgg = this._aggregate(byAttacker, scope, pets, rawDmgByName, 'damage', sinceZone);
+    const healAgg = this._aggregate(byHealer, scope, pets, rawHealByName, 'heal', sinceZone);
     // Both passes are given the SAME requested scope, so a 'group' fallback (empty roster) happens
     // identically on both sides - agg.scope/fellBack from either is representative of both.
 
-    const merged = new Map(); // name -> { damage, heal, hits, isPet, unknownPets, isOther }
+    const merged = new Map(); // name -> { damage, heal, hits, isPet, unknownPets, isOther, denonDamage }
+    // Owner, 14 Sep: "this should also apply to the aura version of the combat meter" was done for
+    // single-metric Damage mode; Both mode (damage+heal combined into one bar) was left out because
+    // it never carried a per-skill breakdown to begin with. dmgAgg's own rows already have the
+    // right denonDamage (from _aggregate's own bump - healAgg's is always 0, metric-gated there),
+    // so folding it through here costs nothing extra.
     const fold = (map, key) => {
       for (const [name, r] of map) {
-        const cur = merged.get(name) || { damage: 0, heal: 0, hits: 0, isPet: false, unknownPets: false, isOther: false };
+        const cur = merged.get(name) || { damage: 0, heal: 0, hits: 0, isPet: false, unknownPets: false, isOther: false, denonDamage: 0 };
         cur[key] += r.damage; // r.damage is just "the amount" here regardless of which pass it came from
         cur.hits += r.hits;
         cur.isPet = cur.isPet || !!r.isPet;
         cur.unknownPets = cur.unknownPets || !!r.unknownPets;
         cur.isOther = cur.isOther || !!r.isOther;
+        if (key === 'damage') cur.denonDamage += r.denonDamage || 0;
         merged.set(name, cur);
       }
     };
@@ -1282,7 +1293,7 @@ class DamageEngine extends EventEmitter {
     if (grandTotal <= 0) return [];
 
     const rows = [...merged.entries()]
-      .map(([name, r]) => ({ name, damage: r.damage, heal: r.heal, total: r.damage + r.heal, isPet: r.isPet, unknownPets: r.unknownPets, isOther: r.isOther }))
+      .map(([name, r]) => ({ name, damage: r.damage, heal: r.heal, total: r.damage + r.heal, denonDamage: r.denonDamage || 0, isPet: r.isPet, unknownPets: r.unknownPets, isOther: r.isOther }))
       .sort((a, b) => {
         const aSummary = a.name === 'Pets' || a.name === 'Other';
         const bSummary = b.name === 'Pets' || b.name === 'Other';
@@ -1333,6 +1344,12 @@ class DamageEngine extends EventEmitter {
         // hard-edged two-colour gradient at this split rather than drawing two separate bar
         // elements. 0 when the row is healing-only, 1 when it's damage-only.
         barSplit: r.total > 0 ? r.damage / r.total : 0,
+        // Same basis as barSplit (a fraction of THIS row's own total bar, damage+heal combined),
+        // not of just its damage portion - that is what lets overlay.js drop this straight into
+        // the same hard-stop gradient as a third stop ahead of barSplit's own damage/heal split.
+        // Owner, 14 Sep: "this should also apply to the aura version of the combat meter" -
+        // Both mode was the one shape that request never reached (see this method's own header).
+        denonPercent: r.total > 0 ? Math.max(0, Math.min(100, (r.denonDamage / r.total) * 100)) : 0,
         isPet: r.isPet,
         unknownPets: r.unknownPets,
         isOther: r.isOther,

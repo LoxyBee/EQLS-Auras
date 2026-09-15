@@ -1142,8 +1142,19 @@ function updateRef(ref, buff, isIcon) {
           // Mirrored rows anchor the bar to the right edge (grow leftward) - flip the gradient
           // direction too, so the segment nearest the anchored/full edge is consistent either way.
           const dir = currentConfig.mirrorRowDirection ? 'to left' : 'to right';
-          ref.barEl.style.background =
-            `linear-gradient(${dir}, ${dmgColor} 0%, ${dmgColor} ${splitPct}%, ${healColor} ${splitPct}%, ${healColor} 100%)`;
+          if (typeof buff.denonPercent === 'number' && buff.denonPercent > 0) {
+            // Owner, 14 Sep: "this should also apply to the aura version of the combat meter" -
+            // Both mode was the one shape it never reached. denonPercent is on the SAME basis as
+            // barSplit (a fraction of this row's own total bar), and Denon's damage is always a
+            // subset of the damage portion, so it can only ever sit at or before splitPct - a
+            // third hard-stop ahead of the existing two, never crossing them.
+            const denonSplitPct = Math.max(0, Math.min(splitPct, buff.denonPercent));
+            ref.barEl.style.background =
+              `linear-gradient(${dir}, ${DENON_BAR_COLOR} 0%, ${DENON_BAR_COLOR} ${denonSplitPct}%, ${dmgColor} ${denonSplitPct}%, ${dmgColor} ${splitPct}%, ${healColor} ${splitPct}%, ${healColor} 100%)`;
+          } else {
+            ref.barEl.style.background =
+              `linear-gradient(${dir}, ${dmgColor} 0%, ${dmgColor} ${splitPct}%, ${healColor} ${splitPct}%, ${healColor} 100%)`;
+          }
         } else if (typeof buff.denonPercent === 'number' && buff.denonPercent > 0) {
           // Same hard-stop-gradient trick as barSplit above, just against a fixed colour instead
           // of a second metric's own shade - `denonPercent` is already "how much of THIS row's

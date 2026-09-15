@@ -204,5 +204,25 @@ test('a Denon\'s Desperate Dirge share paints as a fixed bright-red segment, sam
   );
 });
 
+// Owner, 14 Sep, follow-up: the single-metric Damage-mode gradient above shipped first; Both mode
+// (one merged damage+heal bar, barSplit) never got Denon's at all until now. denonPercent is on
+// the same basis as barSplit, so it slots in as a THIRD hard-stop ahead of the existing two rather
+// than needing its own separate branch.
+test('Both mode also gets the Denon\'s red slice, as a third hard-stop ahead of the damage/heal split', () => {
+  const fn = overlaySrc.match(/if \(typeof buff\.barSplit === 'number'\) \{([\s\S]*?)\n {8}\} else if \(typeof buff\.denonPercent/);
+  assert.ok(fn, 'the barSplit branch has been restructured - re-locate the Both-mode gradient code');
+  const block = fn[1];
+  assert.match(block, /typeof buff\.denonPercent === 'number' && buff\.denonPercent > 0/, 'Both mode must also check for a Denon\'s share');
+  assert.match(
+    block, /const denonSplitPct = Math\.max\(0, Math\.min\(splitPct, buff\.denonPercent\)\);/,
+    'Denon\'s share must be clamped to at most the damage portion itself - it is a subset of the damage split, never allowed past it'
+  );
+  assert.match(
+    block,
+    /`linear-gradient\(\$\{dir\}, \$\{DENON_BAR_COLOR\} 0%, \$\{DENON_BAR_COLOR\} \$\{denonSplitPct\}%, \$\{dmgColor\} \$\{denonSplitPct\}%, \$\{dmgColor\} \$\{splitPct\}%, \$\{healColor\} \$\{splitPct\}%, \$\{healColor\} 100%\)`/,
+    'must be a three-stop gradient: red, then the rest of the damage colour, then heal colour - not a two-colour blend'
+  );
+});
+
 module.exports = () => report('damage-row-cap');
 if (require.main === module) report('damage-row-cap').then((n) => process.exit(n ? 1 : 0));

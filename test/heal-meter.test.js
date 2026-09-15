@@ -199,6 +199,33 @@ test("a healing-only player in 'both' mode gets barSplit 0 (an all-heal-coloured
   assert.equal(chouder.barSplit, 0);
 });
 
+// Owner, 14 Sep: "this should also apply to the aura version of the combat meter" was built for
+// single-metric Damage mode first; Both mode (one merged damage+heal bar) was the shape it never
+// reached, because it had no per-skill breakdown to draw from at all. denonPercent is on the SAME
+// basis as barSplit (a fraction of the row's OWN total bar), which is what lets overlay.js drop it
+// in as a third gradient stop ahead of the existing damage/heal split.
+test("'both' mode also carries denonPercent - Denon's Desperate Dirge highlighted even in the merged bar", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a fire giant for 10 points of damage.`, 500); // establish "a fire giant" as the enemy first
+  // Aristirin: 300 dirge damage, 100 melee damage, 100 healing -> 500 total.
+  // Dirge is 300/500 = 60% of the WHOLE bar (not 300/400 = 75% of just the damage portion).
+  e.handleLine(`${T}A fire giant has taken 300 damage from Denon's Desperate Dirge V by Aristirin.`, 1000);
+  e.handleLine(`${T}Aristirin slashes a fire giant for 100 points of damage.`, 1500);
+  e.handleLine(`${T}Aristirin healed you for 100 hit points by Light Healing.`, 1500);
+  const row = e.getActive(1500, 'all', 'both').find((r) => r.name === 'Aristirin');
+  assert.ok(row, 'Aristirin must have a row');
+  assert.equal(row.barSplit, 0.8, 'sanity check: 400 damage of 500 total');
+  assert.equal(row.denonPercent, 60);
+});
+
+test("'both' mode: a row with no Denon's damage gets denonPercent 0, not undefined", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}A flouting gargoyle has taken 100 damage from your Frost Bolt.`, 1000);
+  e.handleLine(`${T}You healed Baxa for 50 hit points by Light Healing.`, 1000);
+  const you = e.getActive(1000, 'all', 'both').find((r) => r.name === 'You');
+  assert.equal(you.denonPercent, 0);
+});
+
 test("'both' bar length is scaled against the biggest COMBINED total, not damage or healing alone", () => {
   const e = new DamageEngine();
   // You: 100 damage only. Chouder: 90 healing only. Chouder's combined total (90) is the biggest.
