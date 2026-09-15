@@ -9842,7 +9842,13 @@ function initCombatPage() {
   // that row's own data ever tracked crits at all (healLines.js carries no critical flag), which
   // is what makes "Both" mode's mixed damage+heal skill list label each row correctly.
   async function renderBars(container, rows, durationSec, metric = 'damage') {
-    container.innerHTML = '';
+    // Owner, 14 Sep, screenshot-confirmed with a video: "live damage flashes when refreshing" -
+    // clearing the container BEFORE the `await` below left it genuinely empty for the length of
+    // that IPC round-trip (one estimateDamageClasses call per row), which barely showed on a
+    // one-off click but flashed visibly every single tick once the live view started re-rendering
+    // on every hit. Everything is now built into a detached fragment first and swapped in as one
+    // atomic replacement at the end - the old content stays on screen right up until the new
+    // content is ready, so there is never a moment with nothing there at all.
     const top = rows.length ? rows[0].damage : 0;
     // Class estimate (owner, 13-14 Sep): only ever built from skills this attacker was actually
     // seen CASTING, scoped to just this fight (or visit) - never damage, which can't say who cast
@@ -9852,6 +9858,7 @@ function initCombatPage() {
     const classEstimates = await Promise.all(
       rows.map((row) => window.eqTracker.estimateDamageClasses(row.castSkills || []))
     );
+    const fragment = document.createDocumentFragment();
     rows.forEach((row, i) => {
       const details = document.createElement('details');
       details.className = 'combat-bar-row';
@@ -9952,8 +9959,12 @@ function initCombatPage() {
         list.appendChild(line);
       });
       details.appendChild(list);
-      container.appendChild(details);
+      fragment.appendChild(details);
     });
+    // The one moment container's content actually changes - old rows visible up to here, new ones
+    // from here, nothing in between.
+    container.innerHTML = '';
+    container.appendChild(fragment);
   }
 
   // One fight, folded into an accordion row under the visit's own chart - clicking it expands its
@@ -10073,7 +10084,9 @@ function initCombatPage() {
   // Draws whichever metric the top-level Damage/Healing/Both toggle currently selects into
   // `container` (owner, 14 Sep: "toggle between damage, healing, or both").
   async function renderMetricBars(container, details) {
-    container.innerHTML = '';
+    // No innerHTML clear here any more (owner, 14 Sep, video-confirmed flash) - renderBars() does
+    // its own atomic old-content-to-new-content swap at the end now, so clearing up front here
+    // would just re-open the exact same empty window this was fixed to close.
     if (viewMode === 'both') {
       const { rows, totalDuration } = aggregateBothRows(details);
       await renderBars(container, rows, totalDuration, 'both');

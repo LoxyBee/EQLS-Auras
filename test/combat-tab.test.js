@@ -870,5 +870,35 @@ test('the damage meter is seeded from the startup zone recovery, same as the rai
   );
 });
 
+// Owner, 14 Sep: "live damage flashes when refreshing" - confirmed with a screen recording. Frame-
+// by-frame analysis showed the chart going completely blank for one frame on every single live
+// tick. Root cause: renderBars() cleared the container BEFORE `await`ing a per-row IPC round trip
+// (estimateDamageClasses) - fine for a one-off click, but the live view calls this on every hit.
+// renderMetricBars() had the identical bug one level up, clearing again before its own `await
+// renderBars(...)`. Fix: build the new content into a detached fragment, `await` everything that
+// needs awaiting, and only THEN swap it in as one atomic replacement.
+test('renderBars builds into a detached fragment and swaps it in atomically - never an empty gap during the class-estimate await', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  const clearIdx = fn[1].indexOf(`container.innerHTML = ''`);
+  const awaitIdx = fn[1].indexOf('await Promise.all(');
+  assert.ok(clearIdx !== -1 && awaitIdx !== -1, 'both the clear and the await must still exist');
+  assert.ok(clearIdx > awaitIdx, 'the container must not be cleared until AFTER the async class-estimate work is done - clearing before it is the exact flash bug');
+  assert.match(fn[1], /const fragment = document\.createDocumentFragment\(\)/);
+  assert.match(fn[1], /fragment\.appendChild\(details\)/, 'rows must be built into the fragment, not appended straight into the live container');
+  assert.doesNotMatch(fn[1], /container\.appendChild\(details\)/, 'a row appended directly into container would show up one at a time instead of swapping in as one piece');
+});
+
+test('renderMetricBars no longer clears its container up front - renderBars owns the one atomic swap', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderMetricBars\(container, details\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderMetricBars has been restructured or removed');
+  assert.doesNotMatch(
+    fn[1], /container\.innerHTML = ''/,
+    'clearing here re-opens the exact empty window renderBars was fixed to close, since this runs BEFORE renderBars\' own await'
+  );
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));
