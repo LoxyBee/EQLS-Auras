@@ -742,7 +742,10 @@ test('jumpToCurrentZone opens the current zone\'s latest visit, or falls back to
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'jumpToCurrentZone has been restructured or removed');
-  assert.match(fn[1], /if \(!zone\) return;/, 'an unknown current zone must not crash or open something arbitrary');
+  // Owner, 14 Sep, follow-up to the scan/empty-list fixes: this used to fail completely
+  // silently - `if (!zone) return;` alone, no feedback at all when nothing was found either.
+  assert.match(fn[1], /if \(!zone\) \{/, 'an unknown current zone must not crash or open something arbitrary');
+  assert.match(fn[1], /setJumpStatus\(/, 'a failed jump must say WHY, not just silently do nothing');
   assert.match(fn[1], /zoneFilter\.value = zone/, 'the zone filter should reflect the jump, not silently diverge from what is shown');
   assert.match(fn[1], /openVisit\(visits\[visits\.length - 1\]\)/, 'must open the LATEST (most recent) visit, not the earliest');
   assert.match(fn[1], /showList\(\)/, 'a zone with no history yet must fall back to the list, not open nothing silently');
@@ -849,8 +852,15 @@ test('a tick auto-opens the live view when the list screen is showing, but never
   const fn = renderer.match(/async function onLiveFightTick\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'onLiveFightTick has been restructured or removed');
   assert.match(
-    fn[1], /\} else if \(fight && listScreen\.style\.display !== 'none'\) \{\s*openLiveFight\(fight\);/,
+    fn[1], /\} else if \(fight && listScreen\.style\.display !== 'none' && !browsingOtherSource\) \{\s*openLiveFight\(fight\);/,
     'auto-open must be gated on the LIST screen specifically being what is showing, not on liveFightOpen being false alone - a historical visit is also "not the live view" and must not get yanked away from'
+  );
+  // Owner, 14 Sep, screenshot-confirmed: "live text appears when in combat log scan" - browsing a
+  // scanned log's results (Source filter set to that scan) still counts as "the list screen", so
+  // a real live fight elsewhere would auto-open right over whatever scan was being reviewed.
+  assert.match(
+    fn[1], /const browsingOtherSource = sourceFilter\.value && sourceFilter\.value !== LIVE_SOURCE;/,
+    'auto-open must not fire while a specific past scan (not the live session) is the active Source filter'
   );
 });
 
@@ -1051,7 +1061,7 @@ test('the empty-list message tells apart "nothing has happened" from "your filte
   assert.ok(fn, 'render() has been restructured');
   assert.match(fn[1], /!lastHistory\.length/, 'must check the UNFILTERED count for the "nothing yet" case');
   assert.match(fn[1], /!filtered\.length/, 'must separately check the FILTERED count - a scan can fill lastHistory while filtered is still empty');
-  assert.match(fn[1], /No fights match the current zone\/min-damage filters/, 'the filtered-to-zero case needs its own, different message');
+  assert.match(fn[1], /No fights match the current zone\/source\/min-damage filters/, 'the filtered-to-zero case needs its own, different message');
 });
 
 test('a "Back to live" button resets both filters and jumps back to whatever is live, distinct from "Current zone"', () => {
@@ -1061,9 +1071,79 @@ test('a "Back to live" button resets both filters and jumps back to whatever is 
   const fn = renderer.match(/async function backToLive\(\) \{([\s\S]*?)\n  \}\n/);
   assert.ok(fn, 'backToLive has been restructured');
   assert.match(fn[1], /zoneFilter\.value = ''/);
+  assert.match(fn[1], /sourceFilter\.value = ''/, 'must reset the source filter too, or a scan you were browsing keeps hiding live fights');
   assert.match(fn[1], /minDamageInput\.value = String\(DEFAULT_MIN_DAMAGE\)/, 'must reset the damage floor too, not just the zone - that is what makes it different from Current zone');
   assert.match(fn[1], /await jumpToCurrentZone\(\)/);
   assert.match(renderer, /backToLiveBtn\.addEventListener\('click', backToLive\)/, 'the button must actually be wired');
+});
+
+// ---------------------------------------------------------------------------
+// "You need a way to return to last scan as well" (owner, 14 Sep). A Source filter (every fight
+// already carries `source` - main.js's mergedDamageHistory) lets a scan's results be isolated
+// again after navigating away, instead of being permanently mixed into the same list forever.
+// ---------------------------------------------------------------------------
+
+test('a Source filter exists, populated the same way the zone filter is, and actually filters the list', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-source-filter"/);
+  assert.match(html, /id="combat-return-to-scan"[^>]*style="display:none"/, 'hidden until a scan has actually happened this session');
+
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(renderer, /function populateSourceFilter\(history\) \{/, 'populateSourceFilter has been restructured or removed');
+  assert.match(renderer, /sourceFilter\.addEventListener\('change', render\)/, 'changing the source must actually re-render, same as the zone filter');
+
+  const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
+  const renderFn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(renderFn, 'render() has been restructured');
+  assert.match(renderFn[1], /populateSourceFilter\(lastHistory\)/);
+  assert.match(
+    renderFn[1], /\(f\.source \|\| LIVE_SOURCE\) === sourceValue/,
+    'the filter predicate must actually check each fight\'s own source, not just exist cosmetically'
+  );
+
+  const siblingFn = combatPage.match(/function siblingVisits\(zone\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(siblingFn, 'siblingVisits has been restructured or removed');
+  assert.match(
+    siblingFn[1], /sourceFilter\.value/,
+    'Older/Newer and jumpToCurrentZone must also respect the source filter, or they would jump you across sources mid-browse'
+  );
+});
+
+test('a completed scan lands you on THAT scan\'s own results and remembers it for "Return to last scan"', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function runScan\(filePath\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'runScan has been restructured');
+  const successBranch = fn[1].slice(fn[1].indexOf('result.ok'));
+  assert.match(successBranch, /sourceFilter\.value = result\.label/, 'must land specifically on this scan\'s own results, not mixed with everything else');
+  assert.match(successBranch, /lastScanLabel = result\.label/, 'must remember which scan, for Return to last scan');
+  assert.match(successBranch, /returnToScanBtn\.style\.display = ''/, 'the Return button must actually appear once there is something to return to');
+
+  const returnFn = renderer.match(/function returnToScan\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(returnFn, 'returnToScan has been restructured or removed');
+  assert.match(returnFn[1], /if \(!lastScanLabel\) return;/, 'must no-op gracefully before any scan has happened, not throw');
+  assert.match(returnFn[1], /sourceFilter\.value = lastScanLabel/);
+  assert.match(renderer, /returnToScanBtn\.addEventListener\('click', returnToScan\)/, 'the button must actually be wired');
+});
+
+// Owner, 14 Sep, screenshot-confirmed: "live text appears when in combat log scan" - a real live
+// fight elsewhere was auto-opening itself right over a scanned log the owner was actively
+// browsing. Covered structurally above (onLiveFightTick's browsingOtherSource guard); this pins
+// the feedback half of the same report - "current zone" silently doing nothing when nothing was
+// found, with no way to tell a genuinely empty zone from a floor/filter hiding real activity.
+test('jumpToCurrentZone reports WHY nothing was found, instead of silently doing nothing', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-jump-status"/);
+
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(renderer, /function setJumpStatus\(text, isError\) \{/, 'setJumpStatus has been restructured or removed');
+
+  const fn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'jumpToCurrentZone has been restructured or removed');
+  assert.match(fn[1], /setJumpStatus\('Your current zone is not known yet/, 'an unresolved zone must say so, not just quietly show the list');
+  assert.match(
+    fn[1], /No activity found in \$\{zone\} above your \$\{formatDamage\(floor\)\} min-damage floor/,
+    'a real min-damage floor hiding everything must be named as the reason, not left to guesswork'
+  );
 });
 
 module.exports = () => report('combat-tab');

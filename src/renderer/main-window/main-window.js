@@ -9735,6 +9735,9 @@ function initCombatPage() {
   const visitList = document.getElementById('combat-visit-list');
   const historyEmpty = document.getElementById('combat-history-empty');
   const zoneFilter = document.getElementById('combat-zone-filter');
+  const sourceFilter = document.getElementById('combat-source-filter');
+  const jumpStatus = document.getElementById('combat-jump-status');
+  const returnToScanBtn = document.getElementById('combat-return-to-scan');
   const minDamageInput = document.getElementById('combat-min-damage');
   const DEFAULT_MIN_DAMAGE = 50000;
   const detailScreen = document.getElementById('combat-detail-screen');
@@ -9757,6 +9760,10 @@ function initCombatPage() {
   if (!visitList) return; // Combat tab not in this build
 
   const UNKNOWN_ZONE = '(zone unknown)';
+  // Must match main.js's mergedDamageHistory - the live engine's own source label ({ tag: 'live',
+  // label: 'This session', ... } in allHistorySources). Never shown to the user as a raw string
+  // comparison target, just the value every LIVE fight's own `source` field carries.
+  const LIVE_SOURCE = 'This session';
   // A fixed, readable rotation - not per-class (this app doesn't know classes), just enough colour
   // variety that ten bars in a row are easy to tell apart, matching the reference image's look.
   const BAR_COLORS = ['#c9a13a', '#4a9fd8', '#6fc47a', '#d8794a', '#9a7fd8', '#d84a8f', '#4ad8c4', '#d8d24a'];
@@ -9770,6 +9777,10 @@ function initCombatPage() {
   const DENON_BAR_COLOR = '#ff2b2b';
   const isDenonSkill = (skill) => typeof skill === 'string' && skill.startsWith(DENON_SKILL_PREFIX);
   let lastHistory = []; // flat, cached so the zone filter can re-render without re-fetching
+  // The most recently completed scan's own source label (main.js's mergedDamageHistory result
+  // label, e.g. "eqlog_Shara_rivervale.txt (scanned ...)") - null until a scan has actually
+  // happened this session. Powers "Return to last scan" (owner, 14 Sep).
+  let lastScanLabel = null;
 
   // Damage / Healing / Both (owner, 14 Sep: "buttons... top level, and not attached to specific
   // fight logs, swapping one view should swap it for all open logs"). One shared mode for the
@@ -9836,6 +9847,7 @@ function initCombatPage() {
   function showDetail() {
     listScreen.style.display = 'none';
     detailScreen.style.display = '';
+    if (jumpStatus) jumpStatus.style.display = 'none'; // whatever failed a moment ago, this succeeded
   }
   // Only ever two screens now (list, and one visit's detail) - a single fight's own numbers
   // expand IN PLACE under its own row instead of being a third screen, per the owner's own
@@ -10189,7 +10201,12 @@ function initCombatPage() {
   // pool Older/Newer step through, and what jumpToCurrentZone() picks the latest entry from.
   function siblingVisits(zone) {
     const floor = minDamage();
-    const filtered = lastHistory.filter((f) => (f.zone || UNKNOWN_ZONE) === zone && f.totalDamage >= floor);
+    const sourceValue = sourceFilter.value;
+    const filtered = lastHistory.filter((f) => (
+      (f.zone || UNKNOWN_ZONE) === zone
+      && (!sourceValue || (f.source || LIVE_SOURCE) === sourceValue)
+      && f.totalDamage >= floor
+    ));
     return buildVisits(filtered);
   }
 
@@ -10258,12 +10275,20 @@ function initCombatPage() {
   // rather than waiting for the "Live now" row to be clicked. Scoped to the LIST screen only
   // (never while a specific historical visit is already open) - a live fight starting should not
   // yank you out of something you're actively reviewing.
+  //
+  // Second guard, added the same day: "live text appears when in combat log scan" - the list
+  // screen check above wasn't enough, because browsing a SCAN's results (Source filter set to
+  // that scan) still counts as "the list screen". A real live fight elsewhere would auto-open
+  // itself over whatever scan you were actively looking through. Only auto-open while the source
+  // filter is unset or explicitly the live session - a manual click on the Live row/Current
+  // zone/Back to live still opens it regardless, this only stops the UNASKED-FOR interruption.
   async function onLiveFightTick() {
     if (liveRenderInFlight) return;
     liveRenderInFlight = true;
     try {
       const fight = await window.eqTracker.getLiveFight();
       updateLiveRow(fight);
+      const browsingOtherSource = sourceFilter.value && sourceFilter.value !== LIVE_SOURCE;
       if (liveFightOpen) {
         if (!fight) {
           // The toolbar is hidden either way (showList below) - just leaving it in a clean state for the next real open.
@@ -10274,7 +10299,7 @@ function initCombatPage() {
         } else {
           await renderLiveDetail(fight);
         }
-      } else if (fight && listScreen.style.display !== 'none') {
+      } else if (fight && listScreen.style.display !== 'none' && !browsingOtherSource) {
         openLiveFight(fight);
       }
     } finally {
@@ -10289,6 +10314,7 @@ function initCombatPage() {
   // the current zone's most recent completed visit - skipping "find it in the list" entirely.
   // Falls back to just showing the (freshly reloaded) list when neither exists.
   async function jumpToCurrentZone() {
+    setJumpStatus('', false);
     await loadHistory();
     const live = await window.eqTracker.getLiveFight();
     if (live) {
@@ -10296,13 +10322,27 @@ function initCombatPage() {
       return;
     }
     const zone = await window.eqTracker.getCombatCurrentZoneBase();
-    if (!zone) return;
+    if (!zone) {
+      setJumpStatus('Your current zone is not known yet - keep playing a moment and try again.', true);
+      showList();
+      return;
+    }
     zoneFilter.value = zone; // picked up by populateZoneFilter inside render(), if it's a real option
     render();
     const visits = siblingVisits(zone);
     if (visits.length) {
       openVisit(visits[visits.length - 1]); // most recent
     } else {
+      // Reported live 14 Sep: this used to fail completely silently - nothing on screen said
+      // whether the zone genuinely has no history yet, or whether real fights exist but the
+      // min-damage floor (or an active Source filter) is hiding all of them.
+      const floor = minDamage();
+      setJumpStatus(
+        floor > 0
+          ? `No activity found in ${zone} above your ${formatDamage(floor)} min-damage floor - try lowering it.`
+          : `No activity found in ${zone} yet.`,
+        true
+      );
       showList();
     }
   }
@@ -10314,8 +10354,23 @@ function initCombatPage() {
   // min-damage floor untouched, which isn't "back to normal", just "back to this zone".
   async function backToLive() {
     zoneFilter.value = '';
+    sourceFilter.value = '';
     minDamageInput.value = String(DEFAULT_MIN_DAMAGE);
     await jumpToCurrentZone();
+  }
+
+  // "After scanning a log and leaving back to live, you need a way to return to last scan as
+  // well" (owner, 14 Sep). The mirror of backToLive above - re-applies the remembered scan's own
+  // Source filter (and clears the zone/damage floor back to "everything that scan found") instead
+  // of making you re-scan the same file just to look at it again.
+  function returnToScan() {
+    if (!lastScanLabel) return;
+    liveFightOpen = false;
+    showList();
+    zoneFilter.value = '';
+    minDamageInput.value = String(DEFAULT_MIN_DAMAGE);
+    sourceFilter.value = lastScanLabel;
+    render();
   }
 
   // Flat history (arrives newest-first from the backend) -> visits, EARLIEST first (owner, 13
@@ -10485,6 +10540,30 @@ function initCombatPage() {
     if (zones.includes(previous)) zoneFilter.value = previous;
   }
 
+  // "You need a way to return to last scan as well" (owner, 14 Sep) - every fight already carries
+  // a `source` (main.js's mergedDamageHistory: "This session" for the live engine, the scan's own
+  // label for an imported log), so filtering on it is what actually lets you isolate one scan's
+  // results again instead of them being permanently mixed into the same list as everything else.
+  // Same pattern as populateZoneFilter right above it.
+  function populateSourceFilter(history) {
+    const sources = [...new Set(history.map((f) => f.source || LIVE_SOURCE))];
+    // Live session first (the common case), then scans oldest-imported first.
+    sources.sort((a, b) => (a === LIVE_SOURCE ? -1 : b === LIVE_SOURCE ? 1 : 0));
+    const previous = sourceFilter.value;
+    sourceFilter.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = `All sources (${history.length})`;
+    sourceFilter.appendChild(allOpt);
+    for (const source of sources) {
+      const opt = document.createElement('option');
+      opt.value = source;
+      opt.textContent = source;
+      sourceFilter.appendChild(opt);
+    }
+    if (sources.includes(previous)) sourceFilter.value = previous;
+  }
+
   // "A filter to exclude logs of fights under a certain total damage value... defaulted to
   // anything less than 50k" (owner, 14 Sep) - a one-hit trash mob or stray retaliation swing
   // showing up as its own "1 fight" visit was pure noise. Filters individual FIGHTS (not whole
@@ -10498,10 +10577,14 @@ function initCombatPage() {
 
   function render() {
     populateZoneFilter(lastHistory);
+    populateSourceFilter(lastHistory);
     const filter = zoneFilter.value;
+    const sourceValue = sourceFilter.value;
     const floor = minDamage();
     const filtered = lastHistory.filter((f) => (
-      (!filter || (f.zone || UNKNOWN_ZONE) === filter) && f.totalDamage >= floor
+      (!filter || (f.zone || UNKNOWN_ZONE) === filter)
+      && (!sourceValue || (f.source || LIVE_SOURCE) === sourceValue)
+      && f.totalDamage >= floor
     ));
     // Two different reasons the list can be empty, and they read very differently: nothing has
     // happened yet at all, versus real fights exist but the zone/min-damage filters hide every one
@@ -10514,7 +10597,7 @@ function initCombatPage() {
       historyEmpty.textContent = 'No fights yet this session - still watching your log.';
       historyEmpty.style.display = '';
     } else if (!filtered.length) {
-      historyEmpty.textContent = 'No fights match the current zone/min-damage filters - try widening them.';
+      historyEmpty.textContent = 'No fights match the current zone/source/min-damage filters - try widening them.';
       historyEmpty.style.display = '';
     } else {
       historyEmpty.style.display = 'none';
@@ -10531,6 +10614,17 @@ function initCombatPage() {
     scanStatus.textContent = text;
     scanStatus.style.display = text ? '' : 'none';
     scanStatus.classList.toggle('scan-error', !!isError);
+  }
+
+  // "Current zone" (and Back to live, which reuses it) could fail completely silently - reported
+  // as part of the same 14 Sep teardown: if today's activity in your current zone never crossed
+  // the min-damage floor, the button just... did nothing, with no hint that a floor was the
+  // reason rather than the zone genuinely having no history. Same shape as setScanStatus above.
+  function setJumpStatus(text, isError) {
+    if (!jumpStatus) return;
+    jumpStatus.textContent = text;
+    jumpStatus.style.display = text ? '' : 'none';
+    jumpStatus.classList.toggle('scan-error', !!isError);
   }
 
   async function runScan(filePath) {
@@ -10554,7 +10648,15 @@ function initCombatPage() {
         liveFightOpen = false;
         showList();
         zoneFilter.value = '';
-        await loadHistory();
+        await loadHistory(); // populates the Source dropdown with this scan's own label
+        // Land on THIS scan's own results specifically, not mixed in with the live session's or
+        // an earlier scan's - the Source filter (added the same day) is what actually makes
+        // "Return to last scan" possible later, and what stops a real live fight from silently
+        // yanking you away mid-review (see onLiveFightTick's browsingOtherSource guard).
+        sourceFilter.value = result.label;
+        lastScanLabel = result.label;
+        if (returnToScanBtn) returnToScanBtn.style.display = '';
+        render();
       }
     } finally {
       scanCurrentBtn.disabled = false;
@@ -10583,6 +10685,7 @@ function initCombatPage() {
   }
   if (backBtn) backBtn.addEventListener('click', () => { liveFightOpen = false; showList(); });
   if (zoneFilter) zoneFilter.addEventListener('change', render);
+  if (sourceFilter) sourceFilter.addEventListener('change', render);
   if (minDamageInput) {
     minDamageInput.value = String(DEFAULT_MIN_DAMAGE);
     minDamageInput.addEventListener('input', render);
@@ -10594,6 +10697,7 @@ function initCombatPage() {
   if (navBtnCombat) navBtnCombat.addEventListener('click', jumpToCurrentZone);
   if (jumpCurrentZoneBtn) jumpCurrentZoneBtn.addEventListener('click', jumpToCurrentZone);
   if (backToLiveBtn) backToLiveBtn.addEventListener('click', backToLive);
+  if (returnToScanBtn) returnToScanBtn.addEventListener('click', returnToScan);
   if (olderBtn) {
     olderBtn.addEventListener('click', () => {
       if (currentVisitIndex > 0) openVisit(currentZoneVisits[currentVisitIndex - 1]);

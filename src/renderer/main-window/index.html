@@ -1062,11 +1062,24 @@
           <div class="row">
             <span class="label">Zone</span>
             <select id="combat-zone-filter" class="text-input"></select>
+            <!-- Owner, 14 Sep, follow-up to the scan-blank-list fix: "you need a way to return to
+                 last scan as well" - a scan's own fights get merged into the same list as your
+                 live session's, with no way to isolate just that scan's results again once you've
+                 navigated elsewhere. Every fight already carries a `source` (main.js's
+                 mergedDamageHistory - "This session" for the live engine, the scan's own label for
+                 an imported one), so this filters on that instead of adding a whole parallel
+                 concept. -->
+            <span class="label" title="Which source this list is showing - your live session, or one specific scanned log file.">Source</span>
+            <select id="combat-source-filter" class="text-input"></select>
             <span class="label" title="Hides any fight below this total damage - trash mobs and stray hits, not a real pull. Set to 0 to show everything.">Min damage</span>
             <input type="number" id="combat-min-damage" class="text-input" min="0" step="1000" style="width:7em">
             <button type="button" id="combat-jump-current-zone" title="Jump straight to the most recent activity in the zone you're in right now.">Current zone</button>
-            <button type="button" id="combat-back-to-live" title="Clear the zone and min-damage filters and jump back to whatever's live right now - the way back out after browsing a scanned log.">Back to live</button>
+            <button type="button" id="combat-back-to-live" title="Clear every filter and jump back to whatever's live right now - the way back out after browsing a scanned log.">Back to live</button>
+            <!-- Hidden until a scan has actually happened this session (nothing to return to
+                 otherwise) - see runScan/returnToScan in main-window.js. -->
+            <button type="button" id="combat-return-to-scan" style="display:none">Return to last scan</button>
           </div>
+          <p class="scan-status" id="combat-jump-status" style="display:none"></p>
           <!-- Owner, 14 Sep: "i need some way to be able to live read the current combat from
                this combat tab" - a fight in progress hasn't ended yet, so it isn't in history at
                all until it does. This row is the entry point into it while it's still happening.
