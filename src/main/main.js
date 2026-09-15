@@ -2018,6 +2018,36 @@ ipcMain.handle('damage:scanLogFile', async (_event, filePath) => {
   }
 });
 
+// A scanned log has to be re-scanned from scratch after every restart - the live session's own
+// fight history got exactly this recovery earlier the same day (damageHistory above), but a scan
+// keeps its OWN separate engine (see allHistorySources's comment) that was never wired in, so
+// pointed out as a gap in the same 14 Sep report. Each scan's engine already has its own
+// captureHistory()/restoreHistory() pair (a completed fight is a permanent fact either way); this
+// just carries the surrounding label/scannedAt alongside it and rebuilds a fresh DamageEngine per
+// remembered scan on restore, in the same order, so composite ids ("scan:0:7") land back on the
+// same index they came from. No staleness limit, same reasoning as damageHistory - re-scanning
+// the same file would produce byte-identical fights regardless of how long the app was closed.
+sessionRestore.register('importedScans', {
+  capture: () => {
+    if (!importedScans.length) return null;
+    const scans = importedScans
+      .map((s) => ({ label: s.label, scannedAt: s.scannedAt, history: s.engine.captureHistory() }))
+      .filter((s) => s.history);
+    return scans.length ? { scans } : null;
+  },
+  restore: (d) => {
+    if (!d || !Array.isArray(d.scans)) return 0;
+    let total = 0;
+    for (const s of d.scans) {
+      if (!s || !s.history) continue;
+      const engine = new DamageEngine({ maxHistory: Infinity });
+      total += engine.restoreHistory(s.history);
+      importedScans.push({ label: s.label, scannedAt: s.scannedAt, engine });
+    }
+    return total;
+  },
+});
+
 ipcMain.handle('damage:getHistory', () => mergedDamageHistory());
 ipcMain.handle('damage:getHistoryFight', (_event, id) => findHistoryFight(id));
 // "I need some way to be able to live read the current combat from this combat tab" (owner, 14

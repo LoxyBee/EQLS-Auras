@@ -946,6 +946,23 @@ test('the Combat tab\'s fight history is registered with sessionRestore, with no
   assert.match(block, /restore: \(d\) => damageEngine\.restoreHistory\(d\)/);
 });
 
+// Owner, 14 Sep, follow-up: "there is no way to browse the fights after you have scanned a log"
+// investigation turned up a second, separate gap in the SAME "every part of the app should have a
+// recovery" feature above - a scanned log's own engine (kept alive in importedScans, entirely
+// separate from the live damageEngine) was never wired into sessionRestore at all, so re-scanning
+// the same file from scratch was the only way to see it again after any restart.
+test('a scanned log\'s history also survives a restart, not just the live session\'s', () => {
+  const main = read('src', 'main', 'main.js');
+  const fn = main.match(/sessionRestore\.register\('importedScans', \{([\s\S]*?)\n\}\);/);
+  assert.ok(fn, 'importedScans is not registered with sessionRestore');
+  const block = fn[1];
+  assert.doesNotMatch(block, /maxGapMs/, 'a completed scan does not go stale either - re-scanning the same file later would produce the identical fights regardless of the gap');
+  assert.match(block, /s\.engine\.captureHistory\(\)/, 'must reuse the engine\'s own capture, not reinvent fight serialisation');
+  assert.match(block, /new DamageEngine\(\{ maxHistory: Infinity \}\)/, 'a restored scan engine must be uncapped, same as a freshly scanned one - scanLogForFights\' own comment on why');
+  assert.match(block, /engine\.restoreHistory\(s\.history\)/);
+  assert.match(block, /importedScans\.push\(\{ label: s\.label, scannedAt: s\.scannedAt, engine \}\)/, 'must rebuild in the same order, so composite ids ("scan:0:7") still resolve to the right scan');
+});
+
 // ---------------------------------------------------------------------------
 // Owner, 14 Sep, follow-up: "back to fights button needs deleting here, because now it should be
 // open by default. also, the live marker needs to be moved here instead when you're on the most
