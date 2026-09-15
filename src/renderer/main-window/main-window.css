@@ -1950,8 +1950,12 @@ select.sd-native {
    other constraint, a long enough label grows the whole control to fit itself, instead of eliding,
    and shoves everything after it onto a wrapped line. A real cap plus .sd-text's existing
    ellipsis is what actually shortens the FIELD, not just the text inside it; refreshDisplay()
-   above puts the untruncated label in `title` so hovering still shows the whole thing. */
-.sd-wrap:has(#combat-source-filter) .sd-display { max-width: 220px; }
+   above puts the untruncated label in `title` so hovering still shows the whole thing.
+   Capped on the WRAP itself, not just .sd-display inside it - once the pair is allowed to
+   flex-grow (owner, follow-up: "expand the text fields to match across the whole row"), capping
+   only the inner display would let the outer .sd-wrap keep growing anyway and leave dead space
+   inside it once .sd-display hit its own limit. */
+.sd-wrap:has(#combat-source-filter) { max-width: 220px; }
 .sd-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sd-text.sd-placeholder { color: var(--ink-faint); }
 .sd-caret { color: var(--accent); font-size: 10px; flex: none; }
@@ -2734,6 +2738,17 @@ body.sidebar-resizing .sidebar {
    it was built for - padding "Zone"/"Source" out to 110px here just wastes width these short,
    inline filter labels don't need, making the row wrap more often than it has to. */
 .combat-filter-pair .label { min-width: 0; }
+/* Owner, 15 Sep, follow-up: "you can still expand the text fields to match across the whole row,
+   that looks better, but allow it to shrink back to how it is now when smaller" - each pair grows
+   to help fill the row's own width when there's room (rather than leaving a big empty gap after a
+   short "50000"), and shrinks straight back down to its natural compact size once the row is
+   narrow enough to wrap - flexbox distributes grow/shrink per LINE, so a wrapped pair on its own
+   line settles back to this same natural size regardless of how wide its neighbours got upstairs.
+   The label itself never grows (flex: 0 0 auto) - only the control beside it does. */
+.combat-filter-pair { flex: 1 1 auto; }
+.combat-filter-pair .label { flex: 0 0 auto; }
+.combat-filter-pair .sd-wrap,
+.combat-filter-pair input.text-input { flex: 1 1 auto; min-width: 80px; }
 
 /* Owner, 15 Sep, second follow-up: "you still did not move the buttons where i told you to" - a
    row of its own beneath the heading still wasn't "the top row" in the sense meant; the heading's

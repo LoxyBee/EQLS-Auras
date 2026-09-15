@@ -1264,8 +1264,8 @@ test('the list heading never calls the live session "past fights" - only Source 
 test('the Source filter field itself is capped to a real width, with the full label still on hover', () => {
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
-    css, /\.sd-wrap:has\(#combat-source-filter\) \.sd-display \{ max-width: 220px; \}/,
-    'the FIELD must be capped, not just rely on the text inside it eliding within an unbounded box'
+    css, /\.sd-wrap:has\(#combat-source-filter\) \{ max-width: 220px; \}/,
+    'the WRAP itself must be capped, not just the inner .sd-display - once the pair can flex-grow, capping only the inner element would leave the outer wrap free to keep growing and dead space behind it'
   );
   const searchDropdown = read('src', 'renderer', 'main-window', 'search-dropdown.js');
   assert.match(
@@ -1352,6 +1352,26 @@ test('filter labels do not carry the settings-form min-width - they sit snug aga
     css, /\.combat-filter-pair \.label\s*\{\s*min-width:\s*0;\s*\}/,
     'must override the shared .label min-width down to 0 inside a filter pair specifically'
   );
+});
+
+// Owner, 15 Sep: "you can still expand the text fields to match across the whole row, that looks
+// better, but allow it to shrink back to how it is now when smaller" - the controls sat at a fixed
+// natural width, leaving a big empty gap after a short "50000" when the row had room to spare.
+test('the filter controls grow to fill spare row width, and can still shrink back down when the row is narrow', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-filter-pair \{ flex: 1 1 auto; \}/, 'each pair must be allowed to grow into the row\'s own spare width');
+  assert.match(
+    css, /\.combat-filter-pair \.label \{ flex: 0 0 auto; \}/,
+    'the LABEL must never grow - only the control beside it should stretch, or "Zone" would end up with its own trailing whitespace'
+  );
+  assert.match(
+    css,
+    /\.combat-filter-pair \.sd-wrap,\n\.combat-filter-pair input\.text-input \{ flex: 1 1 auto; min-width: 80px; \}/,
+    'both the themed dropdown wrapper and the plain number input must grow, with a floor so they cannot shrink to nothing on a narrow line'
+  );
+  // Growing is per flex LINE, not per row overall - once wrapped, this same min-width is what
+  // "shrink back to how it is now when smaller" actually falls back to. No separate media query
+  // needed; the owner's own two requirements (grow AND shrink-back) are one flexbox behaviour.
 });
 
 module.exports = () => report('combat-tab');
