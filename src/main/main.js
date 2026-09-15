@@ -3388,17 +3388,35 @@ app.on('render-process-gone', (_event, contents, details) => {
   // (7 times in one evening, Sep 12) that this line alone could not yet distinguish main window
   // from overlay from a specific aura.
   let win = 'unknown';
+  let widgetId = null;
   try {
     const url = contents.getURL();
     if (url) {
       const [filePath, query] = url.split('?');
       const short = filePath.split(/[\\/]/).filter(Boolean).slice(-2).join('/');
       win = query ? `${short}?${query}` : short;
+      if (short === 'overlay/index.html' && query) {
+        widgetId = new URLSearchParams(query).get('widgetId');
+      }
     } else {
       win = '(no URL)';
     }
   } catch { /* contents may already be fully gone */ }
   debugLog(`SHUTDOWN: render-process-gone reason=${details.reason} exitCode=${details.exitCode} window=${win}`);
+  // Confirmed 14 Sep (real debug-log evidence): a crashed aura's window shell survives the
+  // renderer's death but never repaints and never gets recreated - it just sits there blank until
+  // the whole app is restarted. That is the "aura disappeared mid-play" report. Rebuild it right
+  // here instead of waiting for a relaunch - see widgetManager.recreateCrashedWindow's own comment
+  // for the full root-cause writeup (native GPU-process crashes, concentrated on the three
+  // frequently-resized standalone list auras).
+  if (widgetId) {
+    debugLog(`SHUTDOWN: recreating crashed aura window widgetId=${widgetId}`);
+    try {
+      widgetManager.recreateCrashedWindow(widgetId);
+    } catch (err) {
+      debugLog(`SHUTDOWN: recreateCrashedWindow failed: ${err && err.message}`);
+    }
+  }
 });
 app.on('child-process-gone', (_event, details) => {
   debugLog(`SHUTDOWN: child-process-gone type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`);

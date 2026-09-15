@@ -547,6 +547,23 @@ function deleteWidget(id) {
   return widgetStore.remove(id);
 }
 
+// A renderer crash (main.js's render-process-gone handler) kills the aura's content but does NOT
+// close the BrowserWindow itself - Electron leaves the shell sitting there blank forever, and
+// createWidgetWindow's own `if (windows.has(config.id)) return` guard means nothing would ever
+// touch it again short of restarting the whole app. That is exactly the "aura disappearing
+// mid-play" symptom reported live 14 Sep - confirmed from the debug log as real native crashes
+// (STATUS_ACCESS_VIOLATION / STATUS_BREAKPOINT exit codes) concentrated on the three
+// frequently-resized standalone list auras (Damage parser, Zone timer, Travel guide), not a JS
+// exception anywhere in this app's own code. Tears the dead shell down and rebuilds it exactly as
+// if the aura had just been unlocked, so it comes back on its own instead of staying blank.
+function recreateCrashedWindow(id) {
+  const win = windows.get(id);
+  if (win && !win.isDestroyed()) win.destroy();
+  windows.delete(id);
+  const config = widgetStore.getById(id);
+  if (config && isVisibleForActiveProfile(config)) createWidgetWindow(config);
+}
+
 function reorderWidgets(orderedIds) {
   return widgetStore.reorderWidgets(orderedIds);
 }
@@ -1696,6 +1713,7 @@ module.exports = {
   duplicateWidget,
   applyCodeToSelfBuffs,
   deleteWidget,
+  recreateCrashedWindow,
   reorderWidgets,
   getFolders,
   createFolder,
