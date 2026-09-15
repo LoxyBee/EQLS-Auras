@@ -1954,18 +1954,16 @@ select.sd-native {
 .sd-display:hover { border-color: var(--accent); }
 .sd-display:focus { outline: none; border-color: var(--accent); }
 .sd-display:disabled { opacity: 0.5; cursor: default; }
-/* Owner, 15 Sep: "the log file name field can be much shorter" - a scan's own label (its file
-   name plus the exact date/time it was scanned) has no natural length limit, and .sd-display's
-   own `max-width: 100%` only bounds it against its PARENT's width - inside a flex row with no
-   other constraint, a long enough label grows the whole control to fit itself, instead of eliding,
-   and shoves everything after it onto a wrapped line. A real cap plus .sd-text's existing
-   ellipsis is what actually shortens the FIELD, not just the text inside it; refreshDisplay()
-   above puts the untruncated label in `title` so hovering still shows the whole thing.
-   Capped on the WRAP itself, not just .sd-display inside it - once the pair is allowed to
-   flex-grow (owner, follow-up: "expand the text fields to match across the whole row"), capping
-   only the inner display would let the outer .sd-wrap keep growing anyway and leave dead space
-   inside it once .sd-display hit its own limit. */
-.sd-wrap:has(#combat-source-filter) { max-width: 220px; }
+/* Owner, 15 Sep: "the log file name field can be much shorter" (a scan's own label - its file
+   name plus the exact date/time it was scanned - has no natural length limit) was first fixed
+   with a flat 220px cap on the Source field specifically. Superseded by the later "scale the
+   fields to fill the gaps... dynamic field sizes" / "middle one doesn't fill the space" -
+   Zone and Min damage both flex-grow to fill the row (.combat-filter-pair), and a fixed cap on
+   Source alone left it looking stuck while its neighbours filled out. The flex-grow + .sd-text's
+   existing ellipsis together already solve the original problem without a hardcoded number: the
+   field now grows with its siblings, sharing the row like they do, and only elides if its own
+   share of that shared space is still narrower than the label - refreshDisplay() already puts the
+   untruncated label in `title` for exactly that case. */
 .sd-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sd-text.sd-placeholder { color: var(--ink-faint); }
 .sd-caret { color: var(--accent); font-size: 10px; flex: none; }

@@ -1257,20 +1257,21 @@ test('the list heading never calls the live session "past fights" - only Source 
   assert.match(renderFn[1], /updateListHeading\(\)/, 'render() must refresh the heading when the Source filter changes');
 });
 
-// Owner, 15 Sep: "the log file name field can be much shorter" - a scan's own source label (its
-// filename plus the exact date/time it was scanned) has no natural length limit, and the themed
-// dropdown's own `max-width: 100%` only bounds it against its PARENT, so a long enough label grew
-// the whole control to fit itself and shoved the rest of the row onto a wrapped line.
-test('the Source filter field itself is capped to a real width, with the full label still on hover', () => {
+// Owner, 15 Sep: "the log file name field can be much shorter" got a flat 220px cap on Source
+// specifically at first. Superseded by "scale the fields to fill the gaps... dynamic field sizes"
+// / "middle one doesn't fill the space" (screenshot: Zone and Min damage both filled the row,
+// Source alone stayed stuck at its old fixed cap) - a hardcoded cap on just one of three siblings
+// stopped making sense once all three were meant to share the row's width the same way.
+test('the Source field grows with its siblings instead of a fixed cap, with the full label still on hover', () => {
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
-  assert.match(
-    css, /\.sd-wrap:has\(#combat-source-filter\) \{ max-width: 220px; \}/,
-    'the WRAP itself must be capped, not just the inner .sd-display - once the pair can flex-grow, capping only the inner element would leave the outer wrap free to keep growing and dead space behind it'
+  assert.doesNotMatch(
+    css, /\.sd-wrap:has\(#combat-source-filter\)\s*\{/,
+    'the source-specific cap must actually be gone, not just widened - it must grow the same way Zone and Min damage do'
   );
   const searchDropdown = read('src', 'renderer', 'main-window', 'search-dropdown.js');
   assert.match(
     searchDropdown, /display\.title = text;/,
-    'a capped, ellipsis-truncated control needs the full value reachable somehow - a hover title is this app\'s standing convention for exactly that'
+    'a control that can still ellipsis-truncate on a narrow window needs the full value reachable somehow - a hover title is this app\'s standing convention for exactly that'
   );
 });
 
