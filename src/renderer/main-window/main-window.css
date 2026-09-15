@@ -2724,6 +2724,23 @@ body.sidebar-resizing .sidebar {
    `.row`s are short label+input pairs that are fine staying on one line. */
 .combat-filter-row { flex-wrap: wrap; row-gap: 6px; }
 
+/* Owner, 15 Sep, second follow-up: "you still did not move the buttons where i told you to" - a
+   row of its own beneath the heading still wasn't "the top row" in the sense meant; the heading's
+   own line is. Same header+actions pattern this app already uses for modal headers
+   (.modal-header: space-between, heading left, actions right), not a new one invented here. Wraps
+   at narrow widths rather than clipping - the actions drop to their own line under the heading
+   instead of running off the edge. */
+.combat-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px; /* replaces .card h3's own bottom margin, zeroed below so it doesn't double up */
+}
+.combat-list-header h3 { margin: 0; }
+.combat-list-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* The main list - one row per VISIT (a trip to a zone, however many fights it held), newest
    first. Kept to one line each on purpose - a full fight-by-fight table for every visit is what
    made this page unusably long; that detail lives one click away instead (see the two screens
@@ -2752,8 +2769,17 @@ body.sidebar-resizing .sidebar {
      shifts the whole string, damage total included, even though the string's own right edge stays
      put). Splitting them into their own tracks - the same fix already applied to the D-code and
      raid/group columns earlier the same day - lines up fight counts under fight counts and damage
-     totals under damage totals. */
-  grid-template-columns: 150px 36px minmax(80px, 1fr) 60px 70px auto;
+     totals under damage totals.
+     The damage column is a FIXED 80px, not `auto` (owner, 15 Sep, follow-up screenshot: "still not
+     column split and even") - each `.combat-visit-row` is its OWN separate grid container (not one
+     shared grid for the whole list), so an `auto` track sizes to THAT row's own content only, with
+     nothing forcing it to match any other row's width. `text-align: right` inside a box that is
+     already exactly as wide as its own text does nothing - the visible right edge still drifted
+     with every row's own damage-string length ("826.3k" vs "1.65m"), the exact bug the fight-count
+     split was supposed to have already fixed. A real fixed width is what actually lines up the
+     right edges across independent per-row grids; 80px comfortably fits this app's own widest
+     formatDamage() output ("999.99m"-shaped values) without needing to be `auto` at all. */
+  grid-template-columns: 150px 36px minmax(80px, 1fr) 60px 70px 80px;
   align-items: baseline;
   gap: 10px;
   padding: 7px 4px;

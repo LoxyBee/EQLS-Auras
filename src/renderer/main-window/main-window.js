@@ -10232,8 +10232,15 @@ function initCombatPage() {
   //     on, this just happens to be history so far)
   //   - the live session, a fight actually in progress right now: "Live fight" + the live badge
   function updateListHeading() {
-    if (!listHeadingText) return;
     const browsingScan = sourceFilter.value && sourceFilter.value !== LIVE_SOURCE;
+    // "Current zone is still there as a button when already on live, why?" (owner, 15 Sep) -
+    // fair: once a live fight is actually showing, the always-visible "Live now" row right below
+    // is already the way to open it, so a second button doing the identical thing was pure
+    // clutter. Still shown whenever nothing is currently live (its OTHER job - jumping to a
+    // zone's most recent COMPLETED visit, which the Live row can never do) or while browsing a
+    // scan (it's the only way back to live at all now that Back to live is gone).
+    if (jumpCurrentZoneBtn) jumpCurrentZoneBtn.style.display = (!browsingScan && lastKnownLiveFight) ? 'none' : '';
+    if (!listHeadingText) return;
     if (browsingScan) {
       listHeadingText.textContent = 'Scan results';
       if (listLiveBadge) listLiveBadge.style.display = 'none';

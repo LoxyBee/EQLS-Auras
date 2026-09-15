@@ -469,7 +469,7 @@ test('the class estimate is wired IPC -> preload -> renderer', () => {
 test('the visit list uses a real grid with fixed time/difficulty/raid-group columns, not flex natural-sizing', () => {
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
-    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 36px minmax\(80px, 1fr\) 60px 70px auto;/s,
+    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 36px minmax\(80px, 1fr\) 60px 70px 80px;/s,
     'the time, difficulty and raid/group columns must all be fixed widths so a short "today" time and a long dated one both start the zone name at the same x'
   );
 });
@@ -1181,23 +1181,36 @@ test('jumpToCurrentZone reports WHY nothing was found, instead of silently doing
 //   - "reading a log still says 'live'" / "and live version still says 'past fights'"
 // ---------------------------------------------------------------------------
 
-test('the action buttons and the filter controls are split across two wrapping rows, actions on top', () => {
+// Owner, 15 Sep, second follow-up after the first attempt (a row of its own below the heading)
+// still wasn't "the top row": "you still did not move the buttons where i told you to". The
+// actions now share the HEADING's own line (.combat-list-header, the same header+actions pattern
+// this app already uses for modal headers), not a separate row beneath it.
+test('the action buttons share the heading\'s own line, not a separate row below it', () => {
   const html = read('src', 'renderer', 'main-window', 'index.html');
   const start = html.indexOf('id="combat-list-screen"');
   const section = html.slice(start, html.indexOf('id="combat-visit-list"', start));
-  const rowMatches = [...section.matchAll(/<div class="row combat-filter-row">/g)];
-  assert.equal(rowMatches.length, 2, 'the actions and the filters (Zone/Source/Min damage) must be two separate rows, not one crowded one');
 
-  // "Put the nav buttons up on the top row" (owner, 15 Sep) - the actions row must come BEFORE the
-  // filters row in source order, not after.
-  const actionsIdx = section.indexOf('id="combat-jump-current-zone"');
-  const filtersIdx = section.indexOf('id="combat-zone-filter"');
-  assert.ok(actionsIdx !== -1 && filtersIdx !== -1 && actionsIdx < filtersIdx, 'the action buttons must render above the filter controls');
+  const headerStart = section.indexOf('class="combat-list-header"');
+  assert.ok(headerStart !== -1, 'combat-list-header is missing');
+  const headerEnd = section.indexOf('</div>', section.indexOf('class="combat-list-actions"'));
+  const header = section.slice(headerStart, headerEnd);
+  assert.match(header, /<h3/, 'the heading must live inside the header wrapper, alongside the actions');
+  assert.match(header, /id="combat-jump-current-zone"/, 'Current zone must be on the heading\'s own line');
+  assert.match(header, /id="combat-return-to-scan"/, 'Return to last scan must be on the heading\'s own line too');
+
+  // The filter controls (Zone/Source/Min damage) are a separate row, further down.
+  const filterRowMatches = [...section.matchAll(/<div class="row combat-filter-row">/g)];
+  assert.equal(filterRowMatches.length, 1, 'exactly one filters row - the actions no longer have a row of their own');
+  assert.ok(section.indexOf('class="row combat-filter-row"') > headerEnd, 'the filters row must come after the header, not before it');
 
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
+    css, /\.combat-list-header\s*\{[^}]*justify-content:\s*space-between/s,
+    'heading left, actions right - the same layout .modal-header already uses elsewhere in this app'
+  );
+  assert.match(
     css, /\.combat-filter-row\s*\{[^}]*flex-wrap:\s*wrap/s,
-    'must actually wrap on a narrow window, not just rely on being split into two rows - two rows can still each individually overflow'
+    'the filters row must still wrap on a narrow window'
   );
 });
 
@@ -1255,6 +1268,35 @@ test('the Source filter field itself is capped to a real width, with the full la
   assert.match(
     searchDropdown, /display\.title = text;/,
     'a capped, ellipsis-truncated control needs the full value reachable somehow - a hover title is this app\'s standing convention for exactly that'
+  );
+});
+
+// Owner, 15 Sep, third follow-up: "current zone is still there as a button when already on live,
+// why?" - fair, once a live fight is actually showing, the always-visible "Live now" row right
+// below is already the way to open it; a second button doing the identical thing was clutter.
+test('Current zone hides itself once a live fight is already showing, since the Live row already covers it', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function updateListHeading\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'updateListHeading has been restructured or removed');
+  assert.match(
+    fn[1], /jumpCurrentZoneBtn\.style\.display = \(!browsingScan && lastKnownLiveFight\) \? 'none' : '';/,
+    'must hide only when NOT browsing a scan AND a fight is actually live - it is still the only way back to live while browsing a scan, and still the only way to a completed visit while nothing is live'
+  );
+});
+
+// Owner, 15 Sep, follow-up screenshot: "still not column split and even" - the fight-count/damage
+// split (0zo) put damage in its own grid column, but left it `auto`-sized - see the CSS comment
+// for why that still drifted (`auto` sizes to EACH ROW's OWN content, since every `.combat-visit-
+// row` is its own separate grid container, not one shared grid for the whole list).
+test('the damage column is a fixed width, not `auto` - independent per-row grids do not share an auto track', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.doesNotMatch(
+    css, /\.combat-visit-row \{[^}]*grid-template-columns: [^;]*\bauto;/s,
+    'a track ending in `auto` sizes to THIS row\'s own content only - it cannot line up across separate per-row grid containers'
+  );
+  assert.match(
+    css, /\.combat-visit-row \{[^}]*grid-template-columns: 150px 36px minmax\(80px, 1fr\) 60px 70px 80px;/s,
+    'the damage column must be a real fixed width, same reasoning as every other column here'
   );
 });
 

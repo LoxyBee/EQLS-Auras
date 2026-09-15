@@ -1065,30 +1065,36 @@
                different while a fight was actually in progress. Both pieces are now their own
                elements (updateListHeading in main-window.js) so the text and the badge can change
                independently based on what's actually being shown. -->
-          <h3 title="Every fight tracked this session plus anything found by a scan above. Newest first. Closing the app clears this - it's not saved to disk.">
-            <span id="combat-list-heading-text">Past fights</span>
-            <span class="live-indicator" id="combat-list-live-badge" title="Always on while the app is open - a fight lands here automatically the moment it ends, no scan needed for anything happening right now.">● Live</span>
-          </h3>
-          <!-- Split into an actions row and a filters row, both allowed to wrap (owner, 15 Sep:
-               "the row of buttons is clipped on smaller screens, there is too many buttons in one
-               row") - six controls plus buttons in one unwrapping flex row ran off the edge of a
-               narrower window with no way to reach the clipped ones. Actions on top (owner,
-               follow-up: "put the nav buttons up on the top row"). -->
-          <div class="row combat-filter-row">
-            <!-- "Back to live" was dropped entirely (owner, 15 Sep: "back to live and current
-                 zone do the same thing basically" / "back to live still flashes the scanned log
-                 when already on live, it should do nothing or not be there") - jumpToCurrentZone
-                 always overwrites the zone filter with wherever you actually are regardless of
-                 what it started as, so once Back to live's own separate reset also cleared the
-                 Source filter, the two buttons became the same action in every case that mattered.
-                 "Current zone" now resets the Source filter itself (see jumpToCurrentZone) - one
-                 button back to live instead of two that only differed when nothing was different. -->
-            <button type="button" id="combat-jump-current-zone" title="Jump straight to the most recent activity in the zone you're in right now - clears the Source filter too, since a scanned file is never 'right now'.">Current zone</button>
-            <!-- Hidden until a scan has actually happened this session (nothing to return to
-                 otherwise), and again once you're already viewing it - see runScan/returnToScan/
-                 updateScanButtons in main-window.js. -->
-            <button type="button" id="combat-return-to-scan" style="display:none">Return to last scan</button>
+          <!-- Owner, 15 Sep, second follow-up: "you still did not move the buttons where i told
+               you to" - a row of its own beneath the heading (the previous attempt) was still not
+               "the top row" - the heading's own line is. Same header+actions pattern this app
+               already uses for modal headers (.modal-header: space-between, wraps at narrow
+               widths) rather than inventing a new one. -->
+          <div class="combat-list-header">
+            <h3 title="Every fight tracked this session plus anything found by a scan above. Newest first. Closing the app clears this - it's not saved to disk.">
+              <span id="combat-list-heading-text">Past fights</span>
+              <span class="live-indicator" id="combat-list-live-badge" title="Always on while the app is open - a fight lands here automatically the moment it ends, no scan needed for anything happening right now.">● Live</span>
+            </h3>
+            <div class="combat-list-actions">
+              <!-- "Back to live" was dropped entirely (owner, 15 Sep: "back to live and current
+                   zone do the same thing basically" / "back to live still flashes the scanned log
+                   when already on live, it should do nothing or not be there") - jumpToCurrentZone
+                   always overwrites the zone filter with wherever you actually are regardless of
+                   what it started as, so once Back to live's own separate reset also cleared the
+                   Source filter, the two buttons became the same action in every case that
+                   mattered. "Current zone" now resets the Source filter itself (see
+                   jumpToCurrentZone) - one button back to live instead of two that only differed
+                   when nothing was different. -->
+              <button type="button" id="combat-jump-current-zone" title="Jump straight to the most recent activity in the zone you're in right now - clears the Source filter too, since a scanned file is never 'right now'.">Current zone</button>
+              <!-- Hidden until a scan has actually happened this session (nothing to return to
+                   otherwise), and again once you're already viewing it - see runScan/returnToScan/
+                   updateScanButtons in main-window.js. -->
+              <button type="button" id="combat-return-to-scan" style="display:none">Return to last scan</button>
+            </div>
           </div>
+          <!-- The filters row is allowed to wrap on its own too (owner, 15 Sep: "the row of
+               buttons is clipped on smaller screens, there is too many buttons in one row") - six
+               controls in one unwrapping flex row ran off the edge of a narrower window. -->
           <div class="row combat-filter-row">
             <span class="label">Zone</span>
             <select id="combat-zone-filter" class="text-input"></select>
