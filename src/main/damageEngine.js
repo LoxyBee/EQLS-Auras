@@ -181,6 +181,12 @@ class DamageEngine extends EventEmitter {
     this.sinceZoneTotal = 0;
     this.sinceZoneStartedAt = null;
     this.sinceZoneLastAt = null;
+    // The since-zone counterpart of bySkillByAttacker (owner, 14 Sep: the Denon's Desperate Dirge
+    // red bar segment "disappears when viewing the aura for the zone total" - it was reading
+    // bySkillByAttacker, which reset() wipes on every fight end, so by the time the meter fell back
+    // to showing the zone-spanning total there was nothing left to attribute to Denon's). Same
+    // reset rule as sinceZoneByAttacker: only enterZone() clears it, never a fight ending.
+    this.sinceZoneBySkillByAttacker = new Map();
     // Owner, 3 Sep: "i want all the damage separated on the backend, so that when something happens
     // that can retroactively split this ... it still collects all the correct data and it isn't
     // lost." Every parsed damage line's ATTACKER is tallied here regardless of classification -
@@ -675,6 +681,15 @@ class DamageEngine extends EventEmitter {
     this.sinceZoneByAttacker.set(attacker, zrow);
     this.sinceZoneTotal += amount;
     this.sinceZoneLastAt = Math.max(this.sinceZoneLastAt || 0, at);
+    if (skill) {
+      const zBySkill = this.sinceZoneBySkillByAttacker.get(attacker) || new Map();
+      const zSrow = zBySkill.get(skill) || { damage: 0, hits: 0, crits: 0 };
+      zSrow.damage += amount;
+      zSrow.hits += 1;
+      if (critical) zSrow.crits += 1;
+      zBySkill.set(skill, zSrow);
+      this.sinceZoneBySkillByAttacker.set(attacker, zBySkill);
+    }
   }
 
   // The heal counterpart of _recordRaw - reuses the identical {damage, hits} map shape so
@@ -778,6 +793,7 @@ class DamageEngine extends EventEmitter {
     this.currentZoneDifficulty = normDifficulty;
     this.currentZoneRaidInstance = normRaidInstance;
     this.sinceZoneByAttacker.clear();
+    this.sinceZoneBySkillByAttacker.clear();
     this.rawZoneByName.clear();
     this.sinceZoneTotal = 0;
     this.sinceZoneStartedAt = null;
@@ -823,6 +839,7 @@ class DamageEngine extends EventEmitter {
       lastRealHitAt: this.lastRealHitAt,
       totalDamage: this.totalDamage,
       sinceZoneByAttacker: [...this.sinceZoneByAttacker],
+      sinceZoneBySkillByAttacker: [...this.sinceZoneBySkillByAttacker].map(([k, v]) => [k, [...v]]),
       sinceZoneTotal: this.sinceZoneTotal,
       sinceZoneStartedAt: this.sinceZoneStartedAt,
       sinceZoneLastAt: this.sinceZoneLastAt,
@@ -886,6 +903,15 @@ class DamageEngine extends EventEmitter {
     }
     for (const pair of Array.isArray(s.sinceZoneByAttacker) ? s.sinceZoneByAttacker : []) {
       if (Array.isArray(pair)) this.sinceZoneByAttacker.set(pair[0], pair[1]);
+    }
+    for (const pair of Array.isArray(s.sinceZoneBySkillByAttacker) ? s.sinceZoneBySkillByAttacker : []) {
+      if (Array.isArray(pair) && Array.isArray(pair[1])) {
+        const bySkill = this.sinceZoneBySkillByAttacker.get(pair[0]) || new Map();
+        for (const skillPair of pair[1]) {
+          if (Array.isArray(skillPair)) bySkill.set(skillPair[0], skillPair[1]);
+        }
+        this.sinceZoneBySkillByAttacker.set(pair[0], bySkill);
+      }
     }
     for (const pair of Array.isArray(s.rawFightByName) ? s.rawFightByName : []) {
       if (Array.isArray(pair)) this.rawFightByName.set(pair[0], pair[1]);
@@ -1384,8 +1410,8 @@ class DamageEngine extends EventEmitter {
   // meter too). Prefix match, not exact equality - the real cast line carries a rank numeral
   // ("Denon's Desperate Dirge V"), the documented case in gotcha #3, confirmed against the owner's
   // own log. Reads `bySkillByAttacker`, the same per-skill map _snapshotRows already draws from.
-  _denonDamageForAttacker(rawName) {
-    const bySkill = this.bySkillByAttacker.get(rawName);
+  _denonDamageForAttacker(rawName, skillMap) {
+    const bySkill = (skillMap || this.bySkillByAttacker).get(rawName);
     if (!bySkill) return 0;
     let sum = 0;
     for (const [skill, s] of bySkill) {
@@ -1394,8 +1420,14 @@ class DamageEngine extends EventEmitter {
     return sum;
   }
 
-  _aggregate(byAttacker, scope = 'all', pets = null, rawByName = null, metric = 'damage') {
+  _aggregate(byAttacker, scope = 'all', pets = null, rawByName = null, metric = 'damage', sinceZone = false) {
     byAttacker = this._reconcileRaw(byAttacker, rawByName, metric);
+    // Which per-skill map Denon's attribution reads - the current fight's (cleared every fight
+    // end) or the since-zone one (cleared only on a real zone change), matching whichever tally
+    // `byAttacker` itself came from. Getting this wrong is exactly the "the red disappears once
+    // you're looking at the zone total" bug (owner, 14 Sep) - the fight's own skill map is empty
+    // by the time the meter falls back to showing the zone-spanning total.
+    const skillMap = sinceZone ? this.sinceZoneBySkillByAttacker : this.bySkillByAttacker;
     const admittedList = (() => {
       try {
         return (this.groupFn() || []).map((n) => String(n).toLowerCase());
@@ -1433,7 +1465,7 @@ class DamageEngine extends EventEmitter {
     };
 
     for (const [rawName, r] of byAttacker) {
-      currentDenon = metric === 'damage' ? this._denonDamageForAttacker(rawName) : 0;
+      currentDenon = metric === 'damage' ? this._denonDamageForAttacker(rawName, skillMap) : 0;
       const key = rawName.toLowerCase();
       const isSelf = rawName === 'You' || key === 'you' || key === 'yourself';
       const petKey = ownPetKey.get(key);
@@ -1513,7 +1545,7 @@ class DamageEngine extends EventEmitter {
   // Single-metric tiles (damage-only or healing-only), built from one _aggregate() pass. See
   // _aggregate's own comment for the collapsing rules and the scope parameter.
   _tilesFrom(byAttacker, secs, sinceZone, scope = 'all', pets = null, rawByName = null, metric = 'damage') {
-    const agg1 = this._aggregate(byAttacker, scope, pets, rawByName, metric);
+    const agg1 = this._aggregate(byAttacker, scope, pets, rawByName, metric, sinceZone);
     const agg = agg1.agg;
     scope = agg1.scope;
     const fellBack = agg1.fellBack;

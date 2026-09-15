@@ -894,6 +894,24 @@ test('a rank suffix on the dirge is still recognised ("Denon\'s Desperate Dirge"
   assert.equal(row.denonPercent, 100, 'a rank numeral must not stop the prefix match');
 });
 
+test('denonPercent survives a fight ending - it must not vanish once the meter falls back to the since-zone total', () => {
+  // Reported live 14 Sep: "the denon's red disappears when viewing the aura for the zone total."
+  // Root cause: Denon's attribution read bySkillByAttacker, which reset() (a fight ending) wipes -
+  // so by the time getActive() fell back to the since-zone tally, there was nothing left to
+  // attribute. sinceZoneBySkillByAttacker is the fix: same accumulation as bySkillByAttacker, but
+  // only cleared by enterZone(), same rule as sinceZoneByAttacker itself.
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}You crush a fire giant for 10 points of damage.`, 500); // establish "a fire giant" as the enemy first
+  e.handleLine(`${T}A fire giant has taken 300 damage from Denon's Desperate Dirge V by Aristirin.`, 1000);
+  e.handleLine(`${T}Aristirin slashes a fire giant for 100 points of damage.`, 1500);
+  e.tick(20000); // past the fight timeout - reset() fires, clearing the fight-scoped skill map
+  const tiles = e.getActive(20000);
+  const row = tiles.find((t) => t.name === 'Aristirin');
+  assert.ok(row, 'Aristirin must still have a row in the since-zone fallback');
+  assert.equal(row.denonPercent, 75, 'the since-zone tile must still know its own Denon\'s share');
+});
+
 test('the heal side never gets a denonPercent - Denon\'s is a damage skill, not a heal', () => {
   const e = new DamageEngine();
   e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1000);
