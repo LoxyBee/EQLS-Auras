@@ -807,6 +807,13 @@ class DamageEngine extends EventEmitter {
       enemies: [...this.enemies],
       friends: [...this.friends],
       byAttacker: [...this.byAttacker],
+      // Owner, 14 Sep: "EVERY part of the app should have a recovery for accidental close" - these
+      // two were missing entirely, so a fight restored across a restart (byAttacker above) kept
+      // its correct totals but silently lost every attacker's per-skill breakdown the moment it
+      // was next captured to history (a restored-then-closed fight showed real damage numbers with
+      // an empty skill list underneath). Nested Map -> Map, so each needs its own two-level unwrap.
+      bySkillByAttacker: [...this.bySkillByAttacker].map(([k, v]) => [k, [...v]]),
+      bySkillByHealer: [...this.bySkillByHealer].map(([k, v]) => [k, [...v]]),
       enemyTargetsThisFight: [...this.enemyTargetsThisFight],
       castsByAttacker: [...this.castsByAttacker].map(([k, v]) => [k, [...v]]),
       rawFightByName: [...this.rawFightByName],
@@ -847,6 +854,27 @@ class DamageEngine extends EventEmitter {
     }
     for (const pair of Array.isArray(s.byAttacker) ? s.byAttacker : []) {
       if (Array.isArray(pair)) this.byAttacker.set(pair[0], pair[1]);
+    }
+    // Merge, not overwrite, matching castsByAttacker's own restore below - a fresh live fight can
+    // only have started AFTER the snapshot, so there is nothing to collide with in practice, but
+    // merging costs nothing and stays consistent with every other nested-map field here.
+    for (const pair of Array.isArray(s.bySkillByAttacker) ? s.bySkillByAttacker : []) {
+      if (Array.isArray(pair) && Array.isArray(pair[1])) {
+        const bySkill = this.bySkillByAttacker.get(pair[0]) || new Map();
+        for (const skillPair of pair[1]) {
+          if (Array.isArray(skillPair)) bySkill.set(skillPair[0], skillPair[1]);
+        }
+        this.bySkillByAttacker.set(pair[0], bySkill);
+      }
+    }
+    for (const pair of Array.isArray(s.bySkillByHealer) ? s.bySkillByHealer : []) {
+      if (Array.isArray(pair) && Array.isArray(pair[1])) {
+        const bySkill = this.bySkillByHealer.get(pair[0]) || new Map();
+        for (const skillPair of pair[1]) {
+          if (Array.isArray(skillPair)) bySkill.set(skillPair[0], skillPair[1]);
+        }
+        this.bySkillByHealer.set(pair[0], bySkill);
+      }
     }
     for (const n of Array.isArray(s.enemyTargetsThisFight) ? s.enemyTargetsThisFight : []) this.enemyTargetsThisFight.add(n);
     for (const pair of Array.isArray(s.castsByAttacker) ? s.castsByAttacker : []) {
@@ -893,6 +921,38 @@ class DamageEngine extends EventEmitter {
     const rows = this.byAttacker.size + this.sinceZoneByAttacker.size + this.byHealer.size + this.sinceZoneByHealer.size;
     if (rows) this.emit('activeChanged', this.getActive(now));
     return rows;
+  }
+
+  // The COMPLETED fight list (Combat tab's Past Fights), separate from captureState/restoreState
+  // above (the still-in-progress live fight/tally, capped at a 2-minute grace window because a
+  // stale LIVE total misrepresents something that is still supposedly happening). Owner, 14 Sep:
+  // "EVERY part of the app should have a recovery for accidental close, this is no exception" -
+  // history was the one part of this engine with no recovery at all, so any restart mid-session
+  // (this project's own test workflow restarts constantly to pick up each fix) silently lost every
+  // fight that hadn't happened to close out and get captured before the process died.
+  // Deliberately registered with NO staleness limit (see sessionRestore.js's own "a character
+  // state that never goes stale" case) - a completed fight is a permanent fact about what already
+  // happened, not a live estimate that ages like a buff countdown or an in-progress total. It is
+  // exactly as true a week later as it was the moment it was captured.
+  captureHistory() {
+    if (!this.history.length) return null;
+    return { history: this.history, historySeq: this._historySeq };
+  }
+
+  restoreHistory(d) {
+    if (!d || !Array.isArray(d.history) || !d.history.length) return 0;
+    // Newest-first already (see _captureHistory's unshift). In real use this.history is always
+    // still empty here - restoreAll() runs once at startup, before this run has captured anything
+    // of its own - but ordering it correctly regardless (this run's own entries, chronologically
+    // the newest, stay first; restored pre-restart entries go after) costs nothing and keeps the
+    // combined list genuinely newest-first if that ever changes.
+    this.history = [...this.history, ...d.history].slice(0, this._maxHistory);
+    // However far the restored ids reached, new captures must start past that point - otherwise
+    // the very next fight this run captures could reuse an id a restored (and displayed) entry
+    // already has.
+    const maxRestoredId = d.history.reduce((m, f) => Math.max(m, Number(f && f.id) || 0), 0);
+    this._historySeq = Math.max(this._historySeq || 0, Number(d.historySeq) || 0, maxRestoredId);
+    return d.history.length;
   }
 
   // A fight ends after a stretch with no counted DAMAGE - heals are not consulted (see _creditHeal

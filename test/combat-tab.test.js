@@ -900,5 +900,20 @@ test('renderMetricBars no longer clears its container up front - renderBars owns
   );
 });
 
+// Owner, 14 Sep: "EVERY part of the app should have a recovery for accidental close, this is no
+// exception" - Past Fights history had no session-restore registration at all until now. No
+// staleness limit (unlike the live 'damage' registration above it) - a completed fight is a
+// permanent fact, not an estimate that ages.
+test('the Combat tab\'s fight history is registered with sessionRestore, with no staleness limit', () => {
+  const main = read('src', 'main', 'main.js');
+  const start = main.indexOf(`sessionRestore.register('damageHistory'`);
+  assert.ok(start !== -1, 'damageHistory is not registered with sessionRestore');
+  const end = main.indexOf('});', start);
+  const block = main.slice(start, end);
+  assert.doesNotMatch(block, /maxGapMs/, 'a completed fight record does not go stale - it must not be given a staleness limit the way the live "damage" registration has');
+  assert.match(block, /capture: \(\) => damageEngine\.captureHistory\(\)/);
+  assert.match(block, /restore: \(d\) => damageEngine\.restoreHistory\(d\)/);
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

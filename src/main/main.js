@@ -275,6 +275,15 @@ sessionRestore.register('damage', {
   restore: (d) => damageEngine.restoreState(d),
 });
 
+// Combat tab's Past Fights history - NO staleness limit (owner, 14 Sep: "EVERY part of the app
+// should have a recovery for accidental close, this is no exception"). Unlike the live meter
+// above, a completed fight record is a permanent fact, not an estimate that ages - it is exactly
+// as true after a long restart as it was the moment it was captured.
+sessionRestore.register('damageHistory', {
+  capture: () => damageEngine.captureHistory(),
+  restore: (d) => damageEngine.restoreHistory(d),
+});
+
 // First-aggro line - 2 minutes, same reasoning ("X pulled" goes stale fast).
 sessionRestore.register('firstAggro', {
   maxGapMs: 2 * MIN,

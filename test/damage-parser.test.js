@@ -835,6 +835,31 @@ test('a fight that timed out during the gap is dropped on restore, but the sets 
   assert.ok(b.enemies.has('a zol ghoul knight'), 'the bootstrap set is kept so the next pull is not lost');
 });
 
+// Owner, 14 Sep: "EVERY part of the app should have a recovery for accidental close" - found while
+// looking into a real report of missing history: bySkillByAttacker/bySkillByHealer were never part
+// of captureState() at all, so a fight restored across a restart kept the right TOTAL per attacker
+// but silently lost their per-skill breakdown the moment it was later captured to history.
+test('captureState / restoreState also carries each attacker\'s per-skill breakdown, not just their flat total', () => {
+  const a = new DamageEngine();
+  a.handleLine(`${T}You slash a zol ghoul knight for 40 points of damage.`, 1000);
+  a.handleLine(`${T}You slash a zol ghoul knight for 60 points of damage.`, 1500);
+  const snap = a.captureState();
+
+  const b = new DamageEngine();
+  b.restoreState(snap, 30_000, 5000);
+  b.setOptions({ fightTimeoutSec: 10 });
+  b.tick(5000 + 20000); // past the idle timeout - closes the restored fight, capturing it to history
+  const hist = b.getHistory();
+  assert.equal(hist.length, 1, 'the restored fight must actually reach history once it closes');
+  const fight = b.getHistoryFight(hist[0].id);
+  const you = fight.rows.find((r) => r.name === 'You');
+  assert.ok(you, 'the restored attacker must still be in the captured fight');
+  const melee = you.bySkill.find((s) => s.skill === 'Melee');
+  assert.ok(melee, 'the per-skill breakdown must survive the restart, not just the flat damage total');
+  assert.equal(melee.damage, 100);
+  assert.equal(melee.hits, 2);
+});
+
 test('nothing counted -> captureState is null', () => {
   assert.equal(new DamageEngine().captureState(), null);
 });

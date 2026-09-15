@@ -591,5 +591,85 @@ test('getLiveFight never mutates state - checking it repeatedly does not end or 
   assert.equal(live.totalDamage, 15, 'repeated reads must not have reset or otherwise disturbed the running fight');
 });
 
+// ---------------------------------------------------------------------------
+// captureHistory / restoreHistory (owner, 14 Sep: "EVERY part of the app should have a recovery
+// for accidental close, this is no exception") - traced from a real report: a fight was played out
+// in full (~9 minutes of real combat) but never showed up in Past Fights, because the app had
+// restarted again before that fight's idle timeout ever fired, and history has always been
+// in-memory only. Separate from captureState/restoreState (the still-LIVE fight/tally, capped at
+// a short grace window) - a COMPLETED fight is a permanent fact, so this has no staleness limit.
+// ---------------------------------------------------------------------------
+
+test('captureHistory / restoreHistory carries completed fights across a restart', () => {
+  const a = new DamageEngine();
+  a.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 1000);
+  endFight(a, 1000);
+  const snap = a.captureHistory();
+  assert.ok(snap);
+
+  const b = new DamageEngine();
+  const n = b.restoreHistory(snap);
+  assert.equal(n, 1);
+  const hist = b.getHistory();
+  assert.equal(hist.length, 1);
+  assert.equal(hist[0].totalDamage, 100);
+});
+
+test('nothing captured yet -> captureHistory is null, and restoreHistory is a harmless no-op on garbage', () => {
+  assert.equal(new DamageEngine().captureHistory(), null);
+  const b = new DamageEngine();
+  assert.equal(b.restoreHistory(null), 0);
+  assert.equal(b.restoreHistory({}), 0);
+  assert.equal(b.restoreHistory({ history: [] }), 0);
+  assert.equal(b.getHistory().length, 0);
+});
+
+test('restored fights are merged newest-first ahead of anything this run has already captured itself', () => {
+  const a = new DamageEngine();
+  a.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1000);
+  endFight(a, 1000);
+  const snap = a.captureHistory(); // one restored fight, "from before the restart"
+
+  const b = new DamageEngine();
+  b.handleLine(`${T}You crush a zol ghoul knight for 20 points of damage.`, 500000); // this run's OWN fight, captured first
+  endFight(b, 500000);
+  b.restoreHistory(snap);
+  const hist = b.getHistory();
+  assert.equal(hist.length, 2);
+  // getHistory() is newest-first; the restored (older, pre-restart) fight belongs at the END.
+  assert.equal(hist[0].totalDamage, 20, 'this run\'s own fight is the newer one and must stay first');
+  assert.equal(hist[1].totalDamage, 10);
+});
+
+test('restored fight ids never collide with ids this run generates afterwards', () => {
+  const a = new DamageEngine();
+  a.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 1000);
+  endFight(a, 1000);
+  const snap = a.captureHistory();
+  const restoredId = snap.history[0].id;
+
+  const b = new DamageEngine();
+  b.restoreHistory(snap);
+  b.handleLine(`${T}You crush a zol ghoul knight for 20 points of damage.`, 500000);
+  endFight(b, 500000);
+  const ids = b.getHistory().map((f) => f.id);
+  assert.equal(new Set(ids).size, ids.length, 'no two history entries may share an id');
+  assert.equal(ids.filter((id) => id === restoredId).length, 1, 'the restored entry\'s own id must appear exactly once - reused by a later capture is a collision, and this is just checking the setup is what it claims to be');
+});
+
+test('respects the same _maxHistory cap restoring already-live history does', () => {
+  const a = new DamageEngine({ maxHistory: 2 });
+  for (let i = 0; i < 3; i++) {
+    a.handleLine(`${T}You crush a zol ghoul knight for ${10 + i} points of damage.`, 1000 + i * 100000);
+    endFight(a, 1000 + i * 100000);
+  }
+  const snap = a.captureHistory();
+  assert.equal(snap.history.length, 2, 'the source engine\'s own cap already trimmed it to 2');
+
+  const b = new DamageEngine({ maxHistory: 2 });
+  b.restoreHistory(snap);
+  assert.equal(b.getHistory().length, 2);
+});
+
 module.exports = () => report('damage-history');
 if (require.main === module) report('damage-history').then((n) => process.exit(n ? 1 : 0));
