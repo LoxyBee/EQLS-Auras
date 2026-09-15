@@ -9850,6 +9850,17 @@ function initCombatPage() {
     // on every hit. Everything is now built into a detached fragment first and swapped in as one
     // atomic replacement at the end - the old content stays on screen right up until the new
     // content is ready, so there is never a moment with nothing there at all.
+    // Owner, 14 Sep: "per skill breakdown should remain open on live view" - every tick rebuilds
+    // every row as a brand new <details> element (see above), which defaults to closed - a player
+    // whose skill breakdown you had open would snap shut on the very next hit with no way to leave
+    // it open and actually read it. Read which player NAMES are currently expanded straight off
+    // the container's own (about-to-be-replaced) DOM before touching anything - the "memory" lives
+    // in the real DOM between renders, nothing extra to track or clean up.
+    const openNames = new Set(
+      [...container.querySelectorAll('details.combat-bar-row[open]')]
+        .map((d) => d.querySelector('.combat-bar-name')?.textContent)
+        .filter(Boolean)
+    );
     const top = rows.length ? rows[0].damage : 0;
     // Class estimate (owner, 13-14 Sep): only ever built from skills this attacker was actually
     // seen CASTING, scoped to just this fight (or visit) - never damage, which can't say who cast
@@ -9863,6 +9874,7 @@ function initCombatPage() {
     rows.forEach((row, i) => {
       const details = document.createElement('details');
       details.className = 'combat-bar-row';
+      if (openNames.has(row.name)) details.open = true;
       const summary = document.createElement('summary');
 
       summary.appendChild(span(row.name, 'combat-bar-name'));

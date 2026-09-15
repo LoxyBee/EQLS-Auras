@@ -944,5 +944,23 @@ test('setDetailToolbarLive swaps Back and the live badge - exactly one visible a
   assert.match(renderer, /async function openVisit\(visit\) \{[\s\S]*?setDetailToolbarLive\(false\)/);
 });
 
+// Owner, 14 Sep: "per skill breakdown should remain open on live view" - confirmed live: "it
+// refreshes on reload and closes." Every tick rebuilds every player row as a brand new <details>
+// element (see the atomic-swap fix above), which defaults to closed - a skill breakdown you had
+// open to actually read snapped shut on the very next hit.
+test('an expanded player\'s skill breakdown stays open across a re-render, read straight off the DOM before rebuilding', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(
+    fn[1], /const openNames = new Set\(\s*\[\.\.\.container\.querySelectorAll\('details\.combat-bar-row\[open\]'\)\]/,
+    'must read which rows are currently open from the container\'s own existing DOM, not a name it was told separately'
+  );
+  const openNamesIdx = fn[1].indexOf('const openNames');
+  const classEstimatesIdx = fn[1].indexOf('await Promise.all(');
+  assert.ok(openNamesIdx !== -1 && openNamesIdx < classEstimatesIdx, 'open names must be captured BEFORE the container\'s content is touched (the class-estimate await runs after, but nothing before this point may replace the DOM being read)');
+  assert.match(fn[1], /if \(openNames\.has\(row\.name\)\) details\.open = true;/, 'a row whose name was open before must be re-opened on the new element replacing it');
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));
