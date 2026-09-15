@@ -962,5 +962,45 @@ test('an expanded player\'s skill breakdown stays open across a re-render, read 
   assert.match(fn[1], /if \(openNames\.has\(row\.name\)\) details\.open = true;/, 'a row whose name was open before must be re-opened on the new element replacing it');
 });
 
+// ---------------------------------------------------------------------------
+// Owner, 14 Sep: "i would like denon's desperate dirge to have it's own coloured section of the
+// combat log. it should still be part of damage totals, but the coloured bar should have the
+// denon's section coloured bright red." Confirmed against the owner's real log (spelling and rank-
+// suffix shape: "Denon's Desperate Dirge V", "...IX", etc. - matches gotcha #3's documented case).
+// ---------------------------------------------------------------------------
+
+test('a player\'s own damage bar splits into a bright-red Denon\'s Desperate Dirge slice plus the rest, same total width', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(renderer, /const DENON_SKILL_PREFIX = "Denon's Desperate Dirge"/);
+  assert.match(renderer, /const DENON_BAR_COLOR = '#ff2b2b'/);
+  assert.match(
+    renderer, /const isDenonSkill = \(skill\) => typeof skill === 'string' && skill\.startsWith\(DENON_SKILL_PREFIX\)/,
+    'must match by prefix, not exact equality - the real cast line carries a rank numeral ("... Dirge V")'
+  );
+
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(
+    fn[1], /const denonDamage = \(row\.bySkill \|\| \[\]\)\.filter\(\(s\) => isDenonSkill\(s\.skill\)\)\.reduce\(\(sum, s\) => sum \+ s\.damage, 0\)/,
+    'must sum every Denon\'s-shaped skill entry for this row, not just look for one exact name'
+  );
+  assert.match(fn[1], /denonSeg\.style\.background = DENON_BAR_COLOR/);
+  assert.match(
+    fn[1], /restSeg\.style\.width = `\$\{row\.damage > 0 \? \(\(row\.damage - denonDamage\) \/ row\.damage\) \* 100 : 100\}%`/,
+    'the two segments together must still fill the row\'s own full share of the bar - this is a split, not a reduction of the total'
+  );
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-bar-fill\s*\{[^}]*display:\s*flex/s, 'the fill must be a flex row to lay its segments out side by side');
+});
+
+test('the same fixed red is used for Denon\'s own row in the per-skill breakdown, not the rotating colour index', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(
+    renderer, /fill\.style\.background = isDenonSkill\(s\.skill\) \? DENON_BAR_COLOR : BAR_COLORS\[si % BAR_COLORS\.length\]/,
+    'Denon\'s must render the same colour wherever it shows up, not whatever BAR_COLORS happens to land on for its position in the list'
+  );
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

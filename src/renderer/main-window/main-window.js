@@ -9759,6 +9759,15 @@ function initCombatPage() {
   // A fixed, readable rotation - not per-class (this app doesn't know classes), just enough colour
   // variety that ten bars in a row are easy to tell apart, matching the reference image's look.
   const BAR_COLORS = ['#c9a13a', '#4a9fd8', '#6fc47a', '#d8794a', '#9a7fd8', '#d84a8f', '#4ad8c4', '#d8d24a'];
+  // Owner, 14 Sep: "i would like denon's desperate dirge to have it's own coloured section of the
+  // combat log... it should still be part of damage totals, but the coloured bar should have the
+  // denon's section coloured bright red" - a fixed colour, not the rotating BAR_COLORS index, and
+  // NOT excluded from anything (row.damage/DPS/% math is all untouched - purely a rendering split).
+  // `startsWith`, not an exact match: the cast-begin line carries a rank numeral ("... Dirge V"),
+  // gotcha #3's own documented case, so the skill name recorded per-hit does too.
+  const DENON_SKILL_PREFIX = "Denon's Desperate Dirge";
+  const DENON_BAR_COLOR = '#ff2b2b';
+  const isDenonSkill = (skill) => typeof skill === 'string' && skill.startsWith(DENON_SKILL_PREFIX);
   let lastHistory = []; // flat, cached so the zone filter can re-render without re-fetching
 
   // Damage / Healing / Both (owner, 14 Sep: "buttons... top level, and not attached to specific
@@ -9884,7 +9893,22 @@ function initCombatPage() {
       const fill = document.createElement('div');
       fill.className = 'combat-bar-fill';
       fill.style.width = `${top > 0 ? Math.max(2, (row.damage / top) * 100) : 0}%`;
-      fill.style.background = BAR_COLORS[i % BAR_COLORS.length];
+      // Denon's Desperate Dirge gets its own bright-red slice of THIS player's own bar, still
+      // part of the same total width - a stacked split, not a separate bar, so "how much of my
+      // damage was the dirge" reads at a glance without changing what the bar's own length means.
+      const denonDamage = (row.bySkill || []).filter((s) => isDenonSkill(s.skill)).reduce((sum, s) => sum + s.damage, 0);
+      if (denonDamage > 0 && row.damage > 0) {
+        const denonSeg = document.createElement('div');
+        denonSeg.className = 'combat-bar-fill-segment';
+        denonSeg.style.width = `${(denonDamage / row.damage) * 100}%`;
+        denonSeg.style.background = DENON_BAR_COLOR;
+        fill.appendChild(denonSeg);
+      }
+      const restSeg = document.createElement('div');
+      restSeg.className = 'combat-bar-fill-segment';
+      restSeg.style.width = `${row.damage > 0 ? ((row.damage - denonDamage) / row.damage) * 100 : 100}%`;
+      restSeg.style.background = BAR_COLORS[i % BAR_COLORS.length];
+      fill.appendChild(restSeg);
       track.appendChild(fill);
 
       // The class estimate is the FIRST text in the bar, its own column ahead of the damage
@@ -9959,7 +9983,10 @@ function initCombatPage() {
         const fill = document.createElement('div');
         fill.className = 'combat-skill-fill';
         fill.style.width = `${skillTop > 0 ? Math.max(2, (s.damage / skillTop) * 100) : 0}%`;
-        fill.style.background = BAR_COLORS[si % BAR_COLORS.length];
+        // The same fixed bright red as the player bar's own Denon's slice above - one skill, one
+        // colour, wherever it shows up, rather than whatever BAR_COLORS' rotating index happens
+        // to land on for this particular row's position in the list.
+        fill.style.background = isDenonSkill(s.skill) ? DENON_BAR_COLOR : BAR_COLORS[si % BAR_COLORS.length];
         track.appendChild(fill);
         trackArea.appendChild(track);
         const amount = document.createElement('div');
