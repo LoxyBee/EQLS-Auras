@@ -1002,5 +1002,48 @@ test('the same fixed red is used for Denon\'s own row in the per-skill breakdown
   );
 });
 
+// ---------------------------------------------------------------------------
+// "There is no way to browse the fights after you have scanned a log" (owner, 14 Sep,
+// screenshot-confirmed: 1778 fights found by a scan, Past Fights list showing nothing). Two bugs
+// in the same report - a scan landed you on whatever zone/detail state the tab happened to be in
+// already, and a filtered-to-zero list looked identical to "nothing has happened", with no way to
+// tell the two apart.
+// ---------------------------------------------------------------------------
+
+test('a successful scan clears the zone filter and returns to the list, so the scan\'s own fights are immediately visible', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function runScan\(filePath\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'runScan has been restructured');
+  const successBranch = fn[1].slice(fn[1].indexOf('result.ok'));
+  assert.match(successBranch, /showList\(\)/, 'a scan must not leave you stranded on an old detail view');
+  assert.match(successBranch, /zoneFilter\.value = ''/, 'a stale zone filter is exactly what hid the 1778 scanned fights in the report');
+  assert.match(successBranch, /await loadHistory\(\)/, 'the filter reset must happen before the reload, not after');
+});
+
+test('the empty-list message tells apart "nothing has happened" from "your filters hide everything"', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  // render() is a common name reused elsewhere in this file (the module scope's own top-level
+  // render, an unrelated per-widget one) - scope the search to inside initCombatPage so this can't
+  // accidentally match one of those instead.
+  const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
+  const fn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'render() has been restructured');
+  assert.match(fn[1], /!lastHistory\.length/, 'must check the UNFILTERED count for the "nothing yet" case');
+  assert.match(fn[1], /!filtered\.length/, 'must separately check the FILTERED count - a scan can fill lastHistory while filtered is still empty');
+  assert.match(fn[1], /No fights match the current zone\/min-damage filters/, 'the filtered-to-zero case needs its own, different message');
+});
+
+test('a "Back to live" button resets both filters and jumps back to whatever is live, distinct from "Current zone"', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-back-to-live"/);
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function backToLive\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'backToLive has been restructured');
+  assert.match(fn[1], /zoneFilter\.value = ''/);
+  assert.match(fn[1], /minDamageInput\.value = String\(DEFAULT_MIN_DAMAGE\)/, 'must reset the damage floor too, not just the zone - that is what makes it different from Current zone');
+  assert.match(fn[1], /await jumpToCurrentZone\(\)/);
+  assert.match(renderer, /backToLiveBtn\.addEventListener\('click', backToLive\)/, 'the button must actually be wired');
+});
+
 module.exports = () => report('combat-tab');
 if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

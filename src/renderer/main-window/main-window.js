@@ -9747,6 +9747,7 @@ function initCombatPage() {
   const scanFileBtn = document.getElementById('combat-scan-file');
   const scanStatus = document.getElementById('combat-scan-status');
   const jumpCurrentZoneBtn = document.getElementById('combat-jump-current-zone');
+  const backToLiveBtn = document.getElementById('combat-back-to-live');
   const olderBtn = document.getElementById('combat-visit-older');
   const newerBtn = document.getElementById('combat-visit-newer');
   const liveRow = document.getElementById('combat-live-row');
@@ -10306,6 +10307,17 @@ function initCombatPage() {
     }
   }
 
+  // "Have a button to return to live" (owner, 14 Sep, alongside the scan-filter fix above) - the
+  // way out of browsing a scanned log (or any old zone/damage filter) back to ordinary live
+  // tracking. Resets BOTH filters to their defaults first, unlike jumpToCurrentZone alone - that
+  // one narrows the zone filter to wherever you currently are but leaves an already-changed
+  // min-damage floor untouched, which isn't "back to normal", just "back to this zone".
+  async function backToLive() {
+    zoneFilter.value = '';
+    minDamageInput.value = String(DEFAULT_MIN_DAMAGE);
+    await jumpToCurrentZone();
+  }
+
   // Flat history (arrives newest-first from the backend) -> visits, EARLIEST first (owner, 13
   // Sep) - both the visit list itself and each visit's own fights inside it, so a visit's fight
   // list reads "pull 1, pull 2, ..." top to bottom the way it actually happened. A fight with no
@@ -10479,13 +10491,28 @@ function initCombatPage() {
   }
 
   function render() {
-    historyEmpty.style.display = lastHistory.length ? 'none' : '';
     populateZoneFilter(lastHistory);
     const filter = zoneFilter.value;
     const floor = minDamage();
     const filtered = lastHistory.filter((f) => (
       (!filter || (f.zone || UNKNOWN_ZONE) === filter) && f.totalDamage >= floor
     ));
+    // Two different reasons the list can be empty, and they read very differently: nothing has
+    // happened yet at all, versus real fights exist but the zone/min-damage filters hide every one
+    // of them. Reported live 14 Sep - after scanning a log that found 1778 fights, the list still
+    // showed nothing because the zone filter was left on a specific zone from before the scan, and
+    // the blank space gave no hint why. Previously this only ever checked the UNFILTERED count, so
+    // a filtered-to-zero result looked identical to "the app hasn't seen anything" instead of
+    // telling you your filters are the reason.
+    if (!lastHistory.length) {
+      historyEmpty.textContent = 'No fights yet this session - still watching your log.';
+      historyEmpty.style.display = '';
+    } else if (!filtered.length) {
+      historyEmpty.textContent = 'No fights match the current zone/min-damage filters - try widening them.';
+      historyEmpty.style.display = '';
+    } else {
+      historyEmpty.style.display = 'none';
+    }
     renderList(buildVisits(filtered));
   }
 
@@ -10511,6 +10538,16 @@ function initCombatPage() {
         setScanStatus(`Could not scan that log: ${result.reason}`, true);
       } else {
         setScanStatus(`Found ${result.fights} fight${result.fights === 1 ? '' : 's'} in ${result.label}.`, false);
+        // Reported live 14 Sep: "there is no way to browse the fights after you have scanned a
+        // log" - a scan can find fights from any zone at any date, but the zone filter was left
+        // wherever it happened to be beforehand (often the CURRENT zone, from a jump-to-current-
+        // zone click) and silently hid everything the scan just found. Clearing the zone filter
+        // and returning to the list screen is what actually makes "scanning opens up the menu to
+        // get back to the fight summary automatically" true - a scan's whole point is browsing
+        // fights, so land somewhere that shows them instead of wherever the tab happened to be.
+        liveFightOpen = false;
+        showList();
+        zoneFilter.value = '';
         await loadHistory();
       }
     } finally {
@@ -10550,6 +10587,7 @@ function initCombatPage() {
   const navBtnCombat = document.getElementById('combat-nav-btn');
   if (navBtnCombat) navBtnCombat.addEventListener('click', jumpToCurrentZone);
   if (jumpCurrentZoneBtn) jumpCurrentZoneBtn.addEventListener('click', jumpToCurrentZone);
+  if (backToLiveBtn) backToLiveBtn.addEventListener('click', backToLive);
   if (olderBtn) {
     olderBtn.addEventListener('click', () => {
       if (currentVisitIndex > 0) openVisit(currentZoneVisits[currentVisitIndex - 1]);
