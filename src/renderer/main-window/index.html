@@ -1069,10 +1069,26 @@
             <span id="combat-list-heading-text">Past fights</span>
             <span class="live-indicator" id="combat-list-live-badge" title="Always on while the app is open - a fight lands here automatically the moment it ends, no scan needed for anything happening right now.">● Live</span>
           </h3>
-          <!-- Split into a filters row and an actions row, both allowed to wrap (owner, 15 Sep:
+          <!-- Split into an actions row and a filters row, both allowed to wrap (owner, 15 Sep:
                "the row of buttons is clipped on smaller screens, there is too many buttons in one
-               row") - six controls plus three buttons in one unwrapping flex row ran off the edge
-               of a narrower window with no way to reach the clipped ones. -->
+               row") - six controls plus buttons in one unwrapping flex row ran off the edge of a
+               narrower window with no way to reach the clipped ones. Actions on top (owner,
+               follow-up: "put the nav buttons up on the top row"). -->
+          <div class="row combat-filter-row">
+            <!-- "Back to live" was dropped entirely (owner, 15 Sep: "back to live and current
+                 zone do the same thing basically" / "back to live still flashes the scanned log
+                 when already on live, it should do nothing or not be there") - jumpToCurrentZone
+                 always overwrites the zone filter with wherever you actually are regardless of
+                 what it started as, so once Back to live's own separate reset also cleared the
+                 Source filter, the two buttons became the same action in every case that mattered.
+                 "Current zone" now resets the Source filter itself (see jumpToCurrentZone) - one
+                 button back to live instead of two that only differed when nothing was different. -->
+            <button type="button" id="combat-jump-current-zone" title="Jump straight to the most recent activity in the zone you're in right now - clears the Source filter too, since a scanned file is never 'right now'.">Current zone</button>
+            <!-- Hidden until a scan has actually happened this session (nothing to return to
+                 otherwise), and again once you're already viewing it - see runScan/returnToScan/
+                 updateScanButtons in main-window.js. -->
+            <button type="button" id="combat-return-to-scan" style="display:none">Return to last scan</button>
+          </div>
           <div class="row combat-filter-row">
             <span class="label">Zone</span>
             <select id="combat-zone-filter" class="text-input"></select>
@@ -1087,19 +1103,6 @@
             <select id="combat-source-filter" class="text-input"></select>
             <span class="label" title="Hides any fight below this total damage - trash mobs and stray hits, not a real pull. Set to 0 to show everything.">Min damage</span>
             <input type="number" id="combat-min-damage" class="text-input" min="0" step="1000" style="width:7em">
-          </div>
-          <div class="row combat-filter-row">
-            <button type="button" id="combat-jump-current-zone" title="Jump straight to the most recent activity in the zone you're in right now.">Current zone</button>
-            <!-- Back to live / Return to last scan are mutually exclusive, not both-always-visible
-                 (owner, 15 Sep: "back to live button flashes the return to last scan when already
-                 on the live tab") - showing "get back to live" while already viewing the live
-                 session, right next to a button inviting you into a scan, was confusing and
-                 redundant. updateScanButtons() in main-window.js toggles between them based on
-                 whether the current filters are already "the default live view". -->
-            <button type="button" id="combat-back-to-live" style="display:none" title="Clear every filter and jump back to whatever's live right now - the way back out after browsing a scanned log.">Back to live</button>
-            <!-- Hidden until a scan has actually happened this session (nothing to return to
-                 otherwise) - see runScan/returnToScan in main-window.js. -->
-            <button type="button" id="combat-return-to-scan" style="display:none">Return to last scan</button>
           </div>
           <p class="scan-status" id="combat-jump-status" style="display:none"></p>
           <!-- Owner, 14 Sep: "i need some way to be able to live read the current combat from

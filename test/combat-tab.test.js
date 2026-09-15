@@ -1081,17 +1081,28 @@ test('the empty-list message tells apart "nothing has happened" from "your filte
   assert.match(fn[1], /No fights match the current zone\/source\/min-damage filters/, 'the filtered-to-zero case needs its own, different message');
 });
 
-test('a "Back to live" button resets both filters and jumps back to whatever is live, distinct from "Current zone"', () => {
+// Owner, 15 Sep: "back to live and current zone do the same thing basically" - true, because
+// jumpToCurrentZone always overwrites the zone filter with wherever you actually are regardless
+// of what it started as, so a separate "Back to live" button that reset the zone filter first was
+// never doing anything jumpToCurrentZone wasn't about to redo anyway. The only genuine difference
+// was the Source-filter reset, folded directly into jumpToCurrentZone instead - one button, not
+// two that only ever differed when there was nothing to differ about. This also closes "back to
+// live still flashes the scanned log when already on live, it should do nothing or not be there" -
+// there is no longer a second button that could be a no-op in the first place.
+test('"Back to live" was removed - Current zone resets the Source filter itself instead', () => {
   const html = read('src', 'renderer', 'main-window', 'index.html');
-  assert.match(html, /id="combat-back-to-live"/);
+  assert.doesNotMatch(html, /id="combat-back-to-live"/, 'the redundant button must actually be gone, not just hidden');
+
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
-  const fn = renderer.match(/async function backToLive\(\) \{([\s\S]*?)\n  \}\n/);
-  assert.ok(fn, 'backToLive has been restructured');
-  assert.match(fn[1], /zoneFilter\.value = ''/);
-  assert.match(fn[1], /sourceFilter\.value = ''/, 'must reset the source filter too, or a scan you were browsing keeps hiding live fights');
-  assert.match(fn[1], /minDamageInput\.value = String\(DEFAULT_MIN_DAMAGE\)/, 'must reset the damage floor too, not just the zone - that is what makes it different from Current zone');
-  assert.match(fn[1], /await jumpToCurrentZone\(\)/);
-  assert.match(renderer, /backToLiveBtn\.addEventListener\('click', backToLive\)/, 'the button must actually be wired');
+  assert.doesNotMatch(renderer, /function backToLive\(\)/, 'backToLive must be gone, not left as dead code');
+  assert.doesNotMatch(renderer, /backToLiveBtn/, 'no dangling reference to a button that no longer exists');
+
+  const fn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'jumpToCurrentZone has been restructured or removed');
+  assert.match(
+    fn[1], /sourceFilter\.value = '';/,
+    'jumping to your current zone must mean live data, not a scanned file frozen in the past - the Source filter has to reset here now that Back to live is gone'
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -1170,12 +1181,18 @@ test('jumpToCurrentZone reports WHY nothing was found, instead of silently doing
 //   - "reading a log still says 'live'" / "and live version still says 'past fights'"
 // ---------------------------------------------------------------------------
 
-test('the filter controls and action buttons are split across two wrapping rows, not one', () => {
+test('the action buttons and the filter controls are split across two wrapping rows, actions on top', () => {
   const html = read('src', 'renderer', 'main-window', 'index.html');
   const start = html.indexOf('id="combat-list-screen"');
   const section = html.slice(start, html.indexOf('id="combat-visit-list"', start));
   const rowMatches = [...section.matchAll(/<div class="row combat-filter-row">/g)];
-  assert.equal(rowMatches.length, 2, 'the filters (Zone/Source/Min damage) and the action buttons must be two separate rows, not one crowded one');
+  assert.equal(rowMatches.length, 2, 'the actions and the filters (Zone/Source/Min damage) must be two separate rows, not one crowded one');
+
+  // "Put the nav buttons up on the top row" (owner, 15 Sep) - the actions row must come BEFORE the
+  // filters row in source order, not after.
+  const actionsIdx = section.indexOf('id="combat-jump-current-zone"');
+  const filtersIdx = section.indexOf('id="combat-zone-filter"');
+  assert.ok(actionsIdx !== -1 && filtersIdx !== -1 && actionsIdx < filtersIdx, 'the action buttons must render above the filter controls');
 
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
@@ -1184,27 +1201,20 @@ test('the filter controls and action buttons are split across two wrapping rows,
   );
 });
 
-test('Back to live and Return to last scan are mutually exclusive, not both visible together', () => {
-  const html = read('src', 'renderer', 'main-window', 'index.html');
-  assert.match(html, /id="combat-back-to-live" style="display:none"/, 'must start hidden - the default view has nothing to reset');
-
+test('Return to last scan hides itself once you are already viewing that exact scan', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/function updateScanButtons\(\) \{([\s\S]*?)\n  \}\n/);
   assert.ok(fn, 'updateScanButtons has been restructured or removed');
   assert.match(
-    fn[1], /const atDefaultFilters = !zoneFilter\.value && sourceIsLive && minDamage\(\) === DEFAULT_MIN_DAMAGE;/,
-    'Back to live must only show when there is actually something to reset (a non-default zone, source, or damage floor)'
-  );
-  assert.match(fn[1], /backToLiveBtn\.style\.display = atDefaultFilters \? 'none' : ''/);
-  assert.match(
     fn[1], /const alreadyOnLastScan = !!lastScanLabel && sourceFilter\.value === lastScanLabel;/,
-    'Return to last scan must hide itself once you are already viewing that exact scan - offering to go somewhere you already are is the "flash" that was reported'
+    'must hide itself once you are already viewing that exact scan - offering to go somewhere you already are is the "flash" that was reported'
   );
+  assert.match(fn[1], /returnToScanBtn\.style\.display = \(lastScanLabel && !alreadyOnLastScan\) \? '' : 'none';/);
 
   const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
   const renderFn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
   assert.ok(renderFn, 'render() has been restructured');
-  assert.match(renderFn[1], /updateScanButtons\(\)/, 'render() must actually call it, or the buttons never update when filters change');
+  assert.match(renderFn[1], /updateScanButtons\(\)/, 'render() must actually call it, or the button never updates when filters change');
 });
 
 test('the "Past fights" heading reacts to what is actually being shown - a scan, live idle, or a live fight', () => {
@@ -1229,6 +1239,23 @@ test('the "Past fights" heading reacts to what is actually being shown - a scan,
   const renderFn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
   assert.ok(renderFn, 'render() has been restructured');
   assert.match(renderFn[1], /updateListHeading\(\)/, 'render() must also refresh the heading when the Source filter itself changes, not only on a live tick');
+});
+
+// Owner, 15 Sep: "the log file name field can be much shorter" - a scan's own source label (its
+// filename plus the exact date/time it was scanned) has no natural length limit, and the themed
+// dropdown's own `max-width: 100%` only bounds it against its PARENT, so a long enough label grew
+// the whole control to fit itself and shoved the rest of the row onto a wrapped line.
+test('the Source filter field itself is capped to a real width, with the full label still on hover', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.sd-wrap:has\(#combat-source-filter\) \.sd-display \{ max-width: 220px; \}/,
+    'the FIELD must be capped, not just rely on the text inside it eliding within an unbounded box'
+  );
+  const searchDropdown = read('src', 'renderer', 'main-window', 'search-dropdown.js');
+  assert.match(
+    searchDropdown, /display\.title = text;/,
+    'a capped, ellipsis-truncated control needs the full value reachable somehow - a hover title is this app\'s standing convention for exactly that'
+  );
 });
 
 module.exports = () => report('combat-tab');

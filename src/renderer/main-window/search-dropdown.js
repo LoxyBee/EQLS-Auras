@@ -65,9 +65,16 @@
     }
     function refreshDisplay() {
       const label = currentLabel();
-      textEl.textContent = label || (sel.options[0] ? sel.options[0].textContent : '');
+      const text = label || (sel.options[0] ? sel.options[0].textContent : '');
+      textEl.textContent = text;
       textEl.classList.toggle('sd-placeholder', !label);
       display.disabled = sel.disabled;
+      // A control with a real max-width (see the Combat tab's Source filter, a scanned log's own
+      // filename+timestamp can run long) ellipsis-truncates .sd-text - the full value still needs
+      // to be reachable somehow, and a native title hover is the same convention this app already
+      // uses everywhere else for "more detail on hover, not clutter on the page" (owner's standing
+      // rule). Harmless on a control with no max-width - nothing ever truncates there.
+      display.title = text;
     }
 
     function renderList() {

@@ -9752,7 +9752,6 @@ function initCombatPage() {
   const scanFileBtn = document.getElementById('combat-scan-file');
   const scanStatus = document.getElementById('combat-scan-status');
   const jumpCurrentZoneBtn = document.getElementById('combat-jump-current-zone');
-  const backToLiveBtn = document.getElementById('combat-back-to-live');
   const olderBtn = document.getElementById('combat-visit-older');
   const newerBtn = document.getElementById('combat-visit-newer');
   const liveRow = document.getElementById('combat-live-row');
@@ -10345,6 +10344,13 @@ function initCombatPage() {
   // Falls back to just showing the (freshly reloaded) list when neither exists.
   async function jumpToCurrentZone() {
     setJumpStatus('', false);
+    // "Current zone and back to live do the same thing basically" (owner, 15 Sep) - true, once
+    // "back to live"'s own Source reset is folded in here: this always overwrites the zone filter
+    // with wherever you actually are regardless of what it started as, so the only thing a
+    // separate "back to live" button ever did differently was clear the Source filter first. Doing
+    // that here instead removes the redundant button - "what's happening in my zone right now"
+    // cannot mean a scanned file's fixed-in-time contents either way.
+    sourceFilter.value = '';
     await loadHistory();
     const live = await window.eqTracker.getLiveFight();
     if (live) {
@@ -10377,22 +10383,10 @@ function initCombatPage() {
     }
   }
 
-  // "Have a button to return to live" (owner, 14 Sep, alongside the scan-filter fix above) - the
-  // way out of browsing a scanned log (or any old zone/damage filter) back to ordinary live
-  // tracking. Resets BOTH filters to their defaults first, unlike jumpToCurrentZone alone - that
-  // one narrows the zone filter to wherever you currently are but leaves an already-changed
-  // min-damage floor untouched, which isn't "back to normal", just "back to this zone".
-  async function backToLive() {
-    zoneFilter.value = '';
-    sourceFilter.value = '';
-    minDamageInput.value = String(DEFAULT_MIN_DAMAGE);
-    await jumpToCurrentZone();
-  }
-
   // "After scanning a log and leaving back to live, you need a way to return to last scan as
-  // well" (owner, 14 Sep). The mirror of backToLive above - re-applies the remembered scan's own
-  // Source filter (and clears the zone/damage floor back to "everything that scan found") instead
-  // of making you re-scan the same file just to look at it again.
+  // well" (owner, 14 Sep). Re-applies the remembered scan's own Source filter (and clears the
+  // zone/damage floor back to "everything that scan found") instead of making you re-scan the
+  // same file just to look at it again.
   function returnToScan() {
     if (!lastScanLabel) return;
     liveFightOpen = false;
@@ -10605,21 +10599,15 @@ function initCombatPage() {
     return Number.isFinite(n) && n >= 0 ? n : 0;
   }
 
-  // "Back to live button flashes the return to last scan when already on the live tab" (owner, 15
-  // Sep) - both buttons used to be visible together all the time once a scan had happened, so
-  // clicking "Back to live" while there was nothing to actually reset (already on the default
-  // live view) was a confusing no-op sitting right next to an equally-visible invitation into a
-  // scan. Made mutually exclusive instead, gated on whether there is currently anything to reset -
-  // exactly one of the two shows at a time, same "show only the button that does something right
-  // now" idea as the detail toolbar's Back/Live-badge swap.
+  // Reported live 15 Sep: with "Back to live" gone (see jumpToCurrentZone's own comment on why -
+  // it was doing the same thing "Current zone" already does once the Source reset moved there),
+  // this only has one button left to manage - hide "Return to last scan" once you are already
+  // viewing that exact scan, since offering to go somewhere you already are is exactly the
+  // confusing no-op the owner reported.
   function updateScanButtons() {
-    const sourceIsLive = !sourceFilter.value || sourceFilter.value === LIVE_SOURCE;
-    const atDefaultFilters = !zoneFilter.value && sourceIsLive && minDamage() === DEFAULT_MIN_DAMAGE;
-    if (backToLiveBtn) backToLiveBtn.style.display = atDefaultFilters ? 'none' : '';
-    if (returnToScanBtn) {
-      const alreadyOnLastScan = !!lastScanLabel && sourceFilter.value === lastScanLabel;
-      returnToScanBtn.style.display = (lastScanLabel && !alreadyOnLastScan) ? '' : 'none';
-    }
+    if (!returnToScanBtn) return;
+    const alreadyOnLastScan = !!lastScanLabel && sourceFilter.value === lastScanLabel;
+    returnToScanBtn.style.display = (lastScanLabel && !alreadyOnLastScan) ? '' : 'none';
   }
 
   function render() {
@@ -10744,7 +10732,6 @@ function initCombatPage() {
   const navBtnCombat = document.getElementById('combat-nav-btn');
   if (navBtnCombat) navBtnCombat.addEventListener('click', jumpToCurrentZone);
   if (jumpCurrentZoneBtn) jumpCurrentZoneBtn.addEventListener('click', jumpToCurrentZone);
-  if (backToLiveBtn) backToLiveBtn.addEventListener('click', backToLive);
   if (returnToScanBtn) returnToScanBtn.addEventListener('click', returnToScan);
   if (olderBtn) {
     olderBtn.addEventListener('click', () => {
