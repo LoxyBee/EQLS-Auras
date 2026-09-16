@@ -670,6 +670,36 @@ class LogRotationService {
   }
 
   /**
+   * Would trimAtBoundary() actually move anything? Read-only - no lock/quiet check, no writes.
+   *
+   * The large-log nudge (QOL #24, logService.js) fires purely on raw file size, with no idea
+   * whether the log genuinely spans a prior week. On a log that weekly auto-rotation is already
+   * keeping clean, a single big raiding week can cross that size threshold on its own - and
+   * "Trim to this week" would then find nothing before the boundary and do nothing at all
+   * (trimAtBoundary's own `offset === 0` exit). Prompting someone into an action that
+   * accomplishes nothing is worse than not prompting, so the host checks this first and skips
+   * the nudge entirely when trimming would be a no-op - reported live, 15 Sep: the size nudge
+   * kept firing near the end of every week even with auto-rotation on, because the two features
+   * never talked to each other.
+   */
+  wouldTrimAnything(filePath, now = new Date()) {
+    try {
+      if (!filePath || !fs.existsSync(filePath)) return false;
+      const size = fs.statSync(filePath).size;
+      if (!size) return false;
+      const cutMs = rotationCutBefore(now, this.resetRule).getTime();
+      const fd = fs.openSync(filePath, 'r');
+      try {
+        return findWeekStartOffset(fd, size, cutMs) > 0;
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch (err) {
+      return false;
+    }
+  }
+
+  /**
    * Split ONE log at this week's reset: archive everything before it, keep everything after.
    *
    * The manual, any-number-of-weeks counterpart to rotateIfDue. The weekly rotation REFUSES a log

@@ -40,6 +40,9 @@ class SessionRestore {
     this._store = null;
     this._debugLog = () => {};
     this._timer = null;
+    // The serialized `parts` from the last actual write - see saveNow()'s early-out. Starts null
+    // so the very first save always writes, whatever it contains.
+    this._lastPartsJSON = null;
   }
 
   setStore(store) {
@@ -74,6 +77,18 @@ class SessionRestore {
 
   // Call directly on before-quit: the debounced save may still be pending and that is exactly the
   // moment the snapshot matters most.
+  //
+  // SKIPS THE WRITE ENTIRELY WHEN NOTHING ACTUALLY CHANGED. This file is one shared JSON blob for
+  // every registered part - including things like the Combat tab's scanned-log history, which can
+  // run tens of MB and yet rarely changes within a session. Every OTHER part's own activity (a
+  // buff landing, a hit landing on the damage meter) calls scheduleSave() too, so without this,
+  // that large unchanging part got rewritten to disk in full on every one of those debounced
+  // saves - real, sustained disk I/O for content that was byte-identical to what was already
+  // there. Comparing the serialized `parts` (not `savedAt`, which always differs) catches this;
+  // holding off on updating `savedAt` when skipped is correct, not a bug - a snapshot nothing has
+  // touched in ten minutes really is ten minutes stale, not freshly saved because a timer happened
+  // to fire. Every part's own entries already carry absolute timestamps for exactly this reason
+  // (see the header comment), so nothing here depends on `savedAt` beyond the one gap check.
   saveNow() {
     if (this._timer) {
       clearTimeout(this._timer);
@@ -89,7 +104,12 @@ class SessionRestore {
         this._debugLog(`sessionRestore: capture "${id}" threw: ${(e && e.message) || e}`);
       }
     }
-    this._store.saveJson(SNAPSHOT_KEY, { savedAt: Date.now(), parts });
+    const partsJSON = JSON.stringify(parts);
+    if (partsJSON === this._lastPartsJSON) return;
+    this._lastPartsJSON = partsJSON;
+    // pretty:false - see store.js's saveJson comment. Nobody reads this file by hand, and it can
+    // hold tens of MB; indentation alone was measured at roughly 3x the byte count for no benefit.
+    this._store.saveJson(SNAPSHOT_KEY, { savedAt: Date.now(), parts }, { pretty: false });
   }
 
   // One startup pass. Each part restores independently.

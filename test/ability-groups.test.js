@@ -240,5 +240,45 @@ test('every stance/invocation the owner named is in the built roster with a land
   }
 });
 
+// Reported live 15 Sep, alongside buffEngine/customTimerEngine's own tick fixes: sweep() used to
+// broadcast whenever ANYTHING was active OR cooling down, and a stance/invocation has no expiry
+// of its own ("stays whatever you last set it to until you change it") - so once ANY stance was
+// ever picked, sweep() broadcast every second for the rest of the session with nothing new to
+// say. A real activation already fires its own change via _activate(); sweep() only needs to
+// separately notice a cooldown running out with no event to mark the moment.
+test('sweep() stays silent once a stance is active and its cooldown has already cleared - nothing left to tick', () => {
+  const slots = [{ barId: 'bar1', index: 0, group: 'stance', toggleName: 'Evasive Stance', toggleDurationSec: 6 }];
+  const { tracker, changes } = makeTracker(slots);
+  // An active stance with its cooldown already long gone - the steady state most of a session
+  // actually sits in once the initial 6s cooldown has cleared. Set directly rather than via
+  // _activate(), which always seeds a fresh cooldown, to isolate exactly this state.
+  tracker.activeSlotByGroup.stance = 'bar1:0';
+  tracker.activeNameByGroup.stance = 'Evasive Stance';
+  assert.equal(tracker.cooldownByGroup.stance.size, 0, 'sanity check: no cooldown entry exists');
+
+  tracker.sweep();
+  assert.deepEqual(changes, [], 'an active-with-no-cooldown stance has nothing ticking - sweep must not broadcast for it forever');
+});
+
+test('sweep() still broadcasts once, right as a cooldown actually finishes', () => {
+  const slots = [
+    { barId: 'bar1', index: 0, group: 'stance', toggleName: 'Evasive Stance', toggleDurationSec: 6 },
+    { barId: 'bar1', index: 1, group: 'stance', toggleName: 'Offensive Stance', toggleDurationSec: 6 },
+  ];
+  const { tracker, changes } = makeTracker(slots);
+  tracker.handleLine(`${TS}You assume an evasive stance.`); // puts BOTH gems on cooldown (mutual exclusion)
+  changes.length = 0;
+
+  for (const group of Object.values(tracker.cooldownByGroup)) {
+    for (const entry of group.values()) entry.expiresAt = Date.now() - 1;
+  }
+  tracker.sweep();
+  assert.deepEqual(changes, [true], 'the cooldown finishing is a real change and must still be broadcast exactly once');
+
+  changes.length = 0;
+  tracker.sweep(); // now fully pruned and nothing active-with-cooldown remains
+  assert.deepEqual(changes, [], 'and it goes quiet again afterward, not on a repeating heartbeat');
+});
+
 module.exports = () => report('ability-groups');
 if (require.main === module) report('ability-groups').then((n) => process.exit(n ? 1 : 0));

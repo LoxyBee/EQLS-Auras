@@ -1288,5 +1288,68 @@ test('trimAtBoundary: whole file older than the boundary -> archive all, keep no
   assert.equal(fs.readFileSync(live, 'utf8'), '', 'the live log is now empty');
 });
 
+// ---------------------------------------------------------------------------
+// wouldTrimAnything - so the size-based nudge can stay quiet when trimming would be a no-op
+// ---------------------------------------------------------------------------
+//
+// Reported live, 15 Sep: the "your log is getting large" nudge (QOL #24) kept firing near the end
+// of every week even with weekly auto-rotation on, because it only ever checked raw file size - a
+// single big week of play can cross 50 MB on its own, and "Trim to this week" then finds nothing
+// before the boundary and does nothing at all. wouldTrimAnything is the read-only check that lets
+// the host know that in advance, without touching the file.
+
+test('wouldTrimAnything is false on a log that is already just this week - the nudge would be a no-op', () => {
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': '[Thu Aug 27 21:00:00 2026] this week only\r\n' });
+  const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  s.setResetRule({ weekday: 2, hour: 11 });
+  assert.equal(s.wouldTrimAnything(path.join(dir, 'eqlog_Baxa_rivervale.txt'), new Date(2026, 7, 29, 12, 0, 0)), false);
+});
+
+test('wouldTrimAnything is true when the log genuinely holds a prior week', () => {
+  const dir = tempLogs({
+    'eqlog_Baxa_rivervale.txt':
+      '[Sun Aug 24 20:00:00 2026] old week\r\n' +
+      '[Tue Aug 25 15:00:00 2026] this week\r\n',
+  });
+  const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  s.setResetRule({ weekday: 2, hour: 11 });
+  assert.equal(s.wouldTrimAnything(path.join(dir, 'eqlog_Baxa_rivervale.txt'), new Date(2026, 7, 29, 12, 0, 0)), true);
+});
+
+test('wouldTrimAnything is false on an empty or missing log, without throwing', () => {
+  const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  assert.equal(s.wouldTrimAnything(null), false);
+  assert.equal(s.wouldTrimAnything('C:/nowhere/eqlog_Baxa_rivervale.txt'), false);
+  const dir = tempLogs({ 'eqlog_Baxa_rivervale.txt': '' });
+  assert.equal(s.wouldTrimAnything(path.join(dir, 'eqlog_Baxa_rivervale.txt')), false);
+});
+
+test('wouldTrimAnything never writes to the file - a dry-run check, not a trim', () => {
+  const dir = tempLogs({
+    'eqlog_Baxa_rivervale.txt':
+      '[Sun Aug 24 20:00:00 2026] old week\r\n[Tue Aug 25 15:00:00 2026] this week\r\n',
+  });
+  const live = path.join(dir, 'eqlog_Baxa_rivervale.txt');
+  const before = fs.readFileSync(live);
+  const s = new LogRotationService({ loadJson: () => ({}), saveJson: () => {} });
+  s.setResetRule({ weekday: 2, hour: 11 });
+  s.wouldTrimAnything(live, new Date(2026, 7, 29, 12, 0, 0));
+  assert.deepEqual(fs.readFileSync(live), before, 'the file must be unchanged');
+  assert.ok(!fs.existsSync(path.join(dir, 'Archive')), 'no archive was created by a dry-run check');
+});
+
+test('the launch archive nudge is gated on wouldTrimAnything, not size alone', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  const at = main.indexOf("ipcMain.handle('log:launchArchiveCheck'");
+  const handler = main.slice(at, main.indexOf('ipcMain.handle', at + 1));
+  // Anchored on the actual conditional-and-return shape, not just the word appearing anywhere
+  // (a mention in a comment must not satisfy this - caught by mutation-testing this exact test).
+  assert.match(
+    handler,
+    /if\s*\(\s*!\s*logRotationService\.wouldTrimAnything\([^)]*\)\s*\)\s*return\s*\{\s*prompt:\s*false\s*\}/,
+    'the nudge must not fire when trimming would do nothing'
+  );
+});
+
 module.exports = () => report('log-rotation');
 if (require.main === module) report('log-rotation').then((n) => process.exit(n ? 1 : 0));

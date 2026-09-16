@@ -775,7 +775,10 @@ function getZoneEnteredAt() {
 // unexplained reason is the failure this project keeps having and a zone rule is a new way to
 // have it.
 function isVisibleInCurrentZone(config) {
-  return isVisibleInZone(config.visibleInZones, currentZone);
+  return isVisibleInZone(config.visibleInZones, currentZone, {
+    visibleInRaid: config.visibleInRaid,
+    visibleInGroup: config.visibleInGroup,
+  });
 }
 
 function shouldBeOnScreen(config) {
@@ -812,14 +815,17 @@ function shouldBeOnScreen(config) {
 // Hiding a window does NOT silence it. A hidden overlay keeps receiving the engine broadcasts
 // and keeps running render(), which is exactly where the alert sounds fire.
 //
-// The rule follows shouldBeOnScreen's two kinds of rule. Profile membership is the ON/OFF
-// switch, so an aura the current loadout has switched off is off, full stop - silent as well as
-// invisible. The SCREEN-CLEARING overrides (master hide, auto-hide while EverQuest is unfocused)
+// The rule follows shouldBeOnScreen's two kinds of rule. Profile membership AND the zone/Raid/
+// Group content filter are both real ON/OFF switches, so an aura the current loadout has
+// switched off, or that doesn't apply to the content you're currently in, is off, full stop -
+// silent as well as invisible (reported live 15 Sep: a "Raid" aura kept alerting by sound in an
+// unrelated dungeon even though it was correctly hidden on screen). The SCREEN-CLEARING overrides
+// (master hide, auto-hide while EverQuest is unfocused) are a different kind of thing and
 // deliberately do NOT silence anything: hearing that a buff is about to drop while you are
 // tabbed out is most of the reason to have a sound at all.
 function shouldBeAudible(config) {
   if (soundsMuted) return false;
-  return isVisibleForActiveProfile(config);
+  return isVisibleForActiveProfile(config) && isVisibleInCurrentZone(config);
 }
 
 function pushAudible(config) {
@@ -838,8 +844,9 @@ function applyVisibility(config) {
   } else if (win) {
     win.hide();
   }
-  // After the show/hide, and on every path that has a window: a profile switch is the one thing
-  // that changes this, and it comes through here for every widget.
+  // After the show/hide, and on every path that has a window: a profile switch or a zone/Raid/
+  // Group content-filter change are what can change this, and both come through here for every
+  // widget (applyProfileVisibility / applyZoneChange / setVisibleIn{Zones,Raid,Group} above).
   pushAudible(config);
 }
 
@@ -1301,6 +1308,22 @@ function setAlwaysOn(id, enabled) {
 function setVisibleInZones(id, zones) {
   const clean = Array.isArray(zones) ? zones.filter((z) => typeof z === 'string' && z.trim()) : [];
   const config = widgetStore.update(id, { visibleInZones: clean });
+  if (config) applyVisibility(config);
+  pushConfigChanged(id);
+  return config;
+}
+
+// Content-type gates alongside the specific zone list above - "Raid" and "Group" toggles next to
+// "Only in:". Same note 21 reasoning: visibility can change right here, so re-apply it rather than
+// only pushing a config update.
+function setVisibleInRaid(id, enabled) {
+  const config = widgetStore.update(id, { visibleInRaid: !!enabled });
+  if (config) applyVisibility(config);
+  pushConfigChanged(id);
+  return config;
+}
+function setVisibleInGroup(id, enabled) {
+  const config = widgetStore.update(id, { visibleInGroup: !!enabled });
   if (config) applyVisibility(config);
   pushConfigChanged(id);
   return config;
@@ -1774,6 +1797,8 @@ module.exports = {
   setAlwaysOn,
   setShowOnAllProfiles,
   setVisibleInZones,
+  setVisibleInRaid,
+  setVisibleInGroup,
   applyZoneChange,
   getCurrentZone,
   getZoneEnteredAt,

@@ -90,9 +90,12 @@ test('the collapse is class-driven, never topic-body display (the child-of-displ
 
 test('the collapsed topic headers carry a value-preview summary that is actually wired', () => {
   // B follow-up: each .topic-summary span shows the topic's current setting without opening it.
-  // Panel topics (Position/Size/Text/Layout) are filled by refreshPanelTopicSummaries, run at the
-  // end of applySettingsPanelShape and on any input/change in the panel.
-  for (const id of ['topic-panel-position-summary', 'topic-panel-size-summary', 'topic-panel-text-summary', 'topic-panel-layout-summary']) {
+  // Panel topics (Size/Text/Layout) are filled by refreshPanelTopicSummaries, run at the end of
+  // applySettingsPanelShape and on any input/change in the panel. Position USED to carry one too
+  // ("20% opacity" next to the "Position" title) - removed 15 Sep at the owner's explicit
+  // instruction ("remove this i said"): the opacity value now lives only next to the Opacity
+  // slider itself (widget-opacity-value), not duplicated into the topic header.
+  for (const id of ['topic-panel-size-summary', 'topic-panel-text-summary', 'topic-panel-layout-summary']) {
     assert.match(html, new RegExp(`id="${id}"`), `${id} span is missing`);
   }
   assert.match(js, /function refreshPanelTopicSummaries\(\)/);

@@ -141,8 +141,12 @@ test('no zones set means everywhere', () => {
 test('an unknown zone SHOWS a gated aura, it does not hide it', () => {
   // The one that matters most. The app cannot know the zone until the player changes zone.
   assert.equal(visibleIn(['Befallen'], null), true);
-  // And widgetManager uses the shared rule rather than keeping a copy that could drift from it.
-  assert.match(managerSrc, /return isVisibleInZone\(config\.visibleInZones, currentZone\);/);
+  // And widgetManager uses the shared rule rather than keeping a copy that could drift from it -
+  // now also passing the Raid/Group content-type gates alongside the specific zone list.
+  assert.match(
+    managerSrc,
+    /return isVisibleInZone\(config\.visibleInZones, currentZone, \{\s*visibleInRaid: config\.visibleInRaid,\s*visibleInGroup: config\.visibleInGroup,\s*\}\);/
+  );
 });
 
 test('the store fails open too', () => {
@@ -289,6 +293,73 @@ test('knownZones/currentZone/HOTKEY_LABELS live in the SAME function as their re
   assert.doesNotMatch(detectionPanelFn[1], /let currentZone/, 'currentZone still declared in both functions');
   assert.doesNotMatch(detectionPanelFn[1], /let knownZones/, 'knownZones still declared in both functions');
   assert.doesNotMatch(detectionPanelFn[1], /getHideHotkey/, 'the hotkey-hint code was left behind, split from HOTKEY_LABELS again');
+});
+
+// ---------------------------------------------------------------------------
+// "Raid"/"Group" content-type toggles, alongside the specific zone list - 15 Sep.
+// ---------------------------------------------------------------------------
+
+const { isRaidContentZone, isGroupContentZone } = require('../src/shared/zoneVisibility');
+
+test('isRaidContentZone/isGroupContentZone classify off the zone string alone', () => {
+  // " - Group" IS the raid-lockout instance (raidNamedTracker.js's own GROUP_INSTANCE_RE, 13 Sep -
+  // confirmed against a full week of real logs), regardless of how misleading that reads.
+  assert.equal(isRaidContentZone('The Plane of Fear - Group'), true);
+  assert.equal(isRaidContentZone('The Plane of Fear - Group 3 (Fused)'), true);
+  assert.equal(isGroupContentZone('The Plane of Fear - Group'), false, 'a raid instance is not ALSO group content');
+
+  // A bare tier suffix with no "- Group" is an ordinary dungeon/group run.
+  assert.equal(isGroupContentZone('Befallen 1 (Awakened)'), true);
+  assert.equal(isRaidContentZone('Befallen 1 (Awakened)'), false);
+
+  // Open world / no suffix at all is neither.
+  assert.equal(isRaidContentZone('The Plane of Fear'), false);
+  assert.equal(isGroupContentZone('The Plane of Fear'), false);
+  assert.equal(isRaidContentZone(null), false);
+  assert.equal(isGroupContentZone(null), false);
+});
+
+test('isVisibleInZone: the Raid/Group filters are additional, independent OR gates alongside the zone list', () => {
+  // Neither the zone list nor a content filter set - never gated, current zone irrelevant.
+  assert.equal(visibleIn([], 'Anywhere'), true);
+  assert.equal(visibleIn([], null, {}), true);
+
+  // Content-type filter alone, no explicit zone list.
+  assert.equal(visibleIn([], 'The Plane of Hate - Group', { visibleInRaid: true }), true);
+  assert.equal(visibleIn([], 'Befallen 1 (Awakened)', { visibleInRaid: true }), false, "a group instance isn't raid content");
+  assert.equal(visibleIn([], 'Befallen 1 (Awakened)', { visibleInGroup: true }), true);
+  assert.equal(visibleIn([], 'The Plane of Hate - Group', { visibleInGroup: true }), false, "a raid instance isn't group content");
+  assert.equal(visibleIn([], 'The Plane of Hate', { visibleInRaid: true, visibleInGroup: true }), false, 'open world matches neither');
+
+  // Unknown zone still means SHOW even with a content filter on, same polarity as the zone list.
+  assert.equal(visibleIn([], null, { visibleInRaid: true }), true);
+
+  // Either the zone list OR a content filter matching is enough - "shows in any of them".
+  assert.equal(visibleIn(['Lower Guk'], 'The Plane of Hate - Group', { visibleInRaid: true }), true);
+  assert.equal(visibleIn(['Lower Guk'], 'Some Other Zone', { visibleInRaid: true }), false);
+});
+
+test('the Raid/Group toggles are wired end to end: store defaults, IPC, preload, manager, UI', () => {
+  const w = newStore().create('Mine');
+  assert.equal(w.visibleInRaid, false);
+  assert.equal(w.visibleInGroup, false);
+
+  assert.match(preloadSrc, /setWidgetVisibleInRaid:/);
+  assert.match(preloadSrc, /setWidgetVisibleInGroup:/);
+  assert.match(mainSrc, /ipcMain\.handle\('widget:setVisibleInRaid'/);
+  assert.match(mainSrc, /ipcMain\.handle\('widget:setVisibleInGroup'/);
+  assert.match(managerSrc, /^function setVisibleInRaid\(/m);
+  assert.match(managerSrc, /^function setVisibleInGroup\(/m);
+  assert.match(managerSrc, /^ {2}setVisibleInRaid,$/m);
+  assert.match(managerSrc, /^ {2}setVisibleInGroup,$/m);
+
+  assert.match(storeSrc, /'visibleInRaid',/, 'shareable, alongside visibleInGroup');
+  assert.match(storeSrc, /'visibleInGroup',/);
+
+  assert.match(html, /id="widget-zone-raid-toggle"/);
+  assert.match(html, /id="widget-zone-group-toggle"/);
+  assert.match(rendererSrc, /setWidgetVisibleInRaid\(widget\.id/);
+  assert.match(rendererSrc, /setWidgetVisibleInGroup\(widget\.id/);
 });
 
 module.exports = () => report('zone-gating');

@@ -68,7 +68,12 @@ test('scanning a log is wired IPC -> preload, and a scan gets its own kept-alive
   assert.match(main, /ipcMain\.handle\('damage:getCurrentLogPath', \(\) => logService\.watcher\.getStatus\(\)\.currentFilePath \|\| null\)/);
   assert.match(main, /ipcMain\.handle\('damage:scanLogFile', async \(_event, filePath\) => \{/);
   assert.match(main, /const engine = await scanLogForFights\(filePath\)/);
-  assert.match(main, /importedScans\.push\(\{ label, scannedAt: Date\.now\(\), engine \}\)/, 'a scan must keep its engine alive so getHistoryFight still works on it later');
+  assert.match(main, /importedScans\.push\(\{ label, scannedAt: Date\.now\(\), engine, filePath \}\)/, 'a scan must keep its engine alive so getHistoryFight still works on it later');
+  // Owner, 15 Sep: repeatedly re-scanning the same file (a real thing that happens over a long
+  // investigation) must replace its own old copy, not pile another one on top of it - see this
+  // handler's own comment for the live report (the same 60-fight zone visit showing up ~10 times
+  // over in the Combat tab because the same file had been re-scanned that many times).
+  assert.match(main, /normalizedScanPath\(importedScans\[i\]\.filePath\) === target/, 'a re-scan must remove any prior scan of the SAME file before pushing the fresh one');
   const preload = read('src', 'preload', 'preload-main.js');
   assert.match(preload, /getDamageCurrentLogPath: \(\) => ipcRenderer\.invoke\('damage:getCurrentLogPath'\)/);
   assert.match(preload, /scanDamageLogFile: \(filePath\) => ipcRenderer\.invoke\('damage:scanLogFile', filePath\)/);
@@ -100,7 +105,13 @@ test('history is re-fetched on every visit to the tab, not loaded once', () => {
   const jumpFn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(jumpFn, 'jumpToCurrentZone has been restructured or removed');
   assert.match(jumpFn[1], /await loadHistory\(\)/, 'the nav-button jump must re-fetch, not reuse stale history');
-  assert.ok(fn[1].trim().endsWith('loadHistory();'), 'no initial load - the tab would open blank the first time');
+  // Owner, 15 Sep: the initial load also snaps the zone filter to current zone once history is
+  // in (applyLiveZoneDefault's own test covers the "why") - it's chained onto the same call now,
+  // not a bare `loadHistory();` on its own line.
+  assert.ok(
+    fn[1].trim().endsWith("loadHistory().then(() => applyLiveZoneDefault());"),
+    'no initial load - the tab would open blank the first time'
+  );
 });
 
 test('player/skill names are built as DOM text nodes, never interpolated into innerHTML', () => {
@@ -467,10 +478,13 @@ test('the class estimate is wired IPC -> preload -> renderer', () => {
 // Owner, 14 Sep: "date and location fields need their own columns to justify text correctly" -
 // today's fights show a bare time while older ones show a full date too, and flex's natural
 // sizing let that shorter width shift the zone name (and everything after it) row to row.
+// Owner, 15 Sep: a per-day header bar (.combat-date-header) now carries the date for a scanned
+// log, so the row itself only ever shows a bare time - the column shrank from 150px (room for
+// "01/09/2026 15:26:56") to 70px (room for "15:26:56" alone) accordingly.
 test('the visit list uses a real grid with fixed time/difficulty/raid-group columns, not flex natural-sizing', () => {
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
   assert.match(
-    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 150px 36px minmax\(80px, 1fr\) 60px 70px 80px;/s,
+    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 70px 36px minmax\(80px, 1fr\) 60px 70px 80px;/s,
     'the time, difficulty and raid/group columns must all be fixed widths so a short "today" time and a long dated one both start the zone name at the same x'
   );
 });
@@ -748,8 +762,64 @@ test('jumpToCurrentZone opens the current zone\'s latest visit, or falls back to
   assert.match(fn[1], /if \(!zone\) \{/, 'an unknown current zone must not crash or open something arbitrary');
   assert.match(fn[1], /setJumpStatus\(/, 'a failed jump must say WHY, not just silently do nothing');
   assert.match(fn[1], /zoneFilter\.value = zone/, 'the zone filter should reflect the jump, not silently diverge from what is shown');
+  // Owner, 15 Sep: a zone with no history yet has no <option>, so this needs the same fix
+  // applyLiveZoneDefault got - rebuild options (via liveZoneForOptions) before assigning.
+  assert.match(
+    fn[1], /liveZoneForOptions = zone;\s*\n\s*populateZoneFilter\(lastHistory\);\s*\n\s*zoneFilter\.value = zone;/,
+    'a zero-history current zone must get an <option> before the jump tries to select it'
+  );
   assert.match(fn[1], /openVisit\(visits\[visits\.length - 1\]\)/, 'must open the LATEST (most recent) visit, not the earliest');
   assert.match(fn[1], /showList\(\)/, 'a zone with no history yet must fall back to the list, not open nothing silently');
+});
+
+// Owner, 15 Sep: "live fights page is STILL showing content from days ago, it needs to be CURRENT
+// ZONE ONLY" / "LIVE VIEW: current zone, ALL fights. SCAN LOG: whatever is in that log, button to
+// return to LIVE VIEW." The list's zone filter used to default to "" (All zones) and just sit
+// there, surfacing every zone from every day in history the moment the tab opened.
+test('the live view defaults its zone filter to wherever the player actually is, and keeps following as they zone', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function applyLiveZoneDefault\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'applyLiveZoneDefault has been restructured or removed');
+  assert.match(
+    fn[1], /const browsingScan = sourceFilter\.value && sourceFilter\.value !== LIVE_SOURCE;\s*\n\s*if \(browsingScan \|\| !zone\) return;/,
+    'a scan is "whatever is in that log" - this must never touch the zone filter while one is open'
+  );
+  assert.match(
+    fn[1], /if \(hasSetInitialZone && zoneFilter\.value !== lastAppliedLiveZone\) return;/,
+    'a manual pick away from the live zone must not get silently stomped on the next zone change'
+  );
+  assert.match(fn[1], /getCombatCurrentZoneBase/, 'must resolve the actual current zone, not guess from history');
+  // Owner, 15 Sep, reported live: this defaulted to "All zones" anyway the first time, because
+  // Surefall Glade had zero recorded fights - assigning zoneFilter.value to a zone with no
+  // <option> is a silent no-op. liveZoneForOptions + populateZoneFilter is the actual fix; a bare
+  // "zoneFilter.value = zone" with nothing rebuilding options first was exactly the bug.
+  assert.match(fn[1], /liveZoneForOptions = zone \|\| null/, 'must keep the option-builder aware of the live zone even with no history yet');
+  assert.match(
+    fn[1], /populateZoneFilter\(lastHistory\);\s*\n\s*zoneFilter\.value = zone;/,
+    'options must be rebuilt (to include a zero-history current zone) BEFORE the value assignment, not after'
+  );
+  const popFn = renderer.match(/function populateZoneFilter\(history\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(popFn, 'populateZoneFilter has been restructured or removed');
+  assert.match(
+    popFn[1], /if \(liveZoneForOptions\) zoneSet\.add\(liveZoneForOptions\);/,
+    'the live current zone must always be selectable, even before any fight has happened there yet'
+  );
+
+  // Wired at startup and on every real zone change, and switching the Source filter back to the
+  // live session re-applies it too (not just at initial tab-open).
+  assert.match(renderer, /window\.eqTracker\.onZoneChanged\(\(\) => applyLiveZoneDefault\(\)\)/);
+  assert.match(renderer, /loadHistory\(\)\.then\(\(\) => applyLiveZoneDefault\(\)\)/);
+  assert.match(
+    renderer, /sourceFilter\.addEventListener\('change', \(\) => \{ applyLiveZoneDefault\(\); render\(\); \}\)/,
+    'switching back to the live source from a scan should re-scope to current zone, not leave the scan\'s "" filter behind'
+  );
+
+  // jumpToCurrentZone's own manual zone-set must keep this function's tracking in sync, or the
+  // very next real zone change would wrongly read it as a deliberate override and stop following.
+  const jumpFn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(jumpFn, 'jumpToCurrentZone has been restructured or removed');
+  assert.match(jumpFn[1], /hasSetInitialZone = true;/);
+  assert.match(jumpFn[1], /lastAppliedLiveZone = zone;/);
 });
 
 test('openVisit recomputes the same-zone sibling list and index every time, for Older/Newer', () => {
@@ -835,13 +905,51 @@ test('main.js exposes the live fight over IPC, and pings the renderer on every c
   assert.match(preload, /onLiveFightTick: \(cb\) => ipcRenderer\.on\('damage:liveFightTick', \(\) => cb\(\)\)/);
 });
 
+// Owner, 15 Sep: "the combat log can probably update slower" - a busy pull can credit several hits
+// a second, and 'activeChanged' used to fire (and broadcast to every overlay window) on every one
+// of them. Runs the REAL handler text against fake damageEngine/broadcast/sessionRestore, not a
+// re-description of what it should do - a throttle this fiddly (leading edge + one coalesced
+// trailing edge, no dropped final state) is exactly the kind of logic a paraphrased test would get
+// wrong right alongside a broken implementation.
+test('the damage broadcast throttle fires immediately on a lone hit, then coalesces a burst into one trailing broadcast', async () => {
+  const main = read('src', 'main', 'main.js');
+  const block = main.match(/const DAMAGE_BROADCAST_THROTTLE_MS = \d+;[\s\S]*?damageEngine\.on\('activeChanged', \(\) => \{[\s\S]*?\n\}\);\n/);
+  assert.ok(block, 'the damage broadcast throttle has been restructured or removed');
+
+  // Each real flush calls broadcast() twice ('damage:active' then 'damage:liveFightTick') - count
+  // just the tick ping, which fires exactly once per flush, as "how many flushes happened".
+  const ticks = [];
+  let cb = null;
+  const fakeDamageEngine = { on: (evt, handler) => { if (evt === 'activeChanged') cb = handler; } };
+  const run = new Function(
+    'damageEngine', 'broadcast', 'sessionRestore', 'damageViews',
+    block[0]
+  );
+  run(fakeDamageEngine, (channel) => { if (channel === 'damage:liveFightTick') ticks.push(1); }, { scheduleSave: () => {} }, () => ({}));
+  assert.ok(cb, 'the activeChanged handler was never registered');
+
+  cb();
+  assert.equal(ticks.length, 1, 'a single hit must broadcast right away, not wait for a window to elapse');
+
+  cb();
+  cb();
+  cb();
+  assert.equal(ticks.length, 1, 'a burst inside the throttle window must not add more broadcasts yet');
+
+  await new Promise((resolve) => setTimeout(resolve, 320));
+  assert.equal(ticks.length, 2, 'the coalesced burst must still produce exactly one trailing broadcast once the window elapses - the last hit\'s state must never be dropped');
+
+  cb();
+  assert.equal(ticks.length, 3, 'once the cooldown has cleared, a fresh isolated hit must broadcast immediately again, same as the very first one');
+});
+
 test('a tick refreshes the Live row, and redraws the open live chart only when that is what is showing', () => {
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   const fn = renderer.match(/async function onLiveFightTick\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'onLiveFightTick has been restructured or removed');
   assert.match(fn[1], /if \(liveRenderInFlight\) return;/, 'a fight can tick once per hit - an overlapping render must be dropped, not queued');
   assert.match(fn[1], /updateLiveRow\(fight\)/, 'the list-screen row must refresh on every tick regardless of which screen is showing');
-  assert.match(fn[1], /if \(liveFightOpen\)/, 'the detail chart must only redraw when the live view is actually the one on screen');
+  assert.match(fn[1], /if \(liveFightOpen && liveVisitCursor === null\)/, 'the detail chart must only redraw when the live view is actually the one on screen AND the user is actually looking at the live fight (not cursored back to an earlier one in the visit)');
   assert.match(fn[1], /liveFightOpen = false;\s*setDetailToolbarLive\(false\);\s*showList\(\);\s*loadHistory\(\);/, 'a fight ending between ticks must fall back to the list, not keep trying to render something that no longer exists');
 });
 
@@ -853,8 +961,8 @@ test('a tick auto-opens the live view when the list screen is showing, but never
   const fn = renderer.match(/async function onLiveFightTick\(\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'onLiveFightTick has been restructured or removed');
   assert.match(
-    fn[1], /\} else if \(fight && listScreen\.style\.display !== 'none' && !browsingOtherSource\) \{\s*openLiveFight\(fight\);/,
-    'auto-open must be gated on the LIST screen specifically being what is showing, not on liveFightOpen being false alone - a historical visit is also "not the live view" and must not get yanked away from'
+    fn[1], /\} else if \(!liveFightOpen && fight && listScreen\.style\.display !== 'none' && !browsingOtherSource && !zoneMismatch\) \{\s*openLiveFight\(fight\);/,
+    'auto-open must be gated on the LIST screen specifically being what is showing (and liveFightOpen explicitly false - the live page has its own cursored-back state now, which must never fall into this branch and re-open itself) - a historical visit is also "not the live view" and must not get yanked away from'
   );
   // Owner, 14 Sep, screenshot-confirmed: "live text appears when in combat log scan" - browsing a
   // scanned log's results (Source filter set to that scan) still counts as "the list screen", so
@@ -862,6 +970,17 @@ test('a tick auto-opens the live view when the list screen is showing, but never
   assert.match(
     fn[1], /const browsingOtherSource = sourceFilter\.value && sourceFilter\.value !== LIVE_SOURCE;/,
     'auto-open must not fire while a specific past scan (not the live session) is the active Source filter'
+  );
+  // Owner, 15 Sep, follow-up: "live fight is still picking up on scanned file when it should
+  // exclude to current zone" - browsingOtherSource alone is false for "All sources" (a legitimate,
+  // deliberate pick since the Source-default fix, not the old accidental default), so reviewing old
+  // scans of one specific zone via the Zone filter still got yanked away by a live fight starting
+  // ANYWHERE else. A Zone filter that does not match where the live fight actually is must ALSO
+  // suppress the auto-open - it only still fires when nothing is zone-filtered, or the live fight
+  // is genuinely in the zone being reviewed (the "your zone just lit up" case this exists for).
+  assert.match(
+    fn[1], /const zoneMismatch = zoneFilter\.value && zoneFilter\.value !== \(fight && fight\.zone\);/,
+    'auto-open must not fire while the Zone filter is narrowed to a zone the live fight is not actually in'
   );
 });
 
@@ -884,7 +1003,66 @@ test('openLiveFight and openVisit each turn the OTHER kind of "live" state off, 
   const openLiveFn = renderer.match(/function openLiveFight\(fight\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(openLiveFn, 'openLiveFight has been restructured or removed');
   assert.match(openLiveFn[1], /liveFightOpen = true;/);
-  assert.match(openLiveFn[1], /currentZoneVisits = \[\];/, 'a single live fight has no siblings to step through - Older/Newer must not carry over stale state from whatever was open before');
+  assert.match(
+    openLiveFn[1], /currentZoneVisits = \[\];/,
+    'the ORDINARY visit-to-visit Older/Newer state must be cleared - the live page uses its own separate liveVisitFights/liveVisitCursor navigation instead (see the "current instance" test below), the two must never be active at once'
+  );
+  assert.match(openLiveFn[1], /liveVisitFights = liveVisitSiblings\(fight\);/, 'must populate the live page\'s OWN navigation pool from this same visit\'s already-completed fights');
+  assert.match(openLiveFn[1], /liveVisitCursor = null;/, 'must start out looking at the live fight itself, not cursored back into an earlier one');
+});
+
+// Owner, 15 Sep: "this live page is for the entire area, all fights there" / "the older and newer
+// need to cycle to past fights in the CURRENT instance" - the live fight used to be treated as a
+// single, isolated thing with nothing to page through (Older/Newer permanently disabled). It is
+// really just the newest entry of the CURRENT VISIT (the live engine tags its own fight history
+// with the same zone+visitId the live fight itself carries), so Older/Newer now step back into
+// that visit's own earlier kills instead - scoped to THIS one instance only, never a different
+// day's visit to the same zone name (that is what the ordinary currentZoneVisits navigation is for,
+// and it stays untouched here).
+test('Older/Newer, from the live page, cycle through the CURRENT instance\'s own past fights - not a different visit to the same zone', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+
+  const siblingsFn = renderer.match(/function liveVisitSiblings\(fight\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(siblingsFn, 'liveVisitSiblings has been restructured or removed');
+  assert.match(
+    siblingsFn[1], /\(f\.source \|\| LIVE_SOURCE\) === LIVE_SOURCE && f\.zone === fight\.zone && f\.visitId === fight\.visitId/,
+    'must match on the SAME visit specifically (zone AND visitId, live source only) - matching on zone name alone would pull in a totally different day\'s visit to the same zone'
+  );
+
+  const navBtnFn = renderer.match(/function updateVisitNavButtons\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(navBtnFn, 'updateVisitNavButtons has been restructured or removed');
+  assert.match(
+    navBtnFn[1], /if \(liveFightOpen\) \{\s*olderBtn\.disabled = liveVisitCursor === 0 \|\| \(liveVisitCursor === null && liveVisitFights\.length === 0\);\s*newerBtn\.disabled = liveVisitCursor === null;\s*return;/,
+    'on the live page, Older disables only at the earliest fight in this visit (or when there are none yet); Newer disables only while already looking at the live fight itself (nothing is newer than live)'
+  );
+
+  const olderClickFn = renderer.match(/if \(olderBtn\) \{\s*olderBtn\.addEventListener\('click', \(\) => \{([\s\S]*?)\n {4}\}\);/);
+  assert.ok(olderClickFn, 'the Older button\'s click handler has been restructured or removed');
+  assert.match(
+    olderClickFn[1], /if \(liveVisitFights\.length\) renderLiveVisitFightAt\(liveVisitFights\.length - 1\);/,
+    'from the live fight itself, Older must jump to the MOST RECENT already-completed fight in this visit, not the oldest'
+  );
+  assert.match(
+    olderClickFn[1], /else if \(liveVisitCursor > 0\) \{\s*renderLiveVisitFightAt\(liveVisitCursor - 1\);/,
+    'once already cursored back into the visit, Older keeps walking further back one fight at a time'
+  );
+
+  const newerClickFn = renderer.match(/if \(newerBtn\) \{\s*newerBtn\.addEventListener\('click', \(\) => \{([\s\S]*?)\n {4}\}\);/);
+  assert.ok(newerClickFn, 'the Newer button\'s click handler has been restructured or removed');
+  assert.match(
+    newerClickFn[1], /if \(liveVisitCursor < liveVisitFights\.length - 1\) renderLiveVisitFightAt\(liveVisitCursor \+ 1\);\s*else returnToLiveVisitFight\(\);/,
+    'Newer must walk forward through the visit\'s fights and, once past the last completed one, land back on the live fight itself - not stop short of it'
+  );
+
+  // The tick handler must never redraw over (or worse, yank away from) a fight the user has
+  // cursored back to - it is finished, its numbers do not move, and it has nothing to do with
+  // whatever the CURRENT live fight is doing right now.
+  const tickFn = renderer.match(/async function onLiveFightTick\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(tickFn);
+  assert.match(
+    tickFn[1], /if \(liveFightOpen && liveVisitCursor === null\) \{/,
+    'a tick must only touch the live chart while the user is actually looking at the live fight, not an earlier one in the same visit'
+  );
 });
 
 // Owner, 14 Sep: a live fight showed "(zone unknown)" in the Combat tab despite genuinely being
@@ -961,7 +1139,57 @@ test('a scanned log\'s history also survives a restart, not just the live sessio
   assert.match(block, /s\.engine\.captureHistory\(\)/, 'must reuse the engine\'s own capture, not reinvent fight serialisation');
   assert.match(block, /new DamageEngine\(\{ maxHistory: Infinity \}\)/, 'a restored scan engine must be uncapped, same as a freshly scanned one - scanLogForFights\' own comment on why');
   assert.match(block, /engine\.restoreHistory\(s\.history\)/);
-  assert.match(block, /importedScans\.push\(\{ label: s\.label, scannedAt: s\.scannedAt, engine \}\)/, 'must rebuild in the same order, so composite ids ("scan:0:7") still resolve to the right scan');
+  assert.match(block, /rebuilt\.push\(\{ label: s\.label, scannedAt: s\.scannedAt, engine, filePath: s\.filePath \|\| null \}\)/, 'must rebuild every saved scan first, before the dedup pass below can compare them');
+});
+
+// Owner, 15 Sep, live report: re-scanning the same log file across a long session left the SAME
+// day's fights piled up in importedScans many times over - each restore never replaced the old
+// copy, just added another, and every one of them got merged into the Combat tab at once (a single
+// zone visit showing up to ~10 times over, each fight's numbers byte-identical since they really
+// were the same real fight read off the same file repeatedly). See damage:scanLogFile's own comment
+// for the fix on the scanning side; this pins the matching self-heal on the restore side, so a save
+// file that already accumulated duplicates before this fix existed gets cleaned up automatically
+// the next time it loads, rather than staying broken forever.
+test('restoring scans dedupes by file, keeping only the newest copy of each one - a save from before this fix existed self-heals', () => {
+  const main = read('src', 'main', 'main.js');
+  const fn = main.match(/sessionRestore\.register\('importedScans', \{([\s\S]*?)\n\}\);/);
+  assert.ok(fn, 'importedScans is not registered with sessionRestore');
+  const block = fn[1];
+  assert.match(
+    block, /scanKey = \(s\) => \(s\.filePath \? normalizedScanPath\(s\.filePath\) : String\(s\.label\)\.replace\(\/ \\\(scanned \[\^\)\]\*\\\)\$\/, ''\)\)/,
+    'a filePath-less entry (saved before this fix) must still be matched by its label with the timestamp suffix stripped, or an old save never gets cleaned up'
+  );
+  assert.match(block, /if \(!prev \|\| s\.scannedAt > prev\.scannedAt\) newestByKey\.set\(key, s\)/, 'must keep the NEWEST scan of a given file, not the first one seen');
+  assert.match(block, /importedScans\.push\(s\)/, 'only the deduped, newest-per-file set may reach the live importedScans array');
+
+  // Behavioural half: run the real restore() against a fake pair of scans of "the same file" -
+  // one old filePath-less save and one newer one under the current shape - and confirm exactly one
+  // survives.
+  const restoreFn = fn[1].match(/restore: \(d\) => \{([\s\S]*?)\n {2}\},/);
+  assert.ok(restoreFn, 'restore() has been restructured');
+
+  const fakeImportedScans = [];
+  const FakeDamageEngine = function () { this.restoreHistory = () => {}; this.getHistory = () => [1, 2, 3]; };
+  const runReal = new Function('importedScans', 'normalizedScanPath', 'DamageEngine', 'd', restoreFn[1]);
+  const path15 = 'C:\\Logs\\eqlog_Shara_rivervale_2026-09-14.txt';
+  const fakePath = (p) => String(p).toLowerCase();
+  const total = runReal(
+    fakeImportedScans,
+    fakePath,
+    FakeDamageEngine,
+    {
+      scans: [
+        { label: 'eqlog_Shara_rivervale_2026-09-14.txt (scanned 15/09/2026, 00:12:20)', scannedAt: 1000, history: {} },
+        { label: 'eqlog_Shara_rivervale_2026-09-14.txt (scanned 15/09/2026, 02:24:22)', scannedAt: 2000, filePath: path15, history: {} },
+        { label: 'eqlog_Shara_rivervale_2026-09-14.txt (scanned 15/09/2026, 02:10:04)', scannedAt: 1500, filePath: path15, history: {} },
+      ],
+    }
+  );
+  assert.equal(fakeImportedScans.length, 2, 'the two entries sharing the same file must collapse to one, leaving the label-only entry (a different key) alone');
+  const survivor = fakeImportedScans.find((s) => s.filePath === path15);
+  assert.ok(survivor, 'the filePath-keyed entry must survive');
+  assert.equal(survivor.scannedAt, 2000, 'the NEWER of the two same-file scans must be the one kept');
+  assert.equal(total, 6, 'the returned count must reflect only the surviving, deduped scans (3 fights each x 2 survivors)');
 });
 
 // ---------------------------------------------------------------------------
@@ -1119,7 +1347,12 @@ test('a Source filter exists, populated the same way the zone filter is, and act
 
   const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
   assert.match(renderer, /function populateSourceFilter\(history\) \{/, 'populateSourceFilter has been restructured or removed');
-  assert.match(renderer, /sourceFilter\.addEventListener\('change', render\)/, 'changing the source must actually re-render, same as the zone filter');
+  // Owner, 15 Sep: switching back to the live source now also re-scopes the zone filter (see
+  // applyLiveZoneDefault's own test), so this listener grew a second call - it still renders.
+  assert.match(
+    renderer, /sourceFilter\.addEventListener\('change', \(\) => \{ applyLiveZoneDefault\(\); render\(\); \}\)/,
+    'changing the source must actually re-render, same as the zone filter'
+  );
 
   const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
   const renderFn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
@@ -1304,9 +1537,61 @@ test('the damage column is a fixed width, not `auto` - independent per-row grids
     'a track ending in `auto` sizes to THIS row\'s own content only - it cannot line up across separate per-row grid containers'
   );
   assert.match(
-    css, /\.combat-visit-row \{[^}]*grid-template-columns: 150px 36px minmax\(80px, 1fr\) 60px 70px 80px;/s,
+    css, /\.combat-visit-row \{[^}]*grid-template-columns: 70px 36px minmax\(80px, 1fr\) 60px 70px 80px;/s,
     'the damage column must be a real fixed width, same reasoning as every other column here'
   );
+});
+
+// Owner, 15 Sep: "the combat log when parsing a large log is very long, with no header bars for
+// dates for clear separation" - a multi-week scan read as one undifferentiated wall of rows.
+test('the Scan results list gets a header bar per day, and the row itself drops the date', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderList\(visits\) \{([\s\S]*?)\n  \}/);
+  assert.ok(fn, 'renderList has been renamed or restructured');
+  assert.match(fn[1], /dateKey\(visit\.startedAt\)/, 'must group consecutive same-day visits');
+  assert.match(fn[1], /combat-date-header/, 'must insert a header bar element');
+  assert.match(fn[1], /formatDateHeader\(visit\.startedAt\)/, 'the header must be dated, not a placeholder');
+  // The row's own time column must be time-only now (formatTime), not the date-or-time formatWhen
+  // it used to share with the per-fight accordion rows - those still use formatWhen deliberately,
+  // since a fight detail screen has no header bar of its own to carry the date instead.
+  assert.match(fn[1], /span\(formatTime\(visit\.startedAt\), 'combat-visit-time'\)/);
+  assert.doesNotMatch(fn[1], /formatWhen\(visit\.startedAt\)/, 'the row must not still print its own date inline');
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-date-header \{/, 'the header bar has no themed styling');
+});
+
+// Owner, 15 Sep, follow-up to the date-header ask: "should the state of the daily log split be
+// shown here, as it's a good way to check logs per day" - the "Choose a log to scan" picker (and
+// every other _pickLogFiles caller, like the Lockouts log tools) lists Split files with no way to
+// tell whether splitting is actually still on, so a stale file looks identical to a current one.
+test('the log picker shows whether daily log splitting is on when Split files are listed', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="log-picker-split-status-row"[^>]*style="display:none"/, 'must start hidden - only meaningful when Split files exist');
+  assert.match(html, /id="log-picker-enable-split-btn"[^>]*style="display:none"/, 'the turn-it-on button must start hidden too - only the off case shows it');
+
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function _pickLogFiles\([\s\S]*?\n\}/);
+  assert.ok(fn, '_pickLogFiles has been renamed or restructured');
+  assert.match(fn[0], /groups\.split \|\| \[\]/, 'must read the Split group specifically, not any file list');
+  assert.match(fn[0], /getLogState\(\)/, 'must read the real splitter state, not assume it is on');
+  assert.match(fn[0], /s\.split\.enabled/);
+  assert.match(fn[0], /newestMtime/, 'must say how current the split files actually are, not just on/off');
+  assert.match(fn[0], /Log splitting is off/i, 'the off case must say so, not just stay silent');
+});
+
+// Owner, 15 Sep, follow-up: "add a button too to be like 'it's off, would you like to turn it
+// on?'" - seeing that splitting is off is only half the fix if going to enable it still means
+// leaving this modal and finding the Setup page.
+test('the log picker can turn splitting on directly, without leaving the modal', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function _pickLogFiles\([\s\S]*?\n\}/);
+  assert.ok(fn, '_pickLogFiles has been renamed or restructured');
+  assert.match(fn[0], /enableSplitBtn\.style\.display = ''/, 'the button must be revealed for the off case');
+  assert.match(fn[0], /setSplitEnabled\(true\)/, 'must call the real enable API, not just hide the warning');
+  // Wired once per DOM element, not once per modal open - _pickLogFiles runs fresh on every open,
+  // so an unguarded addEventListener here would stack a duplicate handler each time.
+  assert.match(fn[0], /dataset\.wired/, 'the click handler must not be re-added on every modal open');
 });
 
 // Owner, 15 Sep: "rename this button to 'return to live'" - it only ever shows while browsing a
@@ -1361,7 +1646,17 @@ test('filter labels do not carry the settings-form min-width - they sit snug aga
 // natural width, leaving a big empty gap after a short "50000" when the row had room to spare.
 test('the filter controls grow to fill spare row width, and can still shrink back down when the row is narrow', () => {
   const css = read('src', 'renderer', 'main-window', 'main-window.css');
-  assert.match(css, /\.combat-filter-pair \{ flex: 1 1 auto; \}/, 'each pair must be allowed to grow into the row\'s own spare width');
+  assert.match(css, /\.combat-filter-pair \{ flex: 1 1 0; min-width: 0; \}/, 'each pair must be allowed to grow into the row\'s own spare width');
+  // Reported live 15 Sep: `flex-basis: auto` (the original value here) made a scan's own Source
+  // label - a filename plus a scanned date/time, no length limit - inflate that pair's UN-SHRUNK
+  // hypothetical width for the wrap decision, which flex-wrap uses instead of the post-shrink
+  // size. A long enough label forced Min damage onto its own line despite plenty of real room.
+  // `flex-basis: 0` fixes the wrap decision; `min-width: 0` is required alongside it - basis:0
+  // alone was verified (in a real browser, not assumed) to still leave the automatic minimum-size
+  // floor in place, which is a flex item's own min-content size when nothing overrides it, and for
+  // a nested flex container like this pair that floor is computed from its children's content -
+  // including the same unbounded label text, one level down. See main-window.css's own comment on
+  // this rule for the measurements.
   assert.match(
     css, /\.combat-filter-pair \.label \{ flex: 0 0 auto; \}/,
     'the LABEL must never grow - only the control beside it should stretch, or "Zone" would end up with its own trailing whitespace'
@@ -1408,6 +1703,77 @@ test('the skill breakdown shows how many times each skill fired, not just its to
     css, /\.combat-skill-track-area \{[^}]*grid-template-columns: 2fr 56px 64px 56px;/s,
     'the track-area sub-grid must reserve a track for Hits alongside Damage/%/Crit, or it will not line up under its own header'
   );
+});
+
+// Reported live 15 Sep, screenshot-confirmed: after "Found 0 fights in eqlog_...", the Source
+// dropdown stayed on "All sources", the heading stayed "Fights - Live", and "Return to last scan"
+// showed anyway - an outright contradiction (Live, AND something to return to). Root cause: a
+// scan that finds zero fights leaves no history entry carrying its label, so populateSourceFilter
+// (which only ever built its option list from history) never created an option for it, and
+// `sourceFilter.value = result.label` silently failed - a <select> assigned a value with no
+// matching <option> just deselects everything.
+test('a 0-fight scan still gets a selectable Source option, not a silent revert to Live', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+
+  const popFn = renderer.match(/function populateSourceFilter\(history\) \{([\s\S]*?)\n {2}\}\n/);
+  assert.ok(popFn, 'populateSourceFilter has been restructured');
+  assert.match(
+    popFn[1], /if \(lastScanLabel\) sources\.add\(lastScanLabel\)/,
+    'the just-scanned label must be a selectable option even when it has zero matching fights'
+  );
+
+  // Ordering matters as much as the fix itself: lastScanLabel must be set BEFORE loadHistory()
+  // triggers the render/populateSourceFilter that needs to see it - setting it after (the original
+  // order) means the option does not exist yet at the moment `sourceFilter.value = result.label`
+  // runs, and creating the option one render later does not retroactively re-select it.
+  const fn = renderer.match(/async function runScan\(filePath\) \{([\s\S]*?)\n {2}\}\n/);
+  assert.ok(fn, 'runScan has been restructured');
+  const successBranch = fn[1].slice(fn[1].indexOf('result.ok'));
+  const labelAt = successBranch.indexOf('lastScanLabel = result.label');
+  const loadAt = successBranch.indexOf('await loadHistory()');
+  assert.ok(labelAt > -1 && loadAt > -1, 'both statements must still exist');
+  assert.ok(labelAt < loadAt, 'lastScanLabel must be set before loadHistory() re-renders the Source dropdown');
+});
+
+// "scanning a log, then closing the app and reopening, reloads the old scanned logs as current,
+// and not view past content, it needs to still be labelled as a scanned log not current" (owner,
+// 15 Sep). Restored scans (sessionRestore's importedScans) get merged into the same fight list the
+// live session renders under (main.js's mergedDamageHistory), and the Source filter's native
+// default of "" (All sources) let that merge show through with the heading still reading "Live" -
+// a fresh page load with old scans on file must default to the live session, not silently blend
+// everything together.
+test('the Source filter defaults to the live session on first load, even with old scans restored - and never overrides a later deliberate "All sources" pick', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
+
+  assert.match(
+    combatPage, /let hasSetInitialSource = false;/,
+    'a closure flag must exist to gate the default to only the very first population'
+  );
+
+  const popFn = combatPage.match(/function populateSourceFilter\(history\) \{([\s\S]*?)\n {2}\}\n/);
+  assert.ok(popFn, 'populateSourceFilter has been restructured');
+  assert.match(
+    popFn[1], /sources\.add\(LIVE_SOURCE\);/,
+    'LIVE_SOURCE must always be a selectable option, even with zero live fights so far - otherwise ' +
+    'assigning sourceFilter.value = LIVE_SOURCE below silently no-ops (a value with no matching option)'
+  );
+
+  const tailAt = popFn[1].indexOf('if (sources.has(previous))');
+  assert.ok(tailAt > -1, 'the previous-value restore branch has been restructured or removed');
+  const tail = popFn[1].slice(tailAt);
+  assert.match(
+    tail, /\}\s*else if \(!hasSetInitialSource\) \{[\s\S]*?sourceFilter\.value = LIVE_SOURCE;[\s\S]*?\}\n\s*hasSetInitialSource = true;/,
+    'must default to LIVE_SOURCE only on the true first population (previous value not found AND ' +
+    'never set before) - and must set hasSetInitialSource unconditionally afterward so a later ' +
+    'render never re-applies this default over a deliberate "All sources" choice'
+  );
+
+  // sources.add(LIVE_SOURCE) must run before the sorted/previous-value logic reads `sources`,
+  // or the option won't exist yet when sourceFilter.value = LIVE_SOURCE tries to select it.
+  const addAt = popFn[1].indexOf('sources.add(LIVE_SOURCE);');
+  const elseAt = popFn[1].indexOf('sourceFilter.value = LIVE_SOURCE;');
+  assert.ok(addAt > -1 && elseAt > -1 && addAt < elseAt, 'LIVE_SOURCE must be added to the option set before it is ever assigned as the value');
 });
 
 module.exports = () => report('combat-tab');

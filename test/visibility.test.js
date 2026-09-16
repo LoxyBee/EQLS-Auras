@@ -128,6 +128,27 @@ test('an aura switched off for the current profile is SILENT, not merely invisib
   assert.equal(wm.shouldBeAudible(aura), false, 'off must mean silent as well as invisible');
 });
 
+test('an aura hidden by the zone/Raid/Group content filter is SILENT too, not just invisible', () => {
+  // Reported live 15 Sep: a "Raid" aura kept playing its alert sounds while sitting in a totally
+  // unrelated dungeon, even though it was correctly off screen there. Zone/Raid/Group gating is
+  // the same KIND of rule as profile membership - "this aura does not apply to the content you're
+  // in right now" - not a screen-clearing convenience like master hide/auto-hide below, so it has
+  // to silence too, the same way profile-off does above.
+  const aura = makeAura('Raid only');
+  aura.visibleInZones = [];
+  aura.visibleInRaid = true;
+  assert.equal(wm.shouldBeAudible(aura), true, 'unknown zone still means show/sound, same fail-open rule');
+
+  wm.applyZoneChange('Befallen 1 (Awakened)'); // a group instance, not raid content
+  assert.equal(wm.shouldBeOnScreen(aura), false);
+  assert.equal(wm.shouldBeAudible(aura), false, 'zone gating must silence it too');
+
+  wm.applyZoneChange('The Plane of Hate - Group'); // the raid-lockout instance
+  assert.equal(wm.shouldBeOnScreen(aura), true);
+  assert.equal(wm.shouldBeAudible(aura), true);
+  wm.applyZoneChange(null);
+});
+
 test('clearing the screen does NOT silence anything', () => {
   // Deliberate and the opposite of the rule above. Hearing that a buff is about to drop while
   // you are tabbed out is most of the reason to have a sound at all.

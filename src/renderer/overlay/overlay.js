@@ -2052,22 +2052,6 @@ function render(buffs) {
     (!grouped && listEl.children.length !== visibleKeys.length) ||
     visibleKeys.some((key) => !tileRefs.has(key));
 
-  // TEMP DEBUG 7 Sep - "pull reset timer stuck flashing". Remove once diagnosed.
-  if (currentConfig.buffSource === 'customTimer' && window.eqOverlay && window.eqOverlay.debugLog) {
-    try {
-      window.eqOverlay.debugLog(
-        `RDBG "${currentConfig.name}" struct=${structureChanged} ` +
-          `preview=${previewActive}/${showingPreviewSample} ` +
-          `raw=[${[...rawSet].join(',')}] ` +
-          `newly=[${[...newlyLanded].join(',')}] ` +
-          `nlr=[${[...newlyLandedRaw].join(',')}] ` +
-          `refs=[${[...tileRefs.keys()].join(',')}] ` +
-          `kids=${listEl.children.length}/${visibleKeys.length} ` +
-          `low=[${tileBuffs.map((b) => `${b.name}:${b.remainingSec}`).join(',')}]`
-      );
-    } catch (e) { /* ignore */ }
-  }
-
   if (structureChanged) {
     listEl.innerHTML = '';
     tileRefs.clear();

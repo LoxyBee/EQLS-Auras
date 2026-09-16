@@ -339,6 +339,83 @@ test('a DoT / melody-song tick does not hold the fight open past the last real h
   assert.equal(e.totalDamage, 40, 'the crush (200) and the 6s tick fell out when the fight ended');
 });
 
+// Owner, 16 Sep, reported live: a Plane of Fear raid (Cazic-Thule + adds) got split into 3
+// separate fights by a periodic Dragon Fear - everyone in the group feared ("You lose control of
+// yourself!") for several seconds at a time, stopping the GROUP's own melee/nukes, while the mob
+// side kept swinging the whole time. The fight-end timer only ever watched the group's OWN real
+// hits (_credit() is only called for dir === 'out'), so that incoming combat did nothing to keep
+// it alive - "it's supposed to also count the enemies hits to stay in combat, not just allies."
+test('an enemy landing a real hit on the group keeps the fight open too, not just the group\'s own hits', () => {
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}You slash Cazic-Thule for 100 points of damage.`, 1000);
+  // 6s later: nothing from the group's own side, but the mob is still swinging (feared/kiting,
+  // say) - a real melee hit, the group's incoming twin of a real outgoing hit.
+  e.handleLine(`${T}Cazic-Thule hits YOU for 60 points of damage.`, 7000);
+  // 9s after THAT incoming hit (under the 10s timeout) - the group's own damage resumes. Without
+  // counting the incoming hit, the gap since the group's last real hit would read as 15s (past
+  // timeout) and this would incorrectly start a brand new fight instead of continuing the same one.
+  e.handleLine(`${T}You slash Cazic-Thule for 50 points of damage.`, 16000);
+  assert.equal(e.getHistory().length, 0, 'the fight must never have been force-closed and captured');
+  assert.equal(e.totalDamage, 150, 'one continuous fight - both outgoing hits credited to it');
+});
+
+test('an incoming DoT tick (poison/disease ticking on the group) does NOT hold the fight open on its own', () => {
+  // Symmetric to the outgoing-DoT test above - a mob's maintained DoT ticking on a straggler after
+  // the real fighting has stopped must not hold a finished fight open forever either.
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}You slash Cazic-Thule for 100 points of damage.`, 1000);
+  // An incoming DoT tick 13s after the last real hit - a "has taken ... by" wording, not melee/direct.
+  e.handleLine(`${T}YOU has taken 100 damage from Rotting Flesh by a dracoliche.`, 14000);
+  e.tick(14000);
+  assert.equal(e.getHistory().length, 1, 'the DoT tick alone should not have kept the old fight open');
+});
+
+// Owner, 16 Sep: "can the timer just be paused when under a fear effect?" - a raid-wide Dragon
+// Fear was stopping BOTH sides at once (feared raiders can't reach anything to hit, so incoming
+// hits went quiet too - the previous fix alone would not have saved this one), so the fight-idle
+// clock genuinely pauses now while the player can't act at all, rather than just measuring a
+// longer window against it.
+test('the fight-idle clock pauses entirely while the player is feared/stunned/mezzed/charmed', () => {
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}You slash Cazic-Thule for 100 points of damage.`, 1000);
+  e.handleLine(`${T}A dracoliche begins casting Dragon Fear.`, 2000);
+  // The generic loss-of-control line - Dragon Fear has no roster entry of its own.
+  e.handleLine(`${T}You lose control of yourself!`, 2000);
+  // 13s of total silence, both directions - past the 10s timeout, but paused.
+  // Confirmed live: this specific spell's OWN end line ("You are no longer afraid.") does not
+  // match the generic land line's "official" pairing ("You have control of yourself again.") -
+  // the pause has to clear on ANY recognized end line, not just that one entry's own.
+  e.handleLine(`${T}You are no longer afraid.`, 15000);
+  e.handleLine(`${T}You slash Cazic-Thule for 50 points of damage.`, 1000);
+  assert.equal(e.getHistory().length, 0, 'the fear must not have force-closed the fight');
+  assert.equal(e.totalDamage, 150, 'one continuous fight - both hits credited to it');
+});
+
+test('a missed/unrecognized "control regained" line cannot pause the fight forever - the safety net still fires', () => {
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}You slash Cazic-Thule for 100 points of damage.`, 1000);
+  e.handleLine(`${T}You lose control of yourself!`, 2000);
+  // No end line ever arrives. Well past the 45s safety net (the longest pausesCombat entry).
+  e.handleLine(`${T}You slash Cazic-Thule for 50 points of damage.`, 50000);
+  assert.equal(e.getHistory().length, 1, 'the old fight should have been closed once the safety net expired');
+  assert.equal(e.totalDamage, 50, 'a fresh fight, not a continuation of the stale one');
+});
+
+test('being rooted or snared does NOT pause the fight clock - you can still swing and cast through either', () => {
+  const e = new DamageEngine();
+  e.setOptions({ fightTimeoutSec: 10 });
+  e.handleLine(`${T}You slash Cazic-Thule for 100 points of damage.`, 1000);
+  e.handleLine(`${T}You are ensnared.`, 2000);
+  // 15s of silence - past the timeout, and a snare must not paper over it.
+  e.handleLine(`${T}You slash Cazic-Thule for 50 points of damage.`, 17000);
+  assert.equal(e.getHistory().length, 1, 'a snare incorrectly paused the fight clock');
+  assert.equal(e.totalDamage, 50, 'a fresh fight, not a continuation of the timed-out one');
+});
+
 test("a known friend's melee on a fresh article-prefixed mob is credited without waiting on the player", () => {
   // Owner, 10 Sep: after a group reform the roster resets, so a groupmate's melee on the next pull
   // sat unclassified until the player's own (slow, AE) damage landed - 30s+ for a bard - and the
@@ -644,10 +721,20 @@ test('a fully-classified friend is byte-identical - raw is only a top-up', () =>
   assert.match(baxa.valueText, /^600/, 'no double-count - raw equals classified here');
 });
 
-// Owner, 2 Sep: a mage pet ("Kobektik") showed as its own attacker row. In scope 'all', once the
-// group roster is known, only you + admitted members get their own row; a summoned-pet-shaped
-// name the roster does NOT vouch for folds into "Pets", any other outsider folds into "Other".
-test("scope 'all': with a roster, outsiders bucket into Pets / Other", () => {
+// Owner, 2 Sep: a mage pet ("Kobektik") showed as its own attacker row - fixed by folding a
+// summoned-pet-shaped name into "Pets" regardless of the group roster.
+//
+// Owner, 15 Sep, live report against a real raid: "Everyone in the fight" (scope 'all') used to
+// ALSO fold every real player outside her own ~6-person group roster into one anonymous "Other"
+// row once that roster filled in - in a 24-person raid, three subgroups' worth of named attackers
+// (one of them outdamaging everyone she could still see by name) vanished into a single 51%
+// bucket, for a scope whose entire point is showing everyone. It looked fine before the roster
+// filled in (an empty roster left everyone with their own row, the pre-existing fallback) and
+// wrong the moment it did, which is backwards - group membership has nothing to do with who a
+// scope named "Everyone" should name. "Show at most N rows" (damageRowCap, overlay.js) already
+// caps a big raid's row count, sorted biggest-first, so nothing here needs an anonymous bucket to
+// keep the screen manageable - only a genuinely pet-shaped name still folds, same as before.
+test("scope 'all': every real player keeps their own row regardless of the group roster - only a pet-shaped name folds", () => {
   const e = new DamageEngine();
   e.setGroupFn(() => ['avenrae', 'shubthulu']);
   e.handleLine(`${T}a zol ghoul knight has taken 100 damage from your Plague III.`, 1000);
@@ -657,11 +744,12 @@ test("scope 'all': with a roster, outsiders bucket into Pets / Other", () => {
   const rows = e.getActive(1000, 'all');
   assert.ok(rows.find((r) => r.name === 'Avenrae'), 'an admitted member keeps their own row');
   const pets = rows.find((r) => r.name === 'Pets');
-  assert.ok(pets && pets.isPet, 'the mage pet folds into Pets');
+  assert.ok(pets && pets.isPet, 'the mage pet still folds into Pets - that part is unchanged');
   assert.match(pets.valueText, /^200/);
-  const other = rows.find((r) => r.name === 'Other');
-  assert.ok(other && other.isOther, 'the non-group stranger folds into Other');
-  assert.match(other.valueText, /^50/);
+  const kaerthos = rows.find((r) => r.name === 'Kaerthos');
+  assert.ok(kaerthos, 'a real player outside the group roster must keep their own row, not vanish into "Other"');
+  assert.match(kaerthos.valueText, /^50/);
+  assert.equal(rows.find((r) => r.name === 'Other'), undefined, '"Other" must not exist in this scope any more - every real name is shown');
   assert.equal(rows.find((r) => r.name === 'Kobektik'), undefined, 'the pet is not its own row any more');
 });
 
@@ -973,6 +1061,78 @@ test('a genuinely different skill name is never merged just because it shares a 
   const live = e.getLiveFight();
   const tenam = live.rows.find((r) => r.name === 'Tenam');
   assert.equal(tenam.bySkill.length, 2, 'Envenomed Bolt and Envenomed Breath are different spells and must stay separate rows');
+});
+
+// ---------------------------------------------------------------------------
+// Monster life-leech "heals" (gotcha: LEECH_HEAL_SPELLS) - reported live 15 Sep against a real
+// Lord Nagafen kill. "Lord Nagafen healed Avenrae for 0 (451) hit points by Leech Touch I." landed
+// seconds into the fight, before any damage line had proven Nagafen hostile - and the ordinary heal
+// rule ("the recipient is a known friend, so the healer must be one too") took it at face value and
+// taught Nagafen as a FRIEND. Once mislearned, the friend/enemy collision guard refused every later
+// genuinely-correct "Nagafen hit you" line to ever fix it, so the rest of a 115-second, 200k-damage
+// fight sat unclassified and uncounted - the Combat tab showed a 48-second, 45k fragment named only
+// after the OTHER boss in the pull, with Nagafen's own name and damage missing entirely.
+//
+// Confirmed live: scanning the full multi-week log got this fight right (Nagafen was already a
+// known enemy from an earlier day by the time the bad line appeared, so the mislearn attempt was a
+// no-op against the collision guard); scanning just that one day's split-log file got it wrong,
+// because that scan meets Nagafen for the first time right as the poisoning line arrives. Traced
+// directly against the real engine and the real log lines, not guessed.
+// ---------------------------------------------------------------------------
+
+test('a monster life-leech "heal" (Leech Touch) does not teach the monster friend status', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Lord Nagafen healed you for 0 (451) hit points by Leech Touch I.`, 1000);
+  assert.equal(e.friends.has('lord nagafen'), false, 'the leech-heal line must not learn Nagafen as a friend');
+});
+
+test('once the leech-heal line is out of the way, a real incoming hit correctly teaches the monster hostile - and its damage survives', () => {
+  const e = new DamageEngine();
+  // Mirrors the real report's exact ordering: the leech-heal line arrives first, before any damage
+  // line has said anything about which side Nagafen is on.
+  e.handleLine(`${T}Lord Nagafen healed you for 0 (451) hit points by Leech Touch I.`, 1000);
+  e.handleLine(`${T}Lord Nagafen hit you for 490 points of fire damage by Lava Breath.`, 1001);
+  e.handleLine(`${T}You hit Lord Nagafen for 3033 points of unresistable damage by Harm Touch.`, 1002);
+  const live = e.getLiveFight();
+  const you = live.rows.find((r) => r.name === 'You');
+  assert.ok(you, 'Nagafen must still be classifiable as an enemy - the Harm Touch hit must be credited');
+  assert.equal(you.damage, 3033);
+});
+
+test('the same protection covers Life Leech and a bare (unranked) spell name, not just "Leech Touch I"', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Lord Nagafen healed you for 82 hit points by Life Leech.`, 1000);
+  assert.equal(e.friends.has('lord nagafen'), false);
+});
+
+test('a monster healing ITSELF via life-leech is still just dropped, not credited as healing received', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Lord Nagafen healed itself for 94 hit points by Life Leech.`, 1000);
+  const live = e.getLiveFight();
+  assert.equal(live, null, 'nothing legitimate happened here from the player\'s perspective - no fight should even start');
+});
+
+test('the leech-heal exception is narrow - an ORDINARY ally heal still correctly teaches friend status', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}Konarer healed you for 50 hit points by Blessing of the Lord Commander.`, 1000);
+  assert.equal(e.friends.has('konarer'), true, 'a real heal must be unaffected by this narrow exception');
+});
+
+// Caught by direct question against the real log, after the first version of this fix shipped: the
+// SAME spell names ("Leech Touch I") are also a genuine PLAYER self-heal - a lifesteal proc off a
+// Harm Touch crit, real and meant to show up on the Healing tab. A player self-heal can never
+// cross-contaminate the friend/enemy sets (healer and target are the same name), so it was never
+// the dangerous shape the monster's cross-target version is - only h !== t is guarded.
+test('a PLAYER\'S OWN self-heal via the same spell name (Leech Touch/Life Leech) is still fully credited', () => {
+  const e = new DamageEngine();
+  // Establish Avenrae as a friend the ordinary way - her own outgoing hit on a known enemy.
+  e.handleLine(`${T}You hit Lord Nagafen for 100 points of unresistable damage by Harm Touch.`, 1000);
+  e.handleLine(`${T}Avenrae hit Lord Nagafen for 3033 points of unresistable damage by Harm Touch X.`, 1001);
+  e.handleLine(`${T}Avenrae healed itself for 0 (3033) hit points by Leech Touch I.`, 1001);
+  const live = e.getLiveFight();
+  const avenrae = live.healRows.find((r) => r.name === 'Avenrae');
+  assert.ok(avenrae, 'Avenrae\'s own lifesteal must still be credited as healing done, not silently dropped');
+  assert.equal(avenrae.damage, 0, '"0 (3033)" means 0 ACTUAL healing (already full) - the credited amount must be the real one, not the potential cap');
 });
 
 module.exports = () => report('damage-parser');

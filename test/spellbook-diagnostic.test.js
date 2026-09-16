@@ -98,12 +98,17 @@ test('the missing message no longer promises the file will appear on its own', (
 });
 
 test('the missing state says what to do about it, and what it costs', () => {
-  const block = html.match(/<div id="spellbook-missing-hint"[\s\S]*?<\/div>/);
-  assert.ok(block, 'there is no explanation shown when the file is missing');
+  // The command row moved out from under a hidden-until-missing wrapper (it's always visible now,
+  // see the next test) - the cost/action explanation lives in the static title= on the hint
+  // paragraph that precedes it, plus the dynamic "worth fixing" wording set for the missing case.
+  const block = html.match(/<p class="hint" id="spellbook-command-hint"[\s\S]*?<\/p>/);
+  assert.ok(block, 'there is no explanation attached to the spellbook command');
   // The cost, or nobody acts on it.
   assert.match(block[0], /ignores them|thrown away/i, 'it does not say what is being lost');
   // The action, or knowing the cost is just bad news.
   assert.match(block[0], /does not write this file on its own/i, 'it does not say the file is manual');
+  assert.match(rendererSrc, /This is worth fixing\.<\/strong> Run this in game to generate/,
+    'the missing-file case no longer says it is worth fixing');
   // The command itself, named exactly, because "your client's output-file command" is the sort of
   // phrase that leaves someone still guessing. Vaela supplied it.
   assert.match(html, /<code id="spellbook-command">\/outputfile spellbook<\/code>/,
@@ -117,11 +122,18 @@ test('the missing state says what to do about it, and what it costs', () => {
   assert.match(rendererSrc, /spellbookMissingWhereEl\.textContent = /);
 });
 
-test('the explanation is shown ONLY when the file is missing', () => {
-  // A permanent warning is a warning nobody reads.
-  assert.match(html, /id="spellbook-missing-hint" style="display:none"/, 'it starts visible');
-  assert.match(rendererSrc, /spellbookMissingHintEl\.style\.display = 'none';/, 'it is never hidden again');
-  assert.match(rendererSrc, /spellbookMissingHintEl\.style\.display = '';/, 'it is never shown');
+test('the command stays reachable once the spellbook is found, not just while it is missing', () => {
+  // Reported live: the copy button vanished entirely once detection succeeded, even though the
+  // game does not write this file on its own and it goes stale on every new scribed spell - "A
+  // permanent warning is a warning nobody reads" (this test's old title) argued for hiding it
+  // outright, which threw out the command along with the warning styling. The fix keeps the
+  // command always visible and only toggles the WARNING styling + wording.
+  assert.doesNotMatch(html, /id="spellbook-command-hint"[^>]*style="display:none"/,
+    'the command row is hidden again - it must stay reachable after detection succeeds');
+  assert.doesNotMatch(html, /<div id="spellbook-missing-hint"/, 'the old hidden-until-missing wrapper is back');
+  assert.match(rendererSrc, /spellbookCommandHintEl\.classList\.add\('warn-hint'\)/, 'the missing case never applies the warning style');
+  assert.match(rendererSrc, /spellbookCommandHintEl\.classList\.remove\('warn-hint'\)/, 'the found case never clears the warning style');
+  assert.match(rendererSrc, /Re-run this in game whenever you scribe a new spell/, 'the found case has no reason to run the command again');
   const fn = rendererSrc.match(/function renderSpellbookState\(state\) \{([\s\S]*?)\n  \}/);
   assert.ok(fn, 'the status renderer has been renamed or restructured');
   assert.ok(

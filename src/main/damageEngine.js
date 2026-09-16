@@ -100,6 +100,26 @@ const {
   isArticlePrefixedMobName,
   looksLikePet,
 } = require('../shared/petNames');
+const { LOSS_OF_CONTROL } = require('../shared/lossOfControl');
+
+// Owner, 16 Sep: "can the timer just be paused when under a fear effect?" - a raid-wide fear
+// (Dragon Fear, Plane of Fear) was splitting one continuous pull into several, because it stops
+// the group's own melee/casting for 10+ real seconds at a stretch. Rather than just widening the
+// timeout, the fight-idle clock now genuinely PAUSES while the player is under one of these -
+// see controlLostAt's own field comment. Scoped to the `pausesCombat` subset only (charm / stun /
+// mez / fear) - ROOTED/SNARED are deliberately excluded, since you can still swing or cast through
+// either of those, only movement is denied, so there's no idle time to paper over.
+const CONTROL_LOST_LINES = LOSS_OF_CONTROL.filter((e) => e.pausesCombat).map((e) => e.land);
+// Matched broadly across every kind's own `end` text, not just the specific entry that landed -
+// the game does not always pair a generic land line with its "official" end line (Dragon Fear
+// itself lands as the generic "You lose control of yourself!" but clears with "You are no longer
+// afraid.", not "You have control of yourself again." - confirmed directly in the owner's log). A
+// player is only ever under one loss-of-control effect at a time in practice, so any recognized
+// "you're free" line ending the CURRENT one is safe.
+const CONTROL_REGAINED_LINES = [...new Set(LOSS_OF_CONTROL.filter((e) => e.pausesCombat).map((e) => e.end))];
+// Safety net for a missed/unrecognized end line, so a pause can never become permanent - the
+// longest of the pausesCombat family's own per-kind safety nets (45s, CHARMED/MESMERIZED/CONTROLLED).
+const CONTROL_LOST_SAFETY_MS = Math.max(...LOSS_OF_CONTROL.filter((e) => e.pausesCombat).map((e) => e.secs)) * 1000;
 
 // Seconds without counted damage before the fight is considered over. Ten is the conventional
 // answer and is as arbitrary as everyone else's ten; it is the per-aura default, not a constant
@@ -114,6 +134,33 @@ const DEFAULT_FIGHT_TIMEOUT_SEC = 10;
 // than a fight boundary cannot belong to the fight starting now, so crediting it would corrupt
 // the total rather than complete it.
 const MAX_PENDING = 400;
+
+// A monster CASTING a heal on a player (a boss mechanic, not a bug) still must never be allowed to
+// teach the boss friend status, and must never be credited as a "healer" in the healing-done tally
+// either way - crediting a raid boss there is meaningless data regardless of what the ability does.
+// Confirmed directly from a live Lord Nagafen encounter, 15 Sep 2026: "Lord Nagafen healed Avenrae
+// for 0 (451) hit points by Leech Touch I." repeated on a steady ~6s cadence for the whole fight,
+// each time landing on whichever player was currently tanking him (Avenrae, then Stonewahl once
+// tanking switched) - a real, repeating heal with no damage-side counterpart anywhere nearby in the
+// log (checked directly - there is no "Nagafen hit <target>" line near any of these). The first one
+// landed a few seconds into the fight, before any real damage line had proven Nagafen an enemy, and
+// _classifyHeal's own "the recipient is a known friend, so the healer must be one too" rule took
+// that at face value and taught Nagafen as a FRIEND. The friend/enemy collision guard (first side
+// wins) then refused every later, genuinely correct "Nagafen hit you" line to ever fix it, so the
+// rest of his damage that fight (a 3033 Harm Touch among many other real hits) sat unclassifiable
+// and uncounted for good. Reproduced directly by tracing the real classifier against the real log.
+//
+// WHY THIS ONLY BROKE ON A FRESH SCAN, NEVER LIVE: scanning a log with weeks of prior history never
+// trips this, because Nagafen is already a known enemy from an earlier encounter by the time this
+// line appears - the wrongful learnFriend attempt is a no-op against the "first side wins" guard.
+// A fresh scan of just one day's log (or the live session's very first encounter with a boss) has
+// no such head start, so the mislearn goes through uncontested. Same reasoning as the article-
+// prefixed-mob heal guard just below it in _classifyHeal - a curated, narrow exception for a text
+// shape that would otherwise mislead the classifier, not a guess about what the ability does.
+const LEECH_HEAL_SPELLS = new Set(['leech touch', 'life leech']);
+function isLeechHealSpell(spell) {
+  return !!spell && LEECH_HEAL_SPELLS.has(stripRankSuffix(String(spell)).toLowerCase());
+}
 
 // How many completed fights the in-memory history keeps (newest first). A generous session's
 // worth, not a database - the owner's ask was "don't lose it the moment the meter resets", not a
@@ -189,6 +236,22 @@ class DamageEngine extends EventEmitter {
     // or a directly-cast nuke - not off every damage line. `lastDamageAt` still tracks any damage,
     // as a fallback for a fight that had only DoT ticks (a pure-DoT kill) so it still closes.
     this.lastRealHitAt = null;
+    // Owner, 16 Sep: "it's supposed to also count the enemies hits to stay in combat, not just
+    // allies" - confirmed from a real report, a Plane of Fear raid split into 3 separate fights by
+    // a periodic Dragon Fear (everyone feared, `You lose control of yourself!`) that stops the
+    // GROUP's own melee/nukes for 10+s at a time. The mob side isn't feared, though - it still
+    // swings - and that incoming damage never touched lastRealHitAt, since _credit() (the only
+    // thing that sets it) is only ever called for `dir === 'out'` (a friend hitting an enemy).
+    // This is its incoming-direction twin, same "real hit only" rule (a mob's own maintained DoT
+    // on a straggler must not hold the fight open forever either, symmetric to the outgoing case
+    // right above).
+    this.lastIncomingRealHitAt = null;
+    // Owner, 16 Sep: when this is set (to the moment control was lost), _expireIfIdle pauses
+    // outright rather than measuring elapsed time against it - a fear/stun/mez/charm that runs
+    // long doesn't get "used up" against the timeout the way an ordinary quiet stretch does. Set
+    // by a CONTROL_LOST_LINES match, cleared by a CONTROL_REGAINED_LINES match (or the safety net)
+    // - see _trackControlLoss. Null whenever the player is free to act.
+    this.controlLostAt = null;
     this.totalDamage = 0;
     // A second tally, spanning the whole time since the last zone line rather than one fight. It
     // exists so a meter has something to show between pulls and right after zoning: getActive falls
@@ -487,6 +550,23 @@ class DamageEngine extends EventEmitter {
       return 'drop';
     }
 
+    // A monster casting one of these spells on a player - see LEECH_HEAL_SPELLS' own comment for
+    // the live Lord Nagafen report this came from (a real, repeating heal with no damage-side
+    // counterpart, not a disguised attack). Dropped anyway: crediting a raid boss as a "healer" in
+    // the healing-done tally is meaningless data regardless of what the ability does, and letting a
+    // cross-target heal from an unclassified name onto a known friend teach that name friend status
+    // is exactly the mislearning this whole guard exists to prevent - the same blanket "drop before
+    // it can poison anything" treatment the article-prefixed crossfire guard just above gets.
+    //
+    // CROSS-TARGET ONLY (h !== t). The same spell names are ALSO genuine player self-heals -
+    // confirmed directly in the same real log: "Avenrae healed itself for 0 (3033) hit points by
+    // Leech Touch I." (her own lifesteal off a Harm Touch crit) and the same for Stonewahl. A
+    // self-heal can never cross-contaminate the friend/enemy sets (both names are the same entity),
+    // so it was never the dangerous shape - only "Lord Nagafen healed Avenrae..." (a different name
+    // as healer and target) is. Dropping self-heals too was tried first and caught by testing
+    // against this exact log: it silently erased Avenrae's own legitimate healing-done credit.
+    if (h !== t && isLeechHealSpell(hit.spell)) return 'drop';
+
     const healerFriend = this._isFriend(hit.healer);
     const healerEnemy = this._isEnemy(hit.healer);
     const targetFriend = this._isFriend(hit.target);
@@ -517,6 +597,9 @@ class DamageEngine extends EventEmitter {
   }
 
   handleLine(line, now = Date.now()) {
+    // Independent of everything below - a control-loss line is never a damage or heal line itself,
+    // so this can't steal anything the rest of handleLine would otherwise have parsed.
+    this._trackControlLoss(line, now);
     const hit = parseDamageLine(line);
     if (hit) {
       // Raw tally FIRST, before any classification can drop the line - see the field comment.
@@ -540,6 +623,10 @@ class DamageEngine extends EventEmitter {
       if (dir === 'out') {
         this._credit(hit.attacker, hit.amount, now, hit.kind === 'melee' || !!hit.direct, hit.skill, hit.critical);
         if (hit.kind !== 'shield') this._noteEnemyTarget(hit.target);
+      } else if (dir === 'in' && (hit.kind === 'melee' || hit.direct)) {
+        // The mob side of the same "real hit keeps the fight open" rule _credit() enforces for the
+        // group's own damage - see lastIncomingRealHitAt's own field comment.
+        this.lastIncomingRealHitAt = Math.max(this.lastIncomingRealHitAt || 0, now);
       }
       if (dir !== 'drop') this.emit('activeChanged', this.getActive(now));
       return;
@@ -884,6 +971,7 @@ class DamageEngine extends EventEmitter {
       fightStartedAt: this.fightStartedAt,
       lastDamageAt: this.lastDamageAt,
       lastRealHitAt: this.lastRealHitAt,
+      lastIncomingRealHitAt: this.lastIncomingRealHitAt,
       totalDamage: this.totalDamage,
       sinceZoneByAttacker: [...this.sinceZoneByAttacker],
       sinceZoneBySkillByAttacker: [...this.sinceZoneBySkillByAttacker].map(([k, v]) => [k, [...v]]),
@@ -982,6 +1070,7 @@ class DamageEngine extends EventEmitter {
     if (typeof s.fightStartedAt === 'number') this.fightStartedAt = s.fightStartedAt;
     if (typeof s.lastDamageAt === 'number') this.lastDamageAt = s.lastDamageAt;
     if (typeof s.lastRealHitAt === 'number') this.lastRealHitAt = s.lastRealHitAt;
+    if (typeof s.lastIncomingRealHitAt === 'number') this.lastIncomingRealHitAt = s.lastIncomingRealHitAt;
     if (typeof s.totalDamage === 'number') this.totalDamage = s.totalDamage;
     if (typeof s.sinceZoneStartedAt === 'number') this.sinceZoneStartedAt = s.sinceZoneStartedAt;
     if (typeof s.sinceZoneLastAt === 'number') this.sinceZoneLastAt = s.sinceZoneLastAt;
@@ -1030,14 +1119,47 @@ class DamageEngine extends EventEmitter {
     return d.history.length;
   }
 
+  // Watches for the player entering/leaving a charm/stun/mez/fear (see CONTROL_LOST_LINES' own
+  // comment for why root/snare are excluded) and pauses the fight-idle clock for exactly that
+  // stretch - `_expireIfIdle` below short-circuits outright while controlLostAt is set, so a long
+  // fear can never itself count against the timeout no matter how long it runs. Called on EVERY
+  // line, not just damage/heal ones - the land/end lines are plain text, invisible to those parsers.
+  _trackControlLoss(line, now) {
+    if (this.controlLostAt !== null) {
+      if (now - this.controlLostAt > CONTROL_LOST_SAFETY_MS) {
+        // The end line was missed somehow (or this specific effect isn't in the table at all) -
+        // don't let a pause become permanent. Falls through to a fresh land-line check below on
+        // the off chance this same line is ALSO the next effect's own land line.
+        this.controlLostAt = null;
+      } else if (CONTROL_REGAINED_LINES.some((end) => line.includes(end))) {
+        this.controlLostAt = null;
+        // The window starts fresh from the moment control returns, not backdated through however
+        // long the effect ran - this IS the "pause", not just a longer allowance.
+        this.lastRealHitAt = Math.max(this.lastRealHitAt || 0, now);
+        this.lastIncomingRealHitAt = Math.max(this.lastIncomingRealHitAt || 0, now);
+        return;
+      } else {
+        return;
+      }
+    }
+    if (CONTROL_LOST_LINES.some((land) => line.includes(land))) this.controlLostAt = now;
+  }
+
   // A fight ends after a stretch with no counted DAMAGE - heals are not consulted (see _creditHeal
   // on why). reset() then clears the heal fight tally alongside the damage one.
   _expireIfIdle(now) {
-    // The fight ends timeoutSec after the last REAL hit (a melee swing or a directly-cast nuke).
-    // A maintained DoT / `/melody` song ticking on a straggler is still credited but does NOT hold
+    // Paused outright while the player can't act at all - see _trackControlLoss/controlLostAt.
+    if (this.controlLostAt !== null) return false;
+    // The fight ends timeoutSec after the last REAL hit (a melee swing or a directly-cast nuke) -
+    // EITHER direction, the group's own or the mob's (owner, 16 Sep: a raid-wide fear stopped the
+    // group's own melee/nukes for 10+s while the mob side kept swinging, and that incoming combat
+    // wasn't holding the fight open at all - see lastIncomingRealHitAt's own comment). A maintained
+    // DoT / `/melody` song ticking on a straggler, either side, is still credited but does NOT hold
     // the fight open on its own (owner, 5 Sep). `lastDamageAt` is the fallback anchor for a fight
-    // that never had a real hit (a pure-DoT kill), so that still closes on the same timeout.
-    const anchor = this.lastRealHitAt != null ? this.lastRealHitAt : this.lastDamageAt;
+    // that never had a real hit at all (a pure-DoT kill), so that still closes on the same timeout.
+    const anchor = (this.lastRealHitAt != null || this.lastIncomingRealHitAt != null)
+      ? Math.max(this.lastRealHitAt || 0, this.lastIncomingRealHitAt || 0)
+      : this.lastDamageAt;
     if (anchor === null) return false;
     if (now - anchor < this.timeoutSec * 1000) return false;
     // Damage lines from within the window that haven't been classified yet ARE ongoing combat -
@@ -1059,8 +1181,8 @@ class DamageEngine extends EventEmitter {
   // landed after the bootstrap caught up.
   _snapshotRows() {
     const reconciled = this._reconcileRaw(this.byAttacker, this.rawFightByName);
-    const rows = [...reconciled.entries()]
-      .map(([name, r]) => ({
+    const rows = this._foldPossessivePets(
+      [...reconciled.entries()].map(([name, r]) => ({
         name,
         damage: r.damage,
         hits: r.hits,
@@ -1069,15 +1191,15 @@ class DamageEngine extends EventEmitter {
           .sort((a, b) => b.damage - a.damage),
         castSkills: [...(this.castsByAttacker.get(name.toLowerCase()) || [])],
       }))
-      .sort((a, b) => b.damage - a.damage);
+    ).sort((a, b) => b.damage - a.damage);
     // Healing during the same fight window (owner, 14 Sep: a Combat tab toggle between Damage /
     // Healing / Both, "several turns ago") - same reconciliation the live meter's heal side
     // already uses (metric:'heal' drops charm-war-pollution self-heals, gotcha #40). A fight
     // itself is still damage-defined (see this file's own header on why); a period with real
     // damage from ANYONE captures whatever healing happened alongside it too.
     const healReconciled = this._reconcileRaw(this.byHealer, this.rawHealFightByName, 'heal');
-    const healRows = [...healReconciled.entries()]
-      .map(([name, r]) => ({
+    const healRows = this._foldPossessivePets(
+      [...healReconciled.entries()].map(([name, r]) => ({
         name,
         damage: r.damage,
         hits: r.hits,
@@ -1086,8 +1208,42 @@ class DamageEngine extends EventEmitter {
           .sort((a, b) => b.damage - a.damage),
         castSkills: [...(this.castsByAttacker.get(name.toLowerCase()) || [])],
       }))
-      .sort((a, b) => b.damage - a.damage);
+    ).sort((a, b) => b.damage - a.damage);
     return { rows, healRows };
+  }
+
+  // Owner, 15 Sep: "avenrae's pet should go under her own graph not it's own entry" - a
+  // possessive-named pet ("Avenrae`s pet") in the Combat tab's fight history/live-fight rows folds
+  // into its owner's own row rather than showing as a separate line, unlike the live overlay
+  // meter's "Pets" bucket (_tilesFrom), which still combines every owner's identifiable pet into
+  // one shared summary row for screen space - a different display, a different call, left as is.
+  // If the owner has no row of their own yet (only their pet has landed a hit so far), the pet's
+  // row is simply relabeled to the owner rather than merged into nothing.
+  _foldPossessivePets(rows) {
+    const byName = new Map(rows.map((r) => [r.name, r]));
+    for (const row of rows) {
+      if (!isPossessivePetName(row.name)) continue;
+      const owner = petOwnerFromName(row.name);
+      if (!owner) continue;
+      byName.delete(row.name);
+      const ownerRow = byName.get(owner);
+      if (!ownerRow) {
+        byName.set(owner, { ...row, name: owner });
+        continue;
+      }
+      ownerRow.damage += row.damage;
+      ownerRow.hits += row.hits;
+      const skillByName = new Map(ownerRow.bySkill.map((s) => [s.skill, { ...s }]));
+      for (const s of row.bySkill) {
+        const cur = skillByName.get(s.skill) || { skill: s.skill, damage: 0, hits: 0, crits: 0 };
+        cur.damage += s.damage;
+        cur.hits += s.hits;
+        cur.crits = (cur.crits || 0) + (s.crits || 0);
+        skillByName.set(s.skill, cur);
+      }
+      ownerRow.bySkill = [...skillByName.values()].sort((a, b) => b.damage - a.damage);
+    }
+    return [...byName.values()];
   }
 
   // The fight is ending (reset() is about to wipe it) - save a permanent record of it first, if it
@@ -1184,6 +1340,8 @@ class DamageEngine extends EventEmitter {
     this.fightStartedAt = null;
     this.lastDamageAt = null;
     this.lastRealHitAt = null;
+    this.lastIncomingRealHitAt = null;
+    this.controlLostAt = null;
     this.pending = [];
     this.byHealer.clear();
     this.bySkillByHealer.clear();
@@ -1590,18 +1748,21 @@ class DamageEngine extends EventEmitter {
         continue;
       }
 
-      // scope 'all'. Her + anyone the group roster has admitted this session get their own row.
-      // Everyone else: a summoned-pet-shaped name (corroboration only - the roster is primary, so
-      // this only fires for a name the roster does NOT vouch for) goes to "Pets"; any other
-      // outsider goes to "Other". If the roster is empty (grouped before launch, or a restart) we
-      // can't tell an outsider from a groupmate, so everyone keeps their own row - the pre-existing
-      // behaviour - and only possessive pets (handled above, roster-independent) still fold.
-      if (admittedList.length === 0 || admits(key)) {
-        bump(rawName, r);
-      } else if (looksLikeGeneratedPetName(rawName)) {
+      // scope 'all' - "Everyone in the fight". Reported live 15 Sep: with a real raid's group
+      // roster filled in (just her own ~6-person subgroup, same as 'group' scope above), this used
+      // to fold every OTHER real raid member - Bandolgrob, Alesunder, three-quarters of a 24-person
+      // raid - into one "Other" row regardless of how much damage they did, so a scope literally
+      // named "Everyone" showed exactly two people plus an anonymous 51%-of-the-fight bucket. It
+      // worked before the roster filled in (admittedList.length === 0 made everyone keep their own
+      // row) and looked broken once it did, which is exactly backwards for a scope whose whole
+      // point is showing everyone - group membership has nothing to do with who this scope should
+      // name. "Show at most N rows" (damageRowCap, overlay.js) already caps how many tiles a big
+      // raid draws, sorted biggest-first, so nothing here needs to hide a real person to make room -
+      // only a summoned-pet-shaped name still folds into "Pets", the same as it always did.
+      if (looksLikeGeneratedPetName(rawName)) {
         bump('Pets', r, { isPet: true });
       } else {
-        bump('Other', r, { isOther: true });
+        bump(rawName, r);
       }
     }
 

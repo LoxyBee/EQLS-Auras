@@ -3301,8 +3301,23 @@ class BuffEngine extends EventEmitter {
     return [...this.ambiguousCasts.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
   }
 
+  // Emits when something actually expired this tick, OR when at least one currently-active entry
+  // is NOT infinite - i.e. has a real countdown that genuinely needs a fresh number every second.
+  // An infinite buff (remainingSec: null, no ticking number - see the roster's infiniteDuration
+  // handling) never needs this, and an EMPTY map obviously never does either. Reported live 15
+  // Sep: this was unconditional every tick regardless, "matching BuffEngine's countdown tick" -
+  // exactly right for a real countdown, but it meant all three of these fired every second
+  // forever even with zero buffs/ally buffs/songs active at all (game closed, nothing running),
+  // each one also triggering a sessionRestore.scheduleSave() call in main.js. customTimerEngine's
+  // own tick copied this same unconditional pattern from here and got the same fix.
+  _hasTickingEntry(map) {
+    for (const entry of map.values()) if (!entry.infinite) return true;
+    return false;
+  }
+
   _tick() {
     const now = Date.now();
+    let selfExpired = false;
     for (const [key, buff] of this.activeBuffs) {
       // An infinite buff has no expiry to compare against and must survive every sweep - it ends
       // when its ended text arrives, when the player dismisses it, or not at all.
@@ -3310,10 +3325,12 @@ class BuffEngine extends EventEmitter {
       if (buff.expiresAt <= now) {
         this.activeBuffs.delete(key);
         this._debugLog(`EXPIRED "${buff.name}" - duration ran out`);
+        selfExpired = true;
       }
     }
-    this.emit('buffsChanged', this.getActiveBuffs());
+    if (selfExpired || this._hasTickingEntry(this.activeBuffs)) this.emit('buffsChanged', this.getActiveBuffs());
 
+    let allyExpired = false;
     for (const [key, buff] of this.allyBuffs) {
       // Same reasoning as the self sweep above - an ally can carry a buff that never runs out
       // too, and it has no expiry to compare against. Missing this half was caught by a test that
@@ -3322,16 +3339,16 @@ class BuffEngine extends EventEmitter {
       if (buff.expiresAt <= now) {
         this.allyBuffs.delete(key);
         this._debugLog(`EXPIRED "${buff.name}" on "${buff.allyName}" - duration ran out`);
+        allyExpired = true;
       }
     }
-    // Unconditional every tick, same as buffsChanged above - the overlay's
-    // countdown text needs a fresh broadcast every second to visibly tick
-    // down, not just when something actually expires. Emitting only on
-    // expiry (tried this first) left ally-buff/custom-timer countdowns
-    // frozen on screen except when some unrelated widget-config change
-    // forced a full re-fetch.
-    this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
+    // Emitting only on expiry (tried this first, before the ticking-entry check existed) left
+    // ally-buff/custom-timer countdowns frozen on screen except when some unrelated widget-config
+    // change forced a full re-fetch - _hasTickingEntry is what keeps a REAL countdown refreshing
+    // every second while still skipping the broadcast when there is nothing to refresh.
+    if (allyExpired || this._hasTickingEntry(this.allyBuffs)) this.emit('allyBuffsChanged', this.getActiveAllyBuffs());
 
+    let songExpired = false;
     for (const [key, song] of this.bardSongs) {
       // Same reasoning as the two sweeps above - a bard song can be marked infiniteDuration too
       // (rare, but the roster allows it for any buff), and has no expiry to compare against then.
@@ -3339,9 +3356,10 @@ class BuffEngine extends EventEmitter {
       if (song.expiresAt <= now) {
         this.bardSongs.delete(key);
         this._debugLog(`EXPIRED "${song.name}" (bard song, cast by ${song.castBy || 'unknown'}) - duration ran out`);
+        songExpired = true;
       }
     }
-    this.emit('bardSongsChanged', this.getActiveBardSongs());
+    if (songExpired || this._hasTickingEntry(this.bardSongs)) this.emit('bardSongsChanged', this.getActiveBardSongs());
   }
 
   // Read-only, for surfacing in the UI (see main-window.js) so a

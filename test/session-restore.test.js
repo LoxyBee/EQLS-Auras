@@ -101,6 +101,62 @@ test('scheduleSave debounces and saveNow flushes', async () => {
   assert.deepEqual(store._peek().sessionRestore.parts.c, { captures: 1 });
 });
 
+// Reported live 15 Sep: sessionRestore.json was measured at ~75 MB on disk and being rewritten
+// every couple of seconds, causing real system-wide disk-I/O lag - because the Combat tab's
+// scanned-log history (one registered part, tens of MB, rarely changing) got rewritten in full
+// every time ANY other part's own activity called scheduleSave(). Root-caused to a runaway debug
+// log elsewhere driving the rapid saves, but this file's own design made every one of those saves
+// far more expensive than it needed to be regardless of what triggers them - both fixes below are
+// worth having on their own.
+test('saveNow skips the write entirely when the captured parts have not actually changed', () => {
+  const store = fakeStore();
+  const calls = [];
+  const wrapped = { ...store, saveJson: (...args) => { calls.push(args); store.saveJson(...args); } };
+  const r = new SessionRestore();
+  r.setStore(wrapped);
+  r.register('c', { capture: () => ({ n: 1 }), restore: () => {} });
+
+  r.saveNow();
+  assert.equal(calls.length, 1, 'the first save always writes');
+  const firstSavedAt = store._peek().sessionRestore.savedAt;
+
+  r.saveNow();
+  assert.equal(calls.length, 1, 'identical content a second time must not write again');
+  assert.equal(store._peek().sessionRestore.savedAt, firstSavedAt, 'savedAt must not move on a skipped write');
+});
+
+test('saveNow writes again the moment captured content actually differs', () => {
+  const store = fakeStore();
+  const calls = [];
+  const wrapped = { ...store, saveJson: (...args) => { calls.push(args); store.saveJson(...args); } };
+  let n = 1;
+  const r = new SessionRestore();
+  r.setStore(wrapped);
+  r.register('c', { capture: () => ({ n }), restore: () => {} });
+
+  r.saveNow();
+  n = 2;
+  r.saveNow();
+  assert.equal(calls.length, 2, 'a real content change must not be swallowed by the unchanged-skip');
+  assert.deepEqual(store._peek().sessionRestore.parts.c, { n: 2 });
+});
+
+// Reported live 15 Sep, the other half of the same finding: the file is pretty-printed with the
+// same JSON.stringify(data, null, 2) every other (small, human-readable) config file uses, and for
+// a file that can hold tens of MB of Combat-tab scan history, that indentation alone was measured
+// at roughly 3x the byte count of the same data compact - real, sustained disk I/O for something
+// nobody reads by hand. store.js's saveJson takes a `{ pretty: false }` option for exactly this.
+test('the snapshot is written compact (pretty: false), not pretty-printed like the small config files', () => {
+  const store = fakeStore();
+  let sawOpts;
+  const wrapped = { ...store, saveJson: (k, v, opts) => { sawOpts = opts; store.saveJson(k, v); } };
+  const r = new SessionRestore();
+  r.setStore(wrapped);
+  r.register('c', { capture: () => ({ n: 1 }), restore: () => {} });
+  r.saveNow();
+  assert.deepEqual(sawOpts, { pretty: false });
+});
+
 test('no store wired: every call is a safe no-op', () => {
   const r = new SessionRestore();
   r.register('x', { capture: () => ({}), restore: () => {} });

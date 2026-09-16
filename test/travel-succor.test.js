@@ -44,7 +44,7 @@ test('a travel guide defaults Succor routing off; a junk stored value coerces to
   assert.equal(new WidgetStore(io).getById(w.id).travelIncludeSuccor, true);
 
   const ws = read('src', 'main', 'widgetStore.js');
-  assert.match(ws, /'scale',\n\s*'travelIncludeSuccor',\n\];/);
+  assert.match(ws, /'scale',\n\s*'travelIncludeSuccor',\n\s*'visibleInRaid',\n\s*'visibleInGroup',\n\];/);
   assert.match(ws, /travelIncludeSuccor: widget\.travelIncludeSuccor === true,/);
 });
 
@@ -62,6 +62,22 @@ test('wired main -> preload -> renderer', () => {
   assert.match(read('src', 'preload', 'preload-main.js'), /setWidgetTravelIncludeSuccor: \(id, include\)/);
   assert.match(read('src', 'renderer', 'main-window', 'index.html'), /id="widget-travel-succor-checkbox"/);
   assert.match(read('src', 'renderer', 'main-window', 'main-window.js'), /setWidgetTravelIncludeSuccor\(selectedId, travelSuccorCb\.checked\)/);
+});
+
+// Reported live 15 Sep, alongside the customTimerEngine text-aura fix: the 1s heartbeat called
+// pushTravelRoutes() unconditionally forever, so every overlay window redrew itself once a second
+// whether the route had changed or not - "almost always zero" travel guides per that function's
+// own header comment, but every window still paid for it regardless. Deduped the same way
+// pushLockoutBoard already was, right above it in main.js.
+test('pushTravelRoutes is deduped against its own last broadcast, like pushLockoutBoard beside it', () => {
+  const main = read('src', 'main', 'main.js');
+  const at = main.indexOf('function pushTravelRoutes()');
+  assert.ok(at > -1, 'pushTravelRoutes has been restructured or removed');
+  const fn = main.slice(at, main.indexOf('\n}', at) + 2);
+  assert.match(fn, /const routes = travelRoutes\(\);/);
+  assert.match(fn, /if \(json === lastTravelRoutesJSON\) return;/, 'must skip the broadcast when nothing changed');
+  assert.match(fn, /lastTravelRoutesJSON = json;/, 'must remember what it last actually sent');
+  assert.match(fn, /broadcast\('travel:routes', routes\);/);
 });
 
 module.exports = () => report('travel-succor');

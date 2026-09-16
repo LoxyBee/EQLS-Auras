@@ -54,6 +54,11 @@ class LogWatcher extends EventEmitter {
       currentFile: this.currentFilePath ? path.basename(this.currentFilePath) : null,
       currentFilePath: this.currentFilePath,
       watching: !!this.pollTimer,
+      // How far into currentFilePath this tailer has read. Exposed so a consumer of the shared
+      // 'line' bus (lockoutService) can record "I have processed up to here" as its own resume
+      // checkpoint - it always trails this exactly, since every line it sees comes from this same
+      // read.
+      offset: this.offset,
     };
   }
 

@@ -44,9 +44,13 @@ test('the version span is filled from getVersionInfo, not hard-coded', () => {
 });
 
 test('the site link opens externally and never navigates the renderer', () => {
-  assert.match(rendererSrc, /getElementById\('about-site-link'\)/);
+  // wireExternalLink() is a small shared helper now (owner, 15 Sep, added alongside the sidebar
+  // Discord icon) - it does the getElementById/preventDefault/openExternal dance once for every
+  // external link instead of each one repeating it, so the per-link wiring is just one call.
+  assert.match(rendererSrc, /function wireExternalLink\(id, url\)/);
   assert.match(rendererSrc, /e\.preventDefault\(\)/);
-  assert.match(rendererSrc, /window\.eqTracker\.openExternal\('https:\/\/eqlsource\.com\/tools\/'\)/);
+  assert.match(rendererSrc, /window\.eqTracker\.openExternal\(url\)/);
+  assert.match(rendererSrc, /wireExternalLink\('about-site-link', 'https:\/\/eqlsource\.com\/tools\/'\)/);
   // the anchor's href is the inert "#", not the real URL
   assert.match(html, /<a href="#" id="about-site-link">/);
 });
@@ -63,6 +67,16 @@ test('the "Version & app data" status text is not dev jargon any more', () => {
   assert.match(rendererSrc, /statusEl\.textContent = 'The app is running\.'/);
   // the error branch is kept
   assert.match(rendererSrc, /statusEl\.textContent = 'Something is wrong: '/);
+});
+
+// Owner, 15 Sep: "i also need a new way to show the discord link so that it's not in the about
+// page and hard to see" - a persistent icon beside the sidebar title, visible from every page,
+// not just the one link buried on About.
+test('a persistent Discord icon sits beside the sidebar title, wired to the same real invite', () => {
+  assert.match(html, /<button type="button" id="sidebar-discord-link"/, 'the sidebar icon is missing');
+  assert.match(rendererSrc, /wireExternalLink\('sidebar-discord-link', 'https:\/\/discord\.gg\/E7c9z3rrdb'\)/);
+  // Same permanent invite as the About page's own link - one URL, not two that can drift apart.
+  assert.match(rendererSrc, /wireExternalLink\('report-discord-link', 'https:\/\/discord\.gg\/E7c9z3rrdb'\)/);
 });
 
 module.exports = () => report('about-page');

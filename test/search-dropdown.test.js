@@ -52,6 +52,31 @@ test('filter box only appears past the threshold', () => {
   assert.match(src, /filter\.hidden = !many/);
 });
 
+test('refresh() re-syncs the display after a direct .value = with no change event', () => {
+  // Reported live: picking 5 AM for the day-split hour, then something re-syncing the <select>
+  // from fresh backend state left the closed display stuck on "Midnight" - a direct .value =
+  // fires no 'change' event, so nothing else in this file would notice.
+  assert.match(src, /refreshFns\.set\(sel/);
+  assert.match(src, /function refresh\(sel\)/);
+  assert.match(src, /window\.SearchDropdown = \{ enhance, enhanceAll, refresh \}/);
+});
+
+test('the day-start-hour select calls SearchDropdown.refresh() after its direct .value =', () => {
+  const block = mainJs.slice(mainJs.indexOf('splitDayStartHourSelect.value = String('));
+  assert.match(block.slice(0, 600), /SearchDropdown\.refresh\(splitDayStartHourSelect\)/);
+});
+
+test('the AA/Exaltation/Deftness selects call SearchDropdown.refresh() after their direct .value =', () => {
+  // Reported live: the Character setup page showed "Not trained (0%)" for all three dropdowns
+  // even though the saved AA levels were correct (Total bonus read the right number) - same root
+  // cause as the day-start-hour dropdown, just discovered on a different control.
+  const block = mainJs.slice(mainJs.indexOf('aaSelect.value = String('));
+  const window = block.slice(0, 900);
+  assert.match(window, /SearchDropdown\.refresh\(aaSelect\)/);
+  assert.match(window, /SearchDropdown\.refresh\(exaltSelect\)/);
+  assert.match(window, /SearchDropdown\.refresh\(deftnessSelect\)/);
+});
+
 test('every sd- class the script uses has a themed CSS rule', () => {
   for (const cls of ['sd-wrap', 'sd-display', 'sd-caret', 'sd-text', 'sd-placeholder', 'sd-popup', 'sd-filter', 'sd-list', 'sd-item', 'sd-current', 'sd-disabled', 'sd-active', 'sd-empty']) {
     assert.ok(css.includes(`.${cls}`), `.${cls} has no CSS rule`);

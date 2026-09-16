@@ -72,6 +72,52 @@ test('a name that folds two attacks into one skill (repeated Melee) sums into a 
   assert.deepEqual(baxa.bySkill, [{ skill: 'Melee', damage: 65, hits: 2, crits: 0 }]);
 });
 
+// Owner, 15 Sep: "avenrae's pet should go under her own graph not it's own entry" - a
+// possessive-named pet folds into its owner's own fight-history row instead of showing as its
+// own line, unlike the live overlay meter's shared "Pets" bucket (a different display, untouched).
+test("a possessive-named pet's damage folds into its owner's own row, not a separate one", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 900);
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 50 points of damage.`, 1000);
+  e.handleLine(`${T}Avenrae\`s pet bites a zol ghoul knight for 79 points of damage.`, 1100);
+  e.handleLine(`${T}Avenrae\`s pet cleaves a zol ghoul knight for 117 points of damage.`, 1100);
+  endFight(e, 1100);
+  const fight = e.getHistoryFight(e.getHistory()[0].id);
+  assert.equal(fight.rows.find((r) => r.name === "Avenrae`s pet"), undefined, "must not be its own row");
+  const avenrae = fight.rows.find((r) => r.name === 'Avenrae');
+  assert.equal(avenrae.damage, 246, '50 (her own hit) + 79 + 117 (her pet) folded together');
+  assert.equal(avenrae.hits, 3);
+  assert.deepEqual(
+    avenrae.bySkill.map((s) => [s.skill, s.damage]),
+    [['Melee', 246]],
+    "the pet's melee folds into the owner's own Melee skill row too"
+  );
+});
+
+test("a possessive-named pet with no owner row yet is simply relabeled to the owner", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 900);
+  // Avenrae never lands a hit of her own this fight - only her pet does.
+  e.handleLine(`${T}Avenrae\`s pet bites a zol ghoul knight for 79 points of damage.`, 1000);
+  endFight(e, 1000);
+  const fight = e.getHistoryFight(e.getHistory()[0].id);
+  assert.equal(fight.rows.find((r) => r.name === "Avenrae`s pet"), undefined);
+  const avenrae = fight.rows.find((r) => r.name === 'Avenrae');
+  assert.ok(avenrae, "the pet's damage must not simply vanish");
+  assert.equal(avenrae.damage, 79);
+});
+
+test('getLiveFight also folds a possessive pet into its owner (same _snapshotRows path)', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 100 points of damage.`, 900);
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 50 points of damage.`, 1000);
+  e.handleLine(`${T}Avenrae\`s pet bites a zol ghoul knight for 79 points of damage.`, 1000);
+  const live = e.getLiveFight();
+  const avenrae = live.rows.find((r) => r.name === 'Avenrae');
+  assert.equal(avenrae.damage, 129);
+  assert.equal(live.rows.find((r) => r.name === "Avenrae`s pet"), undefined);
+});
+
 // Owner, 13 Sep - crit rate on the per-skill breakdown. Counted per skill (not just per attacker)
 // since a caster's nukes and their melee crit at completely different rates.
 test('crits are counted per skill, alongside hits - a mix of crit and non-crit swings', () => {
