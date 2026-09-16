@@ -163,6 +163,49 @@ class PetTracker {
   }
 
   /**
+   * Session-restore (see sessionRestore.js). Without this, a restart mid-fight forgot which mobs
+   * were charmed pets - unlike the group roster or the current zone, nothing re-derives this from
+   * log history at startup, so it silently misbucketed a still-alive own pet into "Other" on the
+   * damage meter until a fresh charm/leader line happened to refresh it. `_genByName` restores by
+   * taking the higher of the two counters rather than overwriting, so a pet charmed again right
+   * after restart still gets a fresh generation instead of colliding with the one just restored.
+   */
+  captureState() {
+    if (!this.ownPets.size && !this.otherPets.size && !this._genByName.size && !this._lastCharmSeenAt) return null;
+    return {
+      ownPets: [...this.ownPets.entries()],
+      otherPets: [...this.otherPets.entries()],
+      genByName: [...this._genByName.entries()],
+      armedUntil: this._armedUntil,
+      lastCharmSeenAt: this._lastCharmSeenAt,
+    };
+  }
+
+  restoreState(d) {
+    if (!d) return 0;
+    const now = Date.now();
+    let n = 0;
+    for (const [k, v] of d.ownPets || []) {
+      if (k && v && typeof v.refreshedAt === 'number' && now - v.refreshedAt <= STALE_MS) {
+        this.ownPets.set(k, v);
+        n += 1;
+      }
+    }
+    for (const [k, v] of d.otherPets || []) {
+      if (k && v && typeof v.refreshedAt === 'number' && now - v.refreshedAt <= STALE_MS) {
+        this.otherPets.set(k, v);
+        n += 1;
+      }
+    }
+    for (const [k, gen] of d.genByName || []) {
+      if (typeof gen === 'number' && gen > (this._genByName.get(k) || 0)) this._genByName.set(k, gen);
+    }
+    if (typeof d.armedUntil === 'number' && d.armedUntil > now) this._armedUntil = d.armedUntil;
+    if (typeof d.lastCharmSeenAt === 'number') this._lastCharmSeenAt = d.lastCharmSeenAt;
+    return n;
+  }
+
+  /**
    * What damageEngine needs to attribute a hit:
    *  - ownPetKeyByName: nameLower -> 'Name#gen', so an own pet's row stays distinct across re-charms
    *  - unknownPetNames: charmed mobs with no known owner - folded into one "Charmed pets" row

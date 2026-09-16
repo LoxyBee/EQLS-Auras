@@ -12,6 +12,19 @@ const {
 
 const TICK_INTERVAL_MS = 1000;
 const DEFAULT_TRIGGER_DURATION_SEC = 5;
+// Reported live 15 Sep: recurring mouse-movement stutter with several auras open, even sitting
+// idle. Every once-a-second engine in this app (this one, buffEngine, moduleHost,
+// raidNamedTracker, the damage/pet/travel/lockout tick and the zone-timer push in main.js) started
+// its own setInterval(fn, 1000) within milliseconds of each other at app launch, so they all land
+// in the same instant every second forever - each one broadcasts to every overlay window, so that
+// instant became several separate always-on-top windows all being told to repaint together, once a
+// second, which is exactly the kind of synchronized burst that makes Windows' compositor stutter.
+// Owner's own call on the fix: stagger the engines against each other (this delays only the FIRST
+// tick - once started, the interval keeps firing 1000ms apart forever, so the offset holds for the
+// life of the app), but never split up a single engine's own broadcast - one aura's tiles (e.g.
+// every Ally Buffs countdown) must still all move on the exact same tick, which they already do
+// since one engine's tick is one broadcast covering everything it owns.
+const TICK_STAGGER_MS = 150;
 
 // Defence in depth: widgetStore.normalizeWidget already clamps every timer's durationSec /
 // cooldownSec (0..3600, non-finite -> a sane default) on every store path - import, share code,
@@ -107,7 +120,12 @@ class CustomTimerEngine extends EventEmitter {
     // "entering" trigger, never a "leaving" one - there is nothing to have genuinely left yet.
     this.currentZone = null;
     this.debugLogFn = null; // (message) => void - see setDebugLogFn, mirrors BuffEngine's own
-    this.tickTimer = setInterval(() => this._tick(), TICK_INTERVAL_MS);
+    // See TICK_STAGGER_MS's own comment. This only delays the FIRST tick - clearInterval/clearTimeout
+    // are interchangeable in Node, so a caller that clears tickTimer before the delay elapses (every
+    // existing test does exactly this) still fully cancels it either way.
+    this.tickTimer = setTimeout(() => {
+      this.tickTimer = setInterval(() => this._tick(), TICK_INTERVAL_MS);
+    }, TICK_STAGGER_MS);
   }
 
   setGetWidgetsFn(fn) {
@@ -566,6 +584,7 @@ class CustomTimerEngine extends EventEmitter {
 
   _tick() {
     const now = Date.now();
+    let changed = false;
     for (const [key, timer] of this.activeTimers) {
       if (timer.expiresAt > now) continue;
 
@@ -576,6 +595,7 @@ class CustomTimerEngine extends EventEmitter {
       if (timer.phase === 'hidden') {
         this.activeTimers.delete(key);
         this._debugLog(`ENDED "${timer.name}" - reverse trigger's hide window elapsed, visible again`);
+        changed = true;
         continue;
       }
 
@@ -586,6 +606,7 @@ class CustomTimerEngine extends EventEmitter {
       if (timer.phase === 'duration' && timer.cooldownSec > 0) {
         timer.phase = 'cooldown';
         timer.expiresAt = now + timer.cooldownSec * 1000;
+        changed = true;
         continue;
       }
       this.activeTimers.delete(key);
@@ -594,11 +615,21 @@ class CustomTimerEngine extends EventEmitter {
           ? `ENDED "${timer.name}" - cooldown finished, ready again`
           : `ENDED "${timer.name}" - duration ran out`
       );
+      changed = true;
     }
-    // Unconditional every tick, matching BuffEngine's self-buffs tick - the
-    // overlay's countdown text needs a fresh broadcast every second to
-    // visibly tick down, not just when a timer actually expires.
-    this.emit('activeChanged', this.getActive());
+    // Broadcast when something REAL changed just now (any aura, text included - an ended timer or
+    // a duration->cooldown transition must never be swallowed), OR when at least one currently
+    // active timer has a live-ticking number that needs refreshing - see _hasNonTextActiveTimer's
+    // own comment. A text aura has no such number, so with nothing else running, a tick that
+    // changed nothing and has nothing to refresh is skipped entirely.
+    //
+    // Reported live 15 Sep: this used to be unconditional every second regardless, "matching
+    // BuffEngine's self-buffs tick" - correct for a genuine countdown, but it meant EVERY aura
+    // window (all of them, text-only alerts included) redrew itself once a second forever, with
+    // the game closed and nothing active at all. Measured contributing to real system-wide lag.
+    if (changed || this._hasNonTextActiveTimer()) {
+      this.emit('activeChanged', this.getActive());
+    }
   }
 
   // Icon looked up live from the current definition (not snapshotted at
@@ -616,6 +647,33 @@ class CustomTimerEngine extends EventEmitter {
       }
     }
     return null;
+  }
+
+  // The widget an active-timer id belongs to, for _hasNonTextActiveTimer() below. `id` is either
+  // a definition's own id ('independent' mode - same shape _findDefinitionById already searches
+  // for) or a combo key `and:<widgetId>`/`or:<widgetId>` (see getActive()'s own header comment on
+  // the two id shapes) - the widget id is embedded directly in the combo case, cheaper than a scan.
+  _findWidgetForId(id) {
+    const combo = /^(?:and|or):(.+)$/.exec(id);
+    if (combo) return this.getWidgetsFn().find((w) => w.id === combo[1]) || null;
+    for (const widget of this.getWidgetsFn()) {
+      if ((widget.customTimers || []).some((t) => t && t.id === id)) return widget;
+    }
+    return null;
+  }
+
+  // Does anything CURRENTLY active have a number on screen that needs refreshing every second?
+  // A text aura (displayMode:'text') shows a flash/message with no ticking countdown, so it has
+  // nothing for a per-second heartbeat to update - only an icon/list-mode widget's remaining-time
+  // readout does. Used by _tick() to decide whether its unconditional once-a-second broadcast is
+  // actually needed right now, or would just be every aura window redrawing itself for nothing.
+  _hasNonTextActiveTimer() {
+    for (const timer of this.activeTimers.values()) {
+      if (timer.phase === 'hidden') continue; // no visible number either way - see getActive()
+      const widget = this._findWidgetForId(timer.defId || timer.id);
+      if (!widget || widget.displayMode !== 'text') return true;
+    }
+    return false;
   }
 
   getActive() {

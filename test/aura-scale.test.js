@@ -37,7 +37,10 @@ test('a fresh aura is scale 1, it is in SHAREABLE_FIELDS (at the end), and a bad
   const w = store.create('T', { buffSource: 'self' });
   assert.equal(w.scale, 1);
   const ws = read('src', 'main', 'widgetStore.js');
-  assert.match(ws, /'dynamicChatTimer',\n\s*'scale',\n\s*'travelIncludeSuccor',\n\];/);
+  assert.match(
+    ws,
+    /'dynamicChatTimer',\n\s*'scale',\n\s*'travelIncludeSuccor',\n\s*'visibleInRaid',\n\s*'visibleInGroup',\n\];/
+  );
   store.update(w.id, { scale: 99 });
   const data = store.store.loadJson('widgets', null);
   const store2 = new WidgetStore({ loadJson: (n, f) => (n === 'widgets' ? data : f), saveJson: () => {} });

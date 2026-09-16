@@ -644,5 +644,128 @@ test('a missing log target is dropped, and backfill falls back to the live log',
   assert.deepEqual([...s.states.keys()], ['Baxa'], 'it read the live log instead');
 });
 
+// ---------------------------------------------------------------------------
+// Session restore — surviving a restart without re-parsing from scratch
+// ---------------------------------------------------------------------------
+//
+// Every restart used to re-parse the whole current lockout week from the log, every time - several
+// seconds of regex work, however many times a day the app is closed and reopened. captureState()/
+// restoreState() put the parsed state back without a re-read, and carry a resume checkpoint so the
+// very next backfill() only has to pick up whatever was appended since the snapshot instead of
+// seeking back to the week boundary again.
+
+test('captureState is null with nothing tracked, and round-trips a real state exactly', async () => {
+  const empty = new LockoutService();
+  assert.equal(empty.captureState(), null);
+
+  const file = liveLog([ASSIGN('Lord Nagafen')]);
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => file);
+  await s.backfill();
+  const snap = s.captureState();
+  assert.ok(snap && Array.isArray(snap.states) && snap.states.length === 1);
+
+  const fresh = new LockoutService();
+  fresh.setCurrentFileFn(() => file);
+  const n = fresh.restoreState(snap);
+  assert.equal(n, 1, 'restored exactly one character');
+  const at = civilNow(new Date(2026, 7, 20, 12, 0, 0));
+  assert.deepEqual(
+    fresh.getProjection(at).characters[0].projection.bosses.map((b) => b.boss),
+    s.getProjection(at).characters[0].projection.bosses.map((b) => b.boss),
+    'a restored state renders the same grid as the one it was captured from'
+  );
+});
+
+test('a restored checkpoint makes the next backfill read only what is new, not the whole week again', async () => {
+  const file = liveLog([ASSIGN('Lord Nagafen')]);
+  const first = new LockoutService();
+  first.setCurrentFileFn(() => file);
+  first.setCurrentOffsetFn(() => fs.statSync(file).size); // stand-in for the live tailer's own offset
+  await first.backfill();
+  const snap = first.captureState();
+  assert.ok(snap.progress && snap.progress.character === 'Baxa', 'a live (non-target) read captures a resume checkpoint');
+
+  // What was on disk when the app "closed". Now more got appended while it was shut - exactly the
+  // gap a resumed read must still pick up.
+  fs.appendFileSync(file, ASSIGN('Lady Vox') + '\r\n');
+
+  const second = new LockoutService();
+  second.setCurrentFileFn(() => file);
+  second.restoreState(snap);
+  const r = await second.backfill();
+
+  assert.equal(r.lines, 1, 'only the one appended line was read, not the whole file again');
+  const bosses = second.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0)))
+    .characters[0].projection.bosses.map((b) => b.boss).sort();
+  assert.deepEqual(bosses, ['Lady Vox', 'Lord Nagafen'], 'both the restored fact and the new one are present');
+});
+
+test('a checkpoint for a different file (rotation, or "Change log file") falls back to a full parse', async () => {
+  const fileA = liveLog([ASSIGN('Lord Nagafen')], 'eqlog_Baxa_rivervale.txt');
+  const s1 = new LockoutService();
+  s1.setCurrentFileFn(() => fileA);
+  s1.setCurrentOffsetFn(() => fs.statSync(fileA).size);
+  await s1.backfill();
+  const snap = s1.captureState();
+
+  // A different file, same character - what a real rotation looks like. The restored fact from
+  // fileA is real and correctly kept; the point of this test is that fileB's own content is fully
+  // read too rather than silently skipped because a (mismatched) checkpoint said "start partway".
+  const fileB = liveLog([ASSIGN('Lady Vox')], 'eqlog_Baxa_rivervale.txt');
+  const s2 = new LockoutService();
+  s2.setCurrentFileFn(() => fileB);
+  s2.restoreState(snap);
+  const r = await s2.backfill();
+
+  assert.ok(r.lines >= 1, 'the new file was actually read from the start, not skipped');
+  const bosses = s2.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0)))
+    .characters[0].projection.bosses.map((b) => b.boss).sort();
+  assert.deepEqual(bosses, ['Lady Vox', 'Lord Nagafen'],
+    "the restored fact survives AND fileB's own content was actually parsed, not skipped by a mismatched checkpoint");
+});
+
+test('a checkpoint past the end of a shrunk/rewritten file falls back to a full parse', async () => {
+  const file = liveLog([ASSIGN('Lord Nagafen')]);
+  const bogusSnap = {
+    states: [['Baxa', core.createState('Baxa')]],
+    progress: { character: 'Baxa', file: path.resolve(file), offset: fs.statSync(file).size + 999999 },
+  };
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => file);
+  s.restoreState(bogusSnap);
+  const r = await s.backfill();
+  assert.ok(r.lines >= 1, 'an out-of-range offset must not skip real, unread lines');
+  const bosses = s.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0)))
+    .characters[0].projection.bosses.map((b) => b.boss);
+  assert.deepEqual(bosses, ['Lord Nagafen']);
+});
+
+test('captureState skips the resume checkpoint while a manual "Change log file" target is set', async () => {
+  const file = liveLog([ASSIGN('Lord Nagafen')]);
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => 'C:/eq/Logs/eqlog_Other_rivervale.txt');
+  s.setCurrentOffsetFn(() => 12345); // the live tailer, watching a DIFFERENT file than the target
+  s.setLogTarget(file);
+  await s.backfill();
+  const snap = s.captureState();
+  assert.equal(snap.progress, null, 'the offset belongs to the tailed file, not the manually targeted one');
+});
+
+test('rebuild() drops any restored checkpoint - a rescan means start over, not resume', async () => {
+  const file = liveLog([ASSIGN('Lord Nagafen')]);
+  const s = new LockoutService();
+  s.setCurrentFileFn(() => file);
+  s.restoreState({
+    states: [['Baxa', core.createState('Baxa')]],
+    progress: { character: 'Baxa', file: path.resolve(file), offset: fs.statSync(file).size },
+  });
+  await s.rebuild();
+  // If the stale checkpoint had been honoured, this would read 0 new lines and lose the task.
+  const bosses = s.getProjection(civilNow(new Date(2026, 7, 20, 12, 0, 0)))
+    .characters[0].projection.bosses.map((b) => b.boss);
+  assert.deepEqual(bosses, ['Lord Nagafen'], 'a full rescan re-read the file from the start');
+});
+
 module.exports = () => report('lockouts');
 if (require.main === module) report('lockouts').then((n) => process.exit(n ? 1 : 0));

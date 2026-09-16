@@ -6,10 +6,15 @@
  *   - a DUNGEON entry (no `raid` flag): the board lights up on a plain "You have entered X." line,
  *     the way #33 originally asked for - "every tracked zone, not just raids".
  *   - a RAID entry (`raid: true` - the Planes, and the classic raid-boss lists): the board lights
- *     up ONLY after the player's own "You say, 'danger'" to the Voidling, then a zone change. The
- *     "- Group" / difficulty-suffix grammar does NOT tell a raid instance from a group one
- *     (measured: the owner's real Plane of Fear raid entered as "... - Group 4 (Refined)"), so the
- *     dialogue is the only gate - the same signal lockoutCore keys its weekly-attempt event on.
+ *     up for the raid-lockout instance, which the zone string's own " - Group" marker names
+ *     directly - corrected 13 Sep after the owner's own correction and a full week of real logs
+ *     checked line by line: every " - Group" zone entry has a Voidling hail within seconds of it,
+ *     every entry without one has none nearby (or one hours old and unrelated). The player's own
+ *     "You say, 'danger'" is kept as a fallback signal (isGroupInstance() ORs it in), but it is not
+ *     the gate any more - it used to be the ONLY one, which missed every time someone ELSE formed
+ *     the raid and just invited this player in, or a reconnect landed back in one with no fresh
+ *     hail. lockoutCore's own weekly-attempt tracking is separate and untouched - it correctly
+ *     still requires the PLAYER's own hail, because an attempt is about who asked for the weekly.
  *
  * A "<name> has been slain by ..." line greys a named; re-entering rebuilds the board.
  */
@@ -21,8 +26,17 @@ const { RAID_ZONE_NAMEDS } = require('../src/shared/data/raidZoneNameds');
 
 const TS = '[Wed Aug 19 19:23:03 2026] ';
 const sayDanger = (t) => t.handleLine(`${TS}You say, 'danger'`);
-// A RAID entry: the player's own "danger" to the Voidling, then the zone change.
-const enter = (t, z) => { sayDanger(t); t.handleLine(`${TS}You have entered ${z}.`); };
+// A RAID entry: the player's own "danger" to the Voidling, then the zone change - into the
+// raid-lockout instance, which the real game marks with its own " - Group" suffix (see
+// GROUP_INSTANCE_RE in raidNamedTracker.js). The hail is kept here for flavor/realism, but what
+// actually makes this a raid entry post-13-Sep is the "- Group" the helper inserts below, not the
+// hail line - callers that want a NON-raid entry into the same zone use enterOpen() instead.
+const enter = (t, z) => {
+  sayDanger(t);
+  const raidZone = /^(.*?)( \d+ \([^)]+\))?$/.exec(z);
+  const withGroup = raidZone[2] ? `${raidZone[1]} - Group${raidZone[2]}` : `${z} - Group`;
+  t.handleLine(`${TS}You have entered ${withGroup}.`);
+};
 // A DUNGEON / open / untracked entry: a plain zone line, no Voidling dialogue.
 const enterOpen = (t, z) => t.handleLine(`${TS}You have entered ${z}.`);
 const slay = (t, n) => t.handleLine(`${TS}${n} has been slain by Avenrae!`);
@@ -139,7 +153,7 @@ test('the board survives a restart: killed nameds come back greyed, not all-up (
   // restart: restoreState runs BEFORE the log-tail zone recovery (setZone), so it stashes
   const { t: t2 } = make();
   assert.equal(t2.restoreState(snap), 0, 'stashed - no board to apply to yet');
-  t2.setZone('The Plane of Hate', false); // startup seed
+  t2.setZone('The Plane of Hate'); // startup seed
   const killed = t2.getActive().filter((r) => r.killed).map((r) => r.name).sort();
   assert.deepEqual(killed, ['Lord of Ire', 'Maestro of Rancor', 'Magi P`tasa']);
 });
@@ -152,7 +166,7 @@ test('a restart into a DIFFERENT zone than the snapshot gets a fresh board, no s
 
   const { t: t2 } = make();
   t2.restoreState(snap);
-  t2.setZone('The Plane of Fear', false); // she left Hate, restarted in Fear
+  t2.setZone('The Plane of Fear'); // she left Hate, restarted in Fear
   assert.equal(t2.getActive().filter((r) => r.killed).length, 0, 'Fear board must be all-up');
   assert.equal(t2.getCurrentZone(), 'The Plane of Fear');
 });
@@ -208,6 +222,22 @@ test("a groupmate's \"danger\" hail: the board shows, but it is not flagged as t
   t.handleLine(`${TS}You have entered The Plane of Fear 1 (Awakened).`);
   assert.equal(t.getCurrentZone(), 'The Plane of Fear', 'the board still shows');
   assert.equal(t.viaVoidling, false, "someone else's hail is not proof the PLAYER raided");
+});
+
+test('a "- Group" zone entry is the raid-lockout instance even with no hail from anyone (invited in by someone else)', () => {
+  const { t } = make();
+  // No danger line at all - reached purely by accepting another player's "asked you to join the
+  // instance" invite. The zone string alone proves it.
+  t.handleLine(`${TS}You have entered The Plane of Hate - Group 4 (Refined).`);
+  assert.equal(t.getCurrentZone(), 'The Plane of Hate');
+  assert.equal(t.viaVoidling, true, 'the zone string names the raid instance directly');
+});
+
+test('a bare instance suffix with no "- Group" is never the raid instance, even with a hail nearby', () => {
+  const { t } = make();
+  t.handleLine(`${TS}You say, 'danger'`);
+  t.handleLine(`${TS}You have entered The Plane of Fear 4 (Refined).`);
+  assert.equal(t.viaVoidling, false, 'no "- Group" in the string means this was not the raid version');
 });
 
 test('viaVoidling is consumed by the zone change - a plain re-entry drops the raid flag but keeps the board', () => {
@@ -337,6 +367,175 @@ test('a non-respawning zone leaves the kill greyed with no countdown', () => {
   const row = t.getActive().find((r) => r.name === 'Efreeti Lord Djarn');
   assert.equal(row.killed, true);
   assert.equal(row.respawnRemainingSec, null);
+});
+
+// ---------------------------------------------------------------------------
+// "reset or keep progress?" prompt (owner's weekly notes, 13 Sep) - re-entering the same base
+// zone with no hail either way is genuinely ambiguous (an instance-line echo vs. a real second
+// trip into a fresh dungeon instance), so it asks rather than silently guessing either way.
+// ---------------------------------------------------------------------------
+
+test('re-entering the same zone with kills already tracked, no hail either way, asks rather than guessing', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  let asked = null;
+  t.on('resetPromptNeeded', (payload) => { asked = payload; });
+  enterOpen(t, "Nagafen's Lair");
+  assert.deepEqual(asked, { zone: "Nagafen's Lair" });
+  assert.deepEqual(t.getPendingResetPrompt(), { zone: "Nagafen's Lair" });
+  // Nothing changes until she answers - same as the existing "keeps the board" behaviour.
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, true);
+});
+
+test('re-entering the same zone with NOTHING killed yet never asks - there is nothing to lose either way', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  let asked = false;
+  t.on('resetPromptNeeded', () => { asked = true; });
+  enterOpen(t, "Nagafen's Lair");
+  assert.equal(asked, false);
+  assert.equal(t.getPendingResetPrompt(), null);
+});
+
+test('the entrance-then-instance-suffix pair for one visit does not ask twice', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  let count = 0;
+  t.on('resetPromptNeeded', () => { count += 1; });
+  enterOpen(t, "Nagafen's Lair 4 (Refined)");
+  enterOpen(t, "Nagafen's Lair 4 (Refined)");
+  assert.equal(count, 1, 'the second identical line re-asked instead of a no-op');
+});
+
+test('answering "reset" while still in the zone rebuilds the board fresh', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  assert.ok(t.getPendingResetPrompt());
+  let changed = false;
+  t.on('changed', () => { changed = true; });
+  assert.equal(t.resolveResetPrompt('reset'), true);
+  assert.equal(t.getPendingResetPrompt(), null);
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, false, 'the kill was not cleared');
+  assert.ok(changed, 'nothing told the overlay the board changed');
+});
+
+test('answering "keep" leaves the board exactly as it was', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  t.resolveResetPrompt('keep');
+  assert.equal(t.getPendingResetPrompt(), null);
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, true);
+});
+
+test('answering after she already left the zone is a harmless no-op', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  t.handleLine(`${TS}You have entered Qeynos.`); // walked off before answering
+  assert.equal(t.getPendingResetPrompt(), null, 'leaving did not cancel the moot question');
+  assert.equal(t.resolveResetPrompt('reset'), false, 'answering a question that no longer exists');
+});
+
+test('a real zone change while a prompt is pending cancels it rather than leaving it stale', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  assert.ok(t.getPendingResetPrompt());
+  enterOpen(t, 'The Plane of Fear'); // a genuinely different tracked zone
+  assert.equal(t.getPendingResetPrompt(), null);
+});
+
+test('a fresh Voidling re-entry still resets automatically even with a question already pending', () => {
+  const { t } = make();
+  // A repeated TAGGED (non-"- Group") entry - not a tagged->bare exit (see the "exiting a d4 into
+  // public" test below) - is still genuinely ambiguous and queues a question.
+  enterOpen(t, 'The Plane of Fear 1 (Awakened)');
+  slay(t, 'Terror');
+  enterOpen(t, 'The Plane of Fear 1 (Awakened)');
+  assert.ok(t.getPendingResetPrompt());
+  enter(t, 'The Plane of Fear'); // a real hail this time - a genuinely fresh instance
+  assert.equal(t.getPendingResetPrompt(), null, 'the stale question was not cleared');
+  assert.equal(t.getActive().find((r) => r.name === 'Terror').killed, false, 'the fresh instance did not reset');
+});
+
+// Owner, 14 Sep: "raid got prompted exiting a d4 into public again" - real bug, screenshot-
+// confirmed live. Stepping OUT of a tagged instance into the bare, suffix-less zone name can never
+// be a fresh attempt (leaving is not starting a new pull), so it must never ask.
+test('leaving a tagged instance for the bare public zone never asks, even with kills tracked', () => {
+  const { t } = make();
+  enterOpen(t, 'The Plane of Fear 4 (Refined)');
+  slay(t, 'Terror');
+  let asked = false;
+  t.on('resetPromptNeeded', () => { asked = true; });
+  enterOpen(t, 'The Plane of Fear'); // stepping out to the public hub, no tag at all
+  assert.equal(asked, false, 'exiting to the bare zone must never trigger the reset-or-keep popup');
+  assert.equal(t.getPendingResetPrompt(), null);
+  assert.equal(t.getActive().find((r) => r.name === 'Terror').killed, true, 'the board must keep showing progress while standing in the hub');
+});
+
+test('a bare-to-bare repeat (no tiered form exists, e.g. Nagafen\'s Lair) still asks - the exit-to-public exception does not apply', () => {
+  const { t } = make();
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  let asked = false;
+  t.on('resetPromptNeeded', () => { asked = true; });
+  enterOpen(t, "Nagafen's Lair"); // bare re-entry, same as before - the ONLY shape a real 2nd attempt can take here
+  assert.equal(asked, true, 'a dungeon with no difficulty tiers must still get to ask on a same-shape re-entry');
+});
+
+// ---------------------------------------------------------------------------
+// Auto-reset on an unanswered prompt (owner, 14 Sep). Confirmed against her own real ~12-hour log:
+// the "reset or keep?" popup fired 3 separate times and was never answered once - each time the
+// board just sat showing stale kills until she happened to leave the zone for something else. Her
+// own call: auto-answer "reset" after a timeout instead of leaving it stuck indefinitely.
+// ---------------------------------------------------------------------------
+
+test('an unanswered reset prompt auto-resolves as "reset" after the timeout', async () => {
+  const { t, log } = make();
+  t.setOptions({ resetPromptAutoResetMs: 20 }); // real timer, shrunk so the test doesn't wait 18s
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair"); // ambiguous re-entry - queues the question
+  assert.ok(t.getPendingResetPrompt(), 'the question must be pending before the timeout can auto-answer it');
+  let changed = false;
+  t.on('changed', () => { changed = true; });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(t.getPendingResetPrompt(), null, 'an unanswered question must not sit pending forever');
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, false, 'the auto-answer must actually be "reset", not "keep"');
+  assert.ok(changed, 'the overlay must be told the board changed when the auto-reset fires');
+  assert.ok(log.some((m) => /auto-resetting/.test(m)), 'the debug log should say WHY the board reset with no one clicking anything');
+});
+
+test('answering manually before the timeout cancels the auto-reset - it does not fire twice', async () => {
+  const { t } = make();
+  t.setOptions({ resetPromptAutoResetMs: 20 });
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  t.resolveResetPrompt('keep'); // she answered before the timer fired
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(t.getActive().find((r) => r.name === 'Efreeti Lord Djarn').killed, true, 'a stale timer must not override her own "keep" answer');
+});
+
+test('leaving the zone before the timeout cancels the auto-reset harmlessly', async () => {
+  const { t } = make();
+  t.setOptions({ resetPromptAutoResetMs: 20 });
+  enterOpen(t, "Nagafen's Lair");
+  slay(t, 'Efreeti Lord Djarn');
+  enterOpen(t, "Nagafen's Lair");
+  enterOpen(t, 'The Plane of Fear'); // walked off before the timer fired
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  // No crash, and the new zone's own (unrelated) board is untouched by a stale timer callback.
+  assert.equal(t.getCurrentZone(), 'The Plane of Fear');
+  assert.equal(t.getPendingResetPrompt(), null);
 });
 
 module.exports = () => report('raid-named-tracker');

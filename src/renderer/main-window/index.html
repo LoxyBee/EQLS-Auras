@@ -52,42 +52,60 @@
            Two buttons for one subject, one of which was a bare "+", is two things to learn where
            there is only one. -->
       <button class="profile-manage-btn" id="profile-manage-btn" title="Add, rename, delete and configure loadouts">Loadouts</button>
-      <!-- Lives up here rather than on the Overlay Auras page deliberately: this is for the
-           moment you want the screen clear NOW, which is exactly the moment you do not want to
-           navigate somewhere first. Its state is loud (see .master-hide-btn.active) because the
-           override is temporary, does not survive a restart, and an aura that is hidden looks
-           identical to an aura that is broken. -->
-      <button
-        class="master-hide-btn"
-        id="master-hide-all-btn"
-        title="Hides every aura for now. No setting changed; back on next restart."
-      >Hide auras</button>
-      <!-- QOL #10 - for streaming / voice chat. Silences every aura's alert sounds without hiding
-           the tiles. Same "loud when active, not persisted" treatment as Hide auras, for the same
-           reason: a forgotten mute looks identical to the sounds being broken. -->
-      <button
-        class="master-hide-btn"
-        id="master-mute-btn"
-        title="Mutes every aura's sounds. Tiles stay visible. Back on next restart."
-      >Mute sounds</button>
-      <!-- Shown only after the nudge pad's centre button opened an aura's settings mid-move: it
-           closed the move UI and stashed it. This puts it back - tweak one aura, then carry on
-           moving them all. -->
-      <button
-        class="master-hide-btn active"
-        id="resume-move-btn"
-        style="display:none"
-        title="You left move mode to open settings. Click to go back to moving."
-      >&#8617; Back to moving</button>
-      <span class="master-hide-hint" id="master-hide-hint"></span>
+      <!-- All right-aligned as one group (15 Sep - was each carrying its own margin-left:auto,
+           which spread Hide auras/Mute sounds apart into two separate clusters instead of one).
+           QOL #10's Mute sounds sits first, since streaming/voice-chat muting is the one someone
+           reaches for FIRST/most reflexively; Hide auras follows it. -->
+      <div class="topbar-actions-right">
+        <!-- QOL #10 - for streaming / voice chat. Silences every aura's alert sounds without
+             hiding the tiles. Same "loud when active, not persisted" treatment as Hide auras, for
+             the same reason: a forgotten mute looks identical to the sounds being broken. -->
+        <button
+          class="master-hide-btn"
+          id="master-mute-btn"
+          title="Mutes every aura's sounds. Tiles stay visible. Back on next restart."
+        >Mute sounds</button>
+        <!-- Lives up here rather than on the Overlay Auras page deliberately: this is for the
+             moment you want the screen clear NOW, which is exactly the moment you do not want to
+             navigate somewhere first. Its state is loud (see .master-hide-btn.active) because the
+             override is temporary, does not survive a restart, and an aura that is hidden looks
+             identical to an aura that is broken. -->
+        <button
+          class="master-hide-btn"
+          id="master-hide-all-btn"
+          title="Hides every aura for now. No setting changed; back on next restart."
+        >Hide auras</button>
+        <!-- Shown only after the nudge pad's centre button opened an aura's settings mid-move: it
+             closed the move UI and stashed it. This puts it back - tweak one aura, then carry on
+             moving them all. -->
+        <button
+          class="master-hide-btn active"
+          id="resume-move-btn"
+          style="display:none"
+          title="You left move mode to open settings. Click to go back to moving."
+        >&#8617; Back to moving</button>
+        <span class="master-hide-hint" id="master-hide-hint"></span>
+      </div>
     </div>
 
     <div class="app-body">
     <nav class="sidebar">
-      <h1>EQLS Auras</h1>
+      <div class="sidebar-title-row">
+        <h1><a href="#" data-page="page-about" title="About EQLS Auras">EQLS Auras</a></h1>
+        <button type="button" id="sidebar-discord-link" class="sidebar-discord-link" title="Join the EQLsource Discord">
+          <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M3 17V5.8C3 4.8 3.8 4 4.8 4h10.4c1 0 1.8.8 1.8 1.8V17l-3-2.6-1.6 1.4-1.9-.7-1.9.7-1.6-1.4L3 17Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+            <circle cx="7.6" cy="9.6" r="1.1" fill="currentColor"/>
+            <circle cx="12.4" cy="9.6" r="1.1" fill="currentColor"/>
+          </svg>
+        </button>
+      </div>
       <button class="nav-btn active" data-page="page-tracker">Buff Tracker</button>
 
-      <button class="nav-btn" data-page="page-overlay" id="widgets-nav-btn">Overlay Auras</button>
+      <button class="nav-btn" data-page="page-overlay" id="widgets-nav-btn">
+        <span class="nav-section-chevron" id="widgets-section-chevron" title="Show/hide the aura list">▾</span>
+        <span>Overlay Auras</span>
+      </button>
       <div class="nav-submenu" id="widgets-submenu">
         <div class="nav-add-widget-row">
           <button id="open-add-widget-modal-btn" class="nav-add-widget-btn">+ Add aura</button>
@@ -95,23 +113,36 @@
         </div>
       </div>
 
-      <button class="nav-btn" data-page="page-action-bars" id="action-bars-nav-btn">Action Bars</button>
-      <div class="nav-submenu" id="action-bars-submenu">
+      <button class="nav-btn" data-page="page-action-bars" id="action-bars-nav-btn">
+        <span class="nav-section-chevron" id="action-bars-section-chevron" title="Show/hide the action bar list">▾</span>
+        <span>Action Bars</span>
+      </button>
+      <div class="nav-submenu nav-submenu-actionbars" id="action-bars-submenu">
         <div class="nav-add-widget-row">
           <button id="open-add-action-bar-modal-btn" class="nav-add-widget-btn">+ Add action bar</button>
         </div>
       </div>
 
-      <button class="nav-btn" data-page="page-planner" id="planner-nav-btn">Buff Planner<span class="nav-exp-tag">exp</span></button>
-
-      <button class="nav-btn" data-page="page-lockouts" id="lockouts-nav-btn">Lockouts</button>
+      <button type="button" class="nav-group-header" id="tools-nav-header">
+        <span class="nav-section-chevron" id="tools-section-chevron" title="Show/hide Buff Planner, Combat, and Lockouts">▾</span>
+        <span>Tools</span>
+      </button>
+      <div class="nav-submenu nav-submenu-tools" id="tools-submenu">
+        <button class="nav-btn" data-page="page-planner" id="planner-nav-btn">Buff Planner<span class="nav-exp-tag">exp</span></button>
+        <button class="nav-btn" data-page="page-combat" id="combat-nav-btn">Combat</button>
+        <button class="nav-btn" data-page="page-lockouts" id="lockouts-nav-btn">Lockouts</button>
+      </div>
       <!-- Nav buttons for custom modules that declare a settings page are injected here by
            initModules() - between Lockouts and Setup (owner's placement). No heading, no wrapper -
            they read as ordinary pages. -->
       <div id="module-nav-slot"></div>
       <button class="nav-btn" data-page="page-settings">Setup</button>
       <button class="nav-btn" data-page="page-log">Log</button>
-      <button class="nav-btn" data-page="page-about">About</button>
+      <!-- Hidden, not deleted - the "EQLS Auras" title link and a couple of in-page "About page"
+           links (see initNavigation()'s generic a[data-page] handler) look this button up by its
+           data-page to activate. About no longer needs its own permanent sidebar row now that the
+           title links to it (owner, 15 Sep). -->
+      <button class="nav-btn" data-page="page-about" style="display:none">About</button>
     </nav>
 
     <!-- Drag handle for the sidebar width. A real element rather than CSS `resize`, because
@@ -279,10 +310,19 @@
                    on 2026-08-24). Already-added zones are left out of the results (see
                    renderZoneAddOptions), so nothing can be picked twice. QOL #2. -->
               <div class="row" id="widget-zones-row">
-                <span class="label" title="Leave empty to show everywhere. Zone names are exact. Pick any number — the aura shows in any of them.">Only in:</span>
-                <input type="text" id="widget-zone-search" class="text-input" placeholder="Type to find a zone, then click it..." autocomplete="off" />
+                <span class="label" title="Leave empty and Raid/Group both off to show everywhere. Zone names are exact. The aura shows if ANY of these match: a specific zone, Raid (any raid-lockout instance), or Group (any group-sized dungeon instance).">Only in:</span>
+                <div class="zone-search-wrap">
+                  <input type="text" id="widget-zone-search" class="text-input" placeholder="Type to find a zone, then click it..." autocomplete="off" />
+                  <div id="widget-zone-options" class="zone-add-list" style="display:none"></div>
+                </div>
+                <!-- Content-type gates alongside the specific zone list above - either one matches
+                     independently, same "shows in any of them" rule the zone list already
+                     follows on its own. "Raid" means the raid-lockout instance specifically (the
+                     zone carries " - Group" - see shared/zoneVisibility.js), not just any zone
+                     that also has a raid version. -->
+                <button type="button" class="profile-toggle" id="widget-zone-raid-toggle" title="Show this aura only in a raid-lockout instance (any zone), on top of the specific zones above.">Raid</button>
+                <button type="button" class="profile-toggle" id="widget-zone-group-toggle" title="Show this aura only in a group-sized dungeon instance (any zone), on top of the specific zones above.">Group</button>
               </div>
-              <div id="widget-zone-options" class="zone-add-list" style="display:none"></div>
               <div id="widget-zone-list" class="profile-toggle-list"></div>
               <p class="hint" id="widget-zone-warning" style="display:none"></p>
             </div>
@@ -304,7 +344,6 @@
                 <button type="button" class="topic-head" data-toggle>
                   <span class="chev"></span>
                   <span class="topic-title">Position</span>
-                  <span class="topic-summary" id="topic-panel-position-summary"></span>
                 </button>
                 <div class="topic-body"><div class="topic-body-inner">
                   <div class="row position-controls" id="widget-position-row">
@@ -315,7 +354,8 @@
                   <p class="hint" id="widget-position-hint"></p>
                   <div class="row" id="widget-opacity-row">
                     <span class="label">Opacity:</span>
-                    <input type="range" id="widget-opacity-slider" min="0.2" max="1" step="0.05" />
+                    <input type="range" id="widget-opacity-slider" min="0" max="1" step="0.05" />
+                    <span id="widget-opacity-value" class="slider-value">100%</span>
                   </div>
                 </div></div>
               </div>
@@ -1043,6 +1083,141 @@
         </div>
       </section>
 
+      <section id="page-combat" class="page">
+        <h2 class="page-title">Combat</h2>
+
+        <div class="card">
+          <h3 title="Reads the file once, from the start, looking for damage lines and zone changes - like the live meter, but all at once instead of line by line as you play.">Scan a log for fights</h3>
+          <div class="row">
+            <button type="button" id="combat-scan-current">Scan my current log</button>
+            <button type="button" id="combat-scan-file">Scan a different log file…</button>
+          </div>
+          <p class="scan-status" id="combat-scan-status" style="display:none"></p>
+        </div>
+
+        <div class="card" id="combat-list-screen">
+          <!-- Owner, 15 Sep: "reading a log still says 'live'" / "live version still says 'past
+               fights'" - this heading used to be one fixed string ("Past fights ● Live") no
+               matter what the Source filter showed, so browsing a static scanned file still
+               carried a "Live" badge, and the live session's own view never said anything
+               different while a fight was actually in progress. Both pieces are now their own
+               elements (updateListHeading in main-window.js) so the text and the badge can change
+               independently based on what's actually being shown. -->
+          <!-- Owner, 15 Sep, second follow-up: "you still did not move the buttons where i told
+               you to" - a row of its own beneath the heading (the previous attempt) was still not
+               "the top row" - the heading's own line is. Same header+actions pattern this app
+               already uses for modal headers (.modal-header: space-between, wraps at narrow
+               widths) rather than inventing a new one. -->
+          <div class="combat-list-header">
+            <h3 title="Every fight tracked this session plus anything found by a scan above. Newest first. Closing the app clears this - it's not saved to disk.">
+              <span id="combat-list-heading-text">Fights</span>
+              <span class="live-indicator" id="combat-list-live-badge" title="Always on while the app is open - a fight lands here automatically the moment it ends, no scan needed for anything happening right now.">● Live</span>
+            </h3>
+            <div class="combat-list-actions">
+              <!-- "Back to live" was dropped entirely (owner, 15 Sep: "back to live and current
+                   zone do the same thing basically" / "back to live still flashes the scanned log
+                   when already on live, it should do nothing or not be there") - jumpToCurrentZone
+                   always overwrites the zone filter with wherever you actually are regardless of
+                   what it started as, so once Back to live's own separate reset also cleared the
+                   Source filter, the two buttons became the same action in every case that
+                   mattered. "Current zone" now resets the Source filter itself (see
+                   jumpToCurrentZone) - one button back to live instead of two that only differed
+                   when nothing was different. -->
+              <!-- Owner, 15 Sep: renamed from "Current zone" - it only ever shows while browsing a
+                   scan now (see updateListHeading), where its whole job is getting back to live. -->
+              <button type="button" id="combat-jump-current-zone" title="Jump straight to whatever's live right now, in the zone you're actually in - clears the Source filter too, since a scanned file is never 'right now'.">Return to live</button>
+              <!-- Hidden until a scan has actually happened this session (nothing to return to
+                   otherwise), and again once you're already viewing it - see runScan/returnToScan/
+                   updateScanButtons in main-window.js. -->
+              <button type="button" id="combat-return-to-scan" style="display:none">Return to last scan</button>
+            </div>
+          </div>
+          <!-- The filters row is allowed to wrap on its own too (owner, 15 Sep: "the row of
+               buttons is clipped on smaller screens, there is too many buttons in one row") - six
+               controls in one unwrapping flex row ran off the edge of a narrower window. -->
+          <!-- Owner, 15 Sep, follow-up to the wrap fix: "it drops down underneath when it still
+               has space, but it split from it's text label which is bad" - each label and its own
+               control were separate flex children, so flex-wrap could (and did) wrap a control
+               onto its own new line while its label stayed behind on the line above, leaving what
+               looked like an unlabelled empty box. Each label+control pair is now grouped into one
+               .combat-filter-pair flex item, so wrapping moves the WHOLE pair together or not at
+               all - a label can never be separated from its own control again. -->
+          <div class="row combat-filter-row">
+            <span class="combat-filter-pair">
+              <span class="label">Zone</span>
+              <select id="combat-zone-filter" class="text-input"></select>
+            </span>
+            <!-- Owner, 14 Sep, follow-up to the scan-blank-list fix: "you need a way to return to
+                 last scan as well" - a scan's own fights get merged into the same list as your
+                 live session's, with no way to isolate just that scan's results again once you've
+                 navigated elsewhere. Every fight already carries a `source` (main.js's
+                 mergedDamageHistory - "This session" for the live engine, the scan's own label for
+                 an imported one), so this filters on that instead of adding a whole parallel
+                 concept. -->
+            <span class="combat-filter-pair">
+              <span class="label" title="Which source this list is showing - your live session, or one specific scanned log file.">Source</span>
+              <select id="combat-source-filter" class="text-input"></select>
+            </span>
+            <span class="combat-filter-pair">
+              <span class="label" title="Hides any fight below this total damage - trash mobs and stray hits, not a real pull. Set to 0 to show everything.">Min damage</span>
+              <input type="number" id="combat-min-damage" class="text-input" min="0" step="1000" style="width:7em">
+            </span>
+          </div>
+          <p class="scan-status" id="combat-jump-status" style="display:none"></p>
+          <!-- Owner, 14 Sep: "i need some way to be able to live read the current combat from
+               this combat tab" - a fight in progress hasn't ended yet, so it isn't in history at
+               all until it does. This row is the entry point into it while it's still happening.
+               Follow-up: "put a placeholder copy of the entire ui there even when no active fight
+               log is happening" - was hidden entirely (display:none) until something was live,
+               which gave no hint the feature existed at all if you never happened to catch a
+               fight in progress. Always visible now, in a muted "idle" state
+               (.combat-live-row-idle) when nothing's underway, so the row itself is the
+               placeholder for what appears there once a fight starts. -->
+          <div class="combat-visit-row combat-live-row combat-live-row-idle" id="combat-live-row">
+            <span class="live-indicator" id="combat-live-status">○ No fight</span>
+            <span></span>
+            <span id="combat-live-zone" class="combat-visit-zone">Nothing happening right now</span>
+            <span></span>
+            <span id="combat-live-meta" class="combat-visit-meta"></span>
+          </div>
+          <div id="combat-visit-list"></div>
+          <p class="empty-note" id="combat-history-empty">No fights yet this session - still watching your log.</p>
+        </div>
+
+        <!-- One shared screen for both drill-downs: click a zone on the list above for the whole
+             visit's combined totals, or a single fight inside that for just its own numbers. -->
+        <div class="card" id="combat-detail-screen" style="display:none">
+          <!-- All four buttons on one row (owner, 14 Sep). The view toggle is top level, not
+               attached to any one fight - switches every chart currently on screen at once, not
+               just whatever gets opened next. -->
+          <div class="row" id="combat-detail-toolbar">
+            <!-- Owner, 14 Sep: "back to fights button needs deleting here, because now it should
+                 be open by default" - a live fight auto-reopens itself the moment you leave the
+                 list screen (see onLiveFightTick), so Back is a dead click while it's showing:
+                 clicking it does nothing but flicker back on the next tick. Swapped for the SAME
+                 live badge the Past Fights heading uses ("also, the live marker needs to be moved
+                 here instead when you're on the most recent active[fight]") - one or the other is
+                 shown, never both; see openLiveFight/openVisit. -->
+            <button type="button" id="combat-detail-back">&larr; Back to fights</button>
+            <span class="live-indicator" id="combat-detail-live-badge" style="display:none">● Live</span>
+            <div id="combat-view-toggle">
+              <button type="button" class="combat-view-btn active" data-view="damage" title="Damage dealt - who hit what, and with what.">Damage</button>
+              <button type="button" class="combat-view-btn" data-view="healing" title="Healing done - who healed, and with what.">Healing</button>
+              <button type="button" class="combat-view-btn" data-view="both" title="Damage and healing combined into one total per person.">Both</button>
+            </div>
+            <div id="combat-visit-nav">
+              <button type="button" id="combat-visit-older" title="The previous (older) visit to this same zone.">&larr; Older</button>
+              <button type="button" id="combat-visit-newer" title="The next (newer) visit to this same zone.">Newer &rarr;</button>
+            </div>
+          </div>
+          <div class="row">
+            <h3 id="combat-detail-title"></h3>
+          </div>
+          <div id="combat-detail-bars" title="Click a player to see how much of their damage came from each spell versus melee."></div>
+          <div id="combat-detail-fightlist"></div>
+        </div>
+      </section>
+
       <!-- Raid lockouts. Reads the current EQ log only; grid derived per boss-raid x tier. -->
       <section id="page-lockouts" class="page">
         <h2 class="page-title">Raid lockouts</h2>
@@ -1194,16 +1369,17 @@
             <input type="text" id="spellbook-char-server" class="text-input" placeholder="server" autocomplete="off" style="width:8em" />
           </div>
           <p class="hint" id="spellbook-char-hint" style="display:none"></p>
-          <div id="spellbook-missing-hint" style="display:none">
-            <p class="hint warn-hint" title="Without your spellbook the app can't tell which shared-text buffs were yours, so it ignores them (700+ in one session). The game does not write this file on its own — run the command below, and again whenever you scribe a spell.">
-              <strong>This is worth fixing.</strong> Run this in game to generate your spellbook file:
-            </p>
-            <div class="row command-row">
-              <code id="spellbook-command">/outputfile spellbook</code>
-              <button type="button" id="copy-spellbook-command-btn">Copy</button>
-            </div>
-            <p class="hint" id="spellbook-missing-where"></p>
+          <!-- Always visible - not just while the spellbook is missing. The game does not write
+               this file on its own, and it goes stale every time you scribe a new spell, so the
+               command stays reachable even after detection succeeds once. Wording/warning style
+               toggled by renderSpellbookState(); see spellbook-missing-where for the found-vs-
+               missing difference. -->
+          <p class="hint" id="spellbook-command-hint" title="Without your spellbook the app can't tell which shared-text buffs were yours, so it ignores them (700+ in one session). The game does not write this file on its own — run the command below, and again whenever you scribe a spell."></p>
+          <div class="row command-row">
+            <code id="spellbook-command">/outputfile spellbook</code>
+            <button type="button" id="copy-spellbook-command-btn">Copy</button>
           </div>
+          <p class="hint" id="spellbook-missing-where" style="display:none"></p>
         </div>
 
         <h3 class="settings-page-section-title">Alerts &amp; sounds</h3>
@@ -1297,6 +1473,44 @@
                 <option value="160">160%</option>
               </select>
               <button type="button" id="ui-scale-reset-btn">Reset</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 title="Recolors this window's own chrome (Buff Tracker, Setup, Combat tab, etc). Auras are unaffected — they already have their own colors/borders per aura.">Colors</h3>
+            <p class="hint">Pick one color per category; the app fills in the lighter/darker shades that category needs on its own.</p>
+            <div class="row">
+              <span class="label">Background:</span>
+              <input type="color" id="theme-background-input" value="#1c160f" />
+              <button type="button" class="theme-category-reset" data-theme-category="background" title="Reset just this color to its default">Reset</button>
+            </div>
+            <div class="row">
+              <span class="label" title="Card/panel surfaces, independent of the background above — set this differently for a two-tone look.">Panels:</span>
+              <input type="color" id="theme-panels-input" value="#14100b" />
+              <button type="button" class="theme-category-reset" data-theme-category="panels" title="Reset just this color to its default">Reset</button>
+            </div>
+            <div class="row">
+              <span class="label">Text:</span>
+              <input type="color" id="theme-text-input" value="#ffffff" />
+              <button type="button" class="theme-category-reset" data-theme-category="text" title="Reset just this color to its default">Reset</button>
+            </div>
+            <div class="row">
+              <span class="label">Highlight:</span>
+              <input type="color" id="theme-highlight-input" value="#cf9a4a" />
+              <button type="button" class="theme-category-reset" data-theme-category="highlight" title="Reset just this color to its default">Reset</button>
+            </div>
+            <div class="row">
+              <span class="label" title="The fill behind whichever aura/page is currently selected in the sidebar — kept separate from Highlight so one bold color doesn't have to do both jobs.">Text highlight:</span>
+              <input type="color" id="theme-text-highlight-input" value="#cf9a4a" />
+              <button type="button" class="theme-category-reset" data-theme-category="textHighlight" title="Reset just this color to its default">Reset</button>
+            </div>
+            <div class="row">
+              <span class="label">Outlines:</span>
+              <input type="color" id="theme-outline-input" value="#8a672f" />
+              <button type="button" class="theme-category-reset" data-theme-category="outline" title="Reset just this color to its default">Reset</button>
+            </div>
+            <div class="row">
+              <button type="button" id="theme-reset-btn">Reset all to default</button>
             </div>
           </div>
 
@@ -2491,9 +2705,11 @@
              elsewhere is unchanged. -->
         <div class="row">
           <input type="hidden" id="widget-new-timer-skill-select" />
-          <input type="text" id="widget-new-timer-skill-search" class="text-input" placeholder="Search for a spell or song..." autocomplete="off" />
+          <div class="zone-search-wrap">
+            <input type="text" id="widget-new-timer-skill-search" class="text-input" placeholder="Search for a spell or song..." autocomplete="off" />
+            <div id="widget-new-timer-skill-options" class="skill-search-list" style="display:none"></div>
+          </div>
         </div>
-        <div id="widget-new-timer-skill-options" class="skill-search-list" style="display:none"></div>
         <p class="hint">
           Starts the instant you begin casting or singing this spell — matched against the cast
           itself, so a ranked recast still starts it. An interrupted cast cancels it.
@@ -2757,10 +2973,28 @@
 
       <div class="sw-step" data-step="logging" hidden>
         <p>In EverQuest, type this and press enter:</p>
-        <p><code class="sw-cmd">/log on</code></p>
+        <div class="row">
+          <code class="sw-cmd" id="sw-log-on-command">/log on</code>
+          <button type="button" id="sw-copy-log-on-btn">Copy</button>
+        </div>
         <p class="hint">Leave it on. The app only works while EverQuest is writing its log.</p>
         <div class="row">
           <span id="sw-log-live" class="hint">Waiting for the first log line&hellip;</span>
+        </div>
+      </div>
+
+      <div class="sw-step" data-step="spellbook" hidden>
+        <p>In EverQuest, type this and press enter:</p>
+        <div class="row">
+          <code class="sw-cmd" id="sw-spellbook-command">/outputfile spellbook</code>
+          <button type="button" id="sw-copy-spellbook-btn">Copy</button>
+        </div>
+        <p class="hint">
+          EQ reuses the same buff text across several spells - your spellbook is how the app tells
+          them apart. Run this again whenever you scribe a new spell.
+        </p>
+        <div class="row">
+          <span id="sw-spellbook-status" class="hint">Checking&hellip;</span>
         </div>
       </div>
 
@@ -2836,6 +3070,13 @@
         <button id="log-picker-close" class="modal-close">✕</button>
       </div>
       <p class="hint" id="log-picker-hint"></p>
+      <!-- Only shown when the file list includes per-day Split files - tells you whether log
+           splitting is actually on and how current the split files are, since that's exactly the
+           thing you need to know before trusting one as "today's log". See _pickLogFiles(). -->
+      <div class="row" id="log-picker-split-status-row" style="display:none">
+        <p class="hint" id="log-picker-split-status" style="margin:0"></p>
+        <button type="button" id="log-picker-enable-split-btn" style="display:none">Turn it on</button>
+      </div>
       <ul id="log-picker-list" class="modal-list" style="max-height:50vh;overflow:auto"></ul>
       <div class="row">
         <button id="log-picker-ok" class="btn-prominent">Use selected</button>
@@ -2844,6 +3085,7 @@
     </div>
   </div>
 
+  <script src="theme.js"></script>
   <script src="search-dropdown.js"></script>
   <script src="main-window.js"></script>
 </body>

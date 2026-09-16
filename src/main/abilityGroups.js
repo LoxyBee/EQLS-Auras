@@ -213,10 +213,17 @@ class AbilityGroupTracker {
   // Called on a slower interval (see main.js) purely to broadcast countdown ticks and clear
   // expired cooldown entries even when nothing new has fired - same reasoning as every other
   // cooldown sweep in this app (customTimerEngine's own tick does the same).
+  //
+  // GATED ON hadAnyCooldown ALONE, not "or hadAnyActive" (removed 15 Sep). A stance/invocation is
+  // a persistent character state with NO expiry of its own - "stays whatever you last set it to
+  // until you change it" - so hadAnyActive stayed true for the entire rest of the session the
+  // moment any stance was ever picked, broadcasting every second forever with nothing new to say.
+  // _activate() (above) already fires onChangeFn() the instant an active slot actually changes;
+  // the only thing THIS sweep needs to independently notice is a cooldown running out on its own
+  // with no event to mark the moment, which hadAnyCooldown alone already covers.
   sweep() {
     const hadAnyCooldown = this.cooldownByGroup.stance.size > 0 || this.cooldownByGroup.invocation.size > 0;
-    const hadAnyActive = this.activeSlotByGroup.stance || this.activeSlotByGroup.invocation;
-    if (hadAnyCooldown || hadAnyActive) this.onChangeFn();
+    if (hadAnyCooldown) this.onChangeFn();
     this.getAllActiveStates(); // prunes expired cooldown entries even if nothing above was true
   }
 }

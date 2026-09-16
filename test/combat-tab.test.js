@@ -1,0 +1,1780 @@
+'use strict';
+/**
+ * The Combat tab (owner's weekly notes, 13 Sep) - fight history + a per-player, per-skill
+ * breakdown viewer, backed by damageEngine's history (damage-history.test.js covers that data
+ * model directly). This file is the wiring: the page/nav exist, IPC -> preload -> renderer is
+ * connected, and the renderer never uses innerHTML with log-derived text (a player/mob/spell name
+ * is not this app's own text - same rule the ambiguous-cast popup already follows).
+ */
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { test, report } = require('./harness');
+
+const ROOT = path.join(__dirname, '..');
+const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8').replace(/\r\n/g, '\n');
+
+test('the Combat nav button and page section exist', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /<button class="nav-btn" data-page="page-combat" id="combat-nav-btn">Combat<\/button>/);
+  assert.match(html, /<section id="page-combat" class="page">/);
+  assert.match(html, /id="combat-visit-list"/);
+  assert.match(html, /id="combat-detail-bars"/);
+  assert.match(html, /id="combat-detail-fightlist"/);
+  assert.match(html, /id="combat-detail-back"/);
+  assert.match(html, /id="combat-zone-filter"/);
+  assert.match(html, /id="combat-scan-current"/);
+  assert.match(html, /id="combat-scan-file"/);
+});
+
+// Owner, 14 Sep: "it needs to be obvious that there is a live tracking option, since currently
+// there is not placeholder ui showing that it will go there" - a fresh session's empty Past
+// Fights list gave no hint that it was actually watching, live, for the next fight to land in it.
+test('a "Live" badge next to Past Fights, and the empty state, both say tracking is actually on', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /class="live-indicator"[^>]*>● Live</, 'the badge must be visible year-round, not conditional on having any history yet');
+  assert.match(html, /id="combat-history-empty">No fights yet this session - still watching your log\.</);
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.live-indicator\s*\{/, 'missing styling for the badge');
+});
+
+test('the page uses a title= tooltip for its explanation, not a <p class="hint"> block (owner\'s standing rule)', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="page-combat"');
+  const end = html.indexOf('</section>', start);
+  const section = html.slice(start, end);
+  assert.doesNotMatch(section, /class="hint"/, 'explanatory subtext belongs in a title= hover, not a hint paragraph');
+  assert.match(section, /title="[^"]*Newest first/, 'the explanation moved somewhere, but not into a title=');
+});
+
+test('it is wired IPC -> preload -> renderer', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(main, /ipcMain\.handle\('damage:getHistory', \(\) => mergedDamageHistory\(\)\)/);
+  assert.match(main, /ipcMain\.handle\('damage:getHistoryFight', \(_event, id\) => findHistoryFight\(id\)\)/);
+  const preload = read('src', 'preload', 'preload-main.js');
+  assert.match(preload, /getDamageHistory: \(\) => ipcRenderer\.invoke\('damage:getHistory'\)/);
+  assert.match(preload, /getDamageHistoryFight: \(id\) => ipcRenderer\.invoke\('damage:getHistoryFight', id\)/);
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(renderer, /function initCombatPage\(\)/);
+  assert.match(renderer, /initCombatPage\(\);/);
+  assert.match(renderer, /window\.eqTracker\.getDamageHistory\(\)/);
+  assert.match(renderer, /window\.eqTracker\.getDamageHistoryFight\(f\.id\)/);
+});
+
+test('scanning a log is wired IPC -> preload, and a scan gets its own kept-alive engine', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(main, /ipcMain\.handle\('damage:getCurrentLogPath', \(\) => logService\.watcher\.getStatus\(\)\.currentFilePath \|\| null\)/);
+  assert.match(main, /ipcMain\.handle\('damage:scanLogFile', async \(_event, filePath\) => \{/);
+  assert.match(main, /const engine = await scanLogForFights\(filePath\)/);
+  assert.match(main, /importedScans\.push\(\{ label, scannedAt: Date\.now\(\), engine, filePath \}\)/, 'a scan must keep its engine alive so getHistoryFight still works on it later');
+  // Owner, 15 Sep: repeatedly re-scanning the same file (a real thing that happens over a long
+  // investigation) must replace its own old copy, not pile another one on top of it - see this
+  // handler's own comment for the live report (the same 60-fight zone visit showing up ~10 times
+  // over in the Combat tab because the same file had been re-scanned that many times).
+  assert.match(main, /normalizedScanPath\(importedScans\[i\]\.filePath\) === target/, 'a re-scan must remove any prior scan of the SAME file before pushing the fresh one');
+  const preload = read('src', 'preload', 'preload-main.js');
+  assert.match(preload, /getDamageCurrentLogPath: \(\) => ipcRenderer\.invoke\('damage:getCurrentLogPath'\)/);
+  assert.match(preload, /scanDamageLogFile: \(filePath\) => ipcRenderer\.invoke\('damage:scanLogFile', filePath\)/);
+});
+
+test('merged history ids are namespaced by source, so a scan can never collide with the live session', () => {
+  const main = read('src', 'main', 'main.js');
+  const fn = main.match(/function mergedDamageHistory\(\) \{([\s\S]*?)\n}\n/);
+  assert.ok(fn, 'mergedDamageHistory has been restructured');
+  assert.match(fn[1], /id: `\$\{tag\}:\$\{entry\.id\}`/);
+  // The id-splitting logic moved into a shared sourceForCompositeId() (also used by the class
+  // estimate handler, which needs the SAME tag resolution) - check that one now.
+  const lookup = main.match(/function sourceForCompositeId\(compositeId\) \{([\s\S]*?)\n}\n/);
+  assert.ok(lookup, 'sourceForCompositeId has been restructured or removed');
+  assert.match(lookup[1], /lastIndexOf\(':'\)/, 'a scan tag ("scan:0") itself contains a colon - splitting on the first one would break it');
+  const fightFn = main.match(/function findHistoryFight\(compositeId\) \{([\s\S]*?)\n}\n/);
+  assert.ok(fightFn, 'findHistoryFight has been restructured');
+  assert.match(fightFn[1], /sourceForCompositeId\(compositeId\)/, 'findHistoryFight must reuse the shared resolver, not its own copy');
+});
+
+// Owner, 14 Sep: clicking into the Combat tab now jumps to the current zone's latest visit
+// (jumpToCurrentZone), which itself re-fetches history first for freshness - so the original
+// "re-fetched on every visit" guarantee still holds, just through a different function.
+test('history is re-fetched on every visit to the tab, not loaded once', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
+  assert.ok(fn, 'initCombatPage has been restructured');
+  assert.match(fn[1], /navBtnCombat\.addEventListener\('click', jumpToCurrentZone\)/);
+  const jumpFn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(jumpFn, 'jumpToCurrentZone has been restructured or removed');
+  assert.match(jumpFn[1], /await loadHistory\(\)/, 'the nav-button jump must re-fetch, not reuse stale history');
+  // Owner, 15 Sep: the initial load also snaps the zone filter to current zone once history is
+  // in (applyLiveZoneDefault's own test covers the "why") - it's chained onto the same call now,
+  // not a bare `loadHistory();` on its own line.
+  assert.ok(
+    fn[1].trim().endsWith("loadHistory().then(() => applyLiveZoneDefault());"),
+    'no initial load - the tab would open blank the first time'
+  );
+});
+
+test('player/skill names are built as DOM text nodes, never interpolated into innerHTML', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
+  assert.ok(fn);
+  // The only innerHTML assignments in this function must be clears (= ''), never a template
+  // literal splicing in row.name / s.skill / fight.topAttacker.
+  const assignments = fn[1].match(/\.innerHTML = [^;]+;/g) || [];
+  for (const a of assignments) {
+    assert.match(a, /innerHTML = '';/, `found a non-empty innerHTML assignment: ${a}`);
+  }
+  assert.match(fn[1], /\.textContent = row\.name|span\(row\.name/, 'row.name should be set as text, not markup');
+});
+
+test('fights are grouped into visits, sorted EARLIEST first per the owner\'s own correction', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function buildVisits\(history\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'buildVisits has been restructured or removed');
+  assert.match(fn[1], /fight\.visitId/, 'fights are not being grouped into visits at all');
+  assert.match(fn[1], /fights\.reverse\(\)/, 'a visit\'s own fights must be earliest-first too, not just the outer list');
+  assert.match(fn[1], /order\.sort\(\(a, b\) => a\.startedAt - b\.startedAt\)/, 'the list must sort earliest first, not newest first');
+  const renderFn = renderer.match(/function renderList\(visits\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(renderFn, 'renderList has been restructured or removed');
+});
+
+test('clicking a visit\'s zone opens the shared detail screen with that visit\'s combined totals', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'openVisit has been restructured or removed');
+  assert.match(fn[1], /getDamageHistoryFight\(f\.id\)/, 'a visit\'s totals must come from its real fights, not a guess');
+  assert.match(fn[1], /renderMetricBars\(detailBars, details\)/);
+  assert.match(fn[1], /detailFightList\.appendChild\(fightAccordionRow/, 'the individual fights must still be reachable from here');
+});
+
+test('a fight expands its own chart in place instead of navigating to a new screen', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'fightAccordionRow has been restructured or removed');
+  assert.match(fn[1], /createElement\('details'\)/, 'a fight row must be an accordion, not a link to another screen');
+  assert.match(fn[1], /renderMetricBars\(nested, \[detail\]\)/, 'expanding it must draw its OWN chart, not reuse the visit\'s combined one');
+  assert.doesNotMatch(fn[1], /showDetail\(\)|display = ''/, 'expanding a fight must not switch screens');
+});
+
+// Owner, 14 Sep: "the fight breakdown for each zone should say what fight it is... if a named was
+// fought it should list the named, if no named was found it should just say Trash".
+test('each fight row shows what it was - a named mob\'s name, or Trash when none was found', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'fightAccordionRow has been restructured or removed');
+  assert.match(fn[1], /fight\.label \|\| 'Trash'/, 'a fight record with no label at all must fall back to Trash, not blank');
+  assert.match(fn[1], /combat-fight-label-trash/, 'Trash needs its own dimmer style so it does not read as a real named kill');
+});
+
+test('Back always returns to the list - there is only ever one screen of depth now', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.doesNotMatch(renderer, /function openFight\(/, 'a per-fight navigation screen would reintroduce the "Back skips a screen" bug');
+  const fn = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
+  assert.ok(fn);
+  assert.match(
+    fn[1], /backBtn\.addEventListener\('click', \(\) => \{ liveFightOpen = false; showList\(\); \}\)/,
+    'Back must go straight to showList (also clearing liveFightOpen, so a stray tick after leaving the live view can\'t redraw over the list), not through an intermediate screen'
+  );
+});
+
+test('the zone filter is populated from the actual history and narrows what renders', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const page = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
+  assert.ok(page, 'initCombatPage has been restructured');
+  const fn = page[1].match(/function render\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'render has been restructured or removed');
+  assert.match(fn[1], /populateZoneFilter\(lastHistory\)/);
+  assert.match(fn[1], /!filter \|\|/, 'an empty filter value must mean "all zones", not "no zones"');
+});
+
+// Owner, 14 Sep: "a filter... to exclude logs of fights under a certain total damage value...
+// defaulted to anything less than 50k" - a stray one-hit trash fight was showing up as its own
+// noise entry in the list. Filters individual FIGHTS (not whole visits) before grouping.
+test('a minimum-damage filter hides small fights, defaulted to 50k', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const page = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
+  assert.ok(page, 'initCombatPage has been restructured');
+  assert.match(page[1], /DEFAULT_MIN_DAMAGE = 50000/);
+  const fn = page[1].match(/function render\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'render has been restructured or removed');
+  assert.match(fn[1], /f\.totalDamage >= floor/, 'the filter must compare each FIGHT\'s own total, not a visit total');
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-min-damage"/, 'the min-damage input must exist on the page');
+});
+
+// Confirmed live, 13 Sep: a nested .combat-bar-row (a fight's own per-player bars, expanded inside
+// a .combat-fight-list-row) came out with no colour, no bar, no damage amount - the DOM and the
+// inline fill colour were both correct (checked directly), only the applied `display` was wrong.
+// Cause: `.combat-fight-list-row summary { display: flex; ... }` is a DESCENDANT selector, so it
+// also matched the nested bar-row's own <summary> two levels down; same specificity as
+// `.combat-bar-row summary { display: grid; ... }`, and later in the file, so it won. Pinning the
+// `>` (direct-child) fix so this can't silently regress the next time either block is touched.
+test('the fight-row accordion styles its OWN summary only - a direct-child combinator, not a descendant one', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  const start = css.indexOf('.combat-fight-list-row {');
+  assert.ok(start !== -1, 'the fight-list-row CSS block has moved or been removed');
+  const block = css.slice(start, start + 700);
+  assert.doesNotMatch(
+    block, /\.combat-fight-list-row summary\b/,
+    'a bare descendant selector here leaks into the nested .combat-bar-row summary two levels down and silently overrides its grid layout with flex'
+  );
+  assert.match(block, /\.combat-fight-list-row > summary \{/, 'the direct-child fix is missing');
+});
+
+// Owner, 13 Sep: crit % and each skill's share of a player's OWN total, added to the skill
+// breakdown. Confirmed live (via a real render against mock data) that a single fight's own chart
+// showed real crit rates while a VISIT's combined chart showed 0% crit on every skill, every time
+// - openVisit's cross-fight aggregation built a fresh { skill, damage } object per skill with no
+// hits/crits fields at all, so summing several fights' worth of the same skill silently discarded
+// both. This pins that the merge actually carries them, not just damage.
+// Owner, 14 Sep: "let's also make this have distinct columns. date, boss/trash name, time, total
+// damage, top dps. top dps should be right most, the name field should be the longest one that
+// fills the section." - was one combined "36s, 77.4k, top: You" string tacked onto a flex row.
+test('each fight row has 5 distinct columns - date, name, time, damage, top dps - name is the flexible one, top dps is rightmost', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'fightAccordionRow has been restructured or removed');
+  assert.match(fn[1], /span\(formatWhen\(fight\.endedAt\), 'combat-fight-date'\)/);
+  assert.match(fn[1], /span\(formatDuration\(fight\.durationSec\), 'combat-fight-duration'\)/);
+  assert.match(fn[1], /span\(formatDamage\(fight\.totalDamage\), 'combat-fight-damage'\)/);
+  assert.match(fn[1], /span\(fight\.topAttacker \|\| '—', 'combat-fight-top'\)/);
+  // top dps must be the LAST column appended, since a grid lays out children in DOM order
+  const order = ['combat-fight-date', 'combat-fight-label', 'combat-fight-duration', 'combat-fight-damage', 'combat-fight-top']
+    .map((cls) => fn[1].indexOf(cls));
+  assert.ok(order.every((i) => i !== -1), 'one of the 5 column classes is missing');
+  for (let i = 1; i < order.length; i++) {
+    assert.ok(order[i] > order[i - 1], 'the 5 columns must be appended in date/name/time/damage/top-dps order, top dps last (rightmost)');
+  }
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-fight-list-row > summary \{[^}]*grid-template-columns: [^;]*1fr/s,
+    'the name column must be the flexible (1fr) one that fills the row, not a fixed width like every other column'
+  );
+  // A bare `1fr` column that also has `overflow: hidden` (needed for the ellipsis) collapses to
+  // ZERO width under a tight window, because overflow:hidden makes its automatic minimum size 0 -
+  // confirmed via a real browser render at a narrow width, where the name text vanished entirely
+  // rather than truncating. `minmax(<floor>, 1fr)` gives it an explicit floor instead.
+  assert.match(
+    css, /\.combat-fight-list-row > summary \{[^}]*grid-template-columns: 150px minmax\(\d+px, 1fr\)/s,
+    'the name column needs an explicit minmax() floor, or it can collapse to 0 width under overflow:hidden + a tight window'
+  );
+});
+
+test('the Back/Damage/Healing/Both buttons are all on one row', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="combat-detail-toolbar"');
+  assert.ok(start !== -1, 'the combat-detail-toolbar row is missing - the toggle got split back onto its own row');
+  const end = html.indexOf('</div>', html.indexOf('combat-detail-title'));
+  const section = html.slice(start, end);
+  assert.match(section, /id="combat-detail-back"/);
+  assert.match(section, /id="combat-view-toggle"/);
+  assert.match(section, /data-view="damage"/);
+  assert.match(section, /data-view="healing"/);
+  assert.match(section, /data-view="both"/);
+});
+
+// Owner, 14 Sep: "there needs to be more separation between sum total graph and the sub fights" -
+// the combined chart's own last row and the first individual-fight row sat right on top of each
+// other with only the fight list's border to tell them apart.
+test('there is a visible gap and a heavier rule between the combined chart and the individual fight list', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  const rule = css.match(/#combat-detail-fightlist\s*\{([\s\S]*?)\}/);
+  assert.ok(rule, 'missing a #combat-detail-fightlist rule');
+  assert.match(rule[1], /margin-top:\s*\d/, 'needs real space above it, not just a border touching the chart');
+  assert.match(rule[1], /border-top:\s*2px/, 'the separating rule should read heavier than the fight list\'s own 1px row borders, so it reads as a section break');
+});
+
+test('a visit\'s combined skill totals carry hits and crits through the merge, not just damage', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function aggregateFightRows\(details, rowsKey\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'aggregateFightRows has been restructured or removed');
+  assert.match(
+    fn[1], /\{ skill: s\.skill, damage: 0, hits: 0, crits: 0 \}/,
+    'the per-skill accumulator must seed hits/crits, not just damage - the exact bug: crit % showed 0% for every skill on a multi-fight visit'
+  );
+  assert.match(fn[1], /srow\.hits \+= s\.hits \|\| 0/);
+  assert.match(fn[1], /srow\.crits \+= s\.crits \|\| 0/);
+});
+
+test('the skill breakdown shows each skill\'s share of the player\'s OWN total, and its crit rate', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(
+    fn[1], /row\.damage > 0 \? Math\.round\(\(s\.damage \/ row\.damage\) \* 100\)/,
+    'share must be against the PLAYER\'s own total, not the fight\'s (that\'s already the point of the bar above it)'
+  );
+  assert.match(fn[1], /s\.hits > 0 \? Math\.round\(\(s\.crits \/ s\.hits\) \* 100\)/);
+});
+
+// Owner, 13 Sep, second round: "needs dedicated columns... columns are unlabeled" and "still no
+// colours for the dps breakdown... the rows need colours to display their %". The skill list is a
+// real grid (Skill / Damage / Hits / % of total / Crit %, the Hits column added 15 Sep) with a
+// header row using the SAME columns, and the Damage cell carries its own coloured bar - sized
+// against this player's own biggest skill, same "biggest, not the total" reasoning the player bars
+// already use.
+test('the skill breakdown has a labelled header row and each skill row has its own coloured bar', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(fn[1], /combat-skill-header/, 'no header row - the columns would be unlabeled again');
+  for (const label of ['Skill', 'Damage', 'Hits', '% of total', 'Crit %']) {
+    assert.ok(fn[1].includes(`'${label}'`), `header is missing the "${label}" column label`);
+  }
+  assert.match(fn[1], /combat-skill-track/, 'each skill needs its own bar track, not just a bare number');
+  assert.match(fn[1], /combat-skill-fill/);
+  assert.match(
+    fn[1], /BAR_COLORS\[si % BAR_COLORS\.length\]/,
+    'each skill bar must actually be coloured, not left the default track colour'
+  );
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-skill-row \{[^}]*display: grid;[^}]*grid-template-columns: 1fr 2fr 56px 64px 56px;/s,
+    'the header and data rows must share one grid-template-columns or the labels will not line up with their values'
+  );
+});
+
+// Owner, 13 Sep, third round: "the coloured bar should extend underneath the crit and damage %
+// numbers" - the track/fill must span the whole Damage/%/Crit area (columns 2 to the end), not
+// just the Damage column, with the three numbers laid on top of it rather than off to the side on
+// bare background.
+test('the skill bar spans the whole Damage/percent/crit area, not just the Damage column', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(
+    fn[1], /combat-skill-track-area/,
+    'the track/fill must live in a wrapper spanning the whole numbers area, not just the Damage column'
+  );
+  assert.match(
+    fn[1], /trackArea\.appendChild\(track\)[\s\S]*trackArea\.appendChild\(amount\)[\s\S]*trackArea\.appendChild\(span\(String\(s\.hits\), 'combat-skill-hits'\)\)[\s\S]*trackArea\.appendChild\(span\(`\$\{share\}%`, 'combat-skill-share'\)\)[\s\S]*trackArea\.appendChild\(span\(critPct === null[\s\S]*?'combat-skill-crit'\)\)/,
+    'the amount, hits, share and crit numbers must all sit on top of the same wide track, not the bare row'
+  );
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-skill-track-area \{[^}]*grid-column: 2 \/ -1;/s,
+    'the track-area must span from the Damage column to the end of the row, covering %/Crit too'
+  );
+  assert.match(
+    css, /\.combat-skill-track \{[^}]*position: absolute;[^}]*inset: 0;/s,
+    'the track background must fill its whole wide area, not just the Damage-column slice'
+  );
+});
+
+// Owner, 13 Sep, fourth round: "dps numbers should also go on top of the coloured bars... it
+// should still be inset" - a short player bar (scaled against the fight's top attacker) used to
+// leave the DPS figure stranded in blank space past the end of it, in its own 90px column. The
+// DPS figure now lives INSIDE the track as a second overlay (right-aligned), same layering trick
+// as the skill-row bars, with no separate stats column at all.
+test('the DPS figure on a player bar is inset into the track, not stranded in a column past it', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(fn[1], /combat-bar-dps/, 'the DPS element must exist');
+  assert.match(
+    fn[1], /track\.appendChild\(dpsEl\)/,
+    'the DPS element must be appended INTO the track, not as a sibling column outside it'
+  );
+  assert.doesNotMatch(
+    fn[1], /combat-bar-stats/,
+    'the old separate stats column should be gone entirely, not left dangling alongside the inset DPS'
+  );
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-bar-row summary \{[^}]*grid-template-columns: 130px 1fr;/s,
+    'the summary grid must drop the old 90px stats column - the track now owns all remaining width'
+  );
+  assert.match(
+    css, /\.combat-bar-dps \{[^}]*position: absolute;[^}]*inset: 0;[^}]*justify-content: flex-end;/s,
+    'the DPS overlay must be absolutely positioned over the whole track and right-aligned within it'
+  );
+});
+
+// Owner, 13 Sep, fifth round: "column text needs to be centered to line up correctly" - the
+// previous round's restructure (moving share/crit off the bare row and into the track-area
+// sub-grid) dropped the header's own right-alignment for those columns without replacing it, so
+// "% OF TOTAL"/"CRIT %" (left-aligned by default) no longer lined up with their own right-aligned
+// data values. Centre is the actual fix requested, applied to both header and data so they can
+// never drift apart from each other again regardless of which side either one is anchored to.
+test('the skill breakdown\'s Damage/percent/crit columns are centred, header and data alike', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-skill-header span:not\(:first-child\) \{ text-align: center; \}/,
+    'every header label but Skill must be centred, or it drifts from its own centred data column'
+  );
+  assert.match(
+    css, /\.combat-skill-share, \.combat-skill-crit, \.combat-skill-hits \{[^}]*text-align: center;/s,
+    'the % of total / crit % / hits data values must be centred, matching their now-centred headers'
+  );
+  assert.match(
+    css, /\.combat-skill-amount \{[^}]*justify-content: center;/s,
+    'the damage amount must be centred too, matching the centred "Damage" header above it'
+  );
+});
+
+// Owner, 13-14 Sep, several rounds: "add in the class estimation and put it as the first text in
+// the damage coloured bar... make sure that it is it's own column" - then "buffs can be used to
+// guess a class, but ONLY if they are seen being cast... damage from puma is not [an indicator]" -
+// then "it is only supposed to take into account that fight" (not the whole session). The estimate
+// is built from `row.castSkills` - captured per-fight (or unioned across a visit's fights) the
+// same way `row.bySkill` already is, never from a damage-log skill list.
+test('the class estimate is the first thing in the damage bar, in its own column ahead of the amount', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars must exist and be async - it awaits a class estimate for every row');
+  assert.match(
+    fn[1], /window\.eqTracker\.estimateDamageClasses\(row\.castSkills \|\| \[\]\)/,
+    'the estimate must come from THIS row\'s own captured cast-skill list, never a damage-log skill list'
+  );
+  assert.match(
+    fn[1], /label\.appendChild\(classWrap\)[\s\S]*label\.appendChild\(span\(formatDamage\(row\.damage\), 'combat-bar-amount'\)\)/,
+    'the class element must be appended BEFORE the amount element - it has to read first in the bar'
+  );
+  assert.match(
+    fn[1], /classWrap\.appendChild\(span\(c\.name, `combat-bar-class-\$\{c\.confidence\}`\)\)/,
+    'each class must be coloured by its OWN confidence tier, not one flat colour for the whole guess'
+  );
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-bar-class \{[^}]*min-width:/s,
+    'the class slot needs a fixed width so it reads as a real column, not text that shifts the amount around row to row'
+  );
+});
+
+// Owner, 13 Sep: "colour the classes by green for 100% guaranteed, orange for maybe".
+test('a confirmed class renders green, a maybe class renders orange - distinct colours, not the same one', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-bar-class-confirmed \{ color: #6fd67a; \}/);
+  assert.match(css, /\.combat-bar-class-maybe \{ color: #e0a94e; \}/);
+});
+
+// A visit's combined chart must union its fights' cast evidence, not just their damage - the same
+// data model precedent bySkill already established.
+test('a visit\'s combined chart unions its fights\' cast-skill evidence, not just damage/bySkill', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function aggregateFightRows\(details, rowsKey\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'aggregateFightRows has been restructured or removed');
+  assert.match(fn[1], /castSkills: new Set\(\)/, 'the per-attacker aggregate must have a castSkills accumulator');
+  assert.match(
+    fn[1], /for \(const skill of row\.castSkills \|\| \[\]\) agg\.castSkills\.add\(skill\)/,
+    'every fight\'s cast skills must be folded into the visit\'s combined set'
+  );
+  assert.match(fn[1], /castSkills: \[\.\.\.r\.castSkills\]/, 'the final row shape must expose castSkills as a plain array for renderBars');
+});
+
+// The IPC round trip the class estimate above depends on - main.js hosts the actual lookup
+// (gameSpellData needs the installed spells_us.txt, which only the main process can read).
+test('the class estimate is wired IPC -> preload -> renderer', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(
+    main, /ipcMain\.handle\('damage:estimateClasses', \(_event, castSkills\) => \(\s*classEstimator\.estimateClasses\(castSkills, \(name\) => gameSpellData\.getClassesForSpell\(currentInstallRoot, name\)\)/,
+    'the handler must exist and use the CURRENT install root, not a stale/hardcoded one'
+  );
+  const preload = read('src', 'preload', 'preload-main.js');
+  assert.match(preload, /estimateDamageClasses: \(castSkillNames\) => ipcRenderer\.invoke\('damage:estimateClasses', castSkillNames\)/);
+});
+
+// Owner, 14 Sep: "date and location fields need their own columns to justify text correctly" -
+// today's fights show a bare time while older ones show a full date too, and flex's natural
+// sizing let that shorter width shift the zone name (and everything after it) row to row.
+// Owner, 15 Sep: a per-day header bar (.combat-date-header) now carries the date for a scanned
+// log, so the row itself only ever shows a bare time - the column shrank from 150px (room for
+// "01/09/2026 15:26:56") to 70px (room for "15:26:56" alone) accordingly.
+test('the visit list uses a real grid with fixed time/difficulty/raid-group columns, not flex natural-sizing', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-visit-row \{[^}]*display: grid;[^}]*grid-template-columns: 70px 36px minmax\(80px, 1fr\) 60px 70px 80px;/s,
+    'the time, difficulty and raid/group columns must all be fixed widths so a short "today" time and a long dated one both start the zone name at the same x'
+  );
+});
+
+// Owner, 14 Sep, screenshot-confirmed: "these 3 pieces of text need their own columns to proper
+// align text" - fight count and damage total used to share one right-aligned "N fights · 3.64m"
+// string, so a 2-digit fight count vs a 1-digit one shifted the whole string (damage total
+// included) even though the string's own right edge stayed fixed - the fight counts and damage
+// totals never actually lined up under each other.
+test('fight count and damage total are separate grid columns, not one combined string', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.doesNotMatch(
+    renderer, /\$\{n\} fight\$\{n === 1 \? '' : 's'\} · \$\{formatDamage/,
+    'must not go back to one combined "N fights · 3.64m" span - that is exactly what did not align'
+  );
+  assert.match(renderer, /span\(`\$\{n\} fight\$\{n === 1 \? '' : 's'\}`, 'combat-visit-fights'\)/);
+  assert.match(renderer, /span\(formatDamage\(visit\.totalDamage\), 'combat-visit-damage'\)/);
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-visit-fights,\s*\.combat-visit-damage\s*\{[^}]*text-align:\s*right/s);
+  // The live row's own meta (duration + damage + top attacker - one combined string, since it is
+  // a single in-progress fight, not a multi-fight visit with its own count) still needs to occupy
+  // both new trailing columns or its text has nowhere near enough room.
+  assert.match(css, /\.combat-live-row \.combat-visit-meta\s*\{[^}]*grid-column:\s*5\s*\/\s*7/s);
+});
+
+// Owner, 14 Sep: "there is still no button to toggle between healing, damage, or both, i asked
+// for this several turns ago" - top-level buttons, not attached to any one fight, that refresh
+// every chart currently on screen when clicked.
+test('the Damage/Healing/Both toggle exists as its own top-level control, not attached to a fight', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="combat-view-toggle"');
+  assert.ok(start !== -1, 'the view-toggle control is missing from the page');
+  const section = html.slice(start, start + 500);
+  assert.match(section, /data-view="damage"/);
+  assert.match(section, /data-view="healing"/);
+  assert.match(section, /data-view="both"/);
+});
+
+test('toggling the view mode refreshes every chart currently open, not just the next one clicked', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function initCombatPage\(\) \{([\s\S]*?)\n}\n/);
+  assert.ok(fn, 'initCombatPage has been restructured');
+  assert.match(fn[1], /const openRenders = new Map\(\)/, 'there must be a registry of what is currently visible');
+  assert.match(
+    fn[1], /for \(const \[container, details\] of openRenders\)[\s\S]*?renderMetricBars\(container, details\)/,
+    'clicking a view button must re-render every registered container, not just set a variable'
+  );
+});
+
+test('a single fight\'s own chart is registered as open (and unregistered on collapse), so it refreshes too', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function fightAccordionRow\(fight, detail\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'fightAccordionRow has been restructured or removed');
+  assert.match(fn[1], /openRenders\.set\(nested, \[detail\]\)/, 'an expanded fight must register itself as open');
+  assert.match(fn[1], /openRenders\.delete\(nested\)/, 'a collapsed fight must unregister itself - it is no longer visible');
+  assert.match(
+    fn[1], /nested\.dataset\.renderedMode !== viewMode/,
+    'a plain "already rendered" flag would leave stale content showing if the mode changed while this fight was collapsed'
+  );
+});
+
+// Owner, 14 Sep, corrected same day: "the 'both' tab should not be two graphs, it should be a
+// combined total graph that shows one graph of the sum of a player's damage and healer" - one bar
+// per person, sized by damage+healing together, not two separate charts.
+test('"Both" mode combines damage and healing into ONE total per person, not two separate charts', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const aggFn = renderer.match(/function aggregateBothRows\(details\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(aggFn, 'aggregateBothRows has been restructured or removed');
+  assert.match(aggFn[1], /aggregateFightRows\(details, 'rows'\)/, 'must start from the damage side');
+  assert.match(aggFn[1], /aggregateFightRows\(details, 'healRows'\)/, 'must start from the healing side');
+  assert.match(aggFn[1], /agg\.damage \+= r\.damage/, 'a person\'s damage and healing totals must be SUMMED into one number');
+  assert.match(aggFn[1], /agg\.bySkill = agg\.bySkill\.concat\(r\.bySkill\)/, 'both sides\' skills must fold into one breakdown list');
+
+  const renderFn = renderer.match(/async function renderMetricBars\(container, details\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(renderFn, 'renderMetricBars has been restructured or removed');
+  assert.match(renderFn[1], /viewMode === 'both'/);
+  assert.match(renderFn[1], /aggregateBothRows\(details\)/);
+  assert.match(
+    renderFn[1], /await renderBars\(container, rows, totalDuration, 'both'\)/,
+    'Both must draw ONE chart into the given container, not two side-by-side sub-charts'
+  );
+});
+
+test('a Crit % column only appears where crits were actually tracked - per skill row, not per overall mode', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(
+    fn[1], /s\.crits === undefined \? null : /,
+    'checking per-row (not the overall metric) is what lets "Both" mode show a real Crit % on a ' +
+    'healer\'s own melee row and "—" on their heal rows, in the same combined skill list'
+  );
+});
+
+// Owner, 14 Sep: "these permafrost caverns should be raid instances, let's make all raid entries
+// include their difficulty level (d0, d4, etc etc)" - confirmed against the owner's own real log
+// that "The Permafrost Caverns" alone has 5 genuinely different instance difficulties that all
+// strip to the same base zone name, indistinguishable without this.
+test('the zone entry point (both live and scanned) passes the RAW zone string\'s difficulty AND raid/group flag to enterZone', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(
+    main, /damageEngine\.enterZone\(Date\.now\(\), baseZoneName\(zone\), difficultyLabel\(zone\), isRaidInstance\(zone\)\)/,
+    'the live zone-change handler must compute difficulty AND raid/group from the RAW zone string, not the stripped base name'
+  );
+  const scan = read('src', 'main', 'damageLogScan.js');
+  assert.match(
+    scan, /engine\.enterZone\(ms, baseZoneName\(zone\), difficultyLabel\(zone\), isRaidInstance\(zone\)\)/,
+    'a batch log scan must tag difficulty AND raid/group the same way live play does'
+  );
+});
+
+// Owner, 14 Sep: "mark them as D4 - [name]" (was "[name] (d4)"), plus "each difficulty prefix
+// should be coloured as well, a different colour per difficulty, but the zone name should stay
+// gold... d4 should have the most prominent colouring, d0 should be almost white but not white."
+// This inline "D4 - Name" form is the detail SCREEN TITLE's own format now (a single heading
+// line, not a table) - the Past Fights LIST uses its own dedicated grid column instead, see the
+// next test.
+test('the detail title puts a coloured "D<n> - " prefix ahead of the name, unchanged when it has no difficulty', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty, raidInstance\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'appendZoneLabel has been restructured or removed');
+  assert.match(fn[1], /zone-diff-d\$\{zoneDiffTier\(difficulty\)\}/, 'the prefix must carry a per-tier CSS class, not just plain text');
+  assert.match(fn[1], /toUpperCase\(\)/, 'the difficulty must render as "D4", not lowercase "d4"');
+  assert.match(renderer, /appendZoneLabel\(detailTitle, visit\.zone, visit\.difficulty, visit\.raidInstance\)/);
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  for (const tier of ['d0', 'd1', 'd2', 'd3', 'd4']) {
+    assert.match(css, new RegExp(`\\.zone-diff-${tier}\\s*\\{`), `missing a colour rule for ${tier}`);
+  }
+  // the zone name itself must never get a difficulty-coloured class - only the prefix does
+  assert.match(fn[1], /container\.appendChild\(document\.createTextNode\(zone \|\| UNKNOWN_ZONE\)\)/);
+});
+
+// Owner, 14 Sep, third round on this feature: "it should be a prefix, like D1/d4. with it's own
+// column" - the Past Fights LIST used to put the same inline "D4 - Name" text inside the zone
+// cell; now the difficulty code lives in its own grid column (`.combat-visit-diff`, see the grid
+// test above) and the zone cell holds only the bare name.
+test('the visit list shows the difficulty code in its OWN column, separate from the zone name', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const badgeFn = renderer.match(/function zoneDifficultyBadge\(difficulty\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(badgeFn, 'zoneDifficultyBadge has been restructured or removed');
+  assert.match(badgeFn[1], /if \(!difficulty\) return null/, 'a non-instanced zone must contribute nothing to the column, not an empty coloured box');
+  assert.match(badgeFn[1], /zone-diff-d\$\{zoneDiffTier\(difficulty\)\}/);
+  assert.doesNotMatch(badgeFn[1], /' - '/, 'no dash here - the grid column gap does that job now, not a baked-in separator');
+
+  assert.match(renderer, /const diffBadge = zoneDifficultyBadge\(visit\.difficulty\)/, 'renderList must build the difficulty column from the visit\'s own difficulty');
+  assert.match(
+    renderer, /const zoneLink = span\(visit\.zone \|\| UNKNOWN_ZONE, 'combat-visit-zone'\)/,
+    'the zone cell must hold only the bare name now - the difficulty code AND the raid/group badge both moved to their own columns'
+  );
+});
+
+// Owner, 14 Sep, follow-up to the D-code column: "raid / group tags are still the same as before
+// and not resolved, they do not have their own column" - the (Raid)/(Group) badge was still tacked
+// onto the zone name text, the same original mistake the D-code prefix had just been fixed for.
+test('the visit list shows the raid/group tag in its OWN column too, separate from the zone name', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const badgeFn = renderer.match(/function zoneInstanceBadge\(raidInstance\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(badgeFn, 'zoneInstanceBadge has been restructured or removed');
+  assert.match(badgeFn[1], /typeof raidInstance !== 'boolean'\) return null/, 'a non-instanced visit must contribute nothing to the column');
+  assert.match(badgeFn[1], /zone-instance-badge zone-instance-\$\{raidInstance \? 'raid' : 'group'\}/);
+  assert.match(badgeFn[1], /raidInstance \? 'Raid' : 'Group'/, 'no parens here - it is its own column, not trailing text after a name');
+
+  assert.match(renderer, /const instanceBadge = zoneInstanceBadge\(visit\.raidInstance\)/, 'renderList must build the raid/group column from the visit\'s own flag');
+  assert.match(renderer, /instanceCell\.className = 'combat-visit-instance'/, 'the raid/group badge needs its own grid cell, not a spot inside the zone cell');
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-visit-instance\s*\{/, 'missing a CSS rule for the new column');
+});
+
+// Owner, 14 Sep (follow-up): "make sure all the hyphen's line up equally, they should be at a
+// static width and not dependent on the width of the difficulty prefix" - "D0" and "D4" render at
+// slightly different widths, which was shifting the dash (and the zone name after it) row to row.
+test('the difficulty code sits in its own fixed-width box, so the dash lands at the same x regardless of the code', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty, raidInstance\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'appendZoneLabel has been restructured or removed');
+  assert.match(fn[1], /className = 'zone-diff-code'/, 'the difficulty code must be its own element, not inline text with the dash');
+  assert.match(fn[1], /createTextNode\(' - '\)/, 'the dash must be appended AFTER the fixed-width code box, not baked into its text');
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  const rule = css.match(/\.zone-diff-code\s*\{([\s\S]*?)\}/);
+  assert.ok(rule, 'missing a .zone-diff-code rule');
+  assert.match(rule[1], /display:\s*inline-block/, 'a fixed width only holds still on an inline-block (or block) box');
+  assert.match(rule[1], /width:\s*\d/, 'the code box needs an explicit fixed width');
+});
+
+test('buildVisits carries the difficulty AND raid/group flag from whichever fight creates the visit', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function buildVisits\(history\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'buildVisits has been restructured or removed');
+  assert.match(fn[1], /difficulty: fight\.difficulty \|\| null/);
+  assert.match(
+    fn[1], /raidInstance: typeof fight\.raidInstance === 'boolean' \? fight\.raidInstance : null/,
+    'raidInstance is tri-state (true/false/null) - a bare `fight.raidInstance || null` would wrongly collapse a real `false` (group instance) to null'
+  );
+});
+
+// Owner, 14 Sep follow-up: "there needs to be an identifier for (group)/raid instance" - a
+// difficulty tier alone doesn't say whether THIS visit was the raid-lockout instance or a plain
+// group run of the same zone.
+test('the zone label shows a (Raid)/(Group) badge when the visit has one, nothing when it does not', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function appendZoneLabel\(container, zone, difficulty, raidInstance\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'appendZoneLabel has been restructured or removed');
+  assert.match(fn[1], /typeof raidInstance === 'boolean'/, 'must gate on the tri-state flag, not just truthiness (false is a real, valid value)');
+  assert.match(fn[1], /raidInstance \? 'Raid' : 'Group'/);
+  // the badge must be a SEPARATE element/class from the difficulty code+dash, appended AFTER the
+  // zone name - inserting it between the code and the dash would reopen the "hyphens don't line
+  // up" bug the previous commit fixed.
+  assert.match(fn[1], /zone-instance-badge zone-instance-\$\{raidInstance \? 'raid' : 'group'\}/);
+  const afterZoneName = fn[1].indexOf('createTextNode(zone || UNKNOWN_ZONE)');
+  const badgeIdx = fn[1].indexOf('zone-instance-badge');
+  assert.ok(afterZoneName !== -1 && badgeIdx > afterZoneName, 'the raid/group badge must be appended AFTER the zone name, not before it or between the code and dash');
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.zone-instance-raid\s*\{/, 'missing a colour rule for the raid badge');
+  assert.match(css, /\.zone-instance-group\s*\{/, 'missing a colour rule for the group badge');
+
+  // The visit list's own column helper must carry the identical badge class logic, not a copy
+  // that drifts from this one - see the dedicated column test below for its own checks.
+  const badgeFn = renderer.match(/function zoneInstanceBadge\(raidInstance\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(badgeFn, 'zoneInstanceBadge has been restructured or removed');
+  assert.match(badgeFn[1], /zone-instance-badge zone-instance-\$\{raidInstance \? 'raid' : 'group'\}/);
+});
+
+// Owner, 14 Sep, second follow-up: a real reported case where one untagged trailing fight, right
+// after being removed from a raid instance, silently erased the D4/Group tag off the 15 real
+// tagged fights that came before it in the same visit. Fix, chosen by the owner: treat stepping
+// out of (or into a different) difficulty/raid-or-group tag as a real visit boundary, the same as
+// stepping into a different zone - not just a same-zone echo to ignore.
+test('leaving an instance (or changing tier) opens a NEW visit, even though the base zone name is unchanged', () => {
+  const engine = read('src', 'main', 'damageEngine.js');
+  const fn = engine.match(/enterZone\(now = Date\.now\(\), zoneName = null, difficulty = null, raidInstance = null\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'enterZone has been restructured or removed');
+  assert.match(
+    fn[1], /normDifficulty !== this\.currentZoneDifficulty/,
+    'a difficulty change alone (same zone name, different tier) must open a new visit'
+  );
+  assert.match(
+    fn[1], /normRaidInstance !== this\.currentZoneRaidInstance/,
+    'a raid/group change alone (same zone name and tier, different instance kind) must open a new visit'
+  );
+});
+
+// ---------------------------------------------------------------------------
+// "Live read the current combat... or check recent past events of the zone i'm in, fast" (owner,
+// 14 Sep). Jumping straight into the current zone's latest visit, plus Older/Newer to step
+// through that same zone's history without going back through the full list.
+// ---------------------------------------------------------------------------
+
+test('the current-zone jump button and Older/Newer controls exist', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-jump-current-zone"/);
+  assert.match(html, /id="combat-visit-older"/);
+  assert.match(html, /id="combat-visit-newer"/);
+});
+
+test('the main process resolves the live current zone to its STRIPPED base name, not the raw suffixed string', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(
+    main, /ipcMain\.handle\('combat:getCurrentZoneBase', \(\) => baseZoneName\(widgetManager\.getCurrentZone\(\)\)\)/,
+    'the renderer has no Node require() access to strip the suffix itself - this must arrive already stripped'
+  );
+  const preload = read('src', 'preload', 'preload-main.js');
+  assert.match(preload, /getCombatCurrentZoneBase: \(\) => ipcRenderer\.invoke\('combat:getCurrentZoneBase'\)/);
+});
+
+test('jumpToCurrentZone opens the current zone\'s latest visit, or falls back to the list', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'jumpToCurrentZone has been restructured or removed');
+  // Owner, 14 Sep, follow-up to the scan/empty-list fixes: this used to fail completely
+  // silently - `if (!zone) return;` alone, no feedback at all when nothing was found either.
+  assert.match(fn[1], /if \(!zone\) \{/, 'an unknown current zone must not crash or open something arbitrary');
+  assert.match(fn[1], /setJumpStatus\(/, 'a failed jump must say WHY, not just silently do nothing');
+  assert.match(fn[1], /zoneFilter\.value = zone/, 'the zone filter should reflect the jump, not silently diverge from what is shown');
+  // Owner, 15 Sep: a zone with no history yet has no <option>, so this needs the same fix
+  // applyLiveZoneDefault got - rebuild options (via liveZoneForOptions) before assigning.
+  assert.match(
+    fn[1], /liveZoneForOptions = zone;\s*\n\s*populateZoneFilter\(lastHistory\);\s*\n\s*zoneFilter\.value = zone;/,
+    'a zero-history current zone must get an <option> before the jump tries to select it'
+  );
+  assert.match(fn[1], /openVisit\(visits\[visits\.length - 1\]\)/, 'must open the LATEST (most recent) visit, not the earliest');
+  assert.match(fn[1], /showList\(\)/, 'a zone with no history yet must fall back to the list, not open nothing silently');
+});
+
+// Owner, 15 Sep: "live fights page is STILL showing content from days ago, it needs to be CURRENT
+// ZONE ONLY" / "LIVE VIEW: current zone, ALL fights. SCAN LOG: whatever is in that log, button to
+// return to LIVE VIEW." The list's zone filter used to default to "" (All zones) and just sit
+// there, surfacing every zone from every day in history the moment the tab opened.
+test('the live view defaults its zone filter to wherever the player actually is, and keeps following as they zone', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function applyLiveZoneDefault\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'applyLiveZoneDefault has been restructured or removed');
+  assert.match(
+    fn[1], /const browsingScan = sourceFilter\.value && sourceFilter\.value !== LIVE_SOURCE;\s*\n\s*if \(browsingScan \|\| !zone\) return;/,
+    'a scan is "whatever is in that log" - this must never touch the zone filter while one is open'
+  );
+  assert.match(
+    fn[1], /if \(hasSetInitialZone && zoneFilter\.value !== lastAppliedLiveZone\) return;/,
+    'a manual pick away from the live zone must not get silently stomped on the next zone change'
+  );
+  assert.match(fn[1], /getCombatCurrentZoneBase/, 'must resolve the actual current zone, not guess from history');
+  // Owner, 15 Sep, reported live: this defaulted to "All zones" anyway the first time, because
+  // Surefall Glade had zero recorded fights - assigning zoneFilter.value to a zone with no
+  // <option> is a silent no-op. liveZoneForOptions + populateZoneFilter is the actual fix; a bare
+  // "zoneFilter.value = zone" with nothing rebuilding options first was exactly the bug.
+  assert.match(fn[1], /liveZoneForOptions = zone \|\| null/, 'must keep the option-builder aware of the live zone even with no history yet');
+  assert.match(
+    fn[1], /populateZoneFilter\(lastHistory\);\s*\n\s*zoneFilter\.value = zone;/,
+    'options must be rebuilt (to include a zero-history current zone) BEFORE the value assignment, not after'
+  );
+  const popFn = renderer.match(/function populateZoneFilter\(history\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(popFn, 'populateZoneFilter has been restructured or removed');
+  assert.match(
+    popFn[1], /if \(liveZoneForOptions\) zoneSet\.add\(liveZoneForOptions\);/,
+    'the live current zone must always be selectable, even before any fight has happened there yet'
+  );
+
+  // Wired at startup and on every real zone change, and switching the Source filter back to the
+  // live session re-applies it too (not just at initial tab-open).
+  assert.match(renderer, /window\.eqTracker\.onZoneChanged\(\(\) => applyLiveZoneDefault\(\)\)/);
+  assert.match(renderer, /loadHistory\(\)\.then\(\(\) => applyLiveZoneDefault\(\)\)/);
+  assert.match(
+    renderer, /sourceFilter\.addEventListener\('change', \(\) => \{ applyLiveZoneDefault\(\); render\(\); \}\)/,
+    'switching back to the live source from a scan should re-scope to current zone, not leave the scan\'s "" filter behind'
+  );
+
+  // jumpToCurrentZone's own manual zone-set must keep this function's tracking in sync, or the
+  // very next real zone change would wrongly read it as a deliberate override and stop following.
+  const jumpFn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(jumpFn, 'jumpToCurrentZone has been restructured or removed');
+  assert.match(jumpFn[1], /hasSetInitialZone = true;/);
+  assert.match(jumpFn[1], /lastAppliedLiveZone = zone;/);
+});
+
+test('openVisit recomputes the same-zone sibling list and index every time, for Older/Newer', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'openVisit has been restructured or removed');
+  assert.match(fn[1], /currentZoneVisits = siblingVisits\(visit\.zone\)/, 'must scope navigation to the SAME zone, not the whole history');
+  assert.match(
+    fn[1], /v\.fights\[0\] && visit\.fights\[0\] && v\.fights\[0\]\.id === visit\.fights\[0\]\.id/,
+    'buildVisits() returns fresh objects every call - matching by object identity would never find the visit just opened'
+  );
+  assert.match(fn[1], /updateVisitNavButtons\(\)/);
+
+  const siblingFn = renderer.match(/function siblingVisits\(zone\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(siblingFn, 'siblingVisits has been restructured or removed');
+  assert.match(siblingFn[1], /f\.totalDamage >= floor/, 'sibling visits should respect the same min-damage floor as the rest of the page');
+});
+
+test('Older/Newer disable at the ends of the same-zone visit list instead of wrapping or erroring', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function updateVisitNavButtons\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'updateVisitNavButtons has been restructured or removed');
+  assert.match(fn[1], /olderBtn\.disabled = currentVisitIndex <= 0/);
+  assert.match(
+    fn[1], /newerBtn\.disabled = currentVisitIndex === -1 \|\| currentVisitIndex >= currentZoneVisits\.length - 1/
+  );
+  assert.match(renderer, /if \(currentVisitIndex > 0\) openVisit\(currentZoneVisits\[currentVisitIndex - 1\]\)/);
+  assert.match(
+    renderer,
+    /if \(currentVisitIndex !== -1 && currentVisitIndex < currentZoneVisits\.length - 1\) \{\s*openVisit\(currentZoneVisits\[currentVisitIndex \+ 1\]\);/
+  );
+});
+
+// ---------------------------------------------------------------------------
+// "Live read the current combat" (owner, 14 Sep) - a "Live now" row above the list, and the
+// detail screen showing the in-progress fight, both kept moving by a lightweight push from main.js
+// rather than the Combat tab polling for it.
+// ---------------------------------------------------------------------------
+
+// Owner, 14 Sep, follow-up: "put a placeholder copy of the entire ui there even when no active
+// fight log is happening" - the row used to be display:none until something was live, which gave
+// no hint the feature even existed unless you happened to already be mid-fight when you opened the
+// tab. It's always visible now, defaulting to a muted "idle" placeholder state in the markup
+// itself (updateLiveRow reinforces this at runtime, but the HTML must not flash a blank/wrong
+// state before the first tick arrives).
+test('the "Live now" row is always visible, defaulting to a muted idle placeholder, never hidden', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="combat-live-row"');
+  assert.ok(start !== -1, 'the live row is missing from the page');
+  const section = html.slice(Math.max(0, start - 200), start + 400);
+  assert.doesNotMatch(section, /style="display:\s*none"/, 'must not start (or ever become, via inline style) hidden - it is the placeholder for the feature itself');
+  assert.match(section, /combat-live-row-idle/, 'must default to the muted idle state in the markup, not just via a JS call that runs a tick later');
+  assert.match(html, /id="combat-live-status"/);
+  assert.match(html, /id="combat-live-zone"/);
+  assert.match(html, /id="combat-live-meta"/);
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-live-row\.combat-live-row-idle\s*\{/, 'missing the muted-placeholder styling');
+});
+
+test('updateLiveRow toggles the idle placeholder class and text, rather than hiding the row', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function updateLiveRow\(fight\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'updateLiveRow has been restructured or removed');
+  assert.doesNotMatch(fn[1], /style\.display/, 'must not hide/show via display any more - the idle CLASS carries the placeholder state instead');
+  assert.match(fn[1], /liveRow\.classList\.toggle\('combat-live-row-idle', !fight\)/);
+  assert.match(fn[1], /liveStatusEl\.textContent = '○ No fight'/);
+  assert.match(fn[1], /liveStatusEl\.textContent = '● Live'/);
+});
+
+test('main.js exposes the live fight over IPC, and pings the renderer on every credited hit', () => {
+  const main = read('src', 'main', 'main.js');
+  assert.match(
+    main, /ipcMain\.handle\('damage:getLiveFight', \(\) => damageEngine\.getLiveFight\(\)\)/,
+    'must read the LIVE session\'s engine, never an imported scan - a scanned file has no "now"'
+  );
+  assert.match(
+    main, /damageEngine\.on\('activeChanged', \(\) => \{[\s\S]*?broadcast\('damage:liveFightTick', null\)/,
+    'must ping on the same event the overlay\'s own live meter already updates from'
+  );
+  const preload = read('src', 'preload', 'preload-main.js');
+  assert.match(preload, /getLiveFight: \(\) => ipcRenderer\.invoke\('damage:getLiveFight'\)/);
+  assert.match(preload, /onLiveFightTick: \(cb\) => ipcRenderer\.on\('damage:liveFightTick', \(\) => cb\(\)\)/);
+});
+
+// Owner, 15 Sep: "the combat log can probably update slower" - a busy pull can credit several hits
+// a second, and 'activeChanged' used to fire (and broadcast to every overlay window) on every one
+// of them. Runs the REAL handler text against fake damageEngine/broadcast/sessionRestore, not a
+// re-description of what it should do - a throttle this fiddly (leading edge + one coalesced
+// trailing edge, no dropped final state) is exactly the kind of logic a paraphrased test would get
+// wrong right alongside a broken implementation.
+test('the damage broadcast throttle fires immediately on a lone hit, then coalesces a burst into one trailing broadcast', async () => {
+  const main = read('src', 'main', 'main.js');
+  const block = main.match(/const DAMAGE_BROADCAST_THROTTLE_MS = \d+;[\s\S]*?damageEngine\.on\('activeChanged', \(\) => \{[\s\S]*?\n\}\);\n/);
+  assert.ok(block, 'the damage broadcast throttle has been restructured or removed');
+
+  // Each real flush calls broadcast() twice ('damage:active' then 'damage:liveFightTick') - count
+  // just the tick ping, which fires exactly once per flush, as "how many flushes happened".
+  const ticks = [];
+  let cb = null;
+  const fakeDamageEngine = { on: (evt, handler) => { if (evt === 'activeChanged') cb = handler; } };
+  const run = new Function(
+    'damageEngine', 'broadcast', 'sessionRestore', 'damageViews',
+    block[0]
+  );
+  run(fakeDamageEngine, (channel) => { if (channel === 'damage:liveFightTick') ticks.push(1); }, { scheduleSave: () => {} }, () => ({}));
+  assert.ok(cb, 'the activeChanged handler was never registered');
+
+  cb();
+  assert.equal(ticks.length, 1, 'a single hit must broadcast right away, not wait for a window to elapse');
+
+  cb();
+  cb();
+  cb();
+  assert.equal(ticks.length, 1, 'a burst inside the throttle window must not add more broadcasts yet');
+
+  await new Promise((resolve) => setTimeout(resolve, 320));
+  assert.equal(ticks.length, 2, 'the coalesced burst must still produce exactly one trailing broadcast once the window elapses - the last hit\'s state must never be dropped');
+
+  cb();
+  assert.equal(ticks.length, 3, 'once the cooldown has cleared, a fresh isolated hit must broadcast immediately again, same as the very first one');
+});
+
+test('a tick refreshes the Live row, and redraws the open live chart only when that is what is showing', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function onLiveFightTick\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'onLiveFightTick has been restructured or removed');
+  assert.match(fn[1], /if \(liveRenderInFlight\) return;/, 'a fight can tick once per hit - an overlapping render must be dropped, not queued');
+  assert.match(fn[1], /updateLiveRow\(fight\)/, 'the list-screen row must refresh on every tick regardless of which screen is showing');
+  assert.match(fn[1], /if \(liveFightOpen && liveVisitCursor === null\)/, 'the detail chart must only redraw when the live view is actually the one on screen AND the user is actually looking at the live fight (not cursored back to an earlier one in the visit)');
+  assert.match(fn[1], /liveFightOpen = false;\s*setDetailToolbarLive\(false\);\s*showList\(\);\s*loadHistory\(\);/, 'a fight ending between ticks must fall back to the list, not keep trying to render something that no longer exists');
+});
+
+// Owner, 14 Sep, follow-up: "this menu should be open always without a click into the fight when
+// it's live" - waiting for the "Live now" row to be clicked wasn't good enough; the list screen
+// should open the live view itself the moment a fight exists.
+test('a tick auto-opens the live view when the list screen is showing, but never yanks the user out of a historical visit', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function onLiveFightTick\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'onLiveFightTick has been restructured or removed');
+  assert.match(
+    fn[1], /\} else if \(!liveFightOpen && fight && listScreen\.style\.display !== 'none' && !browsingOtherSource && !zoneMismatch\) \{\s*openLiveFight\(fight\);/,
+    'auto-open must be gated on the LIST screen specifically being what is showing (and liveFightOpen explicitly false - the live page has its own cursored-back state now, which must never fall into this branch and re-open itself) - a historical visit is also "not the live view" and must not get yanked away from'
+  );
+  // Owner, 14 Sep, screenshot-confirmed: "live text appears when in combat log scan" - browsing a
+  // scanned log's results (Source filter set to that scan) still counts as "the list screen", so
+  // a real live fight elsewhere would auto-open right over whatever scan was being reviewed.
+  assert.match(
+    fn[1], /const browsingOtherSource = sourceFilter\.value && sourceFilter\.value !== LIVE_SOURCE;/,
+    'auto-open must not fire while a specific past scan (not the live session) is the active Source filter'
+  );
+  // Owner, 15 Sep, follow-up: "live fight is still picking up on scanned file when it should
+  // exclude to current zone" - browsingOtherSource alone is false for "All sources" (a legitimate,
+  // deliberate pick since the Source-default fix, not the old accidental default), so reviewing old
+  // scans of one specific zone via the Zone filter still got yanked away by a live fight starting
+  // ANYWHERE else. A Zone filter that does not match where the live fight actually is must ALSO
+  // suppress the auto-open - it only still fires when nothing is zone-filtered, or the live fight
+  // is genuinely in the zone being reviewed (the "your zone just lit up" case this exists for).
+  assert.match(
+    fn[1], /const zoneMismatch = zoneFilter\.value && zoneFilter\.value !== \(fight && fight\.zone\);/,
+    'auto-open must not fire while the Zone filter is narrowed to a zone the live fight is not actually in'
+  );
+});
+
+test('jumpToCurrentZone opens the live fight first, falling back to the latest completed visit only when nothing is live', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'jumpToCurrentZone has been restructured or removed');
+  const liveIdx = fn[1].indexOf('getLiveFight');
+  const zoneIdx = fn[1].indexOf('getCombatCurrentZoneBase');
+  assert.ok(liveIdx !== -1 && zoneIdx !== -1 && liveIdx < zoneIdx, 'must check for a live fight BEFORE falling back to the completed-visit path');
+  assert.match(fn[1], /if \(live\) \{\s*openLiveFight\(live\);\s*return;/);
+});
+
+test('openLiveFight and openVisit each turn the OTHER kind of "live" state off, so a stray tick can\'t redraw the wrong screen', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const openVisitFn = renderer.match(/async function openVisit\(visit\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(openVisitFn);
+  assert.match(openVisitFn[1], /liveFightOpen = false;/, 'opening a completed visit must clear liveFightOpen, or a tick could redraw the live chart over it');
+
+  const openLiveFn = renderer.match(/function openLiveFight\(fight\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(openLiveFn, 'openLiveFight has been restructured or removed');
+  assert.match(openLiveFn[1], /liveFightOpen = true;/);
+  assert.match(
+    openLiveFn[1], /currentZoneVisits = \[\];/,
+    'the ORDINARY visit-to-visit Older/Newer state must be cleared - the live page uses its own separate liveVisitFights/liveVisitCursor navigation instead (see the "current instance" test below), the two must never be active at once'
+  );
+  assert.match(openLiveFn[1], /liveVisitFights = liveVisitSiblings\(fight\);/, 'must populate the live page\'s OWN navigation pool from this same visit\'s already-completed fights');
+  assert.match(openLiveFn[1], /liveVisitCursor = null;/, 'must start out looking at the live fight itself, not cursored back into an earlier one');
+});
+
+// Owner, 15 Sep: "this live page is for the entire area, all fights there" / "the older and newer
+// need to cycle to past fights in the CURRENT instance" - the live fight used to be treated as a
+// single, isolated thing with nothing to page through (Older/Newer permanently disabled). It is
+// really just the newest entry of the CURRENT VISIT (the live engine tags its own fight history
+// with the same zone+visitId the live fight itself carries), so Older/Newer now step back into
+// that visit's own earlier kills instead - scoped to THIS one instance only, never a different
+// day's visit to the same zone name (that is what the ordinary currentZoneVisits navigation is for,
+// and it stays untouched here).
+test('Older/Newer, from the live page, cycle through the CURRENT instance\'s own past fights - not a different visit to the same zone', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+
+  const siblingsFn = renderer.match(/function liveVisitSiblings\(fight\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(siblingsFn, 'liveVisitSiblings has been restructured or removed');
+  assert.match(
+    siblingsFn[1], /\(f\.source \|\| LIVE_SOURCE\) === LIVE_SOURCE && f\.zone === fight\.zone && f\.visitId === fight\.visitId/,
+    'must match on the SAME visit specifically (zone AND visitId, live source only) - matching on zone name alone would pull in a totally different day\'s visit to the same zone'
+  );
+
+  const navBtnFn = renderer.match(/function updateVisitNavButtons\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(navBtnFn, 'updateVisitNavButtons has been restructured or removed');
+  assert.match(
+    navBtnFn[1], /if \(liveFightOpen\) \{\s*olderBtn\.disabled = liveVisitCursor === 0 \|\| \(liveVisitCursor === null && liveVisitFights\.length === 0\);\s*newerBtn\.disabled = liveVisitCursor === null;\s*return;/,
+    'on the live page, Older disables only at the earliest fight in this visit (or when there are none yet); Newer disables only while already looking at the live fight itself (nothing is newer than live)'
+  );
+
+  const olderClickFn = renderer.match(/if \(olderBtn\) \{\s*olderBtn\.addEventListener\('click', \(\) => \{([\s\S]*?)\n {4}\}\);/);
+  assert.ok(olderClickFn, 'the Older button\'s click handler has been restructured or removed');
+  assert.match(
+    olderClickFn[1], /if \(liveVisitFights\.length\) renderLiveVisitFightAt\(liveVisitFights\.length - 1\);/,
+    'from the live fight itself, Older must jump to the MOST RECENT already-completed fight in this visit, not the oldest'
+  );
+  assert.match(
+    olderClickFn[1], /else if \(liveVisitCursor > 0\) \{\s*renderLiveVisitFightAt\(liveVisitCursor - 1\);/,
+    'once already cursored back into the visit, Older keeps walking further back one fight at a time'
+  );
+
+  const newerClickFn = renderer.match(/if \(newerBtn\) \{\s*newerBtn\.addEventListener\('click', \(\) => \{([\s\S]*?)\n {4}\}\);/);
+  assert.ok(newerClickFn, 'the Newer button\'s click handler has been restructured or removed');
+  assert.match(
+    newerClickFn[1], /if \(liveVisitCursor < liveVisitFights\.length - 1\) renderLiveVisitFightAt\(liveVisitCursor \+ 1\);\s*else returnToLiveVisitFight\(\);/,
+    'Newer must walk forward through the visit\'s fights and, once past the last completed one, land back on the live fight itself - not stop short of it'
+  );
+
+  // The tick handler must never redraw over (or worse, yank away from) a fight the user has
+  // cursored back to - it is finished, its numbers do not move, and it has nothing to do with
+  // whatever the CURRENT live fight is doing right now.
+  const tickFn = renderer.match(/async function onLiveFightTick\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(tickFn);
+  assert.match(
+    tickFn[1], /if \(liveFightOpen && liveVisitCursor === null\) \{/,
+    'a tick must only touch the live chart while the user is actually looking at the live fight, not an earlier one in the same visit'
+  );
+});
+
+// Owner, 14 Sep: a live fight showed "(zone unknown)" in the Combat tab despite genuinely being
+// in a known zone the whole time - a session that had been running for a while (or restarted
+// mid-fight) with no NEW "You have entered X." line since. Every other zone-aware engine already
+// gets seeded from the startup log-tail recovery (readLastZoneEntry) - the damage meter never was.
+test('the damage meter is seeded from the startup zone recovery, same as the raid board/travel guide/etc.', () => {
+  const main = read('src', 'main', 'main.js');
+  const start = main.indexOf('const found = readLastZoneEntry(logPath);');
+  assert.ok(start !== -1, 'the startup zone-recovery block has moved or been removed');
+  const block = main.slice(start, start + 1200);
+  assert.match(
+    block, /damageEngine\.enterZone\(Date\.now\(\), baseZoneName\(found\.zone\), difficultyLabel\(found\.zone\), isRaidInstance\(found\.zone\)\)/,
+    'the damage meter must be seeded the same way the live zone-change handler seeds it - raw zone string in, base name + difficulty + raid/group out'
+  );
+});
+
+// Owner, 14 Sep: "live damage flashes when refreshing" - confirmed with a screen recording. Frame-
+// by-frame analysis showed the chart going completely blank for one frame on every single live
+// tick. Root cause: renderBars() cleared the container BEFORE `await`ing a per-row IPC round trip
+// (estimateDamageClasses) - fine for a one-off click, but the live view calls this on every hit.
+// renderMetricBars() had the identical bug one level up, clearing again before its own `await
+// renderBars(...)`. Fix: build the new content into a detached fragment, `await` everything that
+// needs awaiting, and only THEN swap it in as one atomic replacement.
+test('renderBars builds into a detached fragment and swaps it in atomically - never an empty gap during the class-estimate await', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  const clearIdx = fn[1].indexOf(`container.innerHTML = ''`);
+  const awaitIdx = fn[1].indexOf('await Promise.all(');
+  assert.ok(clearIdx !== -1 && awaitIdx !== -1, 'both the clear and the await must still exist');
+  assert.ok(clearIdx > awaitIdx, 'the container must not be cleared until AFTER the async class-estimate work is done - clearing before it is the exact flash bug');
+  assert.match(fn[1], /const fragment = document\.createDocumentFragment\(\)/);
+  assert.match(fn[1], /fragment\.appendChild\(details\)/, 'rows must be built into the fragment, not appended straight into the live container');
+  assert.doesNotMatch(fn[1], /container\.appendChild\(details\)/, 'a row appended directly into container would show up one at a time instead of swapping in as one piece');
+});
+
+test('renderMetricBars no longer clears its container up front - renderBars owns the one atomic swap', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderMetricBars\(container, details\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderMetricBars has been restructured or removed');
+  assert.doesNotMatch(
+    fn[1], /container\.innerHTML = ''/,
+    'clearing here re-opens the exact empty window renderBars was fixed to close, since this runs BEFORE renderBars\' own await'
+  );
+});
+
+// Owner, 14 Sep: "EVERY part of the app should have a recovery for accidental close, this is no
+// exception" - Past Fights history had no session-restore registration at all until now. No
+// staleness limit (unlike the live 'damage' registration above it) - a completed fight is a
+// permanent fact, not an estimate that ages.
+test('the Combat tab\'s fight history is registered with sessionRestore, with no staleness limit', () => {
+  const main = read('src', 'main', 'main.js');
+  const start = main.indexOf(`sessionRestore.register('damageHistory'`);
+  assert.ok(start !== -1, 'damageHistory is not registered with sessionRestore');
+  const end = main.indexOf('});', start);
+  const block = main.slice(start, end);
+  assert.doesNotMatch(block, /maxGapMs/, 'a completed fight record does not go stale - it must not be given a staleness limit the way the live "damage" registration has');
+  assert.match(block, /capture: \(\) => damageEngine\.captureHistory\(\)/);
+  assert.match(block, /restore: \(d\) => damageEngine\.restoreHistory\(d\)/);
+});
+
+// Owner, 14 Sep, follow-up: "there is no way to browse the fights after you have scanned a log"
+// investigation turned up a second, separate gap in the SAME "every part of the app should have a
+// recovery" feature above - a scanned log's own engine (kept alive in importedScans, entirely
+// separate from the live damageEngine) was never wired into sessionRestore at all, so re-scanning
+// the same file from scratch was the only way to see it again after any restart.
+test('a scanned log\'s history also survives a restart, not just the live session\'s', () => {
+  const main = read('src', 'main', 'main.js');
+  const fn = main.match(/sessionRestore\.register\('importedScans', \{([\s\S]*?)\n\}\);/);
+  assert.ok(fn, 'importedScans is not registered with sessionRestore');
+  const block = fn[1];
+  assert.doesNotMatch(block, /maxGapMs/, 'a completed scan does not go stale either - re-scanning the same file later would produce the identical fights regardless of the gap');
+  assert.match(block, /s\.engine\.captureHistory\(\)/, 'must reuse the engine\'s own capture, not reinvent fight serialisation');
+  assert.match(block, /new DamageEngine\(\{ maxHistory: Infinity \}\)/, 'a restored scan engine must be uncapped, same as a freshly scanned one - scanLogForFights\' own comment on why');
+  assert.match(block, /engine\.restoreHistory\(s\.history\)/);
+  assert.match(block, /rebuilt\.push\(\{ label: s\.label, scannedAt: s\.scannedAt, engine, filePath: s\.filePath \|\| null \}\)/, 'must rebuild every saved scan first, before the dedup pass below can compare them');
+});
+
+// Owner, 15 Sep, live report: re-scanning the same log file across a long session left the SAME
+// day's fights piled up in importedScans many times over - each restore never replaced the old
+// copy, just added another, and every one of them got merged into the Combat tab at once (a single
+// zone visit showing up to ~10 times over, each fight's numbers byte-identical since they really
+// were the same real fight read off the same file repeatedly). See damage:scanLogFile's own comment
+// for the fix on the scanning side; this pins the matching self-heal on the restore side, so a save
+// file that already accumulated duplicates before this fix existed gets cleaned up automatically
+// the next time it loads, rather than staying broken forever.
+test('restoring scans dedupes by file, keeping only the newest copy of each one - a save from before this fix existed self-heals', () => {
+  const main = read('src', 'main', 'main.js');
+  const fn = main.match(/sessionRestore\.register\('importedScans', \{([\s\S]*?)\n\}\);/);
+  assert.ok(fn, 'importedScans is not registered with sessionRestore');
+  const block = fn[1];
+  assert.match(
+    block, /scanKey = \(s\) => \(s\.filePath \? normalizedScanPath\(s\.filePath\) : String\(s\.label\)\.replace\(\/ \\\(scanned \[\^\)\]\*\\\)\$\/, ''\)\)/,
+    'a filePath-less entry (saved before this fix) must still be matched by its label with the timestamp suffix stripped, or an old save never gets cleaned up'
+  );
+  assert.match(block, /if \(!prev \|\| s\.scannedAt > prev\.scannedAt\) newestByKey\.set\(key, s\)/, 'must keep the NEWEST scan of a given file, not the first one seen');
+  assert.match(block, /importedScans\.push\(s\)/, 'only the deduped, newest-per-file set may reach the live importedScans array');
+
+  // Behavioural half: run the real restore() against a fake pair of scans of "the same file" -
+  // one old filePath-less save and one newer one under the current shape - and confirm exactly one
+  // survives.
+  const restoreFn = fn[1].match(/restore: \(d\) => \{([\s\S]*?)\n {2}\},/);
+  assert.ok(restoreFn, 'restore() has been restructured');
+
+  const fakeImportedScans = [];
+  const FakeDamageEngine = function () { this.restoreHistory = () => {}; this.getHistory = () => [1, 2, 3]; };
+  const runReal = new Function('importedScans', 'normalizedScanPath', 'DamageEngine', 'd', restoreFn[1]);
+  const path15 = 'C:\\Logs\\eqlog_Shara_rivervale_2026-09-14.txt';
+  const fakePath = (p) => String(p).toLowerCase();
+  const total = runReal(
+    fakeImportedScans,
+    fakePath,
+    FakeDamageEngine,
+    {
+      scans: [
+        { label: 'eqlog_Shara_rivervale_2026-09-14.txt (scanned 15/09/2026, 00:12:20)', scannedAt: 1000, history: {} },
+        { label: 'eqlog_Shara_rivervale_2026-09-14.txt (scanned 15/09/2026, 02:24:22)', scannedAt: 2000, filePath: path15, history: {} },
+        { label: 'eqlog_Shara_rivervale_2026-09-14.txt (scanned 15/09/2026, 02:10:04)', scannedAt: 1500, filePath: path15, history: {} },
+      ],
+    }
+  );
+  assert.equal(fakeImportedScans.length, 2, 'the two entries sharing the same file must collapse to one, leaving the label-only entry (a different key) alone');
+  const survivor = fakeImportedScans.find((s) => s.filePath === path15);
+  assert.ok(survivor, 'the filePath-keyed entry must survive');
+  assert.equal(survivor.scannedAt, 2000, 'the NEWER of the two same-file scans must be the one kept');
+  assert.equal(total, 6, 'the returned count must reflect only the surviving, deduped scans (3 fights each x 2 survivors)');
+});
+
+// ---------------------------------------------------------------------------
+// Owner, 14 Sep, follow-up: "back to fights button needs deleting here, because now it should be
+// open by default. also, the live marker needs to be moved here instead when you're on the most
+// recent active[fight]." Back is a dead click while the live view is open - it auto-reopens on
+// the very next tick (onLiveFightTick's own list-screen gate) - so it's swapped for the same
+// "● Live" badge the Past Fights heading already uses, in the exact seat Back occupied.
+// ---------------------------------------------------------------------------
+
+test('the detail toolbar has a live badge alongside Back, hidden by default', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="combat-detail-toolbar"');
+  const end = html.indexOf('id="combat-view-toggle"', start);
+  const section = html.slice(start, end);
+  assert.match(section, /id="combat-detail-back"/);
+  assert.match(section, /id="combat-detail-live-badge"[^>]*style="display:none"/, 'the live badge must start hidden - Back is the default until a live fight is actually open');
+});
+
+test('setDetailToolbarLive swaps Back and the live badge - exactly one visible at a time', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function setDetailToolbarLive\(isLive\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'setDetailToolbarLive has been restructured or removed');
+  assert.match(fn[1], /backBtn\.style\.display = isLive \? 'none' : ''/);
+  assert.match(fn[1], /detailLiveBadge\.style\.display = isLive \? '' : 'none'/);
+
+  // Wired at both entry points, each turning the OTHER's toolbar state on for itself.
+  assert.match(renderer, /function openLiveFight\(fight\) \{[\s\S]*?setDetailToolbarLive\(true\)/);
+  assert.match(renderer, /async function openVisit\(visit\) \{[\s\S]*?setDetailToolbarLive\(false\)/);
+});
+
+// Owner, 14 Sep: "per skill breakdown should remain open on live view" - confirmed live: "it
+// refreshes on reload and closes." Every tick rebuilds every player row as a brand new <details>
+// element (see the atomic-swap fix above), which defaults to closed - a skill breakdown you had
+// open to actually read snapped shut on the very next hit.
+test('an expanded player\'s skill breakdown stays open across a re-render, read straight off the DOM before rebuilding', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(
+    fn[1], /const openNames = new Set\(\s*\[\.\.\.container\.querySelectorAll\('details\.combat-bar-row\[open\]'\)\]/,
+    'must read which rows are currently open from the container\'s own existing DOM, not a name it was told separately'
+  );
+  const openNamesIdx = fn[1].indexOf('const openNames');
+  const classEstimatesIdx = fn[1].indexOf('await Promise.all(');
+  assert.ok(openNamesIdx !== -1 && openNamesIdx < classEstimatesIdx, 'open names must be captured BEFORE the container\'s content is touched (the class-estimate await runs after, but nothing before this point may replace the DOM being read)');
+  assert.match(fn[1], /if \(openNames\.has\(row\.name\)\) details\.open = true;/, 'a row whose name was open before must be re-opened on the new element replacing it');
+});
+
+// ---------------------------------------------------------------------------
+// Owner, 14 Sep: "i would like denon's desperate dirge to have it's own coloured section of the
+// combat log. it should still be part of damage totals, but the coloured bar should have the
+// denon's section coloured bright red." Confirmed against the owner's real log (spelling and rank-
+// suffix shape: "Denon's Desperate Dirge V", "...IX", etc. - matches gotcha #3's documented case).
+// ---------------------------------------------------------------------------
+
+test('a player\'s own damage bar splits into a bright-red Denon\'s Desperate Dirge slice plus the rest, same total width', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(renderer, /const DENON_SKILL_PREFIX = "Denon's Desperate Dirge"/);
+  assert.match(renderer, /const DENON_BAR_COLOR = '#ff2b2b'/);
+  assert.match(
+    renderer, /const isDenonSkill = \(skill\) => typeof skill === 'string' && skill\.startsWith\(DENON_SKILL_PREFIX\)/,
+    'must match by prefix, not exact equality - the real cast line carries a rank numeral ("... Dirge V")'
+  );
+
+  const fn = renderer.match(/async function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(
+    fn[1], /const denonDamage = \(row\.bySkill \|\| \[\]\)\.filter\(\(s\) => isDenonSkill\(s\.skill\)\)\.reduce\(\(sum, s\) => sum \+ s\.damage, 0\)/,
+    'must sum every Denon\'s-shaped skill entry for this row, not just look for one exact name'
+  );
+  assert.match(fn[1], /denonSeg\.style\.background = DENON_BAR_COLOR/);
+  assert.match(
+    fn[1], /restSeg\.style\.width = `\$\{row\.damage > 0 \? \(\(row\.damage - denonDamage\) \/ row\.damage\) \* 100 : 100\}%`/,
+    'the two segments together must still fill the row\'s own full share of the bar - this is a split, not a reduction of the total'
+  );
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-bar-fill\s*\{[^}]*display:\s*flex/s, 'the fill must be a flex row to lay its segments out side by side');
+});
+
+test('the same fixed red is used for Denon\'s own row in the per-skill breakdown, not the rotating colour index', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(
+    renderer, /fill\.style\.background = isDenonSkill\(s\.skill\) \? DENON_BAR_COLOR : BAR_COLORS\[si % BAR_COLORS\.length\]/,
+    'Denon\'s must render the same colour wherever it shows up, not whatever BAR_COLORS happens to land on for its position in the list'
+  );
+});
+
+// ---------------------------------------------------------------------------
+// "There is no way to browse the fights after you have scanned a log" (owner, 14 Sep,
+// screenshot-confirmed: 1778 fights found by a scan, Past Fights list showing nothing). Two bugs
+// in the same report - a scan landed you on whatever zone/detail state the tab happened to be in
+// already, and a filtered-to-zero list looked identical to "nothing has happened", with no way to
+// tell the two apart.
+// ---------------------------------------------------------------------------
+
+test('a successful scan clears the zone filter and returns to the list, so the scan\'s own fights are immediately visible', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function runScan\(filePath\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'runScan has been restructured');
+  const successBranch = fn[1].slice(fn[1].indexOf('result.ok'));
+  assert.match(successBranch, /showList\(\)/, 'a scan must not leave you stranded on an old detail view');
+  assert.match(successBranch, /zoneFilter\.value = ''/, 'a stale zone filter is exactly what hid the 1778 scanned fights in the report');
+  assert.match(successBranch, /await loadHistory\(\)/, 'the filter reset must happen before the reload, not after');
+});
+
+test('the empty-list message tells apart "nothing has happened" from "your filters hide everything"', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  // render() is a common name reused elsewhere in this file (the module scope's own top-level
+  // render, an unrelated per-widget one) - scope the search to inside initCombatPage so this can't
+  // accidentally match one of those instead.
+  const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
+  const fn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'render() has been restructured');
+  assert.match(fn[1], /!lastHistory\.length/, 'must check the UNFILTERED count for the "nothing yet" case');
+  assert.match(fn[1], /!filtered\.length/, 'must separately check the FILTERED count - a scan can fill lastHistory while filtered is still empty');
+  assert.match(fn[1], /No fights match the current zone\/source\/min-damage filters/, 'the filtered-to-zero case needs its own, different message');
+});
+
+// Owner, 15 Sep: "back to live and current zone do the same thing basically" - true, because
+// jumpToCurrentZone always overwrites the zone filter with wherever you actually are regardless
+// of what it started as, so a separate "Back to live" button that reset the zone filter first was
+// never doing anything jumpToCurrentZone wasn't about to redo anyway. The only genuine difference
+// was the Source-filter reset, folded directly into jumpToCurrentZone instead - one button, not
+// two that only ever differed when there was nothing to differ about. This also closes "back to
+// live still flashes the scanned log when already on live, it should do nothing or not be there" -
+// there is no longer a second button that could be a no-op in the first place.
+test('"Back to live" was removed - Current zone resets the Source filter itself instead', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.doesNotMatch(html, /id="combat-back-to-live"/, 'the redundant button must actually be gone, not just hidden');
+
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.doesNotMatch(renderer, /function backToLive\(\)/, 'backToLive must be gone, not left as dead code');
+  assert.doesNotMatch(renderer, /backToLiveBtn/, 'no dangling reference to a button that no longer exists');
+
+  const fn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'jumpToCurrentZone has been restructured or removed');
+  assert.match(
+    fn[1], /sourceFilter\.value = '';/,
+    'jumping to your current zone must mean live data, not a scanned file frozen in the past - the Source filter has to reset here now that Back to live is gone'
+  );
+});
+
+// ---------------------------------------------------------------------------
+// "You need a way to return to last scan as well" (owner, 14 Sep). A Source filter (every fight
+// already carries `source` - main.js's mergedDamageHistory) lets a scan's results be isolated
+// again after navigating away, instead of being permanently mixed into the same list forever.
+// ---------------------------------------------------------------------------
+
+test('a Source filter exists, populated the same way the zone filter is, and actually filters the list', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-source-filter"/);
+  assert.match(html, /id="combat-return-to-scan"[^>]*style="display:none"/, 'hidden until a scan has actually happened this session');
+
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(renderer, /function populateSourceFilter\(history\) \{/, 'populateSourceFilter has been restructured or removed');
+  // Owner, 15 Sep: switching back to the live source now also re-scopes the zone filter (see
+  // applyLiveZoneDefault's own test), so this listener grew a second call - it still renders.
+  assert.match(
+    renderer, /sourceFilter\.addEventListener\('change', \(\) => \{ applyLiveZoneDefault\(\); render\(\); \}\)/,
+    'changing the source must actually re-render, same as the zone filter'
+  );
+
+  const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
+  const renderFn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(renderFn, 'render() has been restructured');
+  assert.match(renderFn[1], /populateSourceFilter\(lastHistory\)/);
+  assert.match(
+    renderFn[1], /\(f\.source \|\| LIVE_SOURCE\) === sourceValue/,
+    'the filter predicate must actually check each fight\'s own source, not just exist cosmetically'
+  );
+
+  const siblingFn = combatPage.match(/function siblingVisits\(zone\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(siblingFn, 'siblingVisits has been restructured or removed');
+  assert.match(
+    siblingFn[1], /sourceFilter\.value/,
+    'Older/Newer and jumpToCurrentZone must also respect the source filter, or they would jump you across sources mid-browse'
+  );
+});
+
+test('a completed scan lands you on THAT scan\'s own results and remembers it for "Return to last scan"', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/async function runScan\(filePath\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'runScan has been restructured');
+  const successBranch = fn[1].slice(fn[1].indexOf('result.ok'));
+  assert.match(successBranch, /sourceFilter\.value = result\.label/, 'must land specifically on this scan\'s own results, not mixed with everything else');
+  assert.match(successBranch, /lastScanLabel = result\.label/, 'must remember which scan, for Return to last scan');
+  assert.match(successBranch, /render\(\);/, 'must re-render after setting lastScanLabel, so updateScanButtons() picks up the new state');
+
+  const returnFn = renderer.match(/function returnToScan\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(returnFn, 'returnToScan has been restructured or removed');
+  assert.match(returnFn[1], /if \(!lastScanLabel\) return;/, 'must no-op gracefully before any scan has happened, not throw');
+  assert.match(returnFn[1], /sourceFilter\.value = lastScanLabel/);
+  assert.match(renderer, /returnToScanBtn\.addEventListener\('click', returnToScan\)/, 'the button must actually be wired');
+});
+
+// Owner, 14 Sep, screenshot-confirmed: "live text appears when in combat log scan" - a real live
+// fight elsewhere was auto-opening itself right over a scanned log the owner was actively
+// browsing. Covered structurally above (onLiveFightTick's browsingOtherSource guard); this pins
+// the feedback half of the same report - "current zone" silently doing nothing when nothing was
+// found, with no way to tell a genuinely empty zone from a floor/filter hiding real activity.
+test('jumpToCurrentZone reports WHY nothing was found, instead of silently doing nothing', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-jump-status"/);
+
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.match(renderer, /function setJumpStatus\(text, isError\) \{/, 'setJumpStatus has been restructured or removed');
+
+  const fn = renderer.match(/async function jumpToCurrentZone\(\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'jumpToCurrentZone has been restructured or removed');
+  assert.match(fn[1], /setJumpStatus\('Your current zone is not known yet/, 'an unresolved zone must say so, not just quietly show the list');
+  assert.match(
+    fn[1], /No activity found in \$\{zone\} above your \$\{formatDamage\(floor\)\} min-damage floor/,
+    'a real min-damage floor hiding everything must be named as the reason, not left to guesswork'
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Owner, 15 Sep, three fixes reported together against the batch above:
+//   - "the row of buttons is clipped on smaller screens, there is too many buttons in one row"
+//   - "back to live button flashes the return to last scan when already on the live tab"
+//   - "reading a log still says 'live'" / "and live version still says 'past fights'"
+// ---------------------------------------------------------------------------
+
+// Owner, 15 Sep, second follow-up after the first attempt (a row of its own below the heading)
+// still wasn't "the top row": "you still did not move the buttons where i told you to". The
+// actions now share the HEADING's own line (.combat-list-header, the same header+actions pattern
+// this app already uses for modal headers), not a separate row beneath it.
+test('the action buttons share the heading\'s own line, not a separate row below it', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('id="combat-list-screen"');
+  const section = html.slice(start, html.indexOf('id="combat-visit-list"', start));
+
+  const headerStart = section.indexOf('class="combat-list-header"');
+  assert.ok(headerStart !== -1, 'combat-list-header is missing');
+  const headerEnd = section.indexOf('</div>', section.indexOf('class="combat-list-actions"'));
+  const header = section.slice(headerStart, headerEnd);
+  assert.match(header, /<h3/, 'the heading must live inside the header wrapper, alongside the actions');
+  assert.match(header, /id="combat-jump-current-zone"/, 'Current zone must be on the heading\'s own line');
+  assert.match(header, /id="combat-return-to-scan"/, 'Return to last scan must be on the heading\'s own line too');
+
+  // The filter controls (Zone/Source/Min damage) are a separate row, further down.
+  const filterRowMatches = [...section.matchAll(/<div class="row combat-filter-row">/g)];
+  assert.equal(filterRowMatches.length, 1, 'exactly one filters row - the actions no longer have a row of their own');
+  assert.ok(section.indexOf('class="row combat-filter-row"') > headerEnd, 'the filters row must come after the header, not before it');
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-list-header\s*\{[^}]*justify-content:\s*space-between/s,
+    'heading left, actions right - the same layout .modal-header already uses elsewhere in this app'
+  );
+  assert.match(
+    css, /\.combat-filter-row\s*\{[^}]*flex-wrap:\s*wrap/s,
+    'the filters row must still wrap on a narrow window'
+  );
+});
+
+test('Return to last scan hides itself once you are already viewing that exact scan', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function updateScanButtons\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'updateScanButtons has been restructured or removed');
+  assert.match(
+    fn[1], /const alreadyOnLastScan = !!lastScanLabel && sourceFilter\.value === lastScanLabel;/,
+    'must hide itself once you are already viewing that exact scan - offering to go somewhere you already are is the "flash" that was reported'
+  );
+  assert.match(fn[1], /returnToScanBtn\.style\.display = \(lastScanLabel && !alreadyOnLastScan\) \? '' : 'none';/);
+
+  const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
+  const renderFn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(renderFn, 'render() has been restructured');
+  assert.match(renderFn[1], /updateScanButtons\(\)/, 'render() must actually call it, or the button never updates when filters change');
+});
+
+// Owner, 15 Sep, repeated: "past fights is also not correct, it is not past, that is actually
+// live" - the first attempt at this (0zq) drew the line at "is a fight literally happening this
+// second", which was the wrong axis - the live session's own view IS "the live version" the whole
+// time it's selected, fight in progress or not, because the app tracks it live either way. Only
+// the Source (live vs a specific past scan) matters now - two states, not three.
+test('the list heading never calls the live session "past fights" - only Source (live vs a scan) decides the wording', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-list-heading-text">Fights</, 'the default/live-view text must not be "Past fights"');
+  assert.match(html, /class="live-indicator" id="combat-list-live-badge"/, 'the text and the live badge must be independent elements, not one fixed string');
+
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function updateListHeading\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'updateListHeading has been restructured or removed');
+  assert.doesNotMatch(fn[1], /'Past fights'/, 'must never fall back to "Past fights" - that is exactly the reported bug, twice');
+  assert.doesNotMatch(fn[1], /lastKnownLiveFight \? /, 'whether a fight is literally active right now must not decide the heading text any more - only whether a scan is being browsed does');
+  assert.match(
+    fn[1], /listHeadingText\.textContent = 'Scan results';[\s\S]*?listLiveBadge\.style\.display = 'none';/,
+    'a scanned file is never "live" no matter what - browsing one must drop the live badge entirely'
+  );
+  assert.match(fn[1], /listHeadingText\.textContent = 'Fights';/, 'the live source (any fight state) must always read as the live view, never "past"');
+
+  const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
+  const renderFn = combatPage.match(/function render\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(renderFn, 'render() has been restructured');
+  assert.match(renderFn[1], /updateListHeading\(\)/, 'render() must refresh the heading when the Source filter changes');
+});
+
+// Owner, 15 Sep: "the log file name field can be much shorter" got a flat 220px cap on Source
+// specifically at first. Superseded by "scale the fields to fill the gaps... dynamic field sizes"
+// / "middle one doesn't fill the space" (screenshot: Zone and Min damage both filled the row,
+// Source alone stayed stuck at its old fixed cap) - a hardcoded cap on just one of three siblings
+// stopped making sense once all three were meant to share the row's width the same way.
+test('the Source field grows with its siblings instead of a fixed cap, with the full label still on hover', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.doesNotMatch(
+    css, /\.sd-wrap:has\(#combat-source-filter\)\s*\{/,
+    'the source-specific cap must actually be gone, not just widened - it must grow the same way Zone and Min damage do'
+  );
+  const searchDropdown = read('src', 'renderer', 'main-window', 'search-dropdown.js');
+  assert.match(
+    searchDropdown, /display\.title = text;/,
+    'a control that can still ellipsis-truncate on a narrow window needs the full value reachable somehow - a hover title is this app\'s standing convention for exactly that'
+  );
+});
+
+// Owner, 15 Sep, repeated: "current zone button is still there on live version. why are you
+// ignoring this? i asked you to change it" - the first attempt (0zs) only hid it while a fight was
+// literally active, which was the wrong axis (same correction as the heading above). The live
+// source IS "the live version" the whole time it's selected, so Current zone must hide for the
+// entire time you're on it, not only during an active fight - it only has a job left while
+// browsing a scan, where it's the one way back to live now that Back to live is gone.
+test('Current zone is hidden for the whole time the live source is selected, not only during an active fight', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function updateListHeading\(\) \{([\s\S]*?)\n  \}\n/);
+  assert.ok(fn, 'updateListHeading has been restructured or removed');
+  assert.match(
+    fn[1], /jumpCurrentZoneBtn\.style\.display = browsingScan \? '' : 'none';/,
+    'must be gated on browsingScan alone - shown only while browsing a scan, hidden the entire time the live source is selected regardless of whether a fight happens to be active'
+  );
+  assert.doesNotMatch(fn[1], /lastKnownLiveFight/, 'whether a fight is literally active must no longer factor into this decision at all');
+});
+
+// Owner, 15 Sep, follow-up screenshot: "still not column split and even" - the fight-count/damage
+// split (0zo) put damage in its own grid column, but left it `auto`-sized - see the CSS comment
+// for why that still drifted (`auto` sizes to EACH ROW's OWN content, since every `.combat-visit-
+// row` is its own separate grid container, not one shared grid for the whole list).
+test('the damage column is a fixed width, not `auto` - independent per-row grids do not share an auto track', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.doesNotMatch(
+    css, /\.combat-visit-row \{[^}]*grid-template-columns: [^;]*\bauto;/s,
+    'a track ending in `auto` sizes to THIS row\'s own content only - it cannot line up across separate per-row grid containers'
+  );
+  assert.match(
+    css, /\.combat-visit-row \{[^}]*grid-template-columns: 70px 36px minmax\(80px, 1fr\) 60px 70px 80px;/s,
+    'the damage column must be a real fixed width, same reasoning as every other column here'
+  );
+});
+
+// Owner, 15 Sep: "the combat log when parsing a large log is very long, with no header bars for
+// dates for clear separation" - a multi-week scan read as one undifferentiated wall of rows.
+test('the Scan results list gets a header bar per day, and the row itself drops the date', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderList\(visits\) \{([\s\S]*?)\n  \}/);
+  assert.ok(fn, 'renderList has been renamed or restructured');
+  assert.match(fn[1], /dateKey\(visit\.startedAt\)/, 'must group consecutive same-day visits');
+  assert.match(fn[1], /combat-date-header/, 'must insert a header bar element');
+  assert.match(fn[1], /formatDateHeader\(visit\.startedAt\)/, 'the header must be dated, not a placeholder');
+  // The row's own time column must be time-only now (formatTime), not the date-or-time formatWhen
+  // it used to share with the per-fight accordion rows - those still use formatWhen deliberately,
+  // since a fight detail screen has no header bar of its own to carry the date instead.
+  assert.match(fn[1], /span\(formatTime\(visit\.startedAt\), 'combat-visit-time'\)/);
+  assert.doesNotMatch(fn[1], /formatWhen\(visit\.startedAt\)/, 'the row must not still print its own date inline');
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-date-header \{/, 'the header bar has no themed styling');
+});
+
+// Owner, 15 Sep, follow-up to the date-header ask: "should the state of the daily log split be
+// shown here, as it's a good way to check logs per day" - the "Choose a log to scan" picker (and
+// every other _pickLogFiles caller, like the Lockouts log tools) lists Split files with no way to
+// tell whether splitting is actually still on, so a stale file looks identical to a current one.
+test('the log picker shows whether daily log splitting is on when Split files are listed', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="log-picker-split-status-row"[^>]*style="display:none"/, 'must start hidden - only meaningful when Split files exist');
+  assert.match(html, /id="log-picker-enable-split-btn"[^>]*style="display:none"/, 'the turn-it-on button must start hidden too - only the off case shows it');
+
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function _pickLogFiles\([\s\S]*?\n\}/);
+  assert.ok(fn, '_pickLogFiles has been renamed or restructured');
+  assert.match(fn[0], /groups\.split \|\| \[\]/, 'must read the Split group specifically, not any file list');
+  assert.match(fn[0], /getLogState\(\)/, 'must read the real splitter state, not assume it is on');
+  assert.match(fn[0], /s\.split\.enabled/);
+  assert.match(fn[0], /newestMtime/, 'must say how current the split files actually are, not just on/off');
+  assert.match(fn[0], /Log splitting is off/i, 'the off case must say so, not just stay silent');
+});
+
+// Owner, 15 Sep, follow-up: "add a button too to be like 'it's off, would you like to turn it
+// on?'" - seeing that splitting is off is only half the fix if going to enable it still means
+// leaving this modal and finding the Setup page.
+test('the log picker can turn splitting on directly, without leaving the modal', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function _pickLogFiles\([\s\S]*?\n\}/);
+  assert.ok(fn, '_pickLogFiles has been renamed or restructured');
+  assert.match(fn[0], /enableSplitBtn\.style\.display = ''/, 'the button must be revealed for the off case');
+  assert.match(fn[0], /setSplitEnabled\(true\)/, 'must call the real enable API, not just hide the warning');
+  // Wired once per DOM element, not once per modal open - _pickLogFiles runs fresh on every open,
+  // so an unguarded addEventListener here would stack a duplicate handler each time.
+  assert.match(fn[0], /dataset\.wired/, 'the click handler must not be re-added on every modal open');
+});
+
+// Owner, 15 Sep: "rename this button to 'return to live'" - it only ever shows while browsing a
+// scan now (updateListHeading), where its whole job is getting back to live; "Current zone" no
+// longer described what it does now that Back to live's own reset moved into it.
+test('the id="combat-jump-current-zone" button reads "Return to live", not "Current zone"', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  assert.match(html, /id="combat-jump-current-zone"[^>]*>Return to live</);
+  assert.doesNotMatch(html, />Current zone</);
+});
+
+// Owner, 15 Sep, follow-up to the filters-row wrap fix: "it drops down underneath when it still
+// has space, but it split from it's text label which is bad" - each label and its own control
+// were separate flex children of .combat-filter-row, so wrapping could move a control onto its own
+// new line while its label stayed behind on the line above - an apparently unlabelled empty box.
+test('each filter label stays with its own control when the row wraps - they are one flex item, not two', () => {
+  const html = read('src', 'renderer', 'main-window', 'index.html');
+  const start = html.indexOf('class="row combat-filter-row"', html.indexOf('id="combat-list-screen"'));
+  const section = html.slice(start, html.indexOf('</div>', start));
+  const pairs = [...section.matchAll(/<span class="combat-filter-pair">/g)];
+  assert.equal(pairs.length, 3, 'Zone, Source, and Min damage must each be their own label+control pair');
+  // Every id must appear INSIDE some pair, not as a bare sibling of the row.
+  for (const id of ['combat-zone-filter', 'combat-source-filter', 'combat-min-damage']) {
+    const idIdx = section.indexOf(`id="${id}"`);
+    const pairStart = section.lastIndexOf('<span class="combat-filter-pair">', idIdx);
+    const pairEnd = section.indexOf('</span>', idIdx);
+    assert.ok(pairStart !== -1 && pairStart < idIdx && idIdx < pairEnd, `#${id} must be inside its own .combat-filter-pair, next to its label`);
+  }
+
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-filter-pair\s*\{[^}]*display:\s*inline-flex/s,
+    'the pair must be one flex item so flex-wrap can only move the whole label+control together'
+  );
+});
+
+// Owner, 15 Sep: "you can see that there is plenty of gaps that can be used that need to be
+// removed" (screenshot: a wide empty gap between "Zone"/"Source" and their own dropdowns) - the
+// shared `.label` class defaults to `min-width: 110px` for the left-aligned settings-form rows it
+// was built for, which just wastes space on these short, inline filter labels and makes the row
+// wrap sooner than it needs to.
+test('filter labels do not carry the settings-form min-width - they sit snug against their own control', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-filter-pair \.label\s*\{\s*min-width:\s*0;\s*\}/,
+    'must override the shared .label min-width down to 0 inside a filter pair specifically'
+  );
+});
+
+// Owner, 15 Sep: "you can still expand the text fields to match across the whole row, that looks
+// better, but allow it to shrink back to how it is now when smaller" - the controls sat at a fixed
+// natural width, leaving a big empty gap after a short "50000" when the row had room to spare.
+test('the filter controls grow to fill spare row width, and can still shrink back down when the row is narrow', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(css, /\.combat-filter-pair \{ flex: 1 1 0; min-width: 0; \}/, 'each pair must be allowed to grow into the row\'s own spare width');
+  // Reported live 15 Sep: `flex-basis: auto` (the original value here) made a scan's own Source
+  // label - a filename plus a scanned date/time, no length limit - inflate that pair's UN-SHRUNK
+  // hypothetical width for the wrap decision, which flex-wrap uses instead of the post-shrink
+  // size. A long enough label forced Min damage onto its own line despite plenty of real room.
+  // `flex-basis: 0` fixes the wrap decision; `min-width: 0` is required alongside it - basis:0
+  // alone was verified (in a real browser, not assumed) to still leave the automatic minimum-size
+  // floor in place, which is a flex item's own min-content size when nothing overrides it, and for
+  // a nested flex container like this pair that floor is computed from its children's content -
+  // including the same unbounded label text, one level down. See main-window.css's own comment on
+  // this rule for the measurements.
+  assert.match(
+    css, /\.combat-filter-pair \.label \{ flex: 0 0 auto; \}/,
+    'the LABEL must never grow - only the control beside it should stretch, or "Zone" would end up with its own trailing whitespace'
+  );
+  assert.match(
+    css,
+    /\.combat-filter-pair \.sd-wrap,\n\.combat-filter-pair input\.text-input \{ flex: 1 1 auto; min-width: 80px; \}/,
+    'both the themed dropdown wrapper and the plain number input must grow, with a floor so they cannot shrink to nothing on a narrow line'
+  );
+  // Growing is per flex LINE, not per row overall - once wrapped, this same min-width is what
+  // "shrink back to how it is now when smaller" actually falls back to. No separate media query
+  // needed; the owner's own two requirements (grow AND shrink-back) are one flexbox behaviour.
+});
+
+// Owner, 15 Sep, follow-up screenshot: "scale the fields to fill the gaps is what i said, not the
+// anchor points, dynamic field sizes" - the Zone/Source dropdowns still sat at their own compact
+// size with a big blank gap next to them, even though .combat-filter-pair's flex-grow was
+// correctly widening their .sd-wrap. .sd-display (the visible button) never claimed that width -
+// `max-width: 100%` is only an upper bound, nothing made it actually fill the now-wider wrap.
+test('the themed dropdown\'s visible control actually fills its wrap once the wrap has grown, not just capped below it', () => {
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.sd-display \{[^}]*(?<!max-)width: 100%;/s,
+    '.sd-display must claim the full width of .sd-wrap with an actual `width: 100%` - `max-width: 100%` alone is only an upper bound and a growing wrap just becomes invisible blank space beside a still-compact control'
+  );
+});
+
+// Owner, 15 Sep: "is it possible to add/check for amount of times skill used/activated? for
+// example, how much instances of desperate dirge, or how many puma procs... it would really help
+// check how often something happens in the log, like weapon procs" - the count was already
+// tracked internally (bySkill's own `hits`, already used to compute Crit %) and simply never
+// surfaced in the UI. Display-only addition, no damageEngine change needed.
+test('the skill breakdown shows how many times each skill fired, not just its total damage', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const fn = renderer.match(/function renderBars\(container, rows, durationSec, metric = 'damage'\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'renderBars has been restructured or removed');
+  assert.match(fn[1], /header\.appendChild\(span\('Hits'\)\)/, 'the header must label the new column');
+  assert.match(
+    fn[1], /trackArea\.appendChild\(span\(String\(s\.hits\), 'combat-skill-hits'\)\)/,
+    'must render the real per-skill hit count (bySkill.hits), not a placeholder'
+  );
+  const css = read('src', 'renderer', 'main-window', 'main-window.css');
+  assert.match(
+    css, /\.combat-skill-track-area \{[^}]*grid-template-columns: 2fr 56px 64px 56px;/s,
+    'the track-area sub-grid must reserve a track for Hits alongside Damage/%/Crit, or it will not line up under its own header'
+  );
+});
+
+// Reported live 15 Sep, screenshot-confirmed: after "Found 0 fights in eqlog_...", the Source
+// dropdown stayed on "All sources", the heading stayed "Fights - Live", and "Return to last scan"
+// showed anyway - an outright contradiction (Live, AND something to return to). Root cause: a
+// scan that finds zero fights leaves no history entry carrying its label, so populateSourceFilter
+// (which only ever built its option list from history) never created an option for it, and
+// `sourceFilter.value = result.label` silently failed - a <select> assigned a value with no
+// matching <option> just deselects everything.
+test('a 0-fight scan still gets a selectable Source option, not a silent revert to Live', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+
+  const popFn = renderer.match(/function populateSourceFilter\(history\) \{([\s\S]*?)\n {2}\}\n/);
+  assert.ok(popFn, 'populateSourceFilter has been restructured');
+  assert.match(
+    popFn[1], /if \(lastScanLabel\) sources\.add\(lastScanLabel\)/,
+    'the just-scanned label must be a selectable option even when it has zero matching fights'
+  );
+
+  // Ordering matters as much as the fix itself: lastScanLabel must be set BEFORE loadHistory()
+  // triggers the render/populateSourceFilter that needs to see it - setting it after (the original
+  // order) means the option does not exist yet at the moment `sourceFilter.value = result.label`
+  // runs, and creating the option one render later does not retroactively re-select it.
+  const fn = renderer.match(/async function runScan\(filePath\) \{([\s\S]*?)\n {2}\}\n/);
+  assert.ok(fn, 'runScan has been restructured');
+  const successBranch = fn[1].slice(fn[1].indexOf('result.ok'));
+  const labelAt = successBranch.indexOf('lastScanLabel = result.label');
+  const loadAt = successBranch.indexOf('await loadHistory()');
+  assert.ok(labelAt > -1 && loadAt > -1, 'both statements must still exist');
+  assert.ok(labelAt < loadAt, 'lastScanLabel must be set before loadHistory() re-renders the Source dropdown');
+});
+
+// "scanning a log, then closing the app and reopening, reloads the old scanned logs as current,
+// and not view past content, it needs to still be labelled as a scanned log not current" (owner,
+// 15 Sep). Restored scans (sessionRestore's importedScans) get merged into the same fight list the
+// live session renders under (main.js's mergedDamageHistory), and the Source filter's native
+// default of "" (All sources) let that merge show through with the heading still reading "Live" -
+// a fresh page load with old scans on file must default to the live session, not silently blend
+// everything together.
+test('the Source filter defaults to the live session on first load, even with old scans restored - and never overrides a later deliberate "All sources" pick', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  const combatPage = renderer.slice(renderer.indexOf('function initCombatPage()'));
+
+  assert.match(
+    combatPage, /let hasSetInitialSource = false;/,
+    'a closure flag must exist to gate the default to only the very first population'
+  );
+
+  const popFn = combatPage.match(/function populateSourceFilter\(history\) \{([\s\S]*?)\n {2}\}\n/);
+  assert.ok(popFn, 'populateSourceFilter has been restructured');
+  assert.match(
+    popFn[1], /sources\.add\(LIVE_SOURCE\);/,
+    'LIVE_SOURCE must always be a selectable option, even with zero live fights so far - otherwise ' +
+    'assigning sourceFilter.value = LIVE_SOURCE below silently no-ops (a value with no matching option)'
+  );
+
+  const tailAt = popFn[1].indexOf('if (sources.has(previous))');
+  assert.ok(tailAt > -1, 'the previous-value restore branch has been restructured or removed');
+  const tail = popFn[1].slice(tailAt);
+  assert.match(
+    tail, /\}\s*else if \(!hasSetInitialSource\) \{[\s\S]*?sourceFilter\.value = LIVE_SOURCE;[\s\S]*?\}\n\s*hasSetInitialSource = true;/,
+    'must default to LIVE_SOURCE only on the true first population (previous value not found AND ' +
+    'never set before) - and must set hasSetInitialSource unconditionally afterward so a later ' +
+    'render never re-applies this default over a deliberate "All sources" choice'
+  );
+
+  // sources.add(LIVE_SOURCE) must run before the sorted/previous-value logic reads `sources`,
+  // or the option won't exist yet when sourceFilter.value = LIVE_SOURCE tries to select it.
+  const addAt = popFn[1].indexOf('sources.add(LIVE_SOURCE);');
+  const elseAt = popFn[1].indexOf('sourceFilter.value = LIVE_SOURCE;');
+  assert.ok(addAt > -1 && elseAt > -1 && addAt < elseAt, 'LIVE_SOURCE must be added to the option set before it is ever assigned as the value');
+});
+
+module.exports = () => report('combat-tab');
+if (require.main === module) report('combat-tab').then((n) => process.exit(n ? 1 : 0));

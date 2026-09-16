@@ -90,6 +90,16 @@ test('a mez replaces a snare on the one tile (newest control wins, not stacked)'
   assert.ok(names.includes('MESMERIZED'), 'the mez that landed second never registered');
 });
 
+test('Earth Elemental Attack (an NPC-only proc root) shows ROOTED and clears on its own wear-off line', () => {
+  const { engine } = setup();
+  engine.handleLine(`${TS}Your feet sink into the ground.`);
+  const active = engine.getActive();
+  assert.equal(active.length, 1);
+  assert.equal(active[0].name, 'ROOTED');
+  engine.handleLine(`${TS}Your feet come free.`);
+  assert.equal(engine.getActive().length, 0, 'the wear-off line did not clear the tile');
+});
+
 test('an unrelated line naming one of the words in chat does not fire it', () => {
   const { engine } = setup();
   engine.handleLine(`${TS}Rallia tells the guild, 'i am no longer afraid of that pull'`);

@@ -86,6 +86,13 @@ class LockoutService extends EventEmitter {
     // this instantiable in a plain Node test with no Electron anywhere.
     this.logsFolderFn = () => null;
     this.currentFileFn = () => null;
+    // How far the shared live tailer has read into the current file - see setCurrentOffsetFn.
+    this.currentOffsetFn = () => null;
+    // Set by restoreState() from a session-restore snapshot: { character, file, offset } - where a
+    // previous run's backfill/live-tail left off, so this run's backfill can resume there instead
+    // of re-parsing the whole week. Consumed (and re-validated against the real file) the first
+    // time backfill() runs; null means "no usable checkpoint, do the normal full parse."
+    this._restoredProgress = null;
     // A file the user pointed the grid at from "Change log file"; null = the tailed live log.
     this.logTarget = null;
     // Extra per-day/archive files the user fed in via "Add split files". Tracked so the UI can tell
@@ -111,6 +118,14 @@ class LockoutService extends EventEmitter {
   // the moment the line arrives.
   setCurrentFileFn(fn) {
     if (typeof fn === 'function') this.currentFileFn = fn;
+  }
+
+  // The shared tailer's own read position in the current file (logWatcher.getStatus().offset).
+  // Every line this service's handleLine() ever sees came from that same read, so at any moment
+  // this position IS "how far this service has processed" - captureState() reads it live rather
+  // than tracking a separate counter of its own.
+  setCurrentOffsetFn(fn) {
+    if (typeof fn === 'function') this.currentOffsetFn = fn;
   }
 
   // Set from main.js whenever the user changes the reset time (Lockouts page or Setup). Emits
@@ -226,22 +241,88 @@ class LockoutService extends EventEmitter {
    *
    * STREAMED - `readline` yields between chunks so the UI stays alive. Idempotent by the core's
    * own contract (clause 6), so overlapping the live tailer or an earlier read is safe. Returns
-   * the line count, or -1 if the filename carried no character.
+   * `{ lines, endOffset }` - `lines` is -1 if the filename carried no character (endOffset then
+   * null); `endOffset` is the file's byte size once the read finished, i.e. how far this call
+   * itself got - the resume checkpoint a later backfill() can start from instead of re-parsing
+   * from the week boundary again. `startOffset` reads from an exact byte position instead of the
+   * week-boundary seek, for exactly that resume case.
    */
-  async _readInto(file, { capToWeek = false } = {}) {
+  async _readInto(file, { capToWeek = false, startOffset = null } = {}) {
     const character = core.characterFromLogFilename(path.basename(file));
-    if (!character) return -1;
+    if (!character) return { lines: -1, endOffset: null };
     const state = this._stateFor(character);
     let lines = 0;
     try {
-      const start = capToWeek ? this._weekStartOffset(file) : 0;
+      const start = Number.isFinite(startOffset) ? startOffset : (capToWeek ? this._weekStartOffset(file) : 0);
       // crlfDelay: Infinity - EverQuest logs are CRLF but a copy or an editor can leave LF.
       const rl = readline.createInterface({ input: fs.createReadStream(file, { start }), crlfDelay: Infinity });
       for await (const line of rl) { lines += 1; core.applyLine(state, line); }
     } catch (err) {
       this._note(err); // a locked or half-written log is ordinary
     }
-    return lines;
+    let endOffset = null;
+    try { endOffset = fs.statSync(file).size; } catch { /* file gone mid-read - no checkpoint */ }
+    return { lines, endOffset };
+  }
+
+  // Is there a usable "resume from here" checkpoint for this character/file? Re-validated against
+  // the real file every time rather than trusted blindly: a different file (rotation, "Change log
+  // file") or a smaller one (the log was rewritten/trimmed in place) both mean the checkpoint no
+  // longer describes this file's bytes, and the safe answer is null - fall back to the normal
+  // full-week parse rather than silently skipping lines that were never actually read from it.
+  _resumableOffset(character, file) {
+    const p = this._restoredProgress;
+    if (!p || !character || p.character !== character) return null;
+    if (path.resolve(p.file) !== path.resolve(file)) return null;
+    let size;
+    try { size = fs.statSync(file).size; } catch { return null; }
+    if (!Number.isFinite(p.offset) || p.offset < 0 || p.offset > size) return null;
+    return p.offset;
+  }
+
+  /**
+   * The other half of session-restore (see sessionRestore.js). Unlike a buff or a damage total, a
+   * recorded kill/task-grant is a permanent fact, not an estimate that ages - so this is captured
+   * and restored with no staleness limit, the same reasoning as the Combat tab's fight history.
+   *
+   * `progress` is what makes restoring worth doing beyond "skip the UI flicker": without it,
+   * restoring the parsed state still leaves backfill() re-parsing the whole current week from
+   * scratch on every launch, because it has no way to know it already did that work last time.
+   * Captured only while following the live log normally (not a manual "Change log file" target,
+   * which always forces its own full rebuild) - see currentOffsetFn's header comment for why this
+   * position is trustworthy at any moment, not just right after a backfill.
+   */
+  captureState() {
+    if (!this.states.size) return null;
+    const states = [...this.states.entries()];
+    let progress = null;
+    if (!this.logTarget) {
+      const file = this.currentFileFn();
+      const character = file ? core.characterFromLogFilename(path.basename(file)) : null;
+      const offset = this.currentOffsetFn();
+      if (character && file && Number.isFinite(offset)) {
+        progress = { character, file: path.resolve(file), offset };
+      }
+    }
+    return { states, progress };
+  }
+
+  restoreState(d) {
+    if (!d || !Array.isArray(d.states)) return 0;
+    let n = 0;
+    for (const entry of d.states) {
+      if (!Array.isArray(entry) || entry.length !== 2) continue;
+      const [character, state] = entry;
+      if (!character || !state || typeof state !== 'object') continue;
+      this.states.set(character, state);
+      n += 1;
+    }
+    const p = d.progress;
+    this._restoredProgress =
+      p && typeof p.character === 'string' && typeof p.file === 'string' && Number.isFinite(p.offset)
+        ? p
+        : null;
+    return n;
   }
 
   // Set from the Lockouts page's "Change log file". When set, backfill reads THIS file instead of
@@ -259,7 +340,7 @@ class LockoutService extends EventEmitter {
     let read = 0;
     for (const p of paths || []) {
       if (!p || !fs.existsSync(p)) continue;
-      const n = await this._readInto(p);
+      const { lines: n } = await this._readInto(p);
       if (n >= 0) { lines += n; read += 1; this.addedLogPaths.add(path.resolve(p)); }
     }
     if (read) this.emit('changed');
@@ -275,6 +356,9 @@ class LockoutService extends EventEmitter {
       this.states.clear();
       this.addedLogPaths.clear();
       this.backfillState = 'idle';
+      // A deliberate rescan/log-target-change/trim means "start over", not "resume" - drop any
+      // restored checkpoint so the following backfill() does the full parse it is meant to.
+      this._restoredProgress = null;
       return this.backfill();
     })();
     try {
@@ -306,8 +390,20 @@ class LockoutService extends EventEmitter {
     this.emit('backfillChanged', this.getStatus());
     const started = Date.now();
 
-    const lines = Math.max(0, await this._readInto(file, { capToWeek: true }));
-    const read = core.characterFromLogFilename(path.basename(file)) ? 1 : 0;
+    // Resume from a restored checkpoint when one validates against this exact file; otherwise
+    // this is either the first backfill of the session or the checkpoint no longer applies (file
+    // rotated, target changed, log rewritten smaller), and the normal full-week parse is the safe
+    // fallback either way - it has always been correct, this only skips it when it would be
+    // redundant work re-deriving something already on disk from the last session.
+    const character = core.characterFromLogFilename(path.basename(file));
+    const resumeOffset = this._resumableOffset(character, file);
+    const { lines: rawLines } = resumeOffset != null
+      ? await this._readInto(file, { startOffset: resumeOffset })
+      : await this._readInto(file, { capToWeek: true });
+    const lines = Math.max(0, rawLines);
+    const read = character ? 1 : 0;
+    // Consumed either way - a checkpoint only ever applies to the very next backfill() call.
+    this._restoredProgress = null;
 
     this.backfillState = 'done';
     this.lastBackfill = {

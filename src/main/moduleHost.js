@@ -172,7 +172,13 @@ class ModuleHost extends EventEmitter {
     this._ctx = { now: () => Date.now(), iconUrlForSpell: () => null };
     this._watcher = null;
     this._reloadTimer = null;
-    this.tickTimer = setInterval(() => this._tick(), 1000);
+    // Staggered against the app's other once-a-second engines - see customTimerEngine.js's
+    // TICK_STAGGER_MS comment (the perf report this came from). Only the first tick is delayed;
+    // clearInterval/clearTimeout are interchangeable in Node, so stop() below still fully cancels
+    // this whether or not the delay has elapsed yet.
+    this.tickTimer = setTimeout(() => {
+      this.tickTimer = setInterval(() => this._tick(), 1000);
+    }, 300);
   }
 
   // --- ctx injection (same pattern as the other engines' setXxxFn) -----------------------------

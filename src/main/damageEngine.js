@@ -69,18 +69,57 @@ const EventEmitter = require('events');
 const { parseDamageLine } = require('../shared/damageLines');
 const { parseHealLine } = require('../shared/healLines');
 const { matchCastBegin, matchOtherCastBegin, stripRankSuffix } = require('./buffParser');
+const { labelFight } = require('../shared/fightLabel');
 
 // A delayed / "promised" heal fires later as "<Target> healed himself ... by <Base> Trigger <N>",
 // which reads as the target's own heal even though the CASTER did it. Re-credited to whoever cast
 // the base spell within this window (Promised Renewal etc. are ~9s delays but can sit for their
 // whole duration; a minute and a half is comfortably clear of a stale earlier cast).
 const TRIGGER_HEAL_ATTR_WINDOW_MS = 90000;
+
+// "You healed <Target> for N hit points." with no "by <Spell>" clause at all - confirmed live 15
+// Sep (owner: "a bunch of my healing is missing... i do not think it is tracking healing from my
+// divine invocation"). It WAS being counted (healLines.js's own `by` clause is already optional,
+// and _creditHeal adds to the total regardless of skill), just invisibly - with no skill name it
+// never reached the per-skill breakdown, so it vanished from every list without vanishing from the
+// total, which reads as "missing" all the same. Checked against the owner's own real log: every
+// single one of 1123 such bare heal lines that day landed while "You begin reciting the divine
+// invocation." was the last invocation line seen, and zero landed under any other invocation - a
+// passive effect of that specific invocation, not a general parsing gap (gotcha-worthy: this file's
+// own header comment claims every heal line names a spell; that turned out to have exactly one
+// exception, tracked here rather than "fixed" by second-guessing healLines.js's already-correct
+// optional `by` clause). Mirrors abilityGroups.js's own INVOCATION_LINE regex - deliberately not
+// wired to that tracker, which only ever activates when a matching Action Bar gem is configured
+// (unrelated feature); this needs to work regardless.
+const INVOCATION_LINE = /^You begin reciting the (.+) invocation\.$/i;
+const DIVINE_INVOCATION_HEAL_SKILL = 'Divine Invocation';
 const {
   isPossessivePetName,
   petOwnerFromName,
   looksLikeGeneratedPetName,
   isArticlePrefixedMobName,
+  looksLikePet,
 } = require('../shared/petNames');
+const { LOSS_OF_CONTROL } = require('../shared/lossOfControl');
+
+// Owner, 16 Sep: "can the timer just be paused when under a fear effect?" - a raid-wide fear
+// (Dragon Fear, Plane of Fear) was splitting one continuous pull into several, because it stops
+// the group's own melee/casting for 10+ real seconds at a stretch. Rather than just widening the
+// timeout, the fight-idle clock now genuinely PAUSES while the player is under one of these -
+// see controlLostAt's own field comment. Scoped to the `pausesCombat` subset only (charm / stun /
+// mez / fear) - ROOTED/SNARED are deliberately excluded, since you can still swing or cast through
+// either of those, only movement is denied, so there's no idle time to paper over.
+const CONTROL_LOST_LINES = LOSS_OF_CONTROL.filter((e) => e.pausesCombat).map((e) => e.land);
+// Matched broadly across every kind's own `end` text, not just the specific entry that landed -
+// the game does not always pair a generic land line with its "official" end line (Dragon Fear
+// itself lands as the generic "You lose control of yourself!" but clears with "You are no longer
+// afraid.", not "You have control of yourself again." - confirmed directly in the owner's log). A
+// player is only ever under one loss-of-control effect at a time in practice, so any recognized
+// "you're free" line ending the CURRENT one is safe.
+const CONTROL_REGAINED_LINES = [...new Set(LOSS_OF_CONTROL.filter((e) => e.pausesCombat).map((e) => e.end))];
+// Safety net for a missed/unrecognized end line, so a pause can never become permanent - the
+// longest of the pausesCombat family's own per-kind safety nets (45s, CHARMED/MESMERIZED/CONTROLLED).
+const CONTROL_LOST_SAFETY_MS = Math.max(...LOSS_OF_CONTROL.filter((e) => e.pausesCombat).map((e) => e.secs)) * 1000;
 
 // Seconds without counted damage before the fight is considered over. Ten is the conventional
 // answer and is as arbitrary as everyone else's ten; it is the per-aura default, not a constant
@@ -96,9 +135,45 @@ const DEFAULT_FIGHT_TIMEOUT_SEC = 10;
 // the total rather than complete it.
 const MAX_PENDING = 400;
 
+// A monster CASTING a heal on a player (a boss mechanic, not a bug) still must never be allowed to
+// teach the boss friend status, and must never be credited as a "healer" in the healing-done tally
+// either way - crediting a raid boss there is meaningless data regardless of what the ability does.
+// Confirmed directly from a live Lord Nagafen encounter, 15 Sep 2026: "Lord Nagafen healed Avenrae
+// for 0 (451) hit points by Leech Touch I." repeated on a steady ~6s cadence for the whole fight,
+// each time landing on whichever player was currently tanking him (Avenrae, then Stonewahl once
+// tanking switched) - a real, repeating heal with no damage-side counterpart anywhere nearby in the
+// log (checked directly - there is no "Nagafen hit <target>" line near any of these). The first one
+// landed a few seconds into the fight, before any real damage line had proven Nagafen an enemy, and
+// _classifyHeal's own "the recipient is a known friend, so the healer must be one too" rule took
+// that at face value and taught Nagafen as a FRIEND. The friend/enemy collision guard (first side
+// wins) then refused every later, genuinely correct "Nagafen hit you" line to ever fix it, so the
+// rest of his damage that fight (a 3033 Harm Touch among many other real hits) sat unclassifiable
+// and uncounted for good. Reproduced directly by tracing the real classifier against the real log.
+//
+// WHY THIS ONLY BROKE ON A FRESH SCAN, NEVER LIVE: scanning a log with weeks of prior history never
+// trips this, because Nagafen is already a known enemy from an earlier encounter by the time this
+// line appears - the wrongful learnFriend attempt is a no-op against the "first side wins" guard.
+// A fresh scan of just one day's log (or the live session's very first encounter with a boss) has
+// no such head start, so the mislearn goes through uncontested. Same reasoning as the article-
+// prefixed-mob heal guard just below it in _classifyHeal - a curated, narrow exception for a text
+// shape that would otherwise mislead the classifier, not a guess about what the ability does.
+const LEECH_HEAL_SPELLS = new Set(['leech touch', 'life leech']);
+function isLeechHealSpell(spell) {
+  return !!spell && LEECH_HEAL_SPELLS.has(stripRankSuffix(String(spell)).toLowerCase());
+}
+
+// How many completed fights the in-memory history keeps (newest first). A generous session's
+// worth, not a database - the owner's ask was "don't lose it the moment the meter resets", not a
+// permanent record, so this does not persist across a restart.
+const MAX_HISTORY = 30;
+
 class DamageEngine extends EventEmitter {
-  constructor() {
+  // `maxHistory` overrides MAX_HISTORY - live gameplay wants a bounded, forever-running buffer,
+  // but a batch scan over an uploaded/archived log (damageLogScan.js) is explicitly enumerating a
+  // FIXED, finite set of past fights the owner asked to review, not something to trim as it goes.
+  constructor({ maxHistory = MAX_HISTORY } = {}) {
     super();
+    this._maxHistory = maxHistory;
     // Lowercased names proven to be things you are fighting. Lowercased because the log is
     // inconsistent about the leading article's case - "A pledge familiar" and "a zol ghoul knight"
     // appear in the same file - and two spellings of one mob would split its fight in half.
@@ -110,6 +185,50 @@ class DamageEngine extends EventEmitter {
     this.friends = new Set(['you']);
     // attacker -> { damage, hits }
     this.byAttacker = new Map();
+    // attacker -> (skill name -> { damage, hits }) - the per-skill breakdown behind a fight-history
+    // row (owner's weekly notes, 13 Sep: "per-skill breakdowns"). One fight's worth only, cleared
+    // with byAttacker in reset() - a completed fight's own breakdown is preserved in `history`
+    // first. `skill` on a parsed hit is the spell/ability name, or the fixed melee bucket
+    // (damageLines.MELEE_SKILL) - see parseDamageLine's own header.
+    this.bySkillByAttacker = new Map();
+    // Real display-cased target names actually damaged as a confirmed enemy this fight (owner, 14
+    // Sep: "the fight breakdown... should say what fight it is - if a named was fought it should
+    // list the named"). Cleared with byAttacker in reset() - see labelFight() in
+    // src/shared/fightLabel.js for how this becomes "Trash" or a real name.
+    this.enemyTargetsThisFight = new Set();
+    // Lowercase attacker name -> Set of real-cased spell names actually seen begin-cast (self
+    // "You begin casting/singing X" or third-person "X begins casting/singing Y.") - the ONLY
+    // input to the Combat tab's class estimate (owner, 14 Sep - see classEstimator.js's header).
+    // Scoped to ONE ZONE VISIT, cleared on a real zone change in enterZone() (same trigger as
+    // sinceZoneByAttacker etc.) - not per-fight (too narrow: a bard sings a song ONCE and it
+    // auto-pulses for the rest of the night with no fresh cast line each pulse - Denon's Desperate
+    // Dirge, gotcha #33/#38's "no per-pulse line" precedent), and NOT session-wide either (too
+    // wide: live-verified against the owner's own real log - "avenrae switches classes a lot...
+    // between instances, not during an instance" - a whole day's scan mixed together evidence from
+    // several genuinely different loadouts she used in different zones that day, confidently
+    // reporting Enchanter/Paladin spells from hours later as if they applied to an earlier fight in
+    // a different zone entirely). One continuous zone visit is the right unit: long enough that a
+    // song sung once still counts fights later in the same visit, short enough that a real loadout
+    // swap between visits can't bleed through. Snapshotted into `history` per fight regardless (see
+    // _captureHistory) - each fight's own row reflects everything known up to that moment WITHIN
+    // the current visit.
+    this.castsByAttacker = new Map();
+    // Completed fights, newest first, capped so this can't grow without bound over a long session.
+    // In-memory only for this run of the app - not written to disk (see _captureHistory).
+    this.history = [];
+    // Where a fight happened, and which trip to that zone it belongs to - see enterZone(). Null
+    // until the caller has ever told this engine a zone name (plain live gameplay never had to;
+    // batch-scanning a log for the Combat tab's history is what actually needs this).
+    this.currentZoneName = null;
+    // The instance's difficulty tier ("d0".."d4"), or null for a non-instanced zone - see
+    // enterZone()'s own comment for the real-log example this exists for.
+    this.currentZoneDifficulty = null;
+    // true = the raid-lockout instance of this zone, false = a plain group run of it, null = not
+    // an instance at all (see zoneDifficulty.isRaidInstance - confirmed against the owner's real
+    // logs, the SAME zone shows up both ways at different times, e.g. "The Plane of Fear 4
+    // (Refined)" (group) vs "The Plane of Fear - Group 4 (Refined)" (raid)).
+    this.currentZoneRaidInstance = null;
+    this._zoneVisitSeq = 0;
     this.fightStartedAt = null;
     this.lastDamageAt = null;
     // Owner, 5 Sep: a maintained DoT / `/melody` song ticking on a straggler must not hold the
@@ -117,6 +236,22 @@ class DamageEngine extends EventEmitter {
     // or a directly-cast nuke - not off every damage line. `lastDamageAt` still tracks any damage,
     // as a fallback for a fight that had only DoT ticks (a pure-DoT kill) so it still closes.
     this.lastRealHitAt = null;
+    // Owner, 16 Sep: "it's supposed to also count the enemies hits to stay in combat, not just
+    // allies" - confirmed from a real report, a Plane of Fear raid split into 3 separate fights by
+    // a periodic Dragon Fear (everyone feared, `You lose control of yourself!`) that stops the
+    // GROUP's own melee/nukes for 10+s at a time. The mob side isn't feared, though - it still
+    // swings - and that incoming damage never touched lastRealHitAt, since _credit() (the only
+    // thing that sets it) is only ever called for `dir === 'out'` (a friend hitting an enemy).
+    // This is its incoming-direction twin, same "real hit only" rule (a mob's own maintained DoT
+    // on a straggler must not hold the fight open forever either, symmetric to the outgoing case
+    // right above).
+    this.lastIncomingRealHitAt = null;
+    // Owner, 16 Sep: when this is set (to the moment control was lost), _expireIfIdle pauses
+    // outright rather than measuring elapsed time against it - a fear/stun/mez/charm that runs
+    // long doesn't get "used up" against the timeout the way an ordinary quiet stretch does. Set
+    // by a CONTROL_LOST_LINES match, cleared by a CONTROL_REGAINED_LINES match (or the safety net)
+    // - see _trackControlLoss. Null whenever the player is free to act.
+    this.controlLostAt = null;
     this.totalDamage = 0;
     // A second tally, spanning the whole time since the last zone line rather than one fight. It
     // exists so a meter has something to show between pulls and right after zoning: getActive falls
@@ -126,6 +261,12 @@ class DamageEngine extends EventEmitter {
     this.sinceZoneTotal = 0;
     this.sinceZoneStartedAt = null;
     this.sinceZoneLastAt = null;
+    // The since-zone counterpart of bySkillByAttacker (owner, 14 Sep: the Denon's Desperate Dirge
+    // red bar segment "disappears when viewing the aura for the zone total" - it was reading
+    // bySkillByAttacker, which reset() wipes on every fight end, so by the time the meter fell back
+    // to showing the zone-spanning total there was nothing left to attribute to Denon's). Same
+    // reset rule as sinceZoneByAttacker: only enterZone() clears it, never a fight ending.
+    this.sinceZoneBySkillByAttacker = new Map();
     // Owner, 3 Sep: "i want all the damage separated on the backend, so that when something happens
     // that can retroactively split this ... it still collects all the correct data and it isn't
     // lost." Every parsed damage line's ATTACKER is tallied here regardless of classification -
@@ -146,6 +287,10 @@ class DamageEngine extends EventEmitter {
     // See _classifyHeal for how a heal line (which always names both parties, unlike a melee line)
     // still needs the same hold-until-provable treatment as damage before it can be credited.
     this.byHealer = new Map();
+    // Per-skill breakdown behind a heal, the same shape as bySkillByAttacker (owner, 14 Sep: a
+    // Combat tab toggle between Damage / Healing / Both, "several turns ago"). One fight's worth,
+    // cleared with byHealer in reset().
+    this.bySkillByHealer = new Map();
     this.lastHealAt = null;
     this.totalHealing = 0;
     this.sinceZoneByHealer = new Map();
@@ -158,6 +303,11 @@ class DamageEngine extends EventEmitter {
     // base-spell-name (lowercased, rank stripped) -> { caster, at } for re-crediting a delayed
     // "... by <Base> Trigger <N>" heal to whoever actually cast <Base> (see TRIGGER_HEAL_ATTR_WINDOW_MS).
     this.recentHealCasts = new Map();
+    // The player's own currently-active invocation, lowercased ("divine", "recovery", ...) - see
+    // INVOCATION_LINE's own comment. null until the first "You begin reciting..." line this
+    // session; a character state (like a stance), not a timed thing, so it is never cleared except
+    // by a real switch.
+    this.activeInvocation = null;
     // Enemies known from elsewhere - the mez/snare/slow targets buffEngine already tracks. Lets a
     // character who debuffs but does not attack still seed the set.
     this.knownEnemiesFn = () => [];
@@ -400,6 +550,23 @@ class DamageEngine extends EventEmitter {
       return 'drop';
     }
 
+    // A monster casting one of these spells on a player - see LEECH_HEAL_SPELLS' own comment for
+    // the live Lord Nagafen report this came from (a real, repeating heal with no damage-side
+    // counterpart, not a disguised attack). Dropped anyway: crediting a raid boss as a "healer" in
+    // the healing-done tally is meaningless data regardless of what the ability does, and letting a
+    // cross-target heal from an unclassified name onto a known friend teach that name friend status
+    // is exactly the mislearning this whole guard exists to prevent - the same blanket "drop before
+    // it can poison anything" treatment the article-prefixed crossfire guard just above gets.
+    //
+    // CROSS-TARGET ONLY (h !== t). The same spell names are ALSO genuine player self-heals -
+    // confirmed directly in the same real log: "Avenrae healed itself for 0 (3033) hit points by
+    // Leech Touch I." (her own lifesteal off a Harm Touch crit) and the same for Stonewahl. A
+    // self-heal can never cross-contaminate the friend/enemy sets (both names are the same entity),
+    // so it was never the dangerous shape - only "Lord Nagafen healed Avenrae..." (a different name
+    // as healer and target) is. Dropping self-heals too was tried first and caught by testing
+    // against this exact log: it silently erased Avenrae's own legitimate healing-done credit.
+    if (h !== t && isLeechHealSpell(hit.spell)) return 'drop';
+
     const healerFriend = this._isFriend(hit.healer);
     const healerEnemy = this._isEnemy(hit.healer);
     const targetFriend = this._isFriend(hit.target);
@@ -430,6 +597,9 @@ class DamageEngine extends EventEmitter {
   }
 
   handleLine(line, now = Date.now()) {
+    // Independent of everything below - a control-loss line is never a damage or heal line itself,
+    // so this can't steal anything the rest of handleLine would otherwise have parsed.
+    this._trackControlLoss(line, now);
     const hit = parseDamageLine(line);
     if (hit) {
       // Raw tally FIRST, before any classification can drop the line - see the field comment.
@@ -450,22 +620,43 @@ class DamageEngine extends EventEmitter {
       this._expireIfIdle(now);
       this._flushPending(now);
       this._flushHealPending(now);
-      if (dir === 'out') this._credit(hit.attacker, hit.amount, now, hit.kind === 'melee' || !!hit.direct);
+      if (dir === 'out') {
+        this._credit(hit.attacker, hit.amount, now, hit.kind === 'melee' || !!hit.direct, hit.skill, hit.critical);
+        if (hit.kind !== 'shield') this._noteEnemyTarget(hit.target);
+      } else if (dir === 'in' && (hit.kind === 'melee' || hit.direct)) {
+        // The mob side of the same "real hit keeps the fight open" rule _credit() enforces for the
+        // group's own damage - see lastIncomingRealHitAt's own field comment.
+        this.lastIncomingRealHitAt = Math.max(this.lastIncomingRealHitAt || 0, now);
+      }
       if (dir !== 'drop') this.emit('activeChanged', this.getActive(now));
       return;
     }
+
+    const invocationMatch = INVOCATION_LINE.exec(line.replace(/^\[[^\]]*\]\s*/, '').trim());
+    if (invocationMatch) this.activeInvocation = invocationMatch[1].toLowerCase();
 
     // Track who casts what, so a delayed "... by <Base> Trigger" heal can be credited to the real
     // caster rather than the target it lands on.
     const ownCast = matchCastBegin(line);
     const otherCast = ownCast ? null : matchOtherCastBegin(line);
-    if (ownCast) this.recentHealCasts.set(stripRankSuffix(ownCast).toLowerCase(), { caster: 'You', at: now });
-    else if (otherCast) {
+    if (ownCast) {
+      this.recentHealCasts.set(stripRankSuffix(ownCast).toLowerCase(), { caster: 'You', at: now });
+      this._noteCast('You', ownCast);
+    } else if (otherCast) {
       this.recentHealCasts.set(stripRankSuffix(otherCast.spellName).toLowerCase(), { caster: otherCast.casterName, at: now });
+      this._noteCast(otherCast.casterName, otherCast.spellName);
     }
 
     const heal = parseHealLine(line);
     if (!heal) return;
+
+    // See INVOCATION_LINE's own comment - a bare "You healed X for N hit points." with no spell at
+    // all, unique to Divine Invocation being active, would otherwise vanish from the per-skill
+    // breakdown (it was always in the total - see _creditHeal's `if (skill)` guard - just never
+    // named). Scoped to the player's own heals only, since only "You" invocation lines are seen.
+    if (!heal.spell && heal.healer === 'You' && this.activeInvocation === 'divine') {
+      heal.spell = DIVINE_INVOCATION_HEAL_SKILL;
+    }
 
     // "<Target> healed himself ... by Promised Renewal Trigger I" - a delayed heal that reads as a
     // self-heal but was cast BY someone else (reported live 5 Sep: the player's Promised Renewal
@@ -491,7 +682,7 @@ class DamageEngine extends EventEmitter {
     this._expireIfIdle(now);
     this._flushPending(now);
     this._flushHealPending(now);
-    if (dir === 'out') this._creditHeal(heal.healer, heal.amount, now);
+    if (dir === 'out') this._creditHeal(heal.healer, heal.amount, now, heal.spell);
     if (dir !== 'drop') this.emit('activeChanged', this.getActive(now));
   }
 
@@ -510,7 +701,10 @@ class DamageEngine extends EventEmitter {
           continue;
         }
         resolvedAny = true;
-        if (dir === 'out') this._credit(p.attacker, p.amount, p.at, p.kind === 'melee' || !!p.direct);
+        if (dir === 'out') {
+          this._credit(p.attacker, p.amount, p.at, p.kind === 'melee' || !!p.direct, p.skill, p.critical);
+          if (p.kind !== 'shield') this._noteEnemyTarget(p.target);
+        }
       }
       this.pending = keep;
       if (!resolvedAny) return;
@@ -531,7 +725,7 @@ class DamageEngine extends EventEmitter {
           continue;
         }
         resolvedAny = true;
-        if (dir === 'out') this._creditHeal(p.healer, p.amount, p.at);
+        if (dir === 'out') this._creditHeal(p.healer, p.amount, p.at, p.spell);
       }
       this.healPending = keep;
       if (!resolvedAny) return;
@@ -549,7 +743,45 @@ class DamageEngine extends EventEmitter {
     bump(this.rawZoneByName);
   }
 
-  _credit(attacker, amount, at, isRealHit) {
+  // Records the real-cased target name for the fight's "Named"/"Trash" label - only when the
+  // target isn't already a known FRIEND, so a rare friendly-fire hit ("You crush Zorrick" -
+  // gotcha in _classify's own comment) can never make the fight read as having fought a groupmate.
+  _noteEnemyTarget(target) {
+    if (target && !this._isFriend(target.toLowerCase())) this.enemyTargetsThisFight.add(target);
+  }
+
+  // See castsByAttacker's own field comment. Kept as the real (non-lowercased) name, since that's
+  // what's actually passed to classesForSpell (an exact-name lookup, case folded there instead). A
+  // pet has its own "begins casting" lines for its innate abilities, but a pet has no class of its
+  // own to guess - reported live (14 Sep): summoned pets ("Jebantik", "Genartik", ...) were showing
+  // class guesses that "didn't before... before was correct". Excluded at the point of recording,
+  // not at display time, so nothing downstream has to remember to filter them back out.
+  _noteCast(attackerName, spellName) {
+    if (!attackerName || !spellName || looksLikePet(attackerName)) return;
+    const key = attackerName.toLowerCase();
+    const set = this.castsByAttacker.get(key) || new Set();
+    set.add(spellName);
+    this.castsByAttacker.set(key, set);
+  }
+
+  // Every spell name this attacker was actually seen CASTING (never a damage-log skill name - see
+  // classEstimator.js). Feeds the Combat tab's class estimate for this one attacker.
+  getCastSkills(attackerName) {
+    return [...(this.castsByAttacker.get(String(attackerName || '').toLowerCase()) || [])];
+  }
+
+  _credit(attacker, amount, at, isRealHit, skill, critical) {
+    // Reported live 15 Sep (screenshot): "Envenomed Bolt" and "Envenomed Bolt IX" listed as two
+    // separate rows for the SAME cast. Confirmed against the real log - this server's direct-hit
+    // wording ("Tenam hit a shiverback for 55 points of poison damage by Envenomed Bolt.") never
+    // carries the rank numeral at all, while every DoT tick from the identical cast ("... has
+    // taken 460 damage from Envenomed Bolt IX by Tenam.") does. Same shape as gotcha #3's Denon's
+    // Desperate Dirge case (a decorative log-line numeral with nothing behind it, not a genuinely
+    // different spell tier) - stripRankSuffix already exists for exactly this, just was never
+    // applied to a damage skill's own aggregation key before. Splitting a DoT's hit count across
+    // two rows this way is also why the owner's separate "hits seems low for DoTs" impression
+    // showed up on Envenomed Bolt specifically - the true count was always there, just divided.
+    if (skill) skill = stripRankSuffix(skill);
     if (this.fightStartedAt === null) this.fightStartedAt = at;
     // A retro-credited line can predate the line that opened the fight.
     if (at < this.fightStartedAt) this.fightStartedAt = at;
@@ -557,6 +789,15 @@ class DamageEngine extends EventEmitter {
     row.damage += amount;
     row.hits += 1;
     this.byAttacker.set(attacker, row);
+    if (skill) {
+      const bySkill = this.bySkillByAttacker.get(attacker) || new Map();
+      const srow = bySkill.get(skill) || { damage: 0, hits: 0, crits: 0 };
+      srow.damage += amount;
+      srow.hits += 1;
+      if (critical) srow.crits += 1;
+      bySkill.set(skill, srow);
+      this.bySkillByAttacker.set(attacker, bySkill);
+    }
     this.totalDamage += amount;
     this.lastDamageAt = Math.max(this.lastDamageAt || 0, at);
     if (isRealHit) this.lastRealHitAt = Math.max(this.lastRealHitAt || 0, at);
@@ -571,6 +812,15 @@ class DamageEngine extends EventEmitter {
     this.sinceZoneByAttacker.set(attacker, zrow);
     this.sinceZoneTotal += amount;
     this.sinceZoneLastAt = Math.max(this.sinceZoneLastAt || 0, at);
+    if (skill) {
+      const zBySkill = this.sinceZoneBySkillByAttacker.get(attacker) || new Map();
+      const zSrow = zBySkill.get(skill) || { damage: 0, hits: 0, crits: 0 };
+      zSrow.damage += amount;
+      zSrow.hits += 1;
+      if (critical) zSrow.crits += 1;
+      zBySkill.set(skill, zSrow);
+      this.sinceZoneBySkillByAttacker.set(attacker, zBySkill);
+    }
   }
 
   // The heal counterpart of _recordRaw - reuses the identical {damage, hits} map shape so
@@ -593,11 +843,22 @@ class DamageEngine extends EventEmitter {
   // (reported live 5 Sep). Heals land in the fight tally while a damage fight is underway, and in
   // the since-zone tally always; when the damage fight times out, reset() clears the heal fight
   // tally with it.
-  _creditHeal(healer, amount, at) {
+  _creditHeal(healer, amount, at, skill) {
+    // Same reasoning as _credit's own comment - a heal skill can carry the identical rank-numeral
+    // split between its cast line and its landing line.
+    if (skill) skill = stripRankSuffix(skill);
     const row = this.byHealer.get(healer) || { damage: 0, hits: 0 };
     row.damage += amount;
     row.hits += 1;
     this.byHealer.set(healer, row);
+    if (skill) {
+      const bySkill = this.bySkillByHealer.get(healer) || new Map();
+      const srow = bySkill.get(skill) || { damage: 0, hits: 0 };
+      srow.damage += amount;
+      srow.hits += 1;
+      bySkill.set(skill, srow);
+      this.bySkillByHealer.set(healer, bySkill);
+    }
     this.totalHealing += amount;
     this.lastHealAt = Math.max(this.lastHealAt || 0, at);
 
@@ -611,11 +872,62 @@ class DamageEngine extends EventEmitter {
     this.sinceZoneHealLastAt = Math.max(this.sinceZoneHealLastAt || 0, at);
   }
 
-  // A zone line. The fight state is left alone - a zone line mid-fight is rare and the timeout
-  // still ends that fight correctly - but the "since zone-in" tally starts over, because that is
-  // exactly what it measures.
-  enterZone(now = Date.now()) {
+  // A zone line. `zoneName`, when given, is stamped onto whatever fight ends next (see
+  // _captureHistory) so history can be organised by zone - and a real change of zone OR of
+  // difficulty/raid-vs-group (not a bare echo of the exact same one) opens a new "visit", so two
+  // separate trips group as two entries, not one merged pile.
+  // `difficulty`/`raidInstance` (owner, 14 Sep) are the caller's own already-computed tier label
+  // and raid-lockout-or-group flag (zoneDifficulty.js's difficultyLabel/isRaidInstance against the
+  // RAW, un-stripped zone string - by the time `zoneName` reaches here it's already the STRIPPED
+  // base name, so both have to travel in separately) - stamped onto history the same way `zone`
+  // already is. Real EQL data (the owner's own logs): "The Permafrost Caverns" alone has FIVE
+  // distinct instance strings (Group / 1 (Awakened) / 2 (Adaptive) / 3 (Fused) / 4 (Refined)) that
+  // all strip to the identical base name - without this they were indistinguishable in history.
+  //
+  // A visit boundary is now keyed on the zone name AND the difficulty/raid tag together, not the
+  // zone name alone (owner, 14 Sep, second follow-up: chose "split into two visits" after a real
+  // reported case - confirmed against her own log). Real EQL sequence, same base zone throughout:
+  // "You have entered The Plane of Fear." (bare, no fights yet) -> raid invite -> "You have
+  // entered The Plane of Fear 4 (Refined)." (tagged, 15 real fights) -> "...has been removed from
+  // The Plane of Fear." -> "You have entered The Plane of Fear." (bare again, ONE trailing fight
+  // in the antechamber). Keying on zone name alone put all 16 fights in ONE visit, and picking the
+  // visit's displayed tag from whichever fight happened to be newest (see buildVisits in the
+  // renderer) meant that one untagged trailing fight silently erased the D4/Group tag off the 15
+  // real raid fights that came before it. Now stepping back out of the tag (or into a different
+  // one) is itself a real visit boundary, exactly like stepping into a different zone entirely - a
+  // sub-period with no fights in it simply never produces a visible row (buildVisits only ever
+  // shows visits that actually contain fights), so this costs nothing on the common "walk through
+  // an untagged entrance, no fighting, then enter the tagged instance" case.
+  //
+  // A REAL zone/tag change force-closes whatever fight is still open FIRST, via the exact same
+  // reset() a timeout would use (so it is captured to history normally) - before `currentZoneName`
+  // moves on to the new zone. Without this, a fight still technically "open" only because nothing
+  // has hit the idle timeout yet would sit untouched through the zone line, and the NEXT zone's
+  // own first hit would be what finally times it out - stamping it with the zone she'd already
+  // left. (An earlier version of this comment called a zone line mid-fight "rare, and the timeout
+  // still ends it correctly" - true for the live meter's numbers, which never cared which zone a
+  // fight was "in", but wrong the moment fights need a zone tag at all.) A genuine echo (the exact
+  // same zone name AND the exact same difficulty/raid tag) still does nothing, same as before.
+  enterZone(now = Date.now(), zoneName = null, difficulty = null, raidInstance = null) {
+    const normDifficulty = difficulty || null;
+    // Tri-state, NOT `|| null` - `false` (a plain group instance, see zoneDifficulty.isRaidInstance)
+    // is a real, meaningful value here and must not collapse to null the way an empty difficulty
+    // string does.
+    const normRaidInstance = typeof raidInstance === 'boolean' ? raidInstance : null;
+    const isRealChange = zoneName && (
+      zoneName !== this.currentZoneName
+      || normDifficulty !== this.currentZoneDifficulty
+      || normRaidInstance !== this.currentZoneRaidInstance
+    );
+    if (isRealChange) {
+      if (this.fightStartedAt !== null) this.reset();
+      this._zoneVisitSeq = (this._zoneVisitSeq || 0) + 1;
+    }
+    this.currentZoneName = zoneName || null;
+    this.currentZoneDifficulty = normDifficulty;
+    this.currentZoneRaidInstance = normRaidInstance;
     this.sinceZoneByAttacker.clear();
+    this.sinceZoneBySkillByAttacker.clear();
     this.rawZoneByName.clear();
     this.sinceZoneTotal = 0;
     this.sinceZoneStartedAt = null;
@@ -625,6 +937,7 @@ class DamageEngine extends EventEmitter {
     this.sinceZoneHealTotal = 0;
     this.sinceZoneHealStartedAt = null;
     this.sinceZoneHealLastAt = null;
+    this.castsByAttacker.clear();
     this.emit('activeChanged', this.getActive(now));
   }
 
@@ -644,13 +957,24 @@ class DamageEngine extends EventEmitter {
       enemies: [...this.enemies],
       friends: [...this.friends],
       byAttacker: [...this.byAttacker],
+      // Owner, 14 Sep: "EVERY part of the app should have a recovery for accidental close" - these
+      // two were missing entirely, so a fight restored across a restart (byAttacker above) kept
+      // its correct totals but silently lost every attacker's per-skill breakdown the moment it
+      // was next captured to history (a restored-then-closed fight showed real damage numbers with
+      // an empty skill list underneath). Nested Map -> Map, so each needs its own two-level unwrap.
+      bySkillByAttacker: [...this.bySkillByAttacker].map(([k, v]) => [k, [...v]]),
+      bySkillByHealer: [...this.bySkillByHealer].map(([k, v]) => [k, [...v]]),
+      enemyTargetsThisFight: [...this.enemyTargetsThisFight],
+      castsByAttacker: [...this.castsByAttacker].map(([k, v]) => [k, [...v]]),
       rawFightByName: [...this.rawFightByName],
       rawZoneByName: [...this.rawZoneByName],
       fightStartedAt: this.fightStartedAt,
       lastDamageAt: this.lastDamageAt,
       lastRealHitAt: this.lastRealHitAt,
+      lastIncomingRealHitAt: this.lastIncomingRealHitAt,
       totalDamage: this.totalDamage,
       sinceZoneByAttacker: [...this.sinceZoneByAttacker],
+      sinceZoneBySkillByAttacker: [...this.sinceZoneBySkillByAttacker].map(([k, v]) => [k, [...v]]),
       sinceZoneTotal: this.sinceZoneTotal,
       sinceZoneStartedAt: this.sinceZoneStartedAt,
       sinceZoneLastAt: this.sinceZoneLastAt,
@@ -663,6 +987,7 @@ class DamageEngine extends EventEmitter {
       sinceZoneHealTotal: this.sinceZoneHealTotal,
       sinceZoneHealStartedAt: this.sinceZoneHealStartedAt,
       sinceZoneHealLastAt: this.sinceZoneHealLastAt,
+      activeInvocation: this.activeInvocation,
     };
   }
 
@@ -683,8 +1008,46 @@ class DamageEngine extends EventEmitter {
     for (const pair of Array.isArray(s.byAttacker) ? s.byAttacker : []) {
       if (Array.isArray(pair)) this.byAttacker.set(pair[0], pair[1]);
     }
+    // Merge, not overwrite, matching castsByAttacker's own restore below - a fresh live fight can
+    // only have started AFTER the snapshot, so there is nothing to collide with in practice, but
+    // merging costs nothing and stays consistent with every other nested-map field here.
+    for (const pair of Array.isArray(s.bySkillByAttacker) ? s.bySkillByAttacker : []) {
+      if (Array.isArray(pair) && Array.isArray(pair[1])) {
+        const bySkill = this.bySkillByAttacker.get(pair[0]) || new Map();
+        for (const skillPair of pair[1]) {
+          if (Array.isArray(skillPair)) bySkill.set(skillPair[0], skillPair[1]);
+        }
+        this.bySkillByAttacker.set(pair[0], bySkill);
+      }
+    }
+    for (const pair of Array.isArray(s.bySkillByHealer) ? s.bySkillByHealer : []) {
+      if (Array.isArray(pair) && Array.isArray(pair[1])) {
+        const bySkill = this.bySkillByHealer.get(pair[0]) || new Map();
+        for (const skillPair of pair[1]) {
+          if (Array.isArray(skillPair)) bySkill.set(skillPair[0], skillPair[1]);
+        }
+        this.bySkillByHealer.set(pair[0], bySkill);
+      }
+    }
+    for (const n of Array.isArray(s.enemyTargetsThisFight) ? s.enemyTargetsThisFight : []) this.enemyTargetsThisFight.add(n);
+    for (const pair of Array.isArray(s.castsByAttacker) ? s.castsByAttacker : []) {
+      if (Array.isArray(pair) && Array.isArray(pair[1])) {
+        const set = this.castsByAttacker.get(pair[0]) || new Set();
+        for (const spell of pair[1]) set.add(spell);
+        this.castsByAttacker.set(pair[0], set);
+      }
+    }
     for (const pair of Array.isArray(s.sinceZoneByAttacker) ? s.sinceZoneByAttacker : []) {
       if (Array.isArray(pair)) this.sinceZoneByAttacker.set(pair[0], pair[1]);
+    }
+    for (const pair of Array.isArray(s.sinceZoneBySkillByAttacker) ? s.sinceZoneBySkillByAttacker : []) {
+      if (Array.isArray(pair) && Array.isArray(pair[1])) {
+        const bySkill = this.sinceZoneBySkillByAttacker.get(pair[0]) || new Map();
+        for (const skillPair of pair[1]) {
+          if (Array.isArray(skillPair)) bySkill.set(skillPair[0], skillPair[1]);
+        }
+        this.sinceZoneBySkillByAttacker.set(pair[0], bySkill);
+      }
     }
     for (const pair of Array.isArray(s.rawFightByName) ? s.rawFightByName : []) {
       if (Array.isArray(pair)) this.rawFightByName.set(pair[0], pair[1]);
@@ -707,6 +1070,7 @@ class DamageEngine extends EventEmitter {
     if (typeof s.fightStartedAt === 'number') this.fightStartedAt = s.fightStartedAt;
     if (typeof s.lastDamageAt === 'number') this.lastDamageAt = s.lastDamageAt;
     if (typeof s.lastRealHitAt === 'number') this.lastRealHitAt = s.lastRealHitAt;
+    if (typeof s.lastIncomingRealHitAt === 'number') this.lastIncomingRealHitAt = s.lastIncomingRealHitAt;
     if (typeof s.totalDamage === 'number') this.totalDamage = s.totalDamage;
     if (typeof s.sinceZoneStartedAt === 'number') this.sinceZoneStartedAt = s.sinceZoneStartedAt;
     if (typeof s.sinceZoneLastAt === 'number') this.sinceZoneLastAt = s.sinceZoneLastAt;
@@ -716,20 +1080,86 @@ class DamageEngine extends EventEmitter {
     if (typeof s.sinceZoneHealStartedAt === 'number') this.sinceZoneHealStartedAt = s.sinceZoneHealStartedAt;
     if (typeof s.sinceZoneHealLastAt === 'number') this.sinceZoneHealLastAt = s.sinceZoneHealLastAt;
     if (typeof s.sinceZoneHealTotal === 'number') this.sinceZoneHealTotal = s.sinceZoneHealTotal;
+    if (typeof s.activeInvocation === 'string') this.activeInvocation = s.activeInvocation;
     this._expireIfIdle(now); // a fight that timed out during the gap ends here, sets kept
     const rows = this.byAttacker.size + this.sinceZoneByAttacker.size + this.byHealer.size + this.sinceZoneByHealer.size;
     if (rows) this.emit('activeChanged', this.getActive(now));
     return rows;
   }
 
+  // The COMPLETED fight list (Combat tab's Past Fights), separate from captureState/restoreState
+  // above (the still-in-progress live fight/tally, capped at a 2-minute grace window because a
+  // stale LIVE total misrepresents something that is still supposedly happening). Owner, 14 Sep:
+  // "EVERY part of the app should have a recovery for accidental close, this is no exception" -
+  // history was the one part of this engine with no recovery at all, so any restart mid-session
+  // (this project's own test workflow restarts constantly to pick up each fix) silently lost every
+  // fight that hadn't happened to close out and get captured before the process died.
+  // Deliberately registered with NO staleness limit (see sessionRestore.js's own "a character
+  // state that never goes stale" case) - a completed fight is a permanent fact about what already
+  // happened, not a live estimate that ages like a buff countdown or an in-progress total. It is
+  // exactly as true a week later as it was the moment it was captured.
+  captureHistory() {
+    if (!this.history.length) return null;
+    return { history: this.history, historySeq: this._historySeq };
+  }
+
+  restoreHistory(d) {
+    if (!d || !Array.isArray(d.history) || !d.history.length) return 0;
+    // Newest-first already (see _captureHistory's unshift). In real use this.history is always
+    // still empty here - restoreAll() runs once at startup, before this run has captured anything
+    // of its own - but ordering it correctly regardless (this run's own entries, chronologically
+    // the newest, stay first; restored pre-restart entries go after) costs nothing and keeps the
+    // combined list genuinely newest-first if that ever changes.
+    this.history = [...this.history, ...d.history].slice(0, this._maxHistory);
+    // However far the restored ids reached, new captures must start past that point - otherwise
+    // the very next fight this run captures could reuse an id a restored (and displayed) entry
+    // already has.
+    const maxRestoredId = d.history.reduce((m, f) => Math.max(m, Number(f && f.id) || 0), 0);
+    this._historySeq = Math.max(this._historySeq || 0, Number(d.historySeq) || 0, maxRestoredId);
+    return d.history.length;
+  }
+
+  // Watches for the player entering/leaving a charm/stun/mez/fear (see CONTROL_LOST_LINES' own
+  // comment for why root/snare are excluded) and pauses the fight-idle clock for exactly that
+  // stretch - `_expireIfIdle` below short-circuits outright while controlLostAt is set, so a long
+  // fear can never itself count against the timeout no matter how long it runs. Called on EVERY
+  // line, not just damage/heal ones - the land/end lines are plain text, invisible to those parsers.
+  _trackControlLoss(line, now) {
+    if (this.controlLostAt !== null) {
+      if (now - this.controlLostAt > CONTROL_LOST_SAFETY_MS) {
+        // The end line was missed somehow (or this specific effect isn't in the table at all) -
+        // don't let a pause become permanent. Falls through to a fresh land-line check below on
+        // the off chance this same line is ALSO the next effect's own land line.
+        this.controlLostAt = null;
+      } else if (CONTROL_REGAINED_LINES.some((end) => line.includes(end))) {
+        this.controlLostAt = null;
+        // The window starts fresh from the moment control returns, not backdated through however
+        // long the effect ran - this IS the "pause", not just a longer allowance.
+        this.lastRealHitAt = Math.max(this.lastRealHitAt || 0, now);
+        this.lastIncomingRealHitAt = Math.max(this.lastIncomingRealHitAt || 0, now);
+        return;
+      } else {
+        return;
+      }
+    }
+    if (CONTROL_LOST_LINES.some((land) => line.includes(land))) this.controlLostAt = now;
+  }
+
   // A fight ends after a stretch with no counted DAMAGE - heals are not consulted (see _creditHeal
   // on why). reset() then clears the heal fight tally alongside the damage one.
   _expireIfIdle(now) {
-    // The fight ends timeoutSec after the last REAL hit (a melee swing or a directly-cast nuke).
-    // A maintained DoT / `/melody` song ticking on a straggler is still credited but does NOT hold
+    // Paused outright while the player can't act at all - see _trackControlLoss/controlLostAt.
+    if (this.controlLostAt !== null) return false;
+    // The fight ends timeoutSec after the last REAL hit (a melee swing or a directly-cast nuke) -
+    // EITHER direction, the group's own or the mob's (owner, 16 Sep: a raid-wide fear stopped the
+    // group's own melee/nukes for 10+s while the mob side kept swinging, and that incoming combat
+    // wasn't holding the fight open at all - see lastIncomingRealHitAt's own comment). A maintained
+    // DoT / `/melody` song ticking on a straggler, either side, is still credited but does NOT hold
     // the fight open on its own (owner, 5 Sep). `lastDamageAt` is the fallback anchor for a fight
-    // that never had a real hit (a pure-DoT kill), so that still closes on the same timeout.
-    const anchor = this.lastRealHitAt != null ? this.lastRealHitAt : this.lastDamageAt;
+    // that never had a real hit at all (a pure-DoT kill), so that still closes on the same timeout.
+    const anchor = (this.lastRealHitAt != null || this.lastIncomingRealHitAt != null)
+      ? Math.max(this.lastRealHitAt || 0, this.lastIncomingRealHitAt || 0)
+      : this.lastDamageAt;
     if (anchor === null) return false;
     if (now - anchor < this.timeoutSec * 1000) return false;
     // Damage lines from within the window that haven't been classified yet ARE ongoing combat -
@@ -744,18 +1174,177 @@ class DamageEngine extends EventEmitter {
     return true;
   }
 
+  // The row-building half of both _captureHistory (a fight that just ended) AND getLiveFight (one
+  // still in progress) - factored out so the two can never quietly disagree about how a row is
+  // built. Uses the exact same raw/classified reconciliation the live meter draws from
+  // (_reconcileRaw), so a groupmate recognised late still shows their full damage, not just what
+  // landed after the bootstrap caught up.
+  _snapshotRows() {
+    const reconciled = this._reconcileRaw(this.byAttacker, this.rawFightByName);
+    const rows = this._foldPossessivePets(
+      [...reconciled.entries()].map(([name, r]) => ({
+        name,
+        damage: r.damage,
+        hits: r.hits,
+        bySkill: [...(this.bySkillByAttacker.get(name) || [])]
+          .map(([skill, s]) => ({ skill, damage: s.damage, hits: s.hits, crits: s.crits || 0 }))
+          .sort((a, b) => b.damage - a.damage),
+        castSkills: [...(this.castsByAttacker.get(name.toLowerCase()) || [])],
+      }))
+    ).sort((a, b) => b.damage - a.damage);
+    // Healing during the same fight window (owner, 14 Sep: a Combat tab toggle between Damage /
+    // Healing / Both, "several turns ago") - same reconciliation the live meter's heal side
+    // already uses (metric:'heal' drops charm-war-pollution self-heals, gotcha #40). A fight
+    // itself is still damage-defined (see this file's own header on why); a period with real
+    // damage from ANYONE captures whatever healing happened alongside it too.
+    const healReconciled = this._reconcileRaw(this.byHealer, this.rawHealFightByName, 'heal');
+    const healRows = this._foldPossessivePets(
+      [...healReconciled.entries()].map(([name, r]) => ({
+        name,
+        damage: r.damage,
+        hits: r.hits,
+        bySkill: [...(this.bySkillByHealer.get(name) || [])]
+          .map(([skill, s]) => ({ skill, damage: s.damage, hits: s.hits }))
+          .sort((a, b) => b.damage - a.damage),
+        castSkills: [...(this.castsByAttacker.get(name.toLowerCase()) || [])],
+      }))
+    ).sort((a, b) => b.damage - a.damage);
+    return { rows, healRows };
+  }
+
+  // Owner, 15 Sep: "avenrae's pet should go under her own graph not it's own entry" - a
+  // possessive-named pet ("Avenrae`s pet") in the Combat tab's fight history/live-fight rows folds
+  // into its owner's own row rather than showing as a separate line, unlike the live overlay
+  // meter's "Pets" bucket (_tilesFrom), which still combines every owner's identifiable pet into
+  // one shared summary row for screen space - a different display, a different call, left as is.
+  // If the owner has no row of their own yet (only their pet has landed a hit so far), the pet's
+  // row is simply relabeled to the owner rather than merged into nothing.
+  _foldPossessivePets(rows) {
+    const byName = new Map(rows.map((r) => [r.name, r]));
+    for (const row of rows) {
+      if (!isPossessivePetName(row.name)) continue;
+      const owner = petOwnerFromName(row.name);
+      if (!owner) continue;
+      byName.delete(row.name);
+      const ownerRow = byName.get(owner);
+      if (!ownerRow) {
+        byName.set(owner, { ...row, name: owner });
+        continue;
+      }
+      ownerRow.damage += row.damage;
+      ownerRow.hits += row.hits;
+      const skillByName = new Map(ownerRow.bySkill.map((s) => [s.skill, { ...s }]));
+      for (const s of row.bySkill) {
+        const cur = skillByName.get(s.skill) || { skill: s.skill, damage: 0, hits: 0, crits: 0 };
+        cur.damage += s.damage;
+        cur.hits += s.hits;
+        cur.crits = (cur.crits || 0) + (s.crits || 0);
+        skillByName.set(s.skill, cur);
+      }
+      ownerRow.bySkill = [...skillByName.values()].sort((a, b) => b.damage - a.damage);
+    }
+    return [...byName.values()];
+  }
+
+  // The fight is ending (reset() is about to wipe it) - save a permanent record of it first, if it
+  // amounted to anything.
+  _captureHistory() {
+    if (this.totalDamage <= 0 || this.fightStartedAt === null) return;
+    const endedAt = this.lastDamageAt || this.fightStartedAt;
+    const { rows, healRows } = this._snapshotRows();
+    if (!rows.length) return;
+    this._historySeq = (this._historySeq || 0) + 1;
+    this.history.unshift({
+      id: this._historySeq,
+      endedAt,
+      durationSec: Math.round(this.fightSeconds(endedAt)),
+      totalDamage: this.totalDamage,
+      totalHealing: this.totalHealing,
+      zone: this.currentZoneName,
+      difficulty: this.currentZoneDifficulty,
+      raidInstance: this.currentZoneRaidInstance,
+      visitId: this.currentZoneName ? this._zoneVisitSeq : null,
+      label: labelFight([...this.enemyTargetsThisFight]),
+      rows,
+      healRows,
+    });
+    if (this.history.length > this._maxHistory) this.history.length = this._maxHistory;
+  }
+
+  // "I need some way to be able to live read the current combat from this combat tab" (owner, 14
+  // Sep) - a fight only ever reaches `history` once it ENDS (_captureHistory, above), so an active
+  // pull that hasn't hit the idle timeout yet was invisible to the Combat tab no matter how long it
+  // ran. This is the same shape `getHistoryFight` returns (rows/healRows with each attacker's own
+  // per-skill breakdown), built from the SAME `_snapshotRows()` a completed fight uses, so the
+  // Combat tab's existing chart-rendering code needs no changes to show a live fight - it is just
+  // another "fight" record whose numbers happen to still be moving. `id` is the string `'live'`,
+  // never a real numeric history id, so it can't collide with one. Returns null when nothing is
+  // actually underway (matches getActive()'s own "in fight AND has damage" gate).
+  getLiveFight() {
+    if (this.fightStartedAt === null || this.totalDamage <= 0) return null;
+    const { rows, healRows } = this._snapshotRows();
+    if (!rows.length) return null;
+    const now = Date.now();
+    return {
+      id: 'live',
+      endedAt: now,
+      durationSec: Math.round(this.fightSeconds(now)),
+      totalDamage: this.totalDamage,
+      totalHealing: this.totalHealing,
+      zone: this.currentZoneName,
+      difficulty: this.currentZoneDifficulty,
+      raidInstance: this.currentZoneRaidInstance,
+      visitId: this.currentZoneName ? this._zoneVisitSeq : null,
+      label: labelFight([...this.enemyTargetsThisFight]),
+      rows,
+      healRows,
+    };
+  }
+
+  // Every completed fight this session, newest first. In-memory only - see the `history` field
+  // comment on why this does not persist across a restart.
+  getHistory() {
+    return this.history.map(({ id, endedAt, durationSec, totalDamage, totalHealing, zone, difficulty, raidInstance, visitId, label, rows, healRows }) => ({
+      id,
+      endedAt,
+      durationSec,
+      totalDamage,
+      totalHealing,
+      zone,
+      difficulty,
+      raidInstance,
+      visitId,
+      label,
+      topAttacker: rows[0] ? rows[0].name : null,
+      topHealer: healRows[0] ? healRows[0].name : null,
+    }));
+  }
+
+  // One fight's full row list (including each row's own per-skill breakdown) - what the Combat
+  // tab's detail view actually renders when a history entry is opened.
+  getHistoryFight(id) {
+    return this.history.find((f) => f.id === id) || null;
+  }
+
   // A fight ending does NOT clear the friend and enemy sets. The same mobs and the same group are
   // usually still there on the next pull, and forgetting them would make every pull re-bootstrap
   // from your own first hit - losing exactly the opening seconds the bootstrap exists to keep.
   reset() {
+    this._captureHistory();
     this.byAttacker.clear();
+    this.bySkillByAttacker.clear();
+    this.enemyTargetsThisFight.clear();
+    // castsByAttacker is deliberately NOT cleared here - see its own field comment.
     this.rawFightByName.clear();
     this.totalDamage = 0;
     this.fightStartedAt = null;
     this.lastDamageAt = null;
     this.lastRealHitAt = null;
+    this.lastIncomingRealHitAt = null;
+    this.controlLostAt = null;
     this.pending = [];
     this.byHealer.clear();
+    this.bySkillByHealer.clear();
     this.rawHealFightByName.clear();
     this.totalHealing = 0;
     this.lastHealAt = null;
@@ -874,20 +1463,31 @@ class DamageEngine extends EventEmitter {
    * gradient inside a single bar rather than two separate elements.
    */
   _bothTilesFrom(byAttacker, rawDmgByName, dmgSecs, byHealer, rawHealByName, healSecs, sinceZone, scope, pets) {
-    const dmgAgg = this._aggregate(byAttacker, scope, pets, rawDmgByName, 'damage');
-    const healAgg = this._aggregate(byHealer, scope, pets, rawHealByName, 'heal');
+    // `sinceZone` threaded through to _aggregate (owner, 14 Sep, adding Denon's to Both mode) -
+    // without it, Denon's attribution here would hit the exact same bug _tilesFrom's own zone-total
+    // fix (earlier the same day) was for: the fight's own per-skill map is empty by the time the
+    // meter falls back to the since-zone total, so a fresh Both-mode addition would reintroduce it
+    // immediately rather than just never having had the feature at all.
+    const dmgAgg = this._aggregate(byAttacker, scope, pets, rawDmgByName, 'damage', sinceZone);
+    const healAgg = this._aggregate(byHealer, scope, pets, rawHealByName, 'heal', sinceZone);
     // Both passes are given the SAME requested scope, so a 'group' fallback (empty roster) happens
     // identically on both sides - agg.scope/fellBack from either is representative of both.
 
-    const merged = new Map(); // name -> { damage, heal, hits, isPet, unknownPets, isOther }
+    const merged = new Map(); // name -> { damage, heal, hits, isPet, unknownPets, isOther, denonDamage }
+    // Owner, 14 Sep: "this should also apply to the aura version of the combat meter" was done for
+    // single-metric Damage mode; Both mode (damage+heal combined into one bar) was left out because
+    // it never carried a per-skill breakdown to begin with. dmgAgg's own rows already have the
+    // right denonDamage (from _aggregate's own bump - healAgg's is always 0, metric-gated there),
+    // so folding it through here costs nothing extra.
     const fold = (map, key) => {
       for (const [name, r] of map) {
-        const cur = merged.get(name) || { damage: 0, heal: 0, hits: 0, isPet: false, unknownPets: false, isOther: false };
+        const cur = merged.get(name) || { damage: 0, heal: 0, hits: 0, isPet: false, unknownPets: false, isOther: false, denonDamage: 0 };
         cur[key] += r.damage; // r.damage is just "the amount" here regardless of which pass it came from
         cur.hits += r.hits;
         cur.isPet = cur.isPet || !!r.isPet;
         cur.unknownPets = cur.unknownPets || !!r.unknownPets;
         cur.isOther = cur.isOther || !!r.isOther;
+        if (key === 'damage') cur.denonDamage += r.denonDamage || 0;
         merged.set(name, cur);
       }
     };
@@ -900,7 +1500,7 @@ class DamageEngine extends EventEmitter {
     if (grandTotal <= 0) return [];
 
     const rows = [...merged.entries()]
-      .map(([name, r]) => ({ name, damage: r.damage, heal: r.heal, total: r.damage + r.heal, isPet: r.isPet, unknownPets: r.unknownPets, isOther: r.isOther }))
+      .map(([name, r]) => ({ name, damage: r.damage, heal: r.heal, total: r.damage + r.heal, denonDamage: r.denonDamage || 0, isPet: r.isPet, unknownPets: r.unknownPets, isOther: r.isOther }))
       .sort((a, b) => {
         const aSummary = a.name === 'Pets' || a.name === 'Other';
         const bSummary = b.name === 'Pets' || b.name === 'Other';
@@ -951,6 +1551,12 @@ class DamageEngine extends EventEmitter {
         // hard-edged two-colour gradient at this split rather than drawing two separate bar
         // elements. 0 when the row is healing-only, 1 when it's damage-only.
         barSplit: r.total > 0 ? r.damage / r.total : 0,
+        // Same basis as barSplit (a fraction of THIS row's own total bar, damage+heal combined),
+        // not of just its damage portion - that is what lets overlay.js drop this straight into
+        // the same hard-stop gradient as a third stop ahead of barSplit's own damage/heal split.
+        // Owner, 14 Sep: "this should also apply to the aura version of the combat meter" -
+        // Both mode was the one shape that request never reached (see this method's own header).
+        denonPercent: r.total > 0 ? Math.max(0, Math.min(100, (r.denonDamage / r.total) * 100)) : 0,
         isPet: r.isPet,
         unknownPets: r.unknownPets,
         isOther: r.isOther,
@@ -996,14 +1602,15 @@ class DamageEngine extends EventEmitter {
    *   `scope` is the EFFECTIVE scope actually applied (may differ from the requested one - see
    *   `fellBack` below).
    */
-  _aggregate(byAttacker, scope = 'all', pets = null, rawByName = null, metric = 'damage') {
-    // Reconcile the classified tally with the raw one (see the rawFightByName / rawZoneByName field
-    // comment). For a name that is a CONFIRMED friend right now - the player, someone in the group
-    // roster, or a name the bootstrap already added to `friends` - its outgoing damage is fully in
-    // the raw tally, so use whichever figure is larger. This is what makes the split retroactive: a
-    // groupmate credited to "Other" (or not credited at all) while unrecognised gets their complete
-    // damage the moment they're recognised, rather than only what landed after. Enemies and
-    // still-unknown names are untouched - raw is not consulted for them.
+  // Reconcile the classified tally with the raw one (see the rawFightByName / rawZoneByName field
+  // comment). For a name that is a CONFIRMED friend right now - the player, someone in the group
+  // roster, or a name the bootstrap already added to `friends` - its outgoing damage is fully in
+  // the raw tally, so use whichever figure is larger. This is what makes the split retroactive: a
+  // groupmate credited to "Other" (or not credited at all) while unrecognised gets their complete
+  // damage the moment they're recognised, rather than only what landed after. Enemies and
+  // still-unknown names are untouched - raw is not consulted for them. Shared by _aggregate (the
+  // live meter) and _captureHistory (a completed fight's permanent record) so the two never drift.
+  _reconcileRaw(byAttacker, rawByName, metric = 'damage') {
     const effective = new Map(byAttacker);
     if (rawByName) {
       for (const [rawName, r] of rawByName) {
@@ -1019,7 +1626,32 @@ class DamageEngine extends EventEmitter {
         if (r.damage > cur.damage) effective.set(rawName, { damage: r.damage, hits: Math.max(r.hits, cur.hits) });
       }
     }
-    byAttacker = effective;
+    return effective;
+  }
+
+  // How much of one raw attacker's OWN damage came from a Denon's Desperate Dirge cast (owner, 14
+  // Sep - the same bright-red bar segment the Combat tab already shows, now for the live overlay
+  // meter too). Prefix match, not exact equality - the real cast line carries a rank numeral
+  // ("Denon's Desperate Dirge V"), the documented case in gotcha #3, confirmed against the owner's
+  // own log. Reads `bySkillByAttacker`, the same per-skill map _snapshotRows already draws from.
+  _denonDamageForAttacker(rawName, skillMap) {
+    const bySkill = (skillMap || this.bySkillByAttacker).get(rawName);
+    if (!bySkill) return 0;
+    let sum = 0;
+    for (const [skill, s] of bySkill) {
+      if (typeof skill === 'string' && skill.startsWith("Denon's Desperate Dirge")) sum += s.damage;
+    }
+    return sum;
+  }
+
+  _aggregate(byAttacker, scope = 'all', pets = null, rawByName = null, metric = 'damage', sinceZone = false) {
+    byAttacker = this._reconcileRaw(byAttacker, rawByName, metric);
+    // Which per-skill map Denon's attribution reads - the current fight's (cleared every fight
+    // end) or the since-zone one (cleared only on a real zone change), matching whichever tally
+    // `byAttacker` itself came from. Getting this wrong is exactly the "the red disappears once
+    // you're looking at the zone total" bug (owner, 14 Sep) - the fight's own skill map is empty
+    // by the time the meter falls back to showing the zone-spanning total.
+    const skillMap = sinceZone ? this.sinceZoneBySkillByAttacker : this.bySkillByAttacker;
     const admittedList = (() => {
       try {
         return (this.groupFn() || []).map((n) => String(n).toLowerCase());
@@ -1039,15 +1671,25 @@ class DamageEngine extends EventEmitter {
 
     // Fold raw attacker rows into the display buckets the scope allows. Anything the scope excludes
     // never enters `agg`, so `totalDamage` and the shares below are its own denominator.
-    const agg = new Map(); // displayName -> { damage, hits, isPet, unknownPets }
+    const agg = new Map(); // displayName -> { damage, hits, isPet, unknownPets, denonDamage }
+    // Owner, 14 Sep: "denon's desperate dirge to have it's own coloured section" on the live
+    // overlay meter too, not just the Combat tab. Set once per raw name below (closed over by
+    // `bump`, rather than threading a new argument through every call site) - a summary row like
+    // "Pets"/"Other" can fold several real attackers together, so this accumulates across every
+    // raw name that lands in the same display bucket, same as damage/hits already do. Damage-only:
+    // Denon's is never a heal, and reusing this for a heal-metric pass would attach a damage-side
+    // number to a heal row, which means nothing.
+    let currentDenon = 0;
     const bump = (name, r, extra) => {
-      const cur = agg.get(name) || { damage: 0, hits: 0 };
+      const cur = agg.get(name) || { damage: 0, hits: 0, denonDamage: 0 };
       cur.damage += r.damage;
       cur.hits += r.hits;
+      cur.denonDamage += currentDenon;
       agg.set(name, Object.assign(cur, extra || {}));
     };
 
     for (const [rawName, r] of byAttacker) {
+      currentDenon = metric === 'damage' ? this._denonDamageForAttacker(rawName, skillMap) : 0;
       const key = rawName.toLowerCase();
       const isSelf = rawName === 'You' || key === 'you' || key === 'yourself';
       const petKey = ownPetKey.get(key);
@@ -1106,18 +1748,21 @@ class DamageEngine extends EventEmitter {
         continue;
       }
 
-      // scope 'all'. Her + anyone the group roster has admitted this session get their own row.
-      // Everyone else: a summoned-pet-shaped name (corroboration only - the roster is primary, so
-      // this only fires for a name the roster does NOT vouch for) goes to "Pets"; any other
-      // outsider goes to "Other". If the roster is empty (grouped before launch, or a restart) we
-      // can't tell an outsider from a groupmate, so everyone keeps their own row - the pre-existing
-      // behaviour - and only possessive pets (handled above, roster-independent) still fold.
-      if (admittedList.length === 0 || admits(key)) {
-        bump(rawName, r);
-      } else if (looksLikeGeneratedPetName(rawName)) {
+      // scope 'all' - "Everyone in the fight". Reported live 15 Sep: with a real raid's group
+      // roster filled in (just her own ~6-person subgroup, same as 'group' scope above), this used
+      // to fold every OTHER real raid member - Bandolgrob, Alesunder, three-quarters of a 24-person
+      // raid - into one "Other" row regardless of how much damage they did, so a scope literally
+      // named "Everyone" showed exactly two people plus an anonymous 51%-of-the-fight bucket. It
+      // worked before the roster filled in (admittedList.length === 0 made everyone keep their own
+      // row) and looked broken once it did, which is exactly backwards for a scope whose whole
+      // point is showing everyone - group membership has nothing to do with who this scope should
+      // name. "Show at most N rows" (damageRowCap, overlay.js) already caps how many tiles a big
+      // raid draws, sorted biggest-first, so nothing here needs to hide a real person to make room -
+      // only a summoned-pet-shaped name still folds into "Pets", the same as it always did.
+      if (looksLikeGeneratedPetName(rawName)) {
         bump('Pets', r, { isPet: true });
       } else {
-        bump('Other', r, { isOther: true });
+        bump(rawName, r);
       }
     }
 
@@ -1127,14 +1772,14 @@ class DamageEngine extends EventEmitter {
   // Single-metric tiles (damage-only or healing-only), built from one _aggregate() pass. See
   // _aggregate's own comment for the collapsing rules and the scope parameter.
   _tilesFrom(byAttacker, secs, sinceZone, scope = 'all', pets = null, rawByName = null, metric = 'damage') {
-    const agg1 = this._aggregate(byAttacker, scope, pets, rawByName, metric);
+    const agg1 = this._aggregate(byAttacker, scope, pets, rawByName, metric, sinceZone);
     const agg = agg1.agg;
     scope = agg1.scope;
     const fellBack = agg1.fellBack;
 
     const totalDamage = [...agg.values()].reduce((s, r) => s + r.damage, 0);
     const rows = [...agg.entries()]
-      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits, isPet: !!r.isPet, unknownPets: !!r.unknownPets, isOther: !!r.isOther }))
+      .map(([name, r]) => ({ name, damage: r.damage, hits: r.hits, denonDamage: r.denonDamage || 0, isPet: !!r.isPet, unknownPets: !!r.unknownPets, isOther: !!r.isOther }))
       // biggest first, but the "Pets" and "Other" summary rows always sink to the bottom above the
       // total, regardless of how much damage they carry.
       .sort((a, b) => {
@@ -1163,6 +1808,11 @@ class DamageEngine extends EventEmitter {
         // every bar short in a five-person group, with even the longest only a fifth of the way
         // across - which reads as everybody doing badly rather than as a comparison.
         barPercent: top > 0 ? Math.max(0, Math.min(100, (r.damage / top) * 100)) : 0,
+        // What share of THIS row's own bar is Denon's Desperate Dirge (owner, 14 Sep: the same
+        // bright-red segment the Combat tab shows, now for the live overlay too) - a fraction of
+        // the row's own bar length, not a separate number, so overlay.js only needs to paint a
+        // second colour inset at this point rather than draw anything new.
+        denonPercent: r.damage > 0 ? Math.max(0, Math.min(100, (r.denonDamage / r.damage) * 100)) : 0,
         // `isPet` - a charmed pet you or a groupmate own (own pets carry a #gen in the name).
         // `unknownPets` - the combined "Charmed pets" row for owner-unknown charms. Both are
         // display hints for the overlay; nothing downstream needs them.

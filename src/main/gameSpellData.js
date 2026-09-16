@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { stripRankSuffix } = require('./buffParser');
 
 // Single parse of the game's own spells_us.txt, shared by everything that
 // needs facts about spells the app's own roster doesn't have. The roster
@@ -30,6 +31,11 @@ const DURATION_TICKS_FIELD = 12;
 const CLASS_LEVEL_FIRST_FIELD = 36;
 const CLASS_COUNT = 16;
 const BARD_OFFSET = 7; // War, Clr, Pal, Rng, SHD, Dru, Mnk, Brd, ...
+// Standard EQ class id order, matching the field-36..51 layout above exactly (index 7 = Bard,
+// already verified against BARD_OFFSET). Used by getClassesForSpell (class-estimation feature,
+// 13 Sep) - nothing before that needed the OTHER 15 classes named, only whether Bard was one of
+// the castable ones.
+const CLASS_ABBREVS = ['War', 'Clr', 'Pal', 'Rng', 'SHD', 'Dru', 'Mnk', 'Brd', 'Rog', 'Shm', 'Nec', 'Wiz', 'Mag', 'Enc', 'Bst', 'Ber'];
 const NEVER_CASTABLE = 255;
 const ICON_FIELD = 75;
 const STR_LANDED_ON_ME = 3;
@@ -64,6 +70,16 @@ function parse(installRoot) {
   const bardOnlyNames = new Set();
   const iconIdByName = new Map();
   const bardSongs = []; // full records, only for bard-only spells
+  // lower name -> Set of class abbrevs, UNION across every entry sharing that name - not
+  // first-entry-wins. A short generic-sounding name ("Chaos Flux", say) can genuinely name two
+  // totally unrelated spells for two different classes, not just rank tiers of one spell (unlike
+  // bardOnlyNames/iconIdByName above, where first-wins is correct because repeats there really are
+  // just tiers). Picking the first entry arbitrarily meant a name could confidently resolve to
+  // whichever class's version of it the file happened to list first - confirmed live 14 Sep: a
+  // combat skill was reported as "Enchanter" when the caster had never touched an Enchanter spell.
+  // The union makes a name honestly ambiguous (2+ classes) when it really does mean more than one
+  // spell, instead of silently picking a winner - see classEstimator.js's own MAX_MAYBE_CLASSES.
+  const classesByName = new Map();
 
   for (const line of raw.split(/\r\n|\n/)) {
     if (!line) continue;
@@ -82,12 +98,21 @@ function parse(installRoot) {
 
     let bardCanCast = false;
     let anyOtherCanCast = false;
+    const castableBy = [];
     for (let i = 0; i < CLASS_COUNT; i++) {
       const level = Number(fields[CLASS_LEVEL_FIRST_FIELD + i]);
       if (!Number.isFinite(level) || level >= NEVER_CASTABLE) continue;
       if (i === BARD_OFFSET) bardCanCast = true;
       else anyOtherCanCast = true;
+      castableBy.push(CLASS_ABBREVS[i]);
     }
+    const existingClasses = classesByName.get(lower);
+    if (existingClasses) {
+      for (const c of castableBy) existingClasses.add(c);
+    } else {
+      classesByName.set(lower, new Set(castableBy));
+    }
+
     if (!bardCanCast || anyOtherCanCast) continue;
 
     if (bardOnlyNames.has(lower)) continue; // first entry wins here too
@@ -104,7 +129,7 @@ function parse(installRoot) {
     });
   }
 
-  return { installRoot, bardOnlyNames, iconIdByName, bardSongs };
+  return { installRoot, bardOnlyNames, iconIdByName, bardSongs, classesByName };
 }
 
 function load(installRoot) {
@@ -136,4 +161,30 @@ function getBardSongRecords(installRoot) {
   return load(installRoot)?.bardSongs || null;
 }
 
-module.exports = { getBardOnlyNames, getIconId, getBardSongRecords };
+// Which class(es) can cast a spell by exact name (case-insensitive), or null if the name isn't
+// recognised at all. Feeds classEstimator.js's "a skill only one class can cast is real evidence"
+// rule (13 Sep) - not exposed as a bard-song-style Set because callers need the actual class list,
+// not just a yes/no.
+function getClassesForSpell(installRoot, name) {
+  const data = load(installRoot);
+  if (!data || !name) return null;
+  let set = data.classesByName.get(name.toLowerCase());
+  // A bare trailing Roman numeral in a cast line ("Denon's Desperate Dirge X") sometimes has NO
+  // corresponding entry in spells_us.txt at all - confirmed, gotcha #3's own example: only the
+  // un-suffixed base name exists there. Exact match failing is not "unrecognised spell", it's
+  // exactly buffStore.getByName()'s already-established fallback case, applied here too - strip
+  // the suffix and try again before giving up. (This is a permissive FALLBACK only, same caution
+  // as buffStore's: a bare numeral is sometimes a genuinely different spell with its own real
+  // entry - see gotcha #13 - but when the suffixed name isn't in the data at all, the stripped
+  // name is the only thing left to try.)
+  if (!set) {
+    const stripped = stripRankSuffix(name);
+    if (stripped !== name) set = data.classesByName.get(stripped.toLowerCase());
+  }
+  if (!set) return null;
+  // Canonical class-id order regardless of which entry's fields happened to be read last while
+  // building the union, so the result is deterministic.
+  return CLASS_ABBREVS.filter((c) => set.has(c));
+}
+
+module.exports = { getBardOnlyNames, getIconId, getBardSongRecords, getClassesForSpell };

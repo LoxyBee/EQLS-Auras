@@ -199,6 +199,33 @@ test("a healing-only player in 'both' mode gets barSplit 0 (an all-heal-coloured
   assert.equal(chouder.barSplit, 0);
 });
 
+// Owner, 14 Sep: "this should also apply to the aura version of the combat meter" was built for
+// single-metric Damage mode first; Both mode (one merged damage+heal bar) was the shape it never
+// reached, because it had no per-skill breakdown to draw from at all. denonPercent is on the SAME
+// basis as barSplit (a fraction of the row's OWN total bar), which is what lets overlay.js drop it
+// in as a third gradient stop ahead of the existing damage/heal split.
+test("'both' mode also carries denonPercent - Denon's Desperate Dirge highlighted even in the merged bar", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a fire giant for 10 points of damage.`, 500); // establish "a fire giant" as the enemy first
+  // Aristirin: 300 dirge damage, 100 melee damage, 100 healing -> 500 total.
+  // Dirge is 300/500 = 60% of the WHOLE bar (not 300/400 = 75% of just the damage portion).
+  e.handleLine(`${T}A fire giant has taken 300 damage from Denon's Desperate Dirge V by Aristirin.`, 1000);
+  e.handleLine(`${T}Aristirin slashes a fire giant for 100 points of damage.`, 1500);
+  e.handleLine(`${T}Aristirin healed you for 100 hit points by Light Healing.`, 1500);
+  const row = e.getActive(1500, 'all', 'both').find((r) => r.name === 'Aristirin');
+  assert.ok(row, 'Aristirin must have a row');
+  assert.equal(row.barSplit, 0.8, 'sanity check: 400 damage of 500 total');
+  assert.equal(row.denonPercent, 60);
+});
+
+test("'both' mode: a row with no Denon's damage gets denonPercent 0, not undefined", () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}A flouting gargoyle has taken 100 damage from your Frost Bolt.`, 1000);
+  e.handleLine(`${T}You healed Baxa for 50 hit points by Light Healing.`, 1000);
+  const you = e.getActive(1000, 'all', 'both').find((r) => r.name === 'You');
+  assert.equal(you.denonPercent, 0);
+});
+
 test("'both' bar length is scaled against the biggest COMBINED total, not damage or healing alone", () => {
   const e = new DamageEngine();
   // You: 100 damage only. Chouder: 90 healing only. Chouder's combined total (90) is the biggest.
@@ -355,6 +382,78 @@ test('healing survives capture/restore the same way damage does', () => {
   e2.restoreState(snap, 0, 2000);
   const rows = e2.getActive(2000, 'all', 'healing');
   assert.ok(rows.some((r) => r.name === 'You' && r.valueText.startsWith('300')));
+});
+
+// ---------------------------------------------------------------------------
+// Owner, 15 Sep: "a bunch of my healing is missing. i do not think it is tracking healing from my
+// divine invocation." Confirmed against the real log: "You healed <Target> for N hit points." with
+// NO "by <Spell>" clause at all - unique to this one server ability, and unique to the player's own
+// heals (that grammar shape is otherwise universal). It was always counted in the TOTAL
+// (_creditHeal adds to totalHealing regardless of skill) but never named, so it vanished from every
+// per-skill breakdown without vanishing from the number at the top - exactly what "missing" looks
+// like from inside the app. Every one of 1123 real occurrences that day landed while "You begin
+// reciting the divine invocation." was the last invocation line seen, and zero landed under any
+// other invocation.
+// ---------------------------------------------------------------------------
+
+test('a bare "You healed X for N hit points." with no spell at all is attributed to Divine Invocation while it is active', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 100); // establishes a live fight - getLiveFight() needs real damage too
+  e.handleLine(`${T}You begin reciting the divine invocation.`, 500);
+  e.handleLine(`${T}You healed Avenrae for 576 hit points.`, 1000);
+  e.handleLine(`${T}You healed Shara for 192 hit points.`, 1100);
+  const live = e.getLiveFight();
+  const you = live.healRows.find((r) => r.name === 'You');
+  assert.ok(you, 'You must have a heal row');
+  assert.equal(you.damage, 768, 'both bare heals must still be counted in the total');
+  const skill = you.bySkill.find((s) => s.skill === 'Divine Invocation');
+  assert.ok(skill, 'the bare heals must show up in the per-skill breakdown, not just the total');
+  assert.equal(skill.damage, 768);
+});
+
+test('a bare heal line is NOT relabelled before divine invocation has ever been seen this session', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 100);
+  e.handleLine(`${T}You healed Avenrae for 576 hit points.`, 1000);
+  const live = e.getLiveFight();
+  const you = live.healRows.find((r) => r.name === 'You');
+  assert.equal(you.bySkill.length, 0, 'with no known active invocation, an unnamed heal must stay unnamed - guessing would be worse than leaving it blank');
+});
+
+test('a bare heal line is NOT relabelled under a DIFFERENT invocation - only Divine Invocation does this', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 100);
+  e.handleLine(`${T}You begin reciting the recovery invocation.`, 500);
+  e.handleLine(`${T}You healed Avenrae for 576 hit points.`, 1000);
+  const live = e.getLiveFight();
+  const you = live.healRows.find((r) => r.name === 'You');
+  assert.equal(you.bySkill.length, 0, 'the real log showed zero bare heals under any invocation other than divine - do not extend the guess to the others');
+});
+
+test('a bare heal line from someone OTHER than the player is never relabelled - only "You" invocation lines are ever seen', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You begin reciting the divine invocation.`, 500);
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 600);
+  // Avenrae proven a friend by fighting the same enemy.
+  e.handleLine(`${T}Avenrae slashes a zol ghoul knight for 40 points of damage.`, 700);
+  e.handleLine(`${T}Avenrae healed herself for 50 hit points.`, 1000);
+  const live = e.getLiveFight();
+  const avenrae = live.healRows.find((r) => r.name === 'Avenrae');
+  assert.ok(avenrae, 'Avenrae must still have a row - the bare heal is still counted');
+  assert.equal(avenrae.bySkill.length, 0, 'we only ever observe the PLAYER\'s own invocation - Avenrae\'s is unknown, so nothing is guessed');
+});
+
+// This still names a real spell, so it must not be swallowed by the bare-heal fallback.
+test('a normally-attributed heal line is untouched even while Divine Invocation is active', () => {
+  const e = new DamageEngine();
+  e.handleLine(`${T}You crush a zol ghoul knight for 10 points of damage.`, 100);
+  e.handleLine(`${T}You begin reciting the divine invocation.`, 500);
+  e.handleLine(`${T}You healed Baxa for 300 hit points by Complete Heal.`, 1000);
+  const live = e.getLiveFight();
+  const you = live.healRows.find((r) => r.name === 'You');
+  const skill = you.bySkill.find((s) => s.skill === 'Complete Heal');
+  assert.ok(skill, 'a real spell name must still win - the fallback only fires when there is truly nothing');
+  assert.equal(you.bySkill.some((s) => s.skill === 'Divine Invocation'), false);
 });
 
 module.exports = () => report('heal-meter');

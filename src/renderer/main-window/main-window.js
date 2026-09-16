@@ -17,23 +17,24 @@ async function init() {
   }
 
   // Links that open in the real browser via the main process, never navigate this window.
-  const aboutSiteLink = document.getElementById('about-site-link');
-  if (aboutSiteLink && window.eqTracker.openExternal) {
-    aboutSiteLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      window.eqTracker.openExternal('https://eqlsource.com/tools/');
-    });
+  function wireExternalLink(id, url) {
+    const el = document.getElementById(id);
+    if (el && window.eqTracker.openExternal) {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.eqTracker.openExternal(url);
+      });
+    }
   }
-  const reportDiscordLink = document.getElementById('report-discord-link');
-  if (reportDiscordLink && window.eqTracker.openExternal) {
-    reportDiscordLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      window.eqTracker.openExternal('https://discord.gg/SxU3ZYxb');
-    });
-  }
+  wireExternalLink('about-site-link', 'https://eqlsource.com/tools/');
+  wireExternalLink('report-discord-link', 'https://discord.gg/E7c9z3rrdb');
+  // A persistent icon beside the sidebar title (owner, 15 Sep) - the About page's own Discord
+  // link was easy to never see since About had no permanent nav row of its own to lead there.
+  wireExternalLink('sidebar-discord-link', 'https://discord.gg/E7c9z3rrdb');
 
   initTitleBar();
   initNavigation();
+  initSidebarSectionCollapse();
   initTopicToggles();
   initProfileBar();
   initLogPanel();
@@ -47,6 +48,7 @@ async function init() {
   initKnownBuffsPanel();
   initCharacterSettingsPanel();
   initUiScale();
+  initCustomTheme();
   initSidebarResize();
   initMergeRule();
   initTradePing();
@@ -64,6 +66,7 @@ async function init() {
   if (window.eqTracker.onModulesChanged) window.eqTracker.onModulesChanged(refreshModuleRegistry);
   initBuffPlanner();
   initLoggingWatch();
+  initCombatPage();
 }
 
 
@@ -140,6 +143,32 @@ function initTopicToggles() {
       btn.closest('.topic').classList.toggle('open');
     });
   });
+  // Static panels (Action Bars, About, Log) have their topic dividers settled once, here, at
+  // startup, since nothing in them is ever conditionally hidden. The aura settings panel calls
+  // this itself again on every shape change - see applySettingsPanelShape.
+  updateTopicDividers();
+}
+
+// A topic's divider (border-top) needs to sit between two topics that are ACTUALLY on screen, not
+// just be skipped for :first-child - a topic can be hidden two different ways (.topic-empty from
+// hideEmptyPanelTopics, or a plain inline style.display='none' for a whole topic a given aura
+// shape never uses, e.g. "Watching" on a custom-timer aura, "Custom triggers" on everything
+// else), and either one can land on what LOOKS like the first or last topic in the markup while a
+// real CSS :first-child/:last-child rule keeps pointing at the hidden one - giving the actual
+// first/last VISIBLE topic a divider (or gap) it shouldn't have. Walking the real DOM after every
+// visibility toggle has settled is the only check that's right regardless of which mechanism hid
+// a given topic. Module-level (not nested in initWidgetsPanel) so both the one-off static-panel
+// pass above and the aura panel's own re-run on every shape change can call the same function.
+function updateTopicDividers() {
+  document.querySelectorAll('.block').forEach((block) => {
+    let seenVisible = false;
+    for (const child of block.children) {
+      if (!child.classList || !child.classList.contains('topic')) continue;
+      const hidden = child.classList.contains('topic-empty') || child.style.display === 'none';
+      child.classList.toggle('topic-after-visible', !hidden && seenVisible);
+      if (!hidden) seenVisible = true;
+    }
+  });
 }
 
 // The "default landing page" rule: with no EQ folder
@@ -163,8 +192,25 @@ function initSetupWizard() {
   const skipBtn = document.getElementById('sw-skip');
   const nextBtn = document.getElementById('sw-next');
   const closeBtn = document.getElementById('sw-close');
+  // Reads from the command element rather than a second copy of the string here, so the button
+  // can never drift from what's actually displayed - same pattern as the Setup page's own
+  // copy-spellbook-command-btn.
+  function wireCopyButton(commandId, btnId) {
+    const commandEl = document.getElementById(commandId);
+    const btn = document.getElementById(btnId);
+    if (!btn || !commandEl) return;
+    btn.addEventListener('click', () => {
+      navigator.clipboard?.writeText(commandEl.textContent.trim()).catch(() => {});
+      btn.textContent = 'Copied!';
+      setTimeout(() => {
+        btn.textContent = 'Copy';
+      }, 1500);
+    });
+  }
+  wireCopyButton('sw-log-on-command', 'sw-copy-log-on-btn');
+  wireCopyButton('sw-spellbook-command', 'sw-copy-spellbook-btn');
 
-  const STEPS = ['welcome', 'folder', 'logging', 'aa', 'done'];
+  const STEPS = ['welcome', 'folder', 'logging', 'spellbook', 'aa', 'done'];
   let i = 0;
   let hasFolder = false;
   let sawLogLine = false;
@@ -191,6 +237,7 @@ function initSetupWizard() {
     nextBtn.disabled = step === 'folder' && !hasFolder;
 
     if (step === 'folder') refreshFolder();
+    if (step === 'spellbook') refreshSpellbookStep();
     if (step === 'aa') loadAa();
     if (step === 'done') refreshDone();
   }
@@ -215,6 +262,18 @@ function initSetupWizard() {
     const el = document.getElementById('sw-log-live');
     if (el) el.textContent = '✓ Log lines are coming in.';
   });
+
+  // Not a hard requirement (nextBtn stays enabled either way) - the spellbook only narrows
+  // ambiguous shared-text buffs, it isn't needed for the app to run at all, unlike the folder step.
+  function refreshSpellbookStep() {
+    window.eqTracker.getSpellbookState().then((s) => {
+      const el = document.getElementById('sw-spellbook-status');
+      if (!el) return;
+      el.textContent = s.filePath
+        ? `✓ Found - ${s.spellCount} spells (${s.filePath})`
+        : "Not found yet - run the command above, then click Next. It's fine to do this later too.";
+    });
+  }
 
   function loadAa() {
     window.eqTracker.getCharacterSettings().then((c) => {
@@ -630,6 +689,15 @@ function initCharacterSettingsPanel() {
     aaSelect.value = String(settings.aaLevel || 0);
     exaltSelect.value = String(settings.exaltationLevel || 0);
     deftnessSelect.value = String(settings.deftnessLevel || 0);
+    // This runs after SearchDropdown.enhanceAll() has already themed these selects (an async
+    // fetch, unlike the mostly-synchronous rest of init()) - a direct .value = fires no event, so
+    // without this the themed dropdowns stay stuck on "Not trained (0%)" even though the real
+    // value (and the AA total below) is correct. Same bug/fix as the day-split-hour dropdown.
+    if (window.SearchDropdown) {
+      window.SearchDropdown.refresh(aaSelect);
+      window.SearchDropdown.refresh(exaltSelect);
+      window.SearchDropdown.refresh(deftnessSelect);
+    }
     updateTotal();
   });
 
@@ -640,7 +708,7 @@ function initCharacterSettingsPanel() {
 
 function initDetectionSettingsPanel() {
   const spellbookStatusEl = document.getElementById('spellbook-status');
-  const spellbookMissingHintEl = document.getElementById('spellbook-missing-hint');
+  const spellbookCommandHintEl = document.getElementById('spellbook-command-hint');
   const spellbookMissingWhereEl = document.getElementById('spellbook-missing-where');
   const spellbookCommandEl = document.getElementById('spellbook-command');
   const copySpellbookCommandBtn = document.getElementById('copy-spellbook-command-btn');
@@ -689,7 +757,9 @@ function initDetectionSettingsPanel() {
     if (state.mode === 'file' && !state.filePath) {
       spellbookStatusEl.textContent = 'The pinned spellbook file is missing — pick another below, or go back to auto.';
       spellbookStatusEl.classList.add('warn');
-      spellbookMissingHintEl.style.display = 'none';
+      spellbookCommandHintEl.textContent = 'Run this in game to regenerate your spellbook file:';
+      spellbookCommandHintEl.classList.remove('warn-hint');
+      spellbookMissingWhereEl.style.display = 'none';
       if (spellbookCharHintEl) {
         spellbookCharHintEl.textContent = 'The file you picked is no longer where it was.';
       }
@@ -701,7 +771,12 @@ function initDetectionSettingsPanel() {
       const many = (state.files || []).length > 1 ? ` across ${state.files.length} files` : '';
       spellbookStatusEl.textContent = `Found - ${state.spellCount} spells${many}${cls} (${state.filePath})`;
       spellbookStatusEl.classList.remove('warn');
-      spellbookMissingHintEl.style.display = 'none';
+      // The command stays reachable even once detection succeeds - the game does not write this
+      // file on its own, so it goes stale the moment a new spell is scribed. Not the warning
+      // styling here; nothing is actually wrong right now.
+      spellbookCommandHintEl.textContent = 'Re-run this in game whenever you scribe a new spell:';
+      spellbookCommandHintEl.classList.remove('warn-hint');
+      spellbookMissingWhereEl.style.display = 'none';
     } else {
       // The old message here said it would "pick it up automatically once detected", which is not
       // true and is expensive to believe: the game does not write this file on its own, so nothing
@@ -710,7 +785,9 @@ function initDetectionSettingsPanel() {
       // a command in game to create.
       spellbookStatusEl.textContent = 'Not found - see below';
       spellbookStatusEl.classList.add('warn');
-      spellbookMissingHintEl.style.display = '';
+      spellbookCommandHintEl.innerHTML = '<strong>This is worth fixing.</strong> Run this in game to generate your spellbook file:';
+      spellbookCommandHintEl.classList.add('warn-hint');
+      spellbookMissingWhereEl.style.display = '';
       const where = state.folder ? `in ${state.folder}` : 'in your EQ install folder';
       const named = state.fileNamePattern ? `named "${state.fileNamePattern}"` : 'ending in "-Spellbook.txt"';
       spellbookMissingWhereEl.textContent = `Looking for a file ${named} ${where}.`;
@@ -1060,6 +1137,51 @@ function activateNavButton(btn) {
   recordPageVisit(pageId);
 }
 
+// "Overlay Auras" / "Action Bars" are nav buttons that also navigate to a page, so the collapse
+// toggle has to be a separate hit target (the chevron) rather than the whole row - clicking the
+// chevron stops the click from bubbling to the button's own nav listener. Purely a sidebar-length
+// convenience, so it's local-only (localStorage), not persisted app state - same pattern already
+// used for the remembered Lockouts tab.
+const SIDEBAR_SECTION_COLLAPSE_KEY = 'sidebarSectionsCollapsed';
+function initSidebarSectionCollapse() {
+  let collapsed;
+  try {
+    collapsed = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_COLLAPSE_KEY) || '{}');
+  } catch (_e) {
+    collapsed = {};
+  }
+
+  const sections = [
+    { chevron: 'widgets-section-chevron', submenu: 'widgets-submenu', key: 'overlay' },
+    { chevron: 'action-bars-section-chevron', submenu: 'action-bars-submenu', key: 'actionBars' },
+    // "Tools" has no page of its own to navigate to (unlike the two above), so its whole header
+    // is the trigger - no stopPropagation dance needed to protect a nav click that doesn't exist.
+    { chevron: 'tools-section-chevron', submenu: 'tools-submenu', key: 'tools', trigger: 'tools-nav-header' },
+  ];
+
+  sections.forEach(({ chevron, submenu, key, trigger }) => {
+    const chevronEl = document.getElementById(chevron);
+    const submenuEl = document.getElementById(submenu);
+    const triggerEl = trigger ? document.getElementById(trigger) : chevronEl;
+    if (!chevronEl || !submenuEl || !triggerEl) return;
+
+    function apply(isCollapsed) {
+      submenuEl.classList.toggle('collapsed', isCollapsed);
+      chevronEl.textContent = isCollapsed ? '▸' : '▾';
+    }
+
+    apply(!!collapsed[key]);
+    triggerEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      collapsed[key] = !collapsed[key];
+      apply(collapsed[key]);
+      try {
+        localStorage.setItem(SIDEBAR_SECTION_COLLAPSE_KEY, JSON.stringify(collapsed));
+      } catch (_e) { /* ignore */ }
+    });
+  });
+}
+
 function initNavigation() {
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => activateNavButton(btn));
@@ -1152,6 +1274,10 @@ function initLogPanel() {
       splitOutputFolderEl.textContent = state.split.outputDir || '-';
       if (splitDayStartHourSelect && document.activeElement !== splitDayStartHourSelect) {
         splitDayStartHourSelect.value = String(state.split.dayStartHour ?? 0);
+        // Setting .value directly (option list unchanged) fires no event, so the themed
+        // dropdown's closed display never learns the value moved - it was reported live as
+        // showing "Midnight" after picking 5 AM. See search-dropdown.js's header comment.
+        if (window.SearchDropdown) window.SearchDropdown.refresh(splitDayStartHourSelect);
       }
       splitSubOptionsEl.style.display = state.split.enabled ? '' : 'none';
     }
@@ -1735,6 +1861,7 @@ function initWidgetsPanel() {
   const showRowIconCheckbox = document.getElementById('widget-show-row-icon-checkbox');
   const mirrorRowCheckbox = document.getElementById('widget-mirror-row-checkbox');
   const opacitySlider = document.getElementById('widget-opacity-slider');
+  const opacityValueEl = document.getElementById('widget-opacity-value');
   const lowThresholdSlider = document.getElementById('widget-low-threshold-slider');
   const lowThresholdValueEl = document.getElementById('widget-low-threshold-value');
   const landingGlowCheckbox = document.getElementById('widget-landing-glow-checkbox');
@@ -1876,6 +2003,7 @@ function initWidgetsPanel() {
       topic.classList.toggle('topic-empty', !anyVisible);
     }
   }
+
   // Workstream B follow-up: a value preview in each collapsed "Display & size" topic header, so a
   // topic's current setting is readable without opening it. Reads the panel's own controls, which
   // selectWidget has populated from the widget by the time this runs (end of
@@ -1891,7 +2019,7 @@ function initWidgetsPanel() {
       if (el) el.textContent = text || '';
     };
     const pct = Math.round(parseFloat(opacitySlider.value || '1') * 100);
-    setText('topic-panel-position-summary', Number.isFinite(pct) ? `${pct}% opacity` : '');
+    if (opacityValueEl) opacityValueEl.textContent = Number.isFinite(pct) ? `${pct}%` : '';
 
     // Which sizing group is actually on screen, not which display-mode radio is checked - a
     // list-format shape (Travel guide, Raid named) shows the list sliders with no radio checked
@@ -2468,11 +2596,44 @@ function initWidgetsPanel() {
     }
   }
 
+  // Same signal as shared/zoneVisibility.js's isRaidContentZone/isGroupContentZone - duplicated
+  // here (this renderer file has no access to `require`, same reason loadoutLockedZones.js and
+  // raidNamedTracker.js each keep their own copy) purely to word the "Only in" warning correctly
+  // when a Raid/Group toggle is on. The actual show/hide decision is made in the main process;
+  // this is display text only. Keep the regex shape in sync if the log format ever changes.
+  const RAID_CONTENT_RE = / - Group(?:\s|$)/;
+  const ANY_INSTANCE_SUFFIX_RE = / (?:- Group(?: \d+ \([^)]+\))?|\d+ \([^)]+\))\s*$/;
+  function isRaidContentZone(z) {
+    return RAID_CONTENT_RE.test(String(z || ''));
+  }
+  function isGroupContentZone(z) {
+    const s = String(z || '');
+    return ANY_INSTANCE_SUFFIX_RE.test(s) && !RAID_CONTENT_RE.test(s);
+  }
+
   function renderWidgetZones(widget) {
     if (!widget) return;
     const zones = widget.visibleInZones || [];
     const listEl = document.getElementById('widget-zone-list');
     const warnEl = document.getElementById('widget-zone-warning');
+    const raidToggle = document.getElementById('widget-zone-raid-toggle');
+    const groupToggle = document.getElementById('widget-zone-group-toggle');
+    if (raidToggle) {
+      raidToggle.classList.toggle('on', !!widget.visibleInRaid);
+      raidToggle.onclick = () => {
+        window.eqTracker.setWidgetVisibleInRaid(widget.id, !widget.visibleInRaid).then(() =>
+          refreshWidgets().then(() => renderWidgetZones(findWidget(widget.id)))
+        );
+      };
+    }
+    if (groupToggle) {
+      groupToggle.classList.toggle('on', !!widget.visibleInGroup);
+      groupToggle.onclick = () => {
+        window.eqTracker.setWidgetVisibleInGroup(widget.id, !widget.visibleInGroup).then(() =>
+          refreshWidgets().then(() => renderWidgetZones(findWidget(widget.id)))
+        );
+      };
+    }
     listEl.innerHTML = '';
     renderZoneAddOptions(widget);
     for (const zone of zones) {
@@ -2493,17 +2654,21 @@ function initWidgetsPanel() {
       listEl.appendChild(chip);
     }
 
-    if (!zones.length) {
+    const gated = zones.length > 0 || !!widget.visibleInRaid || !!widget.visibleInGroup;
+    const matchesNow =
+      (currentZone && zones.includes(currentZone)) ||
+      (widget.visibleInRaid && isRaidContentZone(currentZone)) ||
+      (widget.visibleInGroup && isGroupContentZone(currentZone));
+    if (!gated) {
       warnEl.style.display = 'none';
     } else if (!currentZone) {
       warnEl.textContent =
-        'This aura is limited to ' + zones.length + ' zone' + (zones.length === 1 ? '' : 's') +
-        ", but the app does not know where you are yet — it finds out when you change zone. " +
-        'Until then the aura shows anyway.';
+        'This aura is limited by zone, but the app does not know where you are yet — it finds ' +
+        'out when you change zone. Until then the aura shows anyway.';
       warnEl.style.display = '';
-    } else if (!zones.includes(currentZone)) {
+    } else if (!matchesNow) {
       warnEl.textContent =
-        'Hidden right now: you are in "' + currentZone + '", which is not on its list.';
+        'Hidden right now: you are in "' + currentZone + '", which doesn\'t match its zone/Raid/Group limits.';
       warnEl.style.display = '';
     } else {
       warnEl.style.display = 'none';
@@ -2604,7 +2769,21 @@ function initWidgetsPanel() {
       const scopeText = names.length > 0 ? `scoped to: ${names.join(', ')}` : 'not scoped to any profile';
       tooltip.textContent = isActiveNow ? `Active now (${scopeText})` : `Not active on the current profile (${scopeText})`;
     }
+    tooltip.textContent += ' — click to toggle for this profile';
     dotWrap.append(dot, tooltip);
+    // Clicking the dot toggles this aura for the CURRENT profile only - never every profile at
+    // once, since that's what the checklist in the settings panel is for.
+    dotWrap.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!currentActiveProfileId) return;
+      const fresh = findWidget(widget.id) || widget;
+      const current = fresh.showOnAllProfiles
+        ? new Set(latestProfiles.map((p) => p.id))
+        : new Set(fresh.activeProfileIds || []);
+      if (current.has(currentActiveProfileId)) current.delete(currentActiveProfileId);
+      else current.add(currentActiveProfileId);
+      window.eqTracker.setWidgetActiveProfileIds(widget.id, [...current]).then(refreshWidgets);
+    });
     btn.appendChild(dotWrap);
 
     row.dataset.widgetId = widget.id;
@@ -3068,6 +3247,7 @@ function initWidgetsPanel() {
     if (widget.buffSource === 'travel') return 'Travel guide';
     if (widget.buffSource === 'lockout') return 'Raid lockouts';
     if (widget.buffSource === 'firstAggro') return 'First aggro';
+    if (widget.buffSource === 'zoneTimer') return 'Zone timer';
     if (widget.displayMode === 'text') return 'Custom text';
     if (widget.buffSource === 'customTimer') return 'Custom timer';
     if (widget.buffSource === 'ally' && widget.trackOnEnemies) return 'Custom debuff';
@@ -3125,6 +3305,7 @@ function initWidgetsPanel() {
     if (widget.buffSource === 'travel') return 'travel';
     if (widget.buffSource === 'lockout') return 'lockout';
     if (widget.buffSource === 'firstAggro') return 'first-aggro';
+    if (widget.buffSource === 'zoneTimer') return 'zone-timer';
     if (widget.displayMode === 'text') {
       if (widget.allyDebuffAlert) return 'ally-alert';
       return widget.buffSource === 'customTimer' ? 'text-customTimer' : 'text';
@@ -3180,6 +3361,10 @@ function initWidgetsPanel() {
     // First aggro - one engine-decided line. No picker, no sort/merge; a sound on a body pull
     // is worth having, so 'alerts' stays.
     'first-aggro': ['list-format', 'timer-text', 'opacity', 'position', 'alerts'],
+    // Zone timer - one line, "<zone> <elapsed>", ticking up since the last zone change. No picker,
+    // no sort/merge/borders (nothing to pick, one row, no duration/category), no 'alerts' either -
+    // nothing here ever lands or expires for a sound to attach to.
+    'zone-timer': ['list-format', 'timer-text', 'opacity', 'position'],
   };
 
   // Applies one shape's field set to every optional row/card, and returns the Set so
@@ -3356,6 +3541,7 @@ function initWidgetsPanel() {
     // topic that ended up with nothing in it for this shape, then refresh the per-topic value
     // previews in the (possibly collapsed) headers.
     hideEmptyPanelTopics();
+    updateTopicDividers();
     refreshPanelTopicSummaries();
 
     return fields;
@@ -4491,6 +4677,15 @@ function initWidgetsPanel() {
         'mob hitting one of yours first (the body-pull tell). Clears when the mob dies or you zone. ' +
         'Only as complete as your own log.',
       create: (name) => window.eqTracker.createFirstAggroWidget(name),
+    },
+    {
+      id: 'zone-timer',
+      name: 'Zone timer',
+      group: 'standalone',
+      description:
+        'The current zone and how long you have been in it, counting up from the moment you ' +
+        'zoned in. Resets on every zone change.',
+      create: (name) => window.eqTracker.createZoneTimerWidget(name),
     },
   ];
 
@@ -7042,6 +7237,55 @@ function _pickLogFiles({ title = 'Choose a log file', hint = '', multi = false, 
     document.getElementById('log-picker-hint').textContent = hint;
     const list = document.getElementById('log-picker-list');
     list.innerHTML = '';
+    const splitStatusRow = document.getElementById('log-picker-split-status-row');
+    const splitStatusEl = document.getElementById('log-picker-split-status');
+    const enableSplitBtn = document.getElementById('log-picker-enable-split-btn');
+    // Only meaningful when there are per-day Split files to actually pick from - hidden for a
+    // plain live/archive/export/backup picker (owner, 15 Sep: "should the state of the daily log
+    // split be shown here, as it's a good way to check logs per day").
+    if (splitStatusRow && splitStatusEl) {
+      const splitFiles = groups.split || [];
+      if (splitFiles.length) {
+        splitStatusRow.style.display = '';
+        splitStatusEl.textContent = 'Checking log splitting…';
+        splitStatusEl.classList.remove('warn');
+        if (enableSplitBtn) enableSplitBtn.style.display = 'none';
+        const newestMtime = Math.max(...splitFiles.map((f) => f.mtime || 0));
+        window.eqTracker.getLogState().then((s) => {
+          const agoText = (ms) => {
+            const mins = Math.round(ms / 60000);
+            if (mins < 1) return 'just now';
+            if (mins < 60) return `${mins} min ago`;
+            const hours = Math.round(mins / 60);
+            return hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
+          };
+          if (s.split && s.split.enabled) {
+            splitStatusEl.textContent = newestMtime
+              ? `Log splitting is on - the newest split file was last updated ${agoText(Date.now() - newestMtime)}.`
+              : 'Log splitting is on.';
+          } else {
+            splitStatusEl.textContent = 'Log splitting is off - these files stopped updating whenever it was turned off.';
+            splitStatusEl.classList.add('warn');
+            if (enableSplitBtn) enableSplitBtn.style.display = '';
+          }
+        }).catch(() => { splitStatusRow.style.display = 'none'; });
+      } else {
+        splitStatusRow.style.display = 'none';
+      }
+    }
+    if (enableSplitBtn && !enableSplitBtn.dataset.wired) {
+      // Wired once, not per-open - _pickLogFiles is called fresh each time the modal opens, and
+      // re-adding a listener on the same persistent DOM element every call would stack duplicates.
+      enableSplitBtn.dataset.wired = '1';
+      enableSplitBtn.addEventListener('click', async () => {
+        enableSplitBtn.disabled = true;
+        await window.eqTracker.setSplitEnabled(true);
+        splitStatusEl.textContent = 'Log splitting is now on - new split files will start appearing as you play.';
+        splitStatusEl.classList.remove('warn');
+        enableSplitBtn.style.display = 'none';
+        enableSplitBtn.disabled = false;
+      });
+    }
     const mb = (n) => (typeof n === 'number' && n >= 0 ? `  (${(n / 1048576).toFixed(1)} MB)` : '');
     const sections = [
       ['live', 'Current log folder'], ['split', 'Split (per-day)'], ['archive', 'Archive (weekly)'],
@@ -7191,6 +7435,83 @@ function initUiScale() {
     show(100);
     window.eqTracker.setUiScale(100);
   });
+}
+
+// Custom theme colors (Setup -> App settings -> Colors). The actual color math (deriving the
+// shade ramp each category needs from its one picked color) lives in theme.js, loaded before this
+// script - see that file's own header comment for why it's split out and what it does. This
+// function is purely the page wiring: load the saved theme, apply it, and save+reapply on change.
+function initCustomTheme() {
+  const inputs = {
+    background: document.getElementById('theme-background-input'),
+    panels: document.getElementById('theme-panels-input'),
+    text: document.getElementById('theme-text-input'),
+    highlight: document.getElementById('theme-highlight-input'),
+    textHighlight: document.getElementById('theme-text-highlight-input'),
+    outline: document.getElementById('theme-outline-input'),
+  };
+  const resetBtn = document.getElementById('theme-reset-btn');
+  if (!inputs.background || !window.EQTheme) return;
+
+  // The shipped defaults, so "Reset to default" and a not-yet-customized picker both show the
+  // app's own real colors rather than whatever happened to be left in the HTML's value= attrs.
+  // panels/textHighlight default to what --panel-fill/--select are actually CHAINED to today
+  // (--bg / --accent respectively - see main-window.css's :root comments on both), not an
+  // arbitrary guess, so an un-customized picker shows the color that is really in effect.
+  const SHIPPED_DEFAULTS = {
+    background: '#1c160f', panels: '#14100b', text: '#ffffff',
+    highlight: '#cf9a4a', textHighlight: '#cf9a4a', outline: '#8a672f',
+  };
+
+  function showInputs(theme) {
+    for (const category of Object.keys(inputs)) {
+      inputs[category].value = (theme && theme[category]) || SHIPPED_DEFAULTS[category];
+    }
+  }
+
+  function currentSelection() {
+    const out = {};
+    for (const category of Object.keys(inputs)) out[category] = inputs[category].value;
+    return out;
+  }
+
+  // Applies + persists whatever the pickers currently show. Shared by every input change and
+  // every per-category "Reset" button below - a reset is just "set this one input back to its
+  // shipped default, then commit exactly like a normal pick".
+  function commit() {
+    const theme = currentSelection();
+    window.EQTheme.applyTheme(theme);
+    window.eqTracker.setTheme(theme);
+  }
+
+  window.eqTracker.getTheme().then((theme) => {
+    showInputs(theme);
+    window.EQTheme.applyTheme(theme);
+  });
+
+  for (const category of Object.keys(inputs)) {
+    inputs[category].addEventListener('input', commit);
+  }
+
+  // Owner, 15 Sep: "each colour needs it's own reset button" - one per row, only touching that
+  // row's own picker; the other five stay exactly as customized. The button under the last row
+  // ("Reset all to default") remains for clearing every category at once.
+  document.querySelectorAll('.theme-category-reset').forEach((btn) => {
+    const category = btn.dataset.themeCategory;
+    if (!inputs[category]) return;
+    btn.addEventListener('click', () => {
+      inputs[category].value = SHIPPED_DEFAULTS[category];
+      commit();
+    });
+  });
+
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      showInputs(null);
+      window.EQTheme.applyTheme(null);
+      window.eqTracker.setTheme(null);
+    });
+  }
 }
 
 // Drag-to-resize the sidebar.
@@ -8095,7 +8416,26 @@ function initActionBarsPage() {
         const scopeText = names.length > 0 ? `scoped to: ${names.join(', ')}` : 'not scoped to any profile';
         tooltip.textContent = isActiveNow ? `Active now (${scopeText})` : `Not active on the current profile (${scopeText})`;
       }
+      tooltip.textContent += ' — click to toggle for this profile';
       dotWrap.append(dot, tooltip);
+      // Same "toggle just the current profile" behaviour as the aura sidebar's dot.
+      dotWrap.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!actionBarCurrentActiveProfileId) return;
+        const fresh = findActionBar(bar.id) || bar;
+        const current = fresh.showOnAllProfiles
+          ? new Set(actionBarLatestProfiles.map((p) => p.id))
+          : new Set(fresh.activeProfileIds || []);
+        if (current.has(actionBarCurrentActiveProfileId)) current.delete(actionBarCurrentActiveProfileId);
+        else current.add(actionBarCurrentActiveProfileId);
+        window.eqTracker.setActionBarActiveProfileIds(bar.id, [...current]).then((updated) => {
+          if (updated) {
+            const idx = actionBars.findIndex((b) => b.id === bar.id);
+            if (idx !== -1) actionBars[idx] = updated;
+          }
+          renderActionBarSubmenu();
+        });
+      });
       btn.appendChild(dotWrap);
 
       row.appendChild(btn);
@@ -9698,4 +10038,1297 @@ function initBuffPlanner() {
   window.eqTracker.onActiveProfileChanged(() => loadInput());
 
   loadInput();
+}
+
+// The Combat tab (owner's weekly notes, 13 Sep) - past-fight history plus a per-player,
+// per-skill breakdown for whichever fight is open. Re-fetched on every visit (not loaded once
+// like Lockouts' log scan) since new fights complete while the app just sits open - there's no
+// expensive read behind it, just whatever damageEngine already has in memory.
+// Owner, 13 Sep, live-testing two rounds of this tab. Round 1: the inline "opens at the bottom"
+// detail was disconnected from what you clicked, the flat zone>visit>table layout made the page
+// unusably long, and the list wasn't sorted the way she reads it. Round 2, after moving to a
+// separate fight screen: "Back" skipped past the visit screen straight to the list (two screens
+// back, not one), and a fight should expand under its own entry instead of navigating anywhere -
+// "so you can find yourself again faster". Landed on exactly two screens: a short list of VISITS
+// (earliest first, one line each), and one visit's own screen showing its COMBINED totals as a
+// bar-per-player chart (her reference image) with the individual fights listed underneath -
+// each expanding ITS OWN chart in place on click, an accordion, never a navigation. "Back" only
+// ever means "the list" now, because nothing here is more than one screen deep any more.
+function initCombatPage() {
+  const listScreen = document.getElementById('combat-list-screen');
+  const visitList = document.getElementById('combat-visit-list');
+  const historyEmpty = document.getElementById('combat-history-empty');
+  const zoneFilter = document.getElementById('combat-zone-filter');
+  const sourceFilter = document.getElementById('combat-source-filter');
+  const listHeadingText = document.getElementById('combat-list-heading-text');
+  const listLiveBadge = document.getElementById('combat-list-live-badge');
+  const jumpStatus = document.getElementById('combat-jump-status');
+  const returnToScanBtn = document.getElementById('combat-return-to-scan');
+  const minDamageInput = document.getElementById('combat-min-damage');
+  const DEFAULT_MIN_DAMAGE = 50000;
+  const detailScreen = document.getElementById('combat-detail-screen');
+  const detailTitle = document.getElementById('combat-detail-title');
+  const detailBars = document.getElementById('combat-detail-bars');
+  const detailFightList = document.getElementById('combat-detail-fightlist');
+  const backBtn = document.getElementById('combat-detail-back');
+  const detailLiveBadge = document.getElementById('combat-detail-live-badge');
+  const scanCurrentBtn = document.getElementById('combat-scan-current');
+  const scanFileBtn = document.getElementById('combat-scan-file');
+  const scanStatus = document.getElementById('combat-scan-status');
+  const jumpCurrentZoneBtn = document.getElementById('combat-jump-current-zone');
+  const olderBtn = document.getElementById('combat-visit-older');
+  const newerBtn = document.getElementById('combat-visit-newer');
+  const liveRow = document.getElementById('combat-live-row');
+  const liveStatusEl = document.getElementById('combat-live-status');
+  const liveZoneEl = document.getElementById('combat-live-zone');
+  const liveMetaEl = document.getElementById('combat-live-meta');
+  if (!visitList) return; // Combat tab not in this build
+
+  const UNKNOWN_ZONE = '(zone unknown)';
+  // Must match main.js's mergedDamageHistory - the live engine's own source label ({ tag: 'live',
+  // label: 'This session', ... } in allHistorySources). Never shown to the user as a raw string
+  // comparison target, just the value every LIVE fight's own `source` field carries.
+  const LIVE_SOURCE = 'This session';
+  // Set true after populateSourceFilter's first run - see its own comment on why the "default to
+  // Live" behavior only ever applies once, never on a later re-render.
+  let hasSetInitialSource = false;
+  // A fixed, readable rotation - not per-class (this app doesn't know classes), just enough colour
+  // variety that ten bars in a row are easy to tell apart, matching the reference image's look.
+  const BAR_COLORS = ['#c9a13a', '#4a9fd8', '#6fc47a', '#d8794a', '#9a7fd8', '#d84a8f', '#4ad8c4', '#d8d24a'];
+  // Owner, 14 Sep: "i would like denon's desperate dirge to have it's own coloured section of the
+  // combat log... it should still be part of damage totals, but the coloured bar should have the
+  // denon's section coloured bright red" - a fixed colour, not the rotating BAR_COLORS index, and
+  // NOT excluded from anything (row.damage/DPS/% math is all untouched - purely a rendering split).
+  // `startsWith`, not an exact match: the cast-begin line carries a rank numeral ("... Dirge V"),
+  // gotcha #3's own documented case, so the skill name recorded per-hit does too.
+  const DENON_SKILL_PREFIX = "Denon's Desperate Dirge";
+  const DENON_BAR_COLOR = '#ff2b2b';
+  const isDenonSkill = (skill) => typeof skill === 'string' && skill.startsWith(DENON_SKILL_PREFIX);
+  let lastHistory = []; // flat, cached so the zone filter can re-render without re-fetching
+  // The most recently completed scan's own source label (main.js's mergedDamageHistory result
+  // label, e.g. "eqlog_Shara_rivervale.txt (scanned ...)") - null until a scan has actually
+  // happened this session. Powers "Return to last scan" (owner, 14 Sep).
+  let lastScanLabel = null;
+
+  // Owner, 15 Sep: "live fights page is STILL showing content from days ago, it needs to be
+  // CURRENT ZONE ONLY" / "LIVE VIEW: current zone, ALL fights. SCAN LOG: whatever is in that
+  // log, button to return to LIVE VIEW." The Scan half of that was already true (runScan clears
+  // the zone filter - "whatever is in that log"); the Live half wasn't - the list's zone filter
+  // just started on "All zones" and stayed there, so opening the tab surfaced every zone from
+  // every day in history instead of only the one you're actually standing in right now.
+  // `hasSetInitialZone` mirrors populateSourceFilter's own `hasSetInitialSource` - a default that
+  // applies once and then gets out of the way of a real choice. `lastAppliedLiveZone` is what
+  // makes it keep following as you actually zone: a later onZoneChanged only re-snaps the filter
+  // when it still holds whatever this function set it to last - the moment someone picks a
+  // DIFFERENT zone (or "All zones") by hand, that stops matching and the auto-follow leaves it
+  // alone, same "don't stomp a manual choice" rule onLiveFightTick's zoneMismatch guard already
+  // uses for the live-open behavior.
+  let hasSetInitialZone = false;
+  let lastAppliedLiveZone = null;
+  // The live current zone, kept fresh by applyLiveZoneDefault regardless of whether it actually
+  // changes the filter - populateZoneFilter always offers it as an option even with ZERO fight
+  // history there yet. Without this, setting zoneFilter.value to a zone with no <option> (a zone
+  // the player just entered and hasn't fought in) is a silent no-op - HTMLSelectElement resets an
+  // unmatched value straight back to "" - so the "current zone" default looked like it did
+  // nothing at all. Same reasoning populateSourceFilter already uses to always offer LIVE_SOURCE.
+  let liveZoneForOptions = null;
+
+  // Damage / Healing / Both (owner, 14 Sep: "buttons... top level, and not attached to specific
+  // fight logs, swapping one view should swap it for all open logs"). One shared mode for the
+  // whole page - switching it re-renders whatever's currently on screen (the open visit, if any)
+  // rather than only affecting the next thing clicked.
+  let viewMode = 'damage'; // 'damage' | 'healing' | 'both'
+  // Every bar-chart container currently visible on screen (the open visit's own combined chart,
+  // plus any expanded fight accordion under it) - Map<container, fightDetailsArray>. Toggling the
+  // view mode re-renders every one of these in place, which is what makes the buttons "top level"
+  // rather than only affecting whatever gets opened next (owner, 14 Sep).
+  const openRenders = new Map();
+  // Older/Newer navigation (owner, 14 Sep: "a fast way to... move forwards/backwards in fight
+  // history") - every visit to the SAME zone as whatever's currently open, sorted earliest-first
+  // (see buildVisits), plus the open visit's own index into that list. Recomputed on every
+  // openVisit() call rather than cached, so it always reflects the current zone filter/min-damage
+  // floor instead of a stale snapshot from whenever the list was last rendered.
+  let currentZoneVisits = [];
+  let currentVisitIndex = -1;
+  // "Live read the current combat" (owner, 14 Sep) - whether the detail screen is currently
+  // showing the IN-PROGRESS fight rather than a completed one. `liveRenderInFlight` drops a tick
+  // that arrives mid-render instead of queueing it - the NEXT tick brings the view current anyway,
+  // and a fight can emit a tick per hit, so overlapping renders would only pile up.
+  let liveFightOpen = false;
+  let liveRenderInFlight = false;
+  // Owner, 15 Sep: "this live page is for the entire area, all fights there" / "the older and
+  // newer need to cycle to past fights in the CURRENT instance" - the live fight is just the
+  // newest entry of the CURRENT VISIT (same zone+visitId the live engine tags its own history
+  // with), so Older/Newer here step through that visit's already-completed fights instead of being
+  // disabled outright. Scoped to THIS one instance only - never a different day's visit to the same
+  // zone name, which is what the ordinary visit-to-visit Older/Newer (currentZoneVisits above) is
+  // for. `liveVisitFights` is oldest-first; `liveVisitCursor` is null while looking at the live
+  // fight itself, or an index into liveVisitFights while looking back at one of its earlier kills.
+  let liveVisitFights = [];
+  let liveVisitCursor = null;
+
+  function formatDamage(n) {
+    if (n < 10000) return String(n);
+    if (n < 1000000) return `${(n / 1000).toFixed(1)}k`;
+    return `${(n / 1000000).toFixed(2)}m`;
+  }
+
+  function formatDuration(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  }
+
+  const isToday = (ms) => new Date(ms).toDateString() === new Date().toDateString();
+  // A live fight from tonight only needs a clock time; anything from a scanned log could be any
+  // day, so "dated" (the owner's own word for this) means showing the date once it isn't obvious.
+  function formatWhen(ms) {
+    const d = new Date(ms);
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return isToday(ms) ? time : `${d.toLocaleDateString()} ${time}`;
+  }
+  function formatTime(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  // Scanning a big log turns "Scan results" into a long, undifferentiated wall of rows with no way
+  // to tell one day from the next at a glance (owner, 15 Sep) - a header bar per day, same block-cap
+  // treatment used elsewhere, does the date's job so the row itself only needs the time.
+  const dateKey = (ms) => new Date(ms).toDateString();
+  function formatDateHeader(ms) {
+    return isToday(ms) ? 'Today' : new Date(ms).toLocaleDateString(undefined, {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+  }
+
+  // Names/skills/zones below come from parsed log text (a player name, a mob name, a spell) -
+  // built as real DOM nodes with .textContent throughout, never innerHTML, the same rule the
+  // ambiguous-cast popup already follows for the same reason (that text is not this app's own).
+  const span = (text, className) => {
+    const el = document.createElement('span');
+    if (className) el.className = className;
+    el.textContent = text;
+    return el;
+  };
+
+  function showList() {
+    detailScreen.style.display = 'none';
+    listScreen.style.display = '';
+    detailBars.innerHTML = '';
+    detailFightList.innerHTML = '';
+  }
+
+  function showDetail() {
+    listScreen.style.display = 'none';
+    detailScreen.style.display = '';
+    if (jumpStatus) jumpStatus.style.display = 'none'; // whatever failed a moment ago, this succeeded
+  }
+  // Only ever two screens now (list, and one visit's detail) - a single fight's own numbers
+  // expand IN PLACE under its own row instead of being a third screen, per the owner's own
+  // report: navigating to a fight, then "Back", used to skip past the visit screen entirely
+  // because Back only ever knew how to return to the list. Nothing left to fix there now -
+  // Back always means "the list", because a fight never left this screen to begin with.
+
+  // One player's row: a coloured bar sized against the BIGGEST row (not the total - a bar
+  // measured against the total leaves every bar short in a five-person group, same reasoning the
+  // live overlay's own bars already use), click to accordion its skill breakdown open underneath.
+  // Fetched up front for every row in parallel, not per-row as the DOM is built, so one slow
+  // lookup can't stagger the chart appearing row by row.
+  // `metric` ('damage' | 'heal' | 'both') only changes the Damage/Healing/Total column heading -
+  // whether a given SKILL row shows a real Crit % or "—" is decided per-row below, from whether
+  // that row's own data ever tracked crits at all (healLines.js carries no critical flag), which
+  // is what makes "Both" mode's mixed damage+heal skill list label each row correctly.
+  async function renderBars(container, rows, durationSec, metric = 'damage') {
+    // Owner, 14 Sep, screenshot-confirmed with a video: "live damage flashes when refreshing" -
+    // clearing the container BEFORE the `await` below left it genuinely empty for the length of
+    // that IPC round-trip (one estimateDamageClasses call per row), which barely showed on a
+    // one-off click but flashed visibly every single tick once the live view started re-rendering
+    // on every hit. Everything is now built into a detached fragment first and swapped in as one
+    // atomic replacement at the end - the old content stays on screen right up until the new
+    // content is ready, so there is never a moment with nothing there at all.
+    // Owner, 14 Sep: "per skill breakdown should remain open on live view" - every tick rebuilds
+    // every row as a brand new <details> element (see above), which defaults to closed - a player
+    // whose skill breakdown you had open would snap shut on the very next hit with no way to leave
+    // it open and actually read it. Read which player NAMES are currently expanded straight off
+    // the container's own (about-to-be-replaced) DOM before touching anything - the "memory" lives
+    // in the real DOM between renders, nothing extra to track or clean up.
+    const openNames = new Set(
+      [...container.querySelectorAll('details.combat-bar-row[open]')]
+        .map((d) => d.querySelector('.combat-bar-name')?.textContent)
+        .filter(Boolean)
+    );
+    const top = rows.length ? rows[0].damage : 0;
+    // Class estimate (owner, 13-14 Sep): only ever built from skills this attacker was actually
+    // seen CASTING, scoped to just this fight (or visit) - never damage, which can't say who cast
+    // a buff whose proc it's crediting, and never the whole session. See classEstimator.js's own
+    // header comment. `row.castSkills` is already the right list either way: one fight's own
+    // capture, or a visit's union of its fights' captures (see openVisit's aggregation below).
+    const classEstimates = await Promise.all(
+      rows.map((row) => window.eqTracker.estimateDamageClasses(row.castSkills || []))
+    );
+    const fragment = document.createDocumentFragment();
+    rows.forEach((row, i) => {
+      const details = document.createElement('details');
+      details.className = 'combat-bar-row';
+      if (openNames.has(row.name)) details.open = true;
+      const summary = document.createElement('summary');
+
+      summary.appendChild(span(row.name, 'combat-bar-name'));
+
+      const track = document.createElement('div');
+      track.className = 'combat-bar-track';
+      const fill = document.createElement('div');
+      fill.className = 'combat-bar-fill';
+      fill.style.width = `${top > 0 ? Math.max(2, (row.damage / top) * 100) : 0}%`;
+      // Denon's Desperate Dirge gets its own bright-red slice of THIS player's own bar, still
+      // part of the same total width - a stacked split, not a separate bar, so "how much of my
+      // damage was the dirge" reads at a glance without changing what the bar's own length means.
+      const denonDamage = (row.bySkill || []).filter((s) => isDenonSkill(s.skill)).reduce((sum, s) => sum + s.damage, 0);
+      if (denonDamage > 0 && row.damage > 0) {
+        const denonSeg = document.createElement('div');
+        denonSeg.className = 'combat-bar-fill-segment';
+        denonSeg.style.width = `${(denonDamage / row.damage) * 100}%`;
+        denonSeg.style.background = DENON_BAR_COLOR;
+        fill.appendChild(denonSeg);
+      }
+      const restSeg = document.createElement('div');
+      restSeg.className = 'combat-bar-fill-segment';
+      restSeg.style.width = `${row.damage > 0 ? ((row.damage - denonDamage) / row.damage) * 100 : 100}%`;
+      restSeg.style.background = BAR_COLORS[i % BAR_COLORS.length];
+      fill.appendChild(restSeg);
+      track.appendChild(fill);
+
+      // The class estimate is the FIRST text in the bar, its own column ahead of the damage
+      // amount (owner, 13 Sep) - a fixed-width slot so every row lines up the same way whether or
+      // not that row actually resolved to anything ("-" when it didn't, never a missing column).
+      // Each class is coloured by its own confidence (owner, 13 Sep: "green for 100% guaranteed,
+      // orange for maybe") - see classEstimator.js for how confirmed/maybe are decided.
+      const label = document.createElement('div');
+      label.className = 'combat-bar-label';
+      const classWrap = document.createElement('span');
+      classWrap.className = 'combat-bar-class';
+      const classes = classEstimates[i];
+      if (classes && classes.length) {
+        classes.forEach((c, ci) => {
+          if (ci > 0) classWrap.appendChild(document.createTextNode('/'));
+          classWrap.appendChild(span(c.name, `combat-bar-class-${c.confidence}`));
+        });
+      } else {
+        classWrap.appendChild(span('—', 'combat-bar-class-unknown'));
+      }
+      label.appendChild(classWrap);
+      label.appendChild(span(formatDamage(row.damage), 'combat-bar-amount'));
+      track.appendChild(label);
+
+      // Inset into the track, not a separate column past its end (owner, 13 Sep: "dps numbers
+      // should also go on top of the coloured bars... it should still be inset") - a short bar
+      // used to leave this number stranded in blank space to the right of it.
+      const dps = durationSec > 0 ? Math.round(row.damage / durationSec) : 0;
+      const dpsEl = document.createElement('div');
+      dpsEl.className = 'combat-bar-dps';
+      dpsEl.textContent = `${formatDamage(dps)}/s`;
+      track.appendChild(dpsEl);
+      summary.appendChild(track);
+
+      details.appendChild(summary);
+      const list = document.createElement('div');
+      list.className = 'combat-skill-list';
+      if (row.bySkill.length) {
+        const header = document.createElement('div');
+        header.className = 'combat-skill-row combat-skill-header';
+        header.appendChild(span('Skill'));
+        header.appendChild(span(metric === 'heal' ? 'Healing' : metric === 'both' ? 'Total' : 'Damage'));
+        // Owner, 15 Sep: "is it possible to add/check for amount of times skill used/activated...
+        // how many puma procs, things like that" - the count was already tracked internally
+        // (bySkill's own `hits`, already used for Crit % below) and just never surfaced.
+        header.appendChild(span('Hits'));
+        header.appendChild(span('% of total'));
+        header.appendChild(span('Crit %'));
+        list.appendChild(header);
+      }
+      const skillTop = row.bySkill.length ? row.bySkill[0].damage : 0;
+      row.bySkill.forEach((s, si) => {
+        const line = document.createElement('div');
+        line.className = 'combat-skill-row';
+        // % of THIS PLAYER's own total (owner, 13 Sep) - not the fight's, since that's already
+        // the point of the bar above it; this answers "of what Avenrae did, how much was this".
+        const share = row.damage > 0 ? Math.round((s.damage / row.damage) * 100) : 0;
+        // A skill row's own shape says whether crits were ever tracked for it - a damage skill
+        // always has the field (even at 0), a healing one never does (healLines.js carries no
+        // critical flag). Checking per-row rather than by the overall `metric` is what makes
+        // "Both" mode work correctly too: a healer who also melees gets a real Crit % on their
+        // Melee row and "—" on their heal rows, in the same combined list.
+        const critPct = s.crits === undefined ? null : (s.hits > 0 ? Math.round((s.crits / s.hits) * 100) : 0);
+        line.appendChild(span(s.skill, 'combat-skill-name'));
+
+        // A coloured bar spanning the WHOLE Damage/%/Crit area, not just the Damage column (owner,
+        // 13 Sep: "the coloured bar should extend underneath the crit and damage % numbers") -
+        // sized against this player's OWN biggest skill, same "biggest, not the total" reasoning
+        // as the player bars above. The track/fill sit behind as one absolutely-positioned pair;
+        // the three numbers are laid out on top in a matching sub-grid so they still land in the
+        // same columns the header uses.
+        const trackArea = document.createElement('div');
+        trackArea.className = 'combat-skill-track-area';
+        const track = document.createElement('div');
+        track.className = 'combat-skill-track';
+        const fill = document.createElement('div');
+        fill.className = 'combat-skill-fill';
+        fill.style.width = `${skillTop > 0 ? Math.max(2, (s.damage / skillTop) * 100) : 0}%`;
+        // The same fixed bright red as the player bar's own Denon's slice above - one skill, one
+        // colour, wherever it shows up, rather than whatever BAR_COLORS' rotating index happens
+        // to land on for this particular row's position in the list.
+        fill.style.background = isDenonSkill(s.skill) ? DENON_BAR_COLOR : BAR_COLORS[si % BAR_COLORS.length];
+        track.appendChild(fill);
+        trackArea.appendChild(track);
+        const amount = document.createElement('div');
+        amount.className = 'combat-skill-amount';
+        amount.textContent = formatDamage(s.damage);
+        trackArea.appendChild(amount);
+        trackArea.appendChild(span(String(s.hits), 'combat-skill-hits'));
+        trackArea.appendChild(span(`${share}%`, 'combat-skill-share'));
+        trackArea.appendChild(span(critPct === null ? '—' : `${critPct}%`, 'combat-skill-crit'));
+        line.appendChild(trackArea);
+        list.appendChild(line);
+      });
+      details.appendChild(list);
+      fragment.appendChild(details);
+    });
+    // The one moment container's content actually changes - old rows visible up to here, new ones
+    // from here, nothing in between.
+    container.innerHTML = '';
+    container.appendChild(fragment);
+  }
+
+  // One fight, folded into an accordion row under the visit's own chart - clicking it expands its
+  // own bar chart in place (owner, 13 Sep: "should expand under the entry... so you can find
+  // yourself again faster"), reusing the detail this visit already fetched rather than a fresh
+  // round trip - the whole point of asking for `Promise.all` up front in openVisit was so a click
+  // here never has to wait on anything.
+  function fightAccordionRow(fight, detail) {
+    const row = document.createElement('details');
+    row.className = 'combat-fight-list-row';
+    // Distinct columns (owner, 14 Sep: "let's also make this have distinct columns - date,
+    // boss/trash name, time, total damage, top dps... top dps should be right most, the name
+    // field should be the longest one that fills the section") - a real CSS grid (see
+    // main-window.css), not the flex row this used to be, with the name column taking the
+    // remaining space (`1fr`) and every other column a fixed width so nothing shifts row to row.
+    const summary = document.createElement('summary');
+    summary.appendChild(span(formatWhen(fight.endedAt), 'combat-fight-date'));
+    // "The fight breakdown for each zone should say what fight it is - if a named was fought it
+    // should list the named, if no named was found it should just say Trash" (owner, 14 Sep).
+    const label = fight.label || 'Trash';
+    summary.appendChild(span(label, label === 'Trash' ? 'combat-fight-label combat-fight-label-trash' : 'combat-fight-label'));
+    summary.appendChild(span(formatDuration(fight.durationSec), 'combat-fight-duration'));
+    summary.appendChild(span(formatDamage(fight.totalDamage), 'combat-fight-damage'));
+    summary.appendChild(span(fight.topAttacker || '—', 'combat-fight-top'));
+    row.appendChild(summary);
+    if (detail) {
+      const nested = document.createElement('div');
+      nested.className = 'combat-fight-bars';
+      row.appendChild(nested);
+      // Rendered lazily, on first expand, not for every fight up front - a visit can hold a
+      // couple dozen of these, and only the one(s) actually opened need their bars built.
+      // `renderedMode` (not just a rendered/not-rendered flag) tracks WHICH mode it was last drawn
+      // in, so re-expanding a fight after the view toggle changed while it was collapsed still
+      // redraws it - a plain "already rendered" flag would leave stale content showing. Registered
+      // in openRenders while expanded, so the top-level view toggle can refresh it too (owner, 14
+      // Sep: "swapping one view should swap it for all open logs") - removed on collapse, since a
+      // hidden chart has no reason to keep re-rendering itself on every toggle.
+      row.addEventListener('toggle', () => {
+        if (row.open) {
+          openRenders.set(nested, [detail]);
+          if (nested.dataset.renderedMode !== viewMode) {
+            nested.dataset.renderedMode = viewMode;
+            renderMetricBars(nested, [detail]);
+          }
+        } else {
+          openRenders.delete(nested);
+        }
+      }, { once: false });
+    }
+    return row;
+  }
+
+  // Sums a list of fight-detail records into one combined per-player chart - shared by the visit
+  // view and (for the "both" toggle) whichever metric is being aggregated. `rowsKey` picks which
+  // side of each fight record to sum ('rows' for damage, 'healRows' for healing - see
+  // damageEngine.js's _captureHistory).
+  function aggregateFightRows(details, rowsKey) {
+    const byName = new Map(); // name -> { name, damage, bySkill: Map<skill, {damage}>, castSkills: Set<name> }
+    let totalDuration = 0;
+    for (const fight of details) {
+      if (!fight) continue;
+      totalDuration += fight.durationSec;
+      for (const row of fight[rowsKey] || []) {
+        const agg = byName.get(row.name) || { name: row.name, damage: 0, bySkill: new Map(), castSkills: new Set() };
+        agg.damage += row.damage;
+        for (const s of row.bySkill) {
+          const srow = agg.bySkill.get(s.skill) || { skill: s.skill, damage: 0, hits: 0, crits: 0 };
+          srow.damage += s.damage;
+          srow.hits += s.hits || 0;
+          srow.crits += s.crits || 0;
+          agg.bySkill.set(s.skill, srow);
+        }
+        // Class estimate evidence, unioned across the visit's fights the same way bySkill is - a
+        // spell this attacker was seen casting in ANY of this visit's pulls still counts toward
+        // the visit's own combined guess (owner, 14 Sep: scoped to "that fight" - a visit's combined
+        // chart is still one coherent view of the SAME fights, not the whole session).
+        for (const skill of row.castSkills || []) agg.castSkills.add(skill);
+        byName.set(row.name, agg);
+      }
+    }
+    const rows = [...byName.values()]
+      .map((r) => ({
+        ...r,
+        bySkill: [...r.bySkill.values()].sort((a, b) => b.damage - a.damage),
+        castSkills: [...r.castSkills],
+      }))
+      .sort((a, b) => b.damage - a.damage);
+    // The visit's own rate divides by the SUM of its fights' durations, not the wall-clock span
+    // between the first and last - the gaps in between are downtime, not part of any fight.
+    return { rows, totalDuration };
+  }
+
+  // "Both" is one combined total per person, not two separate charts (owner, 14 Sep: "it should
+  // be a combined total graph that shows one graph of the sum of a player's damage and healing") -
+  // merges each side's rows by NAME into a single bar sized by damage+healing together, with both
+  // sides' skills folded into one breakdown list (so a healer who also melees shows both).
+  function aggregateBothRows(details) {
+    const dmg = aggregateFightRows(details, 'rows');
+    const heal = aggregateFightRows(details, 'healRows');
+    const byName = new Map();
+    for (const r of dmg.rows) byName.set(r.name, { name: r.name, damage: r.damage, bySkill: [...r.bySkill], castSkills: new Set(r.castSkills) });
+    for (const r of heal.rows) {
+      const agg = byName.get(r.name) || { name: r.name, damage: 0, bySkill: [], castSkills: new Set() };
+      agg.damage += r.damage;
+      agg.bySkill = agg.bySkill.concat(r.bySkill);
+      for (const c of r.castSkills) agg.castSkills.add(c);
+      byName.set(r.name, agg);
+    }
+    const rows = [...byName.values()]
+      .map((r) => ({ ...r, bySkill: r.bySkill.sort((a, b) => b.damage - a.damage), castSkills: [...r.castSkills] }))
+      .sort((a, b) => b.damage - a.damage);
+    // Both sides sum duration over the exact same fights in `details`, so they already agree -
+    // either one is the right rate basis.
+    return { rows, totalDuration: dmg.totalDuration };
+  }
+
+  // Draws whichever metric the top-level Damage/Healing/Both toggle currently selects into
+  // `container` (owner, 14 Sep: "toggle between damage, healing, or both").
+  async function renderMetricBars(container, details) {
+    // No innerHTML clear here any more (owner, 14 Sep, video-confirmed flash) - renderBars() does
+    // its own atomic old-content-to-new-content swap at the end now, so clearing up front here
+    // would just re-open the exact same empty window this was fixed to close.
+    if (viewMode === 'both') {
+      const { rows, totalDuration } = aggregateBothRows(details);
+      await renderBars(container, rows, totalDuration, 'both');
+      return;
+    }
+    const rowsKey = viewMode === 'healing' ? 'healRows' : 'rows';
+    const { rows, totalDuration } = aggregateFightRows(details, rowsKey);
+    await renderBars(container, rows, totalDuration, viewMode === 'healing' ? 'heal' : 'damage');
+  }
+
+  // "Clicking on the zone itself should show the totals of that encounter" - every fight in the
+  // visit, summed per player and per skill, as one combined chart; the individual fights are
+  // listed underneath, each expanding to its own chart in place rather than navigating anywhere.
+  // Owner, 14 Sep: "back to fights button needs deleting here, because now it should be open by
+  // default... the live marker needs to be moved here instead when you're on the most recent
+  // active[fight]" - Back is a dead click while the live view is showing (it auto-reopens on the
+  // very next tick, see onLiveFightTick), so it's swapped for the same "● Live" badge the Past
+  // Fights heading uses. Exactly one of the two is ever visible.
+  function setDetailToolbarLive(isLive) {
+    if (backBtn) backBtn.style.display = isLive ? 'none' : '';
+    if (detailLiveBadge) detailLiveBadge.style.display = isLive ? '' : 'none';
+  }
+
+  async function openVisit(visit) {
+    liveFightOpen = false; // leaving the live view (if that's what was open) for a completed one
+    setDetailToolbarLive(false);
+    showDetail();
+    openRenders.clear(); // leaving the previous visit (if any) - nothing from it stays "open"
+    detailTitle.textContent = '';
+    appendZoneLabel(detailTitle, visit.zone, visit.difficulty, visit.raidInstance);
+    detailTitle.appendChild(document.createTextNode(
+      ` — ${formatWhen(visit.startedAt)}, ${visit.fights.length} fight${visit.fights.length === 1 ? '' : 's'}`
+    ));
+    detailBars.innerHTML = '';
+    detailBars.appendChild(span('Loading…', 'empty-note'));
+    detailFightList.innerHTML = '';
+
+    // Older/Newer navigation - every visit to this SAME zone, so stepping through history stays
+    // scoped to "recent past events of the zone i'm in" rather than jumping across unrelated
+    // zones. Matched by the first fight's id (stable) since buildVisits() builds fresh objects
+    // every call, so object identity can't be relied on.
+    currentZoneVisits = siblingVisits(visit.zone);
+    currentVisitIndex = currentZoneVisits.findIndex(
+      (v) => v.fights[0] && visit.fights[0] && v.fights[0].id === visit.fights[0].id
+    );
+    updateVisitNavButtons();
+
+    const details = await Promise.all(visit.fights.map((f) => window.eqTracker.getDamageHistoryFight(f.id)));
+    openRenders.set(detailBars, details);
+    await renderMetricBars(detailBars, details);
+
+    // "Fights should be organised earliest first" - visit.fights is already in that order (see
+    // buildVisits), so the fight list below the combined chart reads as "pull 1, pull 2, ..." top
+    // to bottom, matching how the visit itself actually played out.
+    visit.fights.forEach((fight, i) => detailFightList.appendChild(fightAccordionRow(fight, details[i])));
+  }
+
+  // Every visit to ONE zone, earliest first, under the page's own current min-damage floor - the
+  // pool Older/Newer step through, and what jumpToCurrentZone() picks the latest entry from.
+  function siblingVisits(zone) {
+    const floor = minDamage();
+    const sourceValue = sourceFilter.value;
+    const filtered = lastHistory.filter((f) => (
+      (f.zone || UNKNOWN_ZONE) === zone
+      && (!sourceValue || (f.source || LIVE_SOURCE) === sourceValue)
+      && f.totalDamage >= floor
+    ));
+    return buildVisits(filtered);
+  }
+
+  function updateVisitNavButtons() {
+    if (!olderBtn || !newerBtn) return;
+    if (liveFightOpen) {
+      olderBtn.disabled = liveVisitCursor === 0 || (liveVisitCursor === null && liveVisitFights.length === 0);
+      newerBtn.disabled = liveVisitCursor === null;
+      return;
+    }
+    olderBtn.disabled = currentVisitIndex <= 0;
+    newerBtn.disabled = currentVisitIndex === -1 || currentVisitIndex >= currentZoneVisits.length - 1;
+  }
+
+  // "Reading a log still says 'live'" / "past fights is also not correct, it is not past, that is
+  // actually live" (owner, 15 Sep, repeated twice - the first fix's own "is a fight literally
+  // happening THIS SECOND" distinction was the wrong axis entirely). The only distinction that
+  // actually matters is which SOURCE is showing, full stop - the live session's own view is "the
+  // live version" the whole time it's selected, whether or not anything happens to be fighting at
+  // this exact instant, because the app is tracking it live either way. Two states, not three:
+  //   - browsing a specific past scan: "Scan results", no live badge at all (a static file is
+  //     never live, no matter what)
+  //   - the live session (any zone/damage filter): "Fights" + the live badge, always - never
+  //     "Past fights", because calling it "past" while it's the live view is exactly what was
+  //     reported wrong, twice
+  function updateListHeading() {
+    const browsingScan = sourceFilter.value && sourceFilter.value !== LIVE_SOURCE;
+    // "Current zone is still there as a button when already on live, why?" (owner, 15 Sep,
+    // repeated) - same axis correction as the heading above: hides whenever you are on the live
+    // source AT ALL (not only when a fight happens to be actively in progress), since the live
+    // view already IS what "Current zone" would otherwise be jumping you to. Shown only while
+    // browsing a scan, where it is now the one way back to live at all (Back to live is gone).
+    if (jumpCurrentZoneBtn) jumpCurrentZoneBtn.style.display = browsingScan ? '' : 'none';
+    if (!listHeadingText) return;
+    if (browsingScan) {
+      listHeadingText.textContent = 'Scan results';
+      if (listLiveBadge) listLiveBadge.style.display = 'none';
+      return;
+    }
+    listHeadingText.textContent = 'Fights';
+    if (listLiveBadge) listLiveBadge.style.display = '';
+  }
+
+  // The always-on-top-of-the-list "Live now" row (owner, 14 Sep, follow-up: "put a placeholder
+  // copy of the entire ui there even when no active fight log is happening") - never hidden;
+  // shows a muted placeholder when nothing's underway instead of disappearing, so the row itself
+  // demonstrates where live tracking appears rather than only existing once a fight is caught in
+  // progress. `fight` is whatever damage:getLiveFight() last returned - the exact same shape a
+  // completed history entry has (see damageEngine.getLiveFight's own comment).
+  function updateLiveRow(fight) {
+    if (!liveRow) return;
+    liveRow.classList.toggle('combat-live-row-idle', !fight);
+    if (!fight) {
+      liveStatusEl.textContent = '○ No fight';
+      liveZoneEl.textContent = 'Nothing happening right now';
+      liveMetaEl.textContent = '';
+      return;
+    }
+    liveStatusEl.textContent = '● Live';
+    liveZoneEl.textContent = fight.zone || UNKNOWN_ZONE;
+    liveMetaEl.textContent = `${formatDuration(fight.durationSec)} · ${formatDamage(fight.totalDamage)} · top: ${fight.rows[0] ? fight.rows[0].name : '—'}`;
+  }
+
+  // Redraws the open live-fight chart from a fresh snapshot - shared by openLiveFight (the first
+  // time it opens) and every later tick while it's still open, so the numbers keep moving instead
+  // of freezing at whatever they were the moment it was opened.
+  async function renderLiveDetail(fight) {
+    detailTitle.textContent = '';
+    appendZoneLabel(detailTitle, fight.zone, fight.difficulty, fight.raidInstance);
+    detailTitle.appendChild(document.createTextNode(` — Live now, ${formatDuration(fight.durationSec)}`));
+    openRenders.set(detailBars, [fight]);
+    await renderMetricBars(detailBars, [fight]);
+  }
+
+  // Every already-completed fight belonging to the SAME visit as the live one (see this file's own
+  // liveVisitFights/liveVisitCursor comment) - always read from the live source specifically, since
+  // a scan has no live fight to be a sibling of. Recomputed each time the live page is (re)opened,
+  // same convention siblingVisits/openVisit already use for their own snapshot.
+  function liveVisitSiblings(fight) {
+    if (!fight || fight.visitId == null) return [];
+    return lastHistory
+      .filter((f) => (f.source || LIVE_SOURCE) === LIVE_SOURCE && f.zone === fight.zone && f.visitId === fight.visitId)
+      .sort((a, b) => a.endedAt - b.endedAt);
+  }
+
+  // Opens the in-progress fight in the shared detail screen. Older/Newer step through this same
+  // visit's earlier fights via liveVisitFights/renderLiveVisitFightAt below, not the ordinary
+  // visit-to-visit navigation (currentZoneVisits), which stays cleared here - the two navigations
+  // are never active at once.
+  function openLiveFight(fight) {
+    showDetail();
+    setDetailToolbarLive(true);
+    openRenders.clear();
+    detailFightList.innerHTML = '';
+    currentZoneVisits = [];
+    currentVisitIndex = -1;
+    liveFightOpen = true;
+    liveVisitFights = liveVisitSiblings(fight);
+    liveVisitCursor = null;
+    updateVisitNavButtons();
+    detailBars.innerHTML = '';
+    detailBars.appendChild(span('Loading…', 'empty-note'));
+    renderLiveDetail(fight);
+  }
+
+  // Older, from the live page: step back to one of this visit's own already-completed fights.
+  // Reuses the ordinary single-fight detail render (getDamageHistoryFight + renderMetricBars) -
+  // same data a completed visit's own fight-accordion row would show - but keeps the live-page
+  // toolbar (the "● Live" badge, not Back) since this is still the same visit's live page, just
+  // looking backward in it.
+  async function renderLiveVisitFightAt(index) {
+    const entry = liveVisitFights[index];
+    if (!entry) return;
+    liveVisitCursor = index;
+    updateVisitNavButtons();
+    detailTitle.textContent = '';
+    appendZoneLabel(detailTitle, entry.zone, entry.difficulty, entry.raidInstance);
+    detailTitle.appendChild(document.createTextNode(` — ${formatWhen(entry.endedAt - entry.durationSec * 1000)}, ${formatDuration(entry.durationSec)}`));
+    const full = await window.eqTracker.getDamageHistoryFight(entry.id);
+    openRenders.set(detailBars, [full]);
+    await renderMetricBars(detailBars, [full]);
+  }
+
+  // Newer, once cursored past the last completed fight in this visit: back to the live fight
+  // itself. If it has since ended (idle-timed-out while the user was looking backward), falls back
+  // to the list cleanly instead of trying to keep showing something that no longer exists.
+  async function returnToLiveVisitFight() {
+    liveVisitCursor = null;
+    updateVisitNavButtons();
+    const fight = await window.eqTracker.getLiveFight();
+    if (fight) {
+      await renderLiveDetail(fight);
+    } else {
+      liveFightOpen = false;
+      setDetailToolbarLive(false);
+      showList();
+      loadHistory();
+    }
+  }
+
+  // Fired on every damage:liveFightTick ping (see main.js - one per credited hit, roughly). Always
+  // refreshes the list-screen "Live now" row; additionally redraws the open detail chart when
+  // that's what's on screen. When the fight has just ended between two ticks (the idle timeout
+  // fired), it is now an ordinary history entry - fall back to the list and reload rather than
+  // trying to keep rendering a "live" view of something that no longer exists.
+  //
+  // "This menu should be open always without a click into the fight when it's live" (owner, 14
+  // Sep follow-up) - the list screen auto-opens the live view itself the moment one exists,
+  // rather than waiting for the "Live now" row to be clicked. Scoped to the LIST screen only
+  // (never while a specific historical visit is already open) - a live fight starting should not
+  // yank you out of something you're actively reviewing.
+  //
+  // Second guard, added the same day: "live text appears when in combat log scan" - the list
+  // screen check above wasn't enough, because browsing a SCAN's results (Source filter set to
+  // that scan) still counts as "the list screen". A real live fight elsewhere would auto-open
+  // itself over whatever scan you were actively looking through. Only auto-open while the source
+  // filter is unset or explicitly the live session - a manual click on the Live row/Current
+  // zone/Back to live still opens it regardless, this only stops the UNASKED-FOR interruption.
+  async function onLiveFightTick() {
+    if (liveRenderInFlight) return;
+    liveRenderInFlight = true;
+    try {
+      const fight = await window.eqTracker.getLiveFight();
+      updateLiveRow(fight);
+      const browsingOtherSource = sourceFilter.value && sourceFilter.value !== LIVE_SOURCE;
+      // Reported live 15 Sep: with Source left on "All sources" (a deliberate pick, not the
+      // default any more - see populateSourceFilter's own comment) and the Zone filter narrowed to
+      // one specific zone for a historical review (old scans of it, say), a live fight starting in
+      // a DIFFERENT zone still auto-opened right over that review - "All sources" was only ever
+      // meant to widen which fights show in the LIST, never to invite getting yanked into whatever
+      // starts fighting live, anywhere. browsingOtherSource alone doesn't catch this: it is false
+      // for "All sources" on purpose (that value legitimately covers the live session too). A zone
+      // filter that does not match where the live fight actually IS is the missing signal - if it
+      // matches (or nothing is filtered), the auto-open is exactly the "your zone just lit up"
+      // notice this feature exists for, and still fires.
+      const zoneMismatch = zoneFilter.value && zoneFilter.value !== (fight && fight.zone);
+      // liveVisitCursor !== null means Older has stepped back to one of this visit's earlier,
+      // already-completed fights (see openLiveFight's own comment) - that fight is finished and
+      // its numbers do not move, so a tick must leave it alone rather than redrawing it (or worse,
+      // yanking to the list) just because the CURRENT live fight happened to end or change while
+      // the user isn't even looking at it right now.
+      if (liveFightOpen && liveVisitCursor === null) {
+        if (!fight) {
+          // The toolbar is hidden either way (showList below) - just leaving it in a clean state for the next real open.
+          liveFightOpen = false;
+          setDetailToolbarLive(false);
+          showList();
+          loadHistory();
+        } else {
+          await renderLiveDetail(fight);
+        }
+      } else if (!liveFightOpen && fight && listScreen.style.display !== 'none' && !browsingOtherSource && !zoneMismatch) {
+        openLiveFight(fight);
+      }
+    } finally {
+      liveRenderInFlight = false;
+    }
+  }
+
+  // "I need some way to be able to live read the current combat from this combat tab... a fast
+  // way to check recent past events of the zone i'm in" (owner, 14 Sep). Re-fetches history for
+  // freshness (this is meant to answer "what just happened here"), then jumps straight past the
+  // list to whatever's most relevant right now: the fight in progress if there is one, otherwise
+  // the current zone's most recent completed visit - skipping "find it in the list" entirely.
+  // Falls back to just showing the (freshly reloaded) list when neither exists.
+  async function jumpToCurrentZone() {
+    setJumpStatus('', false);
+    // "Current zone and back to live do the same thing basically" (owner, 15 Sep) - true, once
+    // "back to live"'s own Source reset is folded in here: this always overwrites the zone filter
+    // with wherever you actually are regardless of what it started as, so the only thing a
+    // separate "back to live" button ever did differently was clear the Source filter first. Doing
+    // that here instead removes the redundant button - "what's happening in my zone right now"
+    // cannot mean a scanned file's fixed-in-time contents either way.
+    sourceFilter.value = '';
+    await loadHistory();
+    const live = await window.eqTracker.getLiveFight();
+    if (live) {
+      openLiveFight(live);
+      return;
+    }
+    const zone = await window.eqTracker.getCombatCurrentZoneBase();
+    if (!zone) {
+      setJumpStatus('Your current zone is not known yet - keep playing a moment and try again.', true);
+      showList();
+      return;
+    }
+    // A zone with no fight history yet has no <option> to select - same silent-no-op trap
+    // applyLiveZoneDefault's own comment documents (reported live, Surefall Glade), so this needs
+    // the same populateZoneFilter-before-assignment fix.
+    liveZoneForOptions = zone;
+    populateZoneFilter(lastHistory);
+    zoneFilter.value = zone; // picked up by populateZoneFilter inside render(), if it's a real option
+    // Keep applyLiveZoneDefault's own tracking in sync with this manual jump too, or the next real
+    // zone change would find zoneFilter.value no longer matching a stale lastAppliedLiveZone and
+    // (wrongly) treat that as a deliberate override, breaking the auto-follow this click just
+    // resumed.
+    hasSetInitialZone = true;
+    lastAppliedLiveZone = zone;
+    render();
+    const visits = siblingVisits(zone);
+    if (visits.length) {
+      openVisit(visits[visits.length - 1]); // most recent
+    } else {
+      // Reported live 14 Sep: this used to fail completely silently - nothing on screen said
+      // whether the zone genuinely has no history yet, or whether real fights exist but the
+      // min-damage floor (or an active Source filter) is hiding all of them.
+      const floor = minDamage();
+      setJumpStatus(
+        floor > 0
+          ? `No activity found in ${zone} above your ${formatDamage(floor)} min-damage floor - try lowering it.`
+          : `No activity found in ${zone} yet.`,
+        true
+      );
+      showList();
+    }
+  }
+
+  // "After scanning a log and leaving back to live, you need a way to return to last scan as
+  // well" (owner, 14 Sep). Re-applies the remembered scan's own Source filter (and clears the
+  // zone/damage floor back to "everything that scan found") instead of making you re-scan the
+  // same file just to look at it again.
+  function returnToScan() {
+    if (!lastScanLabel) return;
+    liveFightOpen = false;
+    showList();
+    zoneFilter.value = '';
+    minDamageInput.value = String(DEFAULT_MIN_DAMAGE);
+    sourceFilter.value = lastScanLabel;
+    render();
+  }
+
+  // Flat history (arrives newest-first from the backend) -> visits, EARLIEST first (owner, 13
+  // Sep) - both the visit list itself and each visit's own fights inside it, so a visit's fight
+  // list reads "pull 1, pull 2, ..." top to bottom the way it actually happened. A fight with no
+  // visitId (no zone was ever told to the engine) is its own singleton visit rather than being
+  // lumped together under one giant "unknown" bucket.
+  function buildVisits(history) {
+    const byKey = new Map();
+    const order = [];
+    for (const fight of history) {
+      const key = fight.visitId != null ? `${fight.zone}:${fight.visitId}` : `single:${fight.id}`;
+      if (!byKey.has(key)) {
+        // difficulty (and whether it's the raid-lockout instance or a plain group run of the same
+        // zone) is now GUARANTEED constant for the life of one visit - damageEngine.enterZone
+        // opens a new visit the moment either one changes, not just the zone name (owner, 14 Sep,
+        // after a real reported case: a trailing untagged fight right after being removed from a
+        // raid instance was silently erasing the D4/Group tag off the 15 real tagged fights before
+        // it, because they used to share one visit keyed on zone name alone). So it is safe to
+        // take it from whichever fight happens to create the visit here.
+        const visit = {
+          zone: fight.zone,
+          difficulty: fight.difficulty || null,
+          raidInstance: typeof fight.raidInstance === 'boolean' ? fight.raidInstance : null,
+          fights: [],
+        };
+        byKey.set(key, visit);
+        order.push(visit);
+      }
+      byKey.get(key).fights.push(fight); // still newest-first here; reversed below
+    }
+    for (const visit of order) {
+      visit.fights.reverse(); // earliest first
+      const oldest = visit.fights[0];
+      visit.startedAt = oldest.endedAt - oldest.durationSec * 1000;
+      visit.endedAt = visit.fights[visit.fights.length - 1].endedAt;
+      visit.totalDamage = visit.fights.reduce((s, f) => s + f.totalDamage, 0);
+    }
+    return order.sort((a, b) => a.startedAt - b.startedAt);
+  }
+
+  // Shared by appendZoneLabel (the detail title) and zoneDifficultyBadge (the visit list's own
+  // column) - the tier number a difficulty string like "d4" maps to, clamped to the 5 colours
+  // main-window.css actually defines.
+  function zoneDiffTier(difficulty) {
+    return Math.min(4, Math.max(0, parseInt(String(difficulty).replace(/[^0-9]/g, ''), 10) || 0));
+  }
+
+  // "D0" - "D4" shown as a coloured prefix before the zone name, only when it's a private
+  // instance - a plain open-world zone has no difficulty at all (zoneDifficulty.js returns null)
+  // and shows unchanged. Owner, 14 Sep: "mark them as D4 - [name]", "each difficulty prefix
+  // should be coloured as well, a different colour per difficulty, but the zone name should stay
+  // gold... d4 should have the most prominent colouring, d0 should be almost white but not white."
+  // The prefix's colour comes from CSS (`zone-diff-d0`..`zone-diff-d4`, see main-window.css) so the
+  // zone name itself keeps the ordinary `.combat-visit-zone`/title gold colour untouched.
+  //
+  // "There needs to be an identifier for (group) /raid instance" (owner, 14 Sep follow-up) - a
+  // difficulty tier alone doesn't say whether THIS visit was the raid-lockout instance or an
+  // ordinary group run of the same zone (confirmed against the owner's real log: the same zone
+  // shows up both ways, e.g. "The Plane of Fear 4 (Refined)" vs "The Plane of Fear - Group 4
+  // (Refined)" - see zoneDifficulty.isRaidInstance). Appended AFTER the zone name, not between the
+  // difficulty code and its dash, so it can't reopen the "hyphens don't line up" bug just fixed
+  // above - nothing between the fixed-width code box and the dash ever changes width now.
+  //
+  // Used for the detail screen's own single-line title only (owner, 14 Sep, third round: "it
+  // should be a prefix, like D1/d4, with it's own column" - a request specifically about the
+  // Past Fights LIST, which now uses the separate zoneDifficultyBadge/appendZoneNameBadge pair
+  // below instead so the code can live in its own grid column there).
+  function appendZoneLabel(container, zone, difficulty, raidInstance) {
+    container.textContent = '';
+    if (difficulty) {
+      const tag = document.createElement('span');
+      tag.className = `zone-diff-tag zone-diff-d${zoneDiffTier(difficulty)}`;
+      // The difficulty code sits in its own fixed-width box (owner, 14 Sep: "make sure all the
+      // hyphens line up equally, they should be at a static width and not dependent on the width
+      // of the difficulty prefix") - the dash then always starts right after that box, at the
+      // same x regardless of whether the code is "D0" or a wider one, instead of drifting with
+      // however wide the code itself happens to render.
+      const code = document.createElement('span');
+      code.className = 'zone-diff-code';
+      code.textContent = String(difficulty).toUpperCase();
+      tag.appendChild(code);
+      tag.appendChild(document.createTextNode(' - '));
+      container.appendChild(tag);
+    }
+    container.appendChild(document.createTextNode(zone || UNKNOWN_ZONE));
+    if (typeof raidInstance === 'boolean') {
+      const badge = document.createElement('span');
+      badge.className = `zone-instance-badge zone-instance-${raidInstance ? 'raid' : 'group'}`;
+      badge.textContent = ` (${raidInstance ? 'Raid' : 'Group'})`;
+      container.appendChild(badge);
+    }
+  }
+
+  // The Past Fights list's own difficulty column (owner, 14 Sep, third round on this same
+  // feature): "it should be a prefix, like D1/d4, with it's own column" - was inline text ahead
+  // of the zone name; a dedicated grid column keeps every row's zone name starting at the same x
+  // regardless of whether a row has a difficulty at all, the same reasoning as the fixed time
+  // column beside it. Returns null (append nothing) for a non-instanced zone. No dash here - the
+  // grid's own column gap does that job, so there is nothing for the code's own width to affect.
+  function zoneDifficultyBadge(difficulty) {
+    if (!difficulty) return null;
+    const badge = document.createElement('span');
+    badge.className = `zone-diff-tag zone-diff-d${zoneDiffTier(difficulty)}`;
+    badge.textContent = String(difficulty).toUpperCase();
+    return badge;
+  }
+
+  // The Past Fights list's own raid/group column (owner, 14 Sep, follow-up to the D-code column:
+  // "raid / group tags are still the same as before and not resolved, they do not have their own
+  // column") - was still inline text tacked onto the zone name; now its own dedicated span, same
+  // pattern as zoneDifficultyBadge beside it. Returns null (append nothing) when the visit isn't
+  // an instance at all.
+  function zoneInstanceBadge(raidInstance) {
+    if (typeof raidInstance !== 'boolean') return null;
+    const badge = document.createElement('span');
+    badge.className = `zone-instance-badge zone-instance-${raidInstance ? 'raid' : 'group'}`;
+    badge.textContent = raidInstance ? 'Raid' : 'Group';
+    return badge;
+  }
+
+  function renderList(visits) {
+    visitList.innerHTML = '';
+    let lastDateKey = null;
+    for (const visit of visits) {
+      const key = dateKey(visit.startedAt);
+      if (key !== lastDateKey) {
+        lastDateKey = key;
+        const header = document.createElement('div');
+        header.className = 'combat-date-header';
+        header.textContent = formatDateHeader(visit.startedAt);
+        visitList.appendChild(header);
+      }
+      const row = document.createElement('div');
+      row.className = 'combat-visit-row';
+      row.appendChild(span(formatTime(visit.startedAt), 'combat-visit-time'));
+      const diffCell = document.createElement('span');
+      diffCell.className = 'combat-visit-diff';
+      const diffBadge = zoneDifficultyBadge(visit.difficulty);
+      if (diffBadge) diffCell.appendChild(diffBadge);
+      row.appendChild(diffCell);
+      const zoneLink = span(visit.zone || UNKNOWN_ZONE, 'combat-visit-zone');
+      zoneLink.addEventListener('click', () => openVisit(visit));
+      row.appendChild(zoneLink);
+      const instanceCell = document.createElement('span');
+      instanceCell.className = 'combat-visit-instance';
+      const instanceBadge = zoneInstanceBadge(visit.raidInstance);
+      if (instanceBadge) instanceCell.appendChild(instanceBadge);
+      row.appendChild(instanceCell);
+      // Two separate columns, not one combined string (owner, 14 Sep, screenshot-confirmed: "these
+      // 3 pieces of text need their own columns to proper align text") - a single right-aligned
+      // "N fights · 3.64m" string kept its own right edge fixed, but the fight count's own digit
+      // width (2 vs 44) shifted the damage number along with it, so damage totals never lined up
+      // under each other the way the D-code/raid-group columns already do.
+      const n = visit.fights.length;
+      row.appendChild(span(`${n} fight${n === 1 ? '' : 's'}`, 'combat-visit-fights'));
+      row.appendChild(span(formatDamage(visit.totalDamage), 'combat-visit-damage'));
+      visitList.appendChild(row);
+    }
+  }
+
+  function populateZoneFilter(history) {
+    const zoneSet = new Set(history.map((f) => f.zone || UNKNOWN_ZONE));
+    // Owner, 15 Sep, reported live: the current-zone default silently did nothing in Surefall
+    // Glade specifically because nothing had ever been fought there yet - no history entry means
+    // no <option>, and assigning zoneFilter.value to a zone with no matching option is a silent
+    // no-op (the select just falls back to "", i.e. "All zones"). See liveZoneForOptions's own
+    // comment.
+    if (liveZoneForOptions) zoneSet.add(liveZoneForOptions);
+    const zones = [...zoneSet].sort();
+    const previous = zoneFilter.value;
+    zoneFilter.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = `All zones (${history.length})`;
+    zoneFilter.appendChild(allOpt);
+    for (const zone of zones) {
+      const opt = document.createElement('option');
+      opt.value = zone;
+      opt.textContent = zone;
+      zoneFilter.appendChild(opt);
+    }
+    if (zones.includes(previous)) zoneFilter.value = previous;
+  }
+
+  // "You need a way to return to last scan as well" (owner, 14 Sep) - every fight already carries
+  // a `source` (main.js's mergedDamageHistory: "This session" for the live engine, the scan's own
+  // label for an imported log), so filtering on it is what actually lets you isolate one scan's
+  // results again instead of them being permanently mixed into the same list as everything else.
+  // Same pattern as populateZoneFilter right above it.
+  function populateSourceFilter(history) {
+    const sources = new Set(history.map((f) => f.source || LIVE_SOURCE));
+    // A scan that found zero fights leaves no history entry carrying its label, so without this
+    // its option never exists to select - reported live 15 Sep: after "Found 0 fights in
+    // eqlog_...", the Source dropdown silently stayed on "All sources" and the heading stayed
+    // "Live" while "Return to last scan" also showed, an outright contradiction (Live AND
+    // something to return to). lastScanLabel is the one label runScan needs to land on regardless
+    // of whether this scan turned up anything - see its own comment for why it is set before this
+    // runs, not after.
+    if (lastScanLabel) sources.add(lastScanLabel);
+    // LIVE_SOURCE must always be selectable, even with zero live fights so far this session -
+    // otherwise defaulting the Source filter to it on page load (see initCombatPage) silently fails
+    // (a value with no matching <option> just falls back to "All sources") the moment old restored
+    // scans exist and no live fight has happened yet, which is exactly the startup case that matters.
+    sources.add(LIVE_SOURCE);
+    // Live session first (the common case), then scans oldest-imported first.
+    const sorted = [...sources].sort((a, b) => (a === LIVE_SOURCE ? -1 : b === LIVE_SOURCE ? 1 : 0));
+    const previous = sourceFilter.value;
+    sourceFilter.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = `All sources (${history.length})`;
+    sourceFilter.appendChild(allOpt);
+    for (const source of sorted) {
+      const opt = document.createElement('option');
+      opt.value = source;
+      opt.textContent = source;
+      sourceFilter.appendChild(opt);
+    }
+    if (sources.has(previous)) {
+      sourceFilter.value = previous;
+    } else if (!hasSetInitialSource) {
+      // Reported live 15 Sep: scanned logs correctly survive a restart (session-restore's own
+      // importedScans part), but this filter's native default is "" (All sources) - which merges
+      // them straight into the SAME list the live session renders under, still headed "Fights -
+      // Live". After a restart with old scans on file, that meant opening the tab landed on
+      // weeks-old scanned fights presented as today's current session, with no visible sign they
+      // were a scan at all. Pinned to the live session specifically on this first population only -
+      // `previous` can legitimately BE "" later if the user deliberately picks "All sources" from
+      // the dropdown themselves, and that real choice must not keep getting silently overridden on
+      // every subsequent re-render (a new fight landing, a zone change, ...). Old scans stay fully
+      // reachable either way - the Source dropdown itself, or "Return to last scan".
+      sourceFilter.value = LIVE_SOURCE;
+    }
+    hasSetInitialSource = true;
+  }
+
+  // "A filter to exclude logs of fights under a certain total damage value... defaulted to
+  // anything less than 50k" (owner, 14 Sep) - a one-hit trash mob or stray retaliation swing
+  // showing up as its own "1 fight" visit was pure noise. Filters individual FIGHTS (not whole
+  // visits) before they're grouped - a visit that had one real pull and one throwaway hit keeps
+  // the real pull and loses only the throwaway; a visit made up ENTIRELY of small fights simply
+  // stops appearing, same as the zone filter already does for an empty zone.
+  function minDamage() {
+    const n = Number(minDamageInput.value);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  }
+
+  // Reported live 15 Sep: with "Back to live" gone (see jumpToCurrentZone's own comment on why -
+  // it was doing the same thing "Current zone" already does once the Source reset moved there),
+  // this only has one button left to manage - hide "Return to last scan" once you are already
+  // viewing that exact scan, since offering to go somewhere you already are is exactly the
+  // confusing no-op the owner reported.
+  function updateScanButtons() {
+    if (!returnToScanBtn) return;
+    const alreadyOnLastScan = !!lastScanLabel && sourceFilter.value === lastScanLabel;
+    returnToScanBtn.style.display = (lastScanLabel && !alreadyOnLastScan) ? '' : 'none';
+  }
+
+  function render() {
+    populateZoneFilter(lastHistory);
+    populateSourceFilter(lastHistory);
+    updateListHeading();
+    updateScanButtons();
+    const filter = zoneFilter.value;
+    const sourceValue = sourceFilter.value;
+    const floor = minDamage();
+    const filtered = lastHistory.filter((f) => (
+      (!filter || (f.zone || UNKNOWN_ZONE) === filter)
+      && (!sourceValue || (f.source || LIVE_SOURCE) === sourceValue)
+      && f.totalDamage >= floor
+    ));
+    // Two different reasons the list can be empty, and they read very differently: nothing has
+    // happened yet at all, versus real fights exist but the zone/min-damage filters hide every one
+    // of them. Reported live 14 Sep - after scanning a log that found 1778 fights, the list still
+    // showed nothing because the zone filter was left on a specific zone from before the scan, and
+    // the blank space gave no hint why. Previously this only ever checked the UNFILTERED count, so
+    // a filtered-to-zero result looked identical to "the app hasn't seen anything" instead of
+    // telling you your filters are the reason.
+    if (!lastHistory.length) {
+      historyEmpty.textContent = 'No fights yet this session - still watching your log.';
+      historyEmpty.style.display = '';
+    } else if (!filtered.length) {
+      historyEmpty.textContent = 'No fights match the current zone/source/min-damage filters - try widening them.';
+      historyEmpty.style.display = '';
+    } else {
+      historyEmpty.style.display = 'none';
+    }
+    renderList(buildVisits(filtered));
+  }
+
+  async function loadHistory() {
+    lastHistory = await window.eqTracker.getDamageHistory();
+    render();
+  }
+
+  // Snaps the list's zone filter to wherever the player actually is, but only while the list is
+  // showing the live session at all (browsing a scan's results is exempt - see runScan, which
+  // already clears the zone filter for exactly that case). No-op with nothing to do yet (zone not
+  // known this early in a fresh launch) or while a manual pick has taken the filter somewhere this
+  // function didn't put it - see the field comments on hasSetInitialZone/lastAppliedLiveZone above.
+  async function applyLiveZoneDefault() {
+    const zone = await window.eqTracker.getCombatCurrentZoneBase();
+    // Refreshed unconditionally, even while browsing a scan or before the rest of this function
+    // decides whether to act - see its own comment for why populateZoneFilter needs this kept
+    // current regardless.
+    liveZoneForOptions = zone || null;
+    const browsingScan = sourceFilter.value && sourceFilter.value !== LIVE_SOURCE;
+    if (browsingScan || !zone) return;
+    if (hasSetInitialZone && zoneFilter.value !== lastAppliedLiveZone) return;
+    if (zoneFilter.value === zone && lastAppliedLiveZone === zone) { hasSetInitialZone = true; return; }
+    hasSetInitialZone = true;
+    lastAppliedLiveZone = zone;
+    // Must run BEFORE the value assignment below, not just rely on the render() at the end - a
+    // zone with no fight history yet has no <option> until this runs, and setting .value to a
+    // nonexistent option is a silent no-op that leaves the filter on "" (reported live, Surefall
+    // Glade).
+    populateZoneFilter(lastHistory);
+    zoneFilter.value = zone;
+    render();
+  }
+
+  function setScanStatus(text, isError) {
+    scanStatus.textContent = text;
+    scanStatus.style.display = text ? '' : 'none';
+    scanStatus.classList.toggle('scan-error', !!isError);
+  }
+
+  // "Current zone" (and Back to live, which reuses it) could fail completely silently - reported
+  // as part of the same 14 Sep teardown: if today's activity in your current zone never crossed
+  // the min-damage floor, the button just... did nothing, with no hint that a floor was the
+  // reason rather than the zone genuinely having no history. Same shape as setScanStatus above.
+  function setJumpStatus(text, isError) {
+    if (!jumpStatus) return;
+    jumpStatus.textContent = text;
+    jumpStatus.style.display = text ? '' : 'none';
+    jumpStatus.classList.toggle('scan-error', !!isError);
+  }
+
+  async function runScan(filePath) {
+    if (!filePath) return;
+    setScanStatus(`Scanning ${filePath}…`, false);
+    scanCurrentBtn.disabled = true;
+    scanFileBtn.disabled = true;
+    try {
+      const result = await window.eqTracker.scanDamageLogFile(filePath);
+      if (!result.ok) {
+        setScanStatus(`Could not scan that log: ${result.reason}`, true);
+      } else {
+        setScanStatus(`Found ${result.fights} fight${result.fights === 1 ? '' : 's'} in ${result.label}.`, false);
+        // Reported live 14 Sep: "there is no way to browse the fights after you have scanned a
+        // log" - a scan can find fights from any zone at any date, but the zone filter was left
+        // wherever it happened to be beforehand (often the CURRENT zone, from a jump-to-current-
+        // zone click) and silently hid everything the scan just found. Clearing the zone filter
+        // and returning to the list screen is what actually makes "scanning opens up the menu to
+        // get back to the fight summary automatically" true - a scan's whole point is browsing
+        // fights, so land somewhere that shows them instead of wherever the tab happened to be.
+        liveFightOpen = false;
+        showList();
+        zoneFilter.value = '';
+        // Set BEFORE loadHistory(), not after - populateSourceFilter needs lastScanLabel already
+        // in place to guarantee this scan's option exists even when it found zero fights (see that
+        // function's own comment). Setting it afterward left a 0-fight scan with no option to
+        // select at all, so the value assignment below silently failed and the view stayed on
+        // "Live" while "Return to last scan" also showed - reported live 15 Sep.
+        lastScanLabel = result.label;
+        await loadHistory(); // populates the Source dropdown with this scan's own label
+        // Land on THIS scan's own results specifically, not mixed in with the live session's or
+        // an earlier scan's - the Source filter (added the same day) is what actually makes
+        // "Return to last scan" possible later, and what stops a real live fight from silently
+        // yanking you away mid-review (see onLiveFightTick's browsingOtherSource guard).
+        sourceFilter.value = result.label;
+        render(); // also runs updateScanButtons(), which shows Back to live now that source != live
+      }
+    } finally {
+      scanCurrentBtn.disabled = false;
+      scanFileBtn.disabled = false;
+    }
+  }
+
+  if (scanCurrentBtn) {
+    scanCurrentBtn.addEventListener('click', async () => {
+      const current = await window.eqTracker.getDamageCurrentLogPath();
+      if (!current) { setScanStatus('No live log is being watched right now.', true); return; }
+      runScan(current);
+    });
+  }
+  if (scanFileBtn) {
+    scanFileBtn.addEventListener('click', async () => {
+      const groups = await window.eqTracker.listLockoutLogFiles();
+      const picked = await pickLogFiles({
+        title: 'Choose a log to scan for fights',
+        hint: 'Any log file - your live log, a per-day Split file, or a weekly Archive - read once from the start for fights and zone changes.',
+        multi: false,
+        groups,
+      });
+      if (picked && picked[0]) runScan(picked[0]);
+    });
+  }
+  if (backBtn) backBtn.addEventListener('click', () => { liveFightOpen = false; showList(); });
+  if (zoneFilter) zoneFilter.addEventListener('change', render);
+  if (sourceFilter) {
+    // Switching the Source dropdown back to the live session (away from a scan) should re-scope
+    // to current zone the same way opening the tab fresh does - applyLiveZoneDefault no-ops while
+    // still browsing a scan, so this is harmless when the new value IS a scan.
+    sourceFilter.addEventListener('change', () => { applyLiveZoneDefault(); render(); });
+  }
+  if (minDamageInput) {
+    minDamageInput.value = String(DEFAULT_MIN_DAMAGE);
+    minDamageInput.addEventListener('input', render);
+  }
+  // Owner, 14 Sep: "i need some way to... check recent past events of the zone i'm in, i need a
+  // fast way to do that" - clicking into the Combat tab (or the explicit button below) now jumps
+  // straight to the current zone's latest visit instead of always landing back on the full list.
+  const navBtnCombat = document.getElementById('combat-nav-btn');
+  if (navBtnCombat) navBtnCombat.addEventListener('click', jumpToCurrentZone);
+  if (jumpCurrentZoneBtn) jumpCurrentZoneBtn.addEventListener('click', jumpToCurrentZone);
+  if (returnToScanBtn) returnToScanBtn.addEventListener('click', returnToScan);
+  if (olderBtn) {
+    olderBtn.addEventListener('click', () => {
+      if (liveFightOpen) {
+        if (liveVisitCursor === null) {
+          if (liveVisitFights.length) renderLiveVisitFightAt(liveVisitFights.length - 1);
+        } else if (liveVisitCursor > 0) {
+          renderLiveVisitFightAt(liveVisitCursor - 1);
+        }
+        return;
+      }
+      if (currentVisitIndex > 0) openVisit(currentZoneVisits[currentVisitIndex - 1]);
+    });
+  }
+  if (newerBtn) {
+    newerBtn.addEventListener('click', () => {
+      if (liveFightOpen) {
+        if (liveVisitCursor !== null) {
+          if (liveVisitCursor < liveVisitFights.length - 1) renderLiveVisitFightAt(liveVisitCursor + 1);
+          else returnToLiveVisitFight();
+        }
+        return;
+      }
+      if (currentVisitIndex !== -1 && currentVisitIndex < currentZoneVisits.length - 1) {
+        openVisit(currentZoneVisits[currentVisitIndex + 1]);
+      }
+    });
+  }
+  if (liveRow) {
+    liveRow.addEventListener('click', async () => {
+      const fight = await window.eqTracker.getLiveFight();
+      if (fight) openLiveFight(fight);
+    });
+  }
+  // Pushed by main.js once per credited hit (roughly) - keeps the "Live now" row, and the open
+  // live chart if that's what's on screen, moving without the Combat tab having to poll for it.
+  window.eqTracker.onLiveFightTick(onLiveFightTick);
+
+  // Damage / Healing / Both - top level, refreshes every chart currently on screen, not just
+  // whatever gets opened next (owner, 14 Sep).
+  const viewButtons = [...document.querySelectorAll('.combat-view-btn')];
+  viewButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.view;
+      if (mode === viewMode) return;
+      viewMode = mode;
+      viewButtons.forEach((b) => b.classList.toggle('active', b === btn));
+      for (const [container, details] of openRenders) {
+        if (container.dataset) container.dataset.renderedMode = viewMode;
+        renderMetricBars(container, details);
+      }
+    });
+  });
+
+  updateVisitNavButtons(); // no visit open yet - both start disabled
+  onLiveFightTick(); // a fight already under way when the tab first opens gets no NEW tick until its next hit
+  // Keeps the live zone default current as the player actually zones, not just once at tab-open -
+  // see hasSetInitialZone's own comment for why a manual override still wins over this.
+  window.eqTracker.onZoneChanged(() => applyLiveZoneDefault());
+  loadHistory().then(() => applyLiveZoneDefault());
 }

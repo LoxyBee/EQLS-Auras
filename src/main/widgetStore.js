@@ -341,6 +341,13 @@ function defaultSelfBuffsWidget(overrides = {}) {
     // 22 August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
     // "The Plane of Fear" and "The Plane of Fear - Group".
     visibleInZones: [],
+    // Two content-type gates alongside the specific list above - "Raid"/"Group" toggles next to
+    // "Only in:". Both off (the default) means this doesn't gate on content type at all. Either
+    // one matches independently of the zone list and of each other - see
+    // shared/zoneVisibility.js's isVisibleInZone for the actual rule and what "Raid" vs "Group"
+    // means off the zone string itself.
+    visibleInRaid: false,
+    visibleInGroup: false,
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -643,6 +650,13 @@ function defaultCustomWidget(name) {
     // 22 August: "make them separate". "Befallen" and "Befallen 1 (Awakened)" are two entries, as are
     // "The Plane of Fear" and "The Plane of Fear - Group".
     visibleInZones: [],
+    // Two content-type gates alongside the specific list above - "Raid"/"Group" toggles next to
+    // "Only in:". Both off (the default) means this doesn't gate on content type at all. Either
+    // one matches independently of the zone list and of each other - see
+    // shared/zoneVisibility.js's isVisibleInZone for the actual rule and what "Raid" vs "Group"
+    // means off the zone string itself.
+    visibleInRaid: false,
+    visibleInGroup: false,
     // Text auras only. What the aura actually says - blank means "use the name of whatever it is
     // watching", which is the sensible default for a buff and usually wrong for a trigger, where
     // the point is to say something short and loud like DISPELLED.
@@ -905,6 +919,8 @@ const SHAREABLE_FIELDS = [
   'dynamicChatTimer',
   'scale',
   'travelIncludeSuccor',
+  'visibleInRaid',
+  'visibleInGroup',
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -1101,6 +1117,8 @@ function normalizeWidget(widget) {
     // reason in the field comment above - the polarity lives here so it cannot be got wrong by a
     // caller.
     visibleInZones: Array.isArray(widget.visibleInZones) ? widget.visibleInZones : [],
+    visibleInRaid: !!widget.visibleInRaid,
+    visibleInGroup: !!widget.visibleInGroup,
     textAuraMessage: typeof widget.textAuraMessage === 'string' ? widget.textAuraMessage : '',
     textAuraSize: typeof widget.textAuraSize === 'number' ? widget.textAuraSize : 32,
     // Clamped to the engine's own retention ceiling. A share code asking for five minutes would
@@ -1206,42 +1224,11 @@ const CHARM_SPELL_NAMES = [
   'Charm Animals', 'Dominate Undead', "Solon's Bewitching Bravura", "Solon's Song of the Sirens",
 ];
 
-// Backlog #36 - the "you can't act right now" text aura. { label, land, end } triples: `land` is
-// the exact line the game writes when that control lands ON THE PLAYER, `end` a substring of the
-// line when it lifts. Both drawn from the roster's own landingText/endedText for the charm / fear /
-// root / snare / mez families plus what actually appears in the owner's logs ("You are stunned!" /
-// "You are no longer stunned." 352/387 times, "You are ensnared." / "You have been entranced.").
-// The game's universal "You are no longer X." fade wording makes `end` reliable; the per-timer
-// `secs` is only a safety net for a missed fade line. Not exhaustive - mob-specific positional
-// stuns and unusual roots won't all be here - but the trigger list is editable like any aura's.
-const LOSS_OF_CONTROL = [
-  // The generic catch-all. The game writes "You lose control of yourself!" for a charm landing on
-  // the player when no spell-specific land line is emitted - confirmed in the owner's log (8x on
-  // 30 Aug, always paired with "You have control of yourself again." 6-35s later). Without this the
-  // per-spell CHARMED entries below missed every charm that only produced the generic line. Listed
-  // first so it is the fallback the others refine. 45s safety net matches the CHARMED entries (one
-  // observed instance ran 35s); the end substring is what actually clears it.
-  { label: 'CONTROLLED', land: 'You lose control of yourself!', end: 'You have control of yourself again.', secs: 45 },
-  { label: 'STUNNED', land: 'You are stunned!', end: 'You are no longer stunned.', secs: 10 },
-  { label: 'STUNNED', land: 'You are stunned by a gust of air.', end: 'You are no longer stunned.', secs: 10 },
-  { label: 'STUNNED', land: 'You are struck by a sudden force.', end: 'You are no longer stunned.', secs: 10 },
-  { label: 'MESMERIZED', land: 'You have been entranced.', end: 'You are no longer entranced.', secs: 45 },
-  { label: 'MESMERIZED', land: 'You are mesmerized.', end: 'You are no longer mesmerized.', secs: 45 },
-  { label: 'CHARMED', land: 'You have been charmed.', end: 'You are no longer charmed.', secs: 45 },
-  { label: 'CHARMED', land: 'You are captivated by the bewitching tune.', end: 'You are no longer captivated.', secs: 45 },
-  { label: 'CHARMED', land: 'You are captivated by the haunting tune.', end: 'You are no longer captivated.', secs: 45 },
-  { label: 'AFRAID', land: 'Your mind fills with fear.', end: 'You are no longer afraid.', secs: 30 },
-  { label: 'AFRAID', land: 'Your mind snaps in terror.', end: 'You are no longer terrified.', secs: 30 },
-  // Screaming Terror (and other fears that write no "mind fills with fear" line) - confirmed in the
-  // owner's log: "You begin to scream." on the land, "You stop screaming." when it breaks. A third-
-  // person fear reads "<Name> begins to scream." the same way.
-  { label: 'AFRAID', land: 'You begin to scream.', end: 'You stop screaming.', secs: 30 },
-  { label: 'ROOTED', land: 'Your feet adhere to the ground.', end: 'Your feet come free.', secs: 40 },
-  { label: 'ROOTED', land: 'Your feet become entwined.', end: 'The roots fall from your feet.', secs: 40 },
-  { label: 'SNARED', land: 'You are ensnared.', end: 'You are no longer ensnared.', secs: 40 },
-  { label: 'SNARED', land: 'Your legs feel weak.', end: 'Strength returns to your legs.', secs: 40 },
-  { label: 'SNARED', land: 'You slow down as your feet are covered in tangling weeds.', end: 'The tangling weeds wither away.', secs: 40 },
-];
+// Backlog #36 - the "you can't act right now" text aura. { label, land, end } triples - moved to
+// src/shared/lossOfControl.js 16 Sep so damageEngine can recognize the same lines (to pause its
+// fight-idle timer under fear/stun/mez/charm) without requiring this whole file. See that module's
+// own header comment for the field meanings and provenance.
+const { LOSS_OF_CONTROL } = require('../shared/lossOfControl');
 
 const TEXT_AURA_PRESETS = {
   // Note 17's red RESIST flash. Originally 1.4 seconds, her own number, raised to 5s at a later
@@ -1842,6 +1829,22 @@ class WidgetStore {
     return widget;
   }
 
+  // The "Zone timer" aura (owner's weekly notes, 13 Sep): one line, "<zone name> <elapsed>",
+  // counting up from the moment the app last saw a zone change - answers "how long have I been
+  // here" at a glance. A plain custom aura, buffSource 'zoneTimer'. Like First aggro, no settings
+  // of its own: it just shows the current zone and how long she's been in it.
+  createZoneTimerAura(name, { activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name || 'Zone timer');
+    widget.buffSource = 'zoneTimer';
+    widget.sortOrder = 'default';
+    widget.listWidth = 220;
+    widget.landingGlowEnabled = false;
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
   // Note 19. The damage meter.
   //
   // A plain custom aura with buffSource 'damage', not a new kind. That is the whole reason this
@@ -2140,10 +2143,10 @@ class WidgetStore {
   // which is what "default" should mean for something built from a fixed recipe, not a frozen copy
   // of a moment in the past.
   //
-  // id/name/position/width/height/activeProfileIds/visibleInZones/premadeOrigin itself are
-  // explicitly carried over rather than reset - this restores the aura's BEHAVIOUR back to the
-  // premade's defaults, not its place on screen, its profile membership, or its zone limits, none
-  // of which the premade had an opinion on in the first place.
+  // id/name/position/width/height/activeProfileIds/visibleInZones/visibleInRaid/visibleInGroup/
+  // premadeOrigin itself are explicitly carried over rather than reset - this restores the aura's
+  // BEHAVIOUR back to the premade's defaults, not its place on screen, its profile membership, or
+  // its zone/content-type limits, none of which the premade had an opinion on in the first place.
   resetToDefault(id) {
     const widget = this.getById(id);
     if (!widget || !widget.premadeOrigin) return false;
@@ -2202,6 +2205,8 @@ class WidgetStore {
       height: widget.height,
       activeProfileIds: widget.activeProfileIds,
       visibleInZones: widget.visibleInZones,
+      visibleInRaid: widget.visibleInRaid,
+      visibleInGroup: widget.visibleInGroup,
       premadeOrigin: widget.premadeOrigin,
     };
     Object.assign(widget, fresh, preserved);

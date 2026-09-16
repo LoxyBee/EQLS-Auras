@@ -9,12 +9,23 @@
  * `sel.innerHTML = ''; ...append...; sel.value = x` populate blocks), on the next frame so the
  * trailing `.value =` has already run.
  *
+ * Setting `sel.value` directly with the OPTION LIST UNCHANGED (a settings control being synced
+ * from fresh backend state, e.g. "New day starts at") fires neither a mutation nor a 'change'
+ * event, so nothing here would otherwise notice - the closed display kept showing whatever it
+ * last rendered while the real value (and the popup's own current-item highlight) had already
+ * moved on. Confirmed live: picking 5 AM, then having something re-sync `.value` afterwards, left
+ * the display frozen on "Midnight" while reopening the popup correctly showed 5 AM as current.
+ * `refresh(sel)` is the fix - call it after any such direct `.value =` so the display catches up
+ * without re-firing 'change' (which would re-trigger whatever handler made the value change and
+ * loop).
+ *
  * The filter input only appears when there are more than FILTER_THRESHOLD options - a filter over
  * five choices is just an extra keystroke.
  */
 (function () {
   'use strict';
   const FILTER_THRESHOLD = 7;
+  const refreshFns = new WeakMap();
 
   function optionsOf(sel) {
     return Array.from(sel.options).map((o) => ({
@@ -65,9 +76,16 @@
     }
     function refreshDisplay() {
       const label = currentLabel();
-      textEl.textContent = label || (sel.options[0] ? sel.options[0].textContent : '');
+      const text = label || (sel.options[0] ? sel.options[0].textContent : '');
+      textEl.textContent = text;
       textEl.classList.toggle('sd-placeholder', !label);
       display.disabled = sel.disabled;
+      // A control with a real max-width (see the Combat tab's Source filter, a scanned log's own
+      // filename+timestamp can run long) ellipsis-truncates .sd-text - the full value still needs
+      // to be reachable somehow, and a native title hover is the same convention this app already
+      // uses everywhere else for "more detail on hover, not clutter on the page" (owner's standing
+      // rule). Harmless on a control with no max-width - nothing ever truncates there.
+      display.title = text;
     }
 
     function renderList() {
@@ -177,6 +195,11 @@
     // focus/blur of the wrapper and after any change event we didn't originate.
     sel.addEventListener('change', refreshDisplay);
 
+    refreshFns.set(sel, () => {
+      refreshDisplay();
+      if (!popup.hidden) renderList();
+    });
+
     rebuild();
   }
 
@@ -184,5 +207,12 @@
     (root || document).querySelectorAll('select').forEach(enhance);
   }
 
-  window.SearchDropdown = { enhance, enhanceAll };
+  // Call after setting `sel.value` directly (no 'change' event) so the display and the popup's
+  // current-item highlight catch up. A no-op on a <select> that isn't enhanced.
+  function refresh(sel) {
+    const fn = sel && refreshFns.get(sel);
+    if (fn) fn();
+  }
+
+  window.SearchDropdown = { enhance, enhanceAll, refresh };
 })();

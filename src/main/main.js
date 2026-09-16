@@ -64,13 +64,15 @@ const { LogService } = require('./logService');
 const { matchZoneChange, matchForgetSpell, matchMemorizeFinished } = require('./buffParser');
 const { isLoadoutLockedZone, INSTANCE_SUFFIX } = require('../shared/loadoutLockedZones');
 const baseZoneName = (z) => String(z || '').replace(INSTANCE_SUFFIX, '').trim();
+const { difficultyLabel, isRaidInstance } = require('../shared/zoneDifficulty');
 const KNOWN_ZONES = require('../shared/data/zones');
 const { BuffStore } = require('./buffStore');
 const { BuffEngine } = require('./buffEngine');
 const { CustomTimerEngine } = require('./customTimerEngine');
 const { DamageEngine } = require('./damageEngine');
+const { scanLogForFights } = require('./damageLogScan');
 const { GroupRoster, RESTORE_GRACE_MS: GROUP_ROSTER_GRACE_MS } = require('./groupRoster');
-const { PetTracker } = require('./petTracker');
+const { PetTracker, STALE_MS: PET_STALE_MS } = require('./petTracker');
 const { RaidNamedTracker } = require('./raidNamedTracker');
 const { FirstAggroEngine } = require('./firstAggroEngine');
 const { ModuleHost } = require('./moduleHost');
@@ -92,6 +94,7 @@ const { tagBardSongs } = require('./bardSongTagger');
 // now - see applyInstallRoot. test/roster.test.js fails if the module or a call to it comes back.
 const { SessionRestore } = require('./sessionRestore');
 const gameSpellData = require('./gameSpellData');
+const classEstimator = require('../shared/classEstimator');
 const { makeStackingService } = require('./stackingService');
 const spellEffects = require('./spellEffects');
 const buffLines = require('../shared/buffLines');
@@ -101,6 +104,7 @@ const widgetManager = require('./widgetManager');
 const actionBarManager = require('./actionBarManager');
 const { AbilityGroupTracker, KNOWN_STANCES, KNOWN_INVOCATIONS } = require('./abilityGroups');
 const ambiguousPopup = require('./ambiguousPopup');
+const resetPromptWindow = require('./resetPromptWindow');
 const zonePromptPopup = require('./zonePromptPopup');
 const moveHudWindow = require('./moveHudWindow');
 const gridGuideWindow = require('./gridGuideWindow');
@@ -271,6 +275,15 @@ sessionRestore.register('damage', {
   restore: (d) => damageEngine.restoreState(d),
 });
 
+// Combat tab's Past Fights history - NO staleness limit (owner, 14 Sep: "EVERY part of the app
+// should have a recovery for accidental close, this is no exception"). Unlike the live meter
+// above, a completed fight record is a permanent fact, not an estimate that ages - it is exactly
+// as true after a long restart as it was the moment it was captured.
+sessionRestore.register('damageHistory', {
+  capture: () => damageEngine.captureHistory(),
+  restore: (d) => damageEngine.restoreHistory(d),
+});
+
 // First-aggro line - 2 minutes, same reasoning ("X pulled" goes stale fast).
 sessionRestore.register('firstAggro', {
   maxGapMs: 2 * MIN,
@@ -300,6 +313,29 @@ sessionRestore.register('raidNamed', {
   restore: (d) => raidNamedTracker.restoreState(d),
 });
 raidNamedTracker.setPersistFn(() => sessionRestore.scheduleSave());
+
+// Raid lockouts - NO staleness limit, same reasoning as damageHistory above: a recorded kill or
+// task-grant is a permanent fact, not an estimate that ages. The owner restarts often (14 Sep),
+// and until now every restart re-parsed the whole current lockout week from the log from scratch -
+// several seconds every single time. Restoring the parsed state also carries a resume checkpoint
+// (see lockoutService.captureState/backfill), so the very next backfill only has to read whatever
+// was appended to the log since the last save instead of re-deriving the whole week again.
+sessionRestore.register('lockouts', {
+  capture: () => lockoutService.captureState(),
+  restore: (d) => lockoutService.restoreState(d),
+});
+lockoutService.on('changed', () => sessionRestore.scheduleSave());
+
+// Charmed pets (note 40 / petTracker.js) - 20 minutes (its own STALE_MS). Unlike the group roster
+// or the current zone, nothing re-derives this from log history at startup, so without this a
+// restart mid-fight forgot which mobs were the player's own charmed pets until a fresh charm/leader
+// line happened to refresh them - in the meantime the damage meter misbucketed a still-alive own
+// pet into "Other".
+sessionRestore.register('pets', {
+  maxGapMs: PET_STALE_MS,
+  capture: () => petTracker.captureState(),
+  restore: (d) => petTracker.restoreState(d),
+});
 // Timer definitions live on widgets themselves (see widgetStore.js), not a
 // separate store - injected rather than required directly since
 // widgetManager pulls in Electron's screen/BrowserWindow. Action bar gem cooldowns ride along as
@@ -705,6 +741,9 @@ onLogLine('lockoutService', (line) => lockoutService.handleLine(line));
 // event carries only the string.
 lockoutService.setLogsFolderFn(() => logService.watcher.getStatus().logsFolder);
 lockoutService.setCurrentFileFn(() => logService.watcher.getStatus().currentFilePath);
+// The shared tailer's own read position - lockoutService's captureState() uses it as its resume
+// checkpoint for session-restore, see that file's header comment.
+lockoutService.setCurrentOffsetFn(() => logService.watcher.getStatus().offset);
 
 /**
  * Weekly log rotation at the lockout reset. See logRotation.js for the measurement behind the
@@ -977,6 +1016,7 @@ function applyZoneChangeAndNotify(zone) {
   const changed = widgetManager.applyZoneChange(zone);
   const win = getMainWindow();
   if (win && !win.isDestroyed()) win.webContents.send('zone:changed', changed);
+  pushZoneTimer();
   return changed;
 }
 
@@ -991,8 +1031,10 @@ onLogLine('zoneChange', (line) => {
   // evidence for detection (see buffEngine.setLoadoutLocked). The base name (suffix stripped) is
   // the key that tells a real move from an entrance->instance / reconnect echo for the same zone.
   buffEngine.setLoadoutLocked(isLoadoutLockedZone(zone), baseZoneName(zone));
-  // The damage meter's "since zone-in" tally starts over here - see damageEngine.enterZone.
-  damageEngine.enterZone();
+  // The damage meter's "since zone-in" tally starts over here - see damageEngine.enterZone. The
+  // BASE name (suffix stripped), so an instance-line echo right after the entrance line reads as
+  // the same zone for the Combat tab's grouping, not two different ones.
+  damageEngine.enterZone(Date.now(), baseZoneName(zone), difficultyLabel(zone), isRaidInstance(zone));
   // Note 20. Where you are is half of every route, so a zone line is the main thing that makes a
   // travel aura redraw.
   pushTravelRoutes();
@@ -1103,13 +1145,61 @@ function damageViews() {
   });
   return { damage: forMode('damage'), healing: forMode('healing'), both: forMode('both') };
 }
+// Owner's ask, 15 Sep - "the combat log can probably update slower". A busy pull with several
+// attackers can credit a hit several times a SECOND, and 'activeChanged' fired on every single one
+// of them - each firing recomputed damageViews() (9 getActive() calls: 3 scopes x 3 modes) and
+// broadcast it to every overlay window, so a big fight could push far more redraws per second than
+// any other engine in the app, on top of the once-a-second stagger above. Throttled to at most one
+// broadcast every DAMAGE_BROADCAST_THROTTLE_MS: the first hit in a burst still broadcasts right
+// away (a lone hit, or the start of a fight, stays instant), then further hits inside the window
+// are coalesced into one trailing broadcast at the end of it - so the numbers are never more than
+// one window-length stale and the very last hit is never dropped, but a big pull's redraw rate is
+// capped instead of tracking the hit rate 1:1. flush is a local closure (not a shared function)
+// specifically so both the leading and trailing edge stay inside the literal handler body -
+// unrelated to the throttle itself, just keeping this readable as one self-contained unit.
+const DAMAGE_BROADCAST_THROTTLE_MS = 300;
+let damageBroadcastTimer = null;
+let damageBroadcastPending = false;
 damageEngine.on('activeChanged', () => {
-  broadcast('damage:active', damageViews());
-  sessionRestore.scheduleSave();
+  const flush = () => {
+    broadcast('damage:active', damageViews());
+    sessionRestore.scheduleSave();
+    // Combat tab "live read the current combat" (owner, 14 Sep) - a lightweight ping, not the row
+    // data itself (that would mean building the full per-skill breakdown on every single hit for
+    // every window, whether or not the Combat tab is even open to care). The renderer re-fetches
+    // via damage:getLiveFight only when it actually has a live view on screen to update.
+    broadcast('damage:liveFightTick', null);
+  };
+  if (damageBroadcastTimer) {
+    damageBroadcastPending = true;
+    return;
+  }
+  flush();
+  damageBroadcastTimer = setTimeout(() => {
+    damageBroadcastTimer = null;
+    if (damageBroadcastPending) {
+      damageBroadcastPending = false;
+      flush();
+    }
+  }, DAMAGE_BROADCAST_THROTTLE_MS);
 });
 // Backlog #33 - the named-kill board. Each row becomes an infinite buff-shaped tile (killed ones
 // flagged so overlay.js can dim them); a row with a live respawn countdown carries remainingSec.
 raidNamedTracker.on('changed', (rows) => broadcast('raidNamed:active', rows.map(raidNamedTile)));
+// Owner's weekly notes, 13 Sep - re-entering the same zone with kills already tracked is genuinely
+// ambiguous (an instance-line echo vs. a real second trip into a fresh instance), so the tracker
+// asks instead of guessing. This is the one place that decides what the two answers DO; the popup
+// window itself (resetPromptWindow.js) only shows a message and reports back which button was hit.
+raidNamedTracker.on('resetPromptNeeded', ({ zone }) => {
+  resetPromptWindow.ask(
+    {
+      message: `You're back in ${zone} and it still shows earlier kills. Reset the board for a new run, or keep what's tracked?`,
+      resetLabel: 'Reset board',
+      keepLabel: 'Keep progress',
+    },
+    (choice) => raidNamedTracker.resolveResetPrompt(choice)
+  );
+});
 firstAggroEngine.on('changed', (rows) => {
   broadcast('firstAggro:active', rows.map(firstAggroTile));
   sessionRestore.scheduleSave();
@@ -1349,8 +1439,19 @@ function travelRowsFor(widget, zone, scribed) {
 }
 
 // One place that both recomputes and sends, so no caller can do one without the other.
+//
+// DEDUPED, same pattern as pushLockoutBoard below - reported live 15 Sep alongside the
+// customTimerEngine text-aura fix: the 1s heartbeat called this unconditionally forever, so
+// EVERY overlay window (all of them, not just travel guides) redrew itself once a second whether
+// the route had changed or not - "almost always zero" travel guides per this function's own
+// header comment, but every window still paid for the broadcast and its own re-render regardless.
+let lastTravelRoutesJSON = null;
 function pushTravelRoutes() {
-  broadcast('travel:routes', travelRoutes());
+  const routes = travelRoutes();
+  const json = JSON.stringify(routes);
+  if (json === lastTravelRoutesJSON) return;
+  lastTravelRoutesJSON = json;
+  broadcast('travel:routes', routes);
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -1470,6 +1571,58 @@ function popLockoutBoard(word) {
   return true;
 }
 
+// -------------------------------------------------------------------------------------------------
+// The Zone Timer aura (owner's weekly notes, 13 Sep). One row - "<zone> <elapsed>" - counting up
+// since the app last saw a zone change. Same broadcast shape as First aggro (one shared value, not
+// per-widget - there's only ever one current zone) but this one has to tick every second on its
+// own, unlike every other tile here which only redraws when something actually happens: nothing
+// EVENTS this aura, time just passes. A dedicated 1s interval (gated cheap when no such aura
+// exists, same as hasLockoutWidget()'s own guard) rather than reusing buffEngine's tick, since this
+// has nothing to do with buffs and doesn't need buffEngine running to make sense.
+function hasZoneTimerWidget() {
+  return widgetManager.getAllWidgetConfigs().some((w) => w.buffSource === 'zoneTimer');
+}
+
+function formatElapsed(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function zoneTimerRow() {
+  const zone = widgetManager.getCurrentZone();
+  const enteredAt = widgetManager.getZoneEnteredAt();
+  if (!zone || !enteredAt) return [];
+  const elapsedSec = Math.max(0, Math.floor((Date.now() - enteredAt) / 1000));
+  return [{
+    name: zone,
+    valueText: formatElapsed(elapsedSec),
+    barPercent: 0,
+    remainingSec: null,
+    durationSec: 0,
+    infinite: true,
+    instant: false,
+    landedAt: null,
+    showOnOverlay: true,
+    iconUrl: null,
+    isBardSong: false,
+    spellCategory: null,
+  }];
+}
+
+function pushZoneTimer() {
+  if (!hasZoneTimerWidget()) return;
+  broadcast('zoneTimer:active', zoneTimerRow());
+}
+// Staggered against the app's other once-a-second engines - see customTimerEngine.js's
+// TICK_STAGGER_MS comment (the perf report this came from, 15 Sep: several always-on-top overlay
+// windows all repainting in the same instant every second, even idle). Only the first tick is
+// delayed - the interval keeps firing 1000ms apart forever once started, so the offset holds.
+setTimeout(() => setInterval(pushZoneTimer, 1000), 750);
+
 // QOL #6/#42. A failed `/tell <word>` whose word is a profile's own command word switches the app
 // to that profile - the macro-friendly way to keep the app's loadout in step with an in-game
 // loadout swap without alt-tabbing. Editable per profile in the Loadouts modal; same "read the
@@ -1527,28 +1680,39 @@ function refreshDamageOptions() {
     .filter((n) => typeof n === 'number' && Number.isFinite(n));
   if (timeouts.length) damageEngine.setOptions({ fightTimeoutSec: Math.max(...timeouts) });
 }
+// Staggered against the app's other once-a-second engines - see customTimerEngine.js's
+// TICK_STAGGER_MS comment (the perf report this came from, 15 Sep). Only the first tick is
+// delayed - the interval keeps firing 1000ms apart forever once started, so the offset holds.
+setTimeout(() => {
+  setInterval(() => {
+    // Re-read alongside the tick rather than on a widget-changed hook. It is a filter over a
+    // handful of configs once a second, and doing it here means the setting can never be left
+    // stale by a path that edits a widget without remembering to call this.
+    refreshDamageOptions();
+    petTracker.tick();
+    abilityGroupTracker.sweep();
+    // Note 20. Catches the two inputs that change without a zone line - editing the destination
+    // and scribing a travel spell. Cheap: a breadth-first search over 104 nodes, only for auras
+    // that are actually travel guides, and almost always zero of them.
+    pushTravelRoutes();
+    // The raid-lockout aura is transient (a shown board clears itself when its timer lapses), so
+    // it needs a heartbeat to notice that lapse and to give a freshly-created aura window its
+    // first (empty) push. Same cost profile as the travel push - a handful of small maps.
+    pushLockoutBoard();
+  }, 1000);
+}, 600);
+
 // A fight that ends in silence produces no log line to notice it with, so the meter needs a clock
-// of its own to clear itself. One second, which is as often as the number could change anyway -
-// timestamps in the log have one-second resolution. Deliberately NOT saved into the session
-// snapshot: a damage total from before a restart is not the current fight, and restoring one
-// would be showing a number that means nothing.
-setInterval(() => {
-  // Re-read alongside the tick rather than on a widget-changed hook. It is a filter over a handful
-  // of configs once a second, and doing it here means the setting can never be left stale by a
-  // path that edits a widget without remembering to call this.
-  refreshDamageOptions();
-  damageEngine.tick();
-  petTracker.tick();
-  abilityGroupTracker.sweep();
-  // Note 20. Catches the two inputs that change without a zone line - editing the destination and
-  // scribing a travel spell. Cheap: a breadth-first search over 104 nodes, only for auras that are
-  // actually travel guides, and almost always zero of them.
-  pushTravelRoutes();
-  // The raid-lockout aura is transient (a shown board clears itself when its timer lapses), so it
-  // needs a heartbeat to notice that lapse and to give a freshly-created aura window its first
-  // (empty) push. Same cost profile as the travel push - a handful of small maps.
-  pushLockoutBoard();
-}, 1000);
+// of its own to clear itself. Split out from the block above (owner's ask, 15 Sep - "the combat
+// log can probably update slower") since nothing about an idle-expiry check needs once-a-second
+// precision: a fight sitting idle for fightTimeoutSec is going to sit idle for a couple more
+// seconds regardless, and log timestamps only have one-second resolution anyway, so 2s costs
+// nothing perceptible while halving this one's share of the per-second broadcast load. Deliberately
+// NOT saved into the session snapshot: a damage total from before a restart is not the current
+// fight, and restoring one would be showing a number that means nothing.
+setTimeout(() => {
+  setInterval(() => damageEngine.tick(), 2000);
+}, 900);
 buffEngine.on('unknownBuffsChanged', (buffs) => broadcast('buffs:unknown', buffs));
 buffEngine.on('ambiguousCastsChanged', (casts) => {
   broadcast('buffs:ambiguous', casts);
@@ -1660,7 +1824,13 @@ app.whenReady().then(() => {
     const found = readLastZoneEntry(logPath);
     if (!found) return;
     applyZoneChangeAndNotify(found.zone);
-    raidNamedTracker.setZone(found.zone, found.viaVoidling);
+    raidNamedTracker.setZone(found.zone);
+    // Owner, 14 Sep: a live fight showed "(zone unknown)" in the Combat tab despite standing in a
+    // real, known zone the whole time. Every other zone-aware engine gets seeded from this same
+    // startup recovery (the raid board two lines above, loadoutLocked/customTimer/travel below) -
+    // the damage meter never was, so it stayed blind to where the player was until the NEXT real
+    // zone line, which for a long session in one zone (or restarting mid-fight) could be never.
+    damageEngine.enterZone(Date.now(), baseZoneName(found.zone), difficultyLabel(found.zone), isRaidInstance(found.zone));
     // Seed loadout-locked state too - but NOT the verified gems: a memorise seen before the app
     // started was never observed, and re-entering a locked zone deliberately starts the gem
     // evidence fresh (see setLoadoutLocked). This only sets the flag so memorises from here on count.
@@ -1838,6 +2008,11 @@ ipcMain.handle('log:launchArchiveCheck', () => {
   if (!state.shouldPromptArchive) return { prompt: false };
   const dismissedAt = Number(loadJson('logArchivePromptDismissedAt', 0)) || 0;
   if (dismissedAt && Date.now() - dismissedAt < LAUNCH_ARCHIVE_RENUDGE_MS) return { prompt: false };
+  // The size threshold alone does not know whether trimming would do anything - see
+  // logRotationService.wouldTrimAnything's own comment. A log weekly auto-rotation is already
+  // keeping to just this week can still cross 50MB on volume alone, and "Trim to this week"
+  // would find nothing before the boundary to move - so there is nothing useful to offer here.
+  if (!logRotationService.wouldTrimAnything(state.currentFilePath)) return { prompt: false };
   return {
     prompt: true,
     sizeBytes: state.fileSizeBytes,
@@ -1867,8 +2042,166 @@ ipcMain.handle('buffs:getActiveBardSongs', () => buffEngine.getActiveBardSongs()
 ipcMain.handle('buffs:removeActiveBardSong', (_event, { castBy, name }) => buffEngine.removeActiveBardSong(castBy, name));
 
 ipcMain.handle('damage:getActive', () => damageViews());
+// Log scanning for the Combat tab (owner, 13 Sep: "an option to back read your current log, or
+// upload a new log and parse out fights"). Each scan keeps its OWN engine alive here rather than
+// merging its fights into the live one - a batch read of a whole archived log has nothing to do
+// with tonight's live session, and the live engine's 30-fight cap would just throw most of a real
+// scan away. Composite ids ("live:3" / "scan:0:7") let damage:getHistory show every source as one
+// list without their own local, per-engine ids colliding.
+const importedScans = []; // { label, scannedAt, engine, filePath }
+
+// Case-insensitive (Windows paths) + resolved, so the same file picked via two slightly different
+// spellings (a trailing slash, a different drive-letter case) still counts as "the same file" for
+// dedup purposes below.
+function normalizedScanPath(p) {
+  return path.resolve(p).toLowerCase();
+}
+
+function allHistorySources() {
+  const sources = [{ tag: 'live', label: 'This session', engine: damageEngine }];
+  importedScans.forEach((s, i) => sources.push({ tag: `scan:${i}`, label: s.label, engine: s.engine }));
+  return sources;
+}
+
+function mergedDamageHistory() {
+  const rows = [];
+  for (const { tag, label, engine } of allHistorySources()) {
+    for (const entry of engine.getHistory()) {
+      rows.push({ ...entry, id: `${tag}:${entry.id}`, source: label });
+    }
+  }
+  rows.sort((a, b) => b.endedAt - a.endedAt);
+  return rows;
+}
+
+// The composite id ("live:3" / "scan:0:7") names which engine a fight/visit actually belongs to -
+// shared by findHistoryFight and the class-estimate handler below, which needs the SAME engine's
+// castsByAttacker for whichever attacker is being estimated, not always the live session's.
+function sourceForCompositeId(compositeId) {
+  const key = String(compositeId || '');
+  const cut = key.lastIndexOf(':');
+  if (cut === -1) return null;
+  const tag = key.slice(0, cut);
+  const localId = Number(key.slice(cut + 1));
+  const src = allHistorySources().find((s) => s.tag === tag);
+  return src ? { src, localId } : null;
+}
+
+function findHistoryFight(compositeId) {
+  const resolved = sourceForCompositeId(compositeId);
+  if (!resolved) return null;
+  const fight = resolved.src.engine.getHistoryFight(resolved.localId);
+  return fight ? { ...fight, id: compositeId, source: resolved.src.label } : null;
+}
+
+ipcMain.handle('damage:getCurrentLogPath', () => logService.watcher.getStatus().currentFilePath || null);
+
+ipcMain.handle('damage:scanLogFile', async (_event, filePath) => {
+  if (!filePath) return { ok: false, reason: 'No file given.' };
+  try {
+    const engine = await scanLogForFights(filePath);
+    const fights = engine.getHistory().length;
+    const label = `${path.basename(filePath)} (scanned ${new Date().toLocaleString()})`;
+    // Reported live 15 Sep: re-scanning the same file across a long investigation left many
+    // separate copies of the same day's fights piled up in importedScans (each one restored again
+    // on every restart, with no staleness limit - a completed fight is meant to be a permanent
+    // record). The Combat tab's zone-visit view showed every copy at once - the exact same 60-fight
+    // visit repeated ~10 times over, each fight's numbers byte-identical because they really were
+    // the same real fight, read off the same file, multiple times. A re-scan is a fresh look at
+    // that file's CURRENT content, not a new historical fact - the old copy has nothing left to
+    // offer once a newer one of the same file exists, so it is replaced, not piled on top of.
+    const target = normalizedScanPath(filePath);
+    for (let i = importedScans.length - 1; i >= 0; i--) {
+      if (importedScans[i].filePath && normalizedScanPath(importedScans[i].filePath) === target) importedScans.splice(i, 1);
+    }
+    importedScans.push({ label, scannedAt: Date.now(), engine, filePath });
+    debugLog(`COMBAT scan "${filePath}" -> ${fights} fight${fights === 1 ? '' : 's'} found`);
+    return { ok: true, fights, label };
+  } catch (err) {
+    debugLog(`COMBAT scan "${filePath}" failed: ${err.message}`);
+    return { ok: false, reason: err.message || 'Could not read that file.' };
+  }
+});
+
+// A scanned log has to be re-scanned from scratch after every restart - the live session's own
+// fight history got exactly this recovery earlier the same day (damageHistory above), but a scan
+// keeps its OWN separate engine (see allHistorySources's comment) that was never wired in, so
+// pointed out as a gap in the same 14 Sep report. Each scan's engine already has its own
+// captureHistory()/restoreHistory() pair (a completed fight is a permanent fact either way); this
+// just carries the surrounding label/scannedAt alongside it and rebuilds a fresh DamageEngine per
+// remembered scan on restore, in the same order, so composite ids ("scan:0:7") land back on the
+// same index they came from. No staleness limit, same reasoning as damageHistory - re-scanning
+// the same file would produce byte-identical fights regardless of how long the app was closed.
+sessionRestore.register('importedScans', {
+  capture: () => {
+    if (!importedScans.length) return null;
+    const scans = importedScans
+      .map((s) => ({ label: s.label, scannedAt: s.scannedAt, filePath: s.filePath || null, history: s.engine.captureHistory() }))
+      .filter((s) => s.history);
+    return scans.length ? { scans } : null;
+  },
+  restore: (d) => {
+    if (!d || !Array.isArray(d.scans)) return 0;
+    // One-time self-heal for the duplication reported live 15 Sep (see damage:scanLogFile's own
+    // comment): before that fix, re-scanning the same file across many restarts left several
+    // separate copies of it saved here, each restored again on every launch. Rebuild everything
+    // first, then keep only the newest copy of each distinct file - a `filePath`-less entry (saved
+    // before this fix existed) falls back to matching on its label with the "(scanned ...)" suffix
+    // stripped off, so an old save still gets cleaned up the first time it loads under the new code.
+    const rebuilt = [];
+    for (const s of d.scans) {
+      if (!s || !s.history) continue;
+      const engine = new DamageEngine({ maxHistory: Infinity });
+      engine.restoreHistory(s.history);
+      rebuilt.push({ label: s.label, scannedAt: s.scannedAt, engine, filePath: s.filePath || null });
+    }
+    const scanKey = (s) => (s.filePath ? normalizedScanPath(s.filePath) : String(s.label).replace(/ \(scanned [^)]*\)$/, ''));
+    const newestByKey = new Map();
+    for (const s of rebuilt) {
+      const key = scanKey(s);
+      const prev = newestByKey.get(key);
+      if (!prev || s.scannedAt > prev.scannedAt) newestByKey.set(key, s);
+    }
+    let total = 0;
+    for (const s of newestByKey.values()) {
+      total += s.engine.getHistory().length;
+      importedScans.push(s);
+    }
+    return total;
+  },
+});
+
+ipcMain.handle('damage:getHistory', () => mergedDamageHistory());
+ipcMain.handle('damage:getHistoryFight', (_event, id) => findHistoryFight(id));
+// "I need some way to be able to live read the current combat from this combat tab" (owner, 14
+// Sep) - the LIVE session's engine only, never an imported scan (a scanned file has no "now").
+// Same shape getHistoryFight returns (see getLiveFight's own comment), so the renderer's existing
+// chart code needs no changes to draw it.
+ipcMain.handle('damage:getLiveFight', () => damageEngine.getLiveFight());
+// "I need some way to be able to live read the current combat... or check recent past events of
+// the zone i'm in, fast" (owner, 14 Sep). `widgetManager.getCurrentZone()` holds the RAW zone
+// string (difficulty suffix and all - see gotcha near applyZoneChangeAndNotify); the Combat tab's
+// own history entries are keyed on the STRIPPED base name (baseZoneName(zone), same as every
+// enterZone call above), so this returns it already stripped rather than making the renderer
+// duplicate that regex (it has no Node `require` access to loadoutLockedZones.js at all - a
+// sandboxed renderer, everything reaches it through preload/IPC).
+ipcMain.handle('combat:getCurrentZoneBase', () => baseZoneName(widgetManager.getCurrentZone()));
+// Combat tab class estimate (owner, 13-14 Sep): a spell only one class can cast is real evidence
+// of one of an attacker's (possibly multiclass) classes - but ONLY when that attacker was actually
+// seen CASTING it, never from a damage-log skill name (a buff's proc damage doesn't say who cast
+// the buff), and scoped to the ONE fight (or visit) being viewed, never the whole session - see
+// classEstimator.js's own header comment. The renderer already has the right cast-skill list on
+// hand (captured per-fight into history, same as bySkill, and unioned across a visit's fights the
+// same way bySkill already is) - this just needs gameSpellData, which only the main process can
+// read.
+ipcMain.handle('damage:estimateClasses', (_event, castSkills) => (
+  classEstimator.estimateClasses(castSkills, (name) => gameSpellData.getClassesForSpell(currentInstallRoot, name))
+));
 ipcMain.handle('raidNamed:getActive', () => raidNamedTracker.getActive().map(raidNamedTile));
+ipcMain.handle('resetPrompt:getPending', () => resetPromptWindow.getPending());
+ipcMain.handle('resetPrompt:answer', (_event, choice) => resetPromptWindow.answer(choice));
 ipcMain.handle('firstAggro:getActive', () => firstAggroEngine.getActive().map(firstAggroTile));
+ipcMain.handle('zoneTimer:getActive', () => zoneTimerRow());
 ipcMain.handle('travel:getRoutes', () => travelRoutes());
 ipcMain.handle('lockout:getBoard', () => lockoutBoardRoutes());
 ipcMain.handle('travel:getZones', () => allZoneNames());
@@ -2124,6 +2457,30 @@ ipcMain.handle('ui:setScale', (_event, pct) => {
   return applied;
 });
 
+// Custom theme colors (Setup -> App settings -> Colors), owner 15 Sep. Four category colors
+// ('#rrggbb' each); the renderer's theme.js derives every other shade from these and applies them
+// as :root custom-property overrides on the main window only - the actual color math and CSS
+// variable names live there, not here. This handler only validates shape and persists; `null`
+// means "no custom theme, use main-window.css's shipped defaults."
+const THEME_CATEGORIES = ['background', 'panels', 'text', 'highlight', 'textHighlight', 'outline'];
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+function sanitizeTheme(theme) {
+  if (!theme || typeof theme !== 'object') return null;
+  const out = {};
+  for (const key of THEME_CATEGORIES) {
+    if (typeof theme[key] === 'string' && HEX_COLOR_RE.test(theme[key])) out[key] = theme[key];
+  }
+  // A theme with nothing valid in it is the same as no theme - don't persist an empty object that
+  // would otherwise read back as "customized" and apply nothing.
+  return Object.keys(out).length ? out : null;
+}
+ipcMain.handle('theme:get', () => sanitizeTheme(loadJson('customTheme', null)));
+ipcMain.handle('theme:set', (_event, theme) => {
+  const clean = sanitizeTheme(theme);
+  saveJson('customTheme', clean);
+  return clean;
+});
+
 ipcMain.handle('buffs:getAmbiguous', () => buffEngine.getAmbiguousCasts());
 ipcMain.handle('buffs:resolveAmbiguous', (_event, { text, buffName }) => {
   const result = buffEngine.resolveAmbiguousCast(text, buffName);
@@ -2297,6 +2654,9 @@ ipcMain.handle('widget:createLockoutBoard', (_event, { name }) =>
 );
 ipcMain.handle('widget:createFirstAggro', (_event, { name }) =>
   widgetManager.createFirstAggroWidget(name)
+);
+ipcMain.handle('widget:createZoneTimer', (_event, { name }) =>
+  widgetManager.createZoneTimerWidget(name)
 );
 ipcMain.handle('widget:createTravelGuide', (_event, { name, destination }) =>
   widgetManager.createTravelGuideWidget(name, destination)
@@ -2500,6 +2860,12 @@ ipcMain.handle('zone:current', () => widgetManager.getCurrentZone());
 ipcMain.handle('zone:known', () => KNOWN_ZONES);
 ipcMain.handle('widget:setVisibleInZones', (_event, { id, zones }) =>
   widgetManager.setVisibleInZones(id, zones)
+);
+ipcMain.handle('widget:setVisibleInRaid', (_event, { id, value }) =>
+  widgetManager.setVisibleInRaid(id, value)
+);
+ipcMain.handle('widget:setVisibleInGroup', (_event, { id, value }) =>
+  widgetManager.setVisibleInGroup(id, value)
 );
 ipcMain.handle('settings:getLoadoutLabel', () => widgetManager.isLoadoutLabelEnabled());
 ipcMain.handle('settings:setLoadoutLabel', (_event, enabled) =>
@@ -3197,8 +3563,43 @@ app.on('web-contents-created', (_event, contents) => {
   });
 });
 
-app.on('render-process-gone', (_event, _contents, details) => {
-  debugLog(`SHUTDOWN: render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
+app.on('render-process-gone', (_event, contents, details) => {
+  // Which window crashed, not just that one did - `contents.getURL()` survives its renderer's
+  // death (it's state on the WebContents object, not the dead process), and every window's own
+  // file name plus query string (widgetId for an aura) is enough to tell them apart without
+  // needing to tag anything at window-creation time. Added 13 Sep after a real recurring crash
+  // (7 times in one evening, Sep 12) that this line alone could not yet distinguish main window
+  // from overlay from a specific aura.
+  let win = 'unknown';
+  let widgetId = null;
+  try {
+    const url = contents.getURL();
+    if (url) {
+      const [filePath, query] = url.split('?');
+      const short = filePath.split(/[\\/]/).filter(Boolean).slice(-2).join('/');
+      win = query ? `${short}?${query}` : short;
+      if (short === 'overlay/index.html' && query) {
+        widgetId = new URLSearchParams(query).get('widgetId');
+      }
+    } else {
+      win = '(no URL)';
+    }
+  } catch { /* contents may already be fully gone */ }
+  debugLog(`SHUTDOWN: render-process-gone reason=${details.reason} exitCode=${details.exitCode} window=${win}`);
+  // Confirmed 14 Sep (real debug-log evidence): a crashed aura's window shell survives the
+  // renderer's death but never repaints and never gets recreated - it just sits there blank until
+  // the whole app is restarted. That is the "aura disappeared mid-play" report. Rebuild it right
+  // here instead of waiting for a relaunch - see widgetManager.recreateCrashedWindow's own comment
+  // for the full root-cause writeup (native GPU-process crashes, concentrated on the three
+  // frequently-resized standalone list auras).
+  if (widgetId) {
+    debugLog(`SHUTDOWN: recreating crashed aura window widgetId=${widgetId}`);
+    try {
+      widgetManager.recreateCrashedWindow(widgetId);
+    } catch (err) {
+      debugLog(`SHUTDOWN: recreateCrashedWindow failed: ${err && err.message}`);
+    }
+  }
 });
 app.on('child-process-gone', (_event, details) => {
   debugLog(`SHUTDOWN: child-process-gone type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`);

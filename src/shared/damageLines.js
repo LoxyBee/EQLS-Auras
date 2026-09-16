@@ -32,8 +32,15 @@
 
 // A trailing " (Critical)" (or "(Riposte)", "(Strikethrough)", ...) that the game appends to
 // several wordings. 1,710 of the direct-spell lines below carry one; ~421 of the "has taken"
-// wordings do too. Every pattern here tolerates it rather than dropping the hit.
-const CRIT_SUFFIX = /(?: \([A-Za-z ]+\))?/.source;
+// wordings do too. Every pattern here tolerates it rather than dropping the hit. Named (not just
+// captured by position) so isCrit() below can read it regardless of how many groups a given
+// pattern has ahead of it - this sits at the very end of every one of them.
+const CRIT_SUFFIX = /(?<suffix> \([A-Za-z ]+\))?/.source;
+
+/** Was this specific hit a crit - the one suffix value that means that, out of several the game writes. */
+function isCrit(m) {
+  return !!(m.groups && m.groups.suffix === ' (Critical)');
+}
 
 // "You crush a wan ghoul knight for 60 points of damage." - 145 lines. Low because this character
 // barely swings a weapon; the wording is standard and the count is the honest measure of how much
@@ -87,22 +94,30 @@ const DAMAGE_SHIELD =
 // damage line on days 1-9 of a month.
 const STAMP = /^\[\w{3} \w{3}\s+\d{1,2} \d{2}:\d{2}:\d{2} \d{4}\]\s*/;
 
+// The bucket every melee swing (no matter the verb - slash, crush, bite, ...) files under for the
+// per-skill breakdown. A melee line names no ability, only a verb tied to the weapon type, and
+// splitting by verb would read as several different things when it is really one: your weapon.
+const MELEE_SKILL = 'Melee';
+
 /**
  * One damage line, or null.
  *
- * Returns { attacker, target, amount, kind } where attacker is the literal string 'You' for your
- * own damage - the log's own word for you, kept rather than translated so nothing downstream has
- * to know the character's name to find her row.
+ * Returns { attacker, target, amount, kind, skill, critical } where attacker is the literal string
+ * 'You' for your own damage - the log's own word for you, kept rather than translated so nothing
+ * downstream has to know the character's name to find her row. `skill` is the per-skill-breakdown
+ * bucket: the spell/ability name for a spell or shield hit, or the fixed MELEE_SKILL label for a
+ * swing. `critical` is true only for the exact "(Critical)" suffix - the game tags several other
+ * things the same bracketed way ("(Riposte)", "(Strikethrough)", ...) and those are not crits.
  */
 function parseDamageLine(line) {
   if (typeof line !== 'string') return null;
   const body = line.replace(STAMP, '');
 
   let m = YOUR_SPELL.exec(body);
-  if (m) return { attacker: 'You', target: m[1], amount: Number(m[2]), kind: 'spell' };
+  if (m) return { attacker: 'You', target: m[1], amount: Number(m[2]), kind: 'spell', skill: m[3], critical: isCrit(m) };
 
   m = OTHER_SPELL.exec(body);
-  if (m) return { attacker: m[4], target: m[1], amount: Number(m[2]), kind: 'spell' };
+  if (m) return { attacker: m[4], target: m[1], amount: Number(m[2]), kind: 'spell', skill: m[3], critical: isCrit(m) };
 
   m = DIRECT_SPELL.exec(body);
   if (m) {
@@ -113,26 +128,27 @@ function parseDamageLine(line) {
       // Z") as opposed to the "X has taken N damage from ..." shape, which is a DoT / song / proc
       // tick. damageEngine keys the fight-end timer off real hits (melee + direct nukes) so a
       // maintained DoT ticking on a straggler does not hold the meter's fight open on its own.
-      return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'spell', direct: true };
+      return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'spell', direct: true, skill: m[4], critical: isCrit(m) };
     }
   }
 
   m = YOUR_MELEE.exec(body);
-  if (m) return { attacker: 'You', target: m[1], amount: Number(m[2]), kind: 'melee' };
+  if (m) return { attacker: 'You', target: m[1], amount: Number(m[2]), kind: 'melee', skill: MELEE_SKILL, critical: isCrit(m) };
 
   // Before OTHER_MELEE: a damage-shield line ends "points of non-melee damage" and the melee
   // pattern requires "points of damage", so they cannot collide - but the order is fixed anyway
-  // so that a future edit loosening one cannot silently start stealing the other's lines.
+  // so that a future edit loosening one cannot silently start stealing the other's lines. Never
+  // carries a crit suffix - the game does not crit-flag retaliation damage.
   m = DAMAGE_SHIELD.exec(body);
   if (m) {
     const attacker = m[2] === 'YOUR' ? 'You' : m[2].replace(/'s$/, '');
-    return { attacker, target: m[1], amount: Number(m[4]), kind: 'shield' };
+    return { attacker, target: m[1], amount: Number(m[4]), kind: 'shield', skill: m[3], critical: false };
   }
 
   m = OTHER_MELEE.exec(body);
-  if (m) return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'melee' };
+  if (m) return { attacker: m[1], target: m[2], amount: Number(m[3]), kind: 'melee', skill: MELEE_SKILL, critical: isCrit(m) };
 
   return null;
 }
 
-module.exports = { parseDamageLine };
+module.exports = { parseDamageLine, MELEE_SKILL };

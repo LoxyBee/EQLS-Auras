@@ -1,6 +1,6 @@
 # Announcement post — draft
 
-Short post for Discord (**discord.gg/SxU3ZYxb**). Owner reviews before it goes out.
+Short post for Discord (**discord.gg/E7c9z3rrdb**). Owner reviews before it goes out.
 **Hold until the release page at https://eqlsource.com/tools/ is actually live** — the link
 is in the post.
 

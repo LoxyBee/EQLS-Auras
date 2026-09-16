@@ -474,6 +474,14 @@ function createFirstAggroWidget(name) {
   return config;
 }
 
+function createZoneTimerWidget(name) {
+  const config = widgetStore.createZoneTimerAura(name, {
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
 function exportWidget(id) {
   return widgetStore.exportCode(id);
 }
@@ -537,6 +545,23 @@ function deleteWidget(id) {
   const win = windows.get(id);
   if (win) win.close();
   return widgetStore.remove(id);
+}
+
+// A renderer crash (main.js's render-process-gone handler) kills the aura's content but does NOT
+// close the BrowserWindow itself - Electron leaves the shell sitting there blank forever, and
+// createWidgetWindow's own `if (windows.has(config.id)) return` guard means nothing would ever
+// touch it again short of restarting the whole app. That is exactly the "aura disappearing
+// mid-play" symptom reported live 14 Sep - confirmed from the debug log as real native crashes
+// (STATUS_ACCESS_VIOLATION / STATUS_BREAKPOINT exit codes) concentrated on the three
+// frequently-resized standalone list auras (Damage parser, Zone timer, Travel guide), not a JS
+// exception anywhere in this app's own code. Tears the dead shell down and rebuilds it exactly as
+// if the aura had just been unlocked, so it comes back on its own instead of staying blank.
+function recreateCrashedWindow(id) {
+  const win = windows.get(id);
+  if (win && !win.isDestroyed()) win.destroy();
+  windows.delete(id);
+  const config = widgetStore.getById(id);
+  if (config && isVisibleForActiveProfile(config)) createWidgetWindow(config);
 }
 
 function reorderWidgets(orderedIds) {
@@ -725,14 +750,23 @@ function setLoadoutLabelEnabledState(enabled) {
 // state until the first zone change after launch. See visibleInZones in widgetStore for why null
 // has to mean "show everything" rather than "hide everything".
 let currentZone = null;
+// When the app last learned it - for the Zone Timer aura's "time in this zone" readout. Set to
+// the instant the app noticed, not backdated to the log line's own timestamp: this app never
+// replays history (same reasoning as currentlyMemorized/zone tracking elsewhere), so a restart
+// mid-zone starts the clock over rather than guessing how long she'd really been there.
+let zoneEnteredAt = null;
 function setCurrentZone(zone) {
   const next = zone || null;
   if (next === currentZone) return false;
   currentZone = next;
+  zoneEnteredAt = Date.now();
   return true;
 }
 function getCurrentZone() {
   return currentZone;
+}
+function getZoneEnteredAt() {
+  return zoneEnteredAt;
 }
 
 // Whether this aura is allowed in the zone the player is in. The rule itself lives in
@@ -741,7 +775,10 @@ function getCurrentZone() {
 // unexplained reason is the failure this project keeps having and a zone rule is a new way to
 // have it.
 function isVisibleInCurrentZone(config) {
-  return isVisibleInZone(config.visibleInZones, currentZone);
+  return isVisibleInZone(config.visibleInZones, currentZone, {
+    visibleInRaid: config.visibleInRaid,
+    visibleInGroup: config.visibleInGroup,
+  });
 }
 
 function shouldBeOnScreen(config) {
@@ -778,14 +815,17 @@ function shouldBeOnScreen(config) {
 // Hiding a window does NOT silence it. A hidden overlay keeps receiving the engine broadcasts
 // and keeps running render(), which is exactly where the alert sounds fire.
 //
-// The rule follows shouldBeOnScreen's two kinds of rule. Profile membership is the ON/OFF
-// switch, so an aura the current loadout has switched off is off, full stop - silent as well as
-// invisible. The SCREEN-CLEARING overrides (master hide, auto-hide while EverQuest is unfocused)
+// The rule follows shouldBeOnScreen's two kinds of rule. Profile membership AND the zone/Raid/
+// Group content filter are both real ON/OFF switches, so an aura the current loadout has
+// switched off, or that doesn't apply to the content you're currently in, is off, full stop -
+// silent as well as invisible (reported live 15 Sep: a "Raid" aura kept alerting by sound in an
+// unrelated dungeon even though it was correctly hidden on screen). The SCREEN-CLEARING overrides
+// (master hide, auto-hide while EverQuest is unfocused) are a different kind of thing and
 // deliberately do NOT silence anything: hearing that a buff is about to drop while you are
 // tabbed out is most of the reason to have a sound at all.
 function shouldBeAudible(config) {
   if (soundsMuted) return false;
-  return isVisibleForActiveProfile(config);
+  return isVisibleForActiveProfile(config) && isVisibleInCurrentZone(config);
 }
 
 function pushAudible(config) {
@@ -804,8 +844,9 @@ function applyVisibility(config) {
   } else if (win) {
     win.hide();
   }
-  // After the show/hide, and on every path that has a window: a profile switch is the one thing
-  // that changes this, and it comes through here for every widget.
+  // After the show/hide, and on every path that has a window: a profile switch or a zone/Raid/
+  // Group content-filter change are what can change this, and both come through here for every
+  // widget (applyProfileVisibility / applyZoneChange / setVisibleIn{Zones,Raid,Group} above).
   pushAudible(config);
 }
 
@@ -1272,6 +1313,22 @@ function setVisibleInZones(id, zones) {
   return config;
 }
 
+// Content-type gates alongside the specific zone list above - "Raid" and "Group" toggles next to
+// "Only in:". Same note 21 reasoning: visibility can change right here, so re-apply it rather than
+// only pushing a config update.
+function setVisibleInRaid(id, enabled) {
+  const config = widgetStore.update(id, { visibleInRaid: !!enabled });
+  if (config) applyVisibility(config);
+  pushConfigChanged(id);
+  return config;
+}
+function setVisibleInGroup(id, enabled) {
+  const config = widgetStore.update(id, { visibleInGroup: !!enabled });
+  if (config) applyVisibility(config);
+  pushConfigChanged(id);
+  return config;
+}
+
 // Called when the log says the player has changed zone. Re-evaluates every aura, because a zone
 // change can both hide and show, and only pushes work when the zone actually changed.
 function applyZoneChange(zone) {
@@ -1664,6 +1721,7 @@ module.exports = {
   createDamageMeterWidget,
   createLockoutBoardWidget,
   createFirstAggroWidget,
+  createZoneTimerWidget,
   setDamageOptions,
   createTravelGuideWidget,
   setTravelDestination,
@@ -1678,6 +1736,7 @@ module.exports = {
   duplicateWidget,
   applyCodeToSelfBuffs,
   deleteWidget,
+  recreateCrashedWindow,
   reorderWidgets,
   getFolders,
   createFolder,
@@ -1738,8 +1797,11 @@ module.exports = {
   setAlwaysOn,
   setShowOnAllProfiles,
   setVisibleInZones,
+  setVisibleInRaid,
+  setVisibleInGroup,
   applyZoneChange,
   getCurrentZone,
+  getZoneEnteredAt,
   isVisibleInCurrentZone,
   setLoadoutLabelEnabled,
   setLoadoutLabelEnabledState,

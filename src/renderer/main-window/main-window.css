@@ -8,6 +8,11 @@
   --bg: #14100b; /* darkest - the "gutter" behind blocks, and the sidebar */
   --panel: #1c160f; /* one step up - window chrome, hover states */
   --panel-2: #241c12; /* two steps up - fill colour for content blocks and inputs */
+  /* The card/block surface color. Chained to --bg by default (a card looks the same tone as the
+     gutter, which is the shipped look - only the border below marks it as its own section), but
+     given its own variable so the custom-theme "Panels" picker (theme.js) can set it independently
+     of the base --bg for a genuine two-tone look, without a picker being forced to move both. */
+  --panel-fill: var(--bg);
   /* Every line separation - hairlines, dotted rules, the sidebar submenu's
      left rule, card/block/modal borders - is this brass now, not a
      separate muted-neutral tone. One line colour for the whole app,
@@ -30,9 +35,15 @@
   --accent-line: #8a672f;
   --accent-dim: #b98a4c; /* muted brass, for accent text sitting next to bold accent titles */
   --bar: #6e5636; /* muted brass - solid fill for block-header caps only, never text */
+  /* The SELECTED-item fill - the sidebar's active aura/page row, the active profile chip. Chained
+     to --accent by default (today's one-accent look), but its own variable so the custom-theme
+     "Text highlight" picker can set it independently of "Highlight" (buttons/borders/badges) -
+     reported live 15 Sep: picking one bold accent colour made a big solid selection bar and small
+     accent touches (buttons, borders) compete for the same visual weight everywhere at once. */
+  --select: var(--accent);
   --danger: #e2584a; /* reserved for exactly one job: a buff about to expire */
   --danger-soft: #e2584a1a;
-  --ok: #6fae82;
+  --ok: #4fd67a; /* brightened - reported too close to --ink-faint at dot size, see .profile-dot-on */
   --info: #5c93c4; /* live/diagnostic status - distinct from "you configured this" */
   --info-soft: #5c93c41f;
   --mono: Consolas, 'SFMono-Regular', monospace; /* kept for timers/values - see index.html comment */
@@ -105,11 +116,14 @@ body {
   min-width: 0;
 }
 
+/* The app's own icon (the 24x24 frame baked into build/icon.ico, inlined here as a data URI so
+   the title bar never depends on a packaged file path resolving) - was a plain 7px accent dot. */
 .title-bar-mark {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
+  width: 16px;
+  height: 16px;
+  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAFEklEQVR4nN1Vb2xTVRQ/577X1/atLay0ZaPQzREZMtQAETb9wCAxMYYP/FtjgCUSIVMiwicVIZYFos5PDJAwnSQwwKQVp+g3E2UJ+C8bxD8bMtmEbriNlpZtXdv3595r7hubI0DUj3qS+3Lvfff8/51zAP7rhFMPPAIEqpeTyYtEgENnjEM9cATg/0SgkIH11tu/3nMAtIT/HXO0RhLrgf/53Qbf40EyunSBTWaLGSVFnEg5OyHxHJeuarmxxKzujhTWA5tgYjxCEOut81TKfvlUSH36QnzCcBRaf2x5TA0p+H6hx74BHDJYYmQJwCYBZCmkR9ku79oLDSOtlS8IPs+a7z6c8AhqYgxiNQTDMZqMLtk93WvfdTulffGz37Wp+lwbkxGBD7WYrxf61Q3JIe0TyvQTjOANmYBqdyoh08DfgZt87GzVV6pDqhZmZT6rqtUp24NrY+eFovamXhFeauZz6yRGC4yctib407CK9TBihWjw+PxOIhFnYFNX2VR3zzeXuxfNnLYXGO5UZCSZHDPEvctJbLrJGQA/dluj+4LhjriIxLWmkkq/R3otOWJ+XPpi/KSVcMFw49i87xGxtLi0KNiZSJAKqKC3oKfW7ZAaFbvkyYyZwBiANP4cKOMWp0uVQdNpelTjO/zh9pb7Jd5CjkHNM8U+ErjW/cf6heEuHcIxZhrsWcWOnlRaSxmUJSijt3TTTIol9gZjidSwlrLbsZAa5qruxmfsVl6alth4FCaRRoRraJgfJJL5m9NU3th5uLREYJ4xOgIycJsMDd6aiwFv+JLPG77kv7N84s4mswZwADcNo9c7Z3TjcOuT+7CuwwD/8kl0yhADUrItnu5unLOlpIicDbjIp9ePhFYC5YwbJuq6WTXUUrFNIkgoE3G3QmXtdZ1VcZ0KewgzDPCUe/Yko5U3cUXbIYEwgSwZw0CFSxju+/zKwdnb55U5Dv3aw9Z4EIa5YQKl9AmC5CHGOCE4Xp2McSTIGaXUx3IGcGAzFFNpzcQz22fMVA4mosuuYzh2ViiRrcIJA/06AnL5K/2He94LBoBx4IwaxC5xG2FveTd2HblfAlOn5m+T7HCYmRymP38+3dv8yGqJeH5Qndgcj1bOh5pY2lIgqLqihvOmXhvWdbz5SwQUs0A9wfMEdZNvGDo+73EgKBE+XskMgQDjVDd5hQgRAnVZVbvl8vWBU4t2FIXUj7L5/FZEaLind0xQX/Pc2gI7OeBWiVfTRWvgd8OUIKgKwnCWjozl6Y6gp7elExZI+bSTl01j/RTgmv+5S8vkO92PJaJLawu9tnW30tq7gfXt3yL2tPQ0lbUZlO0GzjdLiLaczjShwKkQu8m4mc1D483M6N6FLycy42Z1UfFNnH40yzm6LRRZwpvL3VzPN0syKKBrIURY3N60xDa3rkM0rbr+ptBxKpP9bgeuEJ0uq9FzDPgbpsaJz+VaHT9aEDc45okiBx0S2eTzyaWDQ9p+S0EkAsTXV5Trn9PXmh/MrTKy7Iz40VvYIaKCAsYYjn8DACvjR2dvBk5I6KX4sauHgq963bZ3Ct0SmKrojwQURYK8ATA4kD3J8iNvC9kiqGJZ8Os5UByau3PAarVTiYtZMWXoiPMVd7FXUXEGAXiYglwiIXHabDiAXL44a+tvl+HfDI0JEvUytQ08iIQBAlViPwlT4UkkAog4DsX7EYbBSqIlRAiIAEIFIHQKYcvhnIA7tLGJwfT/oD8BPx97ndK5Bb0AAAAASUVORK5CYII=");
+  background-size: contain;
+  background-repeat: no-repeat;
   flex-shrink: 0;
 }
 
@@ -262,8 +276,17 @@ body {
   font-weight: 600;
 }
 
-.master-hide-btn {
+/* One right-aligned cluster instead of each button pushing itself apart with its own
+   margin-left:auto (which used to spread Hide auras and Mute sounds into two separate groups). */
+.topbar-actions-right {
   margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.master-hide-btn {
   flex-shrink: 0;
   background: transparent;
   border: 1px dashed var(--line);
@@ -328,8 +351,8 @@ body {
    soft-tint-plus-bold treatment was too easy to miss at a glance. Dark text
    on brass, since --ink white on this fill has poor contrast. */
 .profile-chip.active {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--select);
+  border-color: var(--select);
   color: var(--bg);
   font-weight: 700;
 }
@@ -411,11 +434,57 @@ body {
   overflow-y: auto;
 }
 
-.sidebar h1 {
+.sidebar-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 4px 12px;
+}
+
+.sidebar h1 {
+  margin: 0;
   font-size: 16px;
   line-height: 1.3;
   color: var(--ink);
+}
+
+/* A small, persistent Discord icon beside the title (owner, 15 Sep) - the old text link only
+   lived on the About page, easy to never see. A generic chat-bubble glyph, not the Discord brand
+   mark, so it needs the tooltip + the label already in this file's other Discord links to read as
+   "this goes to Discord" rather than relying on shape recognition alone. */
+.sidebar-discord-link {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.sidebar-discord-link svg {
+  width: 16px;
+  height: 16px;
+}
+.sidebar-discord-link:hover {
+  color: var(--accent);
+  background: var(--panel);
+}
+/* Links to About (owner, 15 Sep - a lower-cost home for About than a permanent sidebar row).
+   Plain text until hovered, so it doesn't read as a link at rest - the title's job is still being
+   a title first. */
+.sidebar h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+.sidebar h1 a:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 /* Active nav item: a left accent bar, not a filled background block - a
@@ -432,6 +501,8 @@ body {
   color: var(--ink);
   padding: 8px 10px;
   font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   cursor: pointer;
 }
 
@@ -477,7 +548,7 @@ body {
 
 /* A clicked nav button keeps focus; without an explicit rule Chromium draws its own ring, which
    reads as a stray box on whichever page button was opened last (usually a module's). The active
-   page is already shown by the left accent bar, so the keyboard focus cue can be the same quiet
+   page is already shown by the solid fill below, so the keyboard focus cue can be the same quiet
    treatment the rest of the app's controls use. */
 .nav-btn:focus:not(:focus-visible) {
   outline: none;
@@ -488,13 +559,20 @@ body {
   padding-left: 8px;
 }
 
+/* The active page gets a solid accent fill - the old thin left border was too easy to miss at a
+   glance. Comes after :hover in the stylesheet so it wins on equal specificity: hovering the
+   already-active button keeps this fill rather than swapping to the plain hover panel colour. */
 .nav-btn.active {
-  background: transparent;
+  background: var(--select);
   border-color: transparent;
-  border-left: 2px solid var(--accent);
-  padding-left: 8px;
-  color: var(--ink);
+  color: var(--bg);
   font-weight: 700;
+}
+.nav-btn.active .nav-section-chevron {
+  color: var(--bg);
+}
+.nav-btn.active .nav-section-chevron:hover {
+  background: transparent;
 }
 
 .nav-submenu {
@@ -506,6 +584,75 @@ body {
   /* Full --line (= --accent-line), not the softer variant - this was
      specifically called out as not having the accent applied yet. */
   border-left: 1px solid var(--line);
+}
+
+.nav-submenu.collapsed {
+  display: none;
+}
+
+/* "Tools" groups Buff Planner/Combat/Lockouts the same way "Overlay Auras"/"Action Bars" group
+   their own children - collapsible, chevron on the left - but it has no page of its own to
+   navigate to, so it's a plain toggle button rather than a .nav-btn (which would otherwise hijack
+   every click into "no page is active", since activateNavButton reads btn.dataset.page). Same
+   weight/spacing as .nav-btn so it doesn't read as a lesser element. */
+.nav-group-header {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+.nav-group-header:hover {
+  background: var(--panel);
+}
+.nav-group-header:focus:not(:focus-visible) {
+  outline: none;
+}
+.nav-group-header:focus-visible {
+  outline: none;
+  border-left: 2px solid var(--info);
+  padding-left: 8px;
+}
+
+/* Same shape as .nav-submenu, but a different line colour - it groups whole PAGES (still full
+   .nav-btn weight inside), not aura/bar management items, and should read as a distinct kind of
+   grouping at a glance. */
+.nav-submenu-tools {
+  border-left-color: var(--info);
+}
+
+/* Same shape again, for the Action Bars submenu - a third distinct line colour so it doesn't
+   read as the same grouping as Overlay Auras' brass line or Tools' blue one. */
+.nav-submenu-actionbars {
+  border-left-color: var(--ok);
+}
+
+/* Collapse toggle for "Overlay Auras" / "Action Bars" - a small hit target on the LEFT of the
+   label so clicking it never also navigates (the button's own click handler still fires for
+   everything else, since this span stops the event from bubbling to it). Chevron only, no
+   explanatory text - see the toggle-explanations-hover-only rule. */
+.nav-section-chevron {
+  font-size: 13px;
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+  margin: -4px 2px -4px -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--ink-dim);
+  border-radius: 4px;
+}
+.nav-section-chevron:hover {
+  color: var(--ink);
+  background: var(--panel);
 }
 
 .nav-sub-row {
@@ -561,6 +708,8 @@ body {
   color: var(--ink);
   padding: 5px 8px;
   font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   cursor: pointer;
   overflow: hidden;
 }
@@ -579,12 +728,12 @@ body {
   background: var(--panel);
 }
 
+/* Solid accent fill, matching .nav-btn.active - the old thin left border was easy to miss,
+   especially with a submenu's own coloured left rule right next to it. */
 .nav-sub-btn.active {
-  background: transparent;
+  background: var(--select);
   border-color: transparent;
-  border-left: 2px solid var(--accent);
-  padding-left: 6px;
-  color: var(--ink);
+  color: var(--bg);
   font-weight: 700;
 }
 
@@ -599,12 +748,20 @@ body {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+}
+.profile-dot-wrap:hover {
+  background: var(--panel);
 }
 
 .profile-dot {
-  width: 5px;
-  height: 5px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
 }
 
@@ -713,17 +870,19 @@ body {
   font-size: 13px;
 }
 
-/* A card is a block, same as the widget panel's - flat --panel-2 fill,
-   square corners, no border. Consecutive cards get a 6px gap (below)
-   instead of a bordered box each, so the page --bg shows through as the
-   same seam the block-stack uses. */
+/* A card is a block, same as the widget panel's. Was a --panel-2 fill (the same brown as an
+   input field); dropped to --bg 15 Sep so a card reads the way the sidebar does - flat, on the
+   page's own ground, separated only by its border and the gutter gap - instead of as a lighter
+   tan tile sitting on top of the page. Square corners, no shadow. Consecutive cards get a 6px
+   gap (below) instead of a bordered box each, so the page --bg shows through as the same seam
+   the block-stack uses. */
 /* Every card gets its own highlight border in the same brass family as
    the block-cap banners, so a card with no cap of its own (most of them)
    still reads as its own distinct section rather than leaning entirely
    on the gutter gap to say so. */
 .card {
-  background: var(--panel-2);
-  border: 1px solid var(--accent-line);
+  background: var(--panel-fill);
+  border: 1px solid var(--line);
   padding: 16px 20px;
 }
 
@@ -759,11 +918,16 @@ body {
 
 /* Same highlight border as .card - a block-cap banner marks a few of
    these already, but plenty (Identity, for instance) don't have one, and
-   this keeps every block visually self-contained regardless. */
+   this keeps every block visually self-contained regardless. Background
+   dropped to --bg alongside .card, same reasoning. Bottom padding trimmed
+   16px -> 6px 15 Sep: an unbroken span of blank pixels reads bigger than
+   the same height split by a rule, so matching the between-topic gap
+   pixel-for-pixel (12+12) still looked taller here - this deliberately
+   comes in under that, not equal to it. */
 .block {
-  background: var(--panel-2);
-  border: 1px solid var(--accent-line);
-  padding: 14px 18px 16px;
+  background: var(--panel-fill);
+  border: 1px solid var(--line);
+  padding: 14px 18px 6px;
 }
 
 /* Card-level heading. `.block h3` (aura panel) and `.card h3` (every page) are one style - the
@@ -775,24 +939,45 @@ body {
   color: var(--ink);
 }
 
-/* A small solid-fill bar at the block's own top, scoped to the block's
-   width (not the full window) - for a real section break, not just a
-   label. .info is a separate colour reserved for LIVE STATUS blocks
-   ("Active on this widget") so that kind of content is never visually
-   confused with a configuration block. */
+/* A thin-rule label at the block's own top, scoped to the block's width (not the full window) -
+   for a real section break, not just a heading. Was a solid --bar fill; retired 15 Sep because
+   it and its blue .info variant were the two things in the whole aura settings panel that had no
+   equivalent anywhere in the sidebar. First pass dropped the fill entirely, but next to a full
+   block of body text a bare 11px label read as too quiet to register as a section break at a
+   glance - this is that plus a size/contrast bump (13px, full --ink instead of --ink-mut, wider
+   letter-spacing) and the faintest possible wash (the same --accent-soft a configured/hovered
+   topic row already uses elsewhere), rather than going back to a solid bar. .info is a separate
+   colour reserved for LIVE STATUS blocks ("Active on this widget") so that kind of content is
+   never visually confused with a configuration block - a border top+bottom instead of just
+   bottom, plus the brass accent colour, is what still sets it apart; it inherits the same size
+   and wash. Bottom margin/padding trimmed 15 Sep, same reasoning as .block's bottom padding
+   above - an unbroken blank span reads bigger than the same height split by a rule, so this
+   deliberately comes in under the between-topic gap rather than matching it exactly. */
 .block-cap {
-  margin: -14px -18px 12px;
-  padding: 7px 18px;
-  background: var(--bar);
+  margin: -14px -18px 2px;
+  padding: 6px 18px;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--accent-line);
   color: var(--ink);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
 }
 
 .block-cap.info {
-  background: var(--info);
+  color: var(--accent);
+  border-top: 1px solid var(--accent-line);
+  border-bottom: 1px solid var(--accent-line);
+}
+
+/* .block-cap's own bottom spacing was trimmed tight enough to suit a first .topic, which already
+   brings its own 12px of top padding along with it. A block whose first row is plain content
+   instead - "Active on this aura"'s hint text, "Manage aura"'s button row, "Buffs shown"'s hint -
+   has no such built-in padding of its own, so that same trim read as cramped there. Restored only
+   where the very next element isn't a topic. */
+.block-cap + :not(.topic) {
+  margin-top: 8px;
 }
 
 /* A collapsible topic row inside the Configuration block. Three tiers of
@@ -808,15 +993,28 @@ body {
         separate from the persistent stripe above.
    Deliberately no additional dot/badge on top of the stripe - tried once
    and it was one "configured" cue too many stacked on the same row. */
+/* Bled to the block's own edges (-18px, matching .block-cap) rather than the old -8px partial
+   bleed - with the open-state wash below now the only solid fill left in the panel, a wash that
+   stopped 10px short of the block's border on each side read as a floating box rather than a
+   real section.
+   Divider is a border-TOP, added by JS via .topic-after-visible rather than a plain CSS
+   :first-child/:last-child rule. A topic can be hidden two different ways (.topic-empty, or a
+   plain inline style.display='none' for a whole topic - e.g. "Watching" on a custom-timer aura,
+   "Layout" on a text aura), and either one still counts toward :first-child/:last-child even
+   though nothing draws it - so a structural CSS rule kept pointing at the wrong end of the list,
+   leaving the real first-or-last VISIBLE topic with a stray divider (or missing one) and the
+   block's own padding stacking into a gap noticeably bigger on that side. updateTopicDividers()
+   in main-window.js walks the real DOM after every visibility toggle settles and marks exactly
+   the topics that have an actually-visible topic before them - see its own comment. */
 .topic {
-  border-bottom: 1px dotted var(--line);
-  padding: 0 8px 0 12px;
-  margin: 0 -8px;
+  border-top: none;
+  padding: 0 18px 0 14px;
+  margin: 0 -18px;
   border-left: 4px solid transparent;
 }
 
-.topic:last-child {
-  border-bottom: none;
+.topic.topic-after-visible {
+  border-top: 1px dotted var(--line);
 }
 
 .topic.configured {
@@ -851,12 +1049,16 @@ body {
   color: var(--accent);
 }
 
-.topic.open > .topic-head {
-  background: var(--accent-soft);
+/* Was a solid accent-soft/info-soft wash behind the open row's head - a fill that read as a
+   third, mismatched treatment next to the dotted row dividers and the left stripe. Dropped 15
+   Sep; the chevron flip already shows open/closed unambiguously, so "this one, right now" is now
+   just the same accent-coloured title the row already gets on hover, kept on while it's open. */
+.topic.open > .topic-head .topic-title {
+  color: var(--accent);
 }
 
-.topic.live.open > .topic-head {
-  background: var(--info-soft);
+.topic.live.open > .topic-head .topic-title {
+  color: var(--info);
 }
 
 .chev {
@@ -1073,6 +1275,14 @@ button:hover {
   color: var(--ink);
 }
 
+/* Chromium draws sliders and checkboxes in its own default blue - the one colour in the whole
+   app that was never on the brass palette. accent-color retints the native control (thumb,
+   track fill, checkmark) without needing a custom-drawn replacement for either. */
+input[type='range'],
+input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+
 /* Chromium's default colour input is a thick white-bordered chip that reads as
    a foreign control against this palette. The swatch itself is the point, so
    the chrome around it is cut to a hairline: zero padding, and the inner
@@ -1273,7 +1483,7 @@ h4 {
   flex-direction: column;
   gap: 2px;
   padding: 10px 2px 4px;
-  border-bottom: 1px solid var(--accent-line);
+  border-bottom: 1px solid var(--line);
   margin-bottom: 2px;
 }
 
@@ -1932,6 +2142,16 @@ select.sd-native {
   gap: 8px;
   min-width: 8em;
   max-width: 100%;
+  /* Owner, 15 Sep: "scale the fields to fill the gaps is what i said, not the anchor points,
+     dynamic field sizes" - screenshot showed the Combat tab's Zone/Source dropdowns staying at
+     their own compact size while a big blank gap opened up next to them, even though their
+     wrapping .sd-wrap WAS flex-growing correctly. Root cause: .sd-wrap growing does not make
+     .sd-display (an inline-flex button, shrink-to-fit by default) grow WITH it - `max-width: 100%`
+     is only an upper bound, nothing here previously claimed the width once the wrap had it to
+     give. `width: 100%` makes the visible control actually fill however wide its wrap is - a
+     no-op everywhere .sd-wrap doesn't itself grow (its shrink-to-fit width already equals 100% of
+     itself), and the real fix everywhere it does. */
+  width: 100%;
   background: var(--panel-2);
   border: 1px solid var(--line);
   color: var(--ink);
@@ -1944,6 +2164,16 @@ select.sd-native {
 .sd-display:hover { border-color: var(--accent); }
 .sd-display:focus { outline: none; border-color: var(--accent); }
 .sd-display:disabled { opacity: 0.5; cursor: default; }
+/* Owner, 15 Sep: "the log file name field can be much shorter" (a scan's own label - its file
+   name plus the exact date/time it was scanned - has no natural length limit) was first fixed
+   with a flat 220px cap on the Source field specifically. Superseded by the later "scale the
+   fields to fill the gaps... dynamic field sizes" / "middle one doesn't fill the space" -
+   Zone and Min damage both flex-grow to fill the row (.combat-filter-pair), and a fixed cap on
+   Source alone left it looking stuck while its neighbours filled out. The flex-grow + .sd-text's
+   existing ellipsis together already solve the original problem without a hardcoded number: the
+   field now grows with its siblings, sharing the row like they do, and only elides if its own
+   share of that shared space is still narrower than the label - refreshDisplay() already puts the
+   untruncated label in `title` for exactly that case. */
 .sd-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sd-text.sd-placeholder { color: var(--ink-faint); }
 .sd-caret { color: var(--accent); font-size: 10px; flex: none; }
@@ -2054,7 +2284,7 @@ select.sd-native {
   gap: 6px;
   padding: 4px 12px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 4px;
   font-size: 12px;
   color: var(--ink-mut);
   cursor: pointer;
@@ -2067,8 +2297,9 @@ select.sd-native {
   color: var(--accent);
 }
 
-/* Matches the top bar's active profile chip so "this profile is on" reads the
-   same in both places. */
+/* Colour treatment matches the top bar's active profile chip so "this profile is on" reads the
+   same in both places - shape doesn't (squared off 15 Sep, the pill no longer fit the flat panel
+   redesign around it). */
 .profile-toggle.on {
   background: var(--accent-soft);
   border-color: var(--accent);
@@ -2076,15 +2307,29 @@ select.sd-native {
   font-weight: 600;
 }
 
-/* The "Only in:" zone search results (QOL #2). A scrollable list of real zone
-   names; clicking one adds it. Shown only while the search field is in use. */
+/* The "Only in:" zone search results (QOL #2). A scrollable list of real zone names; clicking one
+   adds it. Shown only while the search field is in use.
+   .zone-search-wrap is the positioning anchor (same pattern as search-dropdown.js's
+   .sd-wrap/.sd-popup) - was in normal flow, which meant a long result list physically pushed
+   "Display & size" and everything under it down the page instead of floating over it (reported
+   live 15 Sep). */
+.zone-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
 .zone-add-list {
-  max-height: 180px;
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
   overflow-y: auto;
-  border: 1px solid var(--line);
+  border: 1px solid var(--accent);
   border-radius: 4px;
-  margin: 4px 0;
-  background: var(--surface, var(--bg));
+  background: var(--panel);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
 }
 .zone-add-option {
   display: block;
@@ -2108,14 +2353,20 @@ select.sd-native {
 }
 
 /* The Skill-cast custom-timer trigger's spell search results (reported live 30 Aug). Same shape
-   as .zone-add-list. */
+   as .zone-add-list, including the same in-flow-vs-floating fix (15 Sep) - it shares
+   .zone-search-wrap as its positioning anchor rather than its own copy. */
 .skill-search-list {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
   max-height: 220px;
   overflow-y: auto;
-  border: 1px solid var(--line);
+  border: 1px solid var(--accent);
   border-radius: 4px;
-  margin: 4px 0;
-  background: var(--panel-2, var(--bg));
+  background: var(--panel);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
 }
 .skill-search-option {
   display: block;
@@ -2269,7 +2520,7 @@ code {
    borders") to read as a distinct surface. */
 .modal-card {
   background: var(--panel-2);
-  border: 1px solid var(--accent-line);
+  border: 1px solid var(--line);
   padding: 16px 20px;
   width: 80vw;
   max-width: 1100px;
@@ -2376,7 +2627,7 @@ body.sidebar-resizing .sidebar {
   margin: 0;
   padding: 4px;
   background: var(--panel-2);
-  border: 1px solid var(--accent-line);
+  border: 1px solid var(--line);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   min-width: 140px;
@@ -2420,7 +2671,7 @@ body.sidebar-resizing .sidebar {
   font-size: 15px;
   padding: 4px 10px;
   background: var(--panel-2);
-  border: 1px solid var(--accent-line);
+  border: 1px solid var(--line);
   border-radius: 5px;
   color: var(--ink);
 }
@@ -2697,3 +2948,454 @@ body.sidebar-resizing .sidebar {
 .lockout-killdate { opacity: 0.65; font-size: 10px; line-height: 1.1; white-space: nowrap; }
 /* A gap in the record is not a detail. It is the reason a cell above might be wrong. */
 .lockout-gapwarn { border-left: 3px solid #e8b04b; padding-left: 10px; margin-top: 6px; }
+
+/* Combat tab - past-fight history and the per-player/per-skill breakdown. */
+/* Owner, 14 Sep: "it needs to be obvious that there is a live tracking option, since currently
+   there is no placeholder ui showing that it will go there" - a fresh session shows an empty list
+   with nothing telling you it's actually watching. A small always-on badge next to the heading,
+   not a paragraph (this project's own rule: hover text for explanation, never subtext under a
+   heading) - the hover title carries the "why", the badge itself just says the fact. */
+.live-indicator { font-size: 0.6em; font-weight: 600; color: #6fd67a; vertical-align: middle; margin-left: 6px; letter-spacing: 0.02em; }
+.empty-note { opacity: 0.6; font-size: 13px; }
+.scan-status { font-size: 12.5px; opacity: 0.8; margin: 8px 0 0; }
+.scan-status.scan-error { color: #e08a3c; opacity: 1; }
+
+/* Owner, 15 Sep: "the row of buttons is clipped on smaller screens, there is too many buttons in
+   one row" - six filter controls plus three action buttons in one `.row` (flex, no wrap by
+   default) ran off the right edge of a narrower window with no way to reach the clipped ones.
+   Scoped to just the Combat tab's own filter rows, not `.row` globally - most of this app's other
+   `.row`s are short label+input pairs that are fine staying on one line. */
+.combat-filter-row { flex-wrap: wrap; row-gap: 6px; }
+/* Owner, 15 Sep, follow-up: "it drops down underneath when it still has space, but it split from
+   it's text label which is bad" - each label and its own control used to be separate flex
+   children of .combat-filter-row, so wrapping could (and did) move a control onto its own new
+   line while its label stayed behind on the line above, reading as an unlabelled empty box. Each
+   pair is grouped into one flex item now, so a wrap moves the whole label+control pair together
+   or not at all. */
+.combat-filter-pair { display: inline-flex; align-items: center; gap: 8px; }
+/* The shared `.label` class defaults to `min-width: 110px` for the left-aligned settings-form rows
+   it was built for - padding "Zone"/"Source" out to 110px here just wastes width these short,
+   inline filter labels don't need, making the row wrap more often than it has to. */
+.combat-filter-pair .label { min-width: 0; }
+/* Owner, 15 Sep, follow-up: "you can still expand the text fields to match across the whole row,
+   that looks better, but allow it to shrink back to how it is now when smaller" - each pair grows
+   to help fill the row's own width when there's room (rather than leaving a big empty gap after a
+   short "50000"), and shrinks straight back down to its natural compact size once the row is
+   narrow enough to wrap - flexbox distributes grow/shrink per LINE, so a wrapped pair on its own
+   line settles back to this same natural size regardless of how wide its neighbours got upstairs.
+   The label itself never grows (flex: 0 0 auto) - only the control beside it does.
+
+   BASIS IS 0, NOT auto, and that is load-bearing rather than cosmetic. `flex-wrap` decides
+   whether a pair fits on the current line using its BASIS (the un-shrunk, content-preferred
+   size) - not its post-shrink size, even though shrinking is enabled and min-width:80px above
+   caps how far it can go. A scan's own Source label has no length limit (a file name plus the
+   exact date/time it was scanned) - with `flex-basis: auto` that pair's hypothetical width was
+   the FULL unshrunk label text, sometimes 400px+, so the row decided Min damage couldn't fit
+   alongside it and wrapped - before shrinking ever got the chance to prove there was room.
+   Reported live 15 Sep with a genuinely long scan label: "there is PLENTY of space for all 3
+   fields on the same row, but it wraps for no reason." `flex-basis: 0` makes every pair START
+   at zero for the wrap decision, so line-assignment is driven by the container's real width
+   instead of by whichever pair's content happens to be longest that day; grow then distributes
+   the row's actual space same as before.
+
+   `min-width: 0` HAD TO COME WITH IT - basis:0 alone measurably was not enough (checked live in
+   a browser, not assumed: the pairs still split onto two lines with basis:0 alone). Every flex
+   item ALSO gets an "automatic minimum size" floor when its own min-width is left at `auto`, and
+   for an item that is itself a flex container (.combat-filter-pair is: label + control side by
+   side) that floor is its own content's min-content size - which pulled the huge scan-label text
+   back in through a second door, since nothing on .combat-filter-pair itself overrode it (only
+   .sd-wrap's OWN min-width was capped, one level too deep to help the pair's own floor). Setting
+   min-width:0 here removes that automatic floor, so basis:0 actually governs. Confirmed after
+   the fix: three equal-width pairs sharing one line at the row width used in the report. */
+.combat-filter-pair { flex: 1 1 0; min-width: 0; }
+.combat-filter-pair .label { flex: 0 0 auto; }
+.combat-filter-pair .sd-wrap,
+.combat-filter-pair input.text-input { flex: 1 1 auto; min-width: 80px; }
+
+/* Owner, 15 Sep, second follow-up: "you still did not move the buttons where i told you to" - a
+   row of its own beneath the heading still wasn't "the top row" in the sense meant; the heading's
+   own line is. Same header+actions pattern this app already uses for modal headers
+   (.modal-header: space-between, heading left, actions right), not a new one invented here. Wraps
+   at narrow widths rather than clipping - the actions drop to their own line under the heading
+   instead of running off the edge. */
+.combat-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px; /* replaces .card h3's own bottom margin, zeroed below so it doesn't double up */
+}
+.combat-list-header h3 { margin: 0; }
+.combat-list-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* The main list - one row per VISIT (a trip to a zone, however many fights it held), newest
+   first. Kept to one line each on purpose - a full fight-by-fight table for every visit is what
+   made this page unusably long; that detail lives one click away instead (see the two screens
+   below). Time leads because that's how the owner reads this list; the zone name is what's
+   clickable, since it's the thing that actually navigates somewhere.
+   A real grid, not flex (owner, 14 Sep: "date and location fields need their own columns to
+   justify text correctly") - today's fights show a bare time ("15:26:56") while anything older
+   shows a full date too ("01/09/2026 15:26:56"), and flex's `0 0 auto` sizing let that shorter
+   width shift the zone name (and everything after it) row to row. The time column is now a fixed
+   width wide enough for the long form, so every row's zone starts at the exact same x regardless
+   of which format that particular row happens to use.
+   The difficulty column (owner, 14 Sep, third round: "it should be a prefix, like D1/d4, with
+   it's own column" - was inline text ahead of the zone name) is its own fixed-width slot between
+   time and zone name; a row with no difficulty at all just leaves it empty, same as an ordinary
+   grid cell with nothing in it.
+   The raid/group column (owner, 14 Sep, follow-up: "raid / group tags are still the same as
+   before and not resolved, they do not have their own column" - was inline text tacked onto the
+   zone name, same original mistake as the difficulty prefix) gets the identical treatment: its
+   own fixed-width slot AFTER the zone name, empty when the visit isn't an instance at all. */
+.combat-visit-row {
+  display: grid;
+  /* Two more fixed tracks than the raid/group column got (owner, 14 Sep, screenshot-confirmed:
+     "these 3 pieces of text need their own columns to proper align text") - fight count and
+     damage total used to share ONE right-aligned cell as a single "N fights · 3.64m" string, so
+     the two numbers drifted against each other row to row (a 2-digit fight count vs a 1-digit one
+     shifts the whole string, damage total included, even though the string's own right edge stays
+     put). Splitting them into their own tracks - the same fix already applied to the D-code and
+     raid/group columns earlier the same day - lines up fight counts under fight counts and damage
+     totals under damage totals.
+     The damage column is a FIXED 80px, not `auto` (owner, 15 Sep, follow-up screenshot: "still not
+     column split and even") - each `.combat-visit-row` is its OWN separate grid container (not one
+     shared grid for the whole list), so an `auto` track sizes to THAT row's own content only, with
+     nothing forcing it to match any other row's width. `text-align: right` inside a box that is
+     already exactly as wide as its own text does nothing - the visible right edge still drifted
+     with every row's own damage-string length ("826.3k" vs "1.65m"), the exact bug the fight-count
+     split was supposed to have already fixed. A real fixed width is what actually lines up the
+     right edges across independent per-row grids; 80px comfortably fits this app's own widest
+     formatDamage() output ("999.99m"-shaped values) without needing to be `auto` at all. */
+  /* First track was 150px to fit the long "date + time" form of formatWhen() - the row now shows
+     a bare time only (a date-header bar above groups same-day rows instead, see
+     .combat-date-header), so it only needs to fit "15:26:56". */
+  grid-template-columns: 70px 36px minmax(80px, 1fr) 60px 70px 80px;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.combat-visit-row:last-child { border-bottom: none; }
+
+/* One header bar per day in the Scan results / Past Fights list, so a long scan doesn't read as
+   one undifferentiated wall of rows (owner, 15 Sep). Same solid-fill treatment as .block-cap,
+   sized to the list itself rather than relying on a .block's own negative-margin bleed. */
+.combat-date-header {
+  margin: 10px 0 4px;
+  padding: 5px 10px;
+  background: var(--bar);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-radius: 3px;
+}
+.combat-date-header:first-child { margin-top: 0; }
+.combat-visit-time { font-variant-numeric: tabular-nums; opacity: 0.75; white-space: nowrap; }
+.combat-visit-diff { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.combat-visit-zone {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent, #c99a3f);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.combat-visit-zone:hover { text-decoration: underline; }
+.combat-visit-instance { white-space: nowrap; }
+
+/* The "Live now" row (owner, 14 Sep) - same grid shape as an ordinary visit row so its columns
+   line up with the list below it, but visually set apart (green-tinted border, no bottom rule of
+   its own) since it isn't a finished visit and clicking it opens a fight still in progress.
+   Always present, never display:none (owner follow-up: "put a placeholder copy of the entire ui
+   there even when no active fight log is happening") - `.combat-live-row-idle` is the muted
+   placeholder state shown whenever nothing's actually underway, so the row itself demonstrates
+   where live tracking will appear rather than only existing once you happen to catch a fight. */
+.combat-live-row { border: 1px solid rgba(111, 214, 122, 0.35); border-radius: 4px; margin-bottom: 6px; cursor: pointer; }
+.combat-live-row .combat-visit-zone { cursor: pointer; }
+.combat-live-row.combat-live-row-idle { border-color: var(--line); cursor: default; opacity: 0.6; }
+.combat-live-row.combat-live-row-idle .combat-visit-zone { cursor: default; font-weight: 400; color: inherit; }
+.combat-live-row.combat-live-row-idle .live-indicator { color: inherit; }
+
+/* Difficulty-tier code ("D0".."D4") - owner, 14 Sep: a different colour per tier, zone name stays
+   gold, D0 almost white, D4 the most prominent. A plain heat ramp (near-white -> yellow -> orange
+   -> red), D4 additionally bold + a faint glow so it reads as the standout tier at a glance, not
+   just another step in the ramp. Shared by the visit list's own dedicated column
+   (.combat-visit-diff) and the detail screen's inline title prefix (.zone-diff-code, below). */
+.zone-diff-tag { font-weight: 700; }
+/* Fixed-width box for just the "D<n>" code INSIDE the detail title's inline prefix, so the dash
+   after it lands at the same x for every title regardless of how wide that code renders (owner,
+   14 Sep). Not used by the visit list any more - a real grid column does that job there now. */
+.zone-diff-code { display: inline-block; width: 22px; text-align: left; font-variant-numeric: tabular-nums; }
+.zone-diff-d0 { color: #ded9ce; }
+.zone-diff-d1 { color: #dccb6c; }
+.zone-diff-d2 { color: #e0a13c; }
+.zone-diff-d3 { color: #e06a2f; }
+.zone-diff-d4 { color: #ff3b30; text-shadow: 0 0 6px rgba(255, 59, 48, 0.55); }
+
+/* Raid/group badge (owner, 14 Sep: "there needs to be an identifier for (group)/raid instance") -
+   a different colour family from the D-tier heat ramp above so the two ideas (difficulty vs
+   raid-lockout-or-not) don't visually blur together. Kept lighter/smaller than the zone name -
+   it's a secondary fact about the visit, not the headline. Text is bare "Raid"/"Group" (no
+   parens) in the visit list's own column; the detail title's inline form (appendZoneLabel) still
+   wraps it in parens since there it's trailing text after the name, not a column of its own. */
+.zone-instance-badge { font-size: 0.9em; font-weight: 600; opacity: 0.85; }
+.zone-instance-raid { color: #b98cff; }
+.zone-instance-group { color: #8fb3c9; }
+.combat-visit-fights, .combat-visit-damage { opacity: 0.6; font-size: 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* The live row's own meta text (duration + damage + top attacker, one combined string - it isn't
+   a multi-fight visit, so there's no separate "fight count" to give its own column) still needs
+   the room BOTH new trailing tracks give it. Explicit placement, not just DOM order - the row's
+   other un-positioned cells (status/zone) still auto-flow into columns 1-4 same as before. */
+.combat-live-row .combat-visit-meta { grid-column: 5 / 7; opacity: 0.6; font-size: 12px; text-align: right; white-space: nowrap; }
+
+/* The two drill-down screens - one fight, or a whole visit's combined totals - share this same
+   bar-chart layout, just fed a different row list. The DPS figure is INSET into the track, laid
+   over its right edge, rather than sitting in its own column past the end of it (owner, 13 Sep:
+   "dps numbers should also go on top of the coloured bars... it should still be inset") - a short
+   bar (a low-damage attacker, scaled against the fight's top attacker) used to leave the DPS
+   number stranded out past a lot of bare background, which is also what made a short row look
+   like wasted space rather than a shorter bar. Track now owns the full 1fr column with no
+   separate stats column at all; amount and DPS are two independent overlays inset:0 within it,
+   left- and right-aligned respectively, same layering trick as the skill-row bars. */
+.combat-bar-row + .combat-bar-row { margin-top: 8px; }
+.combat-bar-row summary {
+  cursor: pointer;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+.combat-bar-row summary::-webkit-details-marker { display: none; }
+.combat-bar-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combat-bar-track {
+  position: relative;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.combat-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 4px;
+  opacity: 0.85;
+  display: flex;
+  overflow: hidden;
+}
+/* Denon's Desperate Dirge gets its own bright-red slice within a player's own bar (owner, 14 Sep):
+   "it should still be part of damage totals, but the coloured bar should have the denon's section
+   coloured bright red." `.combat-bar-fill` is a flex row now - each segment is just a plain
+   coloured block filling its own share of that row's total width. */
+.combat-bar-fill-segment { height: 100%; }
+/* Class estimate (owner, 13 Sep: "add in the class estimation and put it as the first text in
+   the damage coloured bar... make sure that it is it's own column") - `.combat-bar-label` is the
+   left-hand overlay (inset:0, same trick as the DPS one on the right), holding two children in a
+   fixed order: the class guess first, then the damage amount. `.combat-bar-class` gets its own
+   min-width so it reads as a real column - every row reserves the same slot for it, "-" when
+   nothing could be resolved, rather than the amount sliding left/right depending on whether that
+   particular row happened to guess anything. */
+.combat-bar-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.combat-bar-class {
+  flex: 0 0 auto;
+  min-width: 46px;
+  font-weight: 600;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+/* Confidence colour (owner, 13 Sep: "colour the classes by green for 100% guaranteed, orange for
+   maybe") - see classEstimator.js for how confirmed/maybe are decided. "-" (nothing resolved) gets
+   neither colour, just a dim neutral, so it never looks like a low-confidence guess. */
+.combat-bar-class-confirmed { color: #6fd67a; }
+.combat-bar-class-maybe { color: #e0a94e; }
+.combat-bar-class-unknown { opacity: 0.6; }
+.combat-bar-amount { flex: 0 0 auto; }
+.combat-bar-dps {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 8px;
+  font-size: 12px;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+/* Skill / Damage / % of total / Crit % - a real labelled grid (owner, 13 Sep: "needs dedicated
+   columns... columns are unlabeled"), the same four columns for the header and every data row so
+   the numbers line up underneath their names instead of just being spaced apart by eye. The
+   coloured bar spans the WHOLE Damage/% of total/Crit % area, not just the Damage column (owner,
+   13 Sep: "the coloured bar should extend underneath the crit and damage % numbers") - a
+   `.combat-skill-track-area` grid item covering columns 2 to the end, itself a sub-grid with the
+   same "2fr 64px 56px" proportions so the three numbers still land in the same visual columns the
+   header uses, layered (z-index) over the track/fill which sit behind as one absolutely-positioned
+   pair spanning the whole area. Sized against this player's own biggest skill, same reasoning the
+   player bars above already use ("biggest, not the total" - otherwise one dominant nuke leaves
+   every other skill's bar too short to read). */
+.combat-skill-list { padding: 6px 4px 4px 140px; }
+.combat-skill-row {
+  display: grid;
+  /* Owner, 15 Sep: "is it possible to add/check for amount of times skill used/activated... it
+     would really help check how often something happens in the log, like weapon procs" - a Hits
+     column, right after the amount so "134.9k from N hits" reads in order. The count was already
+     tracked internally (bySkill's own `hits` field, used for Crit % all along) - this is a
+     display-only addition, no engine change. */
+  grid-template-columns: 1fr 2fr 56px 64px 56px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+}
+.combat-skill-row:first-child { border-top: none; }
+.combat-skill-name { opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combat-skill-header {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  border-top: none;
+  padding-bottom: 6px;
+}
+/* Header labels and their data values must share the SAME alignment or the columns visibly don't
+   line up (owner, 13 Sep: "column text needs to be centered to line up correctly") - centred for
+   every column but Skill, which stays left (names, with the ellipsis overflow, read better
+   anchored left) on both the header and the data ('Skill' via :first-child below, the name cells
+   via .combat-skill-name's own default left alignment). */
+.combat-skill-header span:first-child { text-align: left; }
+.combat-skill-header span:not(:first-child) { text-align: center; }
+.combat-skill-track-area {
+  grid-column: 2 / -1;
+  position: relative;
+  display: grid;
+  grid-template-columns: 2fr 56px 64px 56px;
+  align-items: center;
+  gap: 10px;
+  height: 16px;
+}
+.combat-skill-share, .combat-skill-crit, .combat-skill-hits {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.combat-skill-track {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.combat-skill-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  opacity: 0.8;
+}
+.combat-skill-amount {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+/* Each fight is its own accordion now, not a navigation - clicking one expands its bar chart in
+   place (owner, 13 Sep: "so you can find yourself again faster") instead of opening a screen that
+   then needs its own way back.
+   `> summary` (direct child), not a bare descendant selector, on every rule below - a nested
+   .combat-bar-row's OWN <summary> lives inside this element too (fight -> its per-player bars),
+   and a same-specificity descendant selector here would win by file order and silently flatten
+   every nested bar's grid layout to this row's flex one. That exact bug shipped once already:
+   "no colours" on every player inside an expanded fight - the DOM and the inline bar-fill colour
+   were both correct, only the CHOSEN display mode was wrong, because this rule reached two levels
+   deeper than intended. */
+.combat-fight-list-row {
+  border-bottom: 1px solid var(--line);
+}
+.combat-fight-list-row:last-child { border-bottom: none; }
+/* Distinct columns (owner, 14 Sep): date, boss/trash name, time, total damage, top dps - top dps
+   RIGHTMOST, name is the flexible column that takes whatever space is left over. A real grid
+   (like .combat-visit-row above it), not flex natural-sizing, so nothing drifts row to row. */
+.combat-fight-list-row > summary {
+  display: grid;
+  grid-template-columns: 150px minmax(80px, 1fr) 70px 80px 100px;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 4px;
+  font-size: 12.5px;
+  cursor: pointer;
+  list-style: none;
+}
+.combat-fight-list-row > summary::-webkit-details-marker { display: none; }
+.combat-fight-list-row:hover > summary { background: var(--surface-hover, rgba(255, 255, 255, 0.05)); }
+.combat-fight-date { opacity: 0.75; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* What was actually fought (owner, 14 Sep: "if a named was fought it should list the named, if no
+   named was found it should just say Trash") - see src/shared/fightLabel.js. A real name reads
+   like the zone-link accent colour (a genuine, notable fact about the fight); "Trash" stays muted
+   - it's the absence of one. */
+.combat-fight-label {
+  font-weight: 600;
+  color: var(--accent, #c99a3f);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.combat-fight-label-trash { font-weight: 400; opacity: 0.55; color: inherit; }
+.combat-fight-duration { font-variant-numeric: tabular-nums; opacity: 0.75; text-align: right; white-space: nowrap; }
+.combat-fight-damage { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.combat-fight-top { text-align: right; opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combat-fight-bars { padding: 4px 4px 10px 20px; }
+/* Owner, 14 Sep: "there needs to be more separation between sum total graph and the sub fights" -
+   the combined chart's last row and the first individual-fight row used to sit right on top of
+   each other with nothing but the fight list's own top border between them. A visible gap plus a
+   heavier rule reads as "end of one section, start of another" the way a shared border did not. */
+#combat-detail-fightlist { margin-top: 22px; padding-top: 14px; border-top: 2px solid var(--line); }
+/* Damage / Healing / Both (owner, 14 Sep) - the "Both" heading between the two stacked charts. */
+.combat-metric-heading {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  margin: 10px 0 4px;
+}
+.combat-metric-heading:first-child { margin-top: 0; }
+/* Centred under the Back button, above the visit title (owner, 14 Sep layout request). */
+/* All four buttons on one row (owner, 14 Sep) - Back to fights stays left, the auto margins
+   centre the Damage/Healing/Both group in whatever space is left over, matching the earlier
+   "toggle centred between Back and the title" layout the owner asked for. */
+#combat-detail-toolbar { justify-content: flex-start; }
+#combat-view-toggle { display: flex; gap: 8px; margin: 0 auto; }
+/* The live badge takes Back's seat while a live fight is open (owner, 14 Sep: Back is a dead
+   click there since the view auto-reopens on the next tick anyway - see setDetailToolbarLive).
+   .live-indicator's own 0.6em is sized for sitting next to bigger heading text; standalone in the
+   toolbar it needs to read at normal size instead. */
+#combat-detail-live-badge { font-size: 14px; font-weight: 700; margin-left: 0; }
+/* Older/Newer visit navigation (owner, 14 Sep: "a fast way to... move forwards/backwards in fight
+   history") - sits at the far right of the toolbar, the auto-margined toggle group already takes
+   the centre so this naturally lands on the opposite end from Back without its own margin rule. */
+#combat-visit-nav { display: flex; gap: 8px; }
+#combat-visit-nav button:disabled { opacity: 0.4; cursor: default; }

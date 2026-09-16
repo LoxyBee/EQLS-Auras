@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
 
   getUiScale: () => ipcRenderer.invoke('ui:getScale'),
   setUiScale: (pct) => ipcRenderer.invoke('ui:setScale', pct),
+  getTheme: () => ipcRenderer.invoke('theme:get'),
+  setTheme: (theme) => ipcRenderer.invoke('theme:set', theme),
   getSidebarWidth: () => ipcRenderer.invoke('ui:getSidebarWidth'),
   setSidebarWidth: (px) => ipcRenderer.invoke('ui:setSidebarWidth', px),
   getMergeRule: () => ipcRenderer.invoke('ui:getMergeRule'),
@@ -165,9 +167,20 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createModuleAuraWidget: (name, moduleId) => ipcRenderer.invoke('widget:createModuleAura', { name, moduleId }),
   createDebuffWidget: (name) => ipcRenderer.invoke('widget:createDebuff', { name }),
   createDamageMeterWidget: (name, mineOnly) => ipcRenderer.invoke('widget:createDamageMeter', { name, mineOnly }),
+  // The Combat tab's fight history - summary list, then one fight's full row/skill detail on click.
+  getDamageHistory: () => ipcRenderer.invoke('damage:getHistory'),
+  getDamageHistoryFight: (id) => ipcRenderer.invoke('damage:getHistoryFight', id),
+  getCombatCurrentZoneBase: () => ipcRenderer.invoke('combat:getCurrentZoneBase'),
+  getLiveFight: () => ipcRenderer.invoke('damage:getLiveFight'),
+  onLiveFightTick: (cb) => ipcRenderer.on('damage:liveFightTick', () => cb()),
+  estimateDamageClasses: (castSkillNames) => ipcRenderer.invoke('damage:estimateClasses', castSkillNames),
+  // "Back read your current log, or upload a new log and parse out fights" (owner, 13 Sep).
+  getDamageCurrentLogPath: () => ipcRenderer.invoke('damage:getCurrentLogPath'),
+  scanDamageLogFile: (filePath) => ipcRenderer.invoke('damage:scanLogFile', filePath),
   createTravelGuideWidget: (name, destination) => ipcRenderer.invoke('widget:createTravelGuide', { name, destination }),
   createLockoutBoardWidget: (name) => ipcRenderer.invoke('widget:createLockoutBoard', { name }),
   createFirstAggroWidget: (name) => ipcRenderer.invoke('widget:createFirstAggro', { name }),
+  createZoneTimerWidget: (name) => ipcRenderer.invoke('widget:createZoneTimer', { name }),
   setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
   setWidgetTravelIncludeSuccor: (id, include) => ipcRenderer.invoke('widget:setTravelIncludeSuccor', { id, include }),
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
@@ -245,6 +258,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   getCurrentZone: () => ipcRenderer.invoke('zone:current'),
   getKnownZones: () => ipcRenderer.invoke('zone:known'),
   setWidgetVisibleInZones: (id, zones) => ipcRenderer.invoke('widget:setVisibleInZones', { id, zones }),
+  setWidgetVisibleInRaid: (id, value) => ipcRenderer.invoke('widget:setVisibleInRaid', { id, value }),
+  setWidgetVisibleInGroup: (id, value) => ipcRenderer.invoke('widget:setVisibleInGroup', { id, value }),
   onZoneChanged: (cb) => ipcRenderer.on('zone:changed', (_e, zone) => cb(zone)),
   setWidgetShowOnAllProfiles: (id, value) =>
     ipcRenderer.invoke('widget:setShowOnAllProfiles', { id, value }),
