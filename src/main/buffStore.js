@@ -72,7 +72,13 @@ class BuffStore {
         // The user opened Known Buffs and hit Save on this spell - respect exactly what they
         // typed, same as a fully custom entry. `edited` is only ever set by upsert() below, so
         // this can never accidentally freeze a spell nobody actually touched.
-        this.buffs.push(p);
+        // Fill in roster fields an older save dropped (scaleCategory, kind, targets, ...) from
+        // the install, without touching anything the user typed - p's own keys always win.
+        const typed = ['durationSec', 'landingText', 'endedText', 'iconId', 'othersLandingSuffix'];
+        const healed = { ...fresh, ...p };
+        for (const k of typed) if (!(k in p)) delete healed[k];
+        if (p.durationSec != null) delete healed.infiniteDuration;
+        this.buffs.push(healed);
         continue;
       }
       const rebuilt = { ...fresh, custom: false };
@@ -247,7 +253,12 @@ class BuffStore {
     const idx = this.buffs.findIndex((b) => b.name.toLowerCase() === lower);
     const previous = idx >= 0 ? this.buffs[idx] : null;
 
+    // Start from the previous entry so roster-derived fields this method never edits
+    // (scaleCategory - which the overlay's category border reads - kind, targets, spellId,
+    // castTimeSec, ...) survive a save. Building from scratch silently dropped them, so a
+    // hand-corrected duration also lost the spell's coloured border.
     const entry = {
+      ...(previous || {}),
       name,
       durationSec,
       showOnOverlay:
@@ -266,6 +277,16 @@ class BuffStore {
     // text via the Known Buffs UI, same as iconId already does above.
     const othersLandingSuffix =
       options.othersLandingSuffix !== undefined ? options.othersLandingSuffix : previous?.othersLandingSuffix;
+    // A typed duration replaces "permanent"; the fields below are re-set only when truthy, so
+    // clear them first (the spread above would otherwise keep a blanked-out value).
+    delete entry.infiniteDuration;
+    delete entry.landingText;
+    delete entry.endedText;
+    delete entry.othersLandingSuffix;
+    delete entry.noDurationScaling;
+    delete entry.isBardSong;
+    delete entry.isBardSongUserSet;
+    delete entry.noDurationScalingUserSet;
     if (landingText) entry.landingText = landingText;
     if (endedText) entry.endedText = endedText;
     // !== undefined, not a truthy check - icon id 0 (the icon picker's

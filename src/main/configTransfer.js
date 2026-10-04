@@ -92,6 +92,18 @@ function listImportable(userDataDir) {
   return out.sort((a, b) => b.mtime - a.mtime);
 }
 
+// Safety-copies the current portable config into backups/pre-import-<stamp>/, same shape as an
+// export. Shared by importConfig and importConfigText - both overwrite live config and both need
+// the same "what was there before" net.
+function backupCurrentPortable(userDataDir) {
+  const backup = path.join(userDataDir, 'backups', `pre-import-${stamp()}`);
+  fs.mkdirSync(backup, { recursive: true });
+  for (const name of portableEntries(userDataDir)) {
+    try { copyInto(path.join(userDataDir, name), path.join(backup, name)); } catch { /* best effort */ }
+  }
+  return backup;
+}
+
 // Copy a bundle's portable entries over userData, after backing up what is there. Returns
 // { ok, restart, backedUpTo }. The caller restarts the app - widgets.json / profiles.json are
 // read once at startup and there is no safe hot-swap.
@@ -101,12 +113,7 @@ function importConfig(userDataDir, sourceDir) {
     const entries = portableEntries(sourceDir);
     if (!entries.length) return { ok: false, error: 'no config found in that folder' };
 
-    // Safety backup of the current config, same shape as an export.
-    const backup = path.join(userDataDir, 'backups', `pre-import-${stamp()}`);
-    fs.mkdirSync(backup, { recursive: true });
-    for (const name of portableEntries(userDataDir)) {
-      try { copyInto(path.join(userDataDir, name), path.join(backup, name)); } catch { /* best effort */ }
-    }
+    const backup = backupCurrentPortable(userDataDir);
 
     let items = 0;
     for (const name of entries) {
@@ -123,4 +130,60 @@ function importConfig(userDataDir, sourceDir) {
   }
 }
 
-module.exports = { exportConfig, listImportable, importConfig, portableEntries, EXCLUDE_JSON };
+// Text-bundle counterpart to exportConfig/importConfig - same portable JSON scope, but inlined as
+// one JSON string instead of a folder, so it can go on the clipboard and paste straight into
+// another running copy of the app. No sounds/customSounds - those are files, not text; Export
+// config still covers those. Returns { ok, text, items }.
+function exportConfigText(userDataDir) {
+  try {
+    const data = {};
+    let items = 0;
+    for (const name of portableEntries(userDataDir)) {
+      if (!name.toLowerCase().endsWith('.json')) continue;
+      try {
+        data[name] = JSON.parse(fs.readFileSync(path.join(userDataDir, name), 'utf8'));
+        items += 1;
+      } catch { /* skip an unreadable/corrupt file */ }
+    }
+    return { ok: true, text: JSON.stringify({ kind: 'eqls-config-text', at: stamp(), data }), items };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+}
+
+// Reverse of exportConfigText. Returns the same shape importConfig does so the renderer can share
+// one result-handling path.
+function importConfigText(userDataDir, text) {
+  let bundle;
+  try { bundle = JSON.parse(text); } catch { bundle = null; }
+  if (!bundle || bundle.kind !== 'eqls-config-text' || !bundle.data || typeof bundle.data !== 'object') {
+    return { ok: false, error: "that doesn't look like a valid config - paste the whole copied text" };
+  }
+  // The pasted text is another person's input (same trust level as a chat share code): a key
+  // like "..\\..\\x.json" would write outside userData, and Windows file names are
+  // case-insensitive so "Config.json" must hit the deny-list too.
+  const excludedLower = new Set([...EXCLUDE_JSON].map((n) => n.toLowerCase()));
+  const names = Object.keys(bundle.data).filter(
+    (n) => n.toLowerCase().endsWith('.json') && path.basename(n) === n && !n.includes('\\')
+      && !excludedLower.has(n.toLowerCase())
+  );
+  if (!names.length) return { ok: false, error: 'no config found in that text' };
+  try {
+    const backup = backupCurrentPortable(userDataDir);
+    let items = 0;
+    for (const name of names) {
+      try {
+        fs.writeFileSync(path.join(userDataDir, name), JSON.stringify(bundle.data[name], null, 2));
+        items += 1;
+      } catch { /* skip a locked/odd entry */ }
+    }
+    return { ok: true, restart: true, backedUpTo: backup, items };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+}
+
+module.exports = {
+  exportConfig, listImportable, importConfig, exportConfigText, importConfigText,
+  portableEntries, EXCLUDE_JSON,
+};

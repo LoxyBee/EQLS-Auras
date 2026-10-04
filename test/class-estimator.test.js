@@ -313,5 +313,17 @@ test('a name with no suffix to strip and no match either way still returns null,
   });
 });
 
+// Owner-reported, 16 Sep: a War/Mnk/Shm character was misread as War/Pal/Shm. Confirmed against
+// the real in-game AA reference that Heroic Leap is Warrior-only - but this server's own
+// spells_us.txt has every rank's "AA granted" level flag on the Paladin column instead of
+// Warrior's (a real data error, not something this app can fix at the source). CLASS_OVERRIDES
+// corrects it regardless of what the file itself says, and regardless of rank suffix.
+test('Heroic Leap resolves to Warrior despite this server\'s spells_us.txt tagging it Paladin', () => {
+  withTempInstall([spellLine(1, 'Heroic Leap I', only(2))], (dir) => { // file wrongly says Pal (index 2)
+    assert.deepEqual(gameSpellData.getClassesForSpell(dir, 'Heroic Leap I'), ['War']);
+    assert.deepEqual(gameSpellData.getClassesForSpell(dir, 'Heroic Leap VII'), ['War'], 'must apply to every rank');
+  });
+});
+
 module.exports = () => report('class-estimator');
 if (require.main === module) report('class-estimator').then((n) => process.exit(n ? 1 : 0));

@@ -199,6 +199,16 @@ function rankValue(name) {
   return total;
 }
 
+// A player-typed chat line (say / tell / shout / auction / channel, including your own). These are
+// the only lines in the log a person can put arbitrary words into, so a fade-message match must
+// never fire on one - someone typing a buff's wear-off text in chat would otherwise remove its tile.
+// Game messages are never speaker + quoted text, so nothing real is excluded.
+const CHAT_LINE_PATTERN =
+  /^(?:\[[^\]]+\]\s*)?(?:You (?:say|shout|auction|tell [^,]+|told [^,]+)|[^,']+? (?:says out of character|says|shouts|auctions|tells [^,]+)), '.*'$/;
+function isChatLine(line) {
+  return typeof line === 'string' && CHAT_LINE_PATTERN.test(line.trim());
+}
+
 function matchCastBegin(line) {
   const stripped = stripTimestamp(line);
   const match = CAST_BEGIN_PATTERN.exec(stripped) || SINGING_PATTERN.exec(stripped);
@@ -513,6 +523,7 @@ function parseChatTimerDuration(line) {
 }
 
 module.exports = {
+  isChatLine,
   matchCastBegin,
   matchSingingBegin,
   matchActivate,
