@@ -3554,7 +3554,28 @@ function initWidgetsPanel() {
     iconLabelOptionsEl.style.display = showIconLabelCheckbox.checked ? '' : 'none';
   }
 
+  // Most setters (sliders, checkboxes, ~70 of them) save through IPC without writing the result
+  // back into the `widgets` cache above, so switching to another aura and back re-read a stale
+  // snapshot and the setting looked reverted (reported by a user: toggling the aura off/on "fixed"
+  // it, because that forces a full refreshWidgets). Rather than patch every call site, selecting an
+  // aura paints from the cache at once, then re-reads the real list and repaints only if this
+  // aura's saved copy differs. The sequence number drops the answer if the user has already moved on.
+  let selectWidgetSeq = 0;
   function selectWidget(id) {
+    const seq = ++selectWidgetSeq;
+    selectWidgetFromCache(id);
+    if (!id || !window.eqTracker.listWidgets) return;
+    window.eqTracker.listWidgets().then((list) => {
+      if (seq !== selectWidgetSeq || !Array.isArray(list)) return;
+      const fresh = list.find((w) => w.id === id);
+      const cached = findWidget(id);
+      if (!fresh || !cached || JSON.stringify(fresh) === JSON.stringify(cached)) return;
+      widgets = list;
+      selectWidgetFromCache(id);
+    }).catch(() => { /* keep the cached view */ });
+  }
+
+  function selectWidgetFromCache(id) {
     // A picker left open while switching to a different aura would go on editing the wrong one.
     closeBuffPickerModal();
     selectedId = id;
@@ -7659,6 +7680,9 @@ function initConfigFolderLink() {
   const openBtn = document.getElementById('open-config-folder-btn');
   if (openBtn) openBtn.addEventListener('click', () => window.eqTracker.openConfigFolder());
 
+  const openBackupsBtn = document.getElementById('open-backups-folder-btn');
+  if (openBackupsBtn) openBackupsBtn.addEventListener('click', () => window.eqTracker.openBackupsFolder());
+
   const backupBtn = document.getElementById('backup-config-btn');
   const statusEl = document.getElementById('backup-config-status');
   if (backupBtn) {
@@ -7738,6 +7762,84 @@ function initConfigFolderLink() {
           detail: `Your previous config was saved to ${r.backedUpTo}`,
           okLabel: 'OK', hideCancel: true,
         });
+        setXfer('Imported — restart the app to apply.');
+      } else {
+        setXfer(`Import failed: ${r.error || 'unknown'}`, true);
+      }
+    });
+  }
+
+  // Copy/paste counterpart to Export/Import config - same portable scope, as clipboard text
+  // instead of a folder, so there's no file picker to fail to find a bundle through. Shares
+  // transfer-config-status/setXfer above rather than its own status line - same "move config"
+  // status, just a second transport.
+  const copyTextBtn = document.getElementById('copy-config-text-btn');
+  const pasteTextBtn = document.getElementById('paste-config-text-btn');
+  const textBox = document.getElementById('config-text-box');
+  const textImportRow = document.getElementById('config-text-import-row');
+  const textImportBtn = document.getElementById('config-text-import-btn');
+  const textCancelBtn = document.getElementById('config-text-cancel-btn');
+  if (copyTextBtn) {
+    copyTextBtn.addEventListener('click', async () => {
+      copyTextBtn.disabled = true;
+      setXfer('Copying…');
+      const r = await window.eqTracker.exportConfigText().catch(() => ({ ok: false, error: 'failed' }));
+      copyTextBtn.disabled = false;
+      if (!r.ok) { setXfer(`Copy failed: ${r.error || 'unknown'}`, true); return; }
+      const copied = await navigator.clipboard?.writeText(r.text).then(() => true).catch(() => false);
+      setXfer(
+        copied
+          ? `Copied ${r.items} item${r.items === 1 ? '' : 's'} to the clipboard — paste it into Import on the other copy.`
+          : `Couldn't reach the clipboard — text is in the box below, select and copy it manually.`,
+        !copied
+      );
+      if (!copied && textBox) {
+        textBox.value = r.text;
+        textBox.style.display = '';
+        textBox.select();
+      }
+    });
+  }
+  if (pasteTextBtn && textBox && textImportRow) {
+    pasteTextBtn.addEventListener('click', () => {
+      textBox.value = '';
+      textBox.style.display = '';
+      textImportRow.style.display = '';
+      setXfer('');
+      textBox.focus();
+    });
+  }
+  if (textCancelBtn && textBox && textImportRow) {
+    textCancelBtn.addEventListener('click', () => {
+      textBox.style.display = 'none';
+      textImportRow.style.display = 'none';
+      textBox.value = '';
+      setXfer('');
+    });
+  }
+  if (textImportBtn && textBox) {
+    textImportBtn.addEventListener('click', async () => {
+      const text = textBox.value.trim();
+      if (!text) { setXfer('Paste something first.', true); return; }
+      const go = await appConfirm({
+        title: 'Import config',
+        message: 'Replace this PC\'s auras, profiles, known-buff edits and settings with the pasted config?',
+        detail: 'Your current config is copied to backups\\ first. Sound files are not affected.',
+        okLabel: 'Import', danger: true,
+      });
+      if (!go) return;
+      setXfer('Importing…');
+      const r = await window.eqTracker.importConfigText(text).catch(() => ({ ok: false, error: 'failed' }));
+      if (r.ok) {
+        await appConfirm({
+          title: 'Imported',
+          message: `Imported ${r.items} item${r.items === 1 ? '' : 's'}. Restart the app now to load it.`,
+          detail: `Your previous config was saved to ${r.backedUpTo}`,
+          okLabel: 'OK', hideCancel: true,
+        });
+        textBox.style.display = 'none';
+        textImportRow.style.display = 'none';
+        textBox.value = '';
         setXfer('Imported — restart the app to apply.');
       } else {
         setXfer(`Import failed: ${r.error || 'unknown'}`, true);

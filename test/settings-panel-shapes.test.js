@@ -210,8 +210,8 @@ test('no shape has a field this table does not know about - a typo would otherwi
 // ---------------------------------------------------------------------------
 
 test('selectWidget computes the shape once and hands the same Set to renderBuffFilter', () => {
-  const fn = rendererSrc.match(/function selectWidget\(id\) \{([\s\S]*?)\n {2}\}/);
-  assert.ok(fn, 'selectWidget has been restructured');
+  const fn = rendererSrc.match(/function selectWidgetFromCache\(id\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'selectWidgetFromCache has been restructured');
   assert.match(fn[1], /const shapeFields = applySettingsPanelShape\(widget\);/, 'the shape is not computed here at all');
   assert.match(fn[1], /renderBuffFilter\(widget, shapeFields\);/, 'renderBuffFilter is given its own, possibly different, Set');
 });
@@ -246,6 +246,14 @@ test('switching display mode re-derives the shape synchronously, from real widge
   assert.ok(fn, 'the displayModeRadios listener has been restructured');
   assert.match(fn[1], /const current = findWidget\(selectedId\);/);
   assert.match(fn[1], /applySettingsPanelShape\(current \? \{ \.\.\.current, displayMode: radio\.value \} : \{ displayMode: radio\.value \}\);/);
+});
+
+test('selecting an aura re-reads the saved copy, so a setting that skipped the local cache is not shown reverted', () => {
+  const fn = rendererSrc.match(/function selectWidget\(id\) \{([\s\S]*?)\n {2}\}/);
+  assert.ok(fn, 'selectWidget has been restructured');
+  assert.match(fn[1], /selectWidgetFromCache\(id\)/);
+  assert.match(fn[1], /window\.eqTracker\.listWidgets\(\)/);
+  assert.match(fn[1], /seq !== selectWidgetSeq/, 'a late answer for an aura the user already left must be dropped');
 });
 
 module.exports = () => report('settings-panel-shapes');

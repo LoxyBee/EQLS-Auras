@@ -1531,18 +1531,17 @@
             <p class="hint" id="hide-hotkey-hint"></p>
           </div>
 
-          <div class="topic" id="topic-app-info" data-topic>
-            <button type="button" class="topic-head" data-toggle title="Build version, where your data lives, and the backup / move-to-another-PC tools.">
+          <div class="topic" id="topic-backup" data-topic>
+            <button type="button" class="topic-head" data-toggle title="Snapshot your data, move it to another PC, or hand the app to someone else.">
               <span class="chev"></span>
-              <span class="topic-title">Version &amp; app data</span>
+              <span class="topic-title">Backup</span>
             </button>
             <div class="topic-body"><div class="topic-body-inner">
-              <p id="status">Checking...</p>
-              <dl id="version-info"></dl>
               <p class="hint">Auras, profiles, buff fixes, sounds and settings all live in one folder — uninstalling never touches it.</p>
               <div class="row">
                 <button type="button" id="backup-config-btn" class="btn-prominent" title="Copies your app data into a dated folder — a snapshot to fall back on before an update.">Back up now</button>
                 <button type="button" id="open-config-folder-btn">📁 Open app data folder</button>
+                <button type="button" id="open-backups-folder-btn">📁 Open backups folder</button>
               </div>
               <p class="hint" id="backup-config-status"></p>
               <p class="hint"><strong>Move to another PC, or hand the app to someone:</strong></p>
@@ -1551,7 +1550,28 @@
                 <button type="button" id="import-config-btn" title="Replaces this PC's config with a bundle. Your current config is backed up first; the app restarts.">Import config…</button>
                 <button type="button" id="open-exports-folder-btn">📁 Open exports folder</button>
               </div>
+              <div class="row">
+                <span class="label" title="Same auras, profiles, buff edits and settings as Export/Import above, but copy/pasted as text instead of a folder — no file picker, works between two copies of the app on this PC or a different one. Sound files don't travel this way.">Or copy/paste it:</span>
+                <button type="button" id="copy-config-text-btn" title="Copies your auras, profiles, buff edits and settings to the clipboard as text.">Copy config as text</button>
+                <button type="button" id="paste-config-text-btn" title="Paste a copied config here to replace this PC's config with it.">Paste config…</button>
+              </div>
+              <textarea id="config-text-box" class="code-output" rows="4" style="display:none;" placeholder="Paste copied config text here"></textarea>
+              <div class="row" id="config-text-import-row" style="display:none;">
+                <button type="button" id="config-text-import-btn" class="btn-prominent">Import pasted text</button>
+                <button type="button" id="config-text-cancel-btn">Cancel</button>
+              </div>
               <p class="hint" id="transfer-config-status"></p>
+            </div></div>
+          </div>
+
+          <div class="topic" id="topic-app-info" data-topic>
+            <button type="button" class="topic-head" data-toggle title="Build version and where your data lives.">
+              <span class="chev"></span>
+              <span class="topic-title">Version &amp; app data</span>
+            </button>
+            <div class="topic-body"><div class="topic-body-inner">
+              <p id="status">Checking...</p>
+              <dl id="version-info"></dl>
             </div></div>
           </div>
         </div>

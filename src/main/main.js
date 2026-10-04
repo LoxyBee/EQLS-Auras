@@ -3217,6 +3217,19 @@ ipcMain.handle('config:openExportsFolder', () => {
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* ignore */ }
   return shell.openPath(dir);
 });
+// "Open backups folder" - the counterpart to "Open exports folder" above. Without this, "Back up
+// now" only told you the backup's name in a status line; finding it meant opening the userData
+// root and clicking into backups\ yourself.
+ipcMain.handle('config:openBackupsFolder', () => {
+  const dir = path.join(app.getPath('userData'), 'backups');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* ignore */ }
+  return shell.openPath(dir);
+});
+
+// Text-bundle counterpart to config:export/config:import - same portable JSON scope, copy/pasted
+// instead of written to a folder. See configTransfer.exportConfigText/importConfigText.
+ipcMain.handle('config:exportText', () => configTransfer.exportConfigText(app.getPath('userData')));
+ipcMain.handle('config:importText', (_event, text) => configTransfer.importConfigText(app.getPath('userData'), text));
 
 // QOL #3b - "Back up now". Copies userData into a dated folder inside itself, skipping the
 // Electron/Chromium cache dirs, the detection logs (large, ephemeral, not config) and the backups

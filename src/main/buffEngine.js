@@ -20,6 +20,7 @@ const {
   matchHostileCastAtYou,
   isFailureLine,
   isPartyChangeLine,
+  isChatLine,
   looksLikeLandingMessage,
   stripTimestamp,
   stripRankSuffix,
@@ -2097,6 +2098,8 @@ class BuffEngine extends EventEmitter {
   }
 
   _checkForEndedBuffs(line) {
+    // Chat can contain anything, including a buff's exact wear-off text - never a real fade.
+    if (isChatLine(line)) return;
     // Runs first, and does not return early, because it reads different line shapes from the self
     // loop below - letting one starve the other would be a silent, ordering-dependent bug.
     this._checkForEndedAllyBuffs(line);

@@ -161,6 +161,21 @@ function getBardSongRecords(installRoot) {
   return load(installRoot)?.bardSongs || null;
 }
 
+// Known-wrong per-class level data in this server's OWN spells_us.txt - confirmed 16 Sep against
+// the real in-game AA reference. Every rank of "Heroic Leap" (a Warrior-only AA, Class: Warrior,
+// requires level 12 per the AA page) has its level-254 "AA granted, no book requirement" flag
+// mistakenly written to the PALADIN column instead of Warrior's (every other real Warrior AA in
+// this same file - Rampage, Area Taunt, War Cry - correctly carries 254 under War). This isn't an
+// app bug, it's bad source data we can't edit (spells_us.txt ships with the user's own EQ install,
+// not with this app) - confirmed live: it single-handedly misclassified a War/Mnk/Shm character as
+// War/Pal/Shm, AND (via classEstimator's "already-confirmed explains away ambiguous evidence"
+// rule) suppressed the one real Pal/Mnk-shared spell that could have pointed at Monk, because the
+// false Paladin "confirmation" fully explained it away. Keyed on the rank-STRIPPED lowercase name
+// so it covers every rank in one entry, same as the rank-suffix fallback below.
+const CLASS_OVERRIDES = new Map([
+  ['heroic leap', ['War']],
+]);
+
 // Which class(es) can cast a spell by exact name (case-insensitive), or null if the name isn't
 // recognised at all. Feeds classEstimator.js's "a skill only one class can cast is real evidence"
 // rule (13 Sep) - not exposed as a bard-song-style Set because callers need the actual class list,
@@ -168,6 +183,8 @@ function getBardSongRecords(installRoot) {
 function getClassesForSpell(installRoot, name) {
   const data = load(installRoot);
   if (!data || !name) return null;
+  const override = CLASS_OVERRIDES.get(stripRankSuffix(name).toLowerCase());
+  if (override) return override;
   let set = data.classesByName.get(name.toLowerCase());
   // A bare trailing Roman numeral in a cast line ("Denon's Desperate Dirge X") sometimes has NO
   // corresponding entry in spells_us.txt at all - confirmed, gotcha #3's own example: only the
