@@ -2038,16 +2038,24 @@ class BuffEngine extends EventEmitter {
       const scaledCastSec = this.useCastTimeFilter && known ? this._scaledCastSec(known, rankValue(castName)) : null;
       const confirmWindowMs = scaledCastSec != null ? Math.round(scaledCastSec * 1000) + CAST_TIME_TOLERANCE_MS : FALLBACK_CONFIRM_WINDOW_MS;
       const timer = setTimeout(() => {
-        if (knowsExpectedText) {
-          this._debugLog(`CANCELLED pending cast "${castName}" - expected landing text never showed up (timed out)`);
-          this._cancelPendingCast();
-        } else {
-          this._debugLog(
-            known
-              ? `LANDED "${known.name}" - named cast, no landing text on file, confirmed by timeout fallback`
-              : `UNKNOWN "${castName}" - named cast, not in the buff database, confirmed by timeout fallback`
-          );
-          this._confirmPendingCast();
+        // This runs on a timer, OUTSIDE main.js's per-listener try/catch around handleLine - an
+        // uncaught throw here would be an uncaught exception in the main process (a crash dialog)
+        // rather than one contained, logged fault. Contained the same way.
+        try {
+          if (knowsExpectedText) {
+            this._debugLog(`CANCELLED pending cast "${castName}" - expected landing text never showed up (timed out)`);
+            this._cancelPendingCast();
+          } else {
+            this._debugLog(
+              known
+                ? `LANDED "${known.name}" - named cast, no landing text on file, confirmed by timeout fallback`
+                : `UNKNOWN "${castName}" - named cast, not in the buff database, confirmed by timeout fallback`
+            );
+            this._confirmPendingCast();
+          }
+        } catch (err) {
+          this.pendingCast = null;
+          this._debugLog(`ERROR confirming pending cast "${castName}" - ${(err && err.message) || err}`);
         }
       }, confirmWindowMs);
       this._debugLog(

@@ -37,6 +37,15 @@ function clampSec(value, fallback) {
   return Number.isFinite(n) ? Math.max(0, Math.min(3600, Math.round(n))) : fallback;
 }
 
+// A trigger's Cooldown may run longer than a duration: up to 3 hours (owner, 15 Oct - Lay on Hands
+// is 70 minutes, and the old shared 60-minute cap brought it back 10 minutes early). Kept in step
+// with widgetStore's MAX_COOLDOWN_SEC.
+const MAX_COOLDOWN_SEC = 3 * 60 * 60;
+function clampCooldownSec(value) {
+  const n = typeof value === 'string' ? Number(value) : value;
+  return Number.isFinite(n) ? Math.max(0, Math.min(MAX_COOLDOWN_SEC, Math.round(n))) : 0;
+}
+
 // Much simpler sibling to BuffEngine, for user-defined timers keyed off
 // arbitrary log text rather than mined spell data - no ambiguity tiers, no
 // spellbook/burst/others-tracking, since the user already picked text they
@@ -58,6 +67,13 @@ function clampSec(value, fallback) {
 // change it. Now a real per-widget field (see widgetStore.js's andWindowSec) - this is only the
 // fallback for a widget that predates the field, not the number itself any more.
 const DEFAULT_AND_WINDOW_MS = 30 * 1000;
+
+// "Stay until ended" (a trigger's untilEnded flag): no countdown at all - the tile stays until the
+// trigger's own end line, or until it fires again. Stored with a far-future expiresAt (rather than
+// Infinity, which JSON turns into null) so _tick, snapshots and restore need no special case.
+// Built for the Stance & invocation premade: "You assume an evasive stance." starts it and the
+// game's "You begin to change your stance." (printed before every swap) ends it.
+const UNTIL_ENDED_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 
 // Reverse detection (widget.reverseDetection - CLAUDE.md's "negative/reverse triggers"). Every
 // ordinary trigger is OFF until it fires, then ON for durationSec. Reverse is the mirror image: ON
@@ -407,6 +423,8 @@ class CustomTimerEngine extends EventEmitter {
       let cleared = 0;
       for (const [key, t] of this.activeTimers) {
         if (t.phase === 'cooldown') continue;
+        // A "stay until ended" tile is a state (a stance), not a buff - only its end line ends it.
+        if (t.untilEnded) continue;
         this.activeTimers.delete(key);
         cleared += 1;
       }
@@ -480,7 +498,11 @@ class CustomTimerEngine extends EventEmitter {
         continue;
       }
 
-      let durSec = clampSec(def.durationSec, DEFAULT_TRIGGER_DURATION_SEC);
+      // The trigger's own "Show for" if it has one (widgetStore ownShowForSec), else the aura-wide
+      // one that setTriggerDurationSec writes onto every timer's durationSec.
+      let durSec = def.showForSec != null
+        ? clampSec(def.showForSec, DEFAULT_TRIGGER_DURATION_SEC)
+        : clampSec(def.durationSec, DEFAULT_TRIGGER_DURATION_SEC);
       // Dynamic chat timer (widget.dynamicChatTimer): the duration is the mm:ss written right after
       // the trigger word - "pulltimerstart 1:20". _findTriggerMatches stored the text after the
       // keyword; parse the time out of that (falling back to the whole line for an AND-combo, whose
@@ -503,13 +525,20 @@ class CustomTimerEngine extends EventEmitter {
       // the owning WIDGET (see _resolveActivations), so this applies uniformly whether `key` is a
       // single definition's own id (independent) or a whole-widget AND/OR combo key.
       if (reverse) {
-        this._debugLog(`FIRED "${def.name}" - reverse trigger: "${stripped}" - hiding for ${durSec}s`);
+        // Hidden until it is READY again: the duration plus this trigger's own cooldown - the same
+        // moment a normal-mode tile finishes its cooldown phase. Hiding for the duration alone
+        // ignored every trigger's own Cooldown, so a "show each ability when it's ready" aura
+        // could only ever have one shared hide time, and a player had to build one aura per
+        // ability to get different cooldowns (reported live). With no cooldown set this is just
+        // the duration, exactly as before.
+        const hideSec = durSec + clampCooldownSec(def.cooldownSec);
+        this._debugLog(`FIRED "${def.name}" - reverse trigger: "${stripped}" - hiding for ${hideSec}s`);
         this.activeTimers.set(key, {
           id: key,
           defId: def.id,
           name: def.name,
-          durationSec: durSec,
-          expiresAt: now + durSec * 1000,
+          durationSec: hideSec,
+          expiresAt: now + hideSec * 1000,
           endedText: def.endedText || null,
           triggerMatch: def.triggerMatch || undefined,
           triggerText: def.triggerText || undefined,
@@ -521,7 +550,7 @@ class CustomTimerEngine extends EventEmitter {
         continue;
       }
 
-      this._debugLog(`FIRED "${def.name}" - trigger: "${stripped}"`);
+      this._debugLog(`FIRED "${def.name}" - trigger: "${stripped}"${def.untilEnded ? ' - until ended' : ''}`);
 
       this.activeTimers.set(key, {
         id: key,
@@ -531,8 +560,15 @@ class CustomTimerEngine extends EventEmitter {
         // per-widget string no definition owns.
         defId: def.id,
         name: def.name,
-        durationSec: durSec,
-        expiresAt: now + durSec * 1000,
+        durationSec: def.untilEnded ? null : durSec,
+        expiresAt: now + (def.untilEnded ? UNTIL_ENDED_MS : durSec * 1000),
+        // See UNTIL_ENDED_MS. No countdown of its own - only the end line (or firing again)
+        // replaces it.
+        untilEnded: def.untilEnded ? true : undefined,
+        // A "stay until ended" tile WITH a Cooldown counts that cooldown down first (sweep / number,
+        // in the dimmed cooldown style), then simply stays: the stance/invocation group's shared 6s
+        // swap cooldown (owner, 15 Oct). A swap starts a fresh tile, so it is group-wide by nature.
+        cooldownUntil: def.untilEnded && clampCooldownSec(def.cooldownSec) > 0 ? now + clampCooldownSec(def.cooldownSec) * 1000 : undefined,
         endedText: def.endedText || null,
         // Carried through so an interrupt can find and cancel this again. Without them the check
         // above has an id and a name and no way to tell what kind of timer it is looking at.
@@ -543,7 +579,7 @@ class CustomTimerEngine extends EventEmitter {
         // line reported. cooldownSec rides along so _tick does not have to look the definition up
         // again, and so a restored snapshot can transition without one.
         phase: 'duration',
-        cooldownSec: clampSec(def.cooldownSec, 0),
+        cooldownSec: clampCooldownSec(def.cooldownSec),
         // Whatever a "contains" trigger's own text left over on this specific line - see
         // _findTriggerMatches. undefined for exact/castOf triggers, which have nothing left over
         // by definition.
@@ -577,6 +613,29 @@ class CustomTimerEngine extends EventEmitter {
     return timers.length;
   }
 
+  // Drops every running tile belonging to one aura: its triggers' own ids (independent mode) and
+  // its AND/OR combo keys, plus any half-seen AND bookkeeping. Called when that aura's trigger
+  // settings change (main.js withAuraReset). A running tile keeps the duration/cooldown/mode it
+  // STARTED with, so without this an edit only showed up once the old tile ran out - reported live
+  // as "it didn't work, then worked after a restart".
+  resetTimers(widgetId, defIds = []) {
+    const ids = new Set(defIds);
+    const combos = new Set([`and:${widgetId}`, `or:${widgetId}`]);
+    let cleared = 0;
+    for (const [key, t] of this.activeTimers) {
+      if (ids.has(key) || ids.has(t.defId) || combos.has(key)) {
+        this.activeTimers.delete(key);
+        cleared += 1;
+      }
+    }
+    for (const id of ids) this.timerSeenUntil.delete(id);
+    if (cleared) {
+      this._debugLog(`RESET ${cleared} running tile(s) - the aura's trigger settings changed`);
+      this.emit('activeChanged', this.getActive());
+    }
+    return cleared;
+  }
+
   removeActive(id) {
     this.activeTimers.delete(id);
     this.emit('activeChanged', this.getActive());
@@ -586,6 +645,12 @@ class CustomTimerEngine extends EventEmitter {
     const now = Date.now();
     let changed = false;
     for (const [key, timer] of this.activeTimers) {
+      // A "stay until ended" tile's opening cooldown just finished - one redraw to drop the
+      // cooldown look (nothing else would trigger one, since it no longer counts as ticking).
+      if (timer.untilEnded && timer.cooldownUntil && timer.cooldownUntil <= now && !timer.cooldownShown) {
+        timer.cooldownShown = true;
+        changed = true;
+      }
       if (timer.expiresAt > now) continue;
 
       // Reverse detection's hide window is over. Just delete - there is no phase after 'hidden',
@@ -667,9 +732,18 @@ class CustomTimerEngine extends EventEmitter {
   // nothing for a per-second heartbeat to update - only an icon/list-mode widget's remaining-time
   // readout does. Used by _tick() to decide whether its unconditional once-a-second broadcast is
   // actually needed right now, or would just be every aura window redrawing itself for nothing.
+  // A "stay until ended" tile still inside its opening cooldown - see handleLine's cooldownUntil.
+  _inUntilEndedCooldown(t, now = Date.now()) {
+    return !!(t.untilEnded && t.cooldownUntil && t.cooldownUntil > now);
+  }
+
   _hasNonTextActiveTimer() {
+    const now = Date.now();
     for (const timer of this.activeTimers.values()) {
       if (timer.phase === 'hidden') continue; // no visible number either way - see getActive()
+      // A settled "stay until ended" tile has nothing ticking - redrawing it every second forever
+      // is the exact idle-repaint cost the 15 Sep perf fix removed.
+      if (timer.untilEnded && !this._inUntilEndedCooldown(timer, now)) continue;
       const widget = this._findWidgetForId(timer.defId || timer.id);
       if (!widget || widget.displayMode !== 'text') return true;
     }
@@ -714,12 +788,22 @@ class CustomTimerEngine extends EventEmitter {
         return {
           id: t.id,
           name: t.name,
-          durationSec: t.durationSec,
-          remainingSec: Math.max(0, Math.round((t.expiresAt - now) / 1000)),
+          // A "stay until ended" tile: during its opening cooldown (cooldownUntil) it reads as an
+          // ordinary cooldown countdown; after that it has no countdown - an infinite buff's shape.
+          // In a cooldown the tile's length IS the cooldown - not the duration it started with.
+          // Reporting the old duration drew the bar/sweep against the wrong total, and a 0s duration
+          // made the overlay treat the whole cooldown as an invisible 0-second ping (reported live:
+          // "Duration shown 0" + a Cooldown showed nothing at all).
+          durationSec: this._inUntilEndedCooldown(t, now) || t.phase === 'cooldown' ? t.cooldownSec : t.durationSec,
+          remainingSec: t.untilEnded
+            ? this._inUntilEndedCooldown(t, now) ? Math.ceil((t.cooldownUntil - now) / 1000) : null
+            : Math.max(0, Math.round((t.expiresAt - now) / 1000)),
+          infinite: t.untilEnded && !this._inUntilEndedCooldown(t, now) ? true : undefined,
+          untilEnded: t.untilEnded ? true : undefined,
           // Note 10: "if the tile doesn't visibly say which phase it is in, the number on screen is
           // actively misleading". Sent so the overlay can show the difference; nothing here decides
           // what that looks like.
-          phase: t.phase || 'duration',
+          phase: this._inUntilEndedCooldown(t, now) ? 'cooldown' : t.phase || 'duration',
           showOnOverlay: true,
           // != null, not a truthy check - icon id 0 is a real, pickable icon.
           iconUrl: def?.iconId != null ? this.iconUrlFn(def.iconId) : null,

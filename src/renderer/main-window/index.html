@@ -84,6 +84,13 @@
           style="display:none"
           title="You left move mode to open settings. Click to go back to moving."
         >&#8617; Back to moving</button>
+        <!-- Dev builds only (hidden unless testBench:getState says available) - src/main/testBench.js. -->
+        <button
+          class="master-hide-btn"
+          id="test-bench-btn"
+          style="display:none"
+          title="Restarts into a separate test copy of the app - its own empty auras, bars and profiles - with the test bench open for sending log lines. Your real setup isn't touched. Click again to restart back."
+        >Test bench</button>
         <span class="master-hide-hint" id="master-hide-hint"></span>
       </div>
     </div>
@@ -624,6 +631,7 @@
                     <label><input type="radio" name="widget-sort-order" value="default" /> Cast order</label>
                     <label><input type="radio" name="widget-sort-order" value="time-remaining" /> Time remaining</label>
                     <label><input type="radio" name="widget-sort-order" value="alphabetical" /> Alphabetical</label>
+                    <label id="widget-sort-trigger-label" style="display:none" title="The order of this aura's trigger list - tiles never move around as timers tick"><input type="radio" name="widget-sort-order" value="trigger" /> Trigger order</label>
                   </div>
                   <div class="row" id="widget-sort-direction-row">
                     <span class="label">Order:</span>
@@ -803,7 +811,7 @@
                        the page that looked like it might also control this but never did anything
                        for a custom-timer aura at all. -->
                   <div class="row">
-                    <span class="label" title="How long a tile stays on screen after its trigger fires. Up to 60 minutes — long enough for a respawn window.">Duration:</span>
+                    <span class="label" title="How long each tile stays up after its trigger fires — the same for every trigger here, up to 60 minutes, unless a trigger has its own Duration shown (in its Edit window). A trigger's own Cooldown (in its Edit window) starts when this ends. With Reverse detection, a used trigger stays hidden for this plus its cooldown.">Duration shown:</span>
                     <input type="number" id="widget-trigger-duration-min" class="duration-input" min="0" max="60" step="1" />
                     <span class="duration-unit">m</span>
                     <input type="number" id="widget-trigger-duration-sec" class="duration-input" min="0" max="59" step="1" />
@@ -828,6 +836,12 @@
                     <label title="Shows the tile all the time, then hides it for the Duration above once it fires — the opposite of normal. With AND, it stays on until every trigger has happened, e.g. a &quot;ready to cast&quot; tile that goes away once you cast it.">
                       <input type="checkbox" id="widget-reverse-detection-checkbox" />
                       Reverse detection
+                    </label>
+                  </div>
+                  <div class="row">
+                    <label title="Fades a tile and gives it a dashed outline while it is on cooldown. Turn off to rely on the sweep or bar alone.">
+                      <input type="checkbox" id="widget-cooldown-dim-checkbox" />
+                      Dim tiles while on cooldown
                     </label>
                   </div>
                   <!-- The button before Edit on each row (built in renderCustomTimersList,
@@ -871,6 +885,7 @@
                     <label><input type="radio" name="widget-timer-format" value="minutes-seconds" /> 5:12</label>
                     <label><input type="radio" name="widget-timer-format" value="seconds-only" /> 312</label>
                     <label><input type="radio" name="widget-timer-format" value="rounded-minutes" /> 6m</label>
+                    <label title="No countdown number - pair it with the icon sweep (Icon display options) instead"><input type="radio" name="widget-timer-format" value="off" /> Off</label>
                   </div>
                   <div class="row">
                     <span class="label">Text size:</span>
@@ -1694,6 +1709,14 @@
                   Use evidence-based detection
                 </label>
                 <span class="experimental-badge">New default</span>
+              </div>
+
+              <h4>Test bench</h4>
+              <div class="row">
+                <label title="Adds a Test bench button to the top bar. It restarts into a separate test copy of the app - its own empty auras, bars and profiles - where you can send log lines to try auras out without being in game. Your real setup is never touched.">
+                  <input type="checkbox" id="test-bench-enabled-checkbox" />
+                  Show test bench
+                </label>
               </div>
 
               <h4>Cast-time-aware confirmation</h4>
@@ -2776,6 +2799,29 @@
            place." What it did is now done visibly instead: define several ordinary triggers (the
            list this modal is opened from already supports that) and set how they combine with
            the Independent/AND/OR toggle next to each one in that list. -->
+      <!-- This trigger's OWN "Duration shown", overriding the aura-wide one for this trigger only (a
+           cooldown HUD needs tiles that stay up for different lengths). Blank = the aura's. -->
+      <div class="topic" id="topic-timer-show-for" data-topic>
+        <button type="button" class="topic-head" data-toggle>
+          <span class="chev"></span>
+          <span class="topic-title">Duration shown override</span>
+          <span class="topic-summary" id="timer-show-for-summary"></span>
+        </button>
+        <div class="topic-body"><div class="topic-body-inner">
+          <div class="row">
+            <span class="label" title="How long this trigger's tile stays up after it fires. Leave both boxes empty to use the aura's Duration shown. 0 is allowed (a sound-only trigger).">Instead of the aura's:</span>
+            <input type="number" id="widget-new-timer-showfor-min" min="0" max="60" step="1" placeholder="-" class="duration-input" />
+            <span class="duration-unit">m</span>
+            <input type="number" id="widget-new-timer-showfor-sec" min="0" max="59" step="1" placeholder="-" class="duration-input" />
+            <span class="duration-unit">s</span>
+          </div>
+          <div class="row">
+            <label title="No timer: the tile stays until this trigger's end line shows up (or it fires again). For a state you stay in, like your current stance.">
+              <input type="checkbox" id="widget-new-timer-until-ended" /> Stay until ended
+            </label>
+          </div>
+        </div></div>
+      </div>
       <div class="topic" id="topic-timer-cooldown" data-topic>
         <button type="button" class="topic-head" data-toggle>
           <span class="chev"></span>
@@ -2785,7 +2831,7 @@
         <div class="topic-body"><div class="topic-body-inner">
           <div class="row">
             <span class="label">Then cooldown:</span>
-            <input type="number" id="widget-new-timer-cooldown-min" min="0" max="60" step="1" placeholder="0" class="duration-input" />
+            <input type="number" id="widget-new-timer-cooldown-min" min="0" max="180" step="1" placeholder="0" class="duration-input" title="Up to 180 minutes (3 hours)" />
             <span class="duration-unit">m</span>
             <input type="number" id="widget-new-timer-cooldown-sec" min="0" max="59" step="1" placeholder="0" class="duration-input" />
             <span class="duration-unit">s</span>

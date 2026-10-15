@@ -99,9 +99,26 @@ function clampSoundCooldownSec(value) {
 
 // A number field on a custom timer, clamped the same way setTriggerDurationSec does (0..3600, 0 is
 // a legitimate "just make a noise" timer). A string, NaN, or Infinity becomes the caller's default.
+// A trigger's Cooldown: up to 3 hours, longer than the 60-minute duration ceiling (owner, 15 Oct -
+// Lay on Hands is 70 minutes). Kept in step with customTimerEngine's MAX_COOLDOWN_SEC.
+const MAX_COOLDOWN_SEC = 3 * 60 * 60;
+function clampCooldownSeconds(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(MAX_COOLDOWN_SEC, Math.round(n))) : 0;
+}
+
 function clampTimerSeconds(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? Math.max(0, Math.min(3600, Math.round(n))) : fallback;
+}
+
+// A trigger's OWN "Show for" - overrides the aura-wide one (triggerDurationSec, written onto every
+// timer's durationSec) for this trigger only, so one aura can hold tiles that stay up for different
+// lengths (reported live: a cooldown HUD needs that). Blank/null/garbage = undefined = "use the
+// aura's"; a real number, including 0, is the trigger's own.
+function ownShowForSec(value) {
+  if (value === null || value === undefined || value === '') return undefined;
+  return clampTimerSeconds(value, undefined);
 }
 
 // Keep only plain non-null objects that carry a string id; coerce their known numeric fields.
@@ -113,7 +130,9 @@ function sanitizeCustomTimers(value) {
     if (!t || typeof t !== 'object' || Array.isArray(t) || typeof t.id !== 'string' || !t.id) continue;
     const clean = { ...t };
     if ('durationSec' in clean) clean.durationSec = clampTimerSeconds(clean.durationSec, DEFAULT_TRIGGER_DURATION_SEC);
-    if ('cooldownSec' in clean) clean.cooldownSec = clampTimerSeconds(clean.cooldownSec, 0);
+    if ('cooldownSec' in clean) clean.cooldownSec = clampCooldownSeconds(clean.cooldownSec);
+    if ('showForSec' in clean) clean.showForSec = ownShowForSec(clean.showForSec);
+    if ('untilEnded' in clean) clean.untilEnded = clean.untilEnded === true ? true : undefined;
     out.push(clean);
   }
   return out;
@@ -466,6 +485,9 @@ function defaultCustomWidget(name) {
   return {
     id: crypto.randomUUID(),
     kind: 'custom',
+    // A tile in its cooldown phase is drawn dimmed + dash-outlined ("not ready yet"). On by
+    // default - the Stance & invocation premade turns it off and relies on its sweep (owner, 15 Oct).
+    cooldownDim: true,
     name,
     folderId: '', // sidebar grouping only - see the renderer
     deletable: true,
@@ -921,6 +943,7 @@ const SHAREABLE_FIELDS = [
   'travelIncludeSuccor',
   'visibleInRaid',
   'visibleInGroup',
+  'cooldownDim', // appended - this list is a share-code wire format (see SHARE_FIELD_ORDER)
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -985,6 +1008,18 @@ function encodeShareCode(kind, diffByName = {}) {
 // (plain deflated JSON with a `name` and string `kind`) and _decodeCode still reads it.
 const LEGACY_SHARE_CODE_PREFIXES = ['EQLSAURAS1-', 'EQBT2-'];
 const V2_SHARE_CODE_PREFIX = 'EQLSAURAS1-';
+
+// Characters a chat app can leave inside a pasted code. Built from character codes (not written as
+// literals) so the source stays plain ASCII: soft hyphen, zero-width space/non-joiner/joiner, word
+// joiner, byte-order mark - and the non-breaking space, which becomes an ordinary space.
+const INVISIBLE_CHARS = new RegExp(
+  '[' + [0xad, 0x200b, 0x200c, 0x200d, 0x2060, 0xfeff].map((c) => String.fromCharCode(c)).join('') + ']',
+  'g'
+);
+const NBSP_CHARS = new RegExp(String.fromCharCode(0xa0), 'g');
+const SHARE_CODE_FINDER = new RegExp(
+  `(?:${SHARE_CODE_PREFIX}[A-Za-z0-9_-]{6,}|${V2_SHARE_CODE_PREFIX}[A-Za-z0-9+/=]+)`
+);
 
 // textSize used to be a 'small'|'medium'|'large' enum (fixed 3-step radio
 // buttons) - now it's a free px number via a slider. Widgets saved under
@@ -1159,6 +1194,9 @@ function normalizeWidget(widget) {
     // QOL #47 - fade the timer text from its normal colour through amber as the buff runs down,
     // a readable heads-up before the red expiring-soon flash. Off by default.
     timerColorRamp: !!widget.timerColorRamp,
+    // Dim + outline a tile while it is in its cooldown phase. On unless explicitly turned off, so
+    // every aura saved before the setting existed looks exactly as it did.
+    cooldownDim: widget.cooldownDim !== false,
     // QOL #48 - icon mode only. Seconds to hold an expired tile on screen, greyed, before it
     // clears. 0 (default) = the old behaviour, the tile vanishes the moment the buff ends.
     expiredLingerSec: Math.max(0, Math.min(6, Number(widget.expiredLingerSec) || 0)),
@@ -1432,6 +1470,30 @@ function defaultsForKind(kind, name) {
   if (kind === MODULE_KIND) return defaultModuleWidget(name);
   return defaultCustomWidget(name);
 }
+
+// The Stance & invocation premade's triggers (see createStanceAura). Lines are the roster's own
+// landing texts for each Stance / Invocation entry. Icons are DEFAULTS the player can change per
+// trigger, all from the game's own stance/invocation icon block (2244-2259):
+//   - 10 taken from the owner's own Stances action bar, where she assigned them by hand (15 Oct);
+//   - the other 5 read off the remaining art in that block - Spellblade (sword + magic swirl) and
+//     Mage Hunter (bow) clearly, Berserker / Offensive / Striker best guesses. 2246 is left unused.
+const STANCE_AURA_TRIGGERS = [
+  { group: 'stance', name: 'Balanced Stance', line: 'You assume a balanced stance.', iconId: 2244 }, // her bar
+  { group: 'stance', name: 'Berserker Stance', line: 'You assume a berserker stance.', iconId: 2248 }, // read off the art
+  { group: 'stance', name: 'Channeler Stance', line: 'You assume a channeler stance.', iconId: 2252 }, // her bar
+  { group: 'stance', name: 'Defensive Stance', line: 'You assume a defensive stance.', iconId: 2251 }, // her bar
+  { group: 'stance', name: 'Evasive Stance', line: 'You assume an evasive stance.', iconId: 2245 }, // her bar
+  { group: 'stance', name: 'Mage Hunter Stance', line: 'You assume a mage hunter stance.', iconId: 2247 }, // read off the art
+  { group: 'stance', name: 'Offensive Stance', line: 'You assume an offensive stance.', iconId: 2249 }, // read off the art
+  { group: 'stance', name: 'Striker Stance', line: 'You assume a striker stance.', iconId: 2250 }, // read off the art
+  { group: 'invocation', name: 'Divine Invocation', line: 'You begin reciting the divine invocation.', iconId: 2254 }, // her bar
+  { group: 'invocation', name: 'Empowering Invocation', line: 'You begin reciting the empowering invocation.', iconId: 2253 }, // her bar
+  { group: 'invocation', name: 'Inversion Invocation', line: 'You begin reciting the inversion invocation.', iconId: 2257 }, // her bar
+  { group: 'invocation', name: 'Inviolable Invocation', line: 'You begin reciting the inviolable invocation.', iconId: 2259 }, // her bar
+  { group: 'invocation', name: 'Overchannel Invocation', line: 'You begin reciting the overchannel invocation.', iconId: 2255 }, // her bar
+  { group: 'invocation', name: 'Recovery Invocation', line: 'You begin reciting the recovery invocation.', iconId: 2258 }, // her bar
+  { group: 'invocation', name: 'Spellblade Invocation', line: 'You begin reciting the spellblade invocation.', iconId: 2256 }, // read off the art
+];
 
 class WidgetStore {
   constructor(store) {
@@ -1833,6 +1895,56 @@ class WidgetStore {
   // counting up from the moment the app last saw a zone change - answers "how long have I been
   // here" at a glance. A plain custom aura, buffSource 'zoneTimer'. Like First aggro, no settings
   // of its own: it just shows the current zone and how long she's been in it.
+  // The "Stance & invocation" premade (owner, 15 Oct). Deliberately ORDINARY custom triggers - one
+  // per stance and invocation - so every name, line and icon stays editable in the normal trigger
+  // editor ("allow the icons to be player editable with defaults selected"). Each trigger is
+  // "stay until ended" (no countdown) and ends on the NEXT pick in its group: any line containing
+  // "You assume a" (which also matches "You assume an ...") for a stance, "You begin reciting the"
+  // for an invocation. The engine checks end lines before triggers on the same line, so a swap ends
+  // the old tile and starts the new one in that one line - instant, with no gap. In plain
+  // Independent mode one aura holds exactly one stance tile and one invocation tile. An interrupted
+  // swap prints no pick, so the current stance correctly stays up. (Ending on the game's "You begin
+  // to change your stance." left a gap for the swap's own time, and a pick with no such line before
+  // it - a bench line, or the rare one in real logs - left two stance tiles up.)
+  // Lines are the roster's own landing texts.
+  createStanceAura(name, { activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name || 'Stance & invocation');
+    widget.buffSource = 'customTimer';
+    widget.triggerCombineMode = 'independent';
+    // Icons with the radial sweep and no number by default (owner, 15 Oct: "sweep as default") -
+    // the 6s swap cooldown below shows as a sweep; both are ordinary aura options she can change.
+    widget.displayMode = 'icons';
+    widget.iconsPerRow = 2;
+    widget.iconDepletionShade = 'radial';
+    widget.timerFormat = 'off';
+    // Stance first, invocation second, always - the trigger list's own order (stances are listed
+    // first in STANCE_AURA_TRIGGERS). 'default' followed time left, so a tile in its cooldown
+    // jumped ahead of a settled one (reported live).
+    widget.sortOrder = 'trigger';
+    // No low-time flash - a 6s cooldown is always "low", so it flashed every swap - and no cooldown
+    // dimming either: the sweep alone says "not ready yet" (owner, 15 Oct).
+    widget.lowTimeThresholdSec = 0;
+    widget.cooldownDim = false;
+    widget.landingGlowEnabled = false;
+    widget.customTimers = STANCE_AURA_TRIGGERS.map((t) => ({
+      id: crypto.randomUUID(),
+      name: t.name,
+      durationSec: DEFAULT_TRIGGER_DURATION_SEC,
+      triggerText: t.line,
+      endedText: t.group === 'stance' ? 'You assume a' : 'You begin reciting the',
+      iconId: t.iconId,
+      untilEnded: true,
+      // The group's shared swap cooldown - every stance, and every invocation, is 6s (owner).
+      cooldownSec: 6,
+    }));
+    widget.buffNames = widget.customTimers.map((t) => t.name);
+    widget.premadeOrigin = { kind: 'stanceAura' };
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
   createZoneTimerAura(name, { activeProfileIds } = {}) {
     const widget = defaultCustomWidget(name || 'Zone timer');
     widget.buffSource = 'zoneTimer';
@@ -1985,7 +2097,7 @@ class WidgetStore {
   // pick step) so the existing explicit-buffNames-filter rendering path in
   // overlay.js already isolates this widget's own timers out of the
   // engine's combined active list, with zero special-casing needed there.
-  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) {
+  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded }) {
     const widget = this.getById(id);
     if (!widget) return null;
     const timer = {
@@ -2019,7 +2131,12 @@ class WidgetStore {
       // Note 10. Seconds to count down AFTER the duration runs out, before the ability is ready
       // again. Undefined rather than 0 when unset, so a timer that has never used this stays
       // byte-identical to one written before the feature existed.
-      cooldownSec: Number(cooldownSec) > 0 ? Number(cooldownSec) : undefined,
+      cooldownSec: Number(cooldownSec) > 0 ? clampCooldownSeconds(cooldownSec) : undefined,
+      // This trigger's own "Show for" - see ownShowForSec. Undefined = the aura's.
+      showForSec: ownShowForSec(showForSec),
+      // "Stay until ended": no countdown, only the end line replaces it (customTimerEngine
+      // UNTIL_ENDED_MS). Undefined when off, so older timers stay byte-identical.
+      untilEnded: untilEnded === true ? true : undefined,
     };
     widget.customTimers = [...(widget.customTimers || []), timer];
     widget.buffNames = widget.customTimers.map((t) => t.name);
@@ -2030,7 +2147,7 @@ class WidgetStore {
   updateCustomTimer(
     id,
     timerId,
-    { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }
+    { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded }
   ) {
     const widget = this.getById(id);
     if (!widget) return null;
@@ -2059,8 +2176,12 @@ class WidgetStore {
     // is also right. Rewriting unconditionally meant any code path not yet updated for a new field
     // would silently wipe it - the same shape of bug as the castOf drop above.
     if (cooldownSec !== undefined) {
-      timer.cooldownSec = Number(cooldownSec) > 0 ? Number(cooldownSec) : undefined;
+      timer.cooldownSec = Number(cooldownSec) > 0 ? clampCooldownSeconds(cooldownSec) : undefined;
     }
+    // Same rule: untouched unless the caller said something. The form sends null for a blank box,
+    // which clears the override back to "use the aura's".
+    if (showForSec !== undefined) timer.showForSec = ownShowForSec(showForSec);
+    if (untilEnded !== undefined) timer.untilEnded = untilEnded === true ? true : undefined;
     widget.buffNames = widget.customTimers.map((t) => t.name);
     this._save();
     return widget;
@@ -2345,7 +2466,25 @@ class WidgetStore {
   // Turns any recognised code (v3 'EQa1', or the legacy v2 'EQLSAURAS1-' JSON format) into a
   // normalised payload: `{ kind, <field>: value, ... }` keyed by real SHAREABLE_FIELDS names, no
   // `name`. null for anything unreadable. This is the ONLY place that touches the wire format.
+  // Codes travel through chat apps, which wrap lines and slip in invisible characters (zero-width
+  // spaces, soft hyphens, non-breaking spaces) that the import box's trim() leaves behind - a
+  // perfectly good code then reads "invalid". Three readings are tried and the first that decodes
+  // wins: the paste as-is, the whole paste with every whitespace character removed (a code wrapped
+  // over several lines), then the code lifted out of surrounding words (a quote, "here you go:").
+  // Decode only: every import path still confirms with the user.
   _decodeCode(code) {
+    if (typeof code !== 'string') return null;
+    const clean = code.replace(INVISIBLE_CHARS, '').replace(NBSP_CHARS, ' ').trim();
+    const candidates = [clean, clean.replace(/\s/g, ''), (SHARE_CODE_FINDER.exec(clean) || [])[0]];
+    for (const c of candidates) {
+      if (!c) continue;
+      const payload = this._decodeCodeExact(c);
+      if (payload) return payload;
+    }
+    return null;
+  }
+
+  _decodeCodeExact(code) {
     if (typeof code !== 'string') return null;
 
     if (code.startsWith(SHARE_CODE_PREFIX)) {

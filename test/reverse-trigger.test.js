@@ -102,6 +102,45 @@ test('independent mode with two triggers: each has its own default-visible tile 
   assert.equal(active[0].name, 'B');
 });
 
+// Reported live: a "show each ability when it's ready" aura - Reverse detection, several
+// independent triggers, each with its own Cooldown - brought every tile back after the aura's one
+// shared Duration, so each ability needed an aura of its own to get its own cooldown.
+test('independent mode: each trigger stays hidden for its OWN cooldown, not the shared duration', () => {
+  const { store, widget, engine } = setup();
+  store.setReverseDetection(widget.id, true);
+  store.addCustomTimer(widget.id, { name: 'Mend', durationSec: 5, triggerText: 'You mend your wounds', triggerMatch: 'contains', cooldownSec: 360 });
+  store.addCustomTimer(widget.id, { name: 'Harm Touch', durationSec: 5, triggerText: 'You harm touch', triggerMatch: 'contains', cooldownSec: 1800 });
+  store.setTriggerDurationSec(widget.id, 0);
+  engine.handleLine(`${TS}You mend your wounds and heal some damage.`);
+  engine.handleLine(`${TS}You harm touch a gnoll.`);
+  assert.equal(engine.getActive().length, 0, 'both used - both hidden');
+
+  const realNow = Date.now;
+  const at = (sec) => {
+    const t0 = realNow();
+    Date.now = () => t0 + sec * 1000;
+    engine._tick();
+    const names = engine.getActive().map((t) => t.name).sort();
+    Date.now = realNow;
+    return names;
+  };
+  try {
+    assert.deepEqual(at(60), [], 'neither cooldown is over after a minute');
+    assert.deepEqual(at(400), ['Mend'], 'Mend (6 min) is ready again, Harm Touch (30 min) is not');
+    assert.deepEqual(at(1900), ['Harm Touch', 'Mend'], 'both ready again');
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('independent mode: with no cooldown set, the hide time is still just the duration', () => {
+  const { store, widget, engine, log } = setup();
+  store.setReverseDetection(widget.id, true);
+  store.addCustomTimer(widget.id, { name: 'Mend', durationSec: 90, triggerText: 'go' });
+  engine.handleLine(`${TS}go`);
+  assert.ok(log.some((l) => l.includes('hiding for 90s')), 'an aura set up the old way must behave as before');
+});
+
 test('AND mode: this is the motivating case - stays on until BOTH triggers have fired, then hides as one tile', () => {
   const { store, widget, engine, log } = setup();
   store.setReverseDetection(widget.id, true);

@@ -128,6 +128,12 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setOverlaySoundsMuted: (muted) => ipcRenderer.invoke('overlay:setSoundsMuted', muted),
   setOverlayPreviewAll: (enabled) => ipcRenderer.invoke('overlay:setPreviewAll', enabled),
   resumeMove: () => ipcRenderer.invoke('move:resume'),
+  // Test bench (dev builds only - getTestBenchState().available is false when packaged).
+  getTestBenchState: () => ipcRenderer.invoke('testBench:getState'),
+  setTestBenchEnabled: (on) => ipcRenderer.invoke('testBench:setEnabled', on),
+  startTestBench: () => ipcRenderer.invoke('testBench:start'),
+  stopTestBench: () => ipcRenderer.invoke('testBench:stop'),
+  onTestBenchState: (callback) => ipcRenderer.on('testBench:state', (_e, s) => callback(s)),
   onOverlayMasterStateChanged: (callback) => {
     ipcRenderer.on('overlay:masterStateChanged', () => callback());
   },
@@ -181,6 +187,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createLockoutBoardWidget: (name) => ipcRenderer.invoke('widget:createLockoutBoard', { name }),
   createFirstAggroWidget: (name) => ipcRenderer.invoke('widget:createFirstAggro', { name }),
   createZoneTimerWidget: (name) => ipcRenderer.invoke('widget:createZoneTimer', { name }),
+  createStanceWidget: (name) => ipcRenderer.invoke('widget:createStance', { name }),
   setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
   setWidgetTravelIncludeSuccor: (id, include) => ipcRenderer.invoke('widget:setTravelIncludeSuccor', { id, include }),
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
@@ -304,6 +311,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setWidgetShowIconLabel: (id, enabled) => ipcRenderer.invoke('widget:setShowIconLabel', { id, enabled }),
   setWidgetIconDepletionShade: (id, value) => ipcRenderer.invoke('widget:setIconDepletionShade', { id, value }),
   setWidgetTimerColorRamp: (id, enabled) => ipcRenderer.invoke('widget:setTimerColorRamp', { id, enabled }),
+  setWidgetCooldownDim: (id, enabled) => ipcRenderer.invoke('widget:setCooldownDim', { id, enabled }),
   setWidgetExpiredLingerSec: (id, seconds) => ipcRenderer.invoke('widget:setExpiredLingerSec', { id, seconds }),
   setWidgetIconLabelSize: (id, size) => ipcRenderer.invoke('widget:setIconLabelSize', { id, value: size }),
   setWidgetIconLabelAnchor: (id, anchor) => ipcRenderer.invoke('widget:setIconLabelAnchor', { id, value: anchor }),

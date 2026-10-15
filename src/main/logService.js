@@ -12,7 +12,11 @@ const ARCHIVE_PROMPT_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50MB
 // and the day-by-day log splitter, and pushes updates out to every open
 // renderer window.
 class LogService {
-  constructor() {
+  // testBenchMode (dev-only test copy - see testBench.js): the watcher still runs, so the app knows
+  // the character / spellbook from the real log, but the splitter never touches the real Logs
+  // folder and real lines are not shown - only bench lines are.
+  constructor({ testBenchMode = false } = {}) {
+    this.testBenchMode = !!testBenchMode;
     this.watcher = new LogWatcher();
     this.splitter = new LogSplitter({ loadJson, saveJson });
     // The handler is injected by main.js, which owns debugLog and the window broadcast. It used to
@@ -21,12 +25,15 @@ class LogService {
     this.lastError = null;
 
     this.watcher.on('status', (status) => {
-      if (status.currentFilePath) {
+      if (status.currentFilePath && !this.testBenchMode) {
         this.splitter.attachToFile(status.currentFilePath);
       }
       this._broadcast('log:status', this.getState());
     });
-    this.watcher.on('line', (line) => this._broadcast('log:line', line));
+    this.watcher.on('line', (line, meta) => {
+      if (this.testBenchMode && !(meta && meta.test)) return;
+      this._broadcast('log:line', line);
+    });
     this.watcher.on('error', (message) => {
       this.lastError = message;
       this._broadcast('log:error', message);

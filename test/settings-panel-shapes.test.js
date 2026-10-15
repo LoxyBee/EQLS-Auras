@@ -132,7 +132,9 @@ const FIELD_SHAPES = {
   // below is travel's own replacement for the list-width/row-size sizing it still wants.
   'display-choice': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer', 'module'],
   'sort': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer'],
-  'merge': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer'],
+  // Not 'custom-timer': every tile there is a different trigger sharing one Duration, so merging
+  // folded a cooldown HUD into one "x2" tile (reported live). overlay.js also ignores the flag.
+  'merge': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff'],
   'borders': ['self-buffs', 'ally-buffs', 'bard-songs', 'custom-buff', 'custom-debuff', 'custom-timer'],
   // 'raid-named' (#33) and 'damage' (note 19) reuse 'list-format' the same way travel does - a
   // list of non-spell rows with no icon mode, wanting only the list-width/row-size sizing and none
@@ -254,6 +256,15 @@ test('selecting an aura re-reads the saved copy, so a setting that skipped the l
   assert.match(fn[1], /selectWidgetFromCache\(id\)/);
   assert.match(fn[1], /window\.eqTracker\.listWidgets\(\)/);
   assert.match(fn[1], /seq !== selectWidgetSeq/, 'a late answer for an aura the user already left must be dropped');
+});
+
+test('the overlay never merges tiles on a trigger aura, even one already saved with merging on', () => {
+  const overlaySrc = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'overlay', 'overlay.js'), 'utf8');
+  assert.match(
+    overlaySrc,
+    /if \(currentConfig\.mergeSameDuration && currentConfig\.buffSource !== 'customTimer'\) \{\s*filtered = mergeByDuration\(filtered\);/,
+    'a cooldown HUD with merging on (e.g. from a share code) would fold into one "x2" tile'
+  );
 });
 
 module.exports = () => report('settings-panel-shapes');

@@ -288,7 +288,10 @@ function formatTime(totalSec, format) {
   // A buff that never runs out has no remaining time - null, deliberately, so it cannot be
   // mistaken for zero anywhere. Checked first, before any format branch, because every one of
   // them would otherwise print "null" or NaN.
-  if (totalSec === null) return INFINITE_LABEL;
+  // "Off" (owner, 15 Oct: number OR sweep is the aura's choice, sweep by default for stances)
+  // shows nothing at all - not even the symbol.
+  if (totalSec === null) return format === 'off' ? '' : INFINITE_LABEL;
+  if (format === 'off') return '';
   if (format === 'seconds-only') return `${totalSec}`;
   if (format === 'rounded-minutes') {
     // Under a minute, rounding up to whole minutes ("1m") is misleading
@@ -943,7 +946,8 @@ function updateRef(ref, buff, isIcon) {
   // worth putting on screen. Opacity rather than not building the tile at all, since sound only
   // fires for buffs this widget is actually "displaying" (see render()'s own comment on that
   // rule) - an invisible tile still counts as displayed, a skipped one would go silent too.
-  const isZeroDurationPing = currentConfig.buffSource === 'customTimer' && buff.durationSec === 0;
+  // A tile in its cooldown phase is never a ping, whatever duration it started with.
+  const isZeroDurationPing = currentConfig.buffSource === 'customTimer' && buff.durationSec === 0 && buff.phase !== 'cooldown';
   ref.root.classList.toggle('zero-duration-ping', isZeroDurationPing);
 
   const threshold = currentConfig.lowTimeThresholdSec ?? 30;
@@ -971,7 +975,9 @@ function updateRef(ref, buff, isIcon) {
   // down to when you can no longer rely on it. Same tile, same digits, opposite meanings - so the
   // cooldown phase is dimmed and outlined, and the tooltip says which it is in words.
   const cooling = buff.phase === 'cooldown';
-  ref.root.classList.toggle('cooldown-phase', cooling);
+  // The dim + dashed outline is the aura's choice (cooldownDim, on unless turned off); the
+  // tooltip still says "cooling down" either way.
+  ref.root.classList.toggle('cooldown-phase', cooling && currentConfig.cooldownDim !== false);
   if (cooling) ref.root.title = `${displayName(buff)} - cooling down, ready in ${buff.remainingSec}s`;
   else if (ref.root.title) ref.root.title = '';
 
@@ -1069,8 +1075,15 @@ function updateRef(ref, buff, isIcon) {
       ref.timeEl.textContent = (swapKind === 'heal' ? 'heal ' : 'dmg ') + damageText;
       ref.timeEl.style.color = damageTextColor(swapKind);
     } else {
+      // A Reverse detection "ready" tile (phase 'shown') and a "stay until ended" trigger tile
+      // (untilEnded - e.g. the current stance) are not counting anything, so they show no time at
+      // all rather than an infinity symbol (owner's call). A real permanent buff keeps its symbol.
       ref.timeEl.textContent =
-        damageText != null ? damageText : formatTime(buff.remainingSec, currentConfig.timerFormat);
+        damageText != null
+          ? damageText
+          : buff.phase === 'shown' || (buff.untilEnded && buff.remainingSec == null)
+            ? ''
+            : formatTime(buff.remainingSec, currentConfig.timerFormat);
     }
   }
   // The share % rides its own right-aligned column on a damage meter (owner, 5 Sep) - so the value
@@ -1196,6 +1209,14 @@ function sortBuffs(buffs, order, direction) {
   let out = buffs;
   if (order === 'time-remaining') out = [...buffs].sort((a, b) => a.remainingSec - b.remainingSec);
   else if (order === 'alphabetical') out = [...buffs].sort((a, b) => a.name.localeCompare(b.name));
+  // 'trigger' (custom-trigger auras): the order of the aura's own trigger list, so a tile never
+  // jumps around as timers tick - the Stance & invocation premade keeps stance first, invocation
+  // second this way (owner, 15 Oct). A tile with no matching trigger goes last.
+  else if (order === 'trigger') {
+    const index = new Map((currentConfig.customTimers || []).map((t, i) => [t.id, i]));
+    const at = (b) => (index.has(b.id) ? index.get(b.id) : Number.MAX_SAFE_INTEGER);
+    out = [...buffs].sort((a, b) => at(a) - at(b));
+  }
   // 'desc' flips whichever order was chosen - including 'default' (cast order), where it means
   // newest-first. Copy first if we haven't already, so the caller's array is never reversed in place.
   if (direction === 'desc') out = (out === buffs ? [...buffs] : out).reverse();
@@ -1499,7 +1520,13 @@ function visibleBuffs(buffs, opts = {}) {
   // Merged AFTER filtering and BEFORE sorting. After filtering, or an excluded buff would still
   // be counted in a badge; before sorting, so the merged tile takes its place in the order by the
   // remaining time it actually shows rather than by whichever member happened to be first.
-  if (currentConfig.mergeSameDuration) filtered = mergeByDuration(filtered);
+  // Never on a trigger (customTimer) aura: each tile is a different trigger, and they all share one
+  // Duration - or none, under Reverse detection - so merging folded them into one "x2" tile
+  // (reported live). Checked here too, not only hidden in settings, because auras that already
+  // have the flag on (and share codes carrying it) still exist.
+  if (currentConfig.mergeSameDuration && currentConfig.buffSource !== 'customTimer') {
+    filtered = mergeByDuration(filtered);
+  }
   const sorted = sortBuffs(filtered, currentConfig.sortOrder, currentConfig.sortDirection);
 
   // A TEXT AURA IS ONE TILE, always, however many things it is watching. That is what makes it an

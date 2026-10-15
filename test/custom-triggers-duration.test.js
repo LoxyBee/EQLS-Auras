@@ -170,15 +170,17 @@ test('the top-level Duration is a minute + second pair, wired both ways (owner, 
     'the boxes do not actually save anywhere'
   );
   // readMinSec caps at the store's own ceiling so an oversized entry can't get past the renderer.
-  assert.match(rendererSrc, /return Math\.min\(3600, m \* 60 \+ s\)/);
+  // 60 minutes by default (every duration); a trigger's Cooldown passes its own 3-hour max.
+  assert.match(rendererSrc, /function readMinSec\(minEl, secEl, max = 3600\) \{/);
+  assert.match(rendererSrc, /return Math\.min\(max, m \* 60 \+ s\)/);
 });
 
 test('the per-trigger Cooldown is also a minute + second pair', () => {
   assert.match(html, /id="widget-new-timer-cooldown-min"/);
   assert.match(html, /id="widget-new-timer-cooldown-sec"/);
-  assert.match(rendererSrc, /cooldownSec: readMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput\)/);
+  assert.match(rendererSrc, /cooldownSec: readMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput, COOLDOWN_MAX_SEC\)/);
   // edit populates both boxes, blank when there is no cooldown
-  assert.match(rendererSrc, /writeMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput, timer\.cooldownSec \|\| 0, true\)/);
+  assert.match(rendererSrc, /writeMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput, timer\.cooldownSec \|\| 0, true, COOLDOWN_MAX_SEC\)/);
 });
 
 test('the form reads duration from the widget itself, not from any input box', () => {
@@ -206,6 +208,143 @@ test('the per-row duration display is gone from the trigger list - the slider ab
   assert.ok(fn, 'renderCustomTimersList has been restructured');
   assert.doesNotMatch(fn[1], /buff-timer/, 'a per-row duration element is still being built');
   assert.doesNotMatch(fn[1], /durationSec \/ 60/, 'still formatting a per-row m:ss duration');
+});
+
+// ---------------------------------------------------------------------------
+// The shared box says what it does, and each trigger's own cooldown is visible on its row
+// (reported live: a cooldown HUD looked like every trigger had the same timer)
+// ---------------------------------------------------------------------------
+
+test('the aura-wide box is labelled "Duration shown", and its hover explains how the cooldown follows it', () => {
+  const row = html.match(/<span class="label" title="([^"]*)">Duration shown:<\/span>\s*<input type="number" id="widget-trigger-duration-min"/);
+  assert.ok(row, 'the shared duration box should be labelled "Duration shown:"');
+  assert.match(row[1], /same for every trigger/);
+  assert.match(row[1], /Cooldown/);
+});
+
+test('each trigger row shows its own cooldown, compactly formatted', () => {
+  const fnSrc = rendererSrc.match(/function formatTriggerSeconds\(total\) \{[\s\S]*?\n {2}\}/);
+  assert.ok(fnSrc, 'formatTriggerSeconds is missing');
+  const formatTriggerSeconds = new Function(`${fnSrc[0]}; return formatTriggerSeconds;`)();
+  assert.equal(formatTriggerSeconds(45), '45s');
+  assert.equal(formatTriggerSeconds(360), '6m');
+  assert.equal(formatTriggerSeconds(90), '1m 30s');
+  assert.equal(formatTriggerSeconds(4200), '1h 10m');
+  assert.equal(formatTriggerSeconds(3600), '1h');
+  const list = rendererSrc.match(/function renderCustomTimersList\(widget\) \{[\s\S]*?\n {2}\}/);
+  assert.ok(list);
+  assert.match(list[0], /if \(Number\(timer\.cooldownSec\) > 0\) \{/, 'only a trigger that has a cooldown gets the note');
+  assert.match(list[0], /formatTriggerSeconds\(Number\(timer\.cooldownSec\)\)\} cooldown/);
+});
+
+// ---------------------------------------------------------------------------
+// A trigger's OWN "Show for" - one aura holding tiles that stay up for different lengths
+// (owner, 15 Oct: "how do [I] manage a 'show for' duration that is independent per trigger?")
+// ---------------------------------------------------------------------------
+
+const { CustomTimerEngine } = require('../src/main/customTimerEngine');
+const { sanitizeCustomTimers } = require('../src/main/widgetStore');
+
+function engineFor(store) {
+  const engine = new CustomTimerEngine();
+  clearInterval(engine.tickTimer);
+  engine.setGetWidgetsFn(() => store.getAll());
+  return engine;
+}
+const LINE = (t) => `[Wed Aug 19 19:23:03 2026] ${t}`;
+
+test('a trigger with its own Show for keeps it; the aura-wide box only covers triggers without one', () => {
+  const store = newStore();
+  const w = store.create('HUD', { buffSource: 'customTimer' });
+  store.addCustomTimer(w.id, { name: 'Short', durationSec: 5, triggerText: 'short thing', showForSec: 15 });
+  store.addCustomTimer(w.id, { name: 'Shared', durationSec: 5, triggerText: 'shared thing' });
+  store.setTriggerDurationSec(w.id, 120); // the aura-wide box changes - must not touch "Short"
+  const engine = engineFor(store);
+  engine.handleLine(LINE('short thing'));
+  engine.handleLine(LINE('shared thing'));
+  const byName = Object.fromEntries(engine.getActive().map((t) => [t.name, t.durationSec]));
+  assert.deepEqual(byName, { Short: 15, Shared: 120 });
+});
+
+test('Show for 0 is a real value, and clearing it (null) goes back to the aura\'s', () => {
+  const store = newStore();
+  const w = store.create('HUD', { buffSource: 'customTimer' });
+  store.addCustomTimer(w.id, { name: 'A', durationSec: 30, triggerText: 'a', showForSec: 0 });
+  const id = store.getById(w.id).customTimers[0].id;
+  assert.equal(store.getById(w.id).customTimers[0].showForSec, 0, '0 must not be treated as "unset"');
+  store.updateCustomTimer(w.id, id, { ...store.getById(w.id).customTimers[0], showForSec: null });
+  assert.equal(store.getById(w.id).customTimers[0].showForSec, undefined, 'null clears the override');
+  store.updateCustomTimer(w.id, id, { ...store.getById(w.id).customTimers[0], showForSec: 45 });
+  const t = store.getById(w.id).customTimers[0];
+  store.updateCustomTimer(w.id, id, { name: t.name, durationSec: t.durationSec, triggerText: t.triggerText });
+  assert.equal(store.getById(w.id).customTimers[0].showForSec, 45, 'a caller that never mentions it leaves it alone');
+});
+
+test('Reverse detection hides a used trigger for its OWN Show for plus its cooldown', () => {
+  const store = newStore();
+  const w = store.create('HUD', { buffSource: 'customTimer' });
+  store.setReverseDetection(w.id, true);
+  store.addCustomTimer(w.id, { name: 'A', durationSec: 5, triggerText: 'a', showForSec: 20, cooldownSec: 100 });
+  store.setTriggerDurationSec(w.id, 0);
+  const engine = engineFor(store);
+  const log = [];
+  engine.setDebugLogFn((m) => log.push(m));
+  engine.handleLine(LINE('a'));
+  assert.ok(log.some((l) => l.includes('hiding for 120s')), log.join('\n'));
+});
+
+test('imports and share codes clamp it like every other trigger number, and drop garbage', () => {
+  const [a, b, c] = sanitizeCustomTimers([
+    { id: 'a', showForSec: 99999 },
+    { id: 'b', showForSec: 'nonsense' },
+    { id: 'c', showForSec: null },
+  ]);
+  assert.equal(a.showForSec, 3600);
+  assert.equal(b.showForSec, undefined);
+  assert.equal(c.showForSec, undefined);
+});
+
+test('the new field gets through both IPC handlers and the form (a missed list drops it silently)', () => {
+  for (const ch of ['widget:addCustomTimer', 'widget:updateCustomTimer']) {
+    const at = mainSrc.indexOf(`'${ch}'`);
+    const handler = mainSrc.slice(at, mainSrc.indexOf('\n);', at));
+    assert.equal((handler.match(/showForSec/g) || []).length, 2, `${ch}: must both destructure and forward showForSec`);
+  }
+  assert.match(rendererSrc, /showForSec: readShowFor\(\),/, 'readTimerFormData must send it');
+  assert.match(rendererSrc, /return showForBlank\(\) \? null : readMinSec\(newTimerShowForMinInput, newTimerShowForSecInput\);/,
+    'two empty boxes mean "use the aura\'s", not 0');
+  assert.match(html, /<span class="topic-title">Duration shown override<\/span>/, 'the title must say it overrides the aura\'s');
+  assert.match(html, />Instead of the aura's:<\/span>\s*<input type="number" id="widget-new-timer-showfor-min"/);
+  assert.match(html, /id="widget-new-timer-showfor-min"/);
+  assert.match(html, /id="widget-new-timer-showfor-sec"/);
+});
+
+// Reported live (owner's own test aura, from its share code): Duration shown 0 + a Cooldown showed
+// nothing. The cooldown phase kept reporting the 0s duration, and the overlay draws a 0-second
+// trigger tile as an invisible sound-only ping.
+test('a 0s duration with a cooldown reports the COOLDOWN as its length, so it is drawn and its bar is right', () => {
+  const store = newStore();
+  const w = store.create('HUD', { buffSource: 'customTimer' });
+  store.addCustomTimer(w.id, { name: 'Mend', durationSec: 0, triggerText: 'You mend your wounds and heal', triggerMatch: 'contains', cooldownSec: 15, showForSec: 0 });
+  store.addCustomTimer(w.id, { name: 'Not mend', durationSec: 0, triggerText: 'hea2', triggerMatch: 'contains', cooldownSec: 20 });
+  store.setTriggerDurationSec(w.id, 0);
+  const engine = engineFor(store);
+  const realNow = Date.now;
+  const t0 = realNow();
+  try {
+    Date.now = () => t0;
+    engine.handleLine(LINE('You mend your wounds and heal some damage.'));
+    engine.handleLine(LINE('hea2'));
+    Date.now = () => t0 + 1500;
+    engine._tick();
+    const byName = Object.fromEntries(engine.getActive().map((t) => [t.name, t]));
+    for (const [name, cd] of [['Mend', 15], ['Not mend', 20]]) {
+      assert.equal(byName[name].phase, 'cooldown', name);
+      assert.equal(byName[name].durationSec, cd, `${name}: must report its cooldown length, not 0`);
+    }
+  } finally { Date.now = realNow; }
+  const overlay = read('src', 'renderer', 'overlay', 'overlay.js');
+  assert.match(overlay, /buff\.durationSec === 0 && buff\.phase !== 'cooldown'/, 'a cooldown tile is never an invisible ping');
 });
 
 module.exports = () => report('custom-triggers-duration');

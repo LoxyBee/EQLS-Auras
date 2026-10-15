@@ -102,7 +102,9 @@ test('a 0-duration custom timer tile is given zero opacity, not skipped from ren
   assert.ok(fn, 'updateRef has been restructured, or the zero-duration toggle has moved');
   assert.match(
     fn[1],
-    /const isZeroDurationPing = currentConfig\.buffSource === 'customTimer' && buff\.durationSec === 0;/,
+    // ...and never a tile in its cooldown phase, whatever duration it started with (a 0s duration +
+    // a Cooldown was drawn invisible for its whole cooldown - reported live).
+    /const isZeroDurationPing = currentConfig\.buffSource === 'customTimer' && buff\.durationSec === 0 && buff\.phase !== 'cooldown';/,
     'the zero-duration flag is no longer computed correctly'
   );
   assert.match(

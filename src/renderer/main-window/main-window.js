@@ -1013,6 +1013,19 @@ function initDetectionSettingsPanel() {
     window.eqTracker.setUseEvidenceModel(useEvidenceModelCheckbox.checked);
   });
 
+  // Log -> Diagnostics "Show test bench" - see src/main/testBench.js. Inside the test copy the
+  // button is always shown (that is how you get out), so the box there just reflects that.
+  const testBenchEnabledCheckbox = document.getElementById('test-bench-enabled-checkbox');
+  if (testBenchEnabledCheckbox && window.eqTracker.getTestBenchState) {
+    window.eqTracker.getTestBenchState().then((s) => {
+      testBenchEnabledCheckbox.checked = !!(s && s.available);
+      testBenchEnabledCheckbox.disabled = !!(s && s.active);
+    });
+    testBenchEnabledCheckbox.addEventListener('change', () => {
+      window.eqTracker.setTestBenchEnabled(testBenchEnabledCheckbox.checked);
+    });
+  }
+
   // Off by default - see buffEngine.js's constructor comment on useCastTimeFilter. Independent
   // toggle from useEvidenceModel just above, so either can be reverted without the other.
   const useCastTimeFilterCheckbox = document.getElementById('use-cast-time-filter-checkbox');
@@ -1867,6 +1880,7 @@ function initWidgetsPanel() {
   const landingGlowCheckbox = document.getElementById('widget-landing-glow-checkbox');
   const landingGlowLabelEl = document.getElementById('widget-landing-glow-label');
   const timerColorRampCheckbox = document.getElementById('widget-timer-color-ramp-checkbox');
+  const cooldownDimCheckbox = document.getElementById('widget-cooldown-dim-checkbox');
   const soundLandCheckbox = document.getElementById('widget-sound-land-checkbox');
   const soundLandLabelEl = document.getElementById('widget-sound-land-label');
   const soundExpireCheckbox = document.getElementById('widget-sound-expire-checkbox');
@@ -2138,21 +2152,37 @@ function initWidgetsPanel() {
   const newTimerNameInput = document.getElementById('widget-new-timer-name');
   const newTimerCooldownMinInput = document.getElementById('widget-new-timer-cooldown-min');
   const newTimerCooldownSecInput = document.getElementById('widget-new-timer-cooldown-sec');
+  // This trigger's own "Show for" (widgetStore ownShowForSec). Both boxes empty = the aura's.
+  const newTimerShowForMinInput = document.getElementById('widget-new-timer-showfor-min');
+  const newTimerShowForSecInput = document.getElementById('widget-new-timer-showfor-sec');
+  const newTimerUntilEndedCheckbox = document.getElementById('widget-new-timer-until-ended');
+  // "Stay until ended" replaces a time, so the time boxes are greyed out while it is ticked.
+  function syncUntilEnded() {
+    newTimerShowForMinInput.disabled = newTimerUntilEndedCheckbox.checked;
+    newTimerShowForSecInput.disabled = newTimerUntilEndedCheckbox.checked;
+  }
+  const showForBlank = () => newTimerShowForMinInput.value.trim() === '' && newTimerShowForSecInput.value.trim() === '';
+  // null = "use the aura's" (both boxes empty); otherwise the trigger's own seconds, 0 included.
+  function readShowFor() {
+    return showForBlank() ? null : readMinSec(newTimerShowForMinInput, newTimerShowForSecInput);
+  }
   const newTimerMatchRadios = document.querySelectorAll('input[name="widget-new-timer-match"]');
 
   // A minute box + a second box that together stand for one duration in seconds, clamped to the
   // store's own 0..3600 ceiling (see clampTimerSeconds / setTriggerDurationSec in widgetStore.js).
   // Used for both the shared trigger Duration and the per-trigger Cooldown.
-  function readMinSec(minEl, secEl) {
+  // max: 3600 (60 min) for every duration; a trigger's Cooldown passes COOLDOWN_MAX_SEC (3 h).
+  const COOLDOWN_MAX_SEC = 3 * 60 * 60;
+  function readMinSec(minEl, secEl, max = 3600) {
     const m = Math.max(0, Math.floor(Number(minEl.value) || 0));
     const s = Math.max(0, Math.floor(Number(secEl.value) || 0));
-    return Math.min(3600, m * 60 + s);
+    return Math.min(max, m * 60 + s);
   }
   // blankZero: leave both boxes empty for a total of 0 (the Cooldown field, where empty means
   // "none"). Off for Duration, where 0 is an ordinary value (a sound-only trigger) and a visible
   // "0 / 0" reads clearer than two blank boxes.
-  function writeMinSec(minEl, secEl, totalSec, blankZero = false) {
-    const t = Math.max(0, Math.min(3600, Math.round(Number(totalSec) || 0)));
+  function writeMinSec(minEl, secEl, totalSec, blankZero = false, max = 3600) {
+    const t = Math.max(0, Math.min(max, Math.round(Number(totalSec) || 0)));
     if (t === 0 && blankZero) {
       minEl.value = '';
       secEl.value = '';
@@ -2175,15 +2205,34 @@ function initWidgetsPanel() {
     const topic = document.getElementById('topic-timer-cooldown');
     const summary = document.getElementById('timer-cooldown-summary');
     topic.classList.toggle('open', open);
-    const secs = readMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput);
+    const secs = readMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput, COOLDOWN_MAX_SEC);
     summary.textContent = secs > 0 ? formatMinSec(secs) : '';
   }
   const updateCooldownSummary = () => {
-    const secs = readMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput);
+    const secs = readMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput, COOLDOWN_MAX_SEC);
     document.getElementById('timer-cooldown-summary').textContent = secs > 0 ? formatMinSec(secs) : '';
   };
   newTimerCooldownMinInput.addEventListener('input', updateCooldownSummary);
   newTimerCooldownSecInput.addEventListener('input', updateCooldownSummary);
+
+  // Same collapsed-unless-used rule as Cooldown above, and the same "summary says the value when
+  // closed" guarantee - here the closed summary reads "aura's" so a blank box is never mistaken for 0.
+  const updateShowForSummary = () => {
+    const v = readShowFor();
+    document.getElementById('timer-show-for-summary').textContent = newTimerUntilEndedCheckbox.checked
+      ? 'until ended'
+      : v === null ? "aura's" : formatMinSec(v);
+  };
+  function setTimerShowForOpen(open) {
+    document.getElementById('topic-timer-show-for').classList.toggle('open', open);
+    updateShowForSummary();
+  }
+  newTimerShowForMinInput.addEventListener('input', updateShowForSummary);
+  newTimerShowForSecInput.addEventListener('input', updateShowForSummary);
+  newTimerUntilEndedCheckbox.addEventListener('change', () => {
+    syncUntilEnded();
+    updateShowForSummary();
+  });
   const newTimerTriggerInput = document.getElementById('widget-new-timer-trigger');
   const newTimerEndedInput = document.getElementById('widget-new-timer-ended');
   renderTriggerTypeChoices();
@@ -3338,7 +3387,10 @@ function initWidgetsPanel() {
     'ally-alert': ['text-fields', 'text-instant', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-picker'],
     'text': ['text-fields', 'text-instant', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'buff-picker'],
     'text-customTimer': ['text-fields', 'text-stack', 'ally-alert-toggle', 'always-on', 'opacity', 'position', 'alerts', 'buff-source', 'buff-source-timer-label', 'custom-timers'],
-    'custom-timer': ['display-choice', 'sort', 'merge', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'custom-timers'],
+    // No 'merge': every tile is a DIFFERENT trigger, and every trigger shares the aura's one Duration
+    // (or none at all, under Reverse detection) - so "merge tiles sharing a duration" folded a whole
+    // cooldown HUD into one "x2" tile (reported live). overlay.js ignores the flag here as well.
+    'custom-timer': ['display-choice', 'sort', 'borders', 'timer-text', 'opacity', 'position', 'alerts', 'custom-timers'],
     // A damage meter is a LIST of attacker rows, biggest first - not spells. No 'sort' (the engine
     // hands the rows pre-sorted and any re-sort would only scramble a real meter, same as travel/
     // raid-named), no 'merge'/'borders' (no duration, no spell category), no 'alerts' (nothing
@@ -3612,6 +3664,9 @@ function initWidgetsPanel() {
     displayModeRadios.forEach((r) => (r.checked = r.value === widget.displayMode));
     timerFormatRadios.forEach((r) => (r.checked = r.value === widget.timerFormat));
     sortOrderRadios.forEach((r) => (r.checked = r.value === (widget.sortOrder || 'default')));
+    // "Trigger order" only means something on a custom-trigger aura (it sorts by the trigger list).
+    const sortTriggerLabel = document.getElementById('widget-sort-trigger-label');
+    if (sortTriggerLabel) sortTriggerLabel.style.display = widget.buffSource === 'customTimer' ? '' : 'none';
     sortDirectionRadios.forEach((r) => (r.checked = r.value === (widget.sortDirection === 'desc' ? 'desc' : 'asc')));
     textSizeSlider.value = widget.textSize;
     textSizeValueEl.textContent = `${widget.textSize}px`;
@@ -3637,6 +3692,7 @@ function initWidgetsPanel() {
     lowThresholdValueEl.textContent = lowThreshold === 0 ? 'off' : `${lowThreshold}s`;
     landingGlowCheckbox.checked = widget.landingGlowEnabled !== false;
     if (timerColorRampCheckbox) timerColorRampCheckbox.checked = !!widget.timerColorRamp;
+    if (cooldownDimCheckbox) cooldownDimCheckbox.checked = widget.cooldownDim !== false;
     mergeCheckbox.checked = !!widget.mergeSameDuration;
     hideInfiniteCheckbox.checked = !!widget.hideInfiniteBuffs;
     categoryBordersCheckbox.checked = widget.categoryBordersEnabled !== false;
@@ -4039,6 +4095,11 @@ function initWidgetsPanel() {
     newTimerCooldownMinInput.value = '';
     newTimerCooldownSecInput.value = '';
     setTimerCooldownOpen(false);
+    newTimerShowForMinInput.value = '';
+    newTimerShowForSecInput.value = '';
+    newTimerUntilEndedCheckbox.checked = false;
+    syncUntilEnded();
+    setTimerShowForOpen(false);
     newTimerMatchRadios.forEach((r) => (r.checked = r.value === 'exact'));
     newTimerTriggerInput.value = '';
     newTimerEndedInput.value = '';
@@ -4074,10 +4135,20 @@ function initWidgetsPanel() {
     // nothing here to restore.
     // Blank, not "0", when there is no cooldown - a zero in the box reads as a cooldown of no
     // length rather than as no cooldown at all.
-    writeMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput, timer.cooldownSec || 0, true);
+    writeMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput, timer.cooldownSec || 0, true, COOLDOWN_MAX_SEC);
     // Open it if this timer actually uses one, so editing does not hide the setting behind a
     // closed section the person cannot see they have already set.
     setTimerCooldownOpen(!!timer.cooldownSec);
+    // Its own Show for, if it has one (0 shown as "0 / 0", a real value); otherwise blank = aura's.
+    if (timer.showForSec != null) {
+      writeMinSec(newTimerShowForMinInput, newTimerShowForSecInput, timer.showForSec, false);
+    } else {
+      newTimerShowForMinInput.value = '';
+      newTimerShowForSecInput.value = '';
+    }
+    newTimerUntilEndedCheckbox.checked = timer.untilEnded === true;
+    syncUntilEnded();
+    setTimerShowForOpen(timer.showForSec != null || timer.untilEnded === true);
     newTimerMatchRadios.forEach((r) => (r.checked = r.value === (timer.triggerMatch === 'contains' ? 'contains' : 'exact')));
     // Restores whichever mode this timer was actually built in - triggerChat only exists on a
     // timer set up via the chat-message builder, triggerMatch:'castOf' only on one built from a
@@ -4266,6 +4337,17 @@ function initWidgetsPanel() {
     return TRIGGER_COMBINE_ORDER[(i + 1) % TRIGGER_COMBINE_ORDER.length];
   }
 
+  // "45s", "6m", "1m 30s", "1h 10m" - compact, for the trigger list's cooldown note.
+  function formatTriggerSeconds(total) {
+    const s = Math.max(0, Math.round(total));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h) return m ? `${h}h ${m}m` : `${h}h`;
+    if (m) return sec ? `${m}m ${sec}s` : `${m}m`;
+    return `${sec}s`;
+  }
+
   function renderCustomTimersList(widget) {
     customTimersListEl.innerHTML = '';
     const timers = widget.customTimers || [];
@@ -4281,9 +4363,31 @@ function initWidgetsPanel() {
         const name = document.createElement('span');
         name.className = 'buff-name';
         name.textContent = timer.name;
-        // No per-row duration any more - it's the one slider above the list now, shared by
-        // every trigger, so showing it again here would just be the exact "two sources for the
-        // same number" confusion that slider was added to end.
+        // No per-row duration - that is the one "Show for" box above the list, shared by every
+        // trigger. The COOLDOWN is per trigger, though, and lived only at the bottom of its Edit
+        // window, so a cooldown HUD's different cooldowns were invisible from here (reported live:
+        // it looked like every trigger had the same timer). Shown on the row so each one reads at
+        // a glance.
+        if (timer.untilEnded) {
+          const ue = document.createElement('span');
+          ue.className = 'trigger-cooldown';
+          ue.textContent = ' · until ended';
+          ue.title = 'Stays until its end line - change it in Edit';
+          name.appendChild(ue);
+        } else if (timer.showForSec != null) {
+          const sf = document.createElement('span');
+          sf.className = 'trigger-cooldown';
+          sf.textContent = ` · shown ${formatTriggerSeconds(Number(timer.showForSec))}`;
+          sf.title = "This trigger's own Duration shown - change it in Edit";
+          name.appendChild(sf);
+        }
+        if (Number(timer.cooldownSec) > 0) {
+          const cd = document.createElement('span');
+          cd.className = 'trigger-cooldown';
+          cd.textContent = ` · ${formatTriggerSeconds(Number(timer.cooldownSec))} cooldown`;
+          cd.title = "This trigger's own cooldown - change it in Edit";
+          name.appendChild(cd);
+        }
         // Reported live 25 Aug: "have a button to the left of edit, that toggles between AND and
         // OR" - a third mode (today's original behaviour, kept as the default) got added during
         // that same conversation, so this is a 3-way cycle rather than a 2-way toggle. It reflects
@@ -4707,6 +4811,13 @@ function initWidgetsPanel() {
         'The current zone and how long you have been in it, counting up from the moment you ' +
         'zoned in. Resets on every zone change.',
       create: (name) => window.eqTracker.createZoneTimerWidget(name),
+    },
+    {
+      id: 'stance',
+      name: 'Stance & invocation',
+      group: 'standalone',
+      description: 'Your current stance and invocation, with their icons. Changes the moment you pick a new one.',
+      create: (name) => window.eqTracker.createStanceWidget(name),
     },
   ];
 
@@ -5407,6 +5518,11 @@ function initWidgetsPanel() {
   landingGlowCheckbox.addEventListener('change', () => {
     window.eqTracker.setWidgetLandingGlowEnabled(selectedId, landingGlowCheckbox.checked);
   });
+  if (cooldownDimCheckbox) {
+    cooldownDimCheckbox.addEventListener('change', () => {
+      window.eqTracker.setWidgetCooldownDim(selectedId, cooldownDimCheckbox.checked).then(updateLocalWidgetCache);
+    });
+  }
   if (timerColorRampCheckbox) {
     timerColorRampCheckbox.addEventListener('change', () => {
       window.eqTracker.setWidgetTimerColorRamp(selectedId, timerColorRampCheckbox.checked);
@@ -5906,7 +6022,11 @@ function initWidgetsPanel() {
       endedChat,
       iconId: newTimerIconId,
       // Note 10. Empty means no cooldown, which is what every timer that existed before this had.
-      cooldownSec: readMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput),
+      cooldownSec: readMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput, COOLDOWN_MAX_SEC),
+      // null = use the aura's Show for (both boxes empty); a number = this trigger's own.
+      showForSec: readShowFor(),
+      // Sent as a definite true/false every save, so unticking it clears it.
+      untilEnded: newTimerUntilEndedCheckbox.checked,
       // 'contains' only for a raw-text trigger - the chat builder writes a whole line it composed
       // itself, so matching part of it would be matching part of something the user never typed.
       // 'castOf' for a skill-cast trigger - triggerText above is a SPELL NAME here, not a line;
@@ -6554,6 +6674,25 @@ function initWidgetsPanel() {
     });
   }
   refreshMasterButtons();
+
+  // Test bench switch (dev builds only - see src/main/testBench.js). Hidden unless the main process
+  // says it exists; lit up (the same loud .active style as Hide auras) while test mode is on.
+  const testBenchBtn = document.getElementById('test-bench-btn');
+  if (testBenchBtn && window.eqTracker.getTestBenchState) {
+    const paintTestBench = (s) => {
+      testBenchBtn.style.display = s && s.available ? '' : 'none';
+      const on = !!(s && s.active);
+      testBenchBtn.classList.toggle('active', on);
+      testBenchBtn.textContent = on ? 'Exit test bench' : 'Test bench';
+    };
+    window.eqTracker.getTestBenchState().then(paintTestBench);
+    window.eqTracker.onTestBenchState(paintTestBench);
+    testBenchBtn.addEventListener('click', () => {
+      window.eqTracker.getTestBenchState().then((s) =>
+        (s && s.active ? window.eqTracker.stopTestBench() : window.eqTracker.startTestBench()).then(paintTestBench)
+      );
+    });
+  }
 
   addTimerBtn.addEventListener('click', () => openTimerModal());
   newTimerCancelBtn.addEventListener('click', closeTimerModal);

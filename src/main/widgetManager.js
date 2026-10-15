@@ -104,6 +104,15 @@ const forceShown = new Set(); // ids
 // practice: every creation path (create / duplicate / import / premade) ticks
 // the currently active profile, so an empty list only ever results from the
 // user deliberately unticking everything.
+// Test bench (dev only - see testBench.js). True only in the separate test copy, whose own data
+// folder already IS the blank slate. All this lifts is what assumes the game is running: the
+// zone/Raid/Group rule (no zone to be in) and the EQ-unfocused auto-hide (EQ is never focused).
+let testBenchMode = false;
+function setTestBenchMode(on) {
+  testBenchMode = !!on;
+  for (const config of widgetStore.getAll()) applyVisibility(config);
+}
+
 function isVisibleForActiveProfile(config) {
   // Note 21. An aura that belongs to every profile, present and future - which a list of ids
   // cannot express, because it would have to name profiles that do not exist yet.
@@ -474,6 +483,14 @@ function createFirstAggroWidget(name) {
   return config;
 }
 
+function createStanceWidget(name) {
+  const config = widgetStore.createStanceAura(name, {
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
 function createZoneTimerWidget(name) {
   const config = widgetStore.createZoneTimerAura(name, {
     activeProfileIds: [getActiveProfileIdFn()],
@@ -775,6 +792,7 @@ function getZoneEnteredAt() {
 // unexplained reason is the failure this project keeps having and a zone rule is a new way to
 // have it.
 function isVisibleInCurrentZone(config) {
+  if (testBenchMode) return true; // test bench: no zone to be in - see testBenchMode
   return isVisibleInZone(config.visibleInZones, currentZone, {
     visibleInRaid: config.visibleInRaid,
     visibleInGroup: config.visibleInGroup,
@@ -806,6 +824,7 @@ function shouldBeOnScreen(config) {
   if (masterHidden) return false;
 
   if (isUnlocked(config.id) || previewShown.has(config.id)) return true;
+  if (testBenchMode) return true; // test bench: the game is not running, so no auto-hide
   return !foregroundHidden;
 }
 
@@ -1420,6 +1439,12 @@ function setIconDepletionShade(id, value) {
   return config;
 }
 
+function setCooldownDim(id, enabled) {
+  const config = widgetStore.update(id, { cooldownDim: !!enabled });
+  pushConfigChanged(id);
+  return config;
+}
+
 function setTimerColorRamp(id, enabled) {
   const config = widgetStore.update(id, { timerColorRamp: enabled });
   pushConfigChanged(id);
@@ -1710,6 +1735,8 @@ function getWidgetConfig(id) {
 
 module.exports = {
   initWidgets,
+  setTestBenchMode,
+  setCooldownDim,
   setActiveProfileIdFn,
   setActiveProfileNameFn,
   createCustomWidget,
@@ -1722,6 +1749,7 @@ module.exports = {
   createLockoutBoardWidget,
   createFirstAggroWidget,
   createZoneTimerWidget,
+  createStanceWidget,
   setDamageOptions,
   createTravelGuideWidget,
   setTravelDestination,
