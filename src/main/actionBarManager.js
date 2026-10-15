@@ -53,6 +53,14 @@ function setActiveProfileIdFn(fn) {
 
 // Same rule as widgetManager's isVisibleForActiveProfile: showOnAllProfiles wins outright,
 // otherwise the bar only counts as visible on a profile actually ticked in activeProfileIds.
+// Test bench (dev only) - see widgetManager.setTestBenchMode. In the test copy EQ is never focused,
+// so the EQ-unfocused auto-hide is lifted.
+let testBenchMode = false;
+function setTestBenchMode(on) {
+  testBenchMode = !!on;
+  for (const config of store.getAll()) applyVisibility(config.id);
+}
+
 function isVisibleForActiveProfile(config) {
   if (config.showOnAllProfiles) return true;
   const ids = config.activeProfileIds || [];
@@ -596,6 +604,7 @@ function shouldBeOnScreen(id) {
   if (masterHidden) return false;
   if (isUnlocked(id)) return true;
   if (!isVisibleForActiveProfile(config)) return false;
+  if (testBenchMode) return true; // test bench: no auto-hide
   return !isBarForegroundHidden(config);
 }
 
@@ -764,6 +773,7 @@ function initActionBars() {
 
 module.exports = {
   initActionBars,
+  setTestBenchMode,
   getAllBars,
   getConfig,
   setActiveProfileIdFn,

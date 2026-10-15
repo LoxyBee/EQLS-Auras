@@ -153,7 +153,7 @@ test('the tile looks different while cooling down, and says so in words', () => 
   // The note: "if the tile doesn't visibly say which phase it is in, the number on screen is
   // actively misleading".
   assert.match(overlaySrc, /const cooling = buff\.phase === 'cooldown';/);
-  assert.match(overlaySrc, /classList\.toggle\('cooldown-phase', cooling\)/);
+  assert.match(overlaySrc, /classList\.toggle\('cooldown-phase', cooling && currentConfig\.cooldownDim !== false\)/);
   assert.match(overlaySrc, /cooling down, ready in/, 'nothing says in words which phase it is');
   assert.match(overlayCss, /\.cooldown-phase \{/, 'the class is set but never styled');
 });
@@ -234,8 +234,8 @@ test('it is wired from the form all the way to the store', () => {
   // Minute + second boxes since 5 Sep (a respawn cooldown can be many minutes).
   assert.match(html, /id="widget-new-timer-cooldown-min"/, 'no field in the form');
   assert.match(html, /id="widget-new-timer-cooldown-sec"/, 'no seconds field in the form');
-  assert.match(rendererSrc, /cooldownSec: readMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput\)/, 'the form never reads it');
-  assert.match(rendererSrc, /writeMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput, timer\.cooldownSec \|\| 0, true\)/,
+  assert.match(rendererSrc, /cooldownSec: readMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput, COOLDOWN_MAX_SEC\)/, 'the form never reads it');
+  assert.match(rendererSrc, /writeMinSec\(newTimerCooldownMinInput, newTimerCooldownSecInput, timer\.cooldownSec \|\| 0, true, COOLDOWN_MAX_SEC\)/,
     'editing a timer does not show its cooldown');
   assert.match(rendererSrc, /newTimerCooldownMinInput\.value = '';/, 'the form is not cleared between timers');
   const add = mainSrc.match(/'widget:addCustomTimer',([\s\S]*?)\n\);/);

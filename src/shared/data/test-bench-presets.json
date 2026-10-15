@@ -1,0 +1,148 @@
+{
+  "_about": "Test bench presets (dev builds only). Each preset is a button; its lines are sent in order, each delayMs after the one before. Text is exactly what the game writes, without the [timestamp] - the bench stamps it with the current time. Add a preset by adding an entry; group decides which heading it sits under.",
+  "presets": [
+    {
+      "group": "Self buffs",
+      "label": "Puma: cast, lands, fades",
+      "lines": [
+        { "text": "You begin casting Spirit of the Puma VII.", "delayMs": 0 },
+        { "text": "You begin to snarl as your features become feline.", "delayMs": 3000 },
+        { "text": "The spirit of the puma departs.", "delayMs": 15000 }
+      ]
+    },
+    {
+      "group": "Self buffs",
+      "label": "Alacrity lands",
+      "lines": [
+        { "text": "You begin casting Alacrity.", "delayMs": 0 },
+        { "text": "You feel much faster.", "delayMs": 2500 }
+      ]
+    },
+    {
+      "group": "Self buffs",
+      "label": "Alacrity fades",
+      "lines": [{ "text": "Your speed returns to normal.", "delayMs": 0 }]
+    },
+    {
+      "group": "Self buffs",
+      "label": "Quick Buff burst",
+      "lines": [
+        { "text": "You activate Quick Buff.", "delayMs": 0 },
+        { "text": "You feel agile.", "delayMs": 150 },
+        { "text": "You feel very brave.", "delayMs": 150 },
+        { "text": "You feel magnanimous of spirit.", "delayMs": 150 },
+        { "text": "You feel a surge of strength as you let forth a mighty yaulp.", "delayMs": 150 },
+        { "text": "You feel much faster.", "delayMs": 150 }
+      ]
+    },
+    {
+      "group": "Ally buffs",
+      "label": "Puma on a groupmate",
+      "lines": [
+        { "text": "You begin casting Spirit of the Puma VII.", "delayMs": 0 },
+        { "text": "Jarlaxle growls with the spirit of the puma.", "delayMs": 3000 }
+      ]
+    },
+    {
+      "group": "Cooldowns",
+      "label": "Mend",
+      "lines": [{ "text": "You mend your wounds and heal some damage.", "delayMs": 0 }]
+    },
+    {
+      "group": "Stances & invocations",
+      "label": "Evasive Stance",
+      "lines": [
+        { "text": "You begin to change your stance.", "delayMs": 0 },
+        { "text": "You assume an evasive stance.", "delayMs": 1500 }
+      ]
+    },
+    {
+      "group": "Stances & invocations",
+      "label": "Offensive Stance",
+      "lines": [
+        { "text": "You begin to change your stance.", "delayMs": 0 },
+        { "text": "You assume an offensive stance.", "delayMs": 1500 }
+      ]
+    },
+    {
+      "group": "Stances & invocations",
+      "label": "Defensive Stance",
+      "lines": [
+        { "text": "You begin to change your stance.", "delayMs": 0 },
+        { "text": "You assume a defensive stance.", "delayMs": 1500 }
+      ]
+    },
+    {
+      "group": "Stances & invocations",
+      "label": "Mage Hunter Stance",
+      "lines": [
+        { "text": "You begin to change your stance.", "delayMs": 0 },
+        { "text": "You assume a mage hunter stance.", "delayMs": 1500 }
+      ]
+    },
+    {
+      "group": "Stances & invocations",
+      "label": "Divine Invocation",
+      "lines": [
+        { "text": "You begin to change your invocation.", "delayMs": 0 },
+        { "text": "You begin reciting the divine invocation.", "delayMs": 1500 }
+      ]
+    },
+    {
+      "group": "Stances & invocations",
+      "label": "Recovery Invocation",
+      "lines": [
+        { "text": "You begin to change your invocation.", "delayMs": 0 },
+        { "text": "You begin reciting the recovery invocation.", "delayMs": 1500 }
+      ]
+    },
+    {
+      "group": "Stances & invocations",
+      "label": "Spellblade Invocation",
+      "lines": [
+        { "text": "You begin to change your invocation.", "delayMs": 0 },
+        { "text": "You begin reciting the spellblade invocation.", "delayMs": 1500 }
+      ]
+    },
+    {
+      "group": "Alerts",
+      "label": "Resisted",
+      "lines": [{ "text": "A gnoll pup resisted your Tashani!", "delayMs": 0 }]
+    },
+    {
+      "group": "Alerts",
+      "label": "Dispelled",
+      "lines": [{ "text": "You feel very dispelled.", "delayMs": 0 }]
+    },
+    {
+      "group": "Alerts",
+      "label": "Charm broke",
+      "lines": [{ "text": "Your Allure spell has worn off of a gnoll pup.", "delayMs": 0 }]
+    },
+    {
+      "group": "Combat",
+      "label": "Short fight",
+      "lines": [
+        { "text": "You hit a gnoll pup for 120 points of magic damage by Energy Storm.", "delayMs": 0 },
+        { "text": "Jarlaxle slashes a gnoll pup for 47 points of damage.", "delayMs": 800 },
+        { "text": "A gnoll pup has taken 32 damage from Chords of Dissonance V by Jarlaxle.", "delayMs": 800 },
+        { "text": "You have slain a gnoll pup!", "delayMs": 1200 }
+      ]
+    },
+    {
+      "group": "World",
+      "label": "Enter Befallen",
+      "lines": [{ "text": "You have entered Befallen.", "delayMs": 0 }]
+    },
+    {
+      "group": "World",
+      "label": "Enter East Commonlands",
+      "lines": [{ "text": "You have entered East Commonlands.", "delayMs": 0 }]
+    },
+    {
+      "group": "World",
+      "label": "You die (clears buffs)",
+      "lines": [{ "text": "You have been slain by a test dummy!", "delayMs": 0 }]
+    }
+  ]
+}

@@ -79,14 +79,14 @@ test('the roster carries recast times, so the note is unblocked', () => {
 });
 
 test('the global cooldown is excluded, and it is half the list', () => {
-  // 1.5s is the shared global cooldown, not a per-spell recast. Offering those would be a
-  // countdown that finishes before it can be read, on half the spells in the game.
+  // 1.5s (and 1s) is the shared global cooldown, not a per-spell recast - the owner's floor is
+  // "over 2 seconds". Offering those would be a countdown that finishes before it can be read.
   const handler = mainSrc.match(/ipcMain\.handle\('buffs:castable'[\s\S]*?\n\);/);
   assert.ok(handler, 'the castable-spell list has been renamed or restructured');
-  assert.match(handler[0], /e\.reuseSec > 1\.5/);
+  assert.ok(handler[0].includes('e.reuseSec > 2)'), 'the floor is "over 2 seconds"');
 
   const all = roster.filter((e) => typeof e.reuseSec === 'number' && e.reuseSec > 0);
-  const real = all.filter((e) => e.reuseSec > 1.5);
+  const real = all.filter((e) => e.reuseSec > 2);
   assert.ok(real.length > 400, `only ${real.length} spells left after excluding the global cooldown`);
   assert.ok(all.length - real.length > 400, 'the exclusion barely removes anything - has the data changed?');
 });
@@ -97,7 +97,7 @@ test('the cooldown list is not the trackable list', () => {
   const handler = mainSrc.match(/ipcMain\.handle\('buffs:castable'[\s\S]*?\n\);/)[0];
   assert.doesNotMatch(handler, /landingText/, 'the cooldown list is filtering on landing text');
 
-  const real = roster.filter((e) => typeof e.reuseSec === 'number' && e.reuseSec > 1.5);
+  const real = roster.filter((e) => typeof e.reuseSec === 'number' && e.reuseSec > 2);
   const noLanding = real.filter((e) => !(e.landingText && String(e.landingText).trim()));
   assert.ok(noLanding.length > 100, `only ${noLanding.length} would be lost - is the distinction still real?`);
 });

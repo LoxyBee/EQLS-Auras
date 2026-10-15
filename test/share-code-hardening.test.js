@@ -193,5 +193,36 @@ test('crash.log is rolled at a size cap (P4)', () => {
   assert.match(main, /statSync\(p\)\.size > CRASH_LOG_MAX_BYTES\) fs\.renameSync/);
 });
 
+// ---------------------------------------------------------------------------
+// A good code pasted through chat is not rejected for the characters around it
+// ---------------------------------------------------------------------------
+
+test('a code survives invisible characters, line wraps and surrounding words from a chat paste', () => {
+  // A real code a player sent: a one-trigger "Mend" cooldown aura.
+  const code = 'EQa1AEWQzU7DMBCEXyWa84Ji58fpvgGHnugFVRysZEkt1WvhOAJU9d1RKYTbSPPNzGovaMCmJziwbQkD2JqaYAz4iL3ohFeCacAY16WkeAhRMgimBR8vUB8FfAcJ05p9CUmfZQTvakLJYZ4lH-SzgPGS1iqKTtVXWnP1kVadlsrrVJ3En0EIY9KnCexMu0X3voyn23rS4oMuuN7u6e71ZgCXvArB7MAoIcpDluiDBp1BsAb85s-LEKz9Q1sLhrzncwShbcC2JnTDRna7Tfb1v3TgmtBvi-72E00qILh241z3ww0WXD86wtD8Wtdv';
+  const store = () => new WidgetStore({ loadJson: (n, f) => f, saveJson: () => {} });
+  const zw = String.fromCharCode(0x200b);
+  const shy = String.fromCharCode(0xad);
+  const nbsp = String.fromCharCode(0xa0);
+  const variants = {
+    plain: code,
+    'blank lines around': `\n\n${code}\n\n`,
+    'wrapped over lines': `${code.slice(0, 100)}\n${code.slice(100, 200)}\r\n${code.slice(200)}`,
+    'zero-width space inside': code.slice(0, 60) + zw + code.slice(60),
+    'soft hyphen inside': code.slice(0, 60) + shy + code.slice(60),
+    'inside a quote': `"${code}"`,
+    'with words after it': `${code} here you go`,
+    'with words before it': `try this:${nbsp}${code}`,
+  };
+  for (const [what, text] of Object.entries(variants)) {
+    const peek = store().peekCode(text);
+    assert.ok(peek, `${what}: rejected`);
+    const widget = store().importCode(text);
+    assert.deepEqual(widget && widget.customTimers.map((t) => t.name), ['Mend'], `${what}: wrong aura`);
+  }
+  assert.equal(store().peekCode('EQa1 not really a code'), null, 'junk must still be rejected');
+  assert.equal(store().peekCode('hello world'), null);
+});
+
 module.exports = () => report('share-code-hardening');
 if (require.main === module) report('share-code-hardening').then((n) => process.exit(n ? 1 : 0));

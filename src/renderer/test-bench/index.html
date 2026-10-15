@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'" />
+  <title>Test bench</title>
+  <link rel="stylesheet" href="test-bench.css" />
+</head>
+<body>
+  <!-- Dev builds only - see src/main/testBench.js. The header is the drag handle. -->
+  <header id="bar">
+    <span class="title">Test bench</span>
+    <span class="badge" title="A separate test copy of the app with its own auras, bars and profiles. Your real setup isn't loaded. Real log lines are ignored here.">TEST COPY</span>
+    <button type="button" id="exit" title="Restart back into your real setup">Exit</button>
+  </header>
+
+  <main>
+    <form id="send-form" class="send-row" autocomplete="off">
+      <input type="text" id="line" placeholder="Type a log line..." title="Exactly what the game writes, without the [timestamp]. Enter sends. Up/Down steps through history." spellcheck="false" />
+      <button type="submit" id="send" class="primary">Send</button>
+    </form>
+    <div id="status" class="status" aria-live="polite"></div>
+
+    <label class="toggle" title="Fills empty auras with a sample tile, to check layouts before sending anything">
+      <input type="checkbox" id="examples" /> Show examples
+    </label>
+
+    <section>
+      <h2>Presets</h2>
+      <div id="presets"></div>
+    </section>
+
+    <section>
+      <h2>
+        History
+        <button type="button" id="clear-history" class="small" title="Forget every line in the history">Clear</button>
+      </h2>
+      <ul id="history"></ul>
+      <p id="history-empty" class="empty">Nothing sent yet.</p>
+    </section>
+  </main>
+
+  <script src="test-bench.js"></script>
+</body>
+</html>

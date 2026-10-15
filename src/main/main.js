@@ -29,7 +29,47 @@ const path = require('path');
 // folder name changes or a local require() ever creeps above it.
 app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker'));
 
+// Test bench (DEV BUILDS ONLY - see testBench.js). Launched with --test-bench, the app runs on its
+// own separate data folder: its own auras, bars and profiles, starting empty, so the real setup is
+// never loaded, shown or touched. Must stay right here, before any local require - the stores
+// resolve userData when they are first used, and nothing may have read the real folder yet.
+const REAL_USER_DATA = app.getPath('userData');
+const TEST_BENCH_MODE = process.argv.includes('--test-bench');
+// The single-instance lock is keyed on the userData folder, so it is taken HERE, against the REAL
+// folder, before the test copy repoints it. The real setup and the test copy then share one lock:
+// opening the app from its shortcut while the test copy runs (or vice versa) focuses the running
+// one instead of starting a second set of overlays and log watchers. Checked further down, where a
+// rejected launch quits before doing anything else.
+const GOT_SINGLE_INSTANCE_LOCK = app.requestSingleInstanceLock();
+if (TEST_BENCH_MODE && GOT_SINGLE_INSTANCE_LOCK) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'EQ Buff Tracker (Test bench)'));
+}
+
 const fs = require('fs');
+
+// Into the test copy: only what makes detection behave like the real thing (EQ folder, AA levels,
+// buff corrections, detection toggles, mote ranks) and a few comforts (theme, window sizes, setup
+// done). Never auras, bars, profiles, learned answers, gems or live timers - that is the point.
+// Copied when missing; config.json (the EQ folder) is refreshed every launch.
+if (TEST_BENCH_MODE && GOT_SINGLE_INSTANCE_LOCK) {
+  const SEED = [
+    'config.json', 'characterSettings.json', 'buffs.json', 'buffsMeta.json', 'blockedBuffs.json',
+    'selfCastRanks.json', 'useCastTimeFilter.json', 'useEvidenceModel.json',
+    'trackOthersEnabled.json', 'debugLogEnabled.json', 'lockoutReset.json', 'customTheme.json',
+    'iconSettings.json', 'uiScale.json', 'sidebarWidth.json', 'mainWindowBounds.json',
+    'setupWizardDone.json', 'overlaySnapGrid.json',
+  ];
+  const sandbox = app.getPath('userData');
+  try {
+    fs.mkdirSync(sandbox, { recursive: true });
+    for (const name of SEED) {
+      const from = path.join(REAL_USER_DATA, name);
+      const to = path.join(sandbox, name);
+      if (!fs.existsSync(from)) continue;
+      if (name === 'config.json' || !fs.existsSync(to)) fs.copyFileSync(from, to);
+    }
+  } catch (e) { /* a missing seed only means a less realistic test copy */ }
+}
 
 // Last-resort net for a stray async error - a filesystem watcher raising EPERM after the dir it
 // watched moved (git branch switch, an AV lock), a socket error nothing listened for, that class
@@ -107,6 +147,8 @@ const ambiguousPopup = require('./ambiguousPopup');
 const resetPromptWindow = require('./resetPromptWindow');
 const zonePromptPopup = require('./zonePromptPopup');
 const moveHudWindow = require('./moveHudWindow');
+const { TestBench, relaunchArgs: testBenchRelaunchArgs } = require('./testBench');
+const testBenchWindow = require('./testBenchWindow');
 const gridGuideWindow = require('./gridGuideWindow');
 const nudgePadWindow = require('./nudgePadWindow');
 const profileFlashWindow = require('./profileFlashWindow');
@@ -132,12 +174,14 @@ protocol.registerSchemesAsPrivileged([
 // module-level side effect below - building stores, touching userData - while
 // on its way out. Given this project's history with a userData write from the
 // wrong place wiping real data, a second instance must do nothing at all.
-if (!app.requestSingleInstanceLock()) {
+// The lock itself was taken at the top of this file (see GOT_SINGLE_INSTANCE_LOCK) - before the
+// test copy repoints userData, so both copies compete for the same one.
+if (!GOT_SINGLE_INSTANCE_LOCK) {
   app.quit();
   return;
 }
 
-const logService = new LogService();
+const logService = new LogService({ testBenchMode: TEST_BENCH_MODE });
 const { LockoutService } = require('./lockoutService');
 const lockoutService = new LockoutService();
 const { LogRotationService } = require('./logRotation');
@@ -148,6 +192,16 @@ const buffStore = new BuffStore({ loadJson, saveJson });
 const stackingService = makeStackingService(buffStore);
 const buffEngine = new BuffEngine(buffStore, { loadJson, saveJson });
 const profileStore = new ProfileStore({ loadJson, saveJson });
+// Leftover from the test bench's first, profile-based version (14 Oct, replaced the same day by the
+// separate test copy): if it left you on its "Test" profile, start back on the one you came from.
+// One-time - the key is cleared as soon as it is read.
+if (!TEST_BENCH_MODE) {
+  const returnTo = loadJson('testBenchReturnProfileId', null);
+  if (returnTo) {
+    saveJson('testBenchReturnProfileId', null);
+    if (profileStore.getAll().some((p) => p.id === returnTo)) profileStore.setActiveId(returnTo);
+  }
+}
 // Makes sure the engine starts out pointed at whichever profile was last
 // active, instead of always defaulting to DEFAULT_PROFILE_ID regardless of
 // what the user last had selected.
@@ -701,8 +755,16 @@ function _faultSig(label, err) {
   const frame = ((err && err.stack) || '').split('\n')[1]?.trim() || 'no-frame';
   return `${label}:${type}:${frame}`;
 }
+// Test bench lines (dev only - see testBench.js) ride the same 'line' event with { test: true }.
+// In the test copy, REAL log lines reach no engine at all - only bench lines do - so playing while
+// the test copy is open cannot leak into the test auras. logActivity never counts a bench line, or
+// a dead log would look alive.
+const TEST_LINE_SKIP = new Set(['logActivity']);
 function onLogLine(label, fn) {
-  logService.watcher.on('line', (line) => {
+  logService.watcher.on('line', (line, meta) => {
+    const isTest = !!(meta && meta.test);
+    if (TEST_BENCH_MODE && !isTest) return;
+    if (isTest && TEST_LINE_SKIP.has(label)) return;
     try {
       fn(line);
     } catch (err) {
@@ -888,6 +950,7 @@ let spellbookFileOverride = loadJson('spellbookFileOverride', '');
 if (spellbookFileOverride) spellbookService.setFileOverride(spellbookFileOverride);
 
 function runLogRotation(why) {
+  if (TEST_BENCH_MODE) return; // the test copy never touches the real Logs folder
   try {
     // NOT WHILE A BACKFILL IS IN FLIGHT. The backfill holds a per-file state object for the length
     // of its stream and sets its own 'done' at the end, so clearing the map underneath it loses
@@ -1774,6 +1837,13 @@ app.whenReady().then(() => {
   appTray.on('click', () => createMainWindow());
   widgetManager.initWidgets();
   actionBarManager.initActionBars();
+  // The test copy (see TEST_BENCH_MODE): no game running, so no zone or focus hiding - and the
+  // bench window opens straight away.
+  if (TEST_BENCH_MODE) {
+    widgetManager.setTestBenchMode(true);
+    actionBarManager.setTestBenchMode(true);
+    testBenchWindow.open(getMainWindow());
+  }
   logService.init();
   // NO ROTATION CALL HERE, deliberately. It used to run one line below this, and at that moment the
   // watcher has just opened the log at the end and seen nothing, so the ten-second quiet check
@@ -1936,6 +2006,7 @@ ipcMain.handle('lockouts:addLogsByPaths', async (_event, paths) => {
 // Split the watched log at this week's reset. The renderer has already confirmed in an in-app
 // modal; this just does it and rebuilds the grid.
 ipcMain.handle('lockouts:trim', async () => {
+  if (TEST_BENCH_MODE) return { ok: false, error: 'Not available in the test bench' };
   // Only the LIVE tailed log - never a file loaded via "Change log file" (that would rewrite an
   // archive or a mule's log). The renderer hides the button in that case; this is the backstop.
   const watched = logService.watcher.getStatus().currentFilePath;
@@ -2004,6 +2075,7 @@ ipcMain.handle('log:archiveHoldsCurrentWeek', () =>
 // most once a week so it is not every-launch nagging.
 const LAUNCH_ARCHIVE_RENUDGE_MS = 7 * 24 * 60 * 60 * 1000;
 ipcMain.handle('log:launchArchiveCheck', () => {
+  if (TEST_BENCH_MODE) return { prompt: false };
   const state = logService.getState();
   if (!state.shouldPromptArchive) return { prompt: false };
   const dismissedAt = Number(loadJson('logArchivePromptDismissedAt', 0)) || 0;
@@ -2025,6 +2097,7 @@ ipcMain.handle('log:dismissArchivePrompt', () => {
 });
 
 ipcMain.handle('log:archiveNow', async () => {
+  if (TEST_BENCH_MODE) return { ok: false, error: 'Not available in the test bench' };
   // The renderer has already confirmed in an in-app modal (and warned if this holds the lockout
   // week). The archive empties the same log the lockout grid is built from, so the grid is rebuilt
   // from what is now there - exactly as the weekly rotation does.
@@ -2655,6 +2728,7 @@ ipcMain.handle('widget:createLockoutBoard', (_event, { name }) =>
 ipcMain.handle('widget:createFirstAggro', (_event, { name }) =>
   widgetManager.createFirstAggroWidget(name)
 );
+ipcMain.handle('widget:createStance', (_event, { name }) => widgetManager.createStanceWidget(name));
 ipcMain.handle('widget:createZoneTimer', (_event, { name }) =>
   widgetManager.createZoneTimerWidget(name)
 );
@@ -2686,13 +2760,13 @@ ipcMain.handle('widget:createCooldownTimer', (_event, { name, spellName, cooldow
 // line, so it needs no landing text at all: filtering this the same way would drop 158 of the 478
 // candidates, a third of them, for a reason that does not apply.
 //
-// Anything at 1.5s or under is excluded. That is the global cooldown every spell shares, not a
-// per-spell recast, and it is 511 of the 989 entries that carry the field - half the list would
-// be a countdown that finishes before it can be read.
+// Anything at 2s or under is excluded (owner, 15 Oct: "spells that have a cooldown of over 2
+// seconds, because 1.5/1 is the default for most spells"). That floor is the global cooldown every
+// spell shares, not a per-spell recast - about half the entries that carry the field.
 ipcMain.handle('buffs:castable', () =>
   buffStore
     .getAll()
-    .filter((e) => typeof e.reuseSec === 'number' && e.reuseSec > 1.5)
+    .filter((e) => typeof e.reuseSec === 'number' && e.reuseSec > 2)
     .map((e) => ({
       name: e.name,
       reuseSec: e.reuseSec,
@@ -2708,7 +2782,7 @@ ipcMain.handle('buffs:castable', () =>
 
 // Every spell name in the roster, for the "Skill cast" custom-timer trigger's search picker. A
 // castOf trigger fires on "You begin casting X" / "You begin singing X" - it needs no landing
-// text and no recast time, so it must NOT be filtered like buffs:castable (recast > 1.5s) or
+// text and no recast time, so it must NOT be filtered like buffs:castable (recast > 2s) or
 // buffs:trackable (has a duration). That filtering was why bard songs and instants were missing
 // from the picker. Reported live 30 Aug.
 ipcMain.handle('buffs:allNames', () =>
@@ -3167,6 +3241,7 @@ ipcMain.handle('widget:setMirrorRowDirection', (_event, { id, enabled }) => widg
 ipcMain.handle('widget:setShowIconLabel', (_event, { id, enabled }) => widgetManager.setShowIconLabel(id, enabled));
 ipcMain.handle('widget:setIconDepletionShade', (_event, { id, value }) => widgetManager.setIconDepletionShade(id, value));
 ipcMain.handle('widget:setTimerColorRamp', (_event, { id, enabled }) => widgetManager.setTimerColorRamp(id, enabled));
+ipcMain.handle('widget:setCooldownDim', (_event, { id, enabled }) => widgetManager.setCooldownDim(id, enabled));
 ipcMain.handle('widget:setExpiredLingerSec', (_event, { id, seconds }) => widgetManager.setExpiredLingerSec(id, seconds));
 ipcMain.handle('widget:setIconLabelSize', (_event, { id, value }) => widgetManager.setIconLabelSize(id, value));
 ipcMain.handle('widget:setTimerTextColor', (_event, { id, value }) => widgetManager.setTimerTextColor(id, value));
@@ -3271,6 +3346,21 @@ ipcMain.on('widget:reportContentSize', (_event, { id, width, height, originX }) 
 ipcMain.handle('widget:setOpacity', (_event, { id, value }) => widgetManager.setOpacity(id, value));
 ipcMain.handle('widget:setBuffFilter', (_event, { id, mode, names }) => widgetManager.setBuffFilter(id, mode, names));
 ipcMain.handle('widget:setBuffSource', (_event, { id, source }) => widgetManager.setBuffSource(id, source));
+// Any change to an aura's TRIGGERS (add / edit / delete, Duration shown, combine mode, Reverse,
+// the dynamic chat timer) resets that aura's running tiles, so the next trigger uses the new
+// settings - a running tile otherwise keeps what it started with until it runs out. The trigger
+// ids from before AND after the change are both used, so a deleted trigger's tile goes too.
+function triggerIdsOf(widgetId) {
+  const w = widgetManager.getWidgetConfig(widgetId);
+  return ((w && w.customTimers) || []).map((t) => t && t.id).filter(Boolean);
+}
+function withAuraReset(widgetId, fn) {
+  const before = triggerIdsOf(widgetId);
+  const result = fn();
+  customTimerEngine.resetTimers(widgetId, [...before, ...triggerIdsOf(widgetId)]);
+  return result;
+}
+
 // Named fields rather than a spread, so nothing arrives from the renderer that the store has not
 // been told to expect. The cost is that a new field has to be added HERE too - cooldownSec was
 // added to the form, the store and the engine and still did nothing until this line changed.
@@ -3280,25 +3370,25 @@ ipcMain.handle(
   // dropped rather than erroring - which is exactly how castOf timers came to be impossible to
   // create through the UI while looking like they worked. Keep this list in sync with
   // readTimerFormData in main-window.js.
-  (_event, { id, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) =>
-    widgetManager.addCustomTimer(id, {
-      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec,
-    })
+  (_event, { id, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded }) =>
+    withAuraReset(id, () => widgetManager.addCustomTimer(id, {
+      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded,
+    }))
 );
-ipcMain.handle('widget:setTriggerDurationSec', (_event, { id, seconds }) => widgetManager.setTriggerDurationSec(id, seconds));
-ipcMain.handle('widget:setTriggerCombineMode', (_event, { id, mode }) => widgetManager.setTriggerCombineMode(id, mode));
+ipcMain.handle('widget:setTriggerDurationSec', (_event, { id, seconds }) => withAuraReset(id, () => widgetManager.setTriggerDurationSec(id, seconds)));
+ipcMain.handle('widget:setTriggerCombineMode', (_event, { id, mode }) => withAuraReset(id, () => widgetManager.setTriggerCombineMode(id, mode)));
 ipcMain.handle('widget:setAndWindowSec', (_event, { id, seconds }) => widgetManager.setAndWindowSec(id, seconds));
-ipcMain.handle('widget:setReverseDetection', (_event, { id, enabled }) => widgetManager.setReverseDetection(id, enabled));
-ipcMain.handle('widget:setDynamicChatTimer', (_event, { id, enabled }) => widgetManager.setDynamicChatTimer(id, enabled));
+ipcMain.handle('widget:setReverseDetection', (_event, { id, enabled }) => withAuraReset(id, () => widgetManager.setReverseDetection(id, enabled)));
+ipcMain.handle('widget:setDynamicChatTimer', (_event, { id, enabled }) => withAuraReset(id, () => widgetManager.setDynamicChatTimer(id, enabled)));
 ipcMain.handle('widget:setScale', (_event, { id, scale }) => widgetManager.setScale(id, scale));
 ipcMain.handle(
   'widget:updateCustomTimer',
-  (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec }) =>
-    widgetManager.updateCustomTimer(id, timerId, {
-      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec,
-    })
+  (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded }) =>
+    withAuraReset(id, () => widgetManager.updateCustomTimer(id, timerId, {
+      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded,
+    }))
 );
-ipcMain.handle('widget:removeCustomTimer', (_event, { id, timerId }) => widgetManager.removeCustomTimer(id, timerId));
+ipcMain.handle('widget:removeCustomTimer', (_event, { id, timerId }) => withAuraReset(id, () => widgetManager.removeCustomTimer(id, timerId)));
 ipcMain.handle('widget:excludeBuff', (_event, { id, name }) => widgetManager.excludeBuff(id, name));
 ipcMain.handle('widget:unexcludeBuff', (_event, { id, name }) => widgetManager.unexcludeBuff(id, name));
 ipcMain.handle('widget:setActiveProfileIds', (_event, { id, profileIds }) => widgetManager.setActiveProfileIds(id, profileIds));
@@ -3502,6 +3592,82 @@ ipcMain.handle('profiles:delete', (_event, id) => {
   broadcast('profiles:changed', profileStore.getAll());
   broadcast('profiles:activeChanged', profileStore.getActiveId());
   return true;
+});
+
+// ---------------------------------------------------------------------------------------------
+// Test bench - DEV BUILDS ONLY. See testBench.js for the design: a SEPARATE TEST COPY of the app
+// (its own data folder, started with --test-bench, see TEST_BENCH_MODE at the top of this file),
+// with a movable window for sending log lines straight into the line bus.
+// ---------------------------------------------------------------------------------------------
+const TEST_BENCH_PRESETS_PATH = path.join(__dirname, '..', 'shared', 'data', 'test-bench-presets.json');
+const testBench = TEST_BENCH_MODE
+  ? new TestBench({
+      store: { loadJson, saveJson }, // the test copy's own folder - see the top of this file
+      emitLine: (line) => logService.watcher.emit('line', line, { test: true }),
+    })
+  : null;
+if (testBench) testBench.on('historyChanged', (h) => testBenchWindow.send('testBench:history', h));
+
+function testBenchPresets() {
+  // Read fresh each time, so editing the JSON shows up without a restart.
+  try {
+    const data = JSON.parse(fs.readFileSync(TEST_BENCH_PRESETS_PATH, 'utf8'));
+    return Array.isArray(data.presets) ? data.presets : [];
+  } catch (e) {
+    debugLog(`TEST BENCH: could not read presets - ${(e && e.message) || e}`);
+    return [];
+  }
+}
+
+// Shown when Log -> Diagnostics "Show test bench" is ticked (on by default in a dev build, off in
+// the installed app). Always shown INSIDE the test copy, so Exit can never go missing.
+function testBenchAvailable() {
+  return TEST_BENCH_MODE || loadJson('testBenchEnabled', !app.isPackaged) === true;
+}
+
+function testBenchState() {
+  return { available: testBenchAvailable(), active: TEST_BENCH_MODE, examples: widgetManager.isPreviewAny() };
+}
+
+// Into or out of the test copy is a restart - the two copies never run their data side by side.
+let testBenchRelaunching = false;
+function relaunchTestBench(into) {
+  if (testBenchRelaunching || into === TEST_BENCH_MODE || (into && !testBenchAvailable())) return testBenchState();
+  testBenchRelaunching = true;
+  if (testBench) testBench.cancelPending();
+  debugLog(`TEST BENCH: restarting ${into ? 'into' : 'out of'} the test copy`);
+  app.relaunch({ args: testBenchRelaunchArgs(process.argv, into) });
+  app.quit(); // a normal quit, so before-quit still flushes the session snapshot
+  return testBenchState();
+}
+
+ipcMain.handle('testBench:getState', () => testBenchState());
+ipcMain.handle('testBench:setEnabled', (_event, on) => {
+  saveJson('testBenchEnabled', !!on);
+  const s = testBenchState();
+  broadcast('testBench:state', s);
+  return s;
+});
+ipcMain.handle('testBench:start', () => relaunchTestBench(true));
+ipcMain.handle('testBench:stop', () => relaunchTestBench(false));
+ipcMain.handle('testBench:getPresets', () => (testBench ? testBenchPresets() : []));
+ipcMain.handle('testBench:getHistory', () => (testBench ? testBench.getHistory() : []));
+ipcMain.handle('testBench:send', (_event, text) =>
+  testBench ? testBench.send(text) : { ok: false, error: 'Only in the test bench' }
+);
+ipcMain.handle('testBench:runPreset', (_event, index) => {
+  if (!testBench) return { ok: false, error: 'Only in the test bench' };
+  const preset = testBenchPresets()[Number(index)];
+  return preset ? testBench.runPreset(preset) : { ok: false, error: 'No such preset' };
+});
+ipcMain.handle('testBench:removeHistory', (_event, line) => (testBench ? testBench.removeHistory(line) : []));
+ipcMain.handle('testBench:clearHistory', () => (testBench ? testBench.clearHistory() : []));
+// Every aura in the test copy is a test aura, so this is simply "Show example content" for all.
+ipcMain.handle('testBench:setExamples', (_event, on) => {
+  if (testBench) widgetManager.setPreviewAll(!!on);
+  const s = testBenchState();
+  testBenchWindow.send('testBench:state', s);
+  return s;
 });
 
 ipcMain.handle('icons:getSets', () => ICON_SETS);
