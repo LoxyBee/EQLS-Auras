@@ -354,6 +354,19 @@ function updateCustomTimer(id, timerId, timer) {
   return config;
 }
 
+// Trigger groups - see widgetStore.setCustomTimerGroup / addTriggerGroup.
+function setCustomTimerGroup(id, timerId, group) {
+  const config = widgetStore.setCustomTimerGroup(id, timerId, group);
+  pushConfigChanged(id);
+  return config;
+}
+
+function addTriggerGroup(id, group) {
+  const config = widgetStore.addTriggerGroup(id, group);
+  pushConfigChanged(id);
+  return config;
+}
+
 function removeCustomTimer(id, timerId) {
   const config = widgetStore.removeCustomTimer(id, timerId);
   pushConfigChanged(id);
@@ -477,6 +490,14 @@ function createLockoutBoardWidget(name) {
 
 function createFirstAggroWidget(name) {
   const config = widgetStore.createFirstAggroBoard(name, {
+    activeProfileIds: [getActiveProfileIdFn()],
+  });
+  createWidgetWindow(config);
+  return config;
+}
+
+function createLohHtCooldownWidget(name) {
+  const config = widgetStore.createLohHtCooldownAura(name, {
     activeProfileIds: [getActiveProfileIdFn()],
   });
   createWidgetWindow(config);
@@ -1737,6 +1758,8 @@ module.exports = {
   initWidgets,
   setTestBenchMode,
   setCooldownDim,
+  setCustomTimerGroup,
+  addTriggerGroup,
   setActiveProfileIdFn,
   setActiveProfileNameFn,
   createCustomWidget,
@@ -1750,6 +1773,7 @@ module.exports = {
   createFirstAggroWidget,
   createZoneTimerWidget,
   createStanceWidget,
+  createLohHtCooldownWidget,
   setDamageOptions,
   createTravelGuideWidget,
   setTravelDestination,

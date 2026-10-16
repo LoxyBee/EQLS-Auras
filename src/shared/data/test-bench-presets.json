@@ -49,6 +49,31 @@
       "lines": [{ "text": "You mend your wounds and heal some damage.", "delayMs": 0 }]
     },
     {
+      "group": "Cooldowns",
+      "label": "Lay on Hands",
+      "lines": [{ "text": "You begin casting Lay on Hands XVII.", "delayMs": 0 }]
+    },
+    {
+      "group": "Cooldowns",
+      "label": "Harm Touch",
+      "lines": [{ "text": "You begin casting Harm Touch X.", "delayMs": 0 }]
+    },
+    {
+      "group": "Cooldowns",
+      "label": "Smite hit",
+      "lines": [{ "text": "You smite a gnoll pup for 24 points of damage.", "delayMs": 0 }]
+    },
+    {
+      "group": "Cooldowns",
+      "label": "Smite miss",
+      "lines": [{ "text": "You try to smite a gnoll pup, but miss!", "delayMs": 0 }]
+    },
+    {
+      "group": "Cooldowns",
+      "label": "Reave hit",
+      "lines": [{ "text": "You reave a gnoll pup for 24 points of damage.", "delayMs": 0 }]
+    },
+    {
       "group": "Stances & invocations",
       "label": "Evasive Stance",
       "lines": [

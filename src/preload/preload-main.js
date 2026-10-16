@@ -188,6 +188,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   createFirstAggroWidget: (name) => ipcRenderer.invoke('widget:createFirstAggro', { name }),
   createZoneTimerWidget: (name) => ipcRenderer.invoke('widget:createZoneTimer', { name }),
   createStanceWidget: (name) => ipcRenderer.invoke('widget:createStance', { name }),
+  createLohHtCooldownWidget: (name) => ipcRenderer.invoke('widget:createLohHtCooldowns', { name }),
   setWidgetTravelDestination: (id, destination) => ipcRenderer.invoke('widget:setTravelDestination', { id, destination }),
   setWidgetTravelIncludeSuccor: (id, include) => ipcRenderer.invoke('widget:setTravelIncludeSuccor', { id, include }),
   getTravelZones: () => ipcRenderer.invoke('travel:getZones'),
@@ -372,6 +373,8 @@ contextBridge.exposeInMainWorld('eqTracker', {
   updateWidgetCustomTimer: (id, timerId, timer) =>
     ipcRenderer.invoke('widget:updateCustomTimer', { id, timerId, ...timer }),
   removeWidgetCustomTimer: (id, timerId) => ipcRenderer.invoke('widget:removeCustomTimer', { id, timerId }),
+  setWidgetTriggerGroup: (id, timerId, group) => ipcRenderer.invoke('widget:setTriggerGroup', { id, timerId, group }),
+  addWidgetTriggerGroup: (id, group) => ipcRenderer.invoke('widget:addTriggerGroup', { id, group }),
   excludeWidgetBuff: (id, name) => ipcRenderer.invoke('widget:excludeBuff', { id, name }),
   unexcludeWidgetBuff: (id, name) => ipcRenderer.invoke('widget:unexcludeBuff', { id, name }),
   setWidgetActiveProfileIds: (id, profileIds) => ipcRenderer.invoke('widget:setActiveProfileIds', { id, profileIds }),

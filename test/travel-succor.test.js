@@ -44,7 +44,7 @@ test('a travel guide defaults Succor routing off; a junk stored value coerces to
   assert.equal(new WidgetStore(io).getById(w.id).travelIncludeSuccor, true);
 
   const ws = read('src', 'main', 'widgetStore.js');
-  assert.match(ws, /'scale',\n\s*'travelIncludeSuccor',\n\s*'visibleInRaid',\n\s*'visibleInGroup',\n\s*'cooldownDim',[^\n]*\n\];/);
+  assert.match(ws, /'scale',\n\s*'travelIncludeSuccor',\n\s*'visibleInRaid',\n\s*'visibleInGroup',\n\s*'cooldownDim',[^\n]*\n\s*'triggerGroups',[^\n]*\n\];/);
   assert.match(ws, /travelIncludeSuccor: widget\.travelIncludeSuccor === true,/);
 });
 

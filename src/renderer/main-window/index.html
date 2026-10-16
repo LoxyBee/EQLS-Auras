@@ -2836,6 +2836,16 @@
             <input type="number" id="widget-new-timer-cooldown-sec" min="0" max="59" step="1" placeholder="0" class="duration-input" />
             <span class="duration-unit">s</span>
           </div>
+          <!-- Cooldown reducers (owner, 16 Oct): each row is a log line - "contains", any case - and how
+               many seconds a match takes off this trigger's running cooldown. Built in main-window.js
+               (addReducerRow / readReducers). -->
+          <div class="row">
+            <span class="label" title="Each matching log line takes that many seconds off this trigger's cooldown while it counts down - e.g. a melee hit like &quot;You smite &quot; shortening Lay on Hands.">Reduced by:</span>
+          </div>
+          <ul id="widget-new-timer-reducers" class="reducer-list"></ul>
+          <div class="row">
+            <button type="button" id="widget-new-timer-add-reducer">+ Add</button>
+          </div>
           <p class="hint">
             Optional. A forced gap between activations: after the trigger fires, it
             cannot fire again until this many seconds after the duration ends. The same tile keeps
@@ -3120,6 +3130,8 @@
       </div>
       <p id="app-confirm-message"></p>
       <p class="hint" id="app-confirm-detail" style="display:none"></p>
+      <!-- Only shown by appPrompt() (a text answer, e.g. naming a new trigger group). -->
+      <input type="text" id="app-confirm-input" class="text-input" style="display:none" autocomplete="off" spellcheck="false" />
       <div class="row">
         <button id="app-confirm-ok" class="btn-prominent">OK</button>
         <button id="app-confirm-cancel">Cancel</button>

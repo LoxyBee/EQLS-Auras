@@ -326,7 +326,7 @@ test('a cooldown that is set is never hidden by the section being shut', () => {
   // nothing on screen saying so. The summary carries it, and editing a timer that has one opens
   // the section.
   assert.match(html, /id="timer-cooldown-summary"/);
-  assert.match(rendererSrc, /setTimerCooldownOpen\(!!timer\.cooldownSec\)/, 'editing hides an existing cooldown');
+  assert.match(rendererSrc, /setTimerCooldownOpen\(!!timer\.cooldownSec( \|\||\))/, 'editing hides an existing cooldown (it also opens for cooldown reducers)');
   assert.match(rendererSrc, /setTimerCooldownOpen\(false\)/, 'the section stays open for the next timer');
   const fn = rendererSrc.match(/function setTimerCooldownOpen\(open\) \{([\s\S]*?)\n {2}\}/);
   assert.ok(fn, 'setTimerCooldownOpen has been renamed');

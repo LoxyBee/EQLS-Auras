@@ -184,8 +184,12 @@ class CustomTimerEngine extends EventEmitter {
     this.resolveSpellFn = fn;
   }
 
+  // A cast the roster does not know (Lay on Hands, Harm Touch - AA abilities, never in the roster)
+  // still has its rank numeral stripped, so a "Harm Touch" Skill-cast trigger matches "You begin
+  // casting Harm Touch X." It used to fall back to the raw name, so such a trigger never fired.
+  // A roster spell that genuinely ends in a numeral ("Yaulp III") resolves to itself first.
   _resolveCastName(castName) {
-    if (this.resolveSpellFn) return this.resolveSpellFn(castName) || castName;
+    if (this.resolveSpellFn) return this.resolveSpellFn(castName) || stripRankSuffix(castName);
     return stripRankSuffix(castName);
   }
 
@@ -453,6 +457,9 @@ class CustomTimerEngine extends EventEmitter {
     }
     if (endedAny) this.emit('activeChanged', this.getActive());
 
+    // Cooldown reducers (owner, 16 Oct: "harm touch is lowered by reave, lay on hands by smite").
+    if (this._applyCooldownReducers(stripped)) this.emit('activeChanged', this.getActive());
+
     // A cast that never finished starts no recast clock. Only 'castOf' timers are cancelled: they
     // are the ones started by a cast line, so they are the only ones that can be wrong about this.
     // A timer the user built by hand out of arbitrary text is left alone, because nothing here
@@ -549,6 +556,12 @@ class CustomTimerEngine extends EventEmitter {
         });
         continue;
       }
+
+      // Trigger groups (widgetStore normalizeTriggerGroup): in Independent mode, a trigger in a group
+      // replaces whatever tile its group is showing - "one at a time" per group, several groups side
+      // by side (the Stance & invocation premade: one stance tile, one invocation tile). In AND/OR
+      // the group is ignored (but kept on the trigger, so switching back restores it).
+      this._replaceGroupTiles(def, key);
 
       this._debugLog(`FIRED "${def.name}" - trigger: "${stripped}"${def.untilEnded ? ' - until ended' : ''}`);
 
@@ -732,6 +745,47 @@ class CustomTimerEngine extends EventEmitter {
   // nothing for a per-second heartbeat to update - only an icon/list-mode widget's remaining-time
   // readout does. Used by _tick() to decide whether its unconditional once-a-second broadcast is
   // actually needed right now, or would just be every aura window redrawing itself for nothing.
+  // A trigger's `reducers` ([{ text, sec }], widgetStore sanitizeReducers): each line that CONTAINS a
+  // reducer's text (case-insensitive, like a "contains" trigger) takes `sec` off the remaining time
+  // of that trigger's running tile - but only while it is cooling down: phase 'cooldown', or a
+  // Reverse-detection tile hiding until ready. Never below "ready now"; _tick then ends it as usual.
+  // A tile still in its Duration shown is left alone. Returns whether anything changed.
+  _applyCooldownReducers(strippedLine) {
+    const lower = strippedLine.toLowerCase();
+    const now = Date.now();
+    let changed = false;
+    for (const t of this.activeTimers.values()) {
+      if (t.phase !== 'cooldown' && t.phase !== 'hidden') continue;
+      if (t.expiresAt <= now) continue;
+      const def = this._findDefinitionById(t.defId || t.id);
+      const reducers = def && Array.isArray(def.reducers) ? def.reducers : [];
+      for (const r of reducers) {
+        if (!r || typeof r.text !== 'string' || !r.text || !(r.sec > 0)) continue;
+        if (!lower.includes(r.text.toLowerCase())) continue;
+        t.expiresAt = Math.max(now, t.expiresAt - r.sec * 1000);
+        changed = true;
+        this._debugLog(`REDUCED "${t.name}" by ${r.sec}s - matched "${r.text}": "${strippedLine}"`);
+      }
+    }
+    return changed;
+  }
+
+  // See the trigger-group comment in handleLine. Drops the running tiles of every OTHER trigger in
+  // the same aura and the same group (case-insensitive), Independent mode only.
+  _replaceGroupTiles(def, key) {
+    const group = typeof def.group === 'string' && def.group ? def.group.toLowerCase() : null;
+    if (!group) return;
+    const widget = this._findWidgetForId(def.id);
+    if (!widget || (widget.triggerCombineMode || 'independent') !== 'independent') return;
+    for (const other of widget.customTimers || []) {
+      if (!other || other.id === def.id || other.id === key) continue;
+      if (typeof other.group !== 'string' || other.group.toLowerCase() !== group) continue;
+      if (this.activeTimers.delete(other.id)) {
+        this._debugLog(`REPLACED "${other.name}" - "${def.name}" fired in the same group (${def.group})`);
+      }
+    }
+  }
+
   // A "stay until ended" tile still inside its opening cooldown - see handleLine's cooldownUntil.
   _inUntilEndedCooldown(t, now = Date.now()) {
     return !!(t.untilEnded && t.cooldownUntil && t.cooldownUntil > now);
