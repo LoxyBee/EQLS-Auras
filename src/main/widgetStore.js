@@ -133,6 +133,8 @@ function sanitizeCustomTimers(value) {
     if ('cooldownSec' in clean) clean.cooldownSec = clampCooldownSeconds(clean.cooldownSec);
     if ('showForSec' in clean) clean.showForSec = ownShowForSec(clean.showForSec);
     if ('untilEnded' in clean) clean.untilEnded = clean.untilEnded === true ? true : undefined;
+    if ('group' in clean) clean.group = normalizeTriggerGroup(clean.group);
+    if ('reducers' in clean) clean.reducers = sanitizeReducers(clean.reducers);
     out.push(clean);
   }
   return out;
@@ -140,6 +142,53 @@ function sanitizeCustomTimers(value) {
 
 // buffNames / excludedBuffNames feed Sets and `.toLowerCase()` in several places; a non-string
 // element throws there. Keep only non-empty strings.
+// Trigger groups (owner, 16 Oct). A trigger's optional `group`: within a group only one tile shows
+// at a time - a trigger firing replaces its group's current tile (customTimerEngine). Only applies
+// in Independent mode; in AND/OR it is ignored but KEPT, so switching back restores it ("in case of
+// misclick"). Names are trimmed, single-spaced, capped at 24 chars; blank = no group.
+const TRIGGER_GROUP_MAX = 24;
+function normalizeTriggerGroup(value) {
+  if (typeof value !== 'string') return undefined;
+  const clean = value.replace(/s+/g, ' ').trim().slice(0, TRIGGER_GROUP_MAX);
+  return clean || undefined;
+}
+// The aura's saved list of group names (so a created group stays offered even before - or after -
+// any trigger is in it). Case-insensitive unique, first spelling wins.
+function normalizeTriggerGroups(value) {
+  const out = [];
+  const seen = new Set();
+  for (const v of Array.isArray(value) ? value : []) {
+    const g = normalizeTriggerGroup(v);
+    if (g && !seen.has(g.toLowerCase())) {
+      seen.add(g.toLowerCase());
+      out.push(g);
+    }
+  }
+  return out;
+}
+
+// Cooldown reducers on a trigger: [{ text, sec }] - a log line containing `text` takes `sec` off the
+// trigger's running cooldown (customTimerEngine._applyCooldownReducers). Owner, 16 Oct: 15s by
+// default, adjustable. Up to 10 rows; text capped at 200 chars; sec 1..3600 (15 if missing/junk);
+// rows with no text dropped. Empty list = undefined, so a trigger without any stays byte-identical.
+const DEFAULT_REDUCER_SEC = 15;
+function sanitizeReducers(value) {
+  if (!Array.isArray(value)) return undefined;
+  const out = [];
+  for (const r of value) {
+    if (!r || typeof r !== 'object') continue;
+    // Kept exactly as typed - a trailing space can be deliberate ("You smite " must not match
+    // "You smiter"). Only an all-blank line is dropped.
+    const text = typeof r.text === 'string' ? r.text.slice(0, 200) : '';
+    if (!text.trim()) continue;
+    const n = Number(r.sec);
+    const sec = Number.isFinite(n) && n > 0 ? Math.min(3600, Math.round(n)) : DEFAULT_REDUCER_SEC;
+    out.push({ text, sec });
+    if (out.length >= 10) break;
+  }
+  return out.length ? out : undefined;
+}
+
 function stringList(value) {
   return Array.isArray(value) ? value.filter((n) => typeof n === 'string' && n.length > 0) : [];
 }
@@ -944,6 +993,7 @@ const SHAREABLE_FIELDS = [
   'visibleInRaid',
   'visibleInGroup',
   'cooldownDim', // appended - this list is a share-code wire format (see SHARE_FIELD_ORDER)
+  'triggerGroups', // appended
 ];
 
 // v2: only non-default fields, deflate-compressed before base64 - v1 (plain
@@ -1197,6 +1247,12 @@ function normalizeWidget(widget) {
     // Dim + outline a tile while it is in its cooldown phase. On unless explicitly turned off, so
     // every aura saved before the setting existed looks exactly as it did.
     cooldownDim: widget.cooldownDim !== false,
+    // Trigger groups this aura has created (see normalizeTriggerGroup). Every group a trigger
+    // already uses is folded in, so the list can never be missing one that is in use.
+    triggerGroups: normalizeTriggerGroups([
+      ...(Array.isArray(widget.triggerGroups) ? widget.triggerGroups : []),
+      ...(Array.isArray(widget.customTimers) ? widget.customTimers.map((t) => t && t.group) : []),
+    ]),
     // QOL #48 - icon mode only. Seconds to hold an expired tile on screen, greyed, before it
     // clears. 0 (default) = the old behaviour, the tile vanishes the moment the buff ends.
     expiredLingerSec: Math.max(0, Math.min(6, Number(widget.expiredLingerSec) || 0)),
@@ -1904,14 +1960,12 @@ class WidgetStore {
   // The "Stance & invocation" premade (owner, 15 Oct). Deliberately ORDINARY custom triggers - one
   // per stance and invocation - so every name, line and icon stays editable in the normal trigger
   // editor ("allow the icons to be player editable with defaults selected"). Each trigger is
-  // "stay until ended" (no countdown) and ends on the NEXT pick in its group: any line containing
-  // "You assume a" (which also matches "You assume an ...") for a stance, "You begin reciting the"
-  // for an invocation. The engine checks end lines before triggers on the same line, so a swap ends
-  // the old tile and starts the new one in that one line - instant, with no gap. In plain
-  // Independent mode one aura holds exactly one stance tile and one invocation tile. An interrupted
-  // swap prints no pick, so the current stance correctly stays up. (Ending on the game's "You begin
-  // to change your stance." left a gap for the swap's own time, and a pick with no such line before
-  // it - a bench line, or the rare one in real logs - left two stance tiles up.)
+  // "stay until ended" (no countdown) and sits in a visible trigger GROUP - "Stance" or
+  // "Invocation" (owner, 16 Oct). In Independent mode a trigger firing replaces its group's current
+  // tile, so one aura holds exactly one stance tile and one invocation tile, the swap is instant,
+  // and an interrupted swap (no new pick printed) leaves the current stance up. Groups replaced an
+  // earlier hidden trick - ending each tile on its group's shared pick wording - which a player
+  // adding a stance by hand could not see, so their new trigger never replaced anything.
   // Lines are the roster's own landing texts.
   createStanceAura(name, { activeProfileIds } = {}) {
     const widget = defaultCustomWidget(name || 'Stance & invocation');
@@ -1937,14 +1991,48 @@ class WidgetStore {
       name: t.name,
       durationSec: DEFAULT_TRIGGER_DURATION_SEC,
       triggerText: t.line,
-      endedText: t.group === 'stance' ? 'You assume a' : 'You begin reciting the',
+      // One group each - a new stance replaces the current stance tile, a new invocation the current
+      // invocation tile. Visible (and editable) on each trigger row, unlike the old hidden trick of
+      // ending each tile on its group's shared pick wording.
+      group: t.group === 'stance' ? 'Stance' : 'Invocation',
       iconId: t.iconId,
       untilEnded: true,
       // The group's shared swap cooldown - every stance, and every invocation, is 6s (owner).
       cooldownSec: 6,
     }));
     widget.buffNames = widget.customTimers.map((t) => t.name);
+    widget.triggerGroups = ['Stance', 'Invocation'];
     widget.premadeOrigin = { kind: 'stanceAura' };
+    if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
+    this.data.widgets.push(widget);
+    this._save();
+    return widget;
+  }
+
+  // "Lay on Hands & Harm Touch" premade (owner, 16 Oct: "make them into the same trigger for now").
+  // One aura, two ordinary editable triggers - Skill cast (any rank), Duration shown 0, so the tile
+  // goes straight into its cooldown - each with its melee-hit cooldown reducer: Smite lowers Lay on
+  // Hands, Reave lowers Harm Touch, 15s per hit (the owner's default; adjustable per row). Recasts
+  // are the spell file's base values (LoH 4,200,000ms, HT 1,200,000ms - the ranked AA entries carry
+  // none), as editable defaults; icons are the spells' own (field 75: 99 / 161).
+  createLohHtCooldownAura(name, { activeProfileIds } = {}) {
+    const widget = defaultCustomWidget(name || 'Lay on Hands & Harm Touch');
+    widget.buffSource = 'customTimer';
+    widget.triggerCombineMode = 'independent';
+    widget.displayMode = 'icons';
+    widget.iconsPerRow = 2;
+    widget.iconDepletionShade = 'radial';
+    widget.sortOrder = 'trigger';
+    widget.lowTimeThresholdSec = 0;
+    widget.cooldownDim = false;
+    widget.landingGlowEnabled = false;
+    widget.triggerDurationSec = 0;
+    widget.customTimers = [
+      { name: 'Lay on Hands', triggerText: 'Lay on Hands', iconId: 99, cooldownSec: 4200, reducers: [{ text: 'You smite ', sec: 15 }] },
+      { name: 'Harm Touch', triggerText: 'Harm Touch', iconId: 161, cooldownSec: 1200, reducers: [{ text: 'You reave ', sec: 15 }] },
+    ].map((t) => ({ id: crypto.randomUUID(), durationSec: 0, triggerMatch: 'castOf', ...t }));
+    widget.buffNames = widget.customTimers.map((t) => t.name);
+    widget.premadeOrigin = { kind: 'lohHtCooldowns' };
     if (activeProfileIds) widget.activeProfileIds = activeProfileIds;
     this.data.widgets.push(widget);
     this._save();
@@ -2103,7 +2191,7 @@ class WidgetStore {
   // pick step) so the existing explicit-buffNames-filter rendering path in
   // overlay.js already isolates this widget's own timers out of the
   // engine's combined active list, with zero special-casing needed there.
-  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded }) {
+  addCustomTimer(id, { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded, reducers }) {
     const widget = this.getById(id);
     if (!widget) return null;
     const timer = {
@@ -2143,6 +2231,8 @@ class WidgetStore {
       // "Stay until ended": no countdown, only the end line replaces it (customTimerEngine
       // UNTIL_ENDED_MS). Undefined when off, so older timers stay byte-identical.
       untilEnded: untilEnded === true ? true : undefined,
+      // Lines that shorten this trigger's cooldown - see sanitizeReducers.
+      reducers: sanitizeReducers(reducers),
     };
     widget.customTimers = [...(widget.customTimers || []), timer];
     widget.buffNames = widget.customTimers.map((t) => t.name);
@@ -2153,7 +2243,7 @@ class WidgetStore {
   updateCustomTimer(
     id,
     timerId,
-    { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded }
+    { name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded, reducers }
   ) {
     const widget = this.getById(id);
     if (!widget) return null;
@@ -2188,7 +2278,32 @@ class WidgetStore {
     // which clears the override back to "use the aura's".
     if (showForSec !== undefined) timer.showForSec = ownShowForSec(showForSec);
     if (untilEnded !== undefined) timer.untilEnded = untilEnded === true ? true : undefined;
+    if (reducers !== undefined) timer.reducers = sanitizeReducers(reducers);
     widget.buffNames = widget.customTimers.map((t) => t.name);
+    this._save();
+    return widget;
+  }
+
+  // Put one trigger in a group (or none: null / ''). The name joins the aura's saved group list.
+  setCustomTimerGroup(id, timerId, group) {
+    const widget = this.getById(id);
+    if (!widget) return null;
+    const timer = (widget.customTimers || []).find((t) => t.id === timerId);
+    if (!timer) return null;
+    const g = normalizeTriggerGroup(group);
+    // Match an existing group's spelling, so "stance" joins "Stance" rather than making a second one.
+    const existing = (widget.triggerGroups || []).find((x) => g && x.toLowerCase() === g.toLowerCase());
+    timer.group = existing || g;
+    widget.triggerGroups = normalizeTriggerGroups([...(widget.triggerGroups || []), timer.group]);
+    this._save();
+    return widget;
+  }
+
+  // Save a new group name on the aura without putting any trigger in it yet.
+  addTriggerGroup(id, group) {
+    const widget = this.getById(id);
+    if (!widget) return null;
+    widget.triggerGroups = normalizeTriggerGroups([...(widget.triggerGroups || []), group]);
     this._save();
     return widget;
   }

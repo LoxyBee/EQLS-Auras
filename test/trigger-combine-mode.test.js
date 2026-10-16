@@ -251,7 +251,7 @@ test('the combine-mode button sits to the left of Edit on every row, and cycles 
   const fn = rendererSrc.match(/function renderCustomTimersList\(widget\) \{([\s\S]*?)\n  \}/);
   assert.ok(fn, 'renderCustomTimersList has been restructured');
   assert.match(fn[1], /combineBtn/, 'no combine-mode button is being built into the row');
-  assert.match(fn[1], /li\.append\(name, combineBtn, editBtn, deleteBtn\)/, 'combineBtn is not positioned before editBtn');
+  assert.match(fn[1], /li\.append\(name, groupSelect, combineBtn, editBtn, deleteBtn\)/, 'combineBtn is not positioned before editBtn (the group dropdown sits just left of it)');
   assert.match(fn[1], /window\.eqTracker\.setWidgetTriggerCombineMode/, 'the button does not actually save anything');
 });
 

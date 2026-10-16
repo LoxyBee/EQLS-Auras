@@ -294,5 +294,17 @@ test('the panel asks no source question for a cooldown', () => {
   assert.match(fn[1], /buffTimerSourceRow\.style\.display = 'none';/);
 });
 
+// Owner, 16 Oct: "this cooldown list is very hard to read, please only include the skills actual
+// cooldown here, not cast time". The picker label is just the recast; the timer still adds the cast.
+test('the cooldown picker lists each spell with just its own cooldown', () => {
+  const fn = rendererSrc.match(/function buffTimerOptionLabel\(buff\) \{[\s\S]*?\n  \}/);
+  assert.ok(fn, 'buffTimerOptionLabel has moved');
+  const label = new Function('buffTimerMode', `${fn[0]}; return buffTimerOptionLabel;`)('cooldown');
+  assert.equal(label({ name: "Aanya's Animation", reuseSec: 20, castSec: 10, cooldownSec: 30 }), "Aanya's Animation - 20s");
+  assert.equal(label({ name: 'Banshee Aura', reuseSec: 9.5, castSec: 5, cooldownSec: 14.5 }), 'Banshee Aura - 9.5s');
+  assert.equal(label({ name: 'Long', reuseSec: 600 }), 'Long - 600s', 'always plain seconds');
+  assert.equal(label({ name: 'Odd', reuseSec: 90 }), 'Odd - 90s');
+});
+
 module.exports = () => report('cooldown-timer');
 if (require.main === module) report('cooldown-timer').then((n) => process.exit(n ? 1 : 0));

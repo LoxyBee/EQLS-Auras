@@ -47,8 +47,9 @@ test('the premade is plain editable triggers: every roster stance and invocation
     assert.equal(t.triggerText, r.landingText, `${r.name}: must fire on the roster's own landing line`);
     assert.equal(t.untilEnded, true);
     assert.equal(typeof t.iconId, 'number', `${r.name}: needs a default icon`);
-    assert.equal(t.endedText, r.category === 'Stance' ? 'You assume a' : 'You begin reciting the');
-    assert.ok(r.landingText.includes(t.endedText), `${r.name}: its own group's end line must match every pick in that group`);
+    // A visible trigger group, not a hidden end line (owner, 16 Oct).
+    assert.equal(t.group, r.category === 'Stance' ? 'Stance' : 'Invocation');
+    assert.equal(t.endedText, undefined, 'no hidden end-line trick any more');
   }
 });
 

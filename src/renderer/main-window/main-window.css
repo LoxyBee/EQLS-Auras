@@ -2000,6 +2000,35 @@ label.disabled {
   color: var(--ink);
 }
 
+/* Cooldown reducers in the trigger editor: [log line] [seconds] s [x] per row. */
+.reducer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.reducer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+.reducer-row .reducer-text {
+  flex: 1;
+  min-width: 0;
+}
+.reducer-row .reducer-remove {
+  padding: 0 8px;
+}
+
+/* The per-row trigger group dropdown (Custom triggers list), just left of the mode button. */
+.trigger-group-wrap {
+  flex-shrink: 0;
+  margin-right: 6px;
+}
+.trigger-group-wrap .sd-display {
+  min-width: 130px;
+}
+
 /* A trigger's own cooldown, next to its name in the Custom triggers list. */
 .buff-name .trigger-cooldown {
   color: var(--ink-dim);

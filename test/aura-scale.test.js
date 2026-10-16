@@ -39,7 +39,7 @@ test('a fresh aura is scale 1, it is in SHAREABLE_FIELDS (at the end), and a bad
   const ws = read('src', 'main', 'widgetStore.js');
   assert.match(
     ws,
-    /'dynamicChatTimer',\n\s*'scale',\n\s*'travelIncludeSuccor',\n\s*'visibleInRaid',\n\s*'visibleInGroup',\n\s*'cooldownDim',[^\n]*\n\];/
+    /'dynamicChatTimer',\n\s*'scale',\n\s*'travelIncludeSuccor',\n\s*'visibleInRaid',\n\s*'visibleInGroup',\n\s*'cooldownDim',[^\n]*\n\s*'triggerGroups',[^\n]*\n\];/
   );
   store.update(w.id, { scale: 99 });
   const data = store.store.loadJson('widgets', null);

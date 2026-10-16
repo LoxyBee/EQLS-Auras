@@ -2153,6 +2153,60 @@ function initWidgetsPanel() {
   const newTimerCooldownMinInput = document.getElementById('widget-new-timer-cooldown-min');
   const newTimerCooldownSecInput = document.getElementById('widget-new-timer-cooldown-sec');
   // This trigger's own "Show for" (widgetStore ownShowForSec). Both boxes empty = the aura's.
+  // Cooldown reducers - rows of [log line contains] [seconds, 15 by default] [remove].
+  const newTimerReducersEl = document.getElementById('widget-new-timer-reducers');
+  const DEFAULT_REDUCER_SEC = 15;
+  function addReducerRow({ text = '', sec = DEFAULT_REDUCER_SEC } = {}) {
+    if (!newTimerReducersEl || newTimerReducersEl.children.length >= 10) return;
+    const li = document.createElement('li');
+    li.className = 'reducer-row';
+    const textEl = document.createElement('input');
+    textEl.type = 'text';
+    textEl.className = 'text-input reducer-text';
+    textEl.placeholder = 'Log line contains, e.g. You smite ';
+    textEl.title = 'Any log line containing this (any case) shortens the cooldown';
+    textEl.value = text;
+    const secEl = document.createElement('input');
+    secEl.type = 'number';
+    secEl.className = 'duration-input reducer-sec';
+    secEl.min = '1';
+    secEl.max = '3600';
+    secEl.step = '1';
+    secEl.value = String(sec);
+    const unit = document.createElement('span');
+    unit.className = 'duration-unit';
+    unit.textContent = 's';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'reducer-remove';
+    remove.textContent = '×';
+    remove.title = 'Remove';
+    remove.addEventListener('click', () => li.remove());
+    li.append(textEl, secEl, unit, remove);
+    newTimerReducersEl.appendChild(li);
+    return textEl;
+  }
+  function setReducers(list) {
+    if (!newTimerReducersEl) return;
+    newTimerReducersEl.innerHTML = '';
+    for (const r of Array.isArray(list) ? list : []) addReducerRow(r);
+  }
+  function readReducers() {
+    if (!newTimerReducersEl) return [];
+    return [...newTimerReducersEl.querySelectorAll('.reducer-row')]
+      .map((li) => ({
+        text: li.querySelector('.reducer-text').value, // as typed - see widgetStore sanitizeReducers
+        sec: Number(li.querySelector('.reducer-sec').value) || DEFAULT_REDUCER_SEC,
+      }))
+      .filter((r) => r.text.trim());
+  }
+  const addReducerBtn = document.getElementById('widget-new-timer-add-reducer');
+  if (addReducerBtn) {
+    addReducerBtn.addEventListener('click', () => {
+      const el = addReducerRow();
+      if (el) el.focus();
+    });
+  }
   const newTimerShowForMinInput = document.getElementById('widget-new-timer-showfor-min');
   const newTimerShowForSecInput = document.getElementById('widget-new-timer-showfor-sec');
   const newTimerUntilEndedCheckbox = document.getElementById('widget-new-timer-until-ended');
@@ -4094,6 +4148,7 @@ function initWidgetsPanel() {
     newTimerNameInput.value = '';
     newTimerCooldownMinInput.value = '';
     newTimerCooldownSecInput.value = '';
+    setReducers([]);
     setTimerCooldownOpen(false);
     newTimerShowForMinInput.value = '';
     newTimerShowForSecInput.value = '';
@@ -4138,7 +4193,8 @@ function initWidgetsPanel() {
     writeMinSec(newTimerCooldownMinInput, newTimerCooldownSecInput, timer.cooldownSec || 0, true, COOLDOWN_MAX_SEC);
     // Open it if this timer actually uses one, so editing does not hide the setting behind a
     // closed section the person cannot see they have already set.
-    setTimerCooldownOpen(!!timer.cooldownSec);
+    setReducers(timer.reducers || []);
+    setTimerCooldownOpen(!!timer.cooldownSec || (Array.isArray(timer.reducers) && timer.reducers.length > 0));
     // Its own Show for, if it has one (0 shown as "0 / 0", a real value); otherwise blank = aura's.
     if (timer.showForSec != null) {
       writeMinSec(newTimerShowForMinInput, newTimerShowForSecInput, timer.showForSec, false);
@@ -4348,6 +4404,48 @@ function initWidgetsPanel() {
     return `${sec}s`;
   }
 
+  const NEW_TRIGGER_GROUP = '__new__';
+  function buildTriggerGroupSelect(widget, timer) {
+    const sel = document.createElement('select');
+    sel.className = 'trigger-group-select';
+    const independent = (widget.triggerCombineMode || 'independent') === 'independent';
+    sel.disabled = !independent;
+    sel.title = independent
+      ? 'One at a time: a trigger replaces the tile of any other trigger in the same group'
+      : 'Groups only apply in Independent mode - kept for when you switch back';
+    const add = (value, label) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    };
+    add('', 'No group');
+    const groups = Array.isArray(widget.triggerGroups) ? [...widget.triggerGroups] : [];
+    if (timer.group && !groups.some((g) => g.toLowerCase() === timer.group.toLowerCase())) groups.push(timer.group);
+    for (const g of groups) add(g, g);
+    add(NEW_TRIGGER_GROUP, 'New group…');
+    sel.value = timer.group || '';
+    const apply = (group) =>
+      window.eqTracker.setWidgetTriggerGroup(widget.id, timer.id, group).then((config) => {
+        updateLocalWidgetCache(config);
+        renderCustomTimersList(config || widget);
+      });
+    sel.addEventListener('change', () => {
+      if (sel.value !== NEW_TRIGGER_GROUP) {
+        apply(sel.value || null);
+        return;
+      }
+      appPrompt({ title: 'New group', okLabel: 'Create', placeholder: 'e.g. Stance', maxLength: 24 }).then((name) => {
+        if (!name) {
+          renderCustomTimersList(findWidget(widget.id) || widget); // cancelled - put the old pick back
+          return;
+        }
+        window.eqTracker.addWidgetTriggerGroup(widget.id, name).then(() => apply(name));
+      });
+    });
+    return sel;
+  }
+
   function renderCustomTimersList(widget) {
     customTimersListEl.innerHTML = '';
     const timers = widget.customTimers || [];
@@ -4380,6 +4478,14 @@ function initWidgetsPanel() {
           sf.textContent = ` · shown ${formatTriggerSeconds(Number(timer.showForSec))}`;
           sf.title = "This trigger's own Duration shown - change it in Edit";
           name.appendChild(sf);
+        }
+        if (Array.isArray(timer.reducers) && timer.reducers.length) {
+          const rd = document.createElement('span');
+          rd.className = 'trigger-cooldown';
+          const first = timer.reducers[0].text.trim();
+          rd.textContent = ` · reduced by "${first}"${timer.reducers.length > 1 ? ` +${timer.reducers.length - 1}` : ''}`;
+          rd.title = timer.reducers.map((r) => `"${r.text}" -${r.sec}s`).join(', ');
+          name.appendChild(rd);
         }
         if (Number(timer.cooldownSec) > 0) {
           const cd = document.createElement('span');
@@ -4427,8 +4533,16 @@ function initWidgetsPanel() {
             refreshWidgets().then(() => renderCustomTimersList(findWidget(widget.id)));
           });
         });
+        // Trigger group (owner, 16 Oct): "one at a time" - triggers in the same group replace each
+        // other's tile. Independent mode only; in AND/OR it is shown disabled but KEPT, so a misclick
+        // on the mode button loses nothing. Uses the app's own themed dropdown (search-dropdown.js).
+        const groupSelect = buildTriggerGroupSelect(widget, timer);
         if (icon) li.append(icon);
-        li.append(name, combineBtn, editBtn, deleteBtn);
+        li.append(name, groupSelect, combineBtn, editBtn, deleteBtn);
+        if (window.SearchDropdown) {
+          window.SearchDropdown.enhance(groupSelect);
+          if (groupSelect.parentNode) groupSelect.parentNode.classList.add('trigger-group-wrap');
+        }
         customTimersListEl.appendChild(li);
       }
     });
@@ -4672,6 +4786,15 @@ function initWidgetsPanel() {
       mode: 'cooldown',
     },
     {
+      id: 'loh-ht-cooldowns',
+      name: 'Cooldown with reducer',
+      group: 'timers',
+      description:
+        'Cooldowns that other skills shorten - set up for Lay on Hands (lowered by Smite) and Harm ' +
+        'Touch (lowered by Reave). Times, skills and amounts are editable.',
+      create: (name) => window.eqTracker.createLohHtCooldownWidget(name),
+    },
+    {
       id: 'skill-ready-reminder',
       name: 'Skill ready reminder (example)',
       group: 'timers',
@@ -4913,7 +5036,11 @@ function initWidgetsPanel() {
 
   function buffTimerOptionLabel(buff) {
     if (buffTimerMode === 'cooldown') {
-      return `${buff.name} - ${buff.reuseSec}s recast + ${buff.castSec}s cast = ${buff.cooldownSec}s`;
+      // Just the spell's own cooldown - the "recast + cast = total" sum was hard to read in a list
+      // (owner, 16 Oct). The timer it builds still counts from the start of the cast (cooldownSec),
+      // and the panel's hint below the picker still explains that once a spell is chosen.
+      // Always plain seconds, however long (owner, 16 Oct).
+      return `${buff.name} - ${Math.round((Number(buff.reuseSec) || 0) * 10) / 10}s`;
     }
     const howLong = buff.infinite ? 'lasts until dispelled' : buff.durationSec ? `${buff.durationSec}s` : 'no duration';
     // self and enemy are mutually exclusive (a detrimental spell is cast AT something, never a
@@ -6027,6 +6154,8 @@ function initWidgetsPanel() {
       showForSec: readShowFor(),
       // Sent as a definite true/false every save, so unticking it clears it.
       untilEnded: newTimerUntilEndedCheckbox.checked,
+      // Always sent (possibly empty), so removing every row clears them.
+      reducers: readReducers(),
       // 'contains' only for a raw-text trigger - the chat builder writes a whole line it composed
       // itself, so matching part of it would be matching part of something the user never typed.
       // 'castOf' for a skill-cast trigger - triggerText above is a SPELL NAME here, not a line;
@@ -7337,7 +7466,13 @@ async function appConfirm(opts = {}) {
   await whenModalFree();
   return _appConfirm(opts);
 }
-function _appConfirm({ title = 'Confirm', message = '', detail = '', okLabel = 'OK', cancelLabel = 'Cancel', danger = false, hideCancel = false } = {}) {
+// The same in-app modal with a text box. Resolves the trimmed text, or null on Cancel / close /
+// backdrop / an empty answer. No OS dialog.
+async function appPrompt({ placeholder = '', value = '', maxLength = 64, ...opts } = {}) {
+  await whenModalFree();
+  return _appConfirm({ ...opts, input: { placeholder, value, maxLength } });
+}
+function _appConfirm({ title = 'Confirm', message = '', detail = '', okLabel = 'OK', cancelLabel = 'Cancel', danger = false, hideCancel = false, input = null } = {}) {
   return new Promise((resolve) => {
     _modalOpen = true;
     const bd = document.getElementById('app-confirm-modal-backdrop');
@@ -7346,6 +7481,13 @@ function _appConfirm({ title = 'Confirm', message = '', detail = '', okLabel = '
     const detEl = document.getElementById('app-confirm-detail');
     detEl.textContent = detail;
     detEl.style.display = detail ? '' : 'none';
+    const inputEl = document.getElementById('app-confirm-input');
+    if (inputEl) {
+      inputEl.style.display = input ? '' : 'none';
+      inputEl.value = input ? input.value || '' : '';
+      inputEl.placeholder = input ? input.placeholder || '' : '';
+      inputEl.maxLength = input ? input.maxLength || 64 : 524288;
+    }
     const ok = document.getElementById('app-confirm-ok');
     const cancel = document.getElementById('app-confirm-cancel');
     const closeX = document.getElementById('app-confirm-close');
@@ -7363,7 +7505,13 @@ function _appConfirm({ title = 'Confirm', message = '', detail = '', okLabel = '
       document.removeEventListener('keydown', onKey);
       _appConfirmClose = null;
       _modalOpen = false;
-      resolve(val);
+      if (input) {
+        const text = inputEl ? inputEl.value.trim() : '';
+        if (inputEl) inputEl.style.display = 'none';
+        resolve(val && text ? text : null);
+      } else {
+        resolve(val);
+      }
     };
     const onOk = () => done(true);
     const onCancel = () => done(false);
@@ -7379,6 +7527,7 @@ function _appConfirm({ title = 'Confirm', message = '', detail = '', okLabel = '
     document.addEventListener('keydown', onKey);
     _appConfirmClose = done;
     bd.style.display = 'flex';
+    if (input && inputEl) inputEl.focus();
   });
 }
 

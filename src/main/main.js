@@ -2729,6 +2729,7 @@ ipcMain.handle('widget:createFirstAggro', (_event, { name }) =>
   widgetManager.createFirstAggroWidget(name)
 );
 ipcMain.handle('widget:createStance', (_event, { name }) => widgetManager.createStanceWidget(name));
+ipcMain.handle('widget:createLohHtCooldowns', (_event, { name }) => widgetManager.createLohHtCooldownWidget(name));
 ipcMain.handle('widget:createZoneTimer', (_event, { name }) =>
   widgetManager.createZoneTimerWidget(name)
 );
@@ -3370,9 +3371,9 @@ ipcMain.handle(
   // dropped rather than erroring - which is exactly how castOf timers came to be impossible to
   // create through the UI while looking like they worked. Keep this list in sync with
   // readTimerFormData in main-window.js.
-  (_event, { id, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded }) =>
+  (_event, { id, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded, reducers }) =>
     withAuraReset(id, () => widgetManager.addCustomTimer(id, {
-      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded,
+      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded, reducers,
     }))
 );
 ipcMain.handle('widget:setTriggerDurationSec', (_event, { id, seconds }) => withAuraReset(id, () => widgetManager.setTriggerDurationSec(id, seconds)));
@@ -3383,12 +3384,18 @@ ipcMain.handle('widget:setDynamicChatTimer', (_event, { id, enabled }) => withAu
 ipcMain.handle('widget:setScale', (_event, { id, scale }) => widgetManager.setScale(id, scale));
 ipcMain.handle(
   'widget:updateCustomTimer',
-  (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded }) =>
+  (_event, { id, timerId, name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded, reducers }) =>
     withAuraReset(id, () => widgetManager.updateCustomTimer(id, timerId, {
-      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded,
+      name, durationSec, triggerText, endedText, triggerChat, endedChat, iconId, triggerMatch, cooldownSec, showForSec, untilEnded, reducers,
     }))
 );
 ipcMain.handle('widget:removeCustomTimer', (_event, { id, timerId }) => withAuraReset(id, () => widgetManager.removeCustomTimer(id, timerId)));
+// Trigger groups (per-row dropdown). Changing a trigger's group is a trigger edit like any other,
+// so the aura's running tiles reset.
+ipcMain.handle('widget:setTriggerGroup', (_event, { id, timerId, group }) =>
+  withAuraReset(id, () => widgetManager.setCustomTimerGroup(id, timerId, group))
+);
+ipcMain.handle('widget:addTriggerGroup', (_event, { id, group }) => widgetManager.addTriggerGroup(id, group));
 ipcMain.handle('widget:excludeBuff', (_event, { id, name }) => widgetManager.excludeBuff(id, name));
 ipcMain.handle('widget:unexcludeBuff', (_event, { id, name }) => widgetManager.unexcludeBuff(id, name));
 ipcMain.handle('widget:setActiveProfileIds', (_event, { id, profileIds }) => widgetManager.setActiveProfileIds(id, profileIds));
