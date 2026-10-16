@@ -288,5 +288,38 @@
     "set": {
       "isBardSong": true
     }
+  },
+  "Ranged Stance": {
+    "why": "Reported missing by a player (16 Oct 2026). landingText DERIVED from the confirmed template ('You assume a <name> stance.'). Not seen in a log; correct this line if wrong.",
+    "add": {
+      "noGameLookup": true,
+      "kind": "buff",
+      "category": "Stance",
+      "targets": "Self",
+      "infiniteDuration": true,
+      "landingText": "You assume a ranged stance."
+    }
+  },
+  "Unyielding Invocation": {
+    "why": "Reported missing by a player (16 Oct 2026). landingText DERIVED from the confirmed template ('You begin reciting the <name> invocation.'). Not seen in a log; correct this line if wrong.",
+    "add": {
+      "noGameLookup": true,
+      "kind": "buff",
+      "category": "Invocation",
+      "targets": "Self",
+      "infiniteDuration": true,
+      "landingText": "You begin reciting the unyielding invocation."
+    }
+  },
+  "Arcane Mastery Invocation": {
+    "why": "Found missing 16 Oct 2026. landingText CONFIRMED from the owner's own log (2 lines).",
+    "add": {
+      "noGameLookup": true,
+      "kind": "buff",
+      "category": "Invocation",
+      "targets": "Self",
+      "infiniteDuration": true,
+      "landingText": "You begin reciting the arcane mastery invocation."
+    }
   }
 }
