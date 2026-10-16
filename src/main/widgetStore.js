@@ -1473,26 +1473,32 @@ function defaultsForKind(kind, name) {
 
 // The Stance & invocation premade's triggers (see createStanceAura). Lines are the roster's own
 // landing texts for each Stance / Invocation entry. Icons are DEFAULTS the player can change per
-// trigger, all from the game's own stance/invocation icon block (2244-2259):
+// trigger, all from the game's own stance/invocation icon block, 2244-2261 (2262 on is blank) -
+// exactly 18 icons for the 18 entries. The block is grouped: stances 2244-2252, invocations
+// 2253-2261.
 //   - 10 taken from the owner's own Stances action bar, where she assigned them by hand (15 Oct);
-//   - the other 5 read off the remaining art in that block - Spellblade (sword + magic swirl) and
-//     Mage Hunter (bow) clearly, Berserker / Offensive / Striker best guesses. 2246 is left unused.
+//   - the other 8 matched by art within their group (16 Oct): Ranged = the bow, Mage Hunter = the
+//     figure facing a beam of magic, Spellblade = sword + magic swirl, Arcane Mastery = the hand
+//     glowing with magic. Berserker / Striker / Offensive / Unyielding are best fits.
 const STANCE_AURA_TRIGGERS = [
   { group: 'stance', name: 'Balanced Stance', line: 'You assume a balanced stance.', iconId: 2244 }, // her bar
-  { group: 'stance', name: 'Berserker Stance', line: 'You assume a berserker stance.', iconId: 2248 }, // read off the art
+  { group: 'stance', name: 'Berserker Stance', line: 'You assume a berserker stance.', iconId: 2248 }, // by art
   { group: 'stance', name: 'Channeler Stance', line: 'You assume a channeler stance.', iconId: 2252 }, // her bar
   { group: 'stance', name: 'Defensive Stance', line: 'You assume a defensive stance.', iconId: 2251 }, // her bar
   { group: 'stance', name: 'Evasive Stance', line: 'You assume an evasive stance.', iconId: 2245 }, // her bar
-  { group: 'stance', name: 'Mage Hunter Stance', line: 'You assume a mage hunter stance.', iconId: 2247 }, // read off the art
-  { group: 'stance', name: 'Offensive Stance', line: 'You assume an offensive stance.', iconId: 2249 }, // read off the art
-  { group: 'stance', name: 'Striker Stance', line: 'You assume a striker stance.', iconId: 2250 }, // read off the art
+  { group: 'stance', name: 'Mage Hunter Stance', line: 'You assume a mage hunter stance.', iconId: 2246 }, // by art
+  { group: 'stance', name: 'Offensive Stance', line: 'You assume an offensive stance.', iconId: 2250 }, // by art
+  { group: 'stance', name: 'Ranged Stance', line: 'You assume a ranged stance.', iconId: 2247 }, // by art (the bow)
+  { group: 'stance', name: 'Striker Stance', line: 'You assume a striker stance.', iconId: 2249 }, // by art
+  { group: 'invocation', name: 'Arcane Mastery Invocation', line: 'You begin reciting the arcane mastery invocation.', iconId: 2260 }, // by art
   { group: 'invocation', name: 'Divine Invocation', line: 'You begin reciting the divine invocation.', iconId: 2254 }, // her bar
   { group: 'invocation', name: 'Empowering Invocation', line: 'You begin reciting the empowering invocation.', iconId: 2253 }, // her bar
   { group: 'invocation', name: 'Inversion Invocation', line: 'You begin reciting the inversion invocation.', iconId: 2257 }, // her bar
   { group: 'invocation', name: 'Inviolable Invocation', line: 'You begin reciting the inviolable invocation.', iconId: 2259 }, // her bar
   { group: 'invocation', name: 'Overchannel Invocation', line: 'You begin reciting the overchannel invocation.', iconId: 2255 }, // her bar
   { group: 'invocation', name: 'Recovery Invocation', line: 'You begin reciting the recovery invocation.', iconId: 2258 }, // her bar
-  { group: 'invocation', name: 'Spellblade Invocation', line: 'You begin reciting the spellblade invocation.', iconId: 2256 }, // read off the art
+  { group: 'invocation', name: 'Spellblade Invocation', line: 'You begin reciting the spellblade invocation.', iconId: 2256 }, // by art
+  { group: 'invocation', name: 'Unyielding Invocation', line: 'You begin reciting the unyielding invocation.', iconId: 2261 }, // by art
 ];
 
 class WidgetStore {

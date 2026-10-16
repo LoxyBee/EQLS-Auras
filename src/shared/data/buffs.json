@@ -560,6 +560,15 @@
   "songInstrument": "Singing"
  },
  {
+  "name": "Arcane Mastery Invocation",
+  "landingText": "You begin reciting the arcane mastery invocation.",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Invocation",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
   "name": "Arch Shielding",
   "spellId": 67,
   "kind": "buff",
@@ -16660,6 +16669,15 @@
   "bardCastable": 0
  },
  {
+  "name": "Ranged Stance",
+  "landingText": "You assume a ranged stance.",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Stance",
+  "targets": "Self",
+  "infiniteDuration": true
+ },
+ {
   "name": "Rapacious Subvention",
   "spellId": 1514,
   "landingText": "A foreign surge of mana refreshes your mind.",
@@ -24533,6 +24551,15 @@
   "unstackableDot": 0,
   "isDiscipline": 0,
   "bardCastable": 0
+ },
+ {
+  "name": "Unyielding Invocation",
+  "landingText": "You begin reciting the unyielding invocation.",
+  "scaleCategory": "none",
+  "kind": "buff",
+  "category": "Invocation",
+  "targets": "Self",
+  "infiniteDuration": true
  },
  {
   "name": "Upheaval",
