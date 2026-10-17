@@ -685,7 +685,11 @@ body {
   border-radius: 4px;
   user-select: none;
 }
-.nav-folder-header:hover { color: var(--ink); }
+/* Same hover highlight as an aura row (.nav-sub-btn:hover + the global button:hover border): panel
+   fill, a 1px --ink-dim border, square corners. The resting 1px transparent border keeps the
+   header from shifting when the border appears. */
+.nav-folder-header { border: 1px solid transparent; border-radius: 0; }
+.nav-folder-header:hover { color: var(--ink); background: var(--panel); border-color: var(--ink-dim); }
 .nav-folder-header.drop-target {
   background: var(--accent-line);
   color: var(--ink);
@@ -812,9 +816,9 @@ body {
 }
 
 /* The folder dot sits last on the header, in the same column as its auras' dots: the header's
-   right padding (9px) matches an aura row's (.nav-sub-btn's 8px padding + 1px border). No hover
+   right padding (8px) + its 1px border match an aura row (.nav-sub-btn: 8px padding + 1px border). No hover
    box behind it. */
-.nav-folder-header { padding-right: 9px; }
+.nav-folder-header { padding-right: 8px; }
 .nav-folder-header .nav-folder-dot {
   order: 10;
   margin-left: 2px;
