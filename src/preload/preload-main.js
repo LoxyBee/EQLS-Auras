@@ -296,6 +296,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   setAuraFolderCollapsed: (id, collapsed) => ipcRenderer.invoke('auraFolders:setCollapsed', { id, collapsed }),
   // "Move together" - link a folder's auras, and start a group move from the folder itself.
   setAuraFolderLinked: (id, linked) => ipcRenderer.invoke('auraFolders:setLinked', { id, linked }),
+  toggleAuraFolderOn: (id) => ipcRenderer.invoke('auraFolders:toggleOn', id),
   moveAuraFolder: (id) => ipcRenderer.invoke('auraFolders:move', id),
   reorderAuraFolders: (orderedIds) => ipcRenderer.invoke('auraFolders:reorder', { orderedIds }),
   setWidgetFolder: (id, folderId) => ipcRenderer.invoke('widget:setFolder', { id, folderId }),

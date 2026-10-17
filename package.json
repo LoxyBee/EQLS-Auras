@@ -1,7 +1,7 @@
 {
   "name": "eqls-auras",
   "productName": "EQLS Auras",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Reads your EverQuest log file and shows a transparent overlay with countdown timers for your active buffs.",
   "main": "src/main/main.js",
   "private": true,

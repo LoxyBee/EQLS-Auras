@@ -2969,6 +2969,9 @@ ipcMain.handle('auraFolders:delete', (_event, id) => widgetManager.deleteFolder(
 ipcMain.handle('auraFolders:setCollapsed', (_event, { id, collapsed }) => widgetManager.setFolderCollapsed(id, collapsed));
 // "Move together" - the chain button on a folder header / its right-click menu.
 ipcMain.handle('auraFolders:setLinked', (_event, { id, linked }) => widgetManager.setFolderLinked(id, linked));
+// The folder's on/off dot - every aura in it, for the CURRENT profile only (widgetManager).
+ipcMain.handle('auraFolders:toggleOn', (_event, id) =>
+  widgetManager.toggleFolderOnProfile(id, profileStore.getActiveId(), profileStore.getAll().map((p) => p.id)));
 // The folder's own Move button: a group move session, started on the first member that is on
 // screen for this loadout profile (any member works - they all move together).
 ipcMain.handle('auraFolders:move', (_event, id) => {
