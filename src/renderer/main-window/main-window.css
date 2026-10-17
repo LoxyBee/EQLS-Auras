@@ -692,7 +692,40 @@ body {
 }
 .nav-folder-header.dragging { opacity: 0.4; }
 .nav-folder-chevron { font-size: 10px; width: 10px; }
-.nav-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+/* "Move together": the chip by Position on a linked aura, and the folder header's brief flash when
+   the chip is clicked. */
+.group-chip {
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: none;
+  color: var(--ink);
+  font-size: 0.9em;
+}
+.nav-folder-header.flash { background: var(--accent-line); color: var(--ink); transition: background 0.3s; }
+
+/* "Move together": the folder's chain button (dim off, lit on) and, while linked, its Move button. */
+.nav-folder-link,
+.nav-folder-move {
+  flex-shrink: 0;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-mut);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.nav-folder-link { opacity: 0.35; filter: grayscale(1); }
+.nav-folder-link:hover { opacity: 0.8; }
+.nav-folder-link.on { opacity: 1; filter: none; border-color: var(--accent-line); }
+.nav-folder-move { border-color: var(--accent-line); color: var(--ink); }
+.nav-folder-move:hover { border-color: var(--accent); }
 /* Auras inside a folder sit indented under their header. */
 .nav-sub-row.in-folder { margin-left: 12px; }
 
@@ -2000,6 +2033,12 @@ label.disabled {
   color: var(--ink);
 }
 
+/* A live status readout beside a control (e.g. Setup -> Updates' version / "up to date" line). */
+.setting-status {
+  color: var(--ink-dim);
+  font-size: 0.92em;
+}
+
 /* Cooldown reducers in the trigger editor: [log line] [seconds] s [x] per row. */
 .reducer-list {
   list-style: none;
@@ -2018,6 +2057,15 @@ label.disabled {
 }
 .reducer-row .reducer-remove {
   padding: 0 8px;
+}
+
+/* Per-profile trigger on/off: the checkbox leads the row; a switched-off row is greyed. */
+.trigger-on-checkbox {
+  flex-shrink: 0;
+  margin-right: 6px;
+}
+li.trigger-off > :not(.trigger-on-checkbox) {
+  opacity: 0.45;
 }
 
 /* The per-row trigger group dropdown (Custom triggers list), just left of the mode button. */

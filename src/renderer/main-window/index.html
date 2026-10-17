@@ -84,6 +84,9 @@
           style="display:none"
           title="You left move mode to open settings. Click to go back to moving."
         >&#8617; Back to moving</button>
+        <!-- Opt-in auto-update (src/main/updater.js): hidden unless an update is available /
+             downloading / ready. "Update available" asks before downloading. -->
+        <button class="master-hide-btn active" id="update-btn" style="display:none"></button>
         <!-- Dev builds only (hidden unless testBench:getState says available) - src/main/testBench.js. -->
         <button
           class="master-hide-btn"
@@ -356,6 +359,9 @@
                   <div class="row position-controls" id="widget-position-row">
                     <button id="widget-lock-btn" class="btn-prominent" title="Unlocked: drag the aura to move it, drag an edge to resize. Locked: fully click-through.">Unlock to move</button>
                     <button id="widget-reset-position-btn" title="Brings an off-screen aura back to a corner of your main screen.">Reset position</button>
+                    <!-- Shown when this aura is in a "Move together" folder - names the group; clicking
+                         it opens that folder in the sidebar. -->
+                    <button type="button" id="widget-group-chip" class="group-chip" style="display:none" title="Moves together with the rest of this folder - click to show the folder"></button>
                     <button id="widget-preview-btn" title="Fills this aura with an example tile so you can judge its size, position and font without going in-game. A real buff replaces it. Press again to turn off.">Show example content</button>
                   </div>
                   <p class="hint" id="widget-position-hint"></p>
@@ -1449,6 +1455,20 @@
         <p class="hint">Things you set once. Click a row to open it.</p>
 
         <div id="app-settings-block">
+          <div class="card">
+            <h3 title="Off by default. When on, the app checks for a newer version shortly after it starts and asks before downloading anything. A downloaded update installs when you close the app, or right away from the top bar.">Updates</h3>
+            <div class="row">
+              <label title="Checks the app's GitHub releases once, shortly after launch. Nothing downloads without asking.">
+                <input type="checkbox" id="auto-update-checkbox" />
+                Check for updates
+              </label>
+            </div>
+            <div class="row">
+              <button type="button" id="update-check-btn">Check now</button>
+              <span id="update-status" class="setting-status"></span>
+            </div>
+          </div>
+
           <div class="card">
             <h3 title="EQ ships a few icon art styles. If icons look wrong, match this to how a buff looks on your hotbar. Applies to every aura.">Icon set</h3>
             <!-- id kept for initWidgetsPanel's iconSetCard lookup (a legacy Overlay-page display
@@ -2962,6 +2982,7 @@
 
   <!-- Right-click a folder header in the Overlay Auras list. -->
   <ul id="folder-context-menu" class="context-menu" style="display:none">
+    <li><button type="button" id="folder-context-link">Move together</button></li>
     <li><button type="button" id="folder-context-rename">Rename folder</button></li>
     <li><button type="button" id="folder-context-delete" class="danger">Delete folder (keeps its auras)</button></li>
   </ul>

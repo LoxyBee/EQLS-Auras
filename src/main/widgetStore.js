@@ -135,6 +135,12 @@ function sanitizeCustomTimers(value) {
     if ('untilEnded' in clean) clean.untilEnded = clean.untilEnded === true ? true : undefined;
     if ('group' in clean) clean.group = normalizeTriggerGroup(clean.group);
     if ('reducers' in clean) clean.reducers = sanitizeReducers(clean.reducers);
+    // Loadout profiles this trigger is switched off in (per-row checkbox). Strings only, unique;
+    // empty = on everywhere (undefined, so an untouched trigger stays byte-identical).
+    if ('offInProfiles' in clean) {
+      const ids = stringList(clean.offInProfiles).filter((v, i, a) => a.indexOf(v) === i);
+      clean.offInProfiles = ids.length ? ids : undefined;
+    }
     out.push(clean);
   }
   return out;
@@ -1085,6 +1091,9 @@ function normalizeFolder(folder) {
     id: typeof folder.id === 'string' && folder.id ? folder.id : crypto.randomUUID(),
     name: typeof folder.name === 'string' ? folder.name : 'Folder',
     collapsed: !!folder.collapsed,
+    // "Move together" (owner, 16 Oct): the folder's auras move as one group - dragging, nudging or
+    // centring any of them moves them all. Off by default; folders otherwise only organise the list.
+    linked: !!folder.linked,
   };
 }
 
@@ -2299,6 +2308,21 @@ class WidgetStore {
     return widget;
   }
 
+  // Switch one trigger on/off for ONE loadout profile (owner, 16 Oct: per-trigger toggles, "different
+  // per profile as well"). A switched-off trigger keeps every setting; it just never fires there.
+  setCustomTimerOff(id, timerId, profileId, off) {
+    const widget = this.getById(id);
+    if (!widget || typeof profileId !== 'string' || !profileId) return null;
+    const timer = (widget.customTimers || []).find((t) => t.id === timerId);
+    if (!timer) return null;
+    const set = new Set(Array.isArray(timer.offInProfiles) ? timer.offInProfiles : []);
+    if (off) set.add(profileId);
+    else set.delete(profileId);
+    timer.offInProfiles = set.size ? [...set] : undefined;
+    this._save();
+    return widget;
+  }
+
   // Save a new group name on the aura without putting any trigger in it yet.
   addTriggerGroup(id, group) {
     const widget = this.getById(id);
@@ -2520,6 +2544,25 @@ class WidgetStore {
     return folder;
   }
 
+  setFolderLinked(id, linked) {
+    const folder = this.getFolders().find((f) => f.id === id);
+    if (!folder) return null;
+    folder.linked = !!linked;
+    this._save();
+    return folder;
+  }
+
+  // The "Move together" group a widget belongs to: { folderId, name, ids } (every aura in its
+  // folder, itself included) when that folder is linked, else null.
+  getLinkedGroup(widgetId) {
+    const widget = this.getById(widgetId);
+    if (!widget || !widget.folderId) return null;
+    const folder = this.getFolders().find((f) => f.id === widget.folderId);
+    if (!folder || !folder.linked) return null;
+    const ids = this.data.widgets.filter((w) => w.folderId === folder.id).map((w) => w.id);
+    return ids.length > 1 ? { folderId: folder.id, name: folder.name, ids } : null;
+  }
+
   // Full list of folder ids in the new order; unknown ids skipped, unnamed folders kept after.
   reorderFolders(orderedIds) {
     const known = new Map(this.getFolders().map((f) => [f.id, f]));
@@ -2577,7 +2620,9 @@ class WidgetStore {
       if (field === 'name') continue;
       let val = widget[field];
       if (field === 'customTimers' && Array.isArray(val)) {
-        val = val.map((t) => (t && typeof t === 'object' ? (({ id: _id, ...rest }) => rest)(t) : t));
+        // The id is regenerated on import; offInProfiles names THIS install's loadout profiles,
+        // meaningless (and just bulk) anywhere else - the recipient gets every trigger switched on.
+        val = val.map((t) => (t && typeof t === 'object' ? (({ id: _id, offInProfiles: _off, ...rest }) => rest)(t) : t));
       }
       if (JSON.stringify(val) !== JSON.stringify(defaults[field])) diff[field] = val;
     }

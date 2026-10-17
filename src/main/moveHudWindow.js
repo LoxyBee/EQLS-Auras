@@ -10,8 +10,13 @@ const { loadJson, saveJson } = require('./store');
 // Same "small always-on-top helper window" idea as zonePromptPopup.js. Fully interactive (drag it
 // by its background, -webkit-app-region:drag; controls are no-drag), so none of the click-through
 // juggling the earlier wrapping-frame version needed.
-const PANEL_W = 320;
-const PANEL_H = 150;
+// The STARTING size only - the panel reports its real size as soon as it renders and the window is
+// fitted to it (fitTo), so the border hugs the buttons whatever rows are showing.
+const PANEL_W = 400;
+const PANEL_H = 240;
+// Sanity bounds for a reported size - never a zero-size (lost) window, never a screen-filling one.
+const FIT_MIN = 120;
+const FIT_MAX = 1200;
 
 let win = null;
 
@@ -99,6 +104,24 @@ function update(auraBounds, meta) {
   win.webContents.send('moveHud:frame', { aura: auraBounds || {}, ...meta });
 }
 
+// The panel's own size, reported by the renderer whenever it changes. Keeps the top-left corner where
+// it is (the user put it there) and re-clamps, so a panel that grew never pokes off the screen.
+function fitTo(width, height) {
+  if (!win || win.isDestroyed()) return null;
+  const w = Math.round(Number(width));
+  const h = Math.round(Number(height));
+  if (!Number.isFinite(w) || !Number.isFinite(h)) return null;
+  const size = {
+    width: Math.max(FIT_MIN, Math.min(FIT_MAX, w)),
+    height: Math.max(FIT_MIN / 2, Math.min(FIT_MAX, h)),
+  };
+  const b = win.getBounds();
+  if (b.width === size.width && b.height === size.height) return b;
+  const c = clampToScreen({ x: b.x, y: b.y, ...size });
+  win.setBounds(c);
+  return c;
+}
+
 function close() {
   if (win && !win.isDestroyed()) win.hide();
 }
@@ -107,4 +130,4 @@ function isOpen() {
   return !!(win && !win.isDestroyed() && win.isVisible());
 }
 
-module.exports = { open, update, close, isOpen, clampToScreen, PANEL_W, PANEL_H };
+module.exports = { open, update, fitTo, close, isOpen, clampToScreen, PANEL_W, PANEL_H };

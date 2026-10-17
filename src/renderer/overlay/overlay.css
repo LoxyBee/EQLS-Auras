@@ -68,6 +68,18 @@ body.unlocked .drag-overlay {
   gap: 4px;
 }
 
+/* "Move together" (linked folder): every member's move box is lit gold together, so the group
+   reads as one thing being moved; "This aura" mode dims the members that are staying put. */
+body.unlocked .drag-overlay.group-member {
+  background: rgba(200, 150, 50, 0.45);
+  border-color: rgba(255, 215, 120, 0.95);
+}
+body.unlocked .drag-overlay.group-dimmed {
+  background: rgba(120, 110, 90, 0.25);
+  border-color: rgba(255, 255, 255, 0.3);
+  opacity: 0.6;
+}
+
 /* Deliberately a small pill rather than a full-width bar. The box around it is what you grab to
    move the aura, and -webkit-app-region: no-drag carves a hole in that - too generous here and
    the aura you are trying to move becomes the one you cannot. */

@@ -2,6 +2,13 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('eqTracker', {
   getVersionInfo: () => ipcRenderer.invoke('app:getVersionInfo'),
+  // Opt-in auto-update - see src/main/updater.js.
+  getUpdaterState: () => ipcRenderer.invoke('updater:getState'),
+  setAutoUpdateEnabled: (on) => ipcRenderer.invoke('updater:setEnabled', on),
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  onUpdaterState: (callback) => ipcRenderer.on('updater:state', (_e, s) => callback(s)),
 
   getUiScale: () => ipcRenderer.invoke('ui:getScale'),
   setUiScale: (pct) => ipcRenderer.invoke('ui:setScale', pct),
@@ -287,6 +294,9 @@ contextBridge.exposeInMainWorld('eqTracker', {
   renameAuraFolder: (id, name) => ipcRenderer.invoke('auraFolders:rename', { id, name }),
   deleteAuraFolder: (id) => ipcRenderer.invoke('auraFolders:delete', id),
   setAuraFolderCollapsed: (id, collapsed) => ipcRenderer.invoke('auraFolders:setCollapsed', { id, collapsed }),
+  // "Move together" - link a folder's auras, and start a group move from the folder itself.
+  setAuraFolderLinked: (id, linked) => ipcRenderer.invoke('auraFolders:setLinked', { id, linked }),
+  moveAuraFolder: (id) => ipcRenderer.invoke('auraFolders:move', id),
   reorderAuraFolders: (orderedIds) => ipcRenderer.invoke('auraFolders:reorder', { orderedIds }),
   setWidgetFolder: (id, folderId) => ipcRenderer.invoke('widget:setFolder', { id, folderId }),
   resetWidgetToDefault: (id) => ipcRenderer.invoke('widget:resetToDefault', { id }),
@@ -375,6 +385,7 @@ contextBridge.exposeInMainWorld('eqTracker', {
   removeWidgetCustomTimer: (id, timerId) => ipcRenderer.invoke('widget:removeCustomTimer', { id, timerId }),
   setWidgetTriggerGroup: (id, timerId, group) => ipcRenderer.invoke('widget:setTriggerGroup', { id, timerId, group }),
   addWidgetTriggerGroup: (id, group) => ipcRenderer.invoke('widget:addTriggerGroup', { id, group }),
+  setWidgetTriggerOff: (id, timerId, off) => ipcRenderer.invoke('widget:setTriggerOff', { id, timerId, off }),
   excludeWidgetBuff: (id, name) => ipcRenderer.invoke('widget:excludeBuff', { id, name }),
   unexcludeWidgetBuff: (id, name) => ipcRenderer.invoke('widget:unexcludeBuff', { id, name }),
   setWidgetActiveProfileIds: (id, profileIds) => ipcRenderer.invoke('widget:setActiveProfileIds', { id, profileIds }),

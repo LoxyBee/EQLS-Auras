@@ -210,7 +210,7 @@ test('the nudge pad is a separate window centred over the box, wired renderer ->
   const main = read('src', 'main', 'main.js');
   assert.match(main, /ipcMain\.on\('nudgePad:nudge'/);
   assert.match(main, /kind === 'actionBar'[\s\S]{0,80}actionBarManager\.nudgePosition\(id, dx, dy\)/);
-  assert.match(main, /widgetManager\.nudgeWidget\(id, dx, dy\)/);
+  assert.match(main, /widgetManager\.nudgeWidget\(id, dx, dy, \{ solo: !!alt \|\| altKeyWatcher\.isHeld\(\) \}\)/);
   assert.match(main, /nudgePadWindow\.showFor\(id, b, kind\)/); // single "Move…" (aura or bar)
   assert.match(main, /getVisibleUnlockedBounds\(\)\) nudgePadWindow\.showFor/); // "Unlock all auras"
   assert.match(main, /nudgePadWindow\.updateFor\(id, bounds\)/); // follow

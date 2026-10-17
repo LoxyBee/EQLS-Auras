@@ -9,8 +9,9 @@ const kind = q.get('kind') || 'widget';
 let stepPx = 1;
 
 for (const btn of document.querySelectorAll('.nudge')) {
-  btn.addEventListener('click', () => {
-    window.eqNudgePad.nudge(id, kind, Number(btn.dataset.dx) * stepPx, Number(btn.dataset.dy) * stepPx);
+  btn.addEventListener('click', (e) => {
+    // Alt held = move just this aura, not its linked group (see main.js's nudgePad:nudge).
+    window.eqNudgePad.nudge(id, kind, Number(btn.dataset.dx) * stepPx, Number(btn.dataset.dy) * stepPx, e.altKey);
   });
 }
 

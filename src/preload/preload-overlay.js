@@ -53,6 +53,10 @@ contextBridge.exposeInMainWorld('eqOverlay', {
     ipcRenderer.on('modules:entries', (_event, all) => callback(all));
   },
   getLockState: (widgetId) => ipcRenderer.invoke('widget:isLocked', widgetId),
+  // "Move together" folders - 'member' | 'dimmed' | null for this aura's move box.
+  onGroupHighlight: (callback) => {
+    ipcRenderer.on('widget:groupHighlight', (_event, state) => callback(state));
+  },
   onLockChanged: (callback) => {
     ipcRenderer.on('widget:lockChanged', (_event, locked) => callback(locked));
   },

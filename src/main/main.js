@@ -149,12 +149,15 @@ const zonePromptPopup = require('./zonePromptPopup');
 const moveHudWindow = require('./moveHudWindow');
 const { TestBench, relaunchArgs: testBenchRelaunchArgs } = require('./testBench');
 const testBenchWindow = require('./testBenchWindow');
+const { Updater } = require('./updater');
 const gridGuideWindow = require('./gridGuideWindow');
 const nudgePadWindow = require('./nudgePadWindow');
 const profileFlashWindow = require('./profileFlashWindow');
 const positionSnap = require('./positionSnap');
 const { ProfileStore } = require('./profileStore');
 const { ForegroundWatcher, focusGameWindow } = require('./foregroundWatcher');
+const { AltKeyWatcher } = require('./altKeyWatcher');
+const { MoveHistory } = require('./moveHistory');
 const soundService = require('./soundService');
 const configTransfer = require('./configTransfer');
 
@@ -429,6 +432,7 @@ groupRoster.setPersistFn(() => sessionRestore.scheduleSave());
 // See customTimerEngine._resolveCastName. getByName tries the exact name first and only then the
 // rank-stripped one, which is what tells a mote rank ("Cannibalize V" -> Cannibalize) apart from a
 // spell whose name merely ends in a numeral ("Yaulp III" -> itself).
+customTimerEngine.setActiveProfileIdFn(() => profileStore.getActiveId());
 customTimerEngine.setResolveSpellFn((name) => {
   const known = buffStore.getByName(name);
   return known ? known.name : null;
@@ -2963,6 +2967,21 @@ ipcMain.handle('auraFolders:create', (_event, name) => widgetManager.createFolde
 ipcMain.handle('auraFolders:rename', (_event, { id, name }) => widgetManager.renameFolder(id, name));
 ipcMain.handle('auraFolders:delete', (_event, id) => widgetManager.deleteFolder(id));
 ipcMain.handle('auraFolders:setCollapsed', (_event, { id, collapsed }) => widgetManager.setFolderCollapsed(id, collapsed));
+// "Move together" - the chain button on a folder header / its right-click menu.
+ipcMain.handle('auraFolders:setLinked', (_event, { id, linked }) => widgetManager.setFolderLinked(id, linked));
+// The folder's own Move button: a group move session, started on the first member that is on
+// screen for this loadout profile (any member works - they all move together).
+ipcMain.handle('auraFolders:move', (_event, id) => {
+  const first = widgetManager
+    .getAllWidgetConfigs()
+    .find((c) => c.folderId === id && widgetManager.isVisibleForActiveProfile(c));
+  if (!first) return { ok: false };
+  if (hudMode === 'all') {
+    widgetManager.setAllUnlocked(false);
+    exitUnlockAllMode();
+  }
+  return enterMoveMode('widget', first.id);
+});
 ipcMain.handle('auraFolders:reorder', (_event, { orderedIds }) => widgetManager.reorderFolders(orderedIds));
 ipcMain.handle('widget:setFolder', (_event, { id, folderId }) => widgetManager.setWidgetFolder(id, folderId));
 ipcMain.handle('widget:resetToDefault', (_event, { id }) => widgetManager.resetWidgetToDefault(id));
@@ -3006,6 +3025,70 @@ let hudMode = null;
 // tweak one aura's settings, then resume moving all of them. null | { kind:'all' } |
 // { kind:'single', moveKind, id }.
 let suspendedMove = null;
+
+// "Move together" (folder link, owner 16 Oct). Set while a single "Move..." session is on an aura in
+// a linked folder: { folderId, name, ids, mode } - mode 'group' moves every member together,
+// 'single' ("This aura" on the move panel) moves only the target while the others stay, dimmed.
+let moveGroup = null;
+// Who follows a moved aura (widgetManager.setGroupFollowFn): the group of a single move session
+// while it is in Group mode, or - with "Unlock all auras" on - the linked folder of whatever is
+// dragged. Nobody, otherwise.
+widgetManager.setGroupFollowFn((movedId) => {
+  if (hudMode === 'single' && moveGroup && moveGroup.mode === 'group' && moveGroup.ids.includes(movedId)) {
+    return moveGroup.ids;
+  }
+  if (hudMode === 'all') {
+    const g = widgetManager.getLinkedGroup(movedId);
+    return g ? g.ids : null;
+  }
+  return null;
+});
+
+// Alt-drag moves one aura on its own, whichever group member it is. The watcher only runs while a
+// group can actually be moved - a group move session, or "Unlock all auras" - see altKeyWatcher.js.
+const altKeyWatcher = new AltKeyWatcher();
+widgetManager.setSoloDragFn(() => altKeyWatcher.isHeld());
+
+function paintGroupHighlights() {
+  if (!moveGroup) return;
+  for (const id of moveGroup.ids) {
+    const isTarget = moveTarget && id === moveTarget.id;
+    widgetManager.setGroupHighlight(id, moveGroup.mode === 'single' && !isTarget ? 'dimmed' : 'member');
+  }
+}
+
+// Undo / Redo on the move panel - see moveHistory.js. A state is where every aura (or the action
+// bar) this session can move sits: in "Unlock all" every aura, else the target and its linked group
+// (members switched off on this profile included - widgetManager's snapshots cover them).
+function moveHistoryTargets() {
+  if (hudMode === 'all') return widgetManager.getAllWidgetConfigs().map((c) => ({ kind: 'widget', id: c.id }));
+  if (!moveTarget) return [];
+  if (moveTarget.kind === 'actionBar') return [{ kind: 'actionBar', id: moveTarget.id }];
+  return (moveGroup ? moveGroup.ids : [moveTarget.id]).map((id) => ({ kind: 'widget', id }));
+}
+const moveHistory = new MoveHistory({
+  capture: () =>
+    moveHistoryTargets().map(({ kind, id }) =>
+      kind === 'actionBar'
+        ? { kind, id, bounds: actionBarManager.getBounds(id) }
+        : { kind, id, snap: widgetManager.getPositionSnapshot(id) }),
+  apply: (state) => {
+    for (const entry of state) {
+      if (entry.kind === 'actionBar') {
+        if (entry.bounds) actionBarManager.placeBar(entry.id, { x: entry.bounds.x, y: entry.bounds.y });
+      } else {
+        widgetManager.applyPositionSnapshot(entry.id, entry.snap);
+      }
+    }
+  },
+  onChange: () => refreshMoveHud(),
+});
+
+function refreshMoveHud() {
+  if (!moveHudWindow.isOpen()) return;
+  moveHudWindow.update(moveTarget ? targetBounds(moveTarget.kind, moveTarget.id) : null, hudMeta());
+}
+
 function notifyMasterState() {
   getMainWindow()?.webContents.send('overlay:masterStateChanged');
 }
@@ -3015,13 +3098,18 @@ function hudMeta() {
   return {
     mode: hudMode || 'single',
     name: moveTarget ? targetName(moveTarget.kind, moveTarget.id) : '',
+    // A linked-folder move: the panel titles it "Moving group: <name>" and shows Group | This aura.
+    group: moveGroup ? { name: moveGroup.name, mode: moveGroup.mode } : null,
     stepPx: moveStepPx,
+    canUndo: moveHistory.canUndo(),
+    canRedo: moveHistory.canRedo(),
     snapEnabled: grid.enabled,
     snapSizePx: grid.sizePx,
   };
 }
 
 function onMoveTargetMoved(id, bounds) {
+  moveHistory.note();
   if (moveTarget && id === moveTarget.id && bounds) moveHudWindow.update(bounds, hudMeta());
   // Keep this aura's nudge pad glued above its box (no-op if it has no pad open).
   if (bounds) nudgePadWindow.updateFor(id, bounds);
@@ -3036,16 +3124,45 @@ function enterMoveMode(kind, id, { keepSuspended = false } = {}) {
   hudMode = 'single';
   positionSnap.setActive(id);
   if (targetLocked(kind, id)) targetSetLocked(kind, id, false);
+  // An aura in a linked folder: bring the whole group up for moving - every member on this loadout
+  // profile is unlocked (shown, with its move box) and lit together. Members switched off on this
+  // profile have no window; they still follow, by their saved positions (widgetManager.shiftWidget).
+  moveGroup = null;
+  if (kind === 'widget') {
+    const g = widgetManager.getLinkedGroup(id);
+    if (g) {
+      moveGroup = { ...g, mode: 'group' };
+      positionSnap.setActive(g.ids); // any member dragged on its own snaps too
+      for (const other of g.ids) {
+        if (other === id) continue;
+        const cfg = widgetManager.getWidgetConfig(other);
+        if (cfg && widgetManager.isVisibleForActiveProfile(cfg)) widgetManager.setLocked(other, false, { force: false });
+      }
+      paintGroupHighlights();
+      altKeyWatcher.start();
+    }
+  }
   const b = targetBounds(kind, id); // exists now that it is unlocked
   getMainWindow()?.hide();
   moveHudWindow.open(b || { x: 200, y: 200, width: 160, height: 80 }, hudMeta());
   nudgePadWindow.showFor(id, b, kind); // a pad over the box - aura or action bar
   if (positionSnap.get().enabled) gridGuideWindow.show(positionSnap.get().sizePx);
+  moveHistory.start();
+  refreshMoveHud();
   return { ok: true };
 }
 
 function exitMoveMode() {
   const t = moveTarget;
+  if (moveGroup) {
+    for (const id of moveGroup.ids) {
+      widgetManager.setGroupHighlight(id, null);
+      if (!t || id !== t.id) widgetManager.setLocked(id, true);
+    }
+    moveGroup = null;
+  }
+  altKeyWatcher.stop();
+  moveHistory.clear();
   moveTarget = null;
   hudMode = null;
   positionSnap.setActive(null);
@@ -3064,12 +3181,17 @@ function enterUnlockAllMode({ keepSuspended = false } = {}) {
   if (!keepSuspended && suspendedMove) { suspendedMove = null; notifyMasterState(); }
   hudMode = 'all';
   positionSnap.setActiveAll(true);
+  altKeyWatcher.start();
   moveHudWindow.open(null, hudMeta());
   for (const { id, bounds } of widgetManager.getVisibleUnlockedBounds()) nudgePadWindow.showFor(id, bounds);
   if (positionSnap.get().enabled) gridGuideWindow.show(positionSnap.get().sizePx);
+  moveHistory.start();
+  refreshMoveHud();
 }
 function exitUnlockAllMode() {
   hudMode = null;
+  altKeyWatcher.stop();
+  moveHistory.clear();
   positionSnap.setActiveAll(false);
   moveHudWindow.close();
   nudgePadWindow.hideAll();
@@ -3099,12 +3221,14 @@ ipcMain.handle('widget:enterMoveMode', (_event, id) => enterMoveMode('widget', i
 ipcMain.handle('actionBar:enterMoveMode', (_event, id) => enterMoveMode('actionBar', id));
 // An arrow on a per-box nudge pad (nudgePadWindow.js). Only an unlocked thing shows a pad, so the
 // lock check is belt-and-braces. Routed by kind, same split targetManager uses.
-ipcMain.on('nudgePad:nudge', (_event, { id, kind, dx, dy } = {}) => {
+ipcMain.on('nudgePad:nudge', (_event, { id, kind, dx, dy, alt } = {}) => {
   if (!id) return;
   if (kind === 'actionBar') {
     if (!actionBarManager.isLocked(id)) actionBarManager.nudgePosition(id, dx, dy);
   } else if (!widgetManager.isLocked(id)) {
-    widgetManager.nudgeWidget(id, dx, dy);
+    // Alt on an arrow = this aura only, same as an Alt-drag. The click's own altKey is not reliable
+    // from the pad's never-focused window, so the Alt watcher is asked too.
+    widgetManager.nudgeWidget(id, dx, dy, { solo: !!alt || altKeyWatcher.isHeld() });
   }
 });
 // The pad's centre button - end the move and jump to this aura's settings. Ending the move first
@@ -3148,6 +3272,20 @@ ipcMain.handle('moveHud:centre', (_event, axis) => {
   if (!moveTarget || hudMode !== 'single') return null;
   const b = targetBounds(moveTarget.kind, moveTarget.id);
   if (!b) return null;
+  // Group mode: centre the GROUP as one block - the box around every member on screen - by moving
+  // the target the right amount; its followers come along (widgetManager.placeWidget).
+  if (moveGroup && moveGroup.mode === 'group') {
+    const boxes = moveGroup.ids.map((gid) => widgetManager.getWidgetBounds(gid)).filter(Boolean);
+    const left = Math.min(...boxes.map((r) => r.x));
+    const top = Math.min(...boxes.map((r) => r.y));
+    const right = Math.max(...boxes.map((r) => r.x + r.width));
+    const bottom = Math.max(...boxes.map((r) => r.y + r.height));
+    const gwa = (screen.getDisplayMatching(b) || screen.getPrimaryDisplay()).workArea;
+    const gpos = {};
+    if (axis === 'h') gpos.x = Math.round(b.x + (gwa.x + (gwa.width - (right - left)) / 2 - left));
+    if (axis === 'v') gpos.y = Math.round(b.y + (gwa.y + (gwa.height - (bottom - top)) / 2 - top));
+    return widgetManager.placeWidget(moveTarget.id, gpos);
+  }
   const wa = (screen.getDisplayMatching(b) || screen.getPrimaryDisplay()).workArea;
   const pos = {};
   if (axis === 'h') pos.x = Math.round(wa.x + (wa.width - b.width) / 2);
@@ -3157,6 +3295,19 @@ ipcMain.handle('moveHud:centre', (_event, axis) => {
     : widgetManager.placeWidget(moveTarget.id, pos);
 });
 ipcMain.handle('moveHud:done', () => endMoveSession());
+ipcMain.handle('moveHud:undo', () => moveHistory.step(-1));
+ipcMain.handle('moveHud:redo', () => moveHistory.step(1));
+ipcMain.on('moveHud:fitTo', (_event, { width, height } = {}) => moveHudWindow.fitTo(width, height));
+// The move panel's "Group | This aura" toggle - switchable mid-move. Nothing is unlocked or relocked;
+// only who follows (see setGroupFollowFn above) and how the other boxes look change.
+ipcMain.handle('moveHud:setGroupMode', (_event, mode) => {
+  if (!moveGroup) return null;
+  moveGroup.mode = mode === 'single' ? 'single' : 'group';
+  paintGroupHighlights();
+  const b = moveTarget ? targetBounds(moveTarget.kind, moveTarget.id) : null;
+  if (b) moveHudWindow.update(b, hudMeta());
+  return moveGroup.mode;
+});
 
 // The Action Bar overlay - see actionBarManager.js's own header comment. Multiple bars, same
 // {id, ...} shape every widget:* handler already uses.
@@ -3396,6 +3547,10 @@ ipcMain.handle('widget:setTriggerGroup', (_event, { id, timerId, group }) =>
   withAuraReset(id, () => widgetManager.setCustomTimerGroup(id, timerId, group))
 );
 ipcMain.handle('widget:addTriggerGroup', (_event, { id, group }) => widgetManager.addTriggerGroup(id, group));
+// Per-row trigger on/off, for the ACTIVE loadout profile only (each profile keeps its own set).
+ipcMain.handle('widget:setTriggerOff', (_event, { id, timerId, off }) =>
+  withAuraReset(id, () => widgetManager.setCustomTimerOff(id, timerId, profileStore.getActiveId(), !!off))
+);
 ipcMain.handle('widget:excludeBuff', (_event, { id, name }) => widgetManager.excludeBuff(id, name));
 ipcMain.handle('widget:unexcludeBuff', (_event, { id, name }) => widgetManager.unexcludeBuff(id, name));
 ipcMain.handle('widget:setActiveProfileIds', (_event, { id, profileIds }) => widgetManager.setActiveProfileIds(id, profileIds));
@@ -3445,6 +3600,8 @@ function activateProfile(id) {
   const result = profileStore.setActiveId(id);
   if (!result) return null;
   buffEngine.setActiveProfileId(result);
+  // Triggers can be switched off per profile - re-evaluate running trigger tiles.
+  customTimerEngine.onProfileChanged();
   // Profile membership is what decides which widgets are on screen (see
   // widgetManager's isVisibleForActiveProfile) - switching profiles has to
   // re-evaluate every widget's visibility, not just swap the engine's
@@ -3713,6 +3870,7 @@ app.on('before-quit', () => {
   // Flush immediately - the debounced save may still be pending, and this is exactly the moment
   // the snapshot matters most.
   sessionRestore.saveNow();
+  altKeyWatcher.stop();
 });
 app.on('will-quit', () => {
   debugLog('SHUTDOWN: will-quit fired');
@@ -3820,6 +3978,24 @@ ipcMain.handle('window:isMaximized', () => {
 
 // Basic round-trip test so we can confirm main <-> preload <-> renderer
 // IPC is wired up correctly before building real features on top of it.
+// Opt-in auto-update (see updater.js). electron-updater is only loaded where it can actually do
+// something - a packaged build, outside the test bench's test copy - so dev runs never touch it.
+const updaterSupported = app.isPackaged && !TEST_BENCH_MODE;
+const updater = new Updater({
+  autoUpdater: updaterSupported ? require('electron-updater').autoUpdater : null,
+  store: { loadJson, saveJson },
+  supported: updaterSupported,
+  currentVersion: app.getVersion(),
+  log: (m) => debugLog(m),
+});
+updater.on('changed', (s) => broadcast('updater:state', s));
+app.whenReady().then(() => updater.init());
+ipcMain.handle('updater:getState', () => updater.getState());
+ipcMain.handle('updater:setEnabled', (_event, on) => updater.setEnabled(on));
+ipcMain.handle('updater:check', () => updater.check());
+ipcMain.handle('updater:download', () => updater.download());
+ipcMain.handle('updater:install', () => updater.install());
+
 ipcMain.handle('app:getVersionInfo', () => {
   return {
     appVersion: app.getVersion(),
