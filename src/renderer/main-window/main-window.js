@@ -2935,6 +2935,33 @@ function initWidgetsPanel() {
       });
       header.append(move);
     }
+    // The folder's on/off dot, same look as an aura's: green all on, grey all off, half for a mix -
+    // for the CURRENT profile. Off remembers the mix; on brings that same mix back.
+    const members = widgets.filter((w) => w.folderId === folder.id);
+    if (members.length) {
+      const onCount = members.filter(
+        (w) => !!w.showOnAllProfiles || (w.activeProfileIds || []).includes(currentActiveProfileId),
+      ).length;
+      const state = onCount === 0 ? 'off' : onCount === members.length ? 'on' : 'mixed';
+      const dotWrap = document.createElement('span');
+      dotWrap.className = 'profile-dot-wrap nav-folder-dot';
+      const dot = document.createElement('span');
+      dot.className = 'profile-dot profile-dot-' + state;
+      const tooltip = document.createElement('span');
+      tooltip.className = 'tooltip-bubble';
+      tooltip.textContent =
+        state === 'off'
+          ? 'All off on this profile - click to turn back on'
+          : `${onCount} of ${members.length} on for this profile - click to turn all off`;
+      dotWrap.append(dot, tooltip);
+      dotWrap.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!currentActiveProfileId) return;
+        window.eqTracker.toggleAuraFolderOn(folder.id).then(refreshWidgets);
+      });
+      header.append(dotWrap);
+    }
+
     const link = document.createElement('button');
     link.type = 'button';
     link.className = 'nav-folder-link' + (folder.linked ? ' on' : '');

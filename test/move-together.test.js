@@ -317,6 +317,47 @@ test('the grid guide counts its lines from the TOP of the screen, like the snap 
   assert.doesNotMatch(html, /repeating-linear-gradient\(0deg/, 'a 0deg gradient starts at the bottom - off by (height mod grid)');
 });
 
+test('folder dot: off remembers which auras were on; on restores exactly that mix, per profile', () => {
+  const { wm, folder, a, b, c } = setup();
+  const on = (id, p) => {
+    const cfg = wm.getWidgetConfig(id);
+    return !!cfg.showOnAllProfiles || (cfg.activeProfileIds || []).includes(p);
+  };
+  const all = ['p1', 'p2'];
+  wm.setActiveProfileIds(a, ['p1', 'p2']);
+  wm.setActiveProfileIds(b, ['p2']); // B deliberately off on p1
+  wm.setActiveProfileIds(c, ['p1']);
+  assert.equal(wm.toggleFolderOnProfile(folder.id, 'p1', all), 'off');
+  assert.deepEqual([on(a, 'p1'), on(b, 'p1'), on(c, 'p1')], [false, false, false]);
+  assert.deepEqual([on(a, 'p2'), on(b, 'p2')], [true, true], 'other profiles untouched');
+  assert.equal(wm.toggleFolderOnProfile(folder.id, 'p1', all), 'on');
+  assert.deepEqual([on(a, 'p1'), on(b, 'p1'), on(c, 'p1')], [true, false, true], 'B stays off - the mix comes back');
+  // Nothing remembered (all were already off, by hand): on turns them all on.
+  for (const id of [a, b, c]) wm.setActiveProfileIds(id, []);
+  assert.equal(wm.toggleFolderOnProfile(folder.id, 'p1', all), 'on');
+  assert.deepEqual([on(a, 'p1'), on(b, 'p1'), on(c, 'p1')], [true, true, true]);
+});
+
+test('folder dot: an "every profile" aura switched off becomes every profile but this one', () => {
+  const { wm, folder, a, b, c } = setup();
+  for (const id of [b, c]) wm.setWidgetFolder(id, ''); // A alone in the folder
+  wm.setShowOnAllProfiles(a, true);
+  wm.toggleFolderOnProfile(folder.id, 'p1', ['p1', 'p2', 'p3']);
+  const cfg = wm.getWidgetConfig(a);
+  assert.equal(cfg.showOnAllProfiles, false);
+  assert.deepEqual(cfg.activeProfileIds.slice().sort(), ['p2', 'p3']);
+  wm.toggleFolderOnProfile(folder.id, 'p1', ['p1', 'p2', 'p3']);
+  assert.deepEqual(wm.getWidgetConfig(a).activeProfileIds.slice().sort(), ['p1', 'p2', 'p3']);
+});
+
+test('folder dot wiring: green / grey / half dot on the header, IPC uses the current profile', () => {
+  const renderer = read('src', 'renderer', 'main-window', 'main-window.js');
+  assert.ok(renderer.includes("const state = onCount === 0 ? 'off' : onCount === members.length ? 'on' : 'mixed';"));
+  assert.ok(renderer.includes('window.eqTracker.toggleAuraFolderOn(folder.id).then(refreshWidgets);'));
+  assert.match(read('src', 'renderer', 'main-window', 'main-window.css'), /\.profile-dot-mixed \{/);
+  assert.ok(read('src', 'main', 'main.js').includes('widgetManager.toggleFolderOnProfile(id, profileStore.getActiveId()'));
+});
+
 test('no follow rule (normal use, or an unlinked folder): auras move alone', () => {
   const { wm, a, b, winOf, pos } = setup();
   wm.setGroupFollowFn(null);

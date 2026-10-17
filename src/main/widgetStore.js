@@ -1094,7 +1094,21 @@ function normalizeFolder(folder) {
     // "Move together" (owner, 16 Oct): the folder's auras move as one group - dragging, nudging or
     // centring any of them moves them all. Off by default; folders otherwise only organise the list.
     linked: !!folder.linked,
+    // The folder's on/off dot (owner, 16 Oct): per loadout profile, which of its auras were on when
+    // the dot switched the folder off - so switching it back on restores that mix, not all of them.
+    restoreOn: normalizeRestoreOn(folder.restoreOn),
   };
+}
+
+function normalizeRestoreOn(value) {
+  const out = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
+  for (const [profileId, ids] of Object.entries(value)) {
+    if (!profileId || !Array.isArray(ids)) continue;
+    const clean = ids.filter((id) => typeof id === 'string' && id);
+    if (clean.length) out[profileId] = clean;
+  }
+  return out;
 }
 
 function normalizeWidget(widget) {
@@ -2548,6 +2562,24 @@ class WidgetStore {
     const folder = this.getFolders().find((f) => f.id === id);
     if (!folder) return null;
     folder.linked = !!linked;
+    this._save();
+    return folder;
+  }
+
+  // The folder dot's memory for one profile: the aura ids to switch back on, or null for none.
+  getFolderRestoreOn(id, profileId) {
+    const folder = this.getFolders().find((f) => f.id === id);
+    const ids = folder && folder.restoreOn ? folder.restoreOn[profileId] : null;
+    return Array.isArray(ids) && ids.length ? [...ids] : null;
+  }
+
+  setFolderRestoreOn(id, profileId, ids) {
+    const folder = this.getFolders().find((f) => f.id === id);
+    if (!folder || !profileId) return null;
+    const restoreOn = { ...(folder.restoreOn || {}) };
+    if (Array.isArray(ids) && ids.length) restoreOn[profileId] = [...ids];
+    else delete restoreOn[profileId];
+    folder.restoreOn = restoreOn;
     this._save();
     return folder;
   }

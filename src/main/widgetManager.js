@@ -736,6 +736,46 @@ function renameFolder(id, name) { return widgetStore.renameFolder(id, name); }
 function deleteFolder(id) { return widgetStore.deleteFolder(id); }
 function setFolderCollapsed(id, collapsed) { return widgetStore.setFolderCollapsed(id, collapsed); }
 function setFolderLinked(id, linked) { return widgetStore.setFolderLinked(id, linked); }
+
+// The folder's on/off dot (owner, 16 Oct). Switches every aura in the folder on or off for ONE
+// profile by setting each aura's own profile membership - the aura dots stay the only real on/off
+// (gotcha: one visibility switch). Off remembers which were on; on restores exactly that mix, or
+// everything if there is nothing remembered (or none of the remembered auras are still in it).
+function isOnForProfile(config, profileId) {
+  return !!config.showOnAllProfiles || (config.activeProfileIds || []).includes(profileId);
+}
+
+function setOnForProfile(config, profileId, on, allProfileIds) {
+  if (isOnForProfile(config, profileId) === on) return;
+  if (config.showOnAllProfiles) {
+    // "Every profile" can't leave one out - spell it out as every profile but this one.
+    widgetStore.update(config.id, { showOnAllProfiles: false });
+    setActiveProfileIds(config.id, allProfileIds.filter((p) => p !== profileId));
+    return;
+  }
+  const ids = new Set(config.activeProfileIds || []);
+  if (on) ids.add(profileId);
+  else ids.delete(profileId);
+  setActiveProfileIds(config.id, [...ids]);
+}
+
+function toggleFolderOnProfile(folderId, profileId, allProfileIds = []) {
+  if (!folderId || !profileId) return null;
+  const members = widgetStore.getAll().filter((c) => c.folderId === folderId);
+  if (!members.length) return null;
+  const onIds = members.filter((c) => isOnForProfile(c, profileId)).map((c) => c.id);
+  if (onIds.length) {
+    widgetStore.setFolderRestoreOn(folderId, profileId, onIds);
+    for (const c of members) setOnForProfile(c, profileId, false, allProfileIds);
+    return 'off';
+  }
+  const saved = widgetStore.getFolderRestoreOn(folderId, profileId);
+  const memberIds = new Set(members.map((c) => c.id));
+  const want = saved && saved.some((id) => memberIds.has(id)) ? new Set(saved) : memberIds;
+  for (const c of members) if (want.has(c.id)) setOnForProfile(c, profileId, true, allProfileIds);
+  widgetStore.setFolderRestoreOn(folderId, profileId, null);
+  return 'on';
+}
 function getLinkedGroup(widgetId) { return widgetStore.getLinkedGroup(widgetId); }
 function reorderFolders(orderedIds) { return widgetStore.reorderFolders(orderedIds); }
 function setWidgetFolder(id, folderId) { return widgetStore.setWidgetFolder(id, folderId); }
@@ -1956,6 +1996,7 @@ module.exports = {
   deleteFolder,
   setFolderCollapsed,
   setFolderLinked,
+  toggleFolderOnProfile,
   getLinkedGroup,
   setGroupFollowFn,
   setSoloDragFn,

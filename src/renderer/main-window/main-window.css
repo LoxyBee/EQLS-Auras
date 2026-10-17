@@ -806,6 +806,21 @@ body {
   background: var(--ink-faint);
 }
 
+/* A folder's dot when some of its auras are on and some off: half green, half grey. */
+.profile-dot-mixed {
+  background: linear-gradient(90deg, var(--ok) 50%, var(--ink-faint) 50%);
+}
+
+/* The folder dot sits last on the header, in the same column as its auras' dots: the header's
+   right padding (9px) matches an aura row's (.nav-sub-btn's 8px padding + 1px border). No hover
+   box behind it. */
+.nav-folder-header { padding-right: 9px; }
+.nav-folder-header .nav-folder-dot {
+  order: 10;
+  margin-left: 2px;
+}
+.nav-folder-header .nav-folder-dot:hover { background: none; }
+
 /* Opens to the RIGHT of the dot, not left like the original mockup - this
    sidebar sits flush against the window's own left edge, so a tooltip
    growing further left would render off-screen instead of just under the
