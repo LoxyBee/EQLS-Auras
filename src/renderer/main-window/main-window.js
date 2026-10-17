@@ -2826,6 +2826,8 @@ function initWidgetsPanel() {
       widgets = list;
       auraFolders = Array.isArray(folders) ? folders : [];
       renderWidgetSubmenu();
+      // A folder's "Move together" may just have changed - keep the open aura's group chip in step.
+      try { if (selectedId) paintGroupChip(findWidget(selectedId)); } catch (e) { /* not set up yet */ }
     });
   }
 
@@ -2918,6 +2920,31 @@ function initWidgetsPanel() {
     name.className = 'nav-folder-name';
     name.textContent = folder.name;
     header.append(chevron, name);
+
+    // "Move together" (owner, 16 Oct): a chain button on every folder - lit when the folder's auras
+    // move as one group - and, while linked, a Move button that starts a group move straight away.
+    if (folder.linked) {
+      const move = document.createElement('button');
+      move.type = 'button';
+      move.className = 'nav-folder-move';
+      move.textContent = 'Move';
+      move.title = 'Move this group';
+      move.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.eqTracker.moveAuraFolder(folder.id);
+      });
+      header.append(move);
+    }
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'nav-folder-link' + (folder.linked ? ' on' : '');
+    link.textContent = '🔗';
+    link.title = folder.linked ? 'Moving together - click to move them separately' : 'Move these auras together';
+    link.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.eqTracker.setAuraFolderLinked(folder.id, !folder.linked).then(refreshWidgets);
+    });
+    header.append(link);
 
     header.addEventListener('click', () => {
       if (folderDragMoved) { folderDragMoved = false; return; } // a drag, not a real click
@@ -3151,10 +3178,13 @@ function initWidgetsPanel() {
   const folderContextMenuEl = document.getElementById('folder-context-menu');
   const folderContextRenameBtn = document.getElementById('folder-context-rename');
   const folderContextDeleteBtn = document.getElementById('folder-context-delete');
+  const folderContextLinkBtn = document.getElementById('folder-context-link');
   let folderContextId = null;
 
   function openFolderContextMenu(folderId, x, y) {
     folderContextId = folderId;
+    const f = auraFolders.find((x2) => x2.id === folderId);
+    folderContextLinkBtn.textContent = f && f.linked ? 'Move separately' : 'Move together';
     folderContextMenuEl.style.display = 'block';
     const r = folderContextMenuEl.getBoundingClientRect();
     folderContextMenuEl.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
@@ -3172,6 +3202,12 @@ function initWidgetsPanel() {
     if (folderContextMenuEl.style.display !== 'none' && !e.defaultPrevented) closeFolderContextMenu();
   });
 
+  folderContextLinkBtn.addEventListener('click', () => {
+    const id = folderContextId;
+    closeFolderContextMenu();
+    const folder = auraFolders.find((f) => f.id === id);
+    if (folder) window.eqTracker.setAuraFolderLinked(id, !folder.linked).then(refreshWidgets);
+  });
   folderContextRenameBtn.addEventListener('click', () => {
     const id = folderContextId;
     closeFolderContextMenu();
@@ -3681,6 +3717,33 @@ function initWidgetsPanel() {
     }).catch(() => { /* keep the cached view */ });
   }
 
+  // "Move together": the chip by Position that says which linked group this aura moves with.
+  const groupChipEl = document.getElementById('widget-group-chip');
+  let groupChipFolderId = null;
+  function paintGroupChip(widget) {
+    if (!groupChipEl) return;
+    const folder = widget && widget.folderId ? auraFolders.find((f) => f.id === widget.folderId) : null;
+    groupChipFolderId = folder && folder.linked ? folder.id : null;
+    groupChipEl.style.display = groupChipFolderId ? '' : 'none';
+    groupChipEl.textContent = groupChipFolderId ? `🔗 ${folder.name}` : '';
+  }
+  if (groupChipEl) {
+    groupChipEl.addEventListener('click', async () => {
+      const folder = auraFolders.find((f) => f.id === groupChipFolderId);
+      if (!folder) return;
+      if (folder.collapsed) {
+        await window.eqTracker.setAuraFolderCollapsed(folder.id, false);
+        await refreshWidgets();
+      }
+      const header = submenuEl.querySelector(`.nav-folder-header[data-folder-id="${folder.id}"]`);
+      if (header) {
+        header.scrollIntoView({ block: 'nearest' });
+        header.classList.add('flash');
+        setTimeout(() => header.classList.remove('flash'), 1200);
+      }
+    });
+  }
+
   function selectWidgetFromCache(id) {
     // A picker left open while switching to a different aura would go on editing the wrong one.
     closeBuffPickerModal();
@@ -3709,6 +3772,7 @@ function initWidgetsPanel() {
     // it here was the second thing on screen with the same information a click apart.
     settingsTitle.textContent = 'Settings';
     nameInput.value = widget.name;
+    paintGroupChip(widget);
     // buffSourceRow/debuffCastByRowEl visibility now comes from applySettingsPanelShape() below,
     // via widgetShape()/SHAPE_FIELDS - see that function's own comment for the full reasoning on
     // when each is shown (announcer vs plumbing-only ally source, debuff-cast-by only ever
@@ -4537,6 +4601,22 @@ function initWidgetsPanel() {
         // other's tile. Independent mode only; in AND/OR it is shown disabled but KEPT, so a misclick
         // on the mode button loses nothing. Uses the app's own themed dropdown (search-dropdown.js).
         const groupSelect = buildTriggerGroupSelect(widget, timer);
+        // On/off for THIS loadout profile only (owner, 16 Oct) - each profile keeps its own set, and
+        // a switched-off trigger keeps all its settings. The row greys out while off.
+        const offHere = Array.isArray(timer.offInProfiles) && timer.offInProfiles.includes(currentActiveProfileId);
+        const onBox = document.createElement('input');
+        onBox.type = 'checkbox';
+        onBox.className = 'trigger-on-checkbox';
+        onBox.checked = !offHere;
+        onBox.title = 'On for this loadout profile. Untick to switch this trigger off here only - other profiles keep their own setting.';
+        onBox.addEventListener('change', () => {
+          window.eqTracker.setWidgetTriggerOff(widget.id, timer.id, !onBox.checked).then((config) => {
+            updateLocalWidgetCache(config);
+            renderCustomTimersList(config || widget);
+          });
+        });
+        li.classList.toggle('trigger-off', offHere);
+        li.append(onBox);
         if (icon) li.append(icon);
         li.append(name, groupSelect, combineBtn, editBtn, deleteBtn);
         if (window.SearchDropdown) {
@@ -6804,6 +6884,74 @@ function initWidgetsPanel() {
   }
   refreshMasterButtons();
 
+  // Opt-in auto-update (src/main/updater.js). The top-bar button only shows when there is
+  // something to do; the Setup page "Updates" card has the opt-in, Check now and the status line.
+  const updateBtn = document.getElementById('update-btn');
+  const autoUpdateCheckbox = document.getElementById('auto-update-checkbox');
+  const updateCheckBtn = document.getElementById('update-check-btn');
+  const updateStatusEl = document.getElementById('update-status');
+  if (window.eqTracker.getUpdaterState) {
+    const paintUpdater = (st) => {
+      if (!st) return;
+      if (autoUpdateCheckbox) {
+        autoUpdateCheckbox.checked = !!st.enabled;
+        autoUpdateCheckbox.disabled = !st.supported;
+      }
+      if (updateCheckBtn) updateCheckBtn.disabled = !st.supported || st.status === 'checking' || st.status === 'downloading';
+      const current = st.currentVersion ? `Version ${st.currentVersion}` : '';
+      const lines = {
+        unsupported: `${current} - updates only work in the installed app`,
+        idle: current,
+        checking: `${current} - checking...`,
+        none: `${current} - up to date`,
+        available: `Version ${st.version} is available`,
+        downloading: `Downloading ${st.version || 'update'}... ${st.percent || 0}%`,
+        downloaded: `Version ${st.version} is ready - restart to install`,
+        error: `${current} - couldn't check for updates`,
+      };
+      if (updateStatusEl) {
+        updateStatusEl.textContent = lines[st.status] || current;
+        updateStatusEl.title = st.status === 'error' && st.error ? st.error : '';
+      }
+      if (updateBtn) {
+        const label = { available: 'Update available', downloading: `Updating ${st.percent || 0}%`, downloaded: 'Restart to update' }[st.status];
+        updateBtn.style.display = label ? '' : 'none';
+        updateBtn.textContent = label || '';
+        updateBtn.disabled = st.status === 'downloading';
+        updateBtn.dataset.status = st.status;
+        updateBtn.dataset.version = st.version || '';
+      }
+    };
+    window.eqTracker.getUpdaterState().then(paintUpdater);
+    window.eqTracker.onUpdaterState(paintUpdater);
+    if (autoUpdateCheckbox) {
+      autoUpdateCheckbox.addEventListener('change', () => {
+        window.eqTracker.setAutoUpdateEnabled(autoUpdateCheckbox.checked).then(paintUpdater);
+      });
+    }
+    if (updateCheckBtn) updateCheckBtn.addEventListener('click', () => window.eqTracker.checkForUpdates().then(paintUpdater));
+    if (updateBtn) {
+      updateBtn.addEventListener('click', () => {
+        const status = updateBtn.dataset.status;
+        if (status === 'available') {
+          // Ask before downloading (owner's choice) - nothing is fetched until this is confirmed.
+          appConfirm({
+            title: 'Update available',
+            message: `Version ${updateBtn.dataset.version} is available. Download it now?`,
+            detail: 'It downloads in the background and installs when you close the app - or straight away from the top bar.',
+            okLabel: 'Download',
+          }).then((ok) => { if (ok) window.eqTracker.downloadUpdate().then(paintUpdater); });
+        } else if (status === 'downloaded') {
+          appConfirm({
+            title: 'Restart to update',
+            message: 'The app will close, install the update and start again.',
+            okLabel: 'Restart now',
+          }).then((ok) => { if (ok) window.eqTracker.installUpdate(); });
+        }
+      });
+    }
+  }
+
   // Test bench switch (dev builds only - see src/main/testBench.js). Hidden unless the main process
   // says it exists; lit up (the same loud .active style as Hide auras) while test mode is on.
   const testBenchBtn = document.getElementById('test-bench-btn');
@@ -7066,6 +7214,9 @@ function initWidgetsPanel() {
   window.eqTracker.onActiveProfileChanged((id) => {
     currentActiveProfileId = id;
     renderWidgetSubmenu();
+    // Trigger on/off is per profile - the open aura's trigger list shows THIS profile's ticks.
+    const open = selectedId && findWidget(selectedId);
+    if (open && open.buffSource === 'customTimer') renderCustomTimersList(open);
   });
   refreshProfilesCache().then(renderWidgetSubmenu);
   refreshActiveProfileCache().then(renderWidgetSubmenu);

@@ -1,7 +1,7 @@
 {
   "name": "eqls-auras",
   "productName": "EQLS Auras",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Reads your EverQuest log file and shows a transparent overlay with countdown timers for your active buffs.",
   "main": "src/main/main.js",
   "private": true,
@@ -43,6 +43,16 @@
         "from": "modules",
         "to": "modules"
       }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "LoxyBee",
+        "repo": "EQLS-Auras"
+      }
     ]
+  },
+  "dependencies": {
+    "electron-updater": "~6.1.8"
   }
 }

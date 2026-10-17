@@ -66,6 +66,96 @@ const movedGuard = new Set();
 // Fired on every move of the aura's window (drag, nudge, Reset). main.js wires this so the move
 // HUD's x/y readout keeps up.
 let onWidgetMoved = () => {};
+
+// ---- "Move together" (folder link, owner 16 Oct) ------------------------------------------------
+// main.js decides, per move session, which auras follow which: fn(movedId) => [other ids] | null.
+// Every way an aura moves while being positioned - a live drag, a nudge, a centre - funnels the
+// same delta to its followers through shiftWidget, so they keep their layout. A follower with no
+// window (switched off on this loadout profile) has its SAVED position shifted the same amount, so
+// the layout is still intact when that profile is used.
+let groupFollowFn = null;
+// id -> [x, y] the window was last seen at. A user drag shows up as 'move' events with no record of
+// where it started, so the delta is measured from here. Updated BEFORE every move this module makes
+// itself, so its own setPosition calls read as delta 0 and never drag followers along twice.
+const lastPosByWidget = new Map();
+// Windowless followers during a live drag: the delta is collected here and saved once, on drop.
+const pendingHiddenShift = new Map();
+
+function setGroupFollowFn(fn) {
+  groupFollowFn = typeof fn === 'function' ? fn : null;
+}
+
+// Alt-drag = move just this one aura (owner, 16 Oct), whichever member of the group it is. main.js
+// hands in "is Alt held right now" (altKeyWatcher). It is read ONCE, as a drag starts, and holds
+// for that whole drag - letting go of Alt halfway must not suddenly yank the rest of the group.
+let soloDragFn = null;
+const soloDrag = new Map(); // id -> true/false for the drag in progress
+function setSoloDragFn(fn) {
+  soloDragFn = typeof fn === 'function' ? fn : null;
+}
+function dragFollowersOf(id) {
+  if (!soloDrag.has(id)) soloDrag.set(id, !!(soloDragFn && soloDragFn()));
+  return soloDrag.get(id) ? [] : followersOf(id);
+}
+
+function followersOf(id) {
+  if (!groupFollowFn) return [];
+  const list = groupFollowFn(id);
+  return Array.isArray(list) ? list.filter((o) => o && o !== id) : [];
+}
+
+// Move one aura by (dx, dy) - its window if it has one, else its saved position. persist:false
+// (during a live drag) defers the save to the drop.
+function shiftWidget(id, dx, dy, { persist = true } = {}) {
+  if (!dx && !dy) return;
+  const win = windows.get(id);
+  if (win && !win.isDestroyed()) {
+    const [x, y] = win.getPosition();
+    const nx = x + dx;
+    const ny = y + dy;
+    lastPosByWidget.set(id, [nx, ny]);
+    win.setPosition(nx, ny);
+    if (persist) {
+      const originX = originXByWidget.get(id) || 0;
+      widgetStore.savePosition(id, { x: nx + originX, y: ny });
+    }
+    return;
+  }
+  if (!persist) {
+    const prev = pendingHiddenShift.get(id) || [0, 0];
+    pendingHiddenShift.set(id, [prev[0] + dx, prev[1] + dy]);
+    return;
+  }
+  const config = widgetStore.getById(id);
+  if (config && config.position) {
+    widgetStore.savePosition(id, { x: config.position.x + dx, y: config.position.y + dy });
+  }
+}
+
+// Save every follower's final spot after a live drag ends.
+function persistFollowers(ids) {
+  for (const id of ids) {
+    const win = windows.get(id);
+    if (win && !win.isDestroyed()) {
+      const [x, y] = win.getPosition();
+      const originX = originXByWidget.get(id) || 0;
+      widgetStore.savePosition(id, { x: x + originX, y });
+      continue;
+    }
+    const pending = pendingHiddenShift.get(id);
+    if (pending) {
+      pendingHiddenShift.delete(id);
+      shiftWidget(id, pending[0], pending[1], { persist: true });
+    }
+  }
+}
+
+// How an aura's move box looks during a group move: 'member' (lit with the group), 'dimmed'
+// (another member while moving just one aura) or null (normal).
+function setGroupHighlight(id, state) {
+  const win = windows.get(id);
+  if (win && !win.isDestroyed()) win.webContents.send('widget:groupHighlight', state || null);
+}
 // Runtime-only, never persisted - true when the auto-hide-when-EQ-unfocused
 // feature (see foregroundWatcher.js) currently has widgets hidden. Kept
 // separate from profile-based visibility (below) so toggling focus never
@@ -233,6 +323,21 @@ function createWidgetWindow(config) {
     if (current && shouldBeOnScreen(current)) win.showInactive();
   });
 
+  lastPosByWidget.set(config.id, [pos.x, pos.y]);
+  // "Move together": a live drag of an unlocked aura drags its followers by the same amount as it
+  // goes. Only real user drags count - every move this module makes updates lastPosByWidget first,
+  // so its own moves measure as delta 0 here.
+  win.on('move', () => {
+    const [x, y] = win.getPosition();
+    const prev = lastPosByWidget.get(config.id);
+    lastPosByWidget.set(config.id, [x, y]);
+    if (movedGuard.has(config.id) || !prev || !isUnlocked(config.id)) return;
+    const dx = x - prev[0];
+    const dy = y - prev[1];
+    if (!dx && !dy) return;
+    for (const other of dragFollowersOf(config.id)) shiftWidget(other, dx, dy, { persist: false });
+  });
+
   win.on('moved', () => {
     if (movedGuard.has(config.id)) return; // re-fired by our own snap setPosition just below
     const [x, y] = win.getPosition();
@@ -244,8 +349,16 @@ function createWidgetWindow(config) {
       sx = positionSnap.snap(x);
       sy = positionSnap.snap(y);
       movedGuard.add(config.id);
+      lastPosByWidget.set(config.id, [sx, sy]);
       win.setPosition(sx, sy);
       movedGuard.delete(config.id);
+    }
+    // Followers take the snap correction too, then everyone's final spot is saved.
+    const followers = dragFollowersOf(config.id);
+    soloDrag.delete(config.id); // the drag is over - the next one reads Alt afresh
+    if (followers.length) {
+      for (const other of followers) shiftWidget(other, sx - x, sy - y, { persist: false });
+      persistFollowers(followers);
     }
     // The stored position is the grid's own intended screen position, not necessarily the
     // window's raw x - see fitToContent's originX handling. Whatever origin offset is currently
@@ -286,6 +399,8 @@ function createWidgetWindow(config) {
     runtimeLock.delete(config.id);
     originXByWidget.delete(config.id);
     resizeRefByWidget.delete(config.id);
+    lastPosByWidget.delete(config.id);
+    soloDrag.delete(config.id);
   });
 
   windows.set(config.id, win);
@@ -350,6 +465,13 @@ function setScale(id, scale) {
 
 function updateCustomTimer(id, timerId, timer) {
   const config = widgetStore.updateCustomTimer(id, timerId, timer);
+  pushConfigChanged(id);
+  return config;
+}
+
+// Per-profile trigger on/off - see widgetStore.setCustomTimerOff.
+function setCustomTimerOff(id, timerId, profileId, off) {
+  const config = widgetStore.setCustomTimerOff(id, timerId, profileId, off);
   pushConfigChanged(id);
   return config;
 }
@@ -613,6 +735,8 @@ function createFolder(name) { return widgetStore.createFolder(name); }
 function renameFolder(id, name) { return widgetStore.renameFolder(id, name); }
 function deleteFolder(id) { return widgetStore.deleteFolder(id); }
 function setFolderCollapsed(id, collapsed) { return widgetStore.setFolderCollapsed(id, collapsed); }
+function setFolderLinked(id, linked) { return widgetStore.setFolderLinked(id, linked); }
+function getLinkedGroup(widgetId) { return widgetStore.getLinkedGroup(widgetId); }
 function reorderFolders(orderedIds) { return widgetStore.reorderFolders(orderedIds); }
 function setWidgetFolder(id, folderId) { return widgetStore.setWidgetFolder(id, folderId); }
 
@@ -1097,6 +1221,7 @@ function resetPosition(id) {
   if (!win) return null;
   const pos = getDefaultPosition();
   originXByWidget.set(id, 0);
+  lastPosByWidget.set(id, [pos.x, pos.y]); // a reset moves this aura only, never its group
   win.setPosition(pos.x, pos.y);
   widgetStore.savePosition(id, pos);
   onWidgetMoved(id, getWidgetBounds(id));
@@ -1119,7 +1244,7 @@ function getWidgetBounds(id) {
 // arrows. A nudge is a deliberate placement, so it saves the same canonical anchor a real drag
 // does (see the 'moved' handler) - applyPendingFit re-centres on the LIVE window position on
 // re-lock, so the nudged spot is kept without any extra bookkeeping here.
-function nudgeWidget(id, dx, dy) {
+function nudgeWidget(id, dx, dy, { solo = false } = {}) {
   const win = windows.get(id);
   if (!win || win.isDestroyed()) return null;
   const [x, y] = win.getPosition();
@@ -1129,9 +1254,13 @@ function nudgeWidget(id, dx, dy) {
     nx = positionSnap.snap(nx);
     ny = positionSnap.snap(ny);
   }
+  lastPosByWidget.set(id, [nx, ny]);
   win.setPosition(nx, ny);
   const originX = originXByWidget.get(id) || 0;
   widgetStore.savePosition(id, { x: nx + originX, y: ny });
+  // "Move together": the group moves by the same (snapped) amount - unless Alt was held on the
+  // arrow (solo), which moves just this one, same as an Alt-drag.
+  for (const other of solo ? [] : followersOf(id)) shiftWidget(other, nx - x, ny - y);
   onWidgetMoved(id, getWidgetBounds(id));
   return getWidgetBounds(id);
 }
@@ -1145,11 +1274,41 @@ function placeWidget(id, { x, y } = {}) {
   const [cx, cy] = win.getPosition();
   const nx = typeof x === 'number' ? Math.round(x) : cx;
   const ny = typeof y === 'number' ? Math.round(y) : cy;
+  lastPosByWidget.set(id, [nx, ny]);
   win.setPosition(nx, ny);
   const originX = originXByWidget.get(id) || 0;
   widgetStore.savePosition(id, { x: nx + originX, y: ny });
+  for (const other of followersOf(id)) shiftWidget(other, nx - cx, ny - cy);
   onWidgetMoved(id, getWidgetBounds(id));
   return getWidgetBounds(id);
+}
+
+// The move panel's Undo / Redo (owner, 16 Oct). A snapshot is where one aura is: its window (if it
+// has one) and its saved position (which differs from the window by the fit offset, and is all a
+// windowless aura - switched off on this profile - has). Restoring puts both back exactly, and
+// moves ONLY that aura: lastPosByWidget first so its 'move' measures 0 (no followers dragged), and
+// movedGuard so the drop handler neither snaps it nor saves over the restored position.
+function getPositionSnapshot(id) {
+  const win = windows.get(id);
+  const config = widgetStore.getById(id);
+  if (!config) return null;
+  return {
+    win: win && !win.isDestroyed() ? win.getPosition() : null,
+    saved: config.position ? { ...config.position } : null,
+  };
+}
+
+function applyPositionSnapshot(id, snap) {
+  if (!snap || !widgetStore.getById(id)) return;
+  const win = windows.get(id);
+  if (snap.win && win && !win.isDestroyed()) {
+    lastPosByWidget.set(id, [snap.win[0], snap.win[1]]);
+    movedGuard.add(id);
+    win.setPosition(snap.win[0], snap.win[1]);
+    movedGuard.delete(id);
+  }
+  if (snap.saved) widgetStore.savePosition(id, { ...snap.saved });
+  if (win && !win.isDestroyed()) onWidgetMoved(id, getWidgetBounds(id));
 }
 
 function toggleLock(id) {
@@ -1759,6 +1918,7 @@ module.exports = {
   setTestBenchMode,
   setCooldownDim,
   setCustomTimerGroup,
+  setCustomTimerOff,
   addTriggerGroup,
   setActiveProfileIdFn,
   setActiveProfileNameFn,
@@ -1795,6 +1955,11 @@ module.exports = {
   renameFolder,
   deleteFolder,
   setFolderCollapsed,
+  setFolderLinked,
+  getLinkedGroup,
+  setGroupFollowFn,
+  setSoloDragFn,
+  setGroupHighlight,
   reorderFolders,
   setWidgetFolder,
   resetWidgetToDefault,
@@ -1826,6 +1991,8 @@ module.exports = {
   isUnlocked,
   nudgeWidget,
   placeWidget,
+  getPositionSnapshot,
+  applyPositionSnapshot,
   getWidgetBounds,
   setOnWidgetMovedFn,
   setDisplayMode,
@@ -1920,4 +2087,5 @@ module.exports = {
   getAllyEnemyDebuffNames,
   getAllyDebuffAlertNames,
   getWidgetConfig,
+  isVisibleForActiveProfile,
 };

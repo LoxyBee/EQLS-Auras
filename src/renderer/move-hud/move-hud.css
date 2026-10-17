@@ -1,4 +1,5 @@
-/* PANEL_W (320) / PANEL_H (150) are set in moveHudWindow.js - keep the panel inside them. */
+/* The window is sized to fit #panel (move-hud.js reports its size to moveHudWindow.js), so the
+   panel's border always hugs the buttons - no fixed box with empty space in it. */
 :root {
   --accent: #f0a54a;
   --panel: rgba(18, 22, 34, 0.94);
@@ -9,10 +10,12 @@
 
 * { box-sizing: border-box; }
 
+/* max-content: the panel takes its natural size, never squeezed by the window it is about to be
+   fitted into. */
 html, body {
   margin: 0;
-  width: 100%;
-  height: 100%;
+  width: max-content;
+  height: max-content;
   background: transparent;
   overflow: hidden;
   font-family: Consolas, "Segoe UI", system-ui, sans-serif;
@@ -20,14 +23,16 @@ html, body {
   user-select: none;
 }
 
+/* Inline-block so it is exactly as big as its contents; the 4px margin (PANEL_MARGIN in
+   move-hud.js) leaves room for the shadow inside the window. */
 #panel {
-  position: absolute;
-  inset: 4px;
+  display: inline-block;
+  margin: 4px;
   padding: 8px 10px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 9px;
-  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.6);
   -webkit-app-region: drag; /* grab any empty part of the panel to move it */
 }
 
@@ -35,22 +40,24 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 4px 0;
+  margin: 6px 0;
   font-size: 12px;
 }
+.row:first-child { margin-top: 0; }
+.row:last-child { margin-bottom: 0; }
 .head { font-weight: 700; }
-#coords { margin-left: auto; color: var(--dim); font-weight: 400; font-variant-numeric: tabular-nums; }
-#aura-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
-.label { color: var(--dim); }
-.hint { color: var(--dim); font-size: 11px; line-height: 1.35; }
-.controls { margin-top: 2px; }
+.link { font-size: 11px; }
+#aura-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+#coords { margin-left: auto; padding-left: 12px; color: var(--dim); font-weight: 400; font-size: 11px; font-variant-numeric: tabular-nums; }
 
-button, select, input, .snap {
-  -webkit-app-region: no-drag; /* controls are clickable, not drag handles */
-}
+button { -webkit-app-region: no-drag; /* controls are clickable, not drag handles */ }
+
+/* A captioned choice: small heading over a joined row of buttons. */
+.choices { align-items: flex-start; gap: 10px; }
+.choice { display: flex; flex-direction: column; gap: 3px; }
+.choice > small, .tool small { font-size: 11px; color: var(--dim); }
 
 #panel button {
-  padding: 3px 8px;
   font: inherit;
   font-size: 12px;
   color: var(--ink);
@@ -65,31 +72,50 @@ button, select, input, .snap {
   color: #1b1205;
   border-color: rgba(0, 0, 0, 0.35);
 }
-/* Footer: Done bottom-left, Reset position bottom-right. */
-.foot { margin-top: 8px; }
-#reset-pos { margin-left: auto; }
+#panel button:disabled { opacity: 0.35; cursor: default; background: rgba(255, 255, 255, 0.08); }
+
+.seg { display: inline-flex; }
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 0 !important;
+  margin-left: -1px;
+}
+.seg button:first-child { border-radius: 5px 0 0 5px !important; margin-left: 0; }
+.seg button:last-child { border-radius: 0 5px 5px 0 !important; }
+.ico { font-size: 14px; line-height: 1; }
+
+/* Captioned icon buttons (Centre, Undo, Redo, Reset): the icon with its word underneath, and every
+   one exactly the same size. */
+.tools { gap: 5px; }
+#panel button.tool {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0;
+  width: 52px;
+  height: 40px;
+}
+.tool small { color: inherit; }
+
+.alt-tip { font-size: 11px; color: var(--dim); }
+
+/* Done sits on its own at the right of the bottom row, a clear gap away from Reset. */
 #panel button.primary {
   background: var(--accent);
   color: #1b1205;
   border-color: rgba(0, 0, 0, 0.35);
   font-weight: 700;
-  padding: 4px 12px;
+  padding: 0 14px;
+  height: 40px;
 }
+#panel #done { margin-left: auto; }
+.foot #reset-pos { margin-right: 16px; }
 
-.snap { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; margin-left: 12px; }
-.snap input { margin: 0; }
-#snap-size {
-  font: inherit;
-  font-size: 12px;
-  color: var(--ink);
-  /* Opaque, dark - the dropdown list is Chromium-drawn and inherits these onto the <option>s. */
-  background: #1b2133;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  padding: 2px 4px;
-}
-#snap-size option { background: #1b2133; color: var(--ink); }
-#snap-size option:checked { background: var(--accent); color: #1b1205; }
-
-/* Centring is a single-aura action - "Positioning all auras" has no one thing to centre. */
+/* Centring and Reset are single-aura actions - "Positioning all auras" has no one thing to move. */
 #panel[data-mode="all"] .centre-row { display: none; }
+#panel[data-mode="all"] #reset-pos { display: none; }

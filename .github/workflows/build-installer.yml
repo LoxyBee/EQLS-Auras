@@ -21,14 +21,48 @@ jobs:
 
       - run: npm test
 
+      # The version is the one IN package.json - every change bumps it before it is pushed
+      # (mandatory, CLAUDE.md "Version bump"; the PR check enforces it). This refuses to publish a
+      # version that has already been released, so a forgotten bump fails loudly here instead of
+      # shipping two different builds under one number.
+      - name: Read the version and refuse a repeat
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "::error::v$VERSION is already released - bump the version in package.json (npm version patch --no-git-tag-version)."
+            exit 1
+          fi
+
       - run: npm run dist
 
-      # Fixed artifactName in package.json (EQLS-Auras-Setup.exe) means this download URL never
-      # changes across version bumps: always
-      # github.com/LoxyBee/EQLS-Auras/releases/download/latest-dev/EQLS-Auras-Setup.exe - safe to
-      # hand to someone (or something) that just wants to always fetch the current build.
-      # prerelease:false (not true) so it's also reachable at the permanent .../releases/latest URL.
-      - name: Publish latest installer as a release
+      # The auto-updater reads THIS release: its own tag, the installer, the blockmap and
+      # latest.yml (electron-builder writes it because package.json build.publish points at
+      # GitHub). make_latest so .../releases/latest - what electron-updater checks - is always the
+      # newest build.
+      - name: Publish this build as a versioned release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: EQLS Auras ${{ env.VERSION }}
+          body: Automatically built from the push to master (commit ${{ github.sha }}).
+          prerelease: false
+          make_latest: 'true'
+          files: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest.yml
+
+      # The fixed download link, unchanged for new players:
+      # github.com/LoxyBee/EQLS-Auras/releases/download/latest-dev/EQLS-Auras-Setup.exe
+      # (fixed artifactName in package.json). make_latest false so it never takes "latest" away
+      # from the versioned release above.
+      - name: Refresh the fixed-link installer
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -37,4 +71,5 @@ jobs:
           name: Latest build
           body: Automatically built from the latest push to master (commit ${{ github.sha }}).
           prerelease: false
+          make_latest: 'false'
           files: dist/*.exe

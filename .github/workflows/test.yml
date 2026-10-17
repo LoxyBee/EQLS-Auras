@@ -18,3 +18,20 @@ jobs:
       - run: npm ci
 
       - run: npm test
+
+  # MANDATORY (owner, 16 Oct): every change raises the version in package.json before it is
+  # pushed. A pull request into master fails here if it does not. See tools/check-version-bump.js
+  # and the "Version bump" rule in CLAUDE.md.
+  version-bump:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: node tools/check-version-bump.js origin/${{ github.base_ref }}

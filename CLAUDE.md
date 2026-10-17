@@ -6,6 +6,23 @@ Electron desktop app that tails an EverQuest log file in real time and shows a t
 
 Server context: the user plays **"EverQuest Legends"**, a custom/private EQ server (not live EQ, not a standard emulator ruleset) via a Daybreak launcher install. Log/spell-data formats matched the classic EQEmu-style schema closely enough to mine directly, but some values (durations, spell availability) may differ from live EQ. This server also has a **multiclass "loadout" mechanic**: the player can swap loadouts, which changes which spells are actually castable *without* touching the spellbook file — but it does generate a real burst of `"You forget X."`/`"You have finished memorizing Y."` lines (confirmed: ~14 events in ~15s for one observed swap). See gotcha #9 below — this is why loadout profiles (`profileStore.js`) exist.
 
+## Version bump — MANDATORY on every change, never skipped
+
+The owner, 16 Oct: *"whatever it takes for any agent working on a patch to push its number as part
+of the workflow, i want this to NEVER be skipped, this is mandatory every single time."*
+
+- **Every change raises the version in `package.json` before it is pushed** — a bug fix, a tweak, a
+  data change, anything. `npm version patch --no-git-tag-version` for a fix,
+  `npm version minor --no-git-tag-version` for a new feature (both also update `package-lock.json`).
+  Commit the bump with the change.
+- Check before pushing: `node tools/check-version-bump.js` (fails unless the version is higher than
+  `origin/master`'s).
+- **Enforced:** the `version-bump` job in `.github/workflows/test.yml` fails any PR into `master`
+  without a bump, and `build-installer.yml` refuses to publish a version that is already released.
+- Why it matters: each build is published as its own release `v<version>`, and the opt-in
+  auto-updater (`src/main/updater.js`) only offers a build whose version is higher than the one
+  installed. An un-bumped change is invisible to updates and indistinguishable in bug reports.
+
 ## Docs are written by a dedicated "Documentation" session — don't write them yourself
 
 Applies to a **new feature** or a **major edit** (a new subsystem, a behaviour change users will

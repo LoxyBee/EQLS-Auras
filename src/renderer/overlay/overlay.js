@@ -3,6 +3,13 @@ const widgetId = new URLSearchParams(window.location.search).get('widgetId');
 const listEl = document.getElementById('buff-list');
 const contentWrap = document.getElementById('content-wrap');
 const dragOverlayEl = document.getElementById('drag-overlay');
+// "Move together" (linked folder): lit with the group, or dimmed while one other member moves alone.
+if (window.eqOverlay.onGroupHighlight && dragOverlayEl) {
+  window.eqOverlay.onGroupHighlight((state) => {
+    dragOverlayEl.classList.toggle('group-member', state === 'member');
+    dragOverlayEl.classList.toggle('group-dimmed', state === 'dimmed');
+  });
+}
 const dragNameEl = document.getElementById('drag-name');
 
 // Note 6: the name is a plain label riding along with the rest of the drag box (it used to be its

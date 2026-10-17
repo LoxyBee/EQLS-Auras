@@ -117,6 +117,7 @@ class CustomTimerEngine extends EventEmitter {
     super();
     this.activeTimers = new Map(); // lowercased name -> { name, durationSec, expiresAt, endedText }
     this.getWidgetsFn = () => [];
+    this.activeProfileIdFn = null; // see setActiveProfileIdFn
     this.iconUrlFn = () => null;
     // triggerCombineMode:'and' bookkeeping - timer id -> the moment it stops counting as "recently
     // seen". Not per-widget, because two widgets never share a timer definition (see the field's
@@ -180,6 +181,30 @@ class CustomTimerEngine extends EventEmitter {
   // it tries the exact name, and only then falls back to the rank-stripped one. That ordering is
   // what tells "Promised Renewal VII" (a mote tier of Promised Renewal) apart from "Yaulp III" (a
   // different spell that happens to end in a numeral), and there are ten of the latter kind.
+  // () => the active loadout profile's id - triggers can be switched off per profile
+  // (timer.offInProfiles). Injected, same DI reasoning as setGetWidgetsFn.
+  setActiveProfileIdFn(fn) {
+    this.activeProfileIdFn = fn;
+  }
+
+  // Is this trigger switched off for the active loadout profile? (owner, 16 Oct: per-trigger
+  // on/off, "different per profile as well").
+  _isTriggerOff(timer) {
+    const off = timer && Array.isArray(timer.offInProfiles) ? timer.offInProfiles : null;
+    if (!off || !off.length || !this.activeProfileIdFn) return false;
+    return off.includes(this.activeProfileIdFn());
+  }
+
+  // A profile switch can turn triggers on or off - redraw, and drop running tiles of any trigger
+  // that is now off (a tile it already started must not linger on a profile that has it off).
+  onProfileChanged() {
+    for (const [key, t] of this.activeTimers) {
+      const def = this._findDefinitionById(t.defId || t.id);
+      if (def && this._isTriggerOff(def)) this.activeTimers.delete(key);
+    }
+    this.emit('activeChanged', this.getActive());
+  }
+
   setResolveSpellFn(fn) {
     this.resolveSpellFn = fn;
   }
@@ -271,7 +296,9 @@ class CustomTimerEngine extends EventEmitter {
         // `!timer` guards a bad element (a null from a malformed share code) regardless of which
         // store path fed it - cheap insurance so the engine is safe even if a writer skips the
         // door-sanitiser. See widgetStore's sanitizeCustomTimers.
-        if (!timer || !timer.triggerText) continue;
+        // A trigger switched off for the active loadout profile (the per-row checkbox) never fires -
+        // it is kept, with all its settings, and other profiles can still use it.
+        if (!timer || !timer.triggerText || this._isTriggerOff(timer)) continue;
         const trigger = timer.triggerText.toLowerCase();
 
         // Dynamic chat timer (widget.dynamicChatTimer): the trigger fires on "<keyword> mm:ss"
@@ -375,7 +402,8 @@ class CustomTimerEngine extends EventEmitter {
             ? Math.max(0, widget.andWindowSec) * 1000
             : DEFAULT_AND_WINDOW_MS;
         for (const t of timers) this.timerSeenUntil.set(t.id, now + andWindowMs);
-        const all = widget.customTimers || [];
+        // Switched-off triggers are not part of the set - AND must not wait for one that can't fire.
+        const all = (widget.customTimers || []).filter((t) => t && !this._isTriggerOff(t));
         // >1 required, not just "every entry seen" - a widget with a single trigger in AND mode
         // would otherwise fire on that one trigger alone, silently behaving like 'independent'
         // instead of visibly doing nothing until a second trigger is even added.
@@ -887,7 +915,8 @@ class CustomTimerEngine extends EventEmitter {
     //     identity" choice _resolveActivations' own 'and' branch already makes).
     for (const widget of this.getWidgetsFn()) {
       if (!widget.reverseDetection) continue;
-      const defs = widget.customTimers || [];
+      // A switched-off trigger shows no "ready" tile either.
+      const defs = (widget.customTimers || []).filter((d) => d && !this._isTriggerOff(d));
       if (defs.length === 0) continue;
       const mode = widget.triggerCombineMode || 'independent';
       if (mode === 'independent') {

@@ -8,4 +8,10 @@ contextBridge.exposeInMainWorld('eqMoveHud', {
   setSnap: (enabled, sizePx) => ipcRenderer.invoke('moveHud:setSnap', { enabled, sizePx }),
   resetPosition: () => ipcRenderer.invoke('moveHud:resetPosition'),
   done: () => ipcRenderer.invoke('moveHud:done'),
+  undo: () => ipcRenderer.invoke('moveHud:undo'),
+  redo: () => ipcRenderer.invoke('moveHud:redo'),
+  // The panel's rendered size, so the window can be fitted to it.
+  fitTo: (width, height) => ipcRenderer.send('moveHud:fitTo', { width, height }),
+  // "Move together" folders: 'group' | 'single' (this aura only).
+  setGroupMode: (mode) => ipcRenderer.invoke('moveHud:setGroupMode', mode),
 });

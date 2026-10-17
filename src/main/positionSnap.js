@@ -1,10 +1,12 @@
 // Shared snap-to-grid state for the move HUD (moveHudWindow.js). Both widgetManager (auras) and
 // actionBarManager (action bars) round through this so the HUD's Snap toggle behaves identically
-// for either. Only ever applied to `activeId` - the one thing currently being positioned - so a
-// bulk "Unlock all" drag is never snapped. main.js owns the persisted `overlaySnapGrid` and mirrors
+// for either. Only ever applied to what is being positioned right now (`activeIds` - one aura or
+// bar, or a linked folder's members), or to everything in "Unlock all" mode (`allActive`). main.js owns the persisted `overlaySnapGrid` and mirrors
 // it here.
 let grid = { enabled: false, sizePx: 8 };
-let activeId = null;
+// The things being positioned right now: one aura or bar, or - a "Move together" group session -
+// every aura in the linked folder, so dragging any one of them on its own (Alt / "One") snaps too.
+let activeIds = new Set();
 // "Unlock all auras" mode - every unlocked aura carries its own nudge arrows, so snap has to
 // apply to all of them, not just the one `activeId` the single-aura move HUD tracks.
 let allActive = false;
@@ -21,8 +23,10 @@ function get() {
   return { ...grid };
 }
 
-function setActive(id) {
-  activeId = id || null;
+// One id, an array of ids, or null for none.
+function setActive(idOrIds) {
+  const list = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+  activeIds = new Set(list.filter((x) => x != null && x !== ''));
 }
 
 function setActiveAll(on) {
@@ -36,7 +40,7 @@ function snap(v) {
 // Should a move of `id` be snapped right now?
 function active(id) {
   if (!grid.enabled || id == null) return false;
-  return allActive || id === activeId;
+  return allActive || activeIds.has(id);
 }
 
 module.exports = { set, get, setActive, setActiveAll, snap, active };
