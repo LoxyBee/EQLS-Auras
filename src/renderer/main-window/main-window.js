@@ -2947,13 +2947,8 @@ function initWidgetsPanel() {
       dotWrap.className = 'profile-dot-wrap nav-folder-dot';
       const dot = document.createElement('span');
       dot.className = 'profile-dot profile-dot-' + state;
-      const tooltip = document.createElement('span');
-      tooltip.className = 'tooltip-bubble';
-      tooltip.textContent =
-        state === 'off'
-          ? 'All off on this profile - click to turn back on'
-          : `${onCount} of ${members.length} on for this profile - click to turn all off`;
-      dotWrap.append(dot, tooltip);
+      // No hover text of any kind on the folder dot (owner, 16 Oct).
+      dotWrap.append(dot);
       dotWrap.addEventListener('click', (e) => {
         e.stopPropagation();
         if (!currentActiveProfileId) return;
